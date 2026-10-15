@@ -289,11 +289,11 @@ impl Client
     ) -> Self
     {
         let params = match quiet {
-            | Quiet::Unheld => json!({
+            Quiet::Unheld => json!({
                 "capabilities": {},
                 "initializationOptions": { "diagnostics": { "quiet": 0_i32 } },
             }),
-            | Quiet::Default => json!({ "capabilities": {} }),
+            Quiet::Default => json!({ "capabilities": {} }),
         };
         let _capabilities = self.request(Method("initialize"), &params);
         let _quiet = self.notify(Method("initialized"), &json!({}));
@@ -501,8 +501,8 @@ impl Client
     ) -> Vec<Value>
     {
         match self.connection {
-            | Connection::Served(ref streams) => streams.exchange(&message),
-            | Connection::Joined(ref mut joined) => joined.exchange(message),
+            Connection::Served(ref streams) => streams.exchange(&message),
+            Connection::Joined(ref mut joined) => joined.exchange(message),
         }
     }
 }

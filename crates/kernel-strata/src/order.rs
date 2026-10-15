@@ -435,36 +435,34 @@ impl fmt::Display for EvidenceError
     ) -> fmt::Result
     {
         match *self {
-            | Self::MissingAtomBound { variable } => write!(
+            Self::MissingAtomBound { variable } => write!(
                 f,
                 "no bound covers the left atom over variable {}",
                 variable.index()
             ),
-            | Self::StrayAtomBound { variable } => write!(
+            Self::StrayAtomBound { variable } => write!(
                 f,
                 "a bound names variable {} outside the left level's atoms",
                 variable.index()
             ),
-            | Self::AtomOffsetMismatch { variable } => write!(
+            Self::AtomOffsetMismatch { variable } => write!(
                 f,
                 "recorded offsets for variable {} differ from the levels",
                 variable.index()
             ),
-            | Self::InsufficientAtomBound { variable } => write!(
+            Self::InsufficientAtomBound { variable } => write!(
                 f,
                 "the bound for variable {} does not dominate",
                 variable.index()
             ),
-            | Self::MissingConstantBound { variable } => write!(
+            Self::MissingConstantBound { variable } => write!(
                 f,
                 "the constant bound names absent variable {}",
                 variable.index()
             ),
-            | Self::InsufficientConstantBound => {
-                f.write_str("the constant bound does not dominate")
-            },
-            | Self::NotRefuting => f.write_str("the valuation does not refute the claimed order"),
-            | Self::Overflow => f.write_str("evaluating the valuation overflowed"),
+            Self::InsufficientConstantBound => f.write_str("the constant bound does not dominate"),
+            Self::NotRefuting => f.write_str("the valuation does not refute the claimed order"),
+            Self::Overflow => f.write_str("evaluating the valuation overflowed"),
         }
     }
 }
@@ -885,12 +883,12 @@ pub fn validate_witness(
         return Err(EvidenceError::InsufficientConstantBound);
     };
     match witness.constant {
-        | ConstantBound::Constant => {
+        ConstantBound::Constant => {
             if shifted_constant > u128::from(right.constant_part()) {
                 return Err(EvidenceError::InsufficientConstantBound);
             }
         },
-        | ConstantBound::Atom(variable) => {
+        ConstantBound::Atom(variable) => {
             let Some(offset) = right.offset_of(variable)
             else {
                 return Err(EvidenceError::MissingConstantBound { variable });

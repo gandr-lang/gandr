@@ -421,8 +421,8 @@ impl RoleTable
             let left = Side(pbg.step(def.rctx, Dir::Left)?);
             let right = Side(pbg.step(def.rctx, Dir::Right)?);
             let opener = match occurrence.enclosure {
-                | Enclosure::Form => Opener::Form,
-                | Enclosure::Bracket(opener) => {
+                Enclosure::Form => Opener::Form,
+                Enclosure::Bracket(opener) => {
                     let opener_def = pbg.mold(opener)?;
                     let opener_left = pbg.step(opener_def.rctx, Dir::Left)?;
                     Opener::Bracket {
@@ -476,8 +476,8 @@ impl RoleTable
         let index = usize::try_from(u32::from(mold))
             .map_err(|_overflow| PbgError::UnknownMold { id: mold })?;
         match self.roles.get(index) {
-            | Some(&role) => Ok(role),
-            | None => Err(PbgError::UnknownMold { id: mold }),
+            Some(&role) => Ok(role),
+            None => Err(PbgError::UnknownMold { id: mold }),
         }
     }
 
@@ -571,21 +571,21 @@ impl RoleTable
                 continue;
             };
             let role = match node.label() {
-                | NodeLabel::Tile(mold) => match self.role_of(mold) {
-                    | Ok(role) => role,
-                    | Err(_unknown) => return Err(HighlightError::UnknownMold { id: mold }),
+                NodeLabel::Tile(mold) => match self.role_of(mold) {
+                    Ok(role) => role,
+                    Err(_unknown) => return Err(HighlightError::UnknownMold { id: mold }),
                 },
-                | NodeLabel::Space => {
+                NodeLabel::Space => {
                     match tree
                         .fragment(position)
                         .map_or(Layout::Whitespace, layout_of)
                     {
-                        | Layout::Comment => HlRole::Comment,
-                        | Layout::Directive => HlRole::Directive,
-                        | Layout::Whitespace => continue,
+                        Layout::Comment => HlRole::Comment,
+                        Layout::Directive => HlRole::Directive,
+                        Layout::Whitespace => continue,
                     }
                 },
-                | NodeLabel::Wald
+                NodeLabel::Wald
                 | NodeLabel::Meld(_)
                 | NodeLabel::Doc
                 | NodeLabel::Grout { .. }
@@ -651,16 +651,16 @@ impl Display for HighlightError
     ) -> FmtResult
     {
         match *self {
-            | Self::GrammarMismatch { tree, table } => write!(
+            Self::GrammarMismatch { tree, table } => write!(
                 f,
                 "the tree was molded under grammar {:#018x}, the role table read off grammar {:#018x}",
                 u64::from(tree),
                 u64::from(table)
             ),
-            | Self::UnknownMold { id } => {
+            Self::UnknownMold { id } => {
                 write!(f, "tile mold {} is past the role table", u32::from(id))
             },
-            | Self::InvertedSpan(ref error) => Display::fmt(error, f),
+            Self::InvertedSpan(ref error) => Display::fmt(error, f),
         }
     }
 }
@@ -685,8 +685,8 @@ impl Error for HighlightError
     fn source(&self) -> Option<&(dyn Error + 'static)>
     {
         match *self {
-            | Self::InvertedSpan(ref error) => Some(error),
-            | Self::GrammarMismatch { .. } | Self::UnknownMold { .. } => None,
+            Self::InvertedSpan(ref error) => Some(error),
+            Self::GrammarMismatch { .. } | Self::UnknownMold { .. } => None,
         }
     }
 }
@@ -728,10 +728,10 @@ fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
         let mut frames = vec![Frame::Enter(rule.regex().view())];
         while let Some(frame) = frames.pop() {
             match frame {
-                | Frame::Restore(brackets) => open = brackets,
-                | Frame::Enter(view) => match view.shape() {
-                    | RegexShape::Empty | RegexShape::Sym(Sym::Sort(_)) => {},
-                    | RegexShape::Sym(Sym::Tile(tile)) => {
+                Frame::Restore(brackets) => open = brackets,
+                Frame::Enter(view) => match view.shape() {
+                    RegexShape::Empty | RegexShape::Sym(Sym::Sort(_)) => {},
+                    RegexShape::Sym(Sym::Tile(tile)) => {
                         let id = MoldId::try_from(out.len())
                             .map_err(|_overflow| PbgError::MoldOverflow)?;
                         let enclosure = open
@@ -750,16 +750,16 @@ fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
                             open.pop();
                         }
                     },
-                    | RegexShape::Seq(items) => {
+                    RegexShape::Seq(items) => {
                         frames.extend(items.into_iter().rev().map(Frame::Enter));
                     },
-                    | RegexShape::Alt(items) => {
+                    RegexShape::Alt(items) => {
                         for item in items.into_iter().rev() {
                             frames.push(Frame::Enter(item));
                             frames.push(Frame::Restore(open.clone()));
                         }
                     },
-                    | RegexShape::Optional(inner) | RegexShape::Repeat(inner) => {
+                    RegexShape::Optional(inner) | RegexShape::Repeat(inner) => {
                         frames.push(Frame::Enter(inner));
                     },
                 },
@@ -830,47 +830,47 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 {
     let label = facts.label.0;
     match facts.kind.0 {
-        | "line_comment" | "block_comment" => return HlRole::Comment,
-        | "shebang" => return HlRole::Directive,
-        | "list_operator" | "redirection_operator" => return HlRole::Operator,
-        | _ => {},
+        "line_comment" | "block_comment" => return HlRole::Comment,
+        "shebang" => return HlRole::Directive,
+        "list_operator" | "redirection_operator" => return HlRole::Operator,
+        _ => {},
     }
     let left_crosses = |tile: &'static str| bool::from(facts.left.crosses(TileLabel(tile)));
     match label {
-        | "identifier" => identifier_role(facts),
-        | "_" => match facts.opener {
-            | Opener::Bracket {
+        "identifier" => identifier_role(facts),
+        "_" => match facts.opener {
+            Opener::Bracket {
                 label: TileLabel("("),
                 ..
             } => HlRole::VariableParam,
-            | Opener::Bracket { .. } | Opener::Form => HlRole::Variable,
+            Opener::Bracket { .. } | Opener::Form => HlRole::Variable,
         },
-        | "!" if left_crosses("fork") => HlRole::Keyword,
-        | "!" => HlRole::Operator,
-        | "+" | "-" if facts.kind.0 == "universe_type" => HlRole::Keyword,
-        | "?" => match facts.kind.0 {
-            | "hole" => HlRole::Hole,
-            | "unknown_type" => HlRole::TypeBuiltin,
-            | _ => HlRole::Operator,
+        "!" if left_crosses("fork") => HlRole::Keyword,
+        "!" => HlRole::Operator,
+        "+" | "-" if facts.kind.0 == "universe_type" => HlRole::Keyword,
+        "?" => match facts.kind.0 {
+            "hole" => HlRole::Hole,
+            "unknown_type" => HlRole::TypeBuiltin,
+            _ => HlRole::Operator,
         },
-        | "true" | "false" => HlRole::Boolean,
-        | "character" => HlRole::Character,
-        | "number" | "typed_number" | "ω" | "file_descriptor" => HlRole::Number,
-        | "\"" | "'" | "string_fragment" | "double_string_fragment" | "single_quoted_content" => {
+        "true" | "false" => HlRole::Boolean,
+        "character" => HlRole::Character,
+        "number" | "typed_number" | "ω" | "file_descriptor" => HlRole::Number,
+        "\"" | "'" | "string_fragment" | "double_string_fragment" | "single_quoted_content" => {
             HlRole::StringLit
         },
-        | "escape_sequence" => HlRole::Escape,
-        | "constructor" => HlRole::Constructor,
-        | "type_identifier" => HlRole::Type,
-        | "type_variable" => HlRole::TypeVariable,
-        | "hole_name" => HlRole::Label,
-        | "variable_name" => HlRole::Variable,
-        | "environment_assignment" => HlRole::VariableParam,
-        | "shell_word" => HlRole::Path,
-        | _ if KEYWORDS.contains(&label) => HlRole::Keyword,
-        | _ if OPERATORS.contains(&label) => HlRole::Operator,
-        | _ if PRIMITIVE_TYPES.contains(&label) => HlRole::TypeBuiltin,
-        | _ => HlRole::Other,
+        "escape_sequence" => HlRole::Escape,
+        "constructor" => HlRole::Constructor,
+        "type_identifier" => HlRole::Type,
+        "type_variable" => HlRole::TypeVariable,
+        "hole_name" => HlRole::Label,
+        "variable_name" => HlRole::Variable,
+        "environment_assignment" => HlRole::VariableParam,
+        "shell_word" => HlRole::Path,
+        _ if KEYWORDS.contains(&label) => HlRole::Keyword,
+        _ if OPERATORS.contains(&label) => HlRole::Operator,
+        _ if PRIMITIVE_TYPES.contains(&label) => HlRole::TypeBuiltin,
+        _ => HlRole::Other,
     }
 }
 
@@ -929,12 +929,12 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
 {
     let kind = facts.kind.0;
     match kind {
-        | "identifier" | "cons_pattern" => return HlRole::Variable,
-        | "projection_expression" => return HlRole::Member,
-        | "at_type" => return HlRole::Label,
-        | "attribute_block" => return HlRole::Other,
-        | "instantiation_expression" => return HlRole::VariableParam,
-        | _ => {},
+        "identifier" | "cons_pattern" => return HlRole::Variable,
+        "projection_expression" => return HlRole::Member,
+        "at_type" => return HlRole::Label,
+        "attribute_block" => return HlRole::Other,
+        "instantiation_expression" => return HlRole::VariableParam,
+        _ => {},
     }
     let left_crosses = |tile: &'static str| bool::from(facts.left.crosses(TileLabel(tile)));
     let right_crosses = |tile: &'static str| bool::from(facts.right.crosses(TileLabel(tile)));
@@ -965,19 +965,19 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
         };
     }
     match facts.opener {
-        | Opener::Form => HlRole::Variable,
-        | Opener::Bracket { label, left } => match label.0 {
-            | "#{" | "{" => HlRole::Member,
-            | "@[" if right_crosses(":") => HlRole::VariableParam,
-            | "@[" => HlRole::Other,
-            | "[" => match kind {
-                | "u_type" | "thunk_expression" => HlRole::Number,
-                | "migrate_expression" => HlRole::Label,
-                | _ => HlRole::Other,
+        Opener::Form => HlRole::Variable,
+        Opener::Bracket { label, left } => match label.0 {
+            "#{" | "{" => HlRole::Member,
+            "@[" if right_crosses(":") => HlRole::VariableParam,
+            "@[" => HlRole::Other,
+            "[" => match kind {
+                "u_type" | "thunk_expression" => HlRole::Number,
+                "migrate_expression" => HlRole::Label,
+                _ => HlRole::Other,
             },
-            | "(" if bool::from(left.crosses(TileLabel("select"))) => HlRole::Label,
-            | "(" => HlRole::VariableParam,
-            | _ => HlRole::Variable,
+            "(" if bool::from(left.crosses(TileLabel("select"))) => HlRole::Label,
+            "(" => HlRole::VariableParam,
+            _ => HlRole::Variable,
         },
     }
 }

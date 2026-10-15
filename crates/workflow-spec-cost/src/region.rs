@@ -261,11 +261,17 @@ impl Regions
                     });
                 }
             };
+            #[expect(
+                clippy::wildcard_enum_match_arm,
+                reason = "`syn::Item` is non-exhaustive, so a wildcard arm is required; only a \
+                          function, an impl, a trait, a struct, an enum or a module carries a \
+                          specification region"
+            )]
             match *item {
-                | syn::Item::Fn(ref function) => {
+                syn::Item::Fn(ref function) => {
                     attach(&function.attrs, format!("{prefix}{}", function.sig.ident));
                 },
-                | syn::Item::Impl(ref block) => {
+                syn::Item::Impl(ref block) => {
                     let owner = owner_of(block);
                     for member in &block.items {
                         if let syn::ImplItem::Fn(ref method) = *member {
@@ -276,7 +282,7 @@ impl Regions
                         }
                     }
                 },
-                | syn::Item::Trait(ref interface) => {
+                syn::Item::Trait(ref interface) => {
                     attach(&interface.attrs, format!("{prefix}{}", interface.ident));
                     for member in &interface.items {
                         if let syn::TraitItem::Fn(ref method) = *member {
@@ -287,19 +293,19 @@ impl Regions
                         }
                     }
                 },
-                | syn::Item::Struct(ref record) => {
+                syn::Item::Struct(ref record) => {
                     attach(&record.attrs, format!("{prefix}{}", record.ident));
                 },
-                | syn::Item::Enum(ref choice) => {
+                syn::Item::Enum(ref choice) => {
                     attach(&choice.attrs, format!("{prefix}{}", choice.ident));
                 },
-                | syn::Item::Mod(ref module) => {
+                syn::Item::Mod(ref module) => {
                     if let Some((_, ref items)) = module.content {
                         let inner = format!("{prefix}{}::", module.ident);
                         pending.extend(items.iter().rev().map(|item| (item, inner.clone())));
                     }
                 },
-                | _ => {},
+                _ => {},
             }
         }
         if found.is_empty() {
@@ -345,8 +351,8 @@ impl Regions
         };
         let after = regions.partition_point(|region| region.first <= line);
         match after.checked_sub(1).and_then(|index| regions.get(index)) {
-            | Some(region) if line <= region.last => Maybe::Present(region),
-            | Some(_) | None => Maybe::Absent(lookup::Absent::OutsideEveryAttribute),
+            Some(region) if line <= region.last => Maybe::Present(region),
+            Some(_) | None => Maybe::Absent(lookup::Absent::OutsideEveryAttribute),
         }
     }
 }
@@ -375,13 +381,18 @@ fn owner_of(block: &syn::ItemImpl) -> ItemName
             .last()
             .map_or_else(|| "_".to_owned(), |segment| segment.ident.to_string())
     };
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "`syn::Type` is non-exhaustive, so a wildcard arm is required; only a path names \
+                  the implementing type"
+    )]
     let owner = match *block.self_ty {
-        | syn::Type::Path(ref typed) => last(&typed.path),
-        | _ => "_".to_owned(),
+        syn::Type::Path(ref typed) => last(&typed.path),
+        _ => "_".to_owned(),
     };
     ItemName(match block.trait_ {
-        | Some((ref interface, _)) => format!("<{owner} as {}>", last(interface)),
-        | None => owner,
+        Some((ref interface, _)) => format!("<{owner} as {}>", last(interface)),
+        None => owner,
     })
 }
 
@@ -496,8 +507,8 @@ mod inner
             .unwrap();
         let file = Path::new("crates/a/src/lib.rs");
         let find = |line| match regions.find(file, Line(line)) {
-            | Maybe::Present(found) => Maybe::Present(found.item.clone()),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(found) => Maybe::Present(found.item.clone()),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         };
         let named = |name: &str| Maybe::Present(ItemName(name.to_owned()));
         assert_eq!(find(3), named("free"), "a one-line attribute");

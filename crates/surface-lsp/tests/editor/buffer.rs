@@ -340,14 +340,12 @@ impl Buffer
     /// trivial.
     pub fn next_char(&self) -> Maybe<Key, neighbour::Absent>
     {
-        match self
-            .text
+        self.text
             .get(self.cursor.0 ..)
             .and_then(|rest| rest.chars().next())
-        {
-            | Some(next) => Maybe::Present(Key(next)),
-            | None => Maybe::Absent(neighbour::Absent::Edge),
-        }
+            .map_or(Maybe::Absent(neighbour::Absent::Edge), |next| {
+                Maybe::Present(Key(next))
+            })
     }
 
     /// The character before the cursor.
@@ -356,14 +354,12 @@ impl Buffer
     /// trivial.
     pub fn previous_char(&self) -> Maybe<Key, neighbour::Absent>
     {
-        match self
-            .text
+        self.text
             .get(.. self.cursor.0)
             .and_then(|before| before.chars().next_back())
-        {
-            | Some(previous) => Maybe::Present(Key(previous)),
-            | None => Maybe::Absent(neighbour::Absent::Edge),
-        }
+            .map_or(Maybe::Absent(neighbour::Absent::Edge), |previous| {
+                Maybe::Present(Key(previous))
+            })
     }
 
     /// Whether the editor inserted the closer at the cursor for the writer.
@@ -440,8 +436,8 @@ impl Buffer
             return Vec::new();
         }
         let closes_before = match next {
-            | Maybe::Present(Key(next)) => CLOSE_BEFORE.contains(next),
-            | Maybe::Absent(_) => true,
+            Maybe::Present(Key(next)) => CLOSE_BEFORE.contains(next),
+            Maybe::Absent(_) => true,
         };
         if let Maybe::Present(Key(closes)) = closer_of(typed)
             && closes_before
@@ -750,11 +746,11 @@ impl Buffer
 pub const fn closer_of(opener: Key) -> Maybe<Key, paired::Absent>
 {
     match opener {
-        | Key('(') => Maybe::Present(Key(')')),
-        | Key('[') => Maybe::Present(Key(']')),
-        | Key('{') => Maybe::Present(Key('}')),
-        | Key('"') => Maybe::Present(Key('"')),
-        | _ => Maybe::Absent(paired::Absent::Unpaired),
+        Key('(') => Maybe::Present(Key(')')),
+        Key('[') => Maybe::Present(Key(']')),
+        Key('{') => Maybe::Present(Key('}')),
+        Key('"') => Maybe::Present(Key('"')),
+        _ => Maybe::Absent(paired::Absent::Unpaired),
     }
 }
 
@@ -765,11 +761,11 @@ pub const fn closer_of(opener: Key) -> Maybe<Key, paired::Absent>
 pub const fn opener_of(closer: Key) -> Maybe<Key, paired::Absent>
 {
     match closer {
-        | Key(')') => Maybe::Present(Key('(')),
-        | Key(']') => Maybe::Present(Key('[')),
-        | Key('}') => Maybe::Present(Key('{')),
-        | Key('"') => Maybe::Present(Key('"')),
-        | _ => Maybe::Absent(paired::Absent::Unpaired),
+        Key(')') => Maybe::Present(Key('(')),
+        Key(']') => Maybe::Present(Key('[')),
+        Key('}') => Maybe::Present(Key('{')),
+        Key('"') => Maybe::Present(Key('"')),
+        _ => Maybe::Absent(paired::Absent::Unpaired),
     }
 }
 
@@ -801,9 +797,9 @@ fn quoting(line: Text<'_>) -> Quoting
     let mut escaped = false;
     for character in line.0.chars() {
         match character {
-            | '\\' if inside => escaped = !escaped,
-            | '"' if !escaped => inside = !inside,
-            | _ => escaped = false,
+            '\\' if inside => escaped = !escaped,
+            '"' if !escaped => inside = !inside,
+            _ => escaped = false,
         }
     }
     if inside {

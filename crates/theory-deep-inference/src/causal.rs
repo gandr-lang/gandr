@@ -560,10 +560,10 @@ impl<A: CellAlphabet> EventOrder<A>
         at: EventIndex,
     ) -> Maybe<&DerivationEvent<A>, event_lookup::Absent>
     {
-        match self.events.get(usize::from(at)) {
-            | Some(event) => Maybe::Present(event),
-            | None => Maybe::Absent(event_lookup::Absent::OutOfRange),
-        }
+        self.events.get(usize::from(at)).map_or(
+            Maybe::Absent(event_lookup::Absent::OutOfRange),
+            Maybe::Present,
+        )
     }
 
     /// The layer of the event at `at`.
@@ -588,10 +588,11 @@ impl<A: CellAlphabet> EventOrder<A>
         at: EventIndex,
     ) -> Maybe<CausalDepth, event_lookup::Absent>
     {
-        match self.depths.get(usize::from(at)) {
-            | Some(depth) => Maybe::Present(*depth),
-            | None => Maybe::Absent(event_lookup::Absent::OutOfRange),
-        }
+        self.depths
+            .get(usize::from(at))
+            .map_or(Maybe::Absent(event_lookup::Absent::OutOfRange), |depth| {
+                Maybe::Present(*depth)
+            })
     }
 
     /// The intrinsic sort key of the event at `at`.
@@ -616,10 +617,11 @@ impl<A: CellAlphabet> EventOrder<A>
         at: EventIndex,
     ) -> Maybe<EventKey, event_lookup::Absent>
     {
-        match self.keys.get(usize::from(at)) {
-            | Some(key) => Maybe::Present(*key),
-            | None => Maybe::Absent(event_lookup::Absent::OutOfRange),
-        }
+        self.keys
+            .get(usize::from(at))
+            .map_or(Maybe::Absent(event_lookup::Absent::OutOfRange), |key| {
+                Maybe::Present(*key)
+            })
     }
 
     /// Refuse this order if two distinct events tie on the canonical sort key.

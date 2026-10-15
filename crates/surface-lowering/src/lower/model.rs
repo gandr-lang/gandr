@@ -267,8 +267,8 @@ impl<'source> Lowerer<'_, 'source>
         let mut values = Vec::new();
         for &argument in stretch(&self.operands, arguments) {
             match self.value_at(argument) {
-                | Maybe::Present(value) => values.push(value),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(value) => values.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
 
@@ -309,8 +309,8 @@ impl<'source> Lowerer<'_, 'source>
             return Maybe::Absent(lowered::Absent::Unminted);
         }
         let defined = match self.value_type_at(member.defined.node) {
-            | Maybe::Present(defined) => defined,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(defined) => defined,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let environment: Vec<ValueId> = arguments.iter().rev().copied().collect();
         let mark = sink.arena.watermark();
@@ -389,13 +389,13 @@ impl<'source> Lowerer<'_, 'source>
             };
             let position = SlotIndex::from(position);
             match self.mint_component(structure, part, sink, origin) {
-                | Ok(minted) => {
+                Ok(minted) => {
                     let _first = modelled.insert(position, minted);
                 },
-                | Err(Missing::Refused(refusal)) => {
+                Err(Missing::Refused(refusal)) => {
                     let _first = faults.insert(position, refusal);
                 },
-                | Err(Missing::Unlowered) => {
+                Err(Missing::Unlowered) => {
                     let _first = faults.insert(position, LoweringRefusal::UnstatedComponent {
                         span: declaration.span,
                         name: slot.name,
@@ -447,17 +447,17 @@ impl<'source> Lowerer<'_, 'source>
             return Err(Missing::Unlowered);
         };
         let (telescope, tail) = match *form {
-            | ModelForm::Operation {
+            ModelForm::Operation {
                 ref telescope,
                 ref results,
             } => (telescope, Tail::Results(results)),
-            | ModelForm::Law {
+            ModelForm::Law {
                 ref telescope,
                 ref carrier,
                 ref left,
                 ref right,
             } => (telescope, Tail::Path(carrier, left, right)),
-            | ModelForm::Sort { .. } => return Err(Missing::Unlowered),
+            ModelForm::Sort { .. } => return Err(Missing::Unlowered),
         };
         let minting = Minting {
             structure,
@@ -478,21 +478,21 @@ impl<'source> Lowerer<'_, 'source>
             dependent: &dependent,
         };
         let codomain = match tail {
-            | Tail::Results(results) => {
+            Tail::Results(results) => {
                 let mut sorts = Vec::with_capacity(results.len());
                 for result in results {
                     sorts.push(self.sort_type(result, context, &minting, sink)?);
                 }
-                match *sorts.as_slice() {
-                    | [one] => one,
-                    | _ => {
-                        let id = sink.arena.value_type_product(&sorts);
-                        sink.origins.record_value_type(id, origin);
-                        id
-                    },
+                if let [one] = *sorts.as_slice() {
+                    one
+                }
+                else {
+                    let id = sink.arena.value_type_product(&sorts);
+                    sink.origins.record_value_type(id, origin);
+                    id
                 }
             },
-            | Tail::Path(carrier, left, right) => {
+            Tail::Path(carrier, left, right) => {
                 let over = self.sort_type(carrier, context, &minting, sink)?;
                 let from = self.term_value(left, context, &minting, sink)?;
                 let to = self.term_value(right, context, &minting, sink)?;
@@ -596,11 +596,11 @@ impl<'source> Lowerer<'_, 'source>
             return Err(Missing::Refused(refusal));
         }
         match (component.meaning, sort.indices.is_empty()) {
-            | (TypeMeaning::Manifest(defined), true) => match self.value_type_at(defined.node) {
-                | Maybe::Present(id) => Ok(id),
-                | Maybe::Absent(_) => Err(Missing::Unlowered),
+            (TypeMeaning::Manifest(defined), true) => match self.value_type_at(defined.node) {
+                Maybe::Present(id) => Ok(id),
+                Maybe::Absent(_) => Err(Missing::Unlowered),
             },
-            | (TypeMeaning::Sealed, true) => {
+            (TypeMeaning::Sealed, true) => {
                 let Some(atom) = self.collected.slots.get(usize::from(component.held))
                 else {
                     return Err(Missing::Unlowered);
@@ -609,22 +609,22 @@ impl<'source> Lowerer<'_, 'source>
                 sink.origins.record_value_type(id, minting.origin);
                 Ok(id)
             },
-            | (TypeMeaning::Instantiated { defined, instance }, true) => self
+            (TypeMeaning::Instantiated { defined, instance }, true) => self
                 .instance_types
                 .get(&(instance, defined.node))
                 .copied()
                 .ok_or(Missing::Unlowered),
-            | (TypeMeaning::Family(family), false) => {
+            (TypeMeaning::Family(family), false) => {
                 let mut arguments = Vec::with_capacity(sort.indices.len());
                 for index in &sort.indices {
                     arguments.push(self.term_value(index, context, minting, sink)?);
                 }
                 match self.expand(family, &arguments, sink, minting.origin) {
-                    | Maybe::Present(id) => Ok(id),
-                    | Maybe::Absent(_) => Err(Missing::Unlowered),
+                    Maybe::Present(id) => Ok(id),
+                    Maybe::Absent(_) => Err(Missing::Unlowered),
                 }
             },
-            | (
+            (
                 TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. },
                 false,
             )
@@ -669,23 +669,23 @@ impl<'source> Lowerer<'_, 'source>
         let mut built: Vec<ValueId> = Vec::new();
         while let Some(step) = pending.pop() {
             match step {
-                | Walk::Read(node) => match node.view() {
-                    | TermView::Var(name) => {
+                Walk::Read(node) => match node.view() {
+                    TermView::Var(name) => {
                         let index = variable(context, name)?;
                         let id = sink.arena.value_variable(Zone::Intuitionistic, index);
                         sink.origins.record_value(id, origin);
                         built.push(id);
                     },
-                    | TermView::Op { name, args } => {
+                    TermView::Op { name, args } => {
                         let arguments: Vec<TermNode<'_>> = args.collect();
                         pending.push(Walk::Apply(name, OperandCount::from(arguments.len())));
                         pending.extend(arguments.into_iter().rev().map(Walk::Read));
                     },
-                    | TermView::Ctor { .. } | TermView::Results { .. } => {
+                    TermView::Ctor { .. } | TermView::Results { .. } => {
                         return Err(Missing::Unlowered);
                     },
                 },
-                | Walk::Apply(name, count) => {
+                Walk::Apply(name, count) => {
                     let start = built
                         .len()
                         .checked_sub(usize::from(count))
@@ -707,8 +707,8 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         match *built.as_slice() {
-            | [value] => Ok(value),
-            | _ => Err(Missing::Unlowered),
+            [value] => Ok(value),
+            _ => Err(Missing::Unlowered),
         }
     }
 
@@ -815,25 +815,25 @@ impl<'source> Lowerer<'_, 'source>
             let mut parameters = Vec::with_capacity(family.parameters.len());
             for parameter in &family.parameters {
                 match self.value_type_at(parameter.classifier.node) {
-                    | Maybe::Present(id) => parameters.push(id),
-                    | Maybe::Absent(_) => break,
+                    Maybe::Present(id) => parameters.push(id),
+                    Maybe::Absent(_) => break,
                 }
             }
             if parameters.len() != family.parameters.len() {
                 continue;
             }
             let indices = match check.stated {
-                | FamilyForm::Written(kind) => self.written_indices(kind, sink, origin),
-                | FamilyForm::Derived => {
+                FamilyForm::Written(kind) => self.written_indices(kind, sink, origin),
+                FamilyForm::Derived => {
                     self.derived_indices(check.structure, check.component, sink, origin)
                 },
             };
             let indices = match indices {
-                | Ok(indices) => indices,
-                | Err(missing) => {
+                Ok(indices) => indices,
+                Err(missing) => {
                     let refusal = match missing {
-                        | Missing::Refused(refusal) => refusal,
-                        | Missing::Unlowered => LoweringRefusal::UnreadAscription {
+                        Missing::Refused(refusal) => refusal,
+                        Missing::Unlowered => LoweringRefusal::UnreadAscription {
                             span: declared.named.span,
                             name: declared.name,
                             form: crate::error::AscriptionForm::Kinded,
@@ -931,14 +931,14 @@ impl<'source> Lowerer<'_, 'source>
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, kind.node, &mut pieces).map_err(Missing::Refused)?;
         let Some(domain) = pieces.pieces.iter().find_map(|piece| match *piece {
-            | Piece::Operand(operand) => Some(operand),
-            | Piece::Tile { .. } => None,
+            Piece::Operand(operand) => Some(operand),
+            Piece::Tile { .. } => None,
         })
         else {
             return Err(Missing::Unlowered);
         };
         let entries: Vec<NodeIndex> = match self.form_at(domain) {
-            | Ok(Some((name, Former::ParenthesizedType))) => {
+            Ok(Some((name, Former::ParenthesizedType))) => {
                 let mut listed = Pieces::new();
                 read_pieces(self.pbg, self.tree, domain.node, &mut listed)
                     .map_err(Missing::Refused)?;
@@ -957,8 +957,8 @@ impl<'source> Lowerer<'_, 'source>
                     .map(|entry| entry.held.at().node)
                     .collect()
             },
-            | Ok(_) => Vec::from([domain.node]),
-            | Err(refusal) => return Err(Missing::Refused(refusal)),
+            Ok(_) => Vec::from([domain.node]),
+            Err(refusal) => return Err(Missing::Refused(refusal)),
         };
         let mut indices = Vec::with_capacity(entries.len());
         for entry in entries {

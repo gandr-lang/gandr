@@ -465,13 +465,15 @@ impl PotentialMaintenance
         node: NodeId,
     ) -> Maybe<Potential, PotentialAbsence>
     {
-        match Self::index_of(node) {
-            | Ok(index) => self.values.get(usize::from(index)).copied().map_or(
-                Maybe::Absent(PotentialAbsence::UnknownNode(node)),
-                Maybe::Present,
-            ),
-            | Err(_) => Maybe::Absent(PotentialAbsence::UnknownNode(node)),
-        }
+        Self::index_of(node).map_or(
+            Maybe::Absent(PotentialAbsence::UnknownNode(node)),
+            |index| {
+                self.values.get(usize::from(index)).copied().map_or(
+                    Maybe::Absent(PotentialAbsence::UnknownNode(node)),
+                    Maybe::Present,
+                )
+            },
+        )
     }
 
     /// Whether the standing valuation satisfies every admitted constraint.
@@ -698,11 +700,11 @@ impl PotentialMaintenance
             restored?;
         }
         match outcome? {
-            | Propagation::Refuted(witness) => {
+            Propagation::Refuted(witness) => {
                 self.telemetry.refutations = self.telemetry.refutations.saturating_increment();
                 Ok(ConstraintVerdict::Refuted(witness))
             },
-            | Propagation::Satisfied => {
+            Propagation::Satisfied => {
                 self.record(edge, offset)?;
                 Ok(ConstraintVerdict::SatisfiedAfterRaise)
             },
@@ -1081,10 +1083,10 @@ impl core::fmt::Display for PotentialError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::NodeCapacity => f.write_str("node capacity"),
-            | Self::ValueOverflow => f.write_str("value overflow"),
-            | Self::WitnessDesynchronized => f.write_str("cycle witness desynchronized"),
-            | Self::ArithmeticOverflow => f.write_str("arithmetic overflow"),
+            Self::NodeCapacity => f.write_str("node capacity"),
+            Self::ValueOverflow => f.write_str("value overflow"),
+            Self::WitnessDesynchronized => f.write_str("cycle witness desynchronized"),
+            Self::ArithmeticOverflow => f.write_str("arithmetic overflow"),
         }
     }
 }

@@ -134,49 +134,49 @@ impl core::fmt::Display for SessionError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Arena => f.write_str("unreadable session payload code"),
-            | Self::ExpectedSession(_) => f.write_str("expected a session code"),
-            | Self::MissingState(State(state)) => write!(f, "missing session state {state}"),
-            | Self::RepeatedState(State(state)) => write!(f, "repeated session occurrence {state}"),
-            | Self::UnboundVariable(State(state)) => {
+            Self::Arena => f.write_str("unreadable session payload code"),
+            Self::ExpectedSession(_) => f.write_str("expected a session code"),
+            Self::MissingState(State(state)) => write!(f, "missing session state {state}"),
+            Self::RepeatedState(State(state)) => write!(f, "repeated session occurrence {state}"),
+            Self::UnboundVariable(State(state)) => {
                 write!(f, "unbound session variable at {state}")
             },
-            | Self::NonContractive(State(state)) => {
+            Self::NonContractive(State(state)) => {
                 write!(f, "noncontractive session binder at {state}")
             },
-            | Self::UnreachableState(State(state)) => {
+            Self::UnreachableState(State(state)) => {
                 write!(f, "unreachable session occurrence {state}")
             },
-            | Self::PayloadTelescope => f.write_str("session payload telescope must end in Unit"),
-            | Self::MissingPayload(PayloadSlot(slot)) => {
+            Self::PayloadTelescope => f.write_str("session payload telescope must end in Unit"),
+            Self::MissingPayload(PayloadSlot(slot)) => {
                 write!(f, "missing session payload slot {slot}")
             },
-            | Self::MissingPair(pair) => write!(
+            Self::MissingPair(pair) => write!(
                 f,
                 "missing session pair ({}, {})",
                 pair.source.0, pair.target.0
             ),
-            | Self::AdministrativePair(pair) => write!(
+            Self::AdministrativePair(pair) => write!(
                 f,
                 "session pair ({}, {}) is not observable",
                 pair.source.0, pair.target.0
             ),
-            | Self::WrongAction(pair) => write!(
+            Self::WrongAction(pair) => write!(
                 f,
                 "session action mismatch at ({}, {})",
                 pair.source.0, pair.target.0
             ),
-            | Self::WrongLabels(pair) => write!(
+            Self::WrongLabels(pair) => write!(
                 f,
                 "session label mismatch at ({}, {})",
                 pair.source.0, pair.target.0
             ),
-            | Self::PayloadMismatch(pair) => write!(
+            Self::PayloadMismatch(pair) => write!(
                 f,
                 "session payload mismatch at ({}, {})",
                 pair.source.0, pair.target.0
             ),
-            | Self::DuplicatePayloadPath(PayloadSlot(source), PayloadSlot(target)) => {
+            Self::DuplicatePayloadPath(PayloadSlot(source), PayloadSlot(target)) => {
                 write!(f, "duplicate session payload path ({source}, {target})")
             },
         }
@@ -222,8 +222,24 @@ pub fn payload_codes(
 ) -> Result<Vec<ValueTypeId>, SessionError>
 {
     match *arena.value_type(payloads).ok_or(SessionError::Arena)? {
-        | ValueType::Product(ref parts) => Ok(parts.to_vec()),
-        | _ => Err(SessionError::PayloadTelescope),
+        ValueType::Product(ref parts) => Ok(parts.to_vec()),
+        ValueType::Data { .. }
+        | ValueType::Record(_)
+        | ValueType::Session { .. }
+        | ValueType::PathUniverse(..)
+        | ValueType::FlowUniverse(..)
+        | ValueType::Path { .. }
+        | ValueType::Flow { .. }
+        | ValueType::Base(_)
+        | ValueType::Sigma { .. }
+        | ValueType::Sum(_)
+        | ValueType::List(_)
+        | ValueType::Thunk(_)
+        | ValueType::Universe { .. }
+        | ValueType::Lift { .. }
+        | ValueType::Element { .. }
+        | ValueType::Abstract(_)
+        | ValueType::StaticPi { .. } => Err(SessionError::PayloadTelescope),
     }
 }
 
@@ -263,21 +279,37 @@ pub fn validate_graph(
 ) -> Result<(), SessionError>
 {
     let fields = match *arena.value_type(payloads).ok_or(SessionError::Arena)? {
-        | ValueType::Product(ref parts) => PayloadSlot(parts.len()),
-        | _ => return Err(SessionError::PayloadTelescope),
+        ValueType::Product(ref parts) => PayloadSlot(parts.len()),
+        ValueType::Data { .. }
+        | ValueType::Record(_)
+        | ValueType::Session { .. }
+        | ValueType::PathUniverse(..)
+        | ValueType::FlowUniverse(..)
+        | ValueType::Path { .. }
+        | ValueType::Flow { .. }
+        | ValueType::Base(_)
+        | ValueType::Sigma { .. }
+        | ValueType::Sum(_)
+        | ValueType::List(_)
+        | ValueType::Thunk(_)
+        | ValueType::Universe { .. }
+        | ValueType::Lift { .. }
+        | ValueType::Element { .. }
+        | ValueType::Abstract(_)
+        | ValueType::StaticPi { .. } => return Err(SessionError::PayloadTelescope),
     };
     let mut seen = alloc::vec![false; graph.nodes.len()];
     let mut binders = alloc::vec![false; graph.nodes.len()];
     let mut pending = alloc::vec![Visit::Enter(graph.root)];
     while let Some(visit) = pending.pop() {
         let id = match visit {
-            | Visit::Leave(id) => {
+            Visit::Leave(id) => {
                 *binders
                     .get_mut(id.0)
                     .ok_or(SessionError::MissingState(id))? = false;
                 continue;
             },
-            | Visit::Enter(id) => id,
+            Visit::Enter(id) => id,
         };
         let node = node(graph, id)?;
         if core::mem::replace(
@@ -287,16 +319,16 @@ pub fn validate_graph(
             return Err(SessionError::RepeatedState(id));
         }
         match node {
-            | &Node::Send(slot, next) | &Node::Receive(slot, next) => {
+            &Node::Send(slot, next) | &Node::Receive(slot, next) => {
                 if slot.0 >= fields.0 {
                     return Err(SessionError::MissingPayload(slot));
                 }
                 pending.push(Visit::Enter(next));
             },
-            | &Node::Select(ref branches) | &Node::Offer(ref branches) => {
+            &Node::Select(ref branches) | &Node::Offer(ref branches) => {
                 pending.extend(branches.values().copied().map(Visit::Enter));
             },
-            | &Node::Mu(body) => {
+            &Node::Mu(body) => {
                 if matches!(*self::node(graph, body)?, Node::Mu(_) | Node::Var(_)) {
                     return Err(SessionError::NonContractive(id));
                 }
@@ -306,12 +338,12 @@ pub fn validate_graph(
                 pending.push(Visit::Leave(id));
                 pending.push(Visit::Enter(body));
             },
-            | &Node::Var(binder) => {
+            &Node::Var(binder) => {
                 if !matches!(binders.get(binder.0), Some(&true)) {
                     return Err(SessionError::UnboundVariable(id));
                 }
             },
-            | &Node::End => {},
+            &Node::End => {},
         }
     }
     for (index, &visited) in seen.iter().enumerate() {
@@ -375,8 +407,14 @@ pub fn head(
 {
     for _ in 0_u8 .. 3 {
         match node(graph, state)? {
-            | &Node::Mu(next) | &Node::Var(next) => state = next,
-            | _ => return Ok(state),
+            &Node::Mu(next) | &Node::Var(next) => state = next,
+            &Node::Send(..)
+            | &Node::Receive(..)
+            | &Node::Select(_)
+            | &Node::Offer(_)
+            | &Node::End => {
+                return Ok(state);
+            },
         }
     }
     Err(SessionError::NonContractive(state))
@@ -407,11 +445,11 @@ pub fn view(
 ) -> Result<(&Graph, ValueTypeId), SessionError>
 {
     match arena.value_type(ty) {
-        | Some(&ValueType::Session {
+        Some(&ValueType::Session {
             ref graph,
             payloads,
         }) => Ok((graph, payloads)),
-        | _ => Err(SessionError::ExpectedSession(ty)),
+        _ => Err(SessionError::ExpectedSession(ty)),
     }
 }
 
@@ -486,8 +524,8 @@ fn branches(
         return Err(SessionError::WrongLabels(pair));
     }
     let required = match polarity {
-        | Choice::Select => source,
-        | Choice::Offer => target,
+        Choice::Select => source,
+        Choice::Offer => target,
     };
     for label in required.keys() {
         let source = source.get(label).ok_or(SessionError::WrongLabels(pair))?;
@@ -611,8 +649,8 @@ pub(crate) fn obligations(
             continue;
         }
         match (a, b) {
-            | (&Node::End, &Node::End) => {},
-            | (&Node::Send(a, next_a), &Node::Send(b, next_b))
+            (&Node::End, &Node::End) => {},
+            (&Node::Send(a, next_a), &Node::Send(b, next_b))
             | (&Node::Receive(a, next_a), &Node::Receive(b, next_b)) => {
                 let source = *source_fields
                     .get(a.0)
@@ -635,7 +673,7 @@ pub(crate) fn obligations(
                     evidence,
                 )?;
             },
-            | _ => return Err(SessionError::WrongAction(pair)),
+            _ => return Err(SessionError::WrongAction(pair)),
         }
     }
     let mut paths = Vec::with_capacity(evidence.payloads.len());

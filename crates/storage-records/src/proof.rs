@@ -542,7 +542,7 @@ impl MembershipProof
         let root = open_root(&carried, expected_root, self.root_node_hash)?;
 
         let leaf = match root {
-            | RootNode::Leaf(leaf) => {
+            RootNode::Leaf(leaf) => {
                 ensure_node_count(
                     &carried,
                     CarriedCount::ROOT_ONLY,
@@ -551,7 +551,7 @@ impl MembershipProof
                 ensure_leaf_total(leaf, expected_root.record_count())?;
                 leaf
             },
-            | RootNode::Internal(internal) => {
+            RootNode::Internal(internal) => {
                 ensure_node_count(
                     &carried,
                     CarriedCount::ROOT_AND_LEAF,
@@ -801,7 +801,7 @@ impl NonMembershipProof
         let root = open_root(&carried, expected_root, self.root_node_hash)?;
 
         let derived = match root {
-            | RootNode::Leaf(leaf) => {
+            RootNode::Leaf(leaf) => {
                 ensure_node_count(
                     &carried,
                     CarriedCount::ROOT_ONLY,
@@ -810,7 +810,7 @@ impl NonMembershipProof
                 ensure_leaf_total(leaf, expected_root.record_count())?;
                 bracket(leaf.records(), None, expected_key)?
             },
-            | RootNode::Internal(internal) => {
+            RootNode::Internal(internal) => {
                 ensure_internal_total(internal, expected_root.record_count())?;
                 let position =
                     select_child(internal.children(), expected_key).ok_or_else(|| {
@@ -824,7 +824,7 @@ impl NonMembershipProof
                 let next = internal.children().get(usize::from(next_position));
 
                 match (needs_successor(leaf.records(), expected_key)?, next) {
-                    | (SuccessorLeaf::Required, Some(next_child)) => {
+                    (SuccessorLeaf::Required, Some(next_child)) => {
                         ensure_node_count(
                             &carried,
                             CarriedCount::ROOT_AND_TWO_LEAVES,
@@ -834,7 +834,7 @@ impl NonMembershipProof
                             leaf_at(&carried, CarriedIndex::SUCCESSOR_LEAF, next_child)?;
                         bracket(leaf.records(), Some(next_leaf.records()), expected_key)?
                     },
-                    | (SuccessorLeaf::Required | SuccessorLeaf::NotRequired, _) => {
+                    (SuccessorLeaf::Required | SuccessorLeaf::NotRequired, _) => {
                         ensure_node_count(
                             &carried,
                             CarriedCount::ROOT_AND_LEAF,
@@ -1084,7 +1084,7 @@ impl RangeProof
         let root = open_root(&carried, expected_root, self.root_node_hash)?;
 
         let derived = match root {
-            | RootNode::Leaf(leaf) => {
+            RootNode::Leaf(leaf) => {
                 ensure_node_count(
                     &carried,
                     CarriedCount::ROOT_ONLY,
@@ -1093,7 +1093,7 @@ impl RangeProof
                 ensure_leaf_total(leaf, expected_root.record_count())?;
                 select_in_range(leaf.records(), expected_range)
             },
-            | RootNode::Internal(internal) => {
+            RootNode::Internal(internal) => {
                 ensure_internal_total(internal, expected_root.record_count())?;
                 let span = range_span(internal.children(), expected_range)?;
                 let selected = internal
@@ -1598,8 +1598,8 @@ fn open_root<'carried>(
     }
 
     match first.node {
-        | DecodedNode::Leaf(ref leaf) => Ok(RootNode::Leaf(leaf)),
-        | DecodedNode::Internal(ref internal) => Ok(RootNode::Internal(internal)),
+        DecodedNode::Leaf(ref leaf) => Ok(RootNode::Leaf(leaf)),
+        DecodedNode::Internal(ref internal) => Ok(RootNode::Internal(internal)),
     }
 }
 
@@ -1848,13 +1848,13 @@ pub(crate) fn needs_successor(
 {
     for record in records {
         match record.key().cmp(&key) {
-            | Ordering::Less => {},
-            | Ordering::Equal => {
+            Ordering::Less => {},
+            Ordering::Equal => {
                 return Err(RecordTreeError::InvalidProofShape {
                     context: "the key an absence proof answers for is present".into(),
                 });
             },
-            | Ordering::Greater => return Ok(SuccessorLeaf::NotRequired),
+            Ordering::Greater => return Ok(SuccessorLeaf::NotRequired),
         }
     }
 
@@ -1914,13 +1914,13 @@ pub(crate) fn bracket(
 
     for record in records {
         match record.key().cmp(&key) {
-            | Ordering::Less => predecessor = Some(record.clone()),
-            | Ordering::Equal => {
+            Ordering::Less => predecessor = Some(record.clone()),
+            Ordering::Equal => {
                 return Err(RecordTreeError::InvalidProofShape {
                     context: "the key an absence proof answers for is present".into(),
                 });
             },
-            | Ordering::Greater => {
+            Ordering::Greater => {
                 return Ok(NonMembershipEvidence::new(
                     predecessor,
                     Some(record.clone()),
@@ -1930,7 +1930,7 @@ pub(crate) fn bracket(
     }
 
     let successor = match next {
-        | Some(next_records) => {
+        Some(next_records) => {
             let record =
                 next_records
                     .first()
@@ -1946,7 +1946,7 @@ pub(crate) fn bracket(
 
             Some(record.clone())
         },
-        | None => None,
+        None => None,
     };
 
     Ok(NonMembershipEvidence::new(predecessor, successor))

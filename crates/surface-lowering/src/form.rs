@@ -1068,23 +1068,21 @@ impl fmt::Display for Repair
     ) -> fmt::Result
     {
         match *self {
-            | Self::Grout(GroutShape::Convex) => f.write_str("grout for a missing term"),
-            | Self::Grout(GroutShape::Prefix | GroutShape::Postfix) => {
+            Self::Grout(GroutShape::Convex) => f.write_str("grout for a missing term"),
+            Self::Grout(GroutShape::Prefix | GroutShape::Postfix) => {
                 f.write_str("grout for a missing operand")
             },
-            | Self::Grout(GroutShape::Infix) => f.write_str("grout for a missing operator"),
-            | Self::Keyword(stray) => {
+            Self::Grout(GroutShape::Infix) => f.write_str("grout for a missing operator"),
+            Self::Keyword(stray) => {
                 write!(f, "the keyword `{}` where a term belongs", stray.written.0)
             },
-            | Self::GhostClose(ClosingClass::Paren) => f.write_str("a `)` the source never wrote"),
-            | Self::GhostClose(ClosingClass::Bracket) => {
-                f.write_str("a `]` the source never wrote")
-            },
-            | Self::GhostClose(ClosingClass::Brace) => f.write_str("a `}` the source never wrote"),
-            | Self::Unended(Ending::Tile(tile)) => {
+            Self::GhostClose(ClosingClass::Paren) => f.write_str("a `)` the source never wrote"),
+            Self::GhostClose(ClosingClass::Bracket) => f.write_str("a `]` the source never wrote"),
+            Self::GhostClose(ClosingClass::Brace) => f.write_str("a `}` the source never wrote"),
+            Self::Unended(Ending::Tile(tile)) => {
                 write!(f, "a closing `{}` the source never wrote", tile.0)
             },
-            | Self::Unended(Ending::Unnamed) => f.write_str("an end the source never wrote"),
+            Self::Unended(Ending::Unnamed) => f.write_str("an end the source never wrote"),
         }
     }
 }
@@ -1185,8 +1183,8 @@ pub fn shape_of<'source>(
 ) -> Result<Shape, LoweringRefusal<'source>>
 {
     match node.label() {
-        | NodeLabel::Wald => Ok(Shape::Root),
-        | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+        NodeLabel::Wald => Ok(Shape::Root),
+        NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
             let kind = named_kind(pbg, node, mold)?;
 
             Ok(Shape::Form {
@@ -1194,9 +1192,9 @@ pub fn shape_of<'source>(
                 former: former_of(kind),
             })
         },
-        | NodeLabel::Grout { shape, .. } => Ok(Shape::Repair(Repair::Grout(shape))),
-        | NodeLabel::GhostClose { class, .. } => Ok(Shape::Repair(Repair::GhostClose(class))),
-        | NodeLabel::Space | NodeLabel::Doc => Ok(Shape::Layout),
+        NodeLabel::Grout { shape, .. } => Ok(Shape::Repair(Repair::Grout(shape))),
+        NodeLabel::GhostClose { class, .. } => Ok(Shape::Repair(Repair::GhostClose(class))),
+        NodeLabel::Space | NodeLabel::Doc => Ok(Shape::Layout),
     }
 }
 
@@ -1410,7 +1408,7 @@ impl Piece
     pub const fn placed(self) -> Placed
     {
         match self {
-            | Self::Tile { at, .. } | Self::Operand(at) => at,
+            Self::Tile { at, .. } | Self::Operand(at) => at,
         }
     }
 }
@@ -1483,8 +1481,8 @@ impl Repaired
         LoweringRefusal::MalformedForm {
             span: self.span,
             form: match self.nested {
-                | Maybe::Present(inner) => inner,
-                | Maybe::Absent(_) => form,
+                Maybe::Present(inner) => inner,
+                Maybe::Absent(_) => form,
             },
             fault: FormFault::Repaired(self.repair),
         }
@@ -1704,7 +1702,7 @@ pub fn read_pieces<'source>(
         return Ok(());
     };
     let own = match node.label() {
-        | NodeLabel::Tile(mold) => {
+        NodeLabel::Tile(mold) => {
             let label = tile_name(pbg, node, mold)?;
             read.pieces.push(Piece::Tile {
                 label,
@@ -1712,9 +1710,9 @@ pub fn read_pieces<'source>(
             });
             return Ok(());
         },
-        | NodeLabel::Meld(mold) => Holder::Rule(rule_name(pbg, node, mold)?),
-        | NodeLabel::Wald => Holder::Root,
-        | NodeLabel::Grout { .. }
+        NodeLabel::Meld(mold) => Holder::Rule(rule_name(pbg, node, mold)?),
+        NodeLabel::Wald => Holder::Root,
+        NodeLabel::Grout { .. }
         | NodeLabel::GhostClose { .. }
         | NodeLabel::Space
         | NodeLabel::Doc => {
@@ -1728,17 +1726,17 @@ pub fn read_pieces<'source>(
         };
         let placed = Placed::of(child, held);
         let piece = match held.label() {
-            | NodeLabel::Space | NodeLabel::Doc => continue,
-            | NodeLabel::Grout { shape, .. } => {
+            NodeLabel::Space | NodeLabel::Doc => continue,
+            NodeLabel::Grout { shape, .. } => {
                 note_repair(read, placed, grouted(pbg, tree, child, shape));
                 continue;
             },
-            | NodeLabel::GhostClose { class, .. } => {
+            NodeLabel::GhostClose { class, .. } => {
                 note_repair(read, placed, Repair::GhostClose(class));
                 continue;
             },
-            | NodeLabel::Tile(mold) => own_tile(pbg, held, own, mold, placed)?,
-            | NodeLabel::Meld(_) | NodeLabel::Wald => Piece::Operand(placed),
+            NodeLabel::Tile(mold) => own_tile(pbg, held, own, mold, placed)?,
+            NodeLabel::Meld(_) | NodeLabel::Wald => Piece::Operand(placed),
         };
         read.pieces.push(piece);
     }
@@ -1803,8 +1801,8 @@ fn unended(
         Maybe::Absent(nested::Absent::Own);
     let mut written = Maybe::Absent(nested::Absent::Own);
     let rule = match tree.node(form).map(Node::label) {
-        | Some(NodeLabel::Meld(mold)) => pbg.rule_of(mold).ok().map(|rule| rule.name),
-        | _ => None,
+        Some(NodeLabel::Meld(mold)) => pbg.rule_of(mold).ok().map(|rule| rule.name),
+        _ => None,
     };
     let own = |mold| pbg.rule_of(mold).is_ok_and(|held| Some(held.name) == rule);
     for child in tree.children(form) {
@@ -1814,15 +1812,15 @@ fn unended(
         };
         let span = held.span();
         match held.label() {
-            | NodeLabel::Tile(mold) if span.end() == point && span.start() < point && own(mold) => {
+            NodeLabel::Tile(mold) if span.end() == point && span.start() < point && own(mold) => {
                 frontier = Maybe::Present((mold, span));
             },
-            | NodeLabel::Tile(_) | NodeLabel::Meld(_) | NodeLabel::Wald
+            NodeLabel::Tile(_) | NodeLabel::Meld(_) | NodeLabel::Wald
                 if span.start() >= point && matches!(written, Maybe::Absent(_)) =>
             {
                 written = Maybe::Present(span);
             },
-            | NodeLabel::Tile(_)
+            NodeLabel::Tile(_)
             | NodeLabel::Meld(_)
             | NodeLabel::Wald
             | NodeLabel::Grout { .. }
@@ -1832,26 +1830,24 @@ fn unended(
         }
     }
     let ending = match frontier {
-        | Maybe::Present((mold, _)) => {
+        Maybe::Present((mold, _)) => {
             let mut labels = pbg
                 .mold_successors(mold)
                 .iter()
                 .filter(|&&(_, next)| bool::from(pbg.mold_is_form_last(next)))
                 .filter_map(|&(_, next)| pbg.mold(next).ok().map(|def| def.label));
             match labels.next() {
-                | Some(first) if labels.all(|label| label == first) => {
-                    Ending::Tile(TileName(first))
-                },
-                | Some(_) | None => Ending::Unnamed,
+                Some(first) if labels.all(|label| label == first) => Ending::Tile(TileName(first)),
+                Some(_) | None => Ending::Unnamed,
             }
         },
-        | Maybe::Absent(_) => Ending::Unnamed,
+        Maybe::Absent(_) => Ending::Unnamed,
     };
     let (floor, mut end) = match (ending, written, frontier) {
-        | (Ending::Tile(_), Maybe::Present(span), _) | (_, _, Maybe::Present((_, span))) => {
+        (Ending::Tile(_), Maybe::Present(span), _) | (_, _, Maybe::Present((_, span))) => {
             (usize::from(span.start()), usize::from(span.end()))
         },
-        | (_, _, Maybe::Absent(_)) => (usize::from(point), usize::from(point)),
+        (_, _, Maybe::Absent(_)) => (usize::from(point), usize::from(point)),
     };
     let source = tree.source();
     let text: &str = source.as_ref();
@@ -1912,8 +1908,8 @@ fn nested_repair<'source>(
     let mut forms: Vec<(NodeIndex, usize)> = pieces
         .iter()
         .filter_map(|piece| match *piece {
-            | Piece::Operand(placed) => Some((placed.node, 1_usize)),
-            | Piece::Tile { .. } => None,
+            Piece::Operand(placed) => Some((placed.node, 1_usize)),
+            Piece::Tile { .. } => None,
         })
         .collect();
     let mut deepest: Maybe<(usize, NodeIndex, Repaired), nested::Absent> =
@@ -1932,22 +1928,22 @@ fn nested_repair<'source>(
                 continue;
             };
             let repair = match held.label() {
-                | NodeLabel::Grout { shape, .. } => grouted(pbg, tree, child, shape),
-                | NodeLabel::GhostClose { class, .. } => Repair::GhostClose(class),
-                | NodeLabel::Meld(_) => {
+                NodeLabel::Grout { shape, .. } => grouted(pbg, tree, child, shape),
+                NodeLabel::GhostClose { class, .. } => Repair::GhostClose(class),
+                NodeLabel::Meld(_) => {
                     forms.push((child, depth.saturating_add(1_usize)));
                     continue;
                 },
-                | NodeLabel::Wald | NodeLabel::Tile(_) | NodeLabel::Space | NodeLabel::Doc => {
+                NodeLabel::Wald | NodeLabel::Tile(_) | NodeLabel::Space | NodeLabel::Doc => {
                     continue;
                 },
             };
             let span = held.span();
             let deeper = match deepest {
-                | Maybe::Present((best, _, ref found)) => {
+                Maybe::Present((best, _, ref found)) => {
                     depth > best || (depth == best && span.start() < found.span.start())
                 },
-                | Maybe::Absent(_) => true,
+                Maybe::Absent(_) => true,
             };
             if deeper {
                 let Shape::Form { name, .. } = shape_of(pbg, holder)?
@@ -1963,13 +1959,13 @@ fn nested_repair<'source>(
         }
     }
     Ok(match deepest {
-        | Maybe::Present((_, holder, found))
+        Maybe::Present((_, holder, found))
             if found.repair == Repair::Grout(GroutShape::Postfix) =>
         {
             Maybe::Present(unended(pbg, tree, holder, found))
         },
-        | Maybe::Present((_, _, found)) => Maybe::Present(found),
-        | Maybe::Absent(reason) => Maybe::Absent(reason),
+        Maybe::Present((_, _, found)) => Maybe::Present(found),
+        Maybe::Absent(reason) => Maybe::Absent(reason),
     })
 }
 
@@ -2024,10 +2020,11 @@ fn grouted(
     if let Some(first) = capitalised.get_mut(.. 1) {
         first.make_ascii_uppercase();
     }
-    let offer = match pbg.tile_label(LabelText(&capitalised)) {
-        | Some(offered) => Offer::Capitalised(TileName(offered.0)),
-        | None => Offer::Unspelled,
-    };
+    let offer = pbg
+        .tile_label(LabelText(&capitalised))
+        .map_or(Offer::Unspelled, |offered| {
+            Offer::Capitalised(TileName(offered.0))
+        });
     Repair::Keyword(StrayKeyword {
         written: TileName(label.0),
         offer,
@@ -2401,13 +2398,11 @@ impl<'pieces> Cursor<'pieces>
     ) -> Maybe<Placed, cursor::Absent>
     {
         match self.peek() {
-            | Maybe::Present(Piece::Tile { label: held, at }) if held == label => {
-                Maybe::Present(at)
-            },
-            | Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) => {
+            Maybe::Present(Piece::Tile { label: held, at }) if held == label => Maybe::Present(at),
+            Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) => {
                 Maybe::Absent(cursor::Absent::Elsewhere)
             },
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 
@@ -2577,13 +2572,13 @@ impl<'pieces> Cursor<'pieces>
             }
         }
         match (first, extra) {
-            | (Maybe::Present(placed), Maybe::Absent(_)) => Run::One(placed),
-            | (Maybe::Present(head), Maybe::Present(placed)) => Run::Several {
+            (Maybe::Present(placed), Maybe::Absent(_)) => Run::One(placed),
+            (Maybe::Present(head), Maybe::Present(placed)) => Run::Several {
                 first: head,
                 extra: placed,
                 count: OperandCount::from(count),
             },
-            | (Maybe::Absent(_), _) => Run::Empty(gap),
+            (Maybe::Absent(_), _) => Run::Empty(gap),
         }
     }
 
@@ -2619,8 +2614,8 @@ impl<'pieces> Cursor<'pieces>
     pub fn here(&self) -> ByteSpan
     {
         match self.peek() {
-            | Maybe::Present(piece) => piece.placed().span,
-            | Maybe::Absent(_) => self.gap(),
+            Maybe::Present(piece) => piece.placed().span,
+            Maybe::Absent(_) => self.gap(),
         }
     }
 
@@ -2833,8 +2828,8 @@ mod tests
             .pieces
             .iter()
             .map(|piece| match *piece {
-                | Piece::Tile { label, at } => Sketch::Tile(label, at.span),
-                | Piece::Operand(at) => Sketch::Operand(at.span),
+                Piece::Tile { label, at } => Sketch::Tile(label, at.span),
+                Piece::Operand(at) => Sketch::Operand(at.span),
             })
             .collect()
     }
@@ -2899,8 +2894,8 @@ mod tests
             .pieces
             .into_iter()
             .find_map(|piece| match piece {
-                | Piece::Operand(operand) => Some(operand),
-                | Piece::Tile { .. } => None,
+                Piece::Operand(operand) => Some(operand),
+                Piece::Tile { .. } => None,
             })
             .unwrap();
         let mut read = Pieces::new();

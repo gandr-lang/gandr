@@ -1308,8 +1308,8 @@ impl Environment
             declaration.levels().params(),
             declaration.levels().constraints().to_vec(),
         ) {
-            | Ok(levels) => levels,
-            | Err(error) => {
+            Ok(levels) => levels,
+            Err(error) => {
                 self.arena.truncate_to(rejected);
                 return Err(error);
             },
@@ -1328,7 +1328,7 @@ impl Environment
             )
         };
         match outcome {
-            | Ok(()) => {
+            Ok(()) => {
                 // Keep this declaration's content; drop the intermediates that
                 // allocated past it.
                 self.arena.truncate_to(content_end);
@@ -1347,7 +1347,7 @@ impl Environment
                 self.advance_seals(position);
                 Ok(CheckedId::new(position))
             },
-            | Err(error) => {
+            Err(error) => {
                 // Drop the intermediates and this declaration's content, down
                 // to the admission floor and no further.
                 self.arena.truncate_to(rejected);
@@ -1556,7 +1556,7 @@ impl Environment
                 declaration: marked.declaration().clone(),
             };
             match marked.mark() {
-                | AdmissionMark::Checked => {
+                AdmissionMark::Checked => {
                     let _admitted =
                         environment
                             .add_decl(staged)
@@ -1565,7 +1565,7 @@ impl Environment
                                 error,
                             })?;
                 },
-                | AdmissionMark::UncheckedBypass => {
+                AdmissionMark::UncheckedBypass => {
                     let _admitted = environment.add_decl_unchecked(staged);
                 },
             }
@@ -1619,30 +1619,30 @@ impl Environment
                 .get(usize::from(atom))
                 .map(AdmittedDeclaration::content)
             {
-                | Some(&DeclarationContent::AbstractType {
+                Some(&DeclarationContent::AbstractType {
                     scope: SealScope::Closed(extent),
                     ..
                 }) => reaches_past(atom, extent),
-                | Some(&DeclarationContent::AbstractType {
+                Some(&DeclarationContent::AbstractType {
                     scope: SealScope::Open,
                     ..
                 }) => true,
-                | Some(_) | None => false,
+                Some(_) | None => false,
             }
         });
         match entries
             .get(usize::from(position))
             .map(AdmittedDeclaration::content)
         {
-            | Some(&DeclarationContent::AbstractType {
+            Some(&DeclarationContent::AbstractType {
                 scope: SealScope::Open,
                 ..
             }) => manifest.push(position),
-            | Some(&DeclarationContent::AbstractType {
+            Some(&DeclarationContent::AbstractType {
                 scope: SealScope::Closed(extent),
                 ..
             }) if reaches_past(position, extent) => manifest.push(position),
-            | Some(_) | None => {},
+            Some(_) | None => {},
         }
     }
 
@@ -1909,8 +1909,8 @@ fn collect_reachable(
             continue;
         }
         match node {
-            | AnyNode::Value(id) => match arena.value(id) {
-                | Some(&Value::Constructor {
+            AnyNode::Value(id) => match arena.value(id) {
+                Some(&Value::Constructor {
                     datatype,
                     ref fields,
                     ..
@@ -1918,14 +1918,14 @@ fn collect_reachable(
                     core::iter::once(AnyNode::ValueType(datatype))
                         .chain(fields.iter().copied().map(AnyNode::Value)),
                 ),
-                | Some(&Value::Record(ref fields)) => {
+                Some(&Value::Record(ref fields)) => {
                     pending.extend(fields.values().copied().map(AnyNode::Value));
                 },
-                | Some(&Value::Constant(index)) => {
+                Some(&Value::Constant(index)) => {
                     let _fresh = found.insert(index);
                 },
-                | Some(&Value::ListNil | &Value::Variable(_) | &Value::Literal(_)) | None => {},
-                | Some(&Value::PathEquiv {
+                Some(&Value::ListNil | &Value::Variable(_) | &Value::Literal(_)) | None => {},
+                Some(&Value::PathEquiv {
                     path_type,
                     forward,
                     backward,
@@ -1935,7 +1935,7 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(forward));
                     pending.push(AnyNode::Value(backward));
                 },
-                | Some(
+                Some(
                     &Value::SessionPath {
                         path_type,
                         payload_paths,
@@ -1950,14 +1950,14 @@ fn collect_reachable(
                     pending.push(AnyNode::ValueType(path_type));
                     pending.push(AnyNode::Value(payload_paths));
                 },
-                | Some(
+                Some(
                     &Value::PathRefl(code)
                     | &Value::Here { point: code, .. }
                     | &Value::Stay { point: code, .. },
                 ) => {
                     pending.push(AnyNode::Value(code));
                 },
-                | Some(
+                Some(
                     &Value::Higher {
                         evidence: ref values,
                         ..
@@ -1969,13 +1969,13 @@ fn collect_reachable(
                 ) => {
                     pending.extend(values.iter().copied().map(AnyNode::Value));
                 },
-                | Some(&Value::HigherEvaluation { ref components, .. }) => pending.extend(
+                Some(&Value::HigherEvaluation { ref components, .. }) => pending.extend(
                     components
                         .iter()
                         .flat_map(|component| [component.left, component.right, component.evidence])
                         .map(AnyNode::Value),
                 ),
-                | Some(&Value::ForwardFlow {
+                Some(&Value::ForwardFlow {
                     flow_type,
                     translator,
                     ref outputs,
@@ -1985,7 +1985,7 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(translator));
                     pending.extend(outputs.iter().copied().map(AnyNode::Value));
                 },
-                | Some(&Value::FunctionFlow {
+                Some(&Value::FunctionFlow {
                     flow_type,
                     domain,
                     codomain,
@@ -1994,7 +1994,7 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(domain));
                     pending.push(AnyNode::Value(codomain));
                 },
-                | Some(
+                Some(
                     &Value::PathProduct(first, second)
                     | &Value::FlowProduct(first, second)
                     | &Value::ListCons(first, second)
@@ -2004,20 +2004,20 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(first));
                     pending.push(AnyNode::Value(second));
                 },
-                | Some(&Value::Tuple(ref components)) => {
+                Some(&Value::Tuple(ref components)) => {
                     pending.extend(components.iter().copied().map(AnyNode::Value));
                 },
-                | Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
+                Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
                     pending.push(AnyNode::Value(body));
                 },
-                | Some(&(Value::Thunk(body) | Value::Returned(body))) => {
+                Some(&(Value::Thunk(body) | Value::Returned(body))) => {
                     pending.push(AnyNode::Computation(body));
                 },
-                | Some(&Value::Quote(quoted)) => pending.push(AnyNode::ValueType(quoted)),
-                | Some(&Value::QuoteComputation(quoted)) => pending.push(AnyNode::CompType(quoted)),
+                Some(&Value::Quote(quoted)) => pending.push(AnyNode::ValueType(quoted)),
+                Some(&Value::QuoteComputation(quoted)) => pending.push(AnyNode::CompType(quoted)),
             },
-            | AnyNode::Computation(id) => match arena.computation(id) {
-                | Some(&Computation::DataCase {
+            AnyNode::Computation(id) => match arena.computation(id) {
+                Some(&Computation::DataCase {
                     scrutinee,
                     motive,
                     ref branches,
@@ -2026,7 +2026,7 @@ fn collect_reachable(
                         .into_iter()
                         .chain(branches.iter().copied().map(AnyNode::Computation)),
                 ),
-                | Some(&Computation::SigmaSplit {
+                Some(&Computation::SigmaSplit {
                     scrutinee,
                     motive,
                     body,
@@ -2035,13 +2035,13 @@ fn collect_reachable(
                     AnyNode::CompType(motive),
                     AnyNode::Computation(body),
                 ]),
-                | Some(
+                Some(
                     &(Computation::RecordProjection(record, _)
                     | Computation::TupleProjection(record, _)),
                 ) => {
                     pending.extend(core::iter::once(AnyNode::Value(record)));
                 },
-                | Some(&Computation::ListFold {
+                Some(&Computation::ListFold {
                     element,
                     result,
                     list,
@@ -2056,11 +2056,11 @@ fn collect_reachable(
                         AnyNode::Computation(on_cons),
                     ]);
                 },
-                | Some(&Computation::Transport(path, value)) => {
+                Some(&Computation::Transport(path, value)) => {
                     pending.push(AnyNode::Value(path));
                     pending.push(AnyNode::Value(value));
                 },
-                | Some(
+                Some(
                     &Computation::PathTransport {
                         motive,
                         path,
@@ -2076,7 +2076,7 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(path));
                     pending.push(AnyNode::Value(value));
                 },
-                | Some(
+                Some(
                     &Computation::TelescopeTransport {
                         motive,
                         path,
@@ -2100,7 +2100,7 @@ fn collect_reachable(
                         AnyNode::Value(value),
                     ]);
                 },
-                | Some(&Computation::RelatedApplication {
+                Some(&Computation::RelatedApplication {
                     path,
                     left,
                     right,
@@ -2115,32 +2115,32 @@ fn collect_reachable(
                         AnyNode::Computation(body),
                     ]);
                 },
-                | Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
+                Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
                     pending.push(AnyNode::Computation(body));
                 },
-                | Some(&Computation::Application(head, argument)) => {
+                Some(&Computation::Application(head, argument)) => {
                     pending.push(AnyNode::Computation(head));
                     pending.push(AnyNode::Value(argument));
                 },
-                | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+                Some(&Computation::Return(value) | &Computation::Force(value)) => {
                     pending.push(AnyNode::Value(value));
                 },
-                | Some(&(Computation::Bind(bound, body) | Computation::With(bound, body))) => {
+                Some(&(Computation::Bind(bound, body) | Computation::With(bound, body))) => {
                     pending.push(AnyNode::Computation(bound));
                     pending.push(AnyNode::Computation(body));
                 },
-                | Some(&Computation::Project(_, pair)) => pending.push(AnyNode::Computation(pair)),
-                | Some(&Computation::Case {
+                Some(&Computation::Project(_, pair)) => pending.push(AnyNode::Computation(pair)),
+                Some(&Computation::Case {
                     scrutinee,
                     ref branches,
                 }) => {
                     pending.push(AnyNode::Value(scrutinee));
                     pending.extend(branches.iter().copied().map(AnyNode::Computation));
                 },
-                | None => {},
+                None => {},
             },
-            | AnyNode::ValueType(id) => match arena.value_type(id) {
-                | Some(&ValueType::Data {
+            AnyNode::ValueType(id) => match arena.value_type(id) {
+                Some(&ValueType::Data {
                     declaration,
                     ref arguments,
                 }) => {
@@ -2149,13 +2149,13 @@ fn collect_reachable(
                         pending.extend(arguments.iter().copied().map(AnyNode::Value));
                     }
                 },
-                | Some(&ValueType::Record(ref fields)) => {
+                Some(&ValueType::Record(ref fields)) => {
                     pending.extend(fields.values().copied().map(AnyNode::ValueType));
                 },
-                | Some(&ValueType::Abstract(index)) => {
+                Some(&ValueType::Abstract(index)) => {
                     let _fresh = found.insert(index);
                 },
-                | Some(
+                Some(
                     &ValueType::PathUniverse(source, target)
                     | &ValueType::FlowUniverse(source, target),
                 ) => {
@@ -2166,7 +2166,7 @@ fn collect_reachable(
                 },
                 // The domain is a type; the endpoints cross into the term
                 // language and follow only where codes do.
-                | Some(
+                Some(
                     &ValueType::Path {
                         domain,
                         left,
@@ -2184,16 +2184,16 @@ fn collect_reachable(
                         pending.push(AnyNode::Value(right));
                     }
                 },
-                | Some(&ValueType::Element { code, .. }) => {
+                Some(&ValueType::Element { code, .. }) => {
                     if follow {
                         pending.push(AnyNode::Value(code));
                     }
                 },
-                | Some(&ValueType::Base(_) | &ValueType::Universe { .. }) | None => {},
-                | Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
+                Some(&ValueType::Base(_) | &ValueType::Universe { .. }) | None => {},
+                Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
                     pending.extend(parts.iter().copied().map(AnyNode::ValueType));
                 },
-                | Some(
+                Some(
                     &ValueType::StaticPi {
                         domain: first,
                         codomain: second,
@@ -2203,7 +2203,7 @@ fn collect_reachable(
                     pending.push(AnyNode::ValueType(first));
                     pending.push(AnyNode::ValueType(second));
                 },
-                | Some(
+                Some(
                     &ValueType::Session {
                         payloads: inner, ..
                     }
@@ -2212,26 +2212,26 @@ fn collect_reachable(
                 ) => {
                     pending.push(AnyNode::ValueType(inner));
                 },
-                | Some(&ValueType::Thunk(body)) => pending.push(AnyNode::CompType(body)),
+                Some(&ValueType::Thunk(body)) => pending.push(AnyNode::CompType(body)),
             },
-            | AnyNode::CompType(id) => match arena.comp_type(id) {
-                | Some(&CompType::Returner(result)) => pending.push(AnyNode::ValueType(result)),
-                | Some(
+            AnyNode::CompType(id) => match arena.comp_type(id) {
+                Some(&CompType::Returner(result)) => pending.push(AnyNode::ValueType(result)),
+                Some(
                     &CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain },
                 ) => {
                     pending.push(AnyNode::ValueType(domain));
                     pending.push(AnyNode::CompType(codomain));
                 },
-                | Some(&CompType::Element { code, .. }) => {
+                Some(&CompType::Element { code, .. }) => {
                     if follow {
                         pending.push(AnyNode::Value(code));
                     }
                 },
-                | Some(&CompType::With(left, right)) => {
+                Some(&CompType::With(left, right)) => {
                     pending.push(AnyNode::CompType(left));
                     pending.push(AnyNode::CompType(right));
                 },
-                | None => {},
+                None => {},
             },
         }
     }
@@ -3078,14 +3078,14 @@ mod tests
                     .arena()
                     .value_type_universe(GroundSort::Value, Level::zero());
                 match finisher {
-                    | Finisher::Definition => {
+                    Finisher::Definition => {
                         staging.def(LevelSignature::monomorphic(), declared, body)
                     },
-                    | Finisher::SealedDefinition => {
+                    Finisher::SealedDefinition => {
                         staging.sealed_def(LevelSignature::monomorphic(), declared, body, vec![])
                     },
-                    | Finisher::Axiom => staging.axiom(LevelSignature::monomorphic(), declared),
-                    | Finisher::AbstractType => staging.abstract_type(
+                    Finisher::Axiom => staging.axiom(LevelSignature::monomorphic(), declared),
+                    Finisher::AbstractType => staging.abstract_type(
                         LevelSignature::monomorphic(),
                         kind,
                         declared,
@@ -3194,8 +3194,8 @@ mod tests
     {
         let mut staging = environment.stage();
         let declared = match atom {
-            | Some(atom) => staging.arena().value_type_abstract(atom),
-            | None => staging.arena().value_type_base(BaseType::Integer),
+            Some(atom) => staging.arena().value_type_abstract(atom),
+            None => staging.arena().value_type_base(BaseType::Integer),
         };
         let seven = staging.arena().value_literal(Literal::Integer(
             gandr_kernel_term::IntegerLiteral::new(

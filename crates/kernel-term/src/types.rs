@@ -258,8 +258,8 @@ impl fmt::Display for GroundSort
     ) -> fmt::Result
     {
         match *self {
-            | Self::Value => f.write_str("+"),
-            | Self::Computation => f.write_str("-"),
+            Self::Value => f.write_str("+"),
+            Self::Computation => f.write_str("-"),
         }
     }
 }
@@ -496,8 +496,24 @@ impl ValueType
     pub fn product_parts(&self) -> Option<&[ValueTypeId]>
     {
         match *self {
-            | Self::Product(ref parts) => Some(parts),
-            | _ => None,
+            Self::Product(ref parts) => Some(parts),
+            Self::Data { .. }
+            | Self::Record(_)
+            | Self::Session { .. }
+            | Self::PathUniverse(..)
+            | Self::FlowUniverse(..)
+            | Self::Path { .. }
+            | Self::Flow { .. }
+            | Self::Base(_)
+            | Self::Sigma { .. }
+            | Self::Sum(_)
+            | Self::List(_)
+            | Self::Thunk(_)
+            | Self::Universe { .. }
+            | Self::Lift { .. }
+            | Self::Element { .. }
+            | Self::Abstract(_)
+            | Self::StaticPi { .. } => None,
         }
     }
 
@@ -518,8 +534,24 @@ impl ValueType
     pub fn summands(&self) -> Option<&[ValueTypeId]>
     {
         match *self {
-            | Self::Sum(ref summands) => Some(summands),
-            | _ => None,
+            Self::Sum(ref summands) => Some(summands),
+            Self::Data { .. }
+            | Self::Record(_)
+            | Self::Session { .. }
+            | Self::PathUniverse(..)
+            | Self::FlowUniverse(..)
+            | Self::Path { .. }
+            | Self::Flow { .. }
+            | Self::Base(_)
+            | Self::Product(_)
+            | Self::Sigma { .. }
+            | Self::List(_)
+            | Self::Thunk(_)
+            | Self::Universe { .. }
+            | Self::Lift { .. }
+            | Self::Element { .. }
+            | Self::Abstract(_)
+            | Self::StaticPi { .. } => None,
         }
     }
 }

@@ -210,10 +210,8 @@ pub fn codes(
 ) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
 {
     match crate::equiv::codes(context, at, classifier) {
-        | Err(CheckRefusal::EquivUnsupported { .. }) => {
-            Err(CheckRefusal::ForwardUnsupported { at })
-        },
-        | decided => decided,
+        Err(CheckRefusal::EquivUnsupported { .. }) => Err(CheckRefusal::ForwardUnsupported { at }),
+        decided => decided,
     }
 }
 
@@ -270,11 +268,11 @@ pub fn decide(
     }
     first_order(context, at, target)?;
     let patterns = match crate::equiv::coverage(context, at, source) {
-        | Ok(Maybe::Present(patterns)) => patterns,
-        | Ok(Maybe::Absent(_)) | Err(CheckRefusal::UncertifiedStratum { .. }) => {
+        Ok(Maybe::Present(patterns)) => patterns,
+        Ok(Maybe::Absent(_)) | Err(CheckRefusal::UncertifiedStratum { .. }) => {
             return Err(unsupported);
         },
-        | Err(refusal) => return Err(refusal),
+        Err(refusal) => return Err(refusal),
     };
     let mut images = Vec::with_capacity(patterns.len());
     let mut dialogues = Vec::with_capacity(patterns.len());
@@ -361,12 +359,30 @@ fn first_order(
     while let Some(ty) = pending.pop() {
         let head = context.whnf_value_type(ty)?;
         match value_type_view(context.arena(), head)? {
-            | ValueTypeView::Unit | ValueTypeView::Integer | ValueTypeView::String => {},
-            | ValueTypeView::Sum(parts) if !parts.is_empty() => {
+            ValueTypeView::Unit | ValueTypeView::Integer | ValueTypeView::String => {},
+            ValueTypeView::Sum(parts) if !parts.is_empty() => {
                 pending.extend(parts.iter().copied());
             },
-            | ValueTypeView::Product(parts) => pending.extend(parts.iter().copied()),
-            | _ => return Err(CheckRefusal::ForwardUnsupported { at }),
+            ValueTypeView::Product(parts) => pending.extend(parts.iter().copied()),
+            ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::Stack { .. }
+            | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Path { .. }
+            | ValueTypeView::Flow { .. }
+            | ValueTypeView::Run(_)
+            | ValueTypeView::Sum(_)
+            | ValueTypeView::List(_)
+            | ValueTypeView::Thunk(_)
+            | ValueTypeView::Universe { .. }
+            | ValueTypeView::Lift { .. }
+            | ValueTypeView::Element { .. }
+            | ValueTypeView::StaticPi { .. }
+            | ValueTypeView::Sigma { .. }
+            | ValueTypeView::Abstract(_)
+            | ValueTypeView::Capability { .. }
+            | ValueTypeView::Session(_)
+            | ValueTypeView::Unknown => return Err(CheckRefusal::ForwardUnsupported { at }),
         }
     }
     Ok(())
@@ -408,20 +424,20 @@ fn leaves(
     while let Some((value, ty)) = pending.pop() {
         let head = context.whnf_value_type(ty)?;
         let leaf = match value_type_view(context.arena(), head)? {
-            | ValueTypeView::Integer => Maybe::Present(Leaf::Integer),
-            | ValueTypeView::String => Maybe::Present(Leaf::String),
-            | ValueTypeView::Unit => continue,
-            | ValueTypeView::Product(parts) => {
+            ValueTypeView::Integer => Maybe::Present(Leaf::Integer),
+            ValueTypeView::String => Maybe::Present(Leaf::String),
+            ValueTypeView::Unit => continue,
+            ValueTypeView::Product(parts) => {
                 let parts = parts.to_vec();
                 match context.arena().value(value) {
-                    | Some(&Value::Tuple(ref components)) if components.len() == parts.len() => {
+                    Some(&Value::Tuple(ref components)) if components.len() == parts.len() => {
                         pending.extend(components.iter().copied().zip(parts));
                     },
-                    | _ => return Err(invariant),
+                    _ => return Err(invariant),
                 }
                 continue;
             },
-            | ValueTypeView::Sum(parts) => {
+            ValueTypeView::Sum(parts) => {
                 let parts = parts.to_vec();
                 let Some(&Value::Injection(summand, payload)) = context.arena().value(value)
                 else {
@@ -431,7 +447,24 @@ fn leaves(
                 pending.push((payload, part));
                 continue;
             },
-            | _ => return Err(CheckRefusal::ForwardUnsupported { at }),
+            ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::Stack { .. }
+            | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Path { .. }
+            | ValueTypeView::Flow { .. }
+            | ValueTypeView::Run(_)
+            | ValueTypeView::List(_)
+            | ValueTypeView::Thunk(_)
+            | ValueTypeView::Universe { .. }
+            | ValueTypeView::Lift { .. }
+            | ValueTypeView::Element { .. }
+            | ValueTypeView::StaticPi { .. }
+            | ValueTypeView::Sigma { .. }
+            | ValueTypeView::Abstract(_)
+            | ValueTypeView::Capability { .. }
+            | ValueTypeView::Session(_)
+            | ValueTypeView::Unknown => return Err(CheckRefusal::ForwardUnsupported { at }),
         };
         let Some(&Value::Variable {
             zone: Zone::Intuitionistic,
@@ -494,26 +527,26 @@ fn natural(
     while let Some((value, ty)) = pending.pop() {
         let head = context.whnf_value_type(ty)?;
         let wanted = match value_type_view(context.arena(), head)? {
-            | ValueTypeView::Integer => Leaf::Integer,
-            | ValueTypeView::String => Leaf::String,
-            | ValueTypeView::Unit => match context.arena().value(value) {
-                | Some(&Value::Tuple(ref components)) if components.is_empty() => continue,
-                | _ => return Err(unsupported),
+            ValueTypeView::Integer => Leaf::Integer,
+            ValueTypeView::String => Leaf::String,
+            ValueTypeView::Unit => match context.arena().value(value) {
+                Some(&Value::Tuple(ref components)) if components.is_empty() => continue,
+                _ => return Err(unsupported),
             },
-            | ValueTypeView::Product(parts) => {
+            ValueTypeView::Product(parts) => {
                 let parts = parts.to_vec();
                 match context.arena().value(value) {
-                    | Some(&Value::Tuple(ref components)) if components.len() == parts.len() => {
+                    Some(&Value::Tuple(ref components)) if components.len() == parts.len() => {
                         pending.extend(components.iter().copied().zip(parts));
                         continue;
                     },
-                    | _ => return Err(unsupported),
+                    _ => return Err(unsupported),
                 }
             },
-            | ValueTypeView::Sum(parts) => {
+            ValueTypeView::Sum(parts) => {
                 let parts = parts.to_vec();
                 match context.arena().value(value) {
-                    | Some(&Value::Injection(summand, payload)) => {
+                    Some(&Value::Injection(summand, payload)) => {
                         let part = parts
                             .get(usize::from(summand))
                             .copied()
@@ -521,10 +554,27 @@ fn natural(
                         pending.push((payload, part));
                         continue;
                     },
-                    | _ => return Err(unsupported),
+                    _ => return Err(unsupported),
                 }
             },
-            | _ => return Err(unsupported),
+            ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::Stack { .. }
+            | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Path { .. }
+            | ValueTypeView::Flow { .. }
+            | ValueTypeView::Run(_)
+            | ValueTypeView::List(_)
+            | ValueTypeView::Thunk(_)
+            | ValueTypeView::Universe { .. }
+            | ValueTypeView::Lift { .. }
+            | ValueTypeView::Element { .. }
+            | ValueTypeView::StaticPi { .. }
+            | ValueTypeView::Sigma { .. }
+            | ValueTypeView::Abstract(_)
+            | ValueTypeView::Capability { .. }
+            | ValueTypeView::Session(_)
+            | ValueTypeView::Unknown => return Err(unsupported),
         };
         let Some(&Value::Variable {
             zone: Zone::Intuitionistic,
@@ -675,9 +725,9 @@ pub fn against(
 ) -> Result<(), CheckRefusal>
 {
     let whole = match crate::conversion::value_bridge(context, at, synthesised, expected, tally) {
-        | Ok(()) => return Ok(()),
-        | Err(refusal @ CheckRefusal::TypeMismatch(_)) => refusal,
-        | Err(refusal) => return Err(refusal),
+        Ok(()) => return Ok(()),
+        Err(refusal @ CheckRefusal::TypeMismatch(_)) => refusal,
+        Err(refusal) => return Err(refusal),
     };
     let node = TermNode::Value(at);
     let (_, found_source, found_target) = crate::flow::endpoints(context, node, synthesised)?;
@@ -704,11 +754,11 @@ pub fn against(
         let wanted = flow_between(context, wanted);
         let mut scratch = crate::conversion::ConversionCount::default();
         match crate::conversion::value_bridge(context, boundary, found, wanted, &mut scratch) {
-            | Ok(()) => {},
-            | Err(CheckRefusal::TypeMismatch(_)) => {
+            Ok(()) => {},
+            Err(CheckRefusal::TypeMismatch(_)) => {
                 return Err(CheckRefusal::Boundary { at: boundary });
             },
-            | Err(refusal) => return Err(refusal),
+            Err(refusal) => return Err(refusal),
         }
     }
     Err(whole)
@@ -754,8 +804,12 @@ fn function_parts(
     };
     let codomain = context.whnf_comp_type(codomain)?;
     match comp_type_view(context.arena(), codomain)? {
-        | CompTypeView::Returner { result, .. } => Ok(Maybe::Present((domain, result))),
-        | _ => Ok(Maybe::Absent(unread::Absent::Unbound)),
+        CompTypeView::Returner { result, .. } => Ok(Maybe::Present((domain, result))),
+        CompTypeView::With(..)
+        | CompTypeView::Arrow { .. }
+        | CompTypeView::Pi { .. }
+        | CompTypeView::Element { .. }
+        | CompTypeView::Unknown => Ok(Maybe::Absent(unread::Absent::Unbound)),
     }
 }
 

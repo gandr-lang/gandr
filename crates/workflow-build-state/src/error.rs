@@ -77,11 +77,11 @@ impl fmt::Display for BuildStateError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Io {
+            Self::Io {
                 ref path,
                 ref message,
             } => write!(f, "{}: {message}", path.display()),
-            | Self::Json {
+            Self::Json {
                 ref path,
                 line,
                 ref message,
@@ -90,17 +90,17 @@ impl fmt::Display for BuildStateError
                 "{}:{line}: not a Cargo JSON message: {message}",
                 path.display()
             ),
-            | Self::Unfinished { ref path } => write!(
+            Self::Unfinished { ref path } => write!(
                 f,
                 "{}: no `build-finished` message, so the build's units may be incomplete",
                 path.display()
             ),
-            | Self::Failed { ref path } => write!(
+            Self::Failed { ref path } => write!(
                 f,
                 "{}: the build failed, so its units are not a complete set",
                 path.display()
             ),
-            | Self::Output { ref message } => write!(f, "standard output: {message}"),
+            Self::Output { ref message } => write!(f, "standard output: {message}"),
         }
     }
 }

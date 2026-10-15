@@ -309,8 +309,8 @@ impl TraceNode
     pub(crate) const fn of(glued: Glued) -> Self
     {
         match glued {
-            | Glued::Value(value) => Self::Value(value),
-            | Glued::Computation(comp) => Self::Computation(comp),
+            Glued::Value(value) => Self::Value(value),
+            Glued::Computation(comp) => Self::Computation(comp),
         }
     }
 }
@@ -757,11 +757,11 @@ where
 {
     let settlement = settle_root(core, domain, problem)?;
     let early = match settlement {
-        | Settlement::Identical | Settlement::StructurallyEqual => {
+        Settlement::Identical | Settlement::StructurallyEqual => {
             RootFastPath::Answered(MachineVerdict::Convertible)
         },
-        | Settlement::GuardedApart => RootFastPath::Answered(MachineVerdict::NotConvertible),
-        | Settlement::StructurallyApart | Settlement::Deferred(_) => RootFastPath::Search,
+        Settlement::GuardedApart => RootFastPath::Answered(MachineVerdict::NotConvertible),
+        Settlement::StructurallyApart | Settlement::Deferred(_) => RootFastPath::Search,
     };
     if let RootFastPath::Answered(verdict) = early {
         if matches!(S::ACTIVITY, SinkActivity::Active) {
@@ -863,11 +863,11 @@ fn settle_root(
 ) -> Result<Settlement, ConversionFault>
 {
     match (problem.left, problem.right) {
-        | (Glued::Value(left), Glued::Value(right)) => convert_values(core, domain, left, right),
-        | (Glued::Computation(left), Glued::Computation(right)) => {
+        (Glued::Value(left), Glued::Value(right)) => convert_values(core, domain, left, right),
+        (Glued::Computation(left), Glued::Computation(right)) => {
             convert_computations(core, domain, left, right)
         },
-        | (Glued::Value(_), Glued::Computation(_)) | (Glued::Computation(_), Glued::Value(_)) => {
+        (Glued::Value(_), Glued::Computation(_)) | (Glued::Computation(_), Glued::Value(_)) => {
             Err(ConversionFault::Polarity)
         },
     }
@@ -1045,8 +1045,8 @@ impl Chain
     ) -> Repeat
     {
         let held = match side {
-            | ConversionSide::Left => &mut self.left,
-            | ConversionSide::Right => &mut self.right,
+            ConversionSide::Left => &mut self.left,
+            ConversionSide::Right => &mut self.right,
         };
         if held.contains(&unfolded) {
             return Repeat::Repeated;
@@ -1534,7 +1534,7 @@ where
             None
         };
         let goal = match sides {
-            | SupportSides::Closed(left, right) => Goal {
+            SupportSides::Closed(left, right) => Goal {
                 left: Slot::Waiting(self.enter_channel(left)?),
                 right: Slot::Waiting(self.enter_channel(right)?),
                 depth: level,
@@ -1542,7 +1542,7 @@ where
                 chain: Chain::default(),
                 next: Next::Classify,
             },
-            | SupportSides::Heads(left, right) => Goal {
+            SupportSides::Heads(left, right) => Goal {
                 left: Slot::Ready(left),
                 right: Slot::Ready(right),
                 depth: level,
@@ -1550,7 +1550,7 @@ where
                 chain: Chain::default(),
                 next: Next::Classify,
             },
-            | SupportSides::OpenedUnder(left, right, count) => Goal {
+            SupportSides::OpenedUnder(left, right, count) => Goal {
                 left: Slot::Waiting(self.open_channel(left, level, Opening::Many(count))?),
                 right: Slot::Waiting(self.open_channel(right, level, Opening::Many(count))?),
                 depth: (0_usize .. usize::from(count)).try_fold(level, |at, _| deeper(at))?,
@@ -1558,7 +1558,7 @@ where
                 chain: Chain::default(),
                 next: Next::Classify,
             },
-            | SupportSides::Opened(left, right) => {
+            SupportSides::Opened(left, right) => {
                 let deeper = deeper(level)?;
                 let left = self.open_channel(left, level, Opening::One)?;
                 let right = self.open_channel(right, level, Opening::One)?;
@@ -2107,23 +2107,23 @@ where
             }
             let answered = self.outcome(root)?;
             match answered {
-                | Outcome::Settled(Settled::Convertible) => {
+                Outcome::Settled(Settled::Convertible) => {
                     return Ok(MachineVerdict::Convertible);
                 },
-                | Outcome::Settled(Settled::NotConvertible) => {
+                Outcome::Settled(Settled::NotConvertible) => {
                     return Ok(MachineVerdict::NotConvertible);
                 },
-                | Outcome::Declined(reason) => return Ok(MachineVerdict::Declined(reason)),
-                | Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
-                | Outcome::Pending => {},
+                Outcome::Declined(reason) => return Ok(MachineVerdict::Declined(reason)),
+                Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
+                Outcome::Pending => {},
             }
             if self.spent_overflowed || self.spent.0 > budget {
                 return Ok(MachineVerdict::Declined(DeclineReason::Budget));
             }
         }
         match M::ACTIVITY {
-            | MemoActivity::Active => Ok(MachineVerdict::Declined(DeclineReason::Cycle)),
-            | MemoActivity::Inactive => Err(ConversionFault::MachineInvariant),
+            MemoActivity::Active => Ok(MachineVerdict::Declined(DeclineReason::Cycle)),
+            MemoActivity::Inactive => Err(ConversionFault::MachineInvariant),
         }
     }
 
@@ -2165,7 +2165,7 @@ where
         let process = self.process_mut(id)?;
         let work = mem::replace(&mut process.work, Work::Spent);
         match work {
-            | Work::Goal(mut goal) => {
+            Work::Goal(mut goal) => {
                 let turn = self.goal_turn(id, &mut goal)?;
                 if turn != Turn::Done {
                     let process = self.process_mut(id)?;
@@ -2173,7 +2173,7 @@ where
                 }
                 Ok(turn)
             },
-            | Work::Channel(mut channel) => {
+            Work::Channel(mut channel) => {
                 let turn = self.channel_turn(id, &mut channel)?;
                 if turn != Turn::Done {
                     let process = self.process_mut(id)?;
@@ -2181,7 +2181,7 @@ where
                 }
                 Ok(turn)
             },
-            | Work::Spent => Err(ConversionFault::MachineInvariant),
+            Work::Spent => Err(ConversionFault::MachineInvariant),
         }
     }
 
@@ -2230,27 +2230,27 @@ where
     ) -> Result<Turn, ConversionFault>
     {
         match *channel {
-            | Channel::Reapply { body, neutral } => {
+            Channel::Reapply { body, neutral } => {
                 let answered = self.outcome(body)?;
                 match answered {
-                    | Outcome::Pending => Ok(Turn::Wait),
-                    | Outcome::Evaluated(Glued::Value(head)) => {
+                    Outcome::Pending => Ok(Turn::Wait),
+                    Outcome::Evaluated(Glued::Value(head)) => {
                         let evaluation = self.reapplication(neutral, head)?;
                         *channel = Channel::Running(evaluation);
                         Ok(Turn::Again)
                     },
-                    | Outcome::Evaluated(Glued::Computation(_))
+                    Outcome::Evaluated(Glued::Computation(_))
                     | Outcome::Settled(_)
                     | Outcome::Declined(_) => Err(ConversionFault::MachineInvariant),
                 }
             },
-            | Channel::Running(ref mut evaluation) => {
+            Channel::Running(ref mut evaluation) => {
                 let sliced = evaluation.resume(self.core, self.domain, Fuel::from(SLICE));
                 let (progress, spent) = sliced.map_err(ConversionFault::Evaluation)?;
                 self.charge(StepCount(u64::from(u32::from(spent))));
                 match progress {
-                    | Progress::Paused => Ok(Turn::Again),
-                    | Progress::Finished(glued) => {
+                    Progress::Paused => Ok(Turn::Again),
+                    Progress::Finished(glued) => {
                         self.finish(id, Outcome::Evaluated(glued))?;
                         Ok(Turn::Done)
                     },
@@ -2309,9 +2309,9 @@ where
         goal.right = Slot::Ready(right);
         let next = mem::replace(&mut goal.next, Next::Classify);
         match next {
-            | Next::Classify => self.classify(id, goal, (left, right)),
-            | Next::Move(chosen) => self.take(id, goal, (left, right), chosen),
-            | Next::Combine(combine) => self.combine(id, goal, combine),
+            Next::Classify => self.classify(id, goal, (left, right)),
+            Next::Move(chosen) => self.take(id, goal, (left, right), chosen),
+            Next::Combine(combine) => self.combine(id, goal, combine),
         }
     }
 
@@ -2360,9 +2360,9 @@ where
         };
         let outcome = self.outcome(channel)?;
         match outcome {
-            | Outcome::Pending => Ok(slot),
-            | Outcome::Evaluated(glued) => Ok(Slot::Ready(glued)),
-            | Outcome::Settled(_) | Outcome::Declined(_) => Err(ConversionFault::MachineInvariant),
+            Outcome::Pending => Ok(slot),
+            Outcome::Evaluated(glued) => Ok(Slot::Ready(glued)),
+            Outcome::Settled(_) | Outcome::Declined(_) => Err(ConversionFault::MachineInvariant),
         }
     }
 
@@ -2419,9 +2419,9 @@ where
             && left != right
         {
             match self.present(goal, (left, right))? {
-                | Presenting::Normal => {},
-                | Presenting::Rewritten => return Ok(Turn::Again),
-                | Presenting::Exhausted => {
+                Presenting::Normal => {},
+                Presenting::Rewritten => return Ok(Turn::Again),
+                Presenting::Exhausted => {
                     self.finish(id, Outcome::Declined(DeclineReason::Budget))?;
                     return Ok(Turn::Done);
                 },
@@ -2432,9 +2432,9 @@ where
         // reduction: a forced step, recording nothing.
         if pair.0 != pair.1 {
             match self.fuse(goal, pair)? {
-                | Presenting::Normal => {},
-                | Presenting::Rewritten => return Ok(Turn::Again),
-                | Presenting::Exhausted => {
+                Presenting::Normal => {},
+                Presenting::Rewritten => return Ok(Turn::Again),
+                Presenting::Exhausted => {
                     self.finish(id, Outcome::Declined(DeclineReason::Budget))?;
                     return Ok(Turn::Done);
                 },
@@ -2452,7 +2452,7 @@ where
         let share = self.share_at(height);
         self.process_mut(id)?.share = share;
         match planned {
-            | Plan::Shared(settled) | Plan::Leaf(settled) => {
+            Plan::Shared(settled) | Plan::Leaf(settled) => {
                 if matches!(planned, Plan::Shared(_)) || settled == Settled::Convertible {
                     self.derivations
                         .decide(id, ConversionDecision::ComparedShared {
@@ -2464,31 +2464,31 @@ where
                 Ok(Turn::Done)
             },
 
-            | Plan::Decompose(subgoals) => {
+            Plan::Decompose(subgoals) => {
                 self.decompose(id, goal, pair, subgoals, Collapse::Allowed)
             },
-            | Plan::Step(Step::Unfold(side)) => {
+            Plan::Step(Step::Unfold(side)) => {
                 let advance = self.unfold(id, goal, pair, side)?;
                 self.advanced(id, advance)
             },
-            | Plan::Step(Step::Force) => {
+            Plan::Step(Step::Force) => {
                 self.force(id, goal, pair)?;
                 Ok(Turn::Again)
             },
-            | Plan::Step(Step::Eta(side)) => {
+            Plan::Step(Step::Eta(side)) => {
                 self.eta(id, goal, pair, side)?;
                 Ok(Turn::Again)
             },
-            | Plan::Step(Step::ReturnEta(side)) => {
+            Plan::Step(Step::ReturnEta(side)) => {
                 self.return_eta(id, goal, pair, side)?;
                 Ok(Turn::Again)
             },
-            | Plan::Step(Step::Reassociate(side)) => {
+            Plan::Step(Step::Reassociate(side)) => {
                 self.reassociate(id, goal, pair, side)?;
                 Ok(Turn::Again)
             },
-            | Plan::Choose(choice) => self.choose(id, goal, choice),
-            | Plan::Decline(reason) => {
+            Plan::Choose(choice) => self.choose(id, goal, choice),
+            Plan::Decline(reason) => {
                 self.finish(id, Outcome::Declined(reason))?;
                 Ok(Turn::Done)
             },
@@ -2537,12 +2537,12 @@ where
                 value,
                 &mut fuel,
             )? {
-                | NormalForm::Kept => {},
-                | NormalForm::Rewritten(normal) => {
+                NormalForm::Kept => {},
+                NormalForm::Rewritten(normal) => {
                     Self::set_side(goal, side, Slot::Ready(Glued::Value(normal)));
                     presenting = Presenting::Rewritten;
                 },
-                | NormalForm::Exhausted => {
+                NormalForm::Exhausted => {
                     presenting = Presenting::Exhausted;
                     break;
                 },
@@ -2595,8 +2595,8 @@ where
         let mut fusing = Presenting::Normal;
         for (side, glued) in [(ConversionSide::Left, left), (ConversionSide::Right, right)] {
             let computation = match glued {
-                | Glued::Computation(computation) => computation,
-                | Glued::Value(value) => {
+                Glued::Computation(computation) => computation,
+                Glued::Value(value) => {
                     let Some(&DomainValue::Neutral { neutral, .. }) = self.domain.value(value)
                     else {
                         continue;
@@ -2606,10 +2606,15 @@ where
                         .neutral(neutral)
                         .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
                     match held.head() {
-                        | NeutralHead::Returned(computation) if held.spine().is_empty() => {
+                        NeutralHead::Returned(computation) if held.spine().is_empty() => {
                             computation
                         },
-                        | _ => continue,
+                        NeutralHead::Variable { .. }
+                        | NeutralHead::Constant(_)
+                        | NeutralHead::Module(_)
+                        | NeutralHead::Hole { .. }
+                        | NeutralHead::Mark { .. }
+                        | NeutralHead::Returned(_) => continue,
                     }
                 },
             };
@@ -2620,18 +2625,18 @@ where
                 (computation, goal.depth),
                 &mut fuel,
             )? {
-                | crate::fusion::Fusion::Kept => {},
-                | crate::fusion::Fusion::Fused(path) => {
+                crate::fusion::Fusion::Kept => {},
+                crate::fusion::Fusion::Fused(path) => {
                     let fused = match glued {
-                        | Glued::Computation(_) => {
+                        Glued::Computation(_) => {
                             Glued::Computation(self.domain.comp_return(path, CompTermFace::Reduced))
                         },
-                        | Glued::Value(_) => Glued::Value(path),
+                        Glued::Value(_) => Glued::Value(path),
                     };
                     Self::set_side(goal, side, Slot::Ready(fused));
                     fusing = Presenting::Rewritten;
                 },
-                | crate::fusion::Fusion::Exhausted => {
+                crate::fusion::Fusion::Exhausted => {
                     fusing = Presenting::Exhausted;
                     break;
                 },
@@ -2677,8 +2682,8 @@ where
     ) -> Result<Turn, ConversionFault>
     {
         match advance {
-            | Advance::Unfolding => Ok(Turn::Again),
-            | Advance::Cycle => {
+            Advance::Unfolding => Ok(Turn::Again),
+            Advance::Cycle => {
                 self.finish(id, Outcome::Declined(DeclineReason::Cycle))?;
                 Ok(Turn::Done)
             },
@@ -2742,15 +2747,15 @@ where
         let mut tallest = DefinitionHeight::default();
         for glued in [pair.0, pair.1] {
             let neutral = match glued {
-                | Glued::Value(value) => match self.domain.value(value) {
-                    | Some(&DomainValue::Neutral { neutral, .. }) => neutral,
-                    | Some(_) => continue,
-                    | None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
+                Glued::Value(value) => match self.domain.value(value) {
+                    Some(&DomainValue::Neutral { neutral, .. }) => neutral,
+                    Some(_) => continue,
+                    None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
                 },
-                | Glued::Computation(comp) => match self.domain.computation(comp) {
-                    | Some(&DomainComp::Neutral { neutral, .. }) => neutral,
-                    | Some(_) => continue,
-                    | None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
+                Glued::Computation(comp) => match self.domain.computation(comp) {
+                    Some(&DomainComp::Neutral { neutral, .. }) => neutral,
+                    Some(_) => continue,
+                    None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
                 },
             };
             let held = self
@@ -2835,12 +2840,12 @@ where
         let mut children = Vec::with_capacity(subgoals.len());
         for subgoal in subgoals {
             let (sides, depth) = match subgoal {
-                | Subgoal::Values(left, right) => (
+                Subgoal::Values(left, right) => (
                     SupportSides::Heads(Glued::Value(left), Glued::Value(right)),
                     goal.depth,
                 ),
-                | Subgoal::Opened(left, right) => (SupportSides::Opened(left, right), goal.depth),
-                | Subgoal::Classifiers(left, right) => {
+                Subgoal::Opened(left, right) => (SupportSides::Opened(left, right), goal.depth),
+                Subgoal::Classifiers(left, right) => {
                     let left = self.domain.value_code(left, TermFace::Reduced);
                     let right = self.domain.value_code(right, TermFace::Reduced);
                     (
@@ -2848,7 +2853,7 @@ where
                         goal.depth,
                     )
                 },
-                | Subgoal::CaseMotives(left, right) => {
+                Subgoal::CaseMotives(left, right) => {
                     let depth = deeper(goal.depth)?;
                     let variable = self.variable(goal.depth)?;
                     let left = self.case_motive(left, variable)?;
@@ -2858,7 +2863,7 @@ where
                         depth,
                     )
                 },
-                | Subgoal::Motives(left, right) => {
+                Subgoal::Motives(left, right) => {
                     let depth = deeper(goal.depth)?;
                     let variable = self.variable(goal.depth)?;
                     let left = self.transport_motive(left, variable)?;
@@ -2868,26 +2873,25 @@ where
                         depth,
                     )
                 },
-                | Subgoal::CaseBranch { left, right, tag } => {
+                Subgoal::CaseBranch { left, right, tag } => {
                     let left = self.case_branch(left, tag)?;
                     let right = self.case_branch(right, tag)?;
                     (SupportSides::Closed(left, right), goal.depth)
                 },
-                | Subgoal::Fixpoints(left, right) => {
+                Subgoal::Fixpoints(left, right) | Subgoal::Entered(left, right) => {
                     (SupportSides::Closed(left, right), goal.depth)
                 },
-                | Subgoal::FixpointBodies(left, right) => {
+                Subgoal::FixpointBodies(left, right) => {
                     let left = self.fixpoint_body(left)?;
                     let right = self.fixpoint_body(right)?;
                     (SupportSides::Opened(left, right), goal.depth)
                 },
-                | Subgoal::SplitBodies(left, right) => {
+                Subgoal::SplitBodies(left, right) => {
                     let (arity, left) = self.split_body(left)?;
                     let (_, right) = self.split_body(right)?;
                     (SupportSides::OpenedUnder(left, right, arity), goal.depth)
                 },
-                | Subgoal::Entered(left, right) => (SupportSides::Closed(left, right), goal.depth),
-                | Subgoal::OpenedUnder(left, right, count) => {
+                Subgoal::OpenedUnder(left, right, count) => {
                     (SupportSides::OpenedUnder(left, right, count), goal.depth)
                 },
             };
@@ -3118,15 +3122,15 @@ where
     ) -> Result<NeutralId, ConversionFault>
     {
         match glued {
-            | Glued::Value(value) => match self.domain.value(value) {
-                | Some(&DomainValue::Neutral { neutral, .. }) => Ok(neutral),
-                | Some(_) => Err(ConversionFault::MachineInvariant),
-                | None => Err(ConversionFault::Domain(DomainFault::Dangling)),
+            Glued::Value(value) => match self.domain.value(value) {
+                Some(&DomainValue::Neutral { neutral, .. }) => Ok(neutral),
+                Some(_) => Err(ConversionFault::MachineInvariant),
+                None => Err(ConversionFault::Domain(DomainFault::Dangling)),
             },
-            | Glued::Computation(comp) => match self.domain.computation(comp) {
-                | Some(&DomainComp::Neutral { neutral, .. }) => Ok(neutral),
-                | Some(_) => Err(ConversionFault::MachineInvariant),
-                | None => Err(ConversionFault::Domain(DomainFault::Dangling)),
+            Glued::Computation(comp) => match self.domain.computation(comp) {
+                Some(&DomainComp::Neutral { neutral, .. }) => Ok(neutral),
+                Some(_) => Err(ConversionFault::MachineInvariant),
+                None => Err(ConversionFault::Domain(DomainFault::Dangling)),
             },
         }
     }
@@ -3171,8 +3175,8 @@ where
             .neutral(neutral)
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
         match held.head() {
-            | NeutralHead::Constant(constant) => Ok(constant),
-            | NeutralHead::Variable { .. }
+            NeutralHead::Constant(constant) => Ok(constant),
+            NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
             | NeutralHead::Hole { .. }
             | NeutralHead::Mark { .. }
@@ -3190,8 +3194,8 @@ where
     ) -> Glued
     {
         match side {
-            | ConversionSide::Left => pair.0,
-            | ConversionSide::Right => pair.1,
+            ConversionSide::Left => pair.0,
+            ConversionSide::Right => pair.1,
         }
     }
 
@@ -3206,8 +3210,8 @@ where
     )
     {
         match side {
-            | ConversionSide::Left => goal.left = slot,
-            | ConversionSide::Right => goal.right = slot,
+            ConversionSide::Left => goal.left = slot,
+            ConversionSide::Right => goal.right = slot,
         }
     }
 
@@ -3282,8 +3286,8 @@ where
         self.derivations
             .decide(id, ConversionDecision::Unfold { constant: named })?;
         let reduced = match side {
-            | ConversionSide::Left => ConversionDecision::ReduceLeft { redex: named },
-            | ConversionSide::Right => ConversionDecision::ReduceRight { redex: named },
+            ConversionSide::Left => ConversionDecision::ReduceLeft { redex: named },
+            ConversionSide::Right => ConversionDecision::ReduceRight { redex: named },
         };
         self.derivations.decide(id, reduced)?;
         self.supports.unfolded(id, constant)?;
@@ -3346,18 +3350,18 @@ where
                 .copied()
                 .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
             match node {
-                | DomainValue::Thunk { body, .. } => {
+                DomainValue::Thunk { body, .. } => {
                     let channel = self.enter_channel(body)?;
                     Self::set_side(goal, side, Slot::Waiting(channel));
                     self.depend(id, channel)?;
                 },
-                | DomainValue::Neutral { neutral, .. } => {
+                DomainValue::Neutral { neutral, .. } => {
                     let grown = extend_spine(self.domain, neutral, Elimination::Force)
                         .map_err(ConversionFault::Evaluation)?;
                     let forced = self.domain.comp_neutral(grown, CompTermFace::Reduced);
                     Self::set_side(goal, side, Slot::Ready(Glued::Computation(forced)));
                 },
-                | DomainValue::PathCertificate { .. }
+                DomainValue::PathCertificate { .. }
                 | DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
                 | DomainValue::PathProduct { .. }
@@ -3443,9 +3447,9 @@ where
             return Err(ConversionFault::MachineInvariant);
         };
         let body = match self.domain.computation(lambda) {
-            | Some(&DomainComp::Lambda { body, .. }) => body,
-            | Some(_) => return Err(ConversionFault::MachineInvariant),
-            | None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
+            Some(&DomainComp::Lambda { body, .. }) => body,
+            Some(_) => return Err(ConversionFault::MachineInvariant),
+            None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
         };
         let channel = self.open_channel(body, goal.depth, Opening::One)?;
         Self::set_side(goal, lambda_side, Slot::Waiting(channel));
@@ -3653,8 +3657,8 @@ where
             children.push(child);
         }
         goal.next = Next::Combine(match combination {
-            | Combination::Biased => Combine::Biased(children),
-            | Combination::Either => Combine::Either(children),
+            Combination::Biased => Combine::Biased(children),
+            Combination::Either => Combine::Either(children),
         });
         Ok(Turn::Wait)
     }
@@ -3707,7 +3711,7 @@ where
     {
         self.charge(StepCount::ONE);
         match chosen {
-            | Move::Shortcut => {
+            Move::Shortcut => {
                 let left = self.neutral_of(pair.0)?;
                 let right = self.neutral_of(pair.1)?;
                 let constant = self.head_constant(left)?;
@@ -3717,20 +3721,20 @@ where
                     })?;
                 let spines = spine_subgoals(self.core, self.domain, left, right)?;
                 match spines {
-                    | Spines::Agree(subgoals) => {
+                    Spines::Agree(subgoals) => {
                         self.decompose(id, goal, pair, subgoals, Collapse::Never)
                     },
-                    | Spines::Disagree => {
+                    Spines::Disagree => {
                         self.answer(id, Settled::NotConvertible, &[])?;
                         Ok(Turn::Done)
                     },
                 }
             },
-            | Move::Unfold(side) => {
+            Move::Unfold(side) => {
                 let advance = self.unfold(id, goal, pair, side)?;
                 self.advanced(id, advance)
             },
-            | Move::FreezeUnfold(side) => {
+            Move::FreezeUnfold(side) => {
                 let constant = self.side_constant(pair, side)?;
                 self.derivations.decide(id, ConversionDecision::Freeze {
                     constant: TraceNode::Constant(constant),
@@ -3740,7 +3744,7 @@ where
                 let advance = self.unfold(id, goal, pair, other(side))?;
                 self.advanced(id, advance)
             },
-            | Move::PostponeUnfold(side) => {
+            Move::PostponeUnfold(side) => {
                 let postponed = self.side_constant(pair, other(side))?;
                 self.derivations.decide(id, ConversionDecision::Postpone {
                     constant: TraceNode::Constant(postponed),
@@ -3748,7 +3752,7 @@ where
                 let advance = self.unfold(id, goal, pair, side)?;
                 self.advanced(id, advance)
             },
-            | Move::FreezeEta(side) => {
+            Move::FreezeEta(side) => {
                 let constant = self.side_constant(pair, side)?;
                 self.derivations.decide(id, ConversionDecision::Freeze {
                     constant: TraceNode::Constant(constant),
@@ -3883,7 +3887,7 @@ where
     ) -> Result<Turn, ConversionFault>
     {
         match combine {
-            | Combine::All {
+            Combine::All {
                 pair,
                 children,
                 collapse,
@@ -3893,7 +3897,7 @@ where
                 for (position, &child) in children.iter().enumerate() {
                     let answered = self.outcome(child)?;
                     match answered {
-                        | Outcome::Settled(Settled::NotConvertible) => {
+                        Outcome::Settled(Settled::NotConvertible) => {
                             let position = u32::try_from(position)
                                 .map_err(|_overflow| ConversionFault::MachineInvariant)?;
                             self.derivations
@@ -3904,12 +3908,12 @@ where
                             self.derivations.rest_on(id, Vec::from([child]))?;
                             return Ok(Turn::Done);
                         },
-                        | Outcome::Settled(Settled::Convertible) => {},
-                        | Outcome::Declined(reason) => {
+                        Outcome::Settled(Settled::Convertible) => {},
+                        Outcome::Declined(reason) => {
                             declined.get_or_insert(reason);
                         },
-                        | Outcome::Pending => waiting = waiting.saturating_add(1_usize),
-                        | Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
+                        Outcome::Pending => waiting = waiting.saturating_add(1_usize),
+                        Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
                     }
                 }
                 if waiting > 0_usize {
@@ -3926,12 +3930,12 @@ where
                 }
                 self.answer(id, Settled::Convertible, &children)?;
                 match collapse {
-                    | Collapse::Allowed => self.derivations.agree_on(id, pair, children)?,
-                    | Collapse::Never => self.derivations.rest_on(id, children)?,
+                    Collapse::Allowed => self.derivations.agree_on(id, pair, children)?,
+                    Collapse::Never => self.derivations.rest_on(id, children)?,
                 }
                 Ok(Turn::Done)
             },
-            | Combine::Biased(children) => {
+            Combine::Biased(children) => {
                 let Some((&last, rest)) = children.split_last()
                 else {
                     return Err(ConversionFault::MachineInvariant);
@@ -3940,42 +3944,42 @@ where
                 for &child in rest {
                     let answered = self.outcome(child)?;
                     match answered {
-                        | Outcome::Settled(Settled::Convertible) => {
+                        Outcome::Settled(Settled::Convertible) => {
                             self.answer(id, Settled::Convertible, &[child])?;
                             self.derivations.rest_on(id, Vec::from([child]))?;
                             return Ok(Turn::Done);
                         },
-                        | Outcome::Pending => waiting = waiting.saturating_add(1_usize),
-                        | Outcome::Settled(Settled::NotConvertible) | Outcome::Declined(_) => {},
-                        | Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
+                        Outcome::Pending => waiting = waiting.saturating_add(1_usize),
+                        Outcome::Settled(Settled::NotConvertible) | Outcome::Declined(_) => {},
+                        Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
                     }
                 }
                 let authoritative = self.outcome(last)?;
                 match authoritative {
-                    | Outcome::Settled(settled) => {
+                    Outcome::Settled(settled) => {
                         // An acceptance rests on the winning branch; a refusal
                         // on every branch, each of which had to fail.
                         let winner = [last];
                         let basis: &[ProcessId] = match settled {
-                            | Settled::Convertible => &winner,
-                            | Settled::NotConvertible => &children,
+                            Settled::Convertible => &winner,
+                            Settled::NotConvertible => &children,
                         };
                         self.answer(id, settled, basis)?;
                         self.derivations.rest_on(id, Vec::from([last]))?;
                         Ok(Turn::Done)
                     },
-                    | Outcome::Declined(_) if waiting == 0_usize => {
+                    Outcome::Declined(_) if waiting == 0_usize => {
                         self.finish(id, authoritative)?;
                         Ok(Turn::Done)
                     },
-                    | Outcome::Pending | Outcome::Declined(_) => {
+                    Outcome::Pending | Outcome::Declined(_) => {
                         goal.next = Next::Combine(Combine::Biased(children));
                         Ok(Turn::Wait)
                     },
-                    | Outcome::Evaluated(_) => Err(ConversionFault::MachineInvariant),
+                    Outcome::Evaluated(_) => Err(ConversionFault::MachineInvariant),
                 }
             },
-            | Combine::Either(children) => {
+            Combine::Either(children) => {
                 if children.is_empty() {
                     return Err(ConversionFault::MachineInvariant);
                 }
@@ -3985,19 +3989,19 @@ where
                 for &child in &children {
                     let answered = self.outcome(child)?;
                     match answered {
-                        | Outcome::Settled(Settled::Convertible) => {
+                        Outcome::Settled(Settled::Convertible) => {
                             self.answer(id, Settled::Convertible, &[child])?;
                             self.derivations.rest_on(id, Vec::from([child]))?;
                             return Ok(Turn::Done);
                         },
-                        | Outcome::Settled(Settled::NotConvertible) => {
+                        Outcome::Settled(Settled::NotConvertible) => {
                             refuted = refuted.saturating_add(1_usize);
                         },
-                        | Outcome::Declined(reason) => {
+                        Outcome::Declined(reason) => {
                             declined.get_or_insert(reason);
                         },
-                        | Outcome::Pending => waiting = waiting.saturating_add(1_usize),
-                        | Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
+                        Outcome::Pending => waiting = waiting.saturating_add(1_usize),
+                        Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
                     }
                 }
                 if waiting > 0_usize {
@@ -4136,11 +4140,11 @@ where
     ) -> Result<ProcessId, ConversionFault>
     {
         match self.settings.granularity().stance() {
-            | GranularityStance::Skeleton => {},
+            GranularityStance::Skeleton => {},
             // The policy's constructor refuses this stance, so no installed
             // policy holds it; the arm answers a typed refusal rather than
             // standing in for a stance it does not implement.
-            | GranularityStance::Spinal => return Err(ConversionFault::MachineInvariant),
+            GranularityStance::Spinal => return Err(ConversionFault::MachineInvariant),
         }
         let index = usize::try_from(u32::from(entry))
             .map_err(|_overflow| ConversionFault::MachineInvariant)?;
@@ -4231,8 +4235,8 @@ where
         let unfolding = held.unfolding();
         let bare = defined == neutral && held.spine().is_empty();
         let height = match held.head() {
-            | NeutralHead::Constant(constant) => self.definitions.height(constant),
-            | NeutralHead::Variable { .. }
+            NeutralHead::Constant(constant) => self.definitions.height(constant),
+            NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
             | NeutralHead::Hole { .. }
             | NeutralHead::Mark { .. }
@@ -4242,13 +4246,13 @@ where
         };
         let share = self.share_at(height);
         let channel = match (unfolding, bare) {
-            | (Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)), _) => {
+            (Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)), _) => {
                 return Err(ConversionFault::MachineInvariant);
             },
-            | (Unfolding::Forced(Glued::Value(body)), true) => {
+            (Unfolding::Forced(Glued::Value(body)), true) => {
                 self.start(Work::Spent, Outcome::Evaluated(Glued::Value(body)), share)?
             },
-            | (Unfolding::Forced(Glued::Value(body)), false) => {
+            (Unfolding::Forced(Glued::Value(body)), false) => {
                 let evaluation = self.reapplication(neutral, body)?;
                 self.start(
                     Work::Channel(Channel::Running(evaluation)),
@@ -4256,8 +4260,8 @@ where
                     share,
                 )?
             },
-            | (Unfolding::Unforced(entry), true) => self.body_channel(entry, height)?,
-            | (Unfolding::Unforced(entry), false) => {
+            (Unfolding::Unforced(entry), true) => self.body_channel(entry, height)?,
+            (Unfolding::Unforced(entry), false) => {
                 let body = self.body_channel(entry, height)?;
                 let channel = self.start(
                     Work::Channel(Channel::Reapply { body, neutral }),
@@ -4442,7 +4446,7 @@ where
             return Ok(channel);
         }
         let evaluation = match arity {
-            | Opening::One => {
+            Opening::One => {
                 let variable = self.variable(level)?;
                 Evaluation::enter(
                     self.definitions,
@@ -4451,7 +4455,7 @@ where
                     Bound::Variable(variable),
                 )
             },
-            | Opening::Many(count) => {
+            Opening::Many(count) => {
                 let mut variables = Vec::with_capacity(usize::from(count));
                 let mut at = level;
                 for _ in 0_usize .. usize::from(count) {
@@ -4834,10 +4838,10 @@ mod tests
             let mut chain = DefinitionChain::new();
             for (position, &(entry, _)) in bodies.iter().enumerate() {
                 let previous = match (mentions, position.checked_sub(1)) {
-                    | (Mentions::Previous, Some(previous)) => {
+                    (Mentions::Previous, Some(previous)) => {
                         Vec::from([ConstantIndex::from(previous)])
                     },
-                    | (Mentions::Nothing, _) | (Mentions::Previous, None) => Vec::new(),
+                    (Mentions::Nothing, _) | (Mentions::Previous, None) => Vec::new(),
                 };
                 let defined = chain.define(
                     ConstantIndex::from(position),
@@ -5008,14 +5012,14 @@ mod tests
             let mut domain = DomainArena::new();
             let fuel = Fuel::from(4_096_u32);
             let problem = match sides {
-                | Sides::Values(left, right) => {
+                Sides::Values(left, right) => {
                     let left = eval_value(&self.core, &mut domain, definitions, fuel, left)
                         .expect("the left side evaluates");
                     let right = eval_value(&self.core, &mut domain, definitions, fuel, right)
                         .expect("the right side evaluates");
                     Problem::values(left, right)
                 },
-                | Sides::Computations(left, right) => {
+                Sides::Computations(left, right) => {
                     let left = eval_computation(&self.core, &mut domain, definitions, fuel, left)
                         .expect("the left side evaluates");
                     let right = eval_computation(&self.core, &mut domain, definitions, fuel, right)
@@ -5104,19 +5108,19 @@ mod tests
                 bodies.push(Unfoldable::Body(kernel.value(&self.core, body)));
             }
             let sides = match sides {
-                | Sides::Values(left, right) => ReplaySides::Values(
+                Sides::Values(left, right) => ReplaySides::Values(
                     kernel.value(&self.core, left),
                     kernel.value(&self.core, right),
                 ),
-                | Sides::Computations(left, right) => ReplaySides::Computations(
+                Sides::Computations(left, right) => ReplaySides::Computations(
                     kernel.computation(&self.core, left),
                     kernel.computation(&self.core, right),
                 ),
             };
             let claim = match verdict {
-                | MachineVerdict::Convertible => EngineClaim::Convertible,
-                | MachineVerdict::NotConvertible => EngineClaim::NotConvertible,
-                | MachineVerdict::Declined(_) => EngineClaim::Declined,
+                MachineVerdict::Convertible => EngineClaim::Convertible,
+                MachineVerdict::NotConvertible => EngineClaim::NotConvertible,
+                MachineVerdict::Declined(_) => EngineClaim::Declined,
             };
             replay(
                 &mut kernel.arena,
@@ -5171,7 +5175,7 @@ mod tests
                 let mut spinal = TracedDuplication::install(DuplicationStance::Spinal, &mut log)
                     .expect("a recording sink carries the spinal stance");
                 let problem = match sides {
-                    | Sides::Values(left, right) => {
+                    Sides::Values(left, right) => {
                         let [left, right] = [left, right].map(|side| {
                             let (mut overlay, root) = lifted(&self.core, CoreTerm::Value(side));
                             let OverlayId::Value(root) = root
@@ -5192,7 +5196,7 @@ mod tests
                         });
                         Problem::values(left, right)
                     },
-                    | Sides::Computations(left, right) => {
+                    Sides::Computations(left, right) => {
                         let [left, right] = [left, right].map(|side| {
                             let (mut overlay, root) =
                                 lifted(&self.core, CoreTerm::Computation(side));
@@ -5253,8 +5257,8 @@ mod tests
         ) -> [ShareCount; 2]
         {
             let roots = match sides {
-                | Sides::Values(left, right) => [CoreTerm::Value(left), CoreTerm::Value(right)],
-                | Sides::Computations(left, right) => {
+                Sides::Values(left, right) => [CoreTerm::Value(left), CoreTerm::Value(right)],
+                Sides::Computations(left, right) => {
                     [CoreTerm::Computation(left), CoreTerm::Computation(right)]
                 },
             };
@@ -5338,14 +5342,14 @@ mod tests
     ) -> Vec<CoreTerm>
     {
         match node {
-            | CoreTerm::Value(id) => match *core.value(id).expect("a reached value resolves") {
-                | Value::Constructor { ref fields, .. } => {
+            CoreTerm::Value(id) => match *core.value(id).expect("a reached value resolves") {
+                Value::Constructor { ref fields, .. } => {
                     fields.iter().copied().map(CoreTerm::Value).collect()
                 },
-                | Value::Record(ref fields) => {
+                Value::Record(ref fields) => {
                     fields.values().copied().map(CoreTerm::Value).collect()
                 },
-                | Value::Here(_)
+                Value::Here(_)
                 | Value::Funext(..)
                 | Value::Equiv(..)
                 | Value::SessionRelated { .. }
@@ -5362,7 +5366,7 @@ mod tests
                 | Value::Reify(_) => {
                     panic!("the pure fixture language has no reified stacks")
                 },
-                | Value::Primitive { .. }
+                Value::Primitive { .. }
                 | Value::Variable { .. }
                 | Value::Constant(_)
                 | Value::ListNil
@@ -5370,41 +5374,41 @@ mod tests
                 | Value::Quote(_)
                 | Value::QuoteComputation(_)
                 | Value::Hole(_) => Vec::new(),
-                | Value::Tuple(ref components) => {
+                Value::Tuple(ref components) => {
                     components.iter().copied().map(CoreTerm::Value).collect()
                 },
-                | Value::PathRefl(code) => Vec::from([CoreTerm::Value(code)]),
-                | Value::PathEquiv {
+                Value::PathRefl(code) => Vec::from([CoreTerm::Value(code)]),
+                Value::PathEquiv {
                     forward, backward, ..
                 } => Vec::from([CoreTerm::Value(forward), CoreTerm::Value(backward)]),
-                | Value::PathProduct(first, second)
+                Value::PathProduct(first, second)
                 | Value::ListCons(first, second)
                 | Value::StaticApplication(first, second) => {
                     Vec::from([CoreTerm::Value(first), CoreTerm::Value(second)])
                 },
-                | Value::StaticLambda(body)
+                Value::StaticLambda(body)
                 | Value::Injection(_, body)
                 | Value::Lift { body, .. }
                 | Value::Mark { body, .. } => Vec::from([CoreTerm::Value(body)]),
-                | Value::Thunk(body) => Vec::from([CoreTerm::Computation(body)]),
+                Value::Thunk(body) => Vec::from([CoreTerm::Computation(body)]),
             },
-            | CoreTerm::Computation(id) => {
+            CoreTerm::Computation(id) => {
                 match *core
                     .computation(id)
                     .expect("a reached computation resolves")
                 {
-                    | Computation::DataCase {
+                    Computation::DataCase {
                         scrutinee,
                         ref branches,
                         ..
                     } => core::iter::once(CoreTerm::Value(scrutinee))
                         .chain(branches.iter().copied().map(CoreTerm::Computation))
                         .collect(),
-                    | Computation::RecordProjection(record, _)
+                    Computation::RecordProjection(record, _)
                     | Computation::TupleProjection(record, _) => {
                         Vec::from([CoreTerm::Value(record)])
                     },
-                    | Computation::PathTransport { .. }
+                    Computation::PathTransport { .. }
                     | Computation::Ride { .. }
                     | Computation::TelescopeTransport { .. }
                     | Computation::Perform { .. }
@@ -5420,7 +5424,7 @@ mod tests
                     | Computation::Session(_) => {
                         panic!("the pure fixture language has no runtime control formers")
                     },
-                    | Computation::ListFold {
+                    Computation::ListFold {
                         list,
                         on_nil,
                         on_cons,
@@ -5430,28 +5434,28 @@ mod tests
                         CoreTerm::Computation(on_nil),
                         CoreTerm::Computation(on_cons),
                     ]),
-                    | Computation::Primitive { arguments, .. } => {
+                    Computation::Primitive { arguments, .. } => {
                         arguments.iter().copied().map(CoreTerm::Value).collect()
                     },
-                    | Computation::Transport(path, value) => {
+                    Computation::Transport(path, value) => {
                         Vec::from([CoreTerm::Value(path), CoreTerm::Value(value)])
                     },
-                    | Computation::Lambda(body)
+                    Computation::Lambda(body)
                     | Computation::Mark { body, .. }
                     | Computation::Fixpoint { body, .. } => {
                         Vec::from([CoreTerm::Computation(body)])
                     },
-                    | Computation::Hole(_) => Vec::new(),
-                    | Computation::Application(head, argument) => {
+                    Computation::Hole(_) => Vec::new(),
+                    Computation::Application(head, argument) => {
                         Vec::from([CoreTerm::Computation(head), CoreTerm::Value(argument)])
                     },
-                    | Computation::Return(value) | Computation::Force(value) => {
+                    Computation::Return(value) | Computation::Force(value) => {
                         Vec::from([CoreTerm::Value(value)])
                     },
-                    | Computation::Bind(bound, body) => {
+                    Computation::Bind(bound, body) => {
                         Vec::from([CoreTerm::Computation(bound), CoreTerm::Computation(body)])
                     },
-                    | Computation::Case {
+                    Computation::Case {
                         scrutinee,
                         ref branches,
                     } => core::iter::once(CoreTerm::Value(scrutinee))
@@ -5501,7 +5505,7 @@ mod tests
         let mut walk = Vec::from([Lifting::Enter(root)]);
         while let Some(step) = walk.pop() {
             match step {
-                | Lifting::Enter(node) => {
+                Lifting::Enter(node) => {
                     if canon.contains_key(&node) {
                         continue;
                     }
@@ -5510,25 +5514,25 @@ mod tests
                         walk.push(Lifting::Enter(child));
                     }
                 },
-                | Lifting::Exit(node) => {
+                Lifting::Exit(node) => {
                     if canon.contains_key(&node) {
                         continue;
                     }
                     let value = |id: ValueId| match canon[&CoreTerm::Value(id)] {
-                        | CoreTerm::Value(id) => id,
-                        | CoreTerm::Computation(_) => panic!("a value is represented by a value"),
+                        CoreTerm::Value(id) => id,
+                        CoreTerm::Computation(_) => panic!("a value is represented by a value"),
                     };
                     let computation = |id: ComputationId| match canon[&CoreTerm::Computation(id)] {
-                        | CoreTerm::Computation(id) => id,
-                        | CoreTerm::Value(_) => {
+                        CoreTerm::Computation(id) => id,
+                        CoreTerm::Value(_) => {
                             panic!("a computation is represented by a computation")
                         },
                     };
                     let representative = match node {
-                        | CoreTerm::Value(id) => {
+                        CoreTerm::Value(id) => {
                             let key =
                                 match core.value(id).expect("a reached value resolves").clone() {
-                                    | Value::Constructor {
+                                    Value::Constructor {
                                         datatype,
                                         tag,
                                         mut fields,
@@ -5542,13 +5546,13 @@ mod tests
                                             fields,
                                         }
                                     },
-                                    | Value::Record(mut fields) => {
+                                    Value::Record(mut fields) => {
                                         for field in fields.values_mut() {
                                             *field = value(*field);
                                         }
                                         Value::Record(fields)
                                     },
-                                    | Value::Here(_)
+                                    Value::Here(_)
                                     | Value::Funext(..)
                                     | Value::Equiv(..)
                                     | Value::SessionRelated { .. }
@@ -5565,16 +5569,16 @@ mod tests
                                     | Value::Reify(_) => {
                                         panic!("the pure fixture language has no reified stacks")
                                     },
-                                    | value @ Value::Primitive { .. } => value,
-                                    | Value::ListNil => Value::ListNil,
-                                    | Value::ListCons(first, second) => {
+                                    value @ Value::Primitive { .. } => value,
+                                    Value::ListNil => Value::ListNil,
+                                    Value::ListCons(first, second) => {
                                         Value::ListCons(value(first), value(second))
                                     },
-                                    | Value::PathRefl(code) => Value::PathRefl(value(code)),
-                                    | Value::PathProduct(first, second) => {
+                                    Value::PathRefl(code) => Value::PathRefl(value(code)),
+                                    Value::PathProduct(first, second) => {
                                         Value::PathProduct(value(first), value(second))
                                     },
-                                    | Value::PathEquiv {
+                                    Value::PathEquiv {
                                         path_type,
                                         forward,
                                         backward,
@@ -5585,49 +5589,51 @@ mod tests
                                         backward: value(backward),
                                         evidence,
                                     },
-                                    | Value::Tuple(mut components) => {
+                                    Value::Tuple(mut components) => {
                                         for component in &mut components {
                                             *component = value(*component);
                                         }
                                         Value::Tuple(components)
                                     },
-                                    | Value::Injection(summand, body) => {
+                                    Value::Injection(summand, body) => {
                                         Value::Injection(summand, value(body))
                                     },
-                                    | Value::Thunk(body) => Value::Thunk(computation(body)),
-                                    | Value::StaticLambda(body) => Value::StaticLambda(value(body)),
-                                    | Value::StaticApplication(head, argument) => {
+                                    Value::Thunk(body) => Value::Thunk(computation(body)),
+                                    Value::StaticLambda(body) => Value::StaticLambda(value(body)),
+                                    Value::StaticApplication(head, argument) => {
                                         Value::StaticApplication(value(head), value(argument))
                                     },
-                                    | Value::Lift { target, body } => Value::Lift {
+                                    Value::Lift { target, body } => Value::Lift {
                                         target,
                                         body: value(body),
                                     },
-                                    | Value::Mark { mark, body } => Value::Mark {
+                                    Value::Mark { mark, body } => Value::Mark {
                                         mark,
                                         body: value(body),
                                     },
-                                    | leaf @ (Value::Variable { .. }
+                                    leaf @ (Value::Variable { .. }
                                     | Value::Constant(_)
                                     | Value::Literal(_)
                                     | Value::Quote(_)
                                     | Value::QuoteComputation(_)
                                     | Value::Hole(_)) => leaf,
                                 };
-                            match values.iter().find(|entry| entry.0 == key) {
-                                | Some(&(_, representative)) => representative,
-                                | None => {
-                                    values.push((key, node));
-                                    node
-                                },
+                            if let Some(&(_, representative)) =
+                                values.iter().find(|entry| entry.0 == key)
+                            {
+                                representative
+                            }
+                            else {
+                                values.push((key, node));
+                                node
                             }
                         },
-                        | CoreTerm::Computation(id) => {
+                        CoreTerm::Computation(id) => {
                             let key = match *core
                                 .computation(id)
                                 .expect("a reached computation resolves")
                             {
-                                | Computation::DataCase {
+                                Computation::DataCase {
                                     scrutinee,
                                     motive,
                                     ref branches,
@@ -5639,13 +5645,13 @@ mod tests
                                         .map(|branch| computation(*branch))
                                         .collect(),
                                 },
-                                | Computation::RecordProjection(record, ref label) => {
+                                Computation::RecordProjection(record, ref label) => {
                                     Computation::RecordProjection(value(record), label.clone())
                                 },
-                                | Computation::TupleProjection(tuple, component) => {
+                                Computation::TupleProjection(tuple, component) => {
                                     Computation::TupleProjection(value(tuple), component)
                                 },
-                                | Computation::PathTransport { .. }
+                                Computation::PathTransport { .. }
                                 | Computation::Ride { .. }
                                 | Computation::TelescopeTransport { .. }
                                 | Computation::Perform { .. }
@@ -5661,7 +5667,7 @@ mod tests
                                 | Computation::Session(_) => panic!(
                                     "the pure fixture language has no runtime control formers"
                                 ),
-                                | Computation::ListFold {
+                                Computation::ListFold {
                                     element,
                                     result,
                                     list,
@@ -5674,7 +5680,7 @@ mod tests
                                     on_nil: computation(on_nil),
                                     on_cons: computation(on_cons),
                                 },
-                                | Computation::Primitive {
+                                Computation::Primitive {
                                     primitive,
                                     mut arguments,
                                 } => {
@@ -5686,29 +5692,25 @@ mod tests
                                         arguments,
                                     }
                                 },
-                                | Computation::Transport(path, argument) => {
+                                Computation::Transport(path, argument) => {
                                     Computation::Transport(value(path), value(argument))
                                 },
-                                | Computation::Lambda(body) => {
-                                    Computation::Lambda(computation(body))
+                                Computation::Lambda(body) => Computation::Lambda(computation(body)),
+                                Computation::Fixpoint { body, evidence } => Computation::Fixpoint {
+                                    body: computation(body),
+                                    evidence,
                                 },
-                                | Computation::Fixpoint { body, evidence } => {
-                                    Computation::Fixpoint {
-                                        body: computation(body),
-                                        evidence,
-                                    }
-                                },
-                                | Computation::Application(head, argument) => {
+                                Computation::Application(head, argument) => {
                                     Computation::Application(computation(head), value(argument))
                                 },
-                                | Computation::Return(returned) => {
+                                Computation::Return(returned) => {
                                     Computation::Return(value(returned))
                                 },
-                                | Computation::Force(forced) => Computation::Force(value(forced)),
-                                | Computation::Bind(bound, body) => {
+                                Computation::Force(forced) => Computation::Force(value(forced)),
+                                Computation::Bind(bound, body) => {
                                     Computation::Bind(computation(bound), computation(body))
                                 },
-                                | Computation::Case {
+                                Computation::Case {
                                     scrutinee,
                                     ref branches,
                                 } => Computation::Case {
@@ -5718,18 +5720,20 @@ mod tests
                                         .map(|branch| computation(*branch))
                                         .collect(),
                                 },
-                                | Computation::Mark { mark, body } => Computation::Mark {
+                                Computation::Mark { mark, body } => Computation::Mark {
                                     mark,
                                     body: computation(body),
                                 },
-                                | Computation::Hole(hole) => Computation::Hole(hole),
+                                Computation::Hole(hole) => Computation::Hole(hole),
                             };
-                            match computations.iter().find(|entry| entry.0 == key) {
-                                | Some(&(_, representative)) => representative,
-                                | None => {
-                                    computations.push((key, node));
-                                    node
-                                },
+                            if let Some(&(_, representative)) =
+                                computations.iter().find(|entry| entry.0 == key)
+                            {
+                                representative
+                            }
+                            else {
+                                computations.push((key, node));
+                                node
                             }
                         },
                     };
@@ -5838,7 +5842,7 @@ mod tests
         let mut walk = Vec::from([Lifting::Enter(root)]);
         while let Some(step) = walk.pop() {
             match step {
-                | Lifting::Enter(node) => {
+                Lifting::Enter(node) => {
                     if !seen.insert(node) {
                         continue;
                     }
@@ -5849,7 +5853,7 @@ mod tests
                         walk.push(Lifting::Enter(child));
                     }
                 },
-                | Lifting::Exit(node) => completed.push(node),
+                Lifting::Exit(node) => completed.push(node),
             }
         }
         let shared: Vec<CoreTerm> = completed
@@ -5887,17 +5891,17 @@ mod tests
         for (share, &leg) in legs.iter().enumerate().rev() {
             let arity = ShareArity::from(u32::from(taken[share]));
             built = match built {
-                | OverlayId::Value(body) => OverlayId::Value(
+                OverlayId::Value(body) => OverlayId::Value(
                     overlay
                         .mint_value(ValueNode::Shared(Sharing { arity, leg, body }))
                         .expect("the leg and the body resolve"),
                 ),
-                | OverlayId::Computation(body) => OverlayId::Computation(
+                OverlayId::Computation(body) => OverlayId::Computation(
                     overlay
                         .mint_computation(CompNode::Shared(Sharing { arity, leg, body }))
                         .expect("the leg and the body resolve"),
                 ),
-                | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+                OverlayId::ValueType(_) | OverlayId::CompType(_) => {
                     panic!("a core term lifts to an evaluation node")
                 },
             };
@@ -5948,7 +5952,7 @@ mod tests
         let mut walk = Vec::from([Lifting::Enter(top)]);
         while let Some(step) = walk.pop() {
             match step {
-                | Lifting::Enter(node) => {
+                Lifting::Enter(node) => {
                     if node != top
                         && let Some(&Nest(share)) = index.get(&node)
                     {
@@ -5965,12 +5969,12 @@ mod tests
                         taken[share] =
                             SharePosition::from(u32::from(taken[share]).saturating_add(1));
                         results.push(match node {
-                            | CoreTerm::Value(_) => OverlayId::Value(
+                            CoreTerm::Value(_) => OverlayId::Value(
                                 overlay
                                     .mint_value(ValueNode::Bound(bound))
                                     .expect("an occurrence names no child"),
                             ),
-                            | CoreTerm::Computation(_) => OverlayId::Computation(
+                            CoreTerm::Computation(_) => OverlayId::Computation(
                                 overlay
                                     .mint_computation(CompNode::Bound(bound))
                                     .expect("an occurrence names no child"),
@@ -5983,7 +5987,7 @@ mod tests
                         walk.push(Lifting::Enter(child));
                     }
                 },
-                | Lifting::Exit(node) => {
+                Lifting::Exit(node) => {
                     let count = core_children(core, node).len();
                     let split = results
                         .len()
@@ -5991,17 +5995,23 @@ mod tests
                         .expect("a node's children are on the stack");
                     let children = results.split_off(split);
                     let value = |at: usize| match children[at] {
-                        | OverlayId::Value(id) => id,
-                        | other => panic!("a value child: {other:?}"),
+                        OverlayId::Value(id) => id,
+                        other @ (OverlayId::Computation(_)
+                        | OverlayId::ValueType(_)
+                        | OverlayId::CompType(_)) => panic!("a value child: {other:?}"),
                     };
                     let computation = |at: usize| match children[at] {
-                        | OverlayId::Computation(id) => id,
-                        | other => panic!("a computation child: {other:?}"),
+                        OverlayId::Computation(id) => id,
+                        other @ (OverlayId::Value(_)
+                        | OverlayId::ValueType(_)
+                        | OverlayId::CompType(_)) => {
+                            panic!("a computation child: {other:?}")
+                        },
                     };
                     let made = match node {
-                        | CoreTerm::Value(id) => {
+                        CoreTerm::Value(id) => {
                             let graft = match *core.value(id).expect("a reached value resolves") {
-                                | Value::Here(_)
+                                Value::Here(_)
                                 | Value::Funext(..)
                                 | Value::Equiv(..)
                                 | Value::SessionRelated { .. }
@@ -6018,32 +6028,30 @@ mod tests
                                 | Value::Reify(_) => {
                                     panic!("the pure fixture language has no reified stacks")
                                 },
-                                | Value::Primitive { .. } => {
+                                Value::Primitive { .. } => {
                                     panic!("the duplication fixtures carry no native operation")
                                 },
-                                | Value::Variable { zone, index } => {
+                                Value::Variable { zone, index } => {
                                     ValueGraft::Variable { zone, index }
                                 },
-                                | Value::Constant(constant) => ValueGraft::Constant(constant),
-                                | Value::Literal(ref literal) => {
-                                    ValueGraft::Literal(literal.clone())
+                                Value::Constant(constant) => ValueGraft::Constant(constant),
+                                Value::Literal(ref literal) => ValueGraft::Literal(literal.clone()),
+                                Value::Tuple(ref components) => match components.len() {
+                                    0 => ValueGraft::Unit,
+                                    2 => ValueGraft::Pair(value(0), value(1)),
+                                    _ => panic!("the fixture language's tuples are binary"),
                                 },
-                                | Value::Tuple(ref components) => match components.len() {
-                                    | 0 => ValueGraft::Unit,
-                                    | 2 => ValueGraft::Pair(value(0), value(1)),
-                                    | _ => panic!("the fixture language's tuples are binary"),
-                                },
-                                | Value::Injection(summand, _) => ValueGraft::Injection(
+                                Value::Injection(summand, _) => ValueGraft::Injection(
                                     gandr_kernel_term::Side::try_from(summand)
                                         .expect("the fixture language's sums are binary"),
                                     value(0),
                                 ),
-                                | Value::Thunk(_) => ValueGraft::Thunk(computation(0)),
-                                | Value::Lift { ref target, .. } => ValueGraft::Lift {
+                                Value::Thunk(_) => ValueGraft::Thunk(computation(0)),
+                                Value::Lift { ref target, .. } => ValueGraft::Lift {
                                     target: target.clone(),
                                     body: value(0),
                                 },
-                                | Value::PathRefl(_)
+                                Value::PathRefl(_)
                                 | Value::Constructor { .. }
                                 | Value::Record(_)
                                 | Value::ListNil
@@ -6056,7 +6064,7 @@ mod tests
                                 | Value::StaticApplication(..) => {
                                     panic!("the duplication fixture uses only the CBPV fragment")
                                 },
-                                | Value::Hole(_) | Value::Mark { .. } => {
+                                Value::Hole(_) | Value::Mark { .. } => {
                                     panic!("the duplication fixtures carry no hole or mark")
                                 },
                             };
@@ -6066,17 +6074,17 @@ mod tests
                                     .expect("the children resolve"),
                             )
                         },
-                        | CoreTerm::Computation(id) => {
+                        CoreTerm::Computation(id) => {
                             let graft = match *core
                                 .computation(id)
                                 .expect("a reached computation resolves")
                             {
-                                | Computation::DataCase { .. }
+                                Computation::DataCase { .. }
                                 | Computation::RecordProjection(..)
                                 | Computation::TupleProjection(..) => {
                                     panic!("native eliminators are outside the duplication fixture")
                                 },
-                                | Computation::PathTransport { .. }
+                                Computation::PathTransport { .. }
                                 | Computation::Ride { .. }
                                 | Computation::TelescopeTransport { .. }
                                 | Computation::Perform { .. }
@@ -6092,28 +6100,28 @@ mod tests
                                 | Computation::Session(_) => panic!(
                                     "the pure fixture language has no runtime control formers"
                                 ),
-                                | Computation::Primitive { .. } => {
+                                Computation::Primitive { .. } => {
                                     panic!("the duplication fixtures carry no native operation")
                                 },
-                                | Computation::Transport(..) | Computation::ListFold { .. } => {
+                                Computation::Transport(..) | Computation::ListFold { .. } => {
                                     panic!("the duplication fixture uses only the CBPV fragment")
                                 },
-                                | Computation::Fixpoint { .. } => {
+                                Computation::Fixpoint { .. } => {
                                     panic!("the duplication fixtures carry no fixpoint")
                                 },
-                                | Computation::Hole(_) | Computation::Mark { .. } => {
+                                Computation::Hole(_) | Computation::Mark { .. } => {
                                     panic!("the duplication fixtures carry no hole or mark")
                                 },
-                                | Computation::Lambda(_) => CompGraft::Lambda(computation(0)),
-                                | Computation::Application(..) => {
+                                Computation::Lambda(_) => CompGraft::Lambda(computation(0)),
+                                Computation::Application(..) => {
                                     CompGraft::Application(computation(0), value(1))
                                 },
-                                | Computation::Return(_) => CompGraft::Return(value(0)),
-                                | Computation::Force(_) => CompGraft::Force(value(0)),
-                                | Computation::Bind(..) => {
+                                Computation::Return(_) => CompGraft::Return(value(0)),
+                                Computation::Force(_) => CompGraft::Force(value(0)),
+                                Computation::Bind(..) => {
                                     CompGraft::Bind(computation(0), computation(1))
                                 },
-                                | Computation::Case { .. } => CompGraft::Case {
+                                Computation::Case { .. } => CompGraft::Case {
                                     scrutinee: value(0),
                                     on_left: computation(1),
                                     on_right: computation(2),
@@ -6341,10 +6349,10 @@ mod tests
         ) -> Translated
         {
             let made = match node {
-                | Node::Value(value) => self.values.contains_key(&value),
-                | Node::Computation(computation) => self.computations.contains_key(&computation),
-                | Node::ValueType(value_type) => self.value_types.contains_key(&value_type),
-                | Node::CompType(comp_type) => self.comp_types.contains_key(&comp_type),
+                Node::Value(value) => self.values.contains_key(&value),
+                Node::Computation(computation) => self.computations.contains_key(&computation),
+                Node::ValueType(value_type) => self.value_types.contains_key(&value_type),
+                Node::CompType(comp_type) => self.comp_types.contains_key(&comp_type),
             };
             if made {
                 Translated::Made
@@ -6437,19 +6445,19 @@ mod tests
                 return Vec::new();
             }
             match node {
-                | Node::Value(value) => {
+                Node::Value(value) => {
                     match *(core.value(value).expect("a fixture value resolves")) {
-                        | Value::Constructor {
+                        Value::Constructor {
                             ref datatype,
                             ref fields,
                             ..
                         } => core::iter::once(Node::ValueType(*datatype))
                             .chain(fields.iter().copied().map(Node::Value))
                             .collect(),
-                        | Value::Record(ref fields) => {
+                        Value::Record(ref fields) => {
                             fields.values().copied().map(Node::Value).collect()
                         },
-                        | Value::Here(_)
+                        Value::Here(_)
                         | Value::Funext(..)
                         | Value::Equiv(..)
                         | Value::SessionRelated { .. }
@@ -6463,8 +6471,8 @@ mod tests
                         | Value::Reify(_) => {
                             panic!("the pure fixture language has no reified stacks")
                         },
-                        | Value::PathRefl(code) => Vec::from([Node::Value(code)]),
-                        | Value::PathEquiv {
+                        Value::PathRefl(code) => Vec::from([Node::Value(code)]),
+                        Value::PathEquiv {
                             path_type,
                             forward,
                             backward,
@@ -6474,25 +6482,25 @@ mod tests
                             Node::Value(forward),
                             Node::Value(backward),
                         ]),
-                        | Value::PathProduct(first, second)
+                        Value::PathProduct(first, second)
                         | Value::ListCons(first, second)
                         | Value::StaticApplication(first, second) => {
                             Vec::from([Node::Value(first), Node::Value(second)])
                         },
-                        | Value::Tuple(ref components) => {
+                        Value::Tuple(ref components) => {
                             components.iter().copied().map(Node::Value).collect()
                         },
-                        | Value::StaticLambda(body)
+                        Value::StaticLambda(body)
                         | Value::Injection(_, body)
                         | Value::Lift { body, .. }
                         | Value::Mark { body, .. } => Vec::from([Node::Value(body)]),
-                        | Value::Thunk(body)
+                        Value::Thunk(body)
                         | Value::Returned(body)
                         | Value::Nested(body)
                         | Value::Run(body) => Vec::from([Node::Computation(body)]),
-                        | Value::Quote(quoted) => Vec::from([Node::ValueType(quoted)]),
-                        | Value::QuoteComputation(quoted) => Vec::from([Node::CompType(quoted)]),
-                        | Value::Primitive { .. }
+                        Value::Quote(quoted) => Vec::from([Node::ValueType(quoted)]),
+                        Value::QuoteComputation(quoted) => Vec::from([Node::CompType(quoted)]),
+                        Value::Primitive { .. }
                         | Value::Variable { .. }
                         | Value::Constant(_)
                         | Value::ListNil
@@ -6500,12 +6508,12 @@ mod tests
                         | Value::Hole(_) => Vec::new(),
                     }
                 },
-                | Node::Computation(computation) => {
+                Node::Computation(computation) => {
                     match *(core
                         .computation(computation)
                         .expect("a fixture computation resolves"))
                     {
-                        | Computation::DataCase {
+                        Computation::DataCase {
                             ref scrutinee,
                             ref motive,
                             ref branches,
@@ -6513,11 +6521,11 @@ mod tests
                             .into_iter()
                             .chain(branches.iter().copied().map(Node::Computation))
                             .collect(),
-                        | Computation::RecordProjection(ref record, _)
+                        Computation::RecordProjection(ref record, _)
                         | Computation::TupleProjection(ref record, _) => {
                             Vec::from([Node::Value(*record)])
                         },
-                        | Computation::PathTransport { .. }
+                        Computation::PathTransport { .. }
                         | Computation::Ride { .. }
                         | Computation::TelescopeTransport { .. }
                         | Computation::Perform { .. }
@@ -6533,7 +6541,7 @@ mod tests
                         | Computation::Session(_) => {
                             panic!("the pure fixture language has no runtime control formers")
                         },
-                        | Computation::ListFold {
+                        Computation::ListFold {
                             element,
                             result,
                             list,
@@ -6546,28 +6554,28 @@ mod tests
                             Node::Computation(on_nil),
                             Node::Computation(on_cons),
                         ]),
-                        | Computation::Primitive { ref arguments, .. } => {
+                        Computation::Primitive { ref arguments, .. } => {
                             arguments.iter().copied().map(Node::Value).collect()
                         },
-                        | Computation::Transport(path, value) => {
+                        Computation::Transport(path, value) => {
                             Vec::from([Node::Value(path), Node::Value(value)])
                         },
-                        | Computation::Lambda(body)
+                        Computation::Lambda(body)
                         | Computation::Mark { body, .. }
                         | Computation::Fixpoint { body, .. } => {
                             Vec::from([Node::Computation(body)])
                         },
-                        | Computation::Hole(_) => Vec::new(),
-                        | Computation::Application(head, argument) => {
+                        Computation::Hole(_) => Vec::new(),
+                        Computation::Application(head, argument) => {
                             Vec::from([Node::Computation(head), Node::Value(argument)])
                         },
-                        | Computation::Return(value) | Computation::Force(value) => {
+                        Computation::Return(value) | Computation::Force(value) => {
                             Vec::from([Node::Value(value)])
                         },
-                        | Computation::Bind(bound, body) => {
+                        Computation::Bind(bound, body) => {
                             Vec::from([Node::Computation(bound), Node::Computation(body)])
                         },
-                        | Computation::Case {
+                        Computation::Case {
                             scrutinee,
                             ref branches,
                         } => core::iter::once(Node::Value(scrutinee))
@@ -6575,56 +6583,56 @@ mod tests
                             .collect(),
                     }
                 },
-                | Node::ValueType(value_type) => {
+                Node::ValueType(value_type) => {
                     match *core
                         .value_type(value_type)
                         .expect("a fixture type resolves")
                     {
-                        | ValueType::Data { ref arguments, .. } => {
+                        ValueType::Data { ref arguments, .. } => {
                             arguments.iter().copied().map(Node::Value).collect()
                         },
-                        | ValueType::Record(ref fields) => {
+                        ValueType::Record(ref fields) => {
                             fields.values().copied().map(Node::ValueType).collect()
                         },
-                        | ValueType::Stack { .. } => panic!("the kernel has no stack type"),
-                        | ValueType::Session(_) => panic!("the kernel has no session type"),
-                        | ValueType::Capability { .. } => {
+                        ValueType::Stack { .. } => panic!("the kernel has no stack type"),
+                        ValueType::Session(_) => panic!("the kernel has no session type"),
+                        ValueType::Capability { .. } => {
                             panic!("the kernel has no capability type")
                         },
-                        | ValueType::Flow { .. } | ValueType::Run(_) => {
+                        ValueType::Flow { .. } | ValueType::Run(_) => {
                             panic!("the pure fixture language has no directed identity")
                         },
-                        | ValueType::Path { .. } => {
+                        ValueType::Path { .. } => {
                             panic!("the pure fixture language has no element identity")
                         },
-                        | ValueType::PathUniverse(source, target) => {
+                        ValueType::PathUniverse(source, target) => {
                             Vec::from([Node::Value(source), Node::Value(target)])
                         },
-                        | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                        ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                             parts.iter().copied().map(Node::ValueType).collect()
                         },
-                        | ValueType::StaticPi {
+                        ValueType::StaticPi {
                             domain: first,
                             codomain: second,
                         }
                         | ValueType::Sigma { first, second } => {
                             Vec::from([Node::ValueType(first), Node::ValueType(second)])
                         },
-                        | ValueType::Thunk(body) => Vec::from([Node::CompType(body)]),
-                        | ValueType::List(inner) | ValueType::Lift { inner, .. } => {
+                        ValueType::Thunk(body) => Vec::from([Node::CompType(body)]),
+                        ValueType::List(inner) | ValueType::Lift { inner, .. } => {
                             Vec::from([Node::ValueType(inner)])
                         },
-                        | ValueType::Element { code, .. } => Vec::from([Node::Value(code)]),
-                        | ValueType::Base(_)
+                        ValueType::Element { code, .. } => Vec::from([Node::Value(code)]),
+                        ValueType::Base(_)
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_)
                         | ValueType::Unknown => Vec::new(),
                     }
                 },
-                | Node::CompType(comp_type) => {
+                Node::CompType(comp_type) => {
                     match *core.comp_type(comp_type).expect("a fixture type resolves") {
-                        | CompType::With(..) => panic!("the kernel has no lazy computation pair"),
-                        | CompType::Returner {
+                        CompType::With(..) => panic!("the kernel has no lazy computation pair"),
+                        CompType::Returner {
                             result,
                             ref effects,
                         } => {
@@ -6635,12 +6643,12 @@ mod tests
                             );
                             Vec::from([Node::ValueType(result)])
                         },
-                        | CompType::Arrow { domain, codomain }
+                        CompType::Arrow { domain, codomain }
                         | CompType::Pi { domain, codomain } => {
                             Vec::from([Node::ValueType(domain), Node::CompType(codomain)])
                         },
-                        | CompType::Element { code, .. } => Vec::from([Node::Value(code)]),
-                        | CompType::Unknown => Vec::new(),
+                        CompType::Element { code, .. } => Vec::from([Node::Value(code)]),
+                        CompType::Unknown => Vec::new(),
                     }
                 },
             }
@@ -6695,9 +6703,9 @@ mod tests
                     .expect("children first")
             };
             match node {
-                | Node::Value(id) => {
+                Node::Value(id) => {
                     let copy = match *(core.value(id).expect("a fixture value resolves")) {
-                        | Value::Constructor {
+                        Value::Constructor {
                             ref datatype,
                             ref tag,
                             ref fields,
@@ -6706,14 +6714,14 @@ mod tests
                             let fields = fields.iter().map(|field| value(self, *field)).collect();
                             self.arena.value_constructor(datatype, *tag, fields)
                         },
-                        | Value::Record(ref fields) => {
+                        Value::Record(ref fields) => {
                             let fields = fields
                                 .iter()
                                 .map(|(label, field)| (label.clone(), value(self, *field)))
                                 .collect();
                             self.arena.value_record(fields)
                         },
-                        | Value::Here(_)
+                        Value::Here(_)
                         | Value::Funext(..)
                         | Value::Equiv(..)
                         | Value::SessionRelated { .. }
@@ -6729,36 +6737,36 @@ mod tests
                         | Value::Reify(_) => {
                             panic!("the pure fixture language has no reified stacks")
                         },
-                        | Value::Returned(body) => {
+                        Value::Returned(body) => {
                             let body = computation(self, body);
                             self.arena.value_returned(body)
                         },
-                        | Value::Primitive { .. } => panic!("the kernel has no native operation"),
-                        | Value::Variable {
+                        Value::Primitive { .. } => panic!("the kernel has no native operation"),
+                        Value::Variable {
                             zone: Zone::Intuitionistic,
                             index,
                         } => self.arena.value_variable(index),
-                        | Value::Variable {
+                        Value::Variable {
                             zone: Zone::Linear, ..
                         } => {
                             panic!("the kernel's terms have no linear zone")
                         },
-                        | Value::Constant(constant) => self.arena.value_constant(constant),
-                        | Value::ListNil => self.arena.value_list_nil(),
-                        | Value::ListCons(first, second) => {
+                        Value::Constant(constant) => self.arena.value_constant(constant),
+                        Value::ListNil => self.arena.value_list_nil(),
+                        Value::ListCons(first, second) => {
                             let (first, second) = (value(self, first), value(self, second));
                             self.arena.value_list_cons(first, second)
                         },
-                        | Value::Literal(ref literal) => self.arena.value_literal(literal.clone()),
-                        | Value::PathRefl(code) => {
+                        Value::Literal(ref literal) => self.arena.value_literal(literal.clone()),
+                        Value::PathRefl(code) => {
                             let code = value(self, code);
                             self.arena.value_path_refl(code)
                         },
-                        | Value::PathProduct(first, second) => {
+                        Value::PathProduct(first, second) => {
                             let (first, second) = (value(self, first), value(self, second));
                             self.arena.value_path_product(first, second)
                         },
-                        | Value::PathEquiv {
+                        Value::PathEquiv {
                             path_type,
                             forward,
                             backward,
@@ -6774,52 +6782,52 @@ mod tests
                                 alloc::sync::Arc::clone(evidence),
                             )
                         },
-                        | Value::Tuple(ref components) => {
+                        Value::Tuple(ref components) => {
                             let components: Vec<_> = components
                                 .iter()
                                 .map(|&component| value(self, component))
                                 .collect();
                             self.arena.value_tuple(&components)
                         },
-                        | Value::Injection(summand, body) => {
+                        Value::Injection(summand, body) => {
                             let body = value(self, body);
                             self.arena.value_injection(summand, body)
                         },
-                        | Value::Thunk(body) => {
+                        Value::Thunk(body) => {
                             let body = computation(self, body);
                             self.arena.value_thunk(body)
                         },
-                        | Value::Quote(quoted) => {
+                        Value::Quote(quoted) => {
                             let quoted = *self.value_types.get(&quoted).expect("children first");
                             self.arena.value_quote(quoted)
                         },
-                        | Value::QuoteComputation(quoted) => {
+                        Value::QuoteComputation(quoted) => {
                             let quoted = *self.comp_types.get(&quoted).expect("children first");
                             self.arena.value_quote_computation(quoted)
                         },
-                        | Value::Lift { ref target, body } => {
+                        Value::Lift { ref target, body } => {
                             let body = value(self, body);
                             self.arena.value_lift(target.clone(), body)
                         },
-                        | Value::StaticApplication(head, argument) => {
+                        Value::StaticApplication(head, argument) => {
                             let (head, argument) = (value(self, head), value(self, argument));
                             self.arena.value_static_application(head, argument)
                         },
-                        | Value::StaticLambda(_) => {
+                        Value::StaticLambda(_) => {
                             panic!("the kernel has no static lambda: a replay fixture lifts it")
                         },
-                        | Value::Hole(_) | Value::Mark { .. } => {
+                        Value::Hole(_) | Value::Mark { .. } => {
                             panic!("the kernel admits no hole or mark: a replay fixture has none")
                         },
                     };
                     self.values.insert(id, copy);
                 },
-                | Node::Computation(id) => {
+                Node::Computation(id) => {
                     let copy = match *core
                         .computation(id)
                         .expect("a fixture computation resolves")
                     {
-                        | Computation::DataCase {
+                        Computation::DataCase {
                             scrutinee,
                             motive,
                             ref branches,
@@ -6833,16 +6841,16 @@ mod tests
                             self.arena
                                 .computation_data_case(scrutinee, motive, branches)
                         },
-                        | Computation::RecordProjection(record, ref label) => {
+                        Computation::RecordProjection(record, ref label) => {
                             let record = value(self, record);
                             self.arena
                                 .computation_record_projection(record, label.clone())
                         },
-                        | Computation::TupleProjection(tuple, component) => {
+                        Computation::TupleProjection(tuple, component) => {
                             let tuple = value(self, tuple);
                             self.arena.computation_tuple_projection(tuple, component)
                         },
-                        | Computation::PathTransport { .. }
+                        Computation::PathTransport { .. }
                         | Computation::Ride { .. }
                         | Computation::TelescopeTransport { .. }
                         | Computation::Perform { .. }
@@ -6857,7 +6865,7 @@ mod tests
                         | Computation::Project(..) => {
                             panic!("the pure fixture language has no runtime control formers")
                         },
-                        | Computation::ListFold {
+                        Computation::ListFold {
                             element,
                             result,
                             list,
@@ -6874,38 +6882,38 @@ mod tests
                             self.arena
                                 .computation_list_fold(element, result, list, on_nil, on_cons)
                         },
-                        | Computation::Primitive { .. } => {
+                        Computation::Primitive { .. } => {
                             panic!("the kernel has no native operation")
                         },
-                        | Computation::Transport(path, argument) => {
+                        Computation::Transport(path, argument) => {
                             let (path, argument) = (value(self, path), value(self, argument));
                             self.arena.computation_transport(path, argument)
                         },
-                        | Computation::Lambda(body) => {
+                        Computation::Lambda(body) => {
                             let body = computation(self, body);
                             self.arena.computation_lambda(body)
                         },
-                        | Computation::Fixpoint { body, evidence } => {
+                        Computation::Fixpoint { body, evidence } => {
                             let body = computation(self, body);
                             self.arena.computation_fixpoint(body, evidence)
                         },
-                        | Computation::Application(head, argument) => {
+                        Computation::Application(head, argument) => {
                             let (head, argument) = (computation(self, head), value(self, argument));
                             self.arena.computation_application(head, argument)
                         },
-                        | Computation::Return(returned) => {
+                        Computation::Return(returned) => {
                             let returned = value(self, returned);
                             self.arena.computation_return(returned)
                         },
-                        | Computation::Bind(bound, body) => {
+                        Computation::Bind(bound, body) => {
                             let (bound, body) = (computation(self, bound), computation(self, body));
                             self.arena.computation_bind(bound, body)
                         },
-                        | Computation::Force(forced) => {
+                        Computation::Force(forced) => {
                             let forced = value(self, forced);
                             self.arena.computation_force(forced)
                         },
-                        | Computation::Case {
+                        Computation::Case {
                             scrutinee,
                             ref branches,
                         } => {
@@ -6916,16 +6924,16 @@ mod tests
                                 .collect();
                             self.arena.computation_case(scrutinee, &branches)
                         },
-                        | Computation::Hole(_) | Computation::Mark { .. } => {
+                        Computation::Hole(_) | Computation::Mark { .. } => {
                             panic!("the kernel admits no hole or mark: a replay fixture has none")
                         },
-                        | Computation::Session(_) => {
+                        Computation::Session(_) => {
                             panic!("the kernel has no session action: a replay fixture has none")
                         },
                     };
                     self.computations.insert(id, copy);
                 },
-                | Node::ValueType(id) => {
+                Node::ValueType(id) => {
                     let value_type = |kernel: &Self, id: ValueTypeId| {
                         *kernel.value_types.get(&id).expect("children first")
                     };
@@ -6933,7 +6941,7 @@ mod tests
                         *kernel.comp_types.get(&id).expect("children first")
                     };
                     let copy = match *core.value_type(id).expect("a fixture type resolves") {
-                        | ValueType::Data {
+                        ValueType::Data {
                             declaration,
                             ref arguments,
                         } => {
@@ -6943,85 +6951,85 @@ mod tests
                                 .collect();
                             self.arena.value_type_data(declaration, arguments)
                         },
-                        | ValueType::Record(ref fields) => {
+                        ValueType::Record(ref fields) => {
                             let fields = fields
                                 .iter()
                                 .map(|(label, field)| (label.clone(), value_type(self, *field)))
                                 .collect();
                             self.arena.value_type_record(fields)
                         },
-                        | ValueType::Stack { .. } => panic!("the kernel has no stack type"),
-                        | ValueType::Session(_) => panic!("the kernel has no session type"),
-                        | ValueType::Capability { .. } => {
+                        ValueType::Stack { .. } => panic!("the kernel has no stack type"),
+                        ValueType::Session(_) => panic!("the kernel has no session type"),
+                        ValueType::Capability { .. } => {
                             panic!("the kernel has no capability type")
                         },
-                        | ValueType::Flow { .. } | ValueType::Run(_) => {
+                        ValueType::Flow { .. } | ValueType::Run(_) => {
                             panic!("the pure fixture language has no directed identity")
                         },
-                        | ValueType::Path { .. } => {
+                        ValueType::Path { .. } => {
                             panic!("the pure fixture language has no element identity")
                         },
-                        | ValueType::PathUniverse(source, target) => {
+                        ValueType::PathUniverse(source, target) => {
                             let (source, target) = (value(self, source), value(self, target));
                             self.arena.value_type_path_universe(source, target)
                         },
-                        | ValueType::Base(base) => self.arena.value_type_base(base),
-                        | ValueType::List(inner) => {
+                        ValueType::Base(base) => self.arena.value_type_base(base),
+                        ValueType::List(inner) => {
                             let inner = value_type(self, inner);
                             self.arena.value_type_list(inner)
                         },
-                        | ValueType::Product(ref components) => {
+                        ValueType::Product(ref components) => {
                             let components: Vec<_> = components
                                 .iter()
                                 .map(|&component| value_type(self, component))
                                 .collect();
                             self.arena.value_type_product(&components)
                         },
-                        | ValueType::Sigma { first, second } => {
+                        ValueType::Sigma { first, second } => {
                             let (first, second) =
                                 (value_type(self, first), value_type(self, second));
                             self.arena.value_type_sigma(first, second)
                         },
-                        | ValueType::Sum(ref summands) => {
+                        ValueType::Sum(ref summands) => {
                             let summands: Vec<_> = summands
                                 .iter()
                                 .map(|&summand| value_type(self, summand))
                                 .collect();
                             self.arena.value_type_sum(&summands)
                         },
-                        | ValueType::Thunk(body) => {
+                        ValueType::Thunk(body) => {
                             let body = comp_type(self, body);
                             self.arena.value_type_thunk(body)
                         },
-                        | ValueType::Universe {
+                        ValueType::Universe {
                             sort: Sort::Ground(sort),
                             ref level,
                         } => self.arena.value_type_universe(sort, level.clone()),
-                        | ValueType::Universe {
+                        ValueType::Universe {
                             sort: Sort::Parameter(_),
                             ..
                         } => panic!("no fixture quotes a sort-polymorphic universe"),
-                        | ValueType::Lift { inner, ref target } => {
+                        ValueType::Lift { inner, ref target } => {
                             let inner = value_type(self, inner);
                             self.arena.value_type_lift(inner, target.clone())
                         },
-                        | ValueType::Element { code, ref target } => {
+                        ValueType::Element { code, ref target } => {
                             let code = value(self, code);
                             self.arena.value_type_element(code, target.clone())
                         },
-                        | ValueType::Abstract(atom) => self.arena.value_type_abstract(atom),
-                        | ValueType::StaticPi { domain, codomain } => {
+                        ValueType::Abstract(atom) => self.arena.value_type_abstract(atom),
+                        ValueType::StaticPi { domain, codomain } => {
                             let (domain, codomain) =
                                 (value_type(self, domain), value_type(self, codomain));
                             self.arena.value_type_static_pi(domain, codomain)
                         },
-                        | ValueType::Unknown => {
+                        ValueType::Unknown => {
                             panic!("the kernel has no unknown type: a replay fixture has none")
                         },
                     };
                     self.value_types.insert(id, copy);
                 },
-                | Node::CompType(id) => {
+                Node::CompType(id) => {
                     let value_type = |kernel: &Self, id: ValueTypeId| {
                         *kernel.value_types.get(&id).expect("children first")
                     };
@@ -7029,8 +7037,8 @@ mod tests
                         *kernel.comp_types.get(&id).expect("children first")
                     };
                     let copy = match *core.comp_type(id).expect("a fixture type resolves") {
-                        | CompType::With(..) => panic!("the kernel has no lazy computation pair"),
-                        | CompType::Returner {
+                        CompType::With(..) => panic!("the kernel has no lazy computation pair"),
+                        CompType::Returner {
                             result,
                             ref effects,
                         } => {
@@ -7042,21 +7050,21 @@ mod tests
                             let result = value_type(self, result);
                             self.arena.comp_type_returner(result)
                         },
-                        | CompType::Arrow { domain, codomain } => {
+                        CompType::Arrow { domain, codomain } => {
                             let (domain, codomain) =
                                 (value_type(self, domain), comp_type(self, codomain));
                             self.arena.comp_type_arrow(domain, codomain)
                         },
-                        | CompType::Pi { domain, codomain } => {
+                        CompType::Pi { domain, codomain } => {
                             let (domain, codomain) =
                                 (value_type(self, domain), comp_type(self, codomain));
                             self.arena.comp_type_pi(domain, codomain)
                         },
-                        | CompType::Element { code, ref target } => {
+                        CompType::Element { code, ref target } => {
                             let code = value(self, code);
                             self.arena.comp_type_element(code, target.clone())
                         },
-                        | CompType::Unknown => {
+                        CompType::Unknown => {
                             panic!("the kernel has no unknown type: a replay fixture has none")
                         },
                     };
@@ -7110,8 +7118,8 @@ mod tests
     fn kernel_decision(decision: ConversionDecision<TraceNode>) -> ConversionDecision<ReplayNode>
     {
         decision.map(|node: TraceNode| match node {
-            | TraceNode::Constant(constant) => ReplayNode::Constant(constant),
-            | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+            TraceNode::Constant(constant) => ReplayNode::Constant(constant),
+            TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
         })
     }
 
@@ -7142,9 +7150,9 @@ mod tests
     fn certified(verdict: MachineVerdict) -> KernelVerdict
     {
         match verdict {
-            | MachineVerdict::Convertible => KernelVerdict::Convertible,
-            | MachineVerdict::NotConvertible => KernelVerdict::NotConvertible,
-            | MachineVerdict::Declined(_) => KernelVerdict::Declined(ReplayDecline::EngineDeclined),
+            MachineVerdict::Convertible => KernelVerdict::Convertible,
+            MachineVerdict::NotConvertible => KernelVerdict::NotConvertible,
+            MachineVerdict::Declined(_) => KernelVerdict::Declined(ReplayDecline::EngineDeclined),
         }
     }
 
@@ -7174,11 +7182,11 @@ mod tests
         fn constant(self) -> ConstantIndex
         {
             ConstantIndex::from(match self {
-                | Self::Zero => 0_usize,
-                | Self::One => 1_usize,
-                | Self::Two => 2_usize,
-                | Self::Three => 3_usize,
-                | Self::Rigid => 9_usize,
+                Self::Zero => 0_usize,
+                Self::One => 1_usize,
+                Self::Two => 2_usize,
+                Self::Three => 3_usize,
+                Self::Rigid => 9_usize,
             })
         }
 
@@ -7189,11 +7197,11 @@ mod tests
         fn entry(self) -> GlobalIndex
         {
             GlobalIndex::from(match self {
-                | Self::Zero => 0_u32,
-                | Self::One => 1_u32,
-                | Self::Two => 2_u32,
-                | Self::Three => 3_u32,
-                | Self::Rigid => 9_u32,
+                Self::Zero => 0_u32,
+                Self::One => 1_u32,
+                Self::Two => 2_u32,
+                Self::Three => 3_u32,
+                Self::Rigid => 9_u32,
             })
         }
     }
@@ -7959,8 +7967,19 @@ mod tests
         let unfolded: Vec<TraceNode> = decisions
             .iter()
             .filter_map(|decision| match *decision {
-                | ConversionDecision::Unfold { constant } => Some(constant),
-                | _ => None,
+                ConversionDecision::Unfold { constant } => Some(constant),
+                ConversionDecision::ReduceLeft { .. }
+                | ConversionDecision::ReduceRight { .. }
+                | ConversionDecision::ConstShortcut { .. }
+                | ConversionDecision::Postpone { .. }
+                | ConversionDecision::Freeze { .. }
+                | ConversionDecision::EtaExpand { .. }
+                | ConversionDecision::ReturnEta { .. }
+                | ConversionDecision::Reassociate { .. }
+                | ConversionDecision::Force { .. }
+                | ConversionDecision::ComparedShared { .. }
+                | ConversionDecision::Decompose
+                | ConversionDecision::NegativeSubgoal { .. } => None,
             })
             .collect();
         assert_eq!(
@@ -8335,8 +8354,8 @@ mod tests
         let mut below = None;
         for _rung in 0_u32 .. 5_u32 {
             let (left, right) = match below {
-                | None => (core.value_unit(), core.value_unit()),
-                | Some((left, right)) => (doubled(&mut core, left), doubled(&mut core, right)),
+                None => (core.value_unit(), core.value_unit()),
+                Some((left, right)) => (doubled(&mut core, left), doubled(&mut core, right)),
             };
             let left = next_constant(&mut bodies, left);
             let right = next_constant(&mut bodies, right);
@@ -8583,9 +8602,9 @@ mod tests
         for (sides, _) in cases {
             let (verdict, decisions) = world.traced(sides);
             let opposite = match verdict {
-                | MachineVerdict::Convertible => MachineVerdict::NotConvertible,
-                | MachineVerdict::NotConvertible => MachineVerdict::Convertible,
-                | MachineVerdict::Declined(reason) => MachineVerdict::Declined(reason),
+                MachineVerdict::Convertible => MachineVerdict::NotConvertible,
+                MachineVerdict::NotConvertible => MachineVerdict::Convertible,
+                MachineVerdict::Declined(reason) => MachineVerdict::Declined(reason),
             };
             assert!(
                 matches!(
@@ -9481,13 +9500,13 @@ mod tests
                 );
             }
             let combine = match kind {
-                | Combinator::All => super::Combine::All {
+                Combinator::All => super::Combine::All {
                     pair,
                     children,
                     collapse: super::Collapse::Never,
                 },
-                | Combinator::Biased => super::Combine::Biased(children),
-                | Combinator::Either => super::Combine::Either(children),
+                Combinator::Biased => super::Combine::Biased(children),
+                Combinator::Either => super::Combine::Either(children),
             };
             let expected_turn = if expected == pending {
                 super::Turn::Wait

@@ -184,8 +184,8 @@ impl DescriptionDiagnostic
             boundary,
         };
         match self.fault {
-            | DescriptionFault::Repaired { repaired, form } => repaired.refusal(form),
-            | DescriptionFault::HigherOrderField
+            DescriptionFault::Repaired { repaired, form } => repaired.refusal(form),
+            DescriptionFault::HigherOrderField
             | DescriptionFault::TypeShape
             | DescriptionFault::NativeDecode(_)
             | DescriptionFault::Signature(
@@ -193,10 +193,10 @@ impl DescriptionDiagnostic
                 | crate::circuit::SignatureFault::HigherCell
                 | crate::circuit::SignatureFault::Wheel,
             ) => unread(crate::FragmentBoundary::Unadmitted),
-            | DescriptionFault::Signature(crate::circuit::SignatureFault::Reversible) => {
+            DescriptionFault::Signature(crate::circuit::SignatureFault::Reversible) => {
                 unread(crate::FragmentBoundary::Reserved)
             },
-            | DescriptionFault::Malformed
+            DescriptionFault::Malformed
             | DescriptionFault::FamilyHead
             | DescriptionFault::NonUniformResult
             | DescriptionFault::GeneratorJudgment
@@ -422,8 +422,8 @@ impl<'pieces> Run<'pieces>
     fn take(&mut self) -> Result<Placed, DescriptionDiagnostic>
     {
         match self.cursor.read() {
-            | Maybe::Present(piece) => Ok(piece.placed()),
-            | Maybe::Absent(_) => Err(self.fault(DescriptionFault::Malformed)),
+            Maybe::Present(piece) => Ok(piece.placed()),
+            Maybe::Absent(_) => Err(self.fault(DescriptionFault::Malformed)),
         }
     }
 
@@ -530,8 +530,8 @@ pub fn elaborate_descriptions<'source>(
                 fault: DescriptionFault::Repaired {
                     repaired: repair,
                     form: match shape_of(grammar, node)? {
-                        | Shape::Form { name, .. } => name,
-                        | Shape::Root | Shape::Layout | Shape::Repair(_) => {
+                        Shape::Form { name, .. } => name,
+                        Shape::Root | Shape::Layout | Shape::Repair(_) => {
                             crate::FormName::DECLARATION
                         },
                     },
@@ -543,15 +543,15 @@ pub fn elaborate_descriptions<'source>(
             continue;
         }
         match declaration {
-            | Ok(declaration) => {
+            Ok(declaration) => {
                 for diagnostic in gandr_theory_levitation::check_desc(&declaration.description) {
                     let span = match diagnostic.span {
-                        | Maybe::Present(position) => ByteSpan::new(
+                        Maybe::Present(position) => ByteSpan::new(
                             usize::from(position.start).into(),
                             usize::from(position.end).into(),
                         )
                         .unwrap_or(at.span),
-                        | Maybe::Absent(_) => at.span,
+                        Maybe::Absent(_) => at.span,
                     };
                     report.diagnostics.push(DescriptionDiagnostic {
                         span,
@@ -560,7 +560,7 @@ pub fn elaborate_descriptions<'source>(
                 }
                 report.declarations.push(declaration);
             },
-            | Err(diagnostic) => report.diagnostics.push(diagnostic),
+            Err(diagnostic) => report.diagnostics.push(diagnostic),
         }
     }
     Ok(report)
@@ -712,17 +712,17 @@ impl Reader<'_, '_>
                     // A cell `name : a <-> a` between terms is the native
                     // reading's: it mints the words of the path type at its
                     // point, which the description does not carry.
-                    | DeclPolarity::Data if member.at(Spelling("identifier")).0 => Ok(()),
-                    | DeclPolarity::Data => self
+                    DeclPolarity::Data if member.at(Spelling("identifier")).0 => Ok(()),
+                    DeclPolarity::Data => self
                         .generator(&mut member, &family, &parameters, indices)
                         .map(|(ctor, signature)| {
                             ctors.push(ctor);
                             written.constructors.push(signature);
                         }),
-                    | DeclPolarity::Codata => self.observation(&mut member, &family).map(
+                    DeclPolarity::Codata => self.observation(&mut member, &family).map(
                         |observation| match observation {
-                            | Observation::Nullary(ctor) => ctors.push(ctor),
-                            | Observation::Parameterized(operation) => {
+                            Observation::Nullary(ctor) => ctors.push(ctor),
+                            Observation::Parameterized(operation) => {
                                 operations.push(operation);
                                 operation_spans.push(span);
                             },
@@ -1019,18 +1019,18 @@ impl Reader<'_, '_>
         let mut values = Vec::new();
         while let Some(frame) = pending.pop() {
             match frame {
-                | TypeFrame::Read(at) => {
+                TypeFrame::Read(at) => {
                     let pieces = self.pieces(at)?;
                     if let [Piece::Tile { label, .. }] = *pieces.as_slice() {
                         let text = self.text(at).0;
                         let ty = match (label.as_ref(), text) {
-                            | (_, "Integer") => ValueTypeRef::prim(PrimTy::Integer),
-                            | (_, "String") => ValueTypeRef::prim(PrimTy::StringTy),
-                            | (_, "Boolean") => ValueTypeRef::prim(PrimTy::Boolean),
-                            | (_, "Unit") => ValueTypeRef::prim(PrimTy::Unit),
-                            | ("type_variable", _) => ValueTypeRef::param(text),
-                            | ("type_identifier", _) => ValueTypeRef::ctor(text, []),
-                            | _ => {
+                            (_, "Integer") => ValueTypeRef::prim(PrimTy::Integer),
+                            (_, "String") => ValueTypeRef::prim(PrimTy::StringTy),
+                            (_, "Boolean") => ValueTypeRef::prim(PrimTy::Boolean),
+                            (_, "Unit") => ValueTypeRef::prim(PrimTy::Unit),
+                            ("type_variable", _) => ValueTypeRef::param(text),
+                            ("type_identifier", _) => ValueTypeRef::ctor(text, []),
+                            _ => {
                                 return Err(DescriptionDiagnostic {
                                     span: at.span,
                                     fault: DescriptionFault::TypeShape,
@@ -1061,7 +1061,7 @@ impl Reader<'_, '_>
                     ));
                     pending.extend(args.into_iter().rev().map(TypeFrame::Read));
                 },
-                | TypeFrame::Apply(head, count) => {
+                TypeFrame::Apply(head, count) => {
                     let Some(start) = values.len().checked_sub(count.0)
                     else {
                         return Err(DescriptionDiagnostic {
@@ -1118,7 +1118,7 @@ fn split_members(pieces: &[Piece]) -> Vec<&[Piece]>
             continue;
         };
         match label.as_ref() {
-            | "}" if depth == 0 => {
+            "}" if depth == 0 => {
                 let count = index.saturating_sub(start);
                 if let Some(member) = rest.get(.. count)
                     && !member.is_empty()
@@ -1127,7 +1127,7 @@ fn split_members(pieces: &[Piece]) -> Vec<&[Piece]>
                 }
                 return result;
             },
-            | ";" | "," if depth == 0 => {
+            ";" | "," if depth == 0 => {
                 let count = index.saturating_sub(start);
                 if let Some((member, suffix)) = rest.split_at_checked(count) {
                     if !member.is_empty() {
@@ -1137,9 +1137,9 @@ fn split_members(pieces: &[Piece]) -> Vec<&[Piece]>
                 }
                 start = index.saturating_add(1);
             },
-            | "(" | "[" | "{" | "#{" => depth = depth.saturating_add(1),
-            | ")" | "]" | "}" => depth = depth.saturating_sub(1),
-            | _ => {},
+            "(" | "[" | "{" | "#{" => depth = depth.saturating_add(1),
+            ")" | "]" | "}" => depth = depth.saturating_sub(1),
+            _ => {},
         }
     }
     if !rest.is_empty() {

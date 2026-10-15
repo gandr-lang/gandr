@@ -58,12 +58,12 @@ impl fmt::Display for ChunkFrameField
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Domain => "the image does not open with the value-chunk domain",
-            | Self::Version => "the frame names an unsupported layout version",
-            | Self::Header => "the image ends inside the frame header",
-            | Self::BodyLength => "the declared body length does not match the image",
-            | Self::Records => "the body is not a sequence of well-formed token records",
-            | Self::TokenCount => "the declared token count does not match the body",
+            Self::Domain => "the image does not open with the value-chunk domain",
+            Self::Version => "the frame names an unsupported layout version",
+            Self::Header => "the image ends inside the frame header",
+            Self::BodyLength => "the declared body length does not match the image",
+            Self::Records => "the body is not a sequence of well-formed token records",
+            Self::TokenCount => "the declared token count does not match the body",
         })
     }
 }
@@ -128,19 +128,19 @@ impl fmt::Display for ManifestField
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Domain => "the domain",
-            | Self::ManifestVersion => "the manifest version",
-            | Self::CommitmentLength => "the chunker commitment's length",
-            | Self::ChunkerCommitment => "the chunker commitment",
-            | Self::DigestFamily => "the digest family",
-            | Self::CodecId => "the codec identifier",
-            | Self::CodecVersion => "the codec version",
-            | Self::ChildIndexBase => "the child index base",
-            | Self::BoundaryClassification => "the boundary classification",
-            | Self::ChunkFrameVersion => "the chunk frame version",
-            | Self::RootDigest => "the root digest",
-            | Self::RootOffset => "the root offset",
-            | Self::TokenCount => "the token count",
+            Self::Domain => "the domain",
+            Self::ManifestVersion => "the manifest version",
+            Self::CommitmentLength => "the chunker commitment's length",
+            Self::ChunkerCommitment => "the chunker commitment",
+            Self::DigestFamily => "the digest family",
+            Self::CodecId => "the codec identifier",
+            Self::CodecVersion => "the codec version",
+            Self::ChildIndexBase => "the child index base",
+            Self::BoundaryClassification => "the boundary classification",
+            Self::ChunkFrameVersion => "the chunk frame version",
+            Self::RootDigest => "the root digest",
+            Self::RootOffset => "the root offset",
+            Self::TokenCount => "the token count",
         })
     }
 }
@@ -194,13 +194,13 @@ impl fmt::Display for ProfileField
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::ChunkerCommitment => "the chunker commitment",
-            | Self::DigestFamily => "the digest family",
-            | Self::CodecId => "the codec identifier",
-            | Self::CodecVersion => "the codec version",
-            | Self::ChildIndexBase => "the child index base",
-            | Self::BoundaryClassification => "the boundary classification",
-            | Self::ChunkFrameVersion => "the chunk frame version",
+            Self::ChunkerCommitment => "the chunker commitment",
+            Self::DigestFamily => "the digest family",
+            Self::CodecId => "the codec identifier",
+            Self::CodecVersion => "the codec version",
+            Self::ChildIndexBase => "the child index base",
+            Self::BoundaryClassification => "the boundary classification",
+            Self::ChunkFrameVersion => "the chunk frame version",
         })
     }
 }
@@ -250,11 +250,11 @@ impl fmt::Display for EmissionFault
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::CloseWithoutOpen => "a close arrived with no constructor open",
-            | Self::PayloadOutsideConstructor => "a payload arrived with no constructor open",
-            | Self::SecondRoot => "a second value opened after the first closed",
-            | Self::UnclosedConstructor => "the emission ended inside a constructor",
-            | Self::EmptyValue => "the emission produced no token",
+            Self::CloseWithoutOpen => "a close arrived with no constructor open",
+            Self::PayloadOutsideConstructor => "a payload arrived with no constructor open",
+            Self::SecondRoot => "a second value opened after the first closed",
+            Self::UnclosedConstructor => "the emission ended inside a constructor",
+            Self::EmptyValue => "the emission produced no token",
         })
     }
 }
@@ -303,11 +303,11 @@ impl fmt::Display for ValueQuantity
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::TokenOffset => "token offset",
-            | Self::TokenCount => "token count",
-            | Self::ByteLength => "byte length",
-            | Self::ChunkCount => "chunk count",
-            | Self::LocalityBound => "locality bound",
+            Self::TokenOffset => "token offset",
+            Self::TokenCount => "token count",
+            Self::ByteLength => "byte length",
+            Self::ChunkCount => "chunk count",
+            Self::LocalityBound => "locality bound",
         })
     }
 }
@@ -491,18 +491,18 @@ impl fmt::Display for ValueError
     ) -> fmt::Result
     {
         match *self {
-            | Self::UnknownChunk { digest } => write!(f, "no chunk is stored under {digest}"),
-            | Self::DigestMismatch { expected, actual } => {
+            Self::UnknownChunk { digest } => write!(f, "no chunk is stored under {digest}"),
+            Self::DigestMismatch { expected, actual } => {
                 write!(f, "a chunk offered as {expected} hashes to {actual}")
             },
-            | Self::MalformedChunk { field } => write!(f, "malformed chunk: {field}"),
-            | Self::TruncatedStream { position } => {
+            Self::MalformedChunk { field } => write!(f, "malformed chunk: {field}"),
+            Self::TruncatedStream { position } => {
                 write!(f, "the token stream ends inside record {position}")
             },
-            | Self::UnknownTokenKind { position } => {
+            Self::UnknownTokenKind { position } => {
                 write!(f, "record {position} opens with an unknown token kind")
             },
-            | Self::UnexpectedToken {
+            Self::UnexpectedToken {
                 expected,
                 found,
                 position,
@@ -512,56 +512,56 @@ impl fmt::Display for ValueError
                     "record {position} is {found} where {expected} was required"
                 )
             },
-            | Self::UnexpectedConstructor { found, position } => {
+            Self::UnexpectedConstructor { found, position } => {
                 write!(
                     f,
                     "record {position} opens constructor {found}, which the decoder does not admit"
                 )
             },
-            | Self::SeamInFlatForm { position } => {
+            Self::SeamInFlatForm { position } => {
                 write!(
                     f,
                     "record {position} is a child record, which a flat form cannot carry"
                 )
             },
-            | Self::TrailingTokens { position } => {
+            Self::TrailingTokens { position } => {
                 write!(
                     f,
                     "the flat form continues past its value at record {position}"
                 )
             },
-            | Self::MalformedEmission { fault } => write!(f, "malformed emission: {fault}"),
-            | Self::UnsupportedIndexBase { base } => {
+            Self::MalformedEmission { fault } => write!(f, "malformed emission: {fault}"),
+            Self::UnsupportedIndexBase { base } => {
                 write!(
                     f,
                     "the {base} child index base is not representable in this encoding"
                 )
             },
-            | Self::ArithmeticOverflow { quantity } => {
+            Self::ArithmeticOverflow { quantity } => {
                 write!(f, "arithmetic overflowed computing a {quantity}")
             },
-            | Self::DecodeBudgetExceeded { spent, ceiling } => {
+            Self::DecodeBudgetExceeded { spent, ceiling } => {
                 write!(
                     f,
                     "a decode would spend {spent} units of work, past the budget of {ceiling}"
                 )
             },
-            | Self::MalformedManifest { field } => {
+            Self::MalformedManifest { field } => {
                 write!(f, "a manifest image holds {field} this build does not read")
             },
-            | Self::TruncatedManifest { field } => {
+            Self::TruncatedManifest { field } => {
                 write!(f, "a manifest image ends inside {field}")
             },
-            | Self::TrailingManifestBytes => {
+            Self::TrailingManifestBytes => {
                 f.write_str("a manifest image continues past its token count")
             },
-            | Self::IncompatibleProfile { field } => {
+            Self::IncompatibleProfile { field } => {
                 write!(
                     f,
                     "the manifest's profile differs from the expected one in {field}"
                 )
             },
-            | Self::TokenCountMismatch { declared, spliced } => {
+            Self::TokenCountMismatch { declared, spliced } => {
                 write!(
                     f,
                     "a manifest declares {declared} tokens where its closure delivers {spliced}"

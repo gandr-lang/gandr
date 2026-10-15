@@ -240,29 +240,29 @@ fn render<'arena>(
     let mut pending = alloc::vec![root];
     while let Some(piece) = pending.pop() {
         let mut expansion = match piece {
-            | Piece::Name(name) => {
+            Piece::Name(name) => {
                 out.push('"');
                 out.extend(name.escape_debug());
                 out.push('"');
                 continue;
             },
-            | Piece::Text(Token(fixed)) => {
+            Piece::Text(Token(fixed)) => {
                 out.push_str(fixed);
                 continue;
             },
-            | Piece::Owned(computed) => {
+            Piece::Owned(computed) => {
                 out.push_str(&computed);
                 continue;
             },
-            | Piece::Command(_, depth) | Piece::Producer(_, depth) | Piece::Consumer(_, depth)
+            Piece::Command(_, depth) | Piece::Producer(_, depth) | Piece::Consumer(_, depth)
                 if depth >= RenderDepth::LIMIT =>
             {
                 out.push('…');
                 continue;
             },
-            | Piece::Command(id, depth) => command(arena, id, depth.child()),
-            | Piece::Producer(id, depth) => producer(arena, id, depth.child()),
-            | Piece::Consumer(id, depth) => consumer(arena, id, depth.child()),
+            Piece::Command(id, depth) => command(arena, id, depth.child()),
+            Piece::Producer(id, depth) => producer(arena, id, depth.child()),
+            Piece::Consumer(id, depth) => consumer(arena, id, depth.child()),
         };
         expansion.reverse();
         pending.append(&mut expansion);
@@ -308,7 +308,7 @@ fn command(
         return alloc::vec![text!("<dangling>")];
     };
     match *node {
-        | CommandNode::Cut {
+        CommandNode::Cut {
             polarity,
             producer,
             consumer,
@@ -316,13 +316,13 @@ fn command(
             text!("⟨"),
             Piece::Producer(producer, depth),
             Piece::Text(Token(match polarity {
-                | Polarity::Positive => " |+ ",
-                | Polarity::Negative => " |− ",
+                Polarity::Positive => " |+ ",
+                Polarity::Negative => " |− ",
             })),
             Piece::Consumer(consumer, depth),
             text!("⟩"),
         ],
-        | CommandNode::Perform {
+        CommandNode::Perform {
             ref signature,
             ref operation,
             route,
@@ -331,8 +331,8 @@ fn command(
         } => {
             let mut pieces = Vec::with_capacity(12);
             match route {
-                | Route::Nearest => pieces.push(text!("perform ")),
-                | Route::Capability(capability) => pieces.extend([
+                Route::Nearest => pieces.push(text!("perform ")),
+                Route::Capability(capability) => pieces.extend([
                     text!("exercise "),
                     Piece::Producer(capability, depth),
                     text!(" "),
@@ -350,7 +350,7 @@ fn command(
             ]);
             pieces
         },
-        | CommandNode::Handle {
+        CommandNode::Handle {
             ref signature,
             introduces,
             subject,
@@ -361,13 +361,13 @@ fn command(
             let mut pieces = Vec::with_capacity(clauses.len().saturating_mul(4).saturating_add(8));
             pieces.extend([
                 match introduces {
-                    | Introduces::Nothing => text!("handle "),
-                    | Introduces::Capability => text!("scope "),
+                    Introduces::Nothing => text!("handle "),
+                    Introduces::Capability => text!("scope "),
                 },
                 Piece::Name(signature.name().as_ref()),
                 match introduces {
-                    | Introduces::Nothing => text!(" { "),
-                    | Introduces::Capability => text!(" { (c) ⇒ "),
+                    Introduces::Nothing => text!(" { "),
+                    Introduces::Capability => text!(" { (c) ⇒ "),
                 },
                 Piece::Command(subject, depth),
                 text!(" | return(x; α) ⇒ "),
@@ -384,7 +384,7 @@ fn command(
             pieces.extend([text!(" }; "), Piece::Consumer(continuation, depth)]);
             pieces
         },
-        | CommandNode::Resume {
+        CommandNode::Resume {
             stack,
             body,
             continuation,
@@ -397,14 +397,14 @@ fn command(
             Piece::Consumer(continuation, depth),
             text!(")")
         ],
-        | CommandNode::Reset { body, continuation } => alloc::vec![
+        CommandNode::Reset { body, continuation } => alloc::vec![
             text!("reset("),
             Piece::Command(body, depth),
             text!("; "),
             Piece::Consumer(continuation, depth),
             text!(")")
         ],
-        | CommandNode::Shift { body, continuation } => alloc::vec![
+        CommandNode::Shift { body, continuation } => alloc::vec![
             text!("shift(k; "),
             Piece::Command(body, depth),
             text!("; "),
@@ -467,7 +467,7 @@ fn producer(
         return alloc::vec![text!("<dangling>")];
     };
     match *node {
-        | ProducerNode::Reify(ref frames) => {
+        ProducerNode::Reify(ref frames) => {
             let mut pieces = Vec::with_capacity(frames.len().saturating_mul(4).saturating_add(2));
             pieces.push(text!("reify ["));
             for (index, frame) in frames.iter().enumerate() {
@@ -475,16 +475,16 @@ fn producer(
                     pieces.push(text!("; "));
                 }
                 match *frame {
-                    | gandr_core_term::control::StackFrame::Apply(value) => {
+                    gandr_core_term::control::StackFrame::Apply(value) => {
                         pieces.extend([text!("apply("), Piece::Producer(value, depth), text!(")")]);
                     },
-                    | gandr_core_term::control::StackFrame::Bind(body) => {
+                    gandr_core_term::control::StackFrame::Bind(body) => {
                         pieces.extend([text!("bind(x; α) ⇒ "), Piece::Command(body, depth)]);
                     },
-                    | gandr_core_term::control::StackFrame::Project(Side::Left) => {
+                    gandr_core_term::control::StackFrame::Project(Side::Left) => {
                         pieces.push(text!("project-left"));
                     },
-                    | gandr_core_term::control::StackFrame::Project(Side::Right) => {
+                    gandr_core_term::control::StackFrame::Project(Side::Right) => {
                         pieces.push(text!("project-right"));
                     },
                 }
@@ -492,22 +492,22 @@ fn producer(
             pieces.push(text!("]"));
             pieces
         },
-        | ProducerNode::Primitive {
+        ProducerNode::Primitive {
             primitive,
             arguments,
         } => applied(Token(primitive.name().into()), &arguments, &[], depth),
-        | ProducerNode::Variable { zone, index } => {
+        ProducerNode::Variable { zone, index } => {
             let prefix = match zone {
-                | Zone::Intuitionistic => 'x',
-                | Zone::Linear => 'l',
+                Zone::Intuitionistic => 'x',
+                Zone::Linear => 'l',
             };
             alloc::vec![Piece::Owned(alloc::format!("{prefix}{}", u32::from(index)))]
         },
-        | ProducerNode::Constant(constant) => {
+        ProducerNode::Constant(constant) => {
             alloc::vec![Piece::Owned(alloc::format!("c{}", usize::from(constant)))]
         },
-        | ProducerNode::Literal(ref literal) => alloc::vec![Piece::Owned(literal_text(literal))],
-        | ProducerNode::Constructor {
+        ProducerNode::Literal(ref literal) => alloc::vec![Piece::Owned(literal_text(literal))],
+        ProducerNode::Constructor {
             ref tag,
             ref producers,
             ref consumers,
@@ -524,38 +524,38 @@ fn producer(
             }
             pieces
         },
-        | ProducerNode::Thunk { body } => alloc::vec![
+        ProducerNode::Thunk { body } => alloc::vec![
             text!("{force(α) ⇒ "),
             Piece::Command(body, depth),
             text!("}"),
         ],
-        | ProducerNode::Fixpoint { body, evidence } => alloc::vec![
+        ProducerNode::Fixpoint { body, evidence } => alloc::vec![
             text!("fix"),
             Piece::Text(Token(match evidence {
-                | FixpointEvidence::Partial => "{x; force(α) ⇒ ",
-                | FixpointEvidence::StructuralDescent => "[<]{x; force(α) ⇒ ",
+                FixpointEvidence::Partial => "{x; force(α) ⇒ ",
+                FixpointEvidence::StructuralDescent => "[<]{x; force(α) ⇒ ",
             })),
             Piece::Command(body, depth),
             text!("}"),
         ],
-        | ProducerNode::Cocase { ref arms } => {
+        ProducerNode::Cocase { ref arms } => {
             let mut pieces = alloc::vec![text!("cocase {")];
             for (position, arm) in arms.iter().enumerate() {
                 if position > 0 {
                     pieces.push(text!(" | "));
                 }
                 pieces.push(Piece::Text(Token(match arm.destructor {
-                    | DestructorTag::Apply => "apply(x; α) ⇒ ",
-                    | DestructorTag::Force => "force(α) ⇒ ",
-                    | DestructorTag::Project(Side::Left) => "project-left(α) ⇒ ",
-                    | DestructorTag::Project(Side::Right) => "project-right(α) ⇒ ",
+                    DestructorTag::Apply => "apply(x; α) ⇒ ",
+                    DestructorTag::Force => "force(α) ⇒ ",
+                    DestructorTag::Project(Side::Left) => "project-left(α) ⇒ ",
+                    DestructorTag::Project(Side::Right) => "project-right(α) ⇒ ",
                 })));
                 pieces.push(Piece::Command(arm.body, depth));
             }
             pieces.push(text!("}"));
             pieces
         },
-        | ProducerNode::Mu { body } => alloc::vec![text!("μα. "), Piece::Command(body, depth)],
+        ProducerNode::Mu { body } => alloc::vec![text!("μα. "), Piece::Command(body, depth)],
     }
 }
 
@@ -616,11 +616,11 @@ fn consumer(
         return alloc::vec![text!("<dangling>")];
     };
     match *node {
-        | ConsumerNode::Covariable(index) => {
+        ConsumerNode::Covariable(index) => {
             alloc::vec![Piece::Owned(alloc::format!("α{}", u32::from(index)))]
         },
-        | ConsumerNode::MuTilde { body } => alloc::vec![text!("μ̃x. "), Piece::Command(body, depth)],
-        | ConsumerNode::ListFold {
+        ConsumerNode::MuTilde { body } => alloc::vec![text!("μ̃x. "), Piece::Command(body, depth)],
+        ConsumerNode::ListFold {
             on_nil,
             on_cons,
             continuation,
@@ -633,37 +633,37 @@ fn consumer(
             text!("}; "),
             Piece::Consumer(continuation, depth)
         ],
-        | ConsumerNode::Destructor {
+        ConsumerNode::Destructor {
             tag,
             ref producers,
             ref consumers,
         } => {
             let name = match tag {
-                | DestructorTag::Apply => Token("apply"),
-                | DestructorTag::Force => Token("force"),
-                | DestructorTag::Project(Side::Left) => Token("project-left"),
-                | DestructorTag::Project(Side::Right) => Token("project-right"),
+                DestructorTag::Apply => Token("apply"),
+                DestructorTag::Force => Token("force"),
+                DestructorTag::Project(Side::Left) => Token("project-left"),
+                DestructorTag::Project(Side::Right) => Token("project-right"),
             };
             applied(name, producers, consumers, depth)
         },
-        | ConsumerNode::DataCase { ref branches, then } => applied(
+        ConsumerNode::DataCase { ref branches, then } => applied(
             Token("datacase"),
             branches,
             core::slice::from_ref(&then),
             depth,
         ),
-        | ConsumerNode::Select { ref selector, then } => {
+        ConsumerNode::Select { ref selector, then } => {
             let mut pieces = applied(Token("select"), &[], core::slice::from_ref(&then), depth);
             let field = match *selector {
-                | Selector::Component(component) => {
+                Selector::Component(component) => {
                     alloc::format!("[{}]", usize::from(component))
                 },
-                | Selector::Label(ref label) => alloc::format!("[.{}]", label.as_ref()),
+                Selector::Label(ref label) => alloc::format!("[.{}]", label.as_ref()),
             };
             pieces.insert(1, Piece::Owned(field));
             pieces
         },
-        | ConsumerNode::Case { ref arms } => {
+        ConsumerNode::Case { ref arms } => {
             let mut pieces = alloc::vec![text!("case {")];
             for (position, arm) in arms.iter().enumerate() {
                 if position > 0 {
@@ -675,7 +675,7 @@ fn consumer(
             pieces.push(text!("}"));
             pieces
         },
-        | ConsumerNode::Top => alloc::vec![text!("★")],
+        ConsumerNode::Top => alloc::vec![text!("★")],
     }
 }
 
@@ -780,20 +780,20 @@ fn applied(
 fn constructor_name(tag: &ConstructorTag) -> Token
 {
     match *tag {
-        | ConstructorTag::Tuple(ProducerArity::ZERO) => Token("unit"),
-        | ConstructorTag::Tuple(ProducerArity::TWO) => Token("pair"),
-        | ConstructorTag::Tuple(_) => Token("tuple"),
-        | ConstructorTag::Record(_) => Token("record"),
-        | ConstructorTag::ListNil => Token("nil"),
-        | ConstructorTag::ListCons => Token("cons"),
-        | ConstructorTag::Injection(summand) => match usize::from(summand) {
-            | 0 => Token("inl"),
-            | 1 => Token("inr"),
-            | _ => Token("inj"),
+        ConstructorTag::Tuple(ProducerArity::ZERO) => Token("unit"),
+        ConstructorTag::Tuple(ProducerArity::TWO) => Token("pair"),
+        ConstructorTag::Tuple(_) => Token("tuple"),
+        ConstructorTag::Record(_) => Token("record"),
+        ConstructorTag::ListNil => Token("nil"),
+        ConstructorTag::ListCons => Token("cons"),
+        ConstructorTag::Injection(summand) => match usize::from(summand) {
+            0 => Token("inl"),
+            1 => Token("inr"),
+            _ => Token("inj"),
         },
-        | ConstructorTag::Lift(_) => Token("lift"),
-        | ConstructorTag::Data { .. } => Token("ctor"),
-        | ConstructorTag::Recorded(_) => Token("recorded"),
+        ConstructorTag::Lift(_) => Token("lift"),
+        ConstructorTag::Data { .. } => Token("ctor"),
+        ConstructorTag::Recorded(_) => Token("recorded"),
     }
 }
 
@@ -806,15 +806,19 @@ fn constructor_name(tag: &ConstructorTag) -> Token
 fn qualifier(tag: &ConstructorTag) -> Option<Piece<'static>>
 {
     match *tag {
-        | ConstructorTag::Data { tag: ordinal, .. } => {
+        ConstructorTag::Data { tag: ordinal, .. } => {
             Some(Piece::Owned(alloc::format!("[{}]", usize::from(ordinal))))
         },
-        | ConstructorTag::Injection(summand) if usize::from(summand) > 1 => {
+        ConstructorTag::Injection(summand) if usize::from(summand) > 1 => {
             Some(Piece::Owned(alloc::format!("[{}]", usize::from(summand))))
         },
-        | ConstructorTag::Record(ref labels) => Some(Piece::Owned(labels_spelled(labels))),
-        | ConstructorTag::Recorded(ref moves) => Some(Piece::Owned(moves_spelled(moves))),
-        | _ => None,
+        ConstructorTag::Record(ref labels) => Some(Piece::Owned(labels_spelled(labels))),
+        ConstructorTag::Recorded(ref moves) => Some(Piece::Owned(moves_spelled(moves))),
+        ConstructorTag::Tuple(_)
+        | ConstructorTag::ListNil
+        | ConstructorTag::ListCons
+        | ConstructorTag::Injection(_)
+        | ConstructorTag::Lift(_) => None,
     }
 }
 
@@ -863,28 +867,28 @@ fn qualifier(tag: &ConstructorTag) -> Option<Piece<'static>>
 fn pattern(tag: &ConstructorTag) -> Piece<'static>
 {
     match *tag {
-        | ConstructorTag::Tuple(ProducerArity::ZERO) => text!("() ⇒ "),
-        | ConstructorTag::Tuple(ProducerArity::TWO) => text!("pair(x, x) ⇒ "),
-        | ConstructorTag::Tuple(arity) => {
+        ConstructorTag::Tuple(ProducerArity::ZERO) => text!("() ⇒ "),
+        ConstructorTag::Tuple(ProducerArity::TWO) => text!("pair(x, x) ⇒ "),
+        ConstructorTag::Tuple(arity) => {
             let binders = alloc::vec!["x"; usize::from(arity)].join(", ");
             Piece::Owned(alloc::format!("tuple({binders}) ⇒ "))
         },
-        | ConstructorTag::Record(ref labels) => {
+        ConstructorTag::Record(ref labels) => {
             let binders = alloc::vec!["x"; labels.len()].join(", ");
             Piece::Owned(alloc::format!(
                 "record{}({binders}) ⇒ ",
                 labels_spelled(labels)
             ))
         },
-        | ConstructorTag::ListNil => text!("nil ⇒ "),
-        | ConstructorTag::ListCons => text!("cons(x, x) ⇒ "),
-        | ConstructorTag::Injection(summand) => match usize::from(summand) {
-            | 0 => text!("inl(x) ⇒ "),
-            | 1 => text!("inr(x) ⇒ "),
-            | position => Piece::Owned(alloc::format!("inj[{position}](x) ⇒ ")),
+        ConstructorTag::ListNil => text!("nil ⇒ "),
+        ConstructorTag::ListCons => text!("cons(x, x) ⇒ "),
+        ConstructorTag::Injection(summand) => match usize::from(summand) {
+            0 => text!("inl(x) ⇒ "),
+            1 => text!("inr(x) ⇒ "),
+            position => Piece::Owned(alloc::format!("inj[{position}](x) ⇒ ")),
         },
-        | ConstructorTag::Lift(_) => text!("lift(x) ⇒ "),
-        | ConstructorTag::Data {
+        ConstructorTag::Lift(_) => text!("lift(x) ⇒ "),
+        ConstructorTag::Data {
             tag: ordinal,
             arity,
             ..
@@ -895,7 +899,7 @@ fn pattern(tag: &ConstructorTag) -> Piece<'static>
                 usize::from(ordinal)
             ))
         },
-        | ConstructorTag::Recorded(ref moves) => {
+        ConstructorTag::Recorded(ref moves) => {
             let binders = alloc::vec!["x"; usize::from(tag.producer_arity())].join(", ");
             Piece::Owned(alloc::format!(
                 "recorded{}({binders}) ⇒ ",
@@ -916,11 +920,11 @@ fn moves_spelled(moves: &[gandr_core_term::session::RecordedMove<()>]) -> String
     let spelled: Vec<String> = moves
         .iter()
         .map(|movement| match *movement {
-            | RecordedMove::Sent(()) => String::from("sent"),
-            | RecordedMove::Received(()) => String::from("received"),
-            | RecordedMove::Selected(ref label) => alloc::format!("selected({})", label.as_ref()),
-            | RecordedMove::Offered(ref label) => alloc::format!("offered({})", label.as_ref()),
-            | RecordedMove::Closed => String::from("closed"),
+            RecordedMove::Sent(()) => String::from("sent"),
+            RecordedMove::Received(()) => String::from("received"),
+            RecordedMove::Selected(ref label) => alloc::format!("selected({})", label.as_ref()),
+            RecordedMove::Offered(ref label) => alloc::format!("offered({})", label.as_ref()),
+            RecordedMove::Closed => String::from("closed"),
         })
         .collect();
     alloc::format!("[{}]", spelled.join(", "))
@@ -965,20 +969,20 @@ fn labels_spelled(labels: &[gandr_core_term::FieldLabel]) -> alloc::string::Stri
 fn literal_text(literal: &Literal) -> String
 {
     let sign = |sign: Sign| match sign {
-        | Sign::Negative => "-",
-        | Sign::NonNegative => "",
+        Sign::Negative => "-",
+        Sign::NonNegative => "",
     };
     match *literal {
-        | Literal::Integer(ref integer) => {
+        Literal::Integer(ref integer) => {
             alloc::format!("{}{}", sign(integer.sign()), integer.magnitude().as_ref())
         },
-        | Literal::Numeric(ref numeric) => alloc::format!(
+        Literal::Numeric(ref numeric) => alloc::format!(
             "{}{}.{}",
             sign(numeric.sign()),
             numeric.integer_part().as_ref(),
             numeric.fraction().as_ref()
         ),
-        | Literal::Text(ref content) => {
+        Literal::Text(ref content) => {
             let mut quoted = String::from("\"");
             let raw: &str = content.as_ref();
             quoted.extend(raw.chars().flat_map(char::escape_debug));

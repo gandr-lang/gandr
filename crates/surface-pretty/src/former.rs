@@ -129,11 +129,11 @@ where
             .map(|step| Move {
                 action: step.kind(),
                 label: match *step {
-                    | gandr_core_term::session::RecordedMove::Selected(ref label)
+                    gandr_core_term::session::RecordedMove::Selected(ref label)
                     | gandr_core_term::session::RecordedMove::Offered(ref label) => {
                         Some(Name::from(label.as_ref()))
                     },
-                    | gandr_core_term::session::RecordedMove::Sent(_)
+                    gandr_core_term::session::RecordedMove::Sent(_)
                     | gandr_core_term::session::RecordedMove::Received(_)
                     | gandr_core_term::session::RecordedMove::Closed => None,
                 },

@@ -132,9 +132,9 @@ fn front(body: TokenBody<'_>) -> Front<'_>
         return Front::Empty;
     };
     let (kind, payload) = match kind {
-        | 0x01 => (Kind::Open, 1_usize),
-        | 0x02 => (Kind::Word, 8_usize),
-        | 0x03 => {
+        0x01 => (Kind::Open, 1_usize),
+        0x02 => (Kind::Word, 8_usize),
+        0x03 => {
             let declared = after.first_chunk::<8>().expect("a bytes length");
             let length = usize::try_from(u64::from_le_bytes(*declared)).expect("a payload length");
             (
@@ -142,7 +142,7 @@ fn front(body: TokenBody<'_>) -> Front<'_>
                 length.checked_add(8_usize).expect("a record length"),
             )
         },
-        | 0x04 => {
+        0x04 => {
             let digest = after.first_chunk::<32>().expect("a child digest");
             let offset = after
                 .get(32_usize ..)
@@ -154,8 +154,8 @@ fn front(body: TokenBody<'_>) -> Front<'_>
             );
             (Kind::Child(pointer), 36_usize)
         },
-        | 0x05 => (Kind::Close, 0_usize),
-        | other => panic!("no record has kind {other:#04x}"),
+        0x05 => (Kind::Close, 0_usize),
+        other => panic!("no record has kind {other:#04x}"),
     };
     let (record, rest) = bytes
         .split_at_checked(payload.checked_add(1_usize).expect("a record length"))
@@ -285,7 +285,7 @@ pub fn reference_cuts(
         since_event = since_event.checked_add(1_u64).expect("a record count");
         let bytes: &[u8] = record.bytes.into();
         match record.kind {
-            | Kind::Open => {
+            Kind::Open => {
                 let mut preimage = RESIDUE_DOMAIN.to_vec();
                 preimage.extend_from_slice(bytes);
                 open.push(Frame {
@@ -293,14 +293,14 @@ pub fn reference_cuts(
                     preimage,
                 });
             },
-            | Kind::Word | Kind::Bytes => {
+            Kind::Word | Kind::Bytes => {
                 open.last_mut()
                     .expect("a payload sits inside a constructor")
                     .preimage
                     .extend_from_slice(bytes);
             },
-            | Kind::Child(_) => panic!("a flat form carries no child record"),
-            | Kind::Close => {
+            Kind::Child(_) => panic!("a flat form carries no child record"),
+            Kind::Close => {
                 let mut frame = open.pop().expect("a close ends an open constructor");
                 frame.preimage.extend_from_slice(bytes);
                 let subtree = blake3::hash(&frame.preimage);
@@ -434,11 +434,11 @@ pub fn splice(
         };
         pending.push(rest);
         match record.kind {
-            | Kind::Child(pointer) => {
+            Kind::Child(pointer) => {
                 chunk_starts.push(RecordIndex(written));
                 pending.push(body_of(store, pointer));
             },
-            | Kind::Open | Kind::Word | Kind::Bytes | Kind::Close => {
+            Kind::Open | Kind::Word | Kind::Bytes | Kind::Close => {
                 flat.extend_from_slice(record.bytes.into());
                 written = written.checked_add(1_usize).expect("a record count");
             },

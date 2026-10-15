@@ -396,27 +396,27 @@ impl fmt::Display for FocusRefusal
     ) -> fmt::Result
     {
         match *self {
-            | Self::UniverseTransport(_) => {
+            Self::UniverseTransport(_) => {
                 f.write_str("universe transport has no command-IL destructor")
             },
-            | Self::ElementTransport(_) => {
+            Self::ElementTransport(_) => {
                 f.write_str("element transport has no command-IL destructor")
             },
-            | Self::ElementPath(_) => f.write_str(
+            Self::ElementPath(_) => f.write_str(
                 "an identity introduction or a compound endpoint has no command-IL producer",
             ),
-            | Self::DanglingValue(_) => f.write_str("a core value id names no node"),
-            | Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
-            | Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
-            | Self::TranslationInvariant => f.write_str("the translation lost a result it pushed"),
-            | Self::Code(_) => f.write_str("a code has no producer in the command IL"),
-            | Self::IncompleteValue(_) | Self::IncompleteComputation(_) => {
+            Self::DanglingValue(_) => f.write_str("a core value id names no node"),
+            Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
+            Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
+            Self::TranslationInvariant => f.write_str("the translation lost a result it pushed"),
+            Self::Code(_) => f.write_str("a code has no producer in the command IL"),
+            Self::IncompleteValue(_) | Self::IncompleteComputation(_) => {
                 f.write_str("a hole or a mark has no image in the command IL")
             },
-            | Self::Unelaborated(_) => f.write_str(
+            Self::Unelaborated(_) => f.write_str(
                 "a computation standing as a value before elaboration has no command-IL producer",
             ),
-            | Self::Session(_) => f.write_str("a session action has no image in the command IL"),
+            Self::Session(_) => f.write_str("a session action has no image in the command IL"),
         }
     }
 }
@@ -1005,20 +1005,20 @@ impl<'run> Focusing<'run>
     ) -> Result<(), FocusRefusal>
     {
         match task {
-            | Task::Reify(source) => self.complete_reify(source),
-            | Task::Control {
+            Task::Reify(source) => self.complete_reify(source),
+            Task::Control {
                 source,
                 continuation,
             } => self.complete_control(source, continuation),
-            | Task::Primitive {
+            Task::Primitive {
                 primitive,
                 arguments,
                 continuation,
             } => {
                 use gandr_core_term::primitive::Arguments;
                 let arguments = match arguments {
-                    | Arguments::Unary(_) => Arguments::Unary(self.pop_producer()?),
-                    | Arguments::Binary(_) => {
+                    Arguments::Unary(_) => Arguments::Unary(self.pop_producer()?),
+                    Arguments::Binary(_) => {
                         let second = self.pop_producer()?;
                         Arguments::Binary([self.pop_producer()?, second])
                     },
@@ -1034,12 +1034,12 @@ impl<'run> Focusing<'run>
                     continuation,
                 )
             },
-            | Task::Value(value) => self.value(value),
-            | Task::Computation {
+            Task::Value(value) => self.value(value),
+            Task::Computation {
                 computation,
                 continuation,
             } => self.computation(computation, continuation),
-            | Task::Tuple(arity) => {
+            Task::Tuple(arity) => {
                 let start = self
                     .producers
                     .len()
@@ -1049,7 +1049,7 @@ impl<'run> Focusing<'run>
                     self.producers.drain(start ..).collect();
                 self.constructor(ConstructorTag::Tuple(arity), &components)
             },
-            | Task::Record(labels) => {
+            Task::Record(labels) => {
                 let start = self
                     .producers
                     .len()
@@ -1058,7 +1058,7 @@ impl<'run> Focusing<'run>
                 let fields: Vec<ProducerId> = self.producers.drain(start ..).collect();
                 self.constructor(ConstructorTag::Record(labels), &fields)
             },
-            | Task::Recorded(moves) => {
+            Task::Recorded(moves) => {
                 let tag = ConstructorTag::Recorded(moves);
                 let start = self
                     .producers
@@ -1068,20 +1068,20 @@ impl<'run> Focusing<'run>
                 let payloads: Vec<ProducerId> = self.producers.drain(start ..).collect();
                 self.constructor(tag, &payloads)
             },
-            | Task::ListCons => {
+            Task::ListCons => {
                 let tail = self.pop_producer()?;
                 let head = self.pop_producer()?;
                 self.constructor(ConstructorTag::ListCons, &[head, tail])
             },
-            | Task::Injection(summand) => {
+            Task::Injection(summand) => {
                 let body = self.pop_producer()?;
                 self.constructor(ConstructorTag::Injection(summand), &[body])
             },
-            | Task::Lift(level) => {
+            Task::Lift(level) => {
                 let body = self.pop_producer()?;
                 self.constructor(ConstructorTag::Lift(level), &[body])
             },
-            | Task::Native { tag, arity, family } => {
+            Task::Native { tag, arity, family } => {
                 let start = self
                     .producers
                     .len()
@@ -1090,13 +1090,13 @@ impl<'run> Focusing<'run>
                 let fields: Vec<ProducerId> = self.producers.drain(start ..).collect();
                 self.constructor(ConstructorTag::Data { tag, arity, family }, &fields)
             },
-            | Task::Thunk => {
+            Task::Thunk => {
                 let body = self.pop_command()?;
                 let thunk = self.arena.mint_producer(ProducerNode::Thunk { body })?;
                 self.producers.push(thunk);
                 Ok(())
             },
-            | Task::Fixpoint(evidence) => {
+            Task::Fixpoint(evidence) => {
                 let body = self.pop_command()?;
                 let thunk = self
                     .arena
@@ -1104,7 +1104,7 @@ impl<'run> Focusing<'run>
                 self.producers.push(thunk);
                 Ok(())
             },
-            | Task::Cut {
+            Task::Cut {
                 origin,
                 polarity,
                 consumer,
@@ -1112,7 +1112,7 @@ impl<'run> Focusing<'run>
                 let producer = self.pop_producer()?;
                 self.cut(origin, polarity, producer, consumer)
             },
-            | Task::ListFold {
+            Task::ListFold {
                 element,
                 result,
                 continuation,
@@ -1129,7 +1129,7 @@ impl<'run> Focusing<'run>
                 })?;
                 self.cut(FocusOrigin::ListFold, Polarity::Positive, list, consumer)
             },
-            | Task::Apply { head, continuation } => {
+            Task::Apply { head, continuation } => {
                 let argument = self.pop_producer()?;
                 let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
                     tag: DestructorTag::Apply,
@@ -1142,7 +1142,7 @@ impl<'run> Focusing<'run>
                 });
                 Ok(())
             },
-            | Task::Combinator {
+            Task::Combinator {
                 combinator,
                 continuation,
             } => {
@@ -1166,7 +1166,7 @@ impl<'run> Focusing<'run>
                 let closed = self.combinator(combinator)?;
                 self.cut(FocusOrigin::Force, Polarity::Positive, closed, frame)
             },
-            | Task::Lambda { continuation } => {
+            Task::Lambda { continuation } => {
                 let body = self.pop_command()?;
                 let object = self.arena.mint_producer(ProducerNode::Cocase {
                     arms: alloc::boxed::Box::from([CopatternArm {
@@ -1181,7 +1181,7 @@ impl<'run> Focusing<'run>
                     continuation,
                 )
             },
-            | Task::Bind { head } => {
+            Task::Bind { head } => {
                 let body = self.pop_command()?;
                 let binder = self.arena.mint_consumer(ConsumerNode::MuTilde { body })?;
                 self.tasks.push(Task::Computation {
@@ -1190,7 +1190,7 @@ impl<'run> Focusing<'run>
                 });
                 Ok(())
             },
-            | Task::Case { branches } => {
+            Task::Case { branches } => {
                 let scrutinee = self.pop_producer()?;
                 let start = self
                     .commands
@@ -1209,7 +1209,7 @@ impl<'run> Focusing<'run>
                 let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
                 self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
             },
-            | Task::Split(arity) => {
+            Task::Split(arity) => {
                 let body = self.pop_command()?;
                 let scrutinee = self.pop_producer()?;
                 let arms = alloc::boxed::Box::from([PatternArm {
@@ -1219,7 +1219,7 @@ impl<'run> Focusing<'run>
                 let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
                 self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
             },
-            | Task::DataCase {
+            Task::DataCase {
                 branches,
                 continuation,
             } => {
@@ -1237,7 +1237,7 @@ impl<'run> Focusing<'run>
                 })?;
                 self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
             },
-            | Task::Name {
+            Task::Name {
                 origin,
                 polarity,
                 continuation,
@@ -1279,13 +1279,13 @@ impl<'run> Focusing<'run>
         let mut frames = Vec::with_capacity(source.len());
         for frame in source.iter().rev() {
             frames.push(match *frame {
-                | gandr_core_term::control::StackFrame::Apply(_) => {
+                gandr_core_term::control::StackFrame::Apply(_) => {
                     gandr_core_term::control::StackFrame::Apply(self.pop_producer()?)
                 },
-                | gandr_core_term::control::StackFrame::Bind(_) => {
+                gandr_core_term::control::StackFrame::Bind(_) => {
                     gandr_core_term::control::StackFrame::Bind(self.pop_command()?)
                 },
-                | gandr_core_term::control::StackFrame::Project(side) => {
+                gandr_core_term::control::StackFrame::Project(side) => {
                     gandr_core_term::control::StackFrame::Project(side)
                 },
             });
@@ -1352,7 +1352,7 @@ impl<'run> Focusing<'run>
             .computation(source)
             .ok_or(FocusRefusal::DanglingComputation(source))?;
         let (node, origin) = match *node {
-            | Computation::Perform {
+            Computation::Perform {
                 ref signature,
                 ref operation,
                 ..
@@ -1370,7 +1370,7 @@ impl<'run> Focusing<'run>
                     FocusOrigin::Perform,
                 )
             },
-            | Computation::Exercise {
+            Computation::Exercise {
                 ref signature,
                 ref operation,
                 ..
@@ -1389,7 +1389,7 @@ impl<'run> Focusing<'run>
                     FocusOrigin::Exercise,
                 )
             },
-            | Computation::Handle {
+            Computation::Handle {
                 ref signature,
                 ref clauses,
                 ..
@@ -1400,8 +1400,35 @@ impl<'run> Focusing<'run>
                 ..
             } => {
                 let (introduces, origin) = match *node {
-                    | Computation::Scope { .. } => (Introduces::Capability, FocusOrigin::Scope),
-                    | _ => (Introduces::Nothing, FocusOrigin::Handle),
+                    Computation::Scope { .. } => (Introduces::Capability, FocusOrigin::Scope),
+                    Computation::Primitive { .. }
+                    | Computation::Transport(..)
+                    | Computation::PathTransport { .. }
+                    | Computation::Ride { .. }
+                    | Computation::TelescopeTransport { .. }
+                    | Computation::Lambda(_)
+                    | Computation::Fixpoint { .. }
+                    | Computation::Application(..)
+                    | Computation::Return(_)
+                    | Computation::Bind(..)
+                    | Computation::Force(_)
+                    | Computation::Case { .. }
+                    | Computation::Split { .. }
+                    | Computation::DataCase { .. }
+                    | Computation::RecordProjection(..)
+                    | Computation::TupleProjection(..)
+                    | Computation::Hole(_)
+                    | Computation::Mark { .. }
+                    | Computation::ListFold { .. }
+                    | Computation::Perform { .. }
+                    | Computation::Handle { .. }
+                    | Computation::Exercise { .. }
+                    | Computation::Resume(..)
+                    | Computation::Reset(_)
+                    | Computation::Shift(_)
+                    | Computation::With(..)
+                    | Computation::Project(..)
+                    | Computation::Session(_) => (Introduces::Nothing, FocusOrigin::Handle),
                 };
                 let signature = self.signature(signature)?;
                 let mut translated = Vec::with_capacity(clauses.len());
@@ -1426,7 +1453,7 @@ impl<'run> Focusing<'run>
                     origin,
                 )
             },
-            | Computation::Resume(..) => {
+            Computation::Resume(..) => {
                 let body = self.pop_command()?;
                 let stack = self.pop_producer()?;
                 (
@@ -1438,21 +1465,21 @@ impl<'run> Focusing<'run>
                     FocusOrigin::Resume,
                 )
             },
-            | Computation::Reset(_) => (
+            Computation::Reset(_) => (
                 crate::il::CommandNode::Reset {
                     body: self.pop_command()?,
                     continuation,
                 },
                 FocusOrigin::Reset,
             ),
-            | Computation::Shift(_) => (
+            Computation::Shift(_) => (
                 crate::il::CommandNode::Shift {
                     body: self.pop_command()?,
                     continuation,
                 },
                 FocusOrigin::Shift,
             ),
-            | Computation::With(..) => {
+            Computation::With(..) => {
                 let right = self.pop_command()?;
                 let left = self.pop_command()?;
                 let producer = self.arena.mint_producer(ProducerNode::Cocase {
@@ -1474,7 +1501,27 @@ impl<'run> Focusing<'run>
                     continuation,
                 );
             },
-            | _ => return Err(FocusRefusal::TranslationInvariant),
+            Computation::Primitive { .. }
+            | Computation::Transport(..)
+            | Computation::PathTransport { .. }
+            | Computation::Ride { .. }
+            | Computation::TelescopeTransport { .. }
+            | Computation::Lambda(_)
+            | Computation::Fixpoint { .. }
+            | Computation::Application(..)
+            | Computation::Return(_)
+            | Computation::Bind(..)
+            | Computation::Force(_)
+            | Computation::Case { .. }
+            | Computation::Split { .. }
+            | Computation::DataCase { .. }
+            | Computation::RecordProjection(..)
+            | Computation::TupleProjection(..)
+            | Computation::Hole(_)
+            | Computation::Mark { .. }
+            | Computation::ListFold { .. }
+            | Computation::Project(..)
+            | Computation::Session(_) => return Err(FocusRefusal::TranslationInvariant),
         };
         let command = self.arena.mint_command(node)?;
         self.provenance.record(command, origin);
@@ -1528,7 +1575,7 @@ impl<'run> Focusing<'run>
     {
         let node = self.core.value(id).ok_or(FocusRefusal::DanglingValue(id))?;
         let leaf = match *node {
-            | Value::Record(ref fields) => {
+            Value::Record(ref fields) => {
                 self.tasks
                     .push(Task::Record(fields.keys().cloned().collect()));
                 for &field in fields.values().rev() {
@@ -1536,7 +1583,7 @@ impl<'run> Focusing<'run>
                 }
                 return Ok(());
             },
-            | Value::Constructor {
+            Value::Constructor {
                 datatype,
                 tag,
                 ref fields,
@@ -1545,10 +1592,10 @@ impl<'run> Focusing<'run>
                     tag,
                     arity: ProducerArity::from(fields.len()),
                     family: match self.core.value_type(datatype) {
-                        | Some(&gandr_core_term::ValueType::Data { declaration, .. }) => {
+                        Some(&gandr_core_term::ValueType::Data { declaration, .. }) => {
                             Some(declaration)
                         },
-                        | Some(_) | None => None,
+                        Some(_) | None => None,
                     },
                 });
                 for &field in fields.iter().rev() {
@@ -1556,45 +1603,45 @@ impl<'run> Focusing<'run>
                 }
                 return Ok(());
             },
-            | Value::Reify(ref frames) => {
+            Value::Reify(ref frames) => {
                 let return_point = self.innermost_covariable()?;
                 self.tasks.push(Task::Reify(id));
                 for frame in frames.iter().rev() {
                     match *frame {
-                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
                             self.tasks.push(Task::Value(value));
                         },
-                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                        gandr_core_term::control::StackFrame::Bind(body) => {
                             self.tasks.push(Task::Computation {
                                 computation: body,
                                 continuation: return_point,
                             });
                         },
-                        | gandr_core_term::control::StackFrame::Project(_) => {},
+                        gandr_core_term::control::StackFrame::Project(_) => {},
                     }
                 }
                 return Ok(());
             },
-            | Value::ListNil => ProducerNode::Constructor {
+            Value::ListNil => ProducerNode::Constructor {
                 tag: ConstructorTag::ListNil,
                 producers: alloc::boxed::Box::from([]),
                 consumers: alloc::boxed::Box::from([]),
             },
-            | Value::ListCons(head, tail) => {
+            Value::ListCons(head, tail) => {
                 self.tasks.push(Task::ListCons);
                 self.tasks.push(Task::Value(tail));
                 self.tasks.push(Task::Value(head));
                 return Ok(());
             },
-            | Value::Variable { zone, index } => ProducerNode::Variable { zone, index },
-            | Value::Constant(constant) => ProducerNode::Constant(constant),
-            | Value::Literal(ref literal) => ProducerNode::Literal(literal.clone()),
-            | Value::Tuple(ref components) if components.is_empty() => ProducerNode::Constructor {
+            Value::Variable { zone, index } => ProducerNode::Variable { zone, index },
+            Value::Constant(constant) => ProducerNode::Constant(constant),
+            Value::Literal(ref literal) => ProducerNode::Literal(literal.clone()),
+            Value::Tuple(ref components) if components.is_empty() => ProducerNode::Constructor {
                 tag: ConstructorTag::Tuple(ProducerArity::ZERO),
                 producers: alloc::boxed::Box::from([]),
                 consumers: alloc::boxed::Box::from([]),
             },
-            | Value::Tuple(ref components) => {
+            Value::Tuple(ref components) => {
                 self.tasks
                     .push(Task::Tuple(ProducerArity::from(components.len())));
                 for &component in components.iter().rev() {
@@ -1602,7 +1649,7 @@ impl<'run> Focusing<'run>
                 }
                 return Ok(());
             },
-            | Value::Recorded(ref moves) => {
+            Value::Recorded(ref moves) => {
                 self.tasks.push(Task::Recorded(
                     moves.iter().map(|movement| movement.carrying(())).collect(),
                 ));
@@ -1615,17 +1662,17 @@ impl<'run> Focusing<'run>
                 }
                 return Ok(());
             },
-            | Value::Injection(summand, body) => {
+            Value::Injection(summand, body) => {
                 self.tasks.push(Task::Injection(summand));
                 self.tasks.push(Task::Value(body));
                 return Ok(());
             },
-            | Value::Lift { ref target, body } => {
+            Value::Lift { ref target, body } => {
                 self.tasks.push(Task::Lift(target.clone()));
                 self.tasks.push(Task::Value(body));
                 return Ok(());
             },
-            | Value::Thunk(body) | Value::Primitive { body, .. } => {
+            Value::Thunk(body) | Value::Primitive { body, .. } => {
                 let return_point = self.innermost_covariable()?;
                 self.tasks.push(Task::Thunk);
                 self.tasks.push(Task::Computation {
@@ -1634,7 +1681,7 @@ impl<'run> Focusing<'run>
                 });
                 return Ok(());
             },
-            | Value::PathRefl(_)
+            Value::PathRefl(_)
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
             | Value::Quote(_)
@@ -1642,11 +1689,11 @@ impl<'run> Focusing<'run>
             | Value::StaticLambda(_)
             | Value::StaticApplication(..) => return Err(FocusRefusal::Code(id)),
             // A flow runs as its translator.
-            | Value::Forward(translator) => {
+            Value::Forward(translator) => {
                 self.tasks.push(Task::Value(translator));
                 return Ok(());
             },
-            | Value::Stay(_)
+            Value::Stay(_)
             | Value::SessionRelated {
                 relation: gandr_core_term::session::SessionRelation::Subtyping,
                 ..
@@ -1655,13 +1702,46 @@ impl<'run> Focusing<'run>
                 self.producers.push(identity);
                 return Ok(());
             },
-            | Value::Then(first, second)
+            Value::Then(first, second)
             | Value::FunctionFlow(first, second)
             | Value::FlowProduct(first, second) => {
                 let combinator = match *node {
-                    | Value::Then(..) => crate::flow::Combinator::Compose,
-                    | Value::FlowProduct(..) => crate::flow::Combinator::Pair,
-                    | _ => crate::flow::Combinator::Wrap,
+                    Value::Then(..) => crate::flow::Combinator::Compose,
+                    Value::FlowProduct(..) => crate::flow::Combinator::Pair,
+                    Value::Primitive { .. }
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Here(_)
+                    | Value::Funext(..)
+                    | Value::Equiv(..)
+                    | Value::Ua { .. }
+                    | Value::SessionRelated { .. }
+                    | Value::Stay(_)
+                    | Value::Forward(_)
+                    | Value::FunctionFlow(..)
+                    | Value::Recorded(_)
+                    | Value::Returned(_)
+                    | Value::Nested(_)
+                    | Value::Run(_)
+                    | Value::Variable { .. }
+                    | Value::Constant(_)
+                    | Value::Literal(_)
+                    | Value::Tuple(_)
+                    | Value::Injection(..)
+                    | Value::ListNil
+                    | Value::ListCons(..)
+                    | Value::Thunk(_)
+                    | Value::Lift { .. }
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_)
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..)
+                    | Value::Constructor { .. }
+                    | Value::Record(_)
+                    | Value::Hole(_)
+                    | Value::Mark { .. }
+                    | Value::Reify(_) => crate::flow::Combinator::Wrap,
                 };
                 let return_point = self.innermost_covariable()?;
                 self.tasks.push(Task::Thunk);
@@ -1673,7 +1753,7 @@ impl<'run> Focusing<'run>
                 self.tasks.push(Task::Value(first));
                 return Ok(());
             },
-            | Value::Here(_)
+            Value::Here(_)
             | Value::Funext(..)
             | Value::Equiv(..)
             | Value::Ua { .. }
@@ -1681,10 +1761,10 @@ impl<'run> Focusing<'run>
             | Value::Returned(_) => {
                 return Err(FocusRefusal::ElementPath(id));
             },
-            | Value::Hole(_) | Value::Mark { .. } => {
+            Value::Hole(_) | Value::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteValue(id));
             },
-            | Value::Nested(_) | Value::Run(_) => return Err(FocusRefusal::Unelaborated(id)),
+            Value::Nested(_) | Value::Run(_) => return Err(FocusRefusal::Unelaborated(id)),
         };
         let producer = self.arena.mint_producer(leaf)?;
         self.producers.push(producer);
@@ -1743,13 +1823,13 @@ impl<'run> Focusing<'run>
             .computation(id)
             .ok_or(FocusRefusal::DanglingComputation(id))?;
         match *node {
-            | Computation::RecordProjection(record, ref label) => {
+            Computation::RecordProjection(record, ref label) => {
                 self.select(record, Selector::Label(label.clone()), continuation)?;
             },
-            | Computation::TupleProjection(tuple, component) => {
+            Computation::TupleProjection(tuple, component) => {
                 self.select(tuple, Selector::Component(component), continuation)?;
             },
-            | Computation::Split {
+            Computation::Split {
                 scrutinee,
                 arity,
                 body,
@@ -1764,7 +1844,7 @@ impl<'run> Focusing<'run>
                     continuation: inner,
                 });
             },
-            | Computation::DataCase {
+            Computation::DataCase {
                 scrutinee,
                 ref branches,
                 ..
@@ -1783,14 +1863,14 @@ impl<'run> Focusing<'run>
                     });
                 }
             },
-            | Computation::Perform { payload, .. } => {
+            Computation::Perform { payload, .. } => {
                 self.tasks.push(Task::Control {
                     source: id,
                     continuation,
                 });
                 self.tasks.push(Task::Value(payload));
             },
-            | Computation::Exercise {
+            Computation::Exercise {
                 capability,
                 payload,
                 ..
@@ -1802,7 +1882,7 @@ impl<'run> Focusing<'run>
                 self.tasks.push(Task::Value(payload));
                 self.tasks.push(Task::Value(capability));
             },
-            | Computation::Handle {
+            Computation::Handle {
                 subject,
                 on_return,
                 ref clauses,
@@ -1834,7 +1914,7 @@ impl<'run> Focusing<'run>
                     continuation: return_point,
                 });
             },
-            | Computation::Resume(stack, body) => {
+            Computation::Resume(stack, body) => {
                 let return_point = self.innermost_covariable()?;
                 self.tasks.push(Task::Control {
                     source: id,
@@ -1846,7 +1926,7 @@ impl<'run> Focusing<'run>
                 });
                 self.tasks.push(Task::Value(stack));
             },
-            | Computation::Reset(body) | Computation::Shift(body) => {
+            Computation::Reset(body) | Computation::Shift(body) => {
                 let return_point = self.innermost_covariable()?;
                 self.tasks.push(Task::Control {
                     source: id,
@@ -1857,7 +1937,7 @@ impl<'run> Focusing<'run>
                     continuation: return_point,
                 });
             },
-            | Computation::With(left, right) => {
+            Computation::With(left, right) => {
                 let return_point = self.innermost_covariable()?;
                 self.tasks.push(Task::Control {
                     source: id,
@@ -1872,7 +1952,7 @@ impl<'run> Focusing<'run>
                     continuation: return_point,
                 });
             },
-            | Computation::Project(side, subject) => {
+            Computation::Project(side, subject) => {
                 let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
                     tag: DestructorTag::Project(side),
                     producers: alloc::boxed::Box::from([]),
@@ -1883,7 +1963,7 @@ impl<'run> Focusing<'run>
                     continuation: frame,
                 });
             },
-            | Computation::ListFold {
+            Computation::ListFold {
                 element,
                 result,
                 list,
@@ -1920,7 +2000,7 @@ impl<'run> Focusing<'run>
                     continuation: return_point,
                 });
             },
-            | Computation::Primitive {
+            Computation::Primitive {
                 primitive,
                 arguments,
             } => {
@@ -1933,15 +2013,15 @@ impl<'run> Focusing<'run>
                     self.tasks.push(Task::Value(*argument));
                 }
             },
-            | Computation::Transport(..) => return Err(FocusRefusal::UniverseTransport(id)),
-            | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } => {
+            Computation::Transport(..) => return Err(FocusRefusal::UniverseTransport(id)),
+            Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } => {
                 return Err(FocusRefusal::ElementTransport(id));
             },
-            | Computation::Hole(_) | Computation::Mark { .. } => {
+            Computation::Hole(_) | Computation::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteComputation(id));
             },
-            | Computation::Session(_) => return Err(FocusRefusal::Session(id)),
-            | Computation::Fixpoint { body, evidence } => {
+            Computation::Session(_) => return Err(FocusRefusal::Session(id)),
+            Computation::Fixpoint { body, evidence } => {
                 let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
                     tag: DestructorTag::Force,
                     producers: alloc::boxed::Box::from([]),
@@ -1961,7 +2041,7 @@ impl<'run> Focusing<'run>
             },
             // A ride runs as its motive's action applied to the flow's
             // translator and the ridden value.
-            | Computation::Ride {
+            Computation::Ride {
                 motive,
                 flow,
                 value,
@@ -1973,7 +2053,7 @@ impl<'run> Focusing<'run>
                 self.tasks.push(Task::Value(value));
                 self.tasks.push(Task::Value(flow));
             },
-            | Computation::Return(value) => {
+            Computation::Return(value) => {
                 self.tasks.push(Task::Cut {
                     origin: FocusOrigin::Return,
                     polarity: Polarity::Positive,
@@ -1981,7 +2061,7 @@ impl<'run> Focusing<'run>
                 });
                 self.tasks.push(Task::Value(value));
             },
-            | Computation::Force(value) => {
+            Computation::Force(value) => {
                 let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
                     tag: DestructorTag::Force,
                     producers: alloc::boxed::Box::from([]),
@@ -1994,11 +2074,11 @@ impl<'run> Focusing<'run>
                 });
                 self.tasks.push(Task::Value(value));
             },
-            | Computation::Application(head, argument) => {
+            Computation::Application(head, argument) => {
                 self.tasks.push(Task::Apply { head, continuation });
                 self.tasks.push(Task::Value(argument));
             },
-            | Computation::Lambda(body) => {
+            Computation::Lambda(body) => {
                 let return_point = self.innermost_covariable()?;
                 self.tasks.push(Task::Lambda { continuation });
                 self.tasks.push(Task::Computation {
@@ -2006,7 +2086,7 @@ impl<'run> Focusing<'run>
                     continuation: return_point,
                 });
             },
-            | Computation::Bind(head, body) => {
+            Computation::Bind(head, body) => {
                 let inner = self.share_or_name(FocusOrigin::Bind, continuation)?;
                 self.tasks.push(Task::Bind { head });
                 self.tasks.push(Task::Computation {
@@ -2014,7 +2094,7 @@ impl<'run> Focusing<'run>
                     continuation: inner,
                 });
             },
-            | Computation::Case {
+            Computation::Case {
                 scrutinee,
                 ref branches,
             } => {
@@ -2129,9 +2209,9 @@ impl<'run> Focusing<'run>
             .consumer(continuation)
             .ok_or(FocusRefusal::TranslationInvariant)?
         {
-            | ConsumerNode::Covariable(_) | ConsumerNode::Top => return Ok(continuation),
-            | ConsumerNode::Destructor { tag, .. } => tag.polarity(),
-            | ConsumerNode::MuTilde { .. }
+            ConsumerNode::Covariable(_) | ConsumerNode::Top => return Ok(continuation),
+            ConsumerNode::Destructor { tag, .. } => tag.polarity(),
+            ConsumerNode::MuTilde { .. }
             | ConsumerNode::Case { .. }
             | ConsumerNode::DataCase { .. }
             | ConsumerNode::Select { .. }

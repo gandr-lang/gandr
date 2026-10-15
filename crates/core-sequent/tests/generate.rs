@@ -372,15 +372,15 @@ impl Generator
         let unit = self.intern(Ty::Unit);
         let integer = self.intern(Ty::Integer);
         match self.draws.pick(Options(6)) {
-            | Choice(0) => unit,
-            | Choice(1) => integer,
-            | Choice(2) => self.intern(Ty::Product(integer, unit)),
-            | Choice(3) => self.intern(Ty::Sum(unit, integer)),
-            | Choice(4) => {
+            Choice(0) => unit,
+            Choice(1) => integer,
+            Choice(2) => self.intern(Ty::Product(integer, unit)),
+            Choice(3) => self.intern(Ty::Sum(unit, integer)),
+            Choice(4) => {
                 let returner = self.intern(Ty::Returner(integer));
                 self.intern(Ty::Thunk(returner))
             },
-            | _ => {
+            _ => {
                 let returner = self.intern(Ty::Returner(integer));
                 let arrow = self.intern(Ty::Arrow(integer, returner));
                 self.intern(Ty::Thunk(arrow))
@@ -417,13 +417,13 @@ impl Generator
     {
         let value = self.value_type();
         match self.draws.pick(Options(3)) {
-            | Choice(0) => self.intern(Ty::Returner(value)),
-            | Choice(1) => {
+            Choice(0) => self.intern(Ty::Returner(value)),
+            Choice(1) => {
                 let domain = self.value_type();
                 let returner = self.intern(Ty::Returner(value));
                 self.intern(Ty::Arrow(domain, returner))
             },
-            | _ => {
+            _ => {
                 let returner = self.intern(Ty::Returner(value));
                 let inner = self.intern(Ty::Arrow(value, returner));
                 let domain = self.value_type();
@@ -572,11 +572,11 @@ impl Generator
             return;
         }
         match self.ty(ty) {
-            | Ty::Unit => {
+            Ty::Unit => {
                 let unit = self.core.value_unit();
                 self.values.push(unit);
             },
-            | Ty::Integer => {
+            Ty::Integer => {
                 let Choice(magnitude) = self.draws.pick(Options(100));
                 let sign = if magnitude > 0 && self.draws.pick(Options(4)) == Choice(0) {
                     Sign::Negative
@@ -591,12 +591,12 @@ impl Generator
                     .value_literal(Literal::Integer(IntegerLiteral::new(sign, digits)));
                 self.values.push(literal);
             },
-            | Ty::Product(first, second) => {
+            Ty::Product(first, second) => {
                 self.tasks.push(Task::Pair);
                 self.tasks.push(Task::Value(second, scope, fuel.child()));
                 self.tasks.push(Task::Value(first, scope, fuel.child()));
             },
-            | Ty::Sum(left, right) => {
+            Ty::Sum(left, right) => {
                 let (side, summand) = if self.draws.pick(Options(2)) == Choice(0) {
                     (Side::Left, left)
                 }
@@ -606,12 +606,12 @@ impl Generator
                 self.tasks.push(Task::Injection(side));
                 self.tasks.push(Task::Value(summand, scope, fuel.child()));
             },
-            | Ty::Thunk(computation) => {
+            Ty::Thunk(computation) => {
                 self.tasks.push(Task::Thunk);
                 self.tasks
                     .push(Task::Computation(computation, scope, fuel.child()));
             },
-            | Ty::Returner(_) | Ty::Arrow(..) => {
+            Ty::Returner(_) | Ty::Arrow(..) => {
                 panic!("a value is generated at a value type")
             },
         }
@@ -661,19 +661,19 @@ impl Generator
             self.draws.pick(Options(5))
         };
         match former {
-            | Choice(1) => {
+            Choice(1) => {
                 let thunk = self.intern(Ty::Thunk(ty));
                 self.tasks.push(Task::Force);
                 self.tasks.push(Task::Value(thunk, scope, child));
             },
-            | Choice(2) => {
+            Choice(2) => {
                 let domain = self.value_type();
                 let function = self.intern(Ty::Arrow(domain, ty));
                 self.tasks.push(Task::Application);
                 self.tasks.push(Task::Value(domain, scope, child));
                 self.tasks.push(Task::Computation(function, scope, child));
             },
-            | Choice(3) => {
+            Choice(3) => {
                 let bound = self.value_type();
                 let head = self.intern(Ty::Returner(bound));
                 let inner = self.extend(scope, bound);
@@ -681,7 +681,7 @@ impl Generator
                 self.tasks.push(Task::Computation(ty, inner, child));
                 self.tasks.push(Task::Computation(head, scope, child));
             },
-            | Choice(4) => {
+            Choice(4) => {
                 let left = self.value_type();
                 let right = self.value_type();
                 let sum = self.intern(Ty::Sum(left, right));
@@ -692,17 +692,17 @@ impl Generator
                 self.tasks.push(Task::Computation(ty, on_left, child));
                 self.tasks.push(Task::Value(sum, scope, child));
             },
-            | _ => match self.ty(ty) {
-                | Ty::Returner(value) => {
+            _ => match self.ty(ty) {
+                Ty::Returner(value) => {
                     self.tasks.push(Task::Return);
                     self.tasks.push(Task::Value(value, scope, child));
                 },
-                | Ty::Arrow(domain, codomain) => {
+                Ty::Arrow(domain, codomain) => {
                     let inner = self.extend(scope, domain);
                     self.tasks.push(Task::Lambda);
                     self.tasks.push(Task::Computation(codomain, inner, child));
                 },
-                | Ty::Unit | Ty::Integer | Ty::Product(..) | Ty::Sum(..) | Ty::Thunk(_) => {
+                Ty::Unit | Ty::Integer | Ty::Product(..) | Ty::Sum(..) | Ty::Thunk(_) => {
                     panic!("a computation is generated at a computation type")
                 },
             },
@@ -757,52 +757,52 @@ impl Generator
     {
         while let Some(task) = self.tasks.pop() {
             match task {
-                | Task::Value(ty, scope, fuel) => self.value(ty, scope, fuel),
-                | Task::Computation(ty, scope, fuel) => self.computation(ty, scope, fuel),
-                | Task::Pair => {
+                Task::Value(ty, scope, fuel) => self.value(ty, scope, fuel),
+                Task::Computation(ty, scope, fuel) => self.computation(ty, scope, fuel),
+                Task::Pair => {
                     let second = self.values.pop().expect("an operand");
                     let first = self.values.pop().expect("an operand");
                     let pair = self.core.value_tuple(&[first, second]);
                     self.values.push(pair);
                 },
-                | Task::Injection(side) => {
+                Task::Injection(side) => {
                     let body = self.values.pop().expect("an operand");
                     let injection = self.core.value_injection(side.into(), body);
                     self.values.push(injection);
                 },
-                | Task::Thunk => {
+                Task::Thunk => {
                     let body = self.computations.pop().expect("an operand");
                     let thunk = self.core.value_thunk(body);
                     self.values.push(thunk);
                 },
-                | Task::Return => {
+                Task::Return => {
                     let value = self.values.pop().expect("an operand");
                     let returned = self.core.computation_return(value);
                     self.computations.push(returned);
                 },
-                | Task::Force => {
+                Task::Force => {
                     let value = self.values.pop().expect("an operand");
                     let forced = self.core.computation_force(value);
                     self.computations.push(forced);
                 },
-                | Task::Application => {
+                Task::Application => {
                     let argument = self.values.pop().expect("an operand");
                     let head = self.computations.pop().expect("an operand");
                     let applied = self.core.computation_application(head, argument);
                     self.computations.push(applied);
                 },
-                | Task::Lambda => {
+                Task::Lambda => {
                     let body = self.computations.pop().expect("an operand");
                     let lambda = self.core.computation_lambda(body);
                     self.computations.push(lambda);
                 },
-                | Task::Bind => {
+                Task::Bind => {
                     let body = self.computations.pop().expect("an operand");
                     let head = self.computations.pop().expect("an operand");
                     let bound = self.core.computation_bind(head, body);
                     self.computations.push(bound);
                 },
-                | Task::Case => {
+                Task::Case => {
                     let on_right = self.computations.pop().expect("an operand");
                     let on_left = self.computations.pop().expect("an operand");
                     let scrutinee = self.values.pop().expect("an operand");
@@ -1029,8 +1029,8 @@ fn typed_builders_preserve_product_sum_and_function_roles()
             panic!("a sum introduction");
         };
         match Side::try_from(side).expect("the generator's sums are binary") {
-            | Side::Left => assert_eq!(Some(&Value::unit()), generator.core.value(body)),
-            | Side::Right => assert!(matches!(
+            Side::Left => assert_eq!(Some(&Value::unit()), generator.core.value(body)),
+            Side::Right => assert!(matches!(
                 generator.core.value(body),
                 Some(&Value::Literal(Literal::Integer(_)))
             )),

@@ -668,12 +668,12 @@ where
 {
     let spelled = |composer: &mut dyn Compose| {
         Ok::<_, PresentationError>(match walk(source, root, admits, form, composer)? {
-            | Walked::Built {
+            Walked::Built {
                 doc,
                 fidelity,
                 unspelled,
             } => (doc, fidelity, unspelled),
-            | Walked::OverBudget => (
+            Walked::OverBudget => (
                 composer.text(Glyphs("?"))?,
                 Fidelity::Approximate,
                 BTreeSet::from([Unspelled::OverBudget]),
@@ -681,7 +681,7 @@ where
         })
     };
     let (text, fidelity, unspelled) = match layout {
-        | Layout::Page(page) => {
+        Layout::Page(page) => {
             let mut meter = BuildMeter::new(BuildLimits::default());
             let mut builder = DocBuilder::try_new(&mut meter)?;
             let mut paged = Paged::new(&mut builder);
@@ -694,7 +694,7 @@ where
             let rendered = render(&arena, doc, &options, &mut render_meter)?;
             (rendered.text, fidelity, unspelled)
         },
-        | Layout::Line => {
+        Layout::Line => {
             let mut line = OneLine::new();
             let (doc, fidelity, unspelled) = spelled(&mut line)?;
             (

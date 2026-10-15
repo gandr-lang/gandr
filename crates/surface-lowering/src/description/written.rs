@@ -120,8 +120,8 @@ impl SurfaceRule<'_>
             "rule {} {} {}",
             self.face.lhs,
             match self.written.orientation {
-                | RuleOrientation::Unpinned => "<=>",
-                | RuleOrientation::Pinned(_) => "==>",
+                RuleOrientation::Unpinned => "<=>",
+                RuleOrientation::Pinned(_) => "==>",
             },
             self.face.rhs
         )
@@ -149,8 +149,8 @@ impl SurfaceRule<'_>
             "rule {name} : {} {} {}",
             self.face.lhs,
             match self.written.orientation {
-                | RuleOrientation::Unpinned => "<=>",
-                | RuleOrientation::Pinned(_) => "==>",
+                RuleOrientation::Unpinned => "<=>",
+                RuleOrientation::Pinned(_) => "==>",
             },
             self.face.rhs
         )

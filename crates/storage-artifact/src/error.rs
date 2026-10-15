@@ -57,13 +57,13 @@ impl fmt::Display for ManifestField
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Domain => "the domain",
-            | Self::ManifestVersion => "the manifest version",
-            | Self::KernelFormat => "the kernel format version",
-            | Self::CommitmentLength => "the boundary commitment's length",
-            | Self::Commitment => "the boundary commitment",
-            | Self::RecordCount => "the record count",
-            | Self::RootNode => "the root node identity",
+            Self::Domain => "the domain",
+            Self::ManifestVersion => "the manifest version",
+            Self::KernelFormat => "the kernel format version",
+            Self::CommitmentLength => "the boundary commitment's length",
+            Self::Commitment => "the boundary commitment",
+            Self::RecordCount => "the record count",
+            Self::RootNode => "the root node identity",
         })
     }
 }
@@ -211,43 +211,43 @@ impl fmt::Display for ArtifactError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Kernel { refusal } => write!(f, "the kernel refuses the artifact: {refusal}"),
-            | Self::Records { ref refusal } => write!(f, "the record plane refuses: {refusal}"),
-            | Self::DuplicateAdmissionKey { key, first, second } => {
+            Self::Kernel { refusal } => write!(f, "the kernel refuses the artifact: {refusal}"),
+            Self::Records { ref refusal } => write!(f, "the record plane refuses: {refusal}"),
+            Self::DuplicateAdmissionKey { key, first, second } => {
                 write!(
                     f,
                     "records {first} and {second} both carry admission index {}",
                     usize::from(key)
                 )
             },
-            | Self::MalformedManifest { field } => {
+            Self::MalformedManifest { field } => {
                 write!(f, "a manifest image holds {field} this build does not read")
             },
-            | Self::TruncatedManifest { field } => {
+            Self::TruncatedManifest { field } => {
                 write!(f, "a manifest image ends inside {field}")
             },
-            | Self::TrailingManifestBytes => {
+            Self::TrailingManifestBytes => {
                 f.write_str("a manifest image continues past its root node identity")
             },
-            | Self::UnsupportedKernelFormat { found } => {
+            Self::UnsupportedKernelFormat { found } => {
                 write!(
                     f,
                     "the manifest names kernel format {found}, which this build does not decode"
                 )
             },
-            | Self::IncompatibleProfile => {
+            Self::IncompatibleProfile => {
                 f.write_str("the manifest's boundary commitment differs from the reader's")
             },
-            | Self::TreeMismatch => {
+            Self::TreeMismatch => {
                 f.write_str("the stored records do not rebuild the tree the manifest names")
             },
-            | Self::MisplacedRecord { position } => {
+            Self::MisplacedRecord { position } => {
                 write!(
                     f,
                     "stored record {position} is not under the key its position requires"
                 )
             },
-            | Self::SegmentBoundary { position } => {
+            Self::SegmentBoundary { position } => {
                 write!(
                     f,
                     "stored record {position} ends where the artifact has no segment boundary"

@@ -61,10 +61,10 @@ impl fmt::Display for FailureClass
     ) -> fmt::Result
     {
         match *self {
-            | Self::UserAbsence => f.write_str("user absence"),
-            | Self::Unrepresentable => f.write_str("unrepresentable"),
-            | Self::MalformedSource => f.write_str("malformed source"),
-            | Self::EngineFault => f.write_str("engine fault"),
+            Self::UserAbsence => f.write_str("user absence"),
+            Self::Unrepresentable => f.write_str("unrepresentable"),
+            Self::MalformedSource => f.write_str("malformed source"),
+            Self::EngineFault => f.write_str("engine fault"),
         }
     }
 }

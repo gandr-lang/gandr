@@ -599,8 +599,8 @@ impl DecodedNode
     pub const fn kind(&self) -> NodeKind
     {
         match *self {
-            | Self::Leaf(_) => NodeKind::Leaf,
-            | Self::Internal(_) => NodeKind::Internal,
+            Self::Leaf(_) => NodeKind::Leaf,
+            Self::Internal(_) => NodeKind::Internal,
         }
     }
 
@@ -632,8 +632,8 @@ impl DecodedNode
     pub fn as_leaf(&self) -> Result<&LeafNode, RecordTreeError>
     {
         match *self {
-            | Self::Leaf(ref leaf) => Ok(leaf),
-            | Self::Internal(_) => Err(RecordTreeError::InvalidProofShape {
+            Self::Leaf(ref leaf) => Ok(leaf),
+            Self::Internal(_) => Err(RecordTreeError::InvalidProofShape {
                 context: "a leaf was required and the node is internal".into(),
             }),
         }
@@ -1051,7 +1051,7 @@ pub fn inspect_node(bytes: EncodedNode<'_>) -> Result<NodeLayout, RecordTreeErro
     let decoded = decode_node(bytes, &mut work)?;
 
     match decoded {
-        | DecodedNode::Leaf(leaf) => {
+        DecodedNode::Leaf(leaf) => {
             let record_count = leaf.record_count()?;
 
             Ok(NodeLayout {
@@ -1060,7 +1060,7 @@ pub fn inspect_node(bytes: EncodedNode<'_>) -> Result<NodeLayout, RecordTreeErro
                 children: None,
             })
         },
-        | DecodedNode::Internal(internal) => {
+        DecodedNode::Internal(internal) => {
             let Ok(child_count) = u64::try_from(internal.children().len())
             else {
                 return Err(RecordTreeError::ArithmeticOverflow {
@@ -1222,17 +1222,17 @@ pub fn decode_node(
     let kind = cursor.read_tag("node kind".into())?;
 
     let decoded = match kind {
-        | TAG_LEAF => {
+        TAG_LEAF => {
             let leaf = decode_leaf(&mut cursor, work)?;
 
             DecodedNode::Leaf(leaf)
         },
-        | TAG_INTERNAL => {
+        TAG_INTERNAL => {
             let internal = decode_internal(&mut cursor)?;
 
             DecodedNode::Internal(internal)
         },
-        | _ => {
+        _ => {
             return Err(RecordTreeError::MalformedNode {
                 context: "node kind is unknown".into(),
             });
@@ -1351,14 +1351,14 @@ fn decode_leaf(
 
         if let Some(earlier) = records.last() {
             match earlier.key().as_ref().cmp(key.as_ref()) {
-                | Ordering::Less => {},
-                | Ordering::Equal => {
+                Ordering::Less => {},
+                Ordering::Equal => {
                     return Err(RecordTreeError::DuplicateKeys {
                         first: RecordIndex::from(records.len().saturating_sub(0x01_usize)),
                         second: position,
                     });
                 },
-                | Ordering::Greater => {
+                Ordering::Greater => {
                     return Err(RecordTreeError::MalformedNode {
                         context: "leaf records are unsorted".into(),
                     });
@@ -1750,11 +1750,11 @@ mod tests
         let decoded = decode(encoded.as_borrowed()).expect("the node decodes");
 
         match decoded {
-            | DecodedNode::Internal(ref internal) => {
+            DecodedNode::Internal(ref internal) => {
                 assert_eq!(internal.children(), children.as_slice());
                 assert_eq!(internal.record_count(), RecordCount::from(6_u64));
             },
-            | DecodedNode::Leaf(_) => panic!("an internal encoding decoded as a leaf"),
+            DecodedNode::Leaf(_) => panic!("an internal encoding decoded as a leaf"),
         }
         assert_eq!(decoded.kind(), NodeKind::Internal);
         assert!(matches!(
@@ -1808,8 +1808,8 @@ mod tests
         let encoded = encode_internal(children.as_slice()).expect("the node encodes");
         let decoded = decode(encoded.as_borrowed()).expect("the node decodes");
         let internal = match decoded {
-            | DecodedNode::Internal(internal) => internal,
-            | DecodedNode::Leaf(_) => panic!("an internal encoding decoded as a leaf"),
+            DecodedNode::Internal(internal) => internal,
+            DecodedNode::Leaf(_) => panic!("an internal encoding decoded as a leaf"),
         };
 
         for (key, expected) in [

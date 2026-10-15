@@ -109,16 +109,16 @@ fn a_template_is_emitted_only_below_its_expansion_factor()
             assert_eq!(usize::from(cost.template_size), expected);
             assert_eq!(usize::from(cost.plain_replayed_steps), members);
             match produced {
-                | Production::WorkBoundExceeded { .. } => {
+                Production::WorkBoundExceeded { .. } => {
                     panic!("the original gate has no memoized allowance")
                 },
-                | Production::SchemaWorkBound { .. } => {},
-                | Production::Go(_) => {
+                Production::SchemaWorkBound { .. } => {},
+                Production::Go(_) => {
                     let size = usize::from(cost.template_size);
                     assert!(size < plain.checked_div(size).unwrap());
                     assert!(size.checked_mul(size).unwrap() < plain);
                 },
-                | Production::Plain { reason, .. } => {
+                Production::Plain { reason, .. } => {
                     assert!(matches!(reason, TemplateRefusal::DoesNotPay { .. }));
                     assert_eq!(usize::from(cache.checked()), 0);
                 },
@@ -376,12 +376,12 @@ fn a_poisoned_inheritance_entry_is_caught_at_admission()
         )
         .unwrap()
         {
-            | Production::Go(template) => break template,
-            | Production::Plain {
+            Production::Go(template) => break template,
+            Production::Plain {
                 reason: TemplateRefusal::NotInherited { key, .. },
                 ..
             } => cache.record(key, InheritanceVerdict::Inherited),
-            | result @ (Production::Plain { .. }
+            result @ (Production::Plain { .. }
             | Production::WorkBoundExceeded { .. }
             | Production::SchemaWorkBound { .. }) => {
                 panic!("unexpected refusal: {result:?}")
@@ -893,15 +893,15 @@ fn decode_equation_image(
     for pair in equation["graph"][0].as_array().unwrap() {
         let body = &pair[1];
         let ty = match body[0].as_str().unwrap() {
-            | "nat" => Type::Nat(image_stage(&body[1])),
-            | "in" => Type::In(Model(image_natural(&body[1]).0)),
-            | "universe" => Type::Universe(Model(image_natural(&body[1]).0)),
-            | "arrow" => Type::Arrow(
+            "nat" => Type::Nat(image_stage(&body[1])),
+            "in" => Type::In(Model(image_natural(&body[1]).0)),
+            "universe" => Type::Universe(Model(image_natural(&body[1]).0)),
+            "arrow" => Type::Arrow(
                 types[&image_natural(&body[1]).0],
                 types[&image_natural(&body[2]).0],
             ),
-            | "lift" => Type::Lift(types[&image_natural(&body[1]).0]),
-            | tag => panic!("unexpected classifier {tag}"),
+            "lift" => Type::Lift(types[&image_natural(&body[1]).0]),
+            tag => panic!("unexpected classifier {tag}"),
         };
         types.insert(image_natural(&pair[0]).0, arena.alloc_type(ty).unwrap());
     }
@@ -928,40 +928,40 @@ fn decode_equation_image(
             continue;
         }
         let term = match tag {
-            | "variable" => Term::Variable(Index(image_natural(&head[1]).0)),
-            | "outer-natural" => Term::Natural(Stage::Outer, image_natural(&head[1])),
-            | "inner-natural" => Term::Natural(
+            "variable" => Term::Variable(Index(image_natural(&head[1]).0)),
+            "outer-natural" => Term::Natural(Stage::Outer, image_natural(&head[1])),
+            "inner-natural" => Term::Natural(
                 Stage::Inner(Model(image_natural(&head[1]).0)),
                 image_natural(&head[2]),
             ),
-            | "code" => Term::Code(types[&image_natural(&head[1]).0]),
-            | "lambda" => Term::Lambda(types[&image_natural(&head[1]).0], child(0)),
-            | "eliminate" => Term::Eliminate(child(0), types[&image_natural(&head[1]).0]),
-            | "apply" => Term::Apply(child(0), child(1)),
-            | "multiply" => Term::Multiply(child(0), child(1)),
-            | "quote" => Term::Quote(child(0)),
-            | "splice" => Term::Splice(child(0)),
-            | "iterate" => Term::Iterate(child(0), child(1), child(2)),
-            | "pred" => {
+            "code" => Term::Code(types[&image_natural(&head[1]).0]),
+            "lambda" => Term::Lambda(types[&image_natural(&head[1]).0], child(0)),
+            "eliminate" => Term::Eliminate(child(0), types[&image_natural(&head[1]).0]),
+            "apply" => Term::Apply(child(0), child(1)),
+            "multiply" => Term::Multiply(child(0), child(1)),
+            "quote" => Term::Quote(child(0)),
+            "splice" => Term::Splice(child(0)),
+            "iterate" => Term::Iterate(child(0), child(1), child(2)),
+            "pred" => {
                 let Term::Natural(Stage::Outer, Natural(n)) = arena.term(child(0)).unwrap()
                 else {
                     panic!("outer predecessor");
                 };
                 Term::Natural(Stage::Outer, Natural(n.checked_sub(1).unwrap()))
             },
-            | name => panic!("unexpected constructor {name}"),
+            name => panic!("unexpected constructor {name}"),
         };
         terms.push(arena.alloc(term).unwrap());
     }
     let rule = match equation["rule"].as_str().unwrap() {
-        | "beta" => Rule::Beta,
-        | "congruence" => Rule::Congruence,
-        | "iterate-zero" => Rule::IterateZero,
-        | "iterate-successor" => Rule::IterateSuccessor,
-        | "splice-quote" => Rule::SpliceQuote,
-        | "quote-splice" => Rule::QuoteSplice,
-        | "eliminate" => Rule::Eliminate,
-        | tag => panic!("unexpected rule {tag}"),
+        "beta" => Rule::Beta,
+        "congruence" => Rule::Congruence,
+        "iterate-zero" => Rule::IterateZero,
+        "iterate-successor" => Rule::IterateSuccessor,
+        "splice-quote" => Rule::SpliceQuote,
+        "quote-splice" => Rule::QuoteSplice,
+        "eliminate" => Rule::Eliminate,
+        tag => panic!("unexpected rule {tag}"),
     };
     let step = Step {
         source: terms[image_natural(&equation["sides"][0]).0],
@@ -1423,12 +1423,12 @@ fn assert_same_analysis(
 )
 {
     match (actual, expected) {
-        | (&Analysis::Candidate(ref actual), &Analysis::Candidate(ref expected)) => {
+        (&Analysis::Candidate(ref actual), &Analysis::Candidate(ref expected)) => {
             assert_eq!(actual.cost(), expected.cost());
             assert_eq!(actual.prices(), expected.prices());
             assert_eq!(actual.points().count(), expected.points().count());
         },
-        | (
+        (
             &Analysis::Refused { reason, cost },
             &Analysis::Refused {
                 reason: expected_reason,
@@ -1438,7 +1438,7 @@ fn assert_same_analysis(
             assert_eq!(reason, expected_reason);
             assert_eq!(cost, expected_cost);
         },
-        | _ => panic!("one analysis refuses and the other does not"),
+        _ => panic!("one analysis refuses and the other does not"),
     }
 }
 
@@ -1459,23 +1459,23 @@ fn assert_same_production(
 )
 {
     match (actual, expected) {
-        | (&Production::Go(_), &Production::Go(_))
+        (&Production::Go(_), &Production::Go(_))
         | (&Production::SchemaWorkBound { .. }, &Production::SchemaWorkBound { .. }) => {},
-        | (
+        (
             &Production::WorkBoundExceeded { bound, .. },
             &Production::WorkBoundExceeded {
                 bound: expected_bound,
                 ..
             },
         ) => assert_eq!(bound, expected_bound),
-        | (
+        (
             &Production::Plain { reason, .. },
             &Production::Plain {
                 reason: expected_reason,
                 ..
             },
         ) => assert_eq!(reason, expected_reason),
-        | _ => panic!("the productions' verdicts differ"),
+        _ => panic!("the productions' verdicts differ"),
     }
     assert_eq!(actual.cost(), expected.cost());
 }
@@ -1531,7 +1531,7 @@ fn outside_peak_refusals_follow_from_the_first_and_last_members()
         let analysis = analyze(&arena, &family).unwrap();
         let whole = generalize_all(&arena, &family).unwrap();
         match probe(&arena, &family).unwrap() {
-            | Probe::Outside(entry) => {
+            Probe::Outside(entry) => {
                 assert!(refused_by_the_two);
                 assert!(matches!(whole.rooting, PeakRoots::Missing(_)));
                 assert!(matches!(
@@ -1545,7 +1545,7 @@ fn outside_peak_refusals_follow_from_the_first_and_last_members()
                         if refused == entry && cost == members_only(&family)
                 ));
             },
-            | Probe::Open { graph, .. } => {
+            Probe::Open { graph, .. } => {
                 assert!(!refused_by_the_two);
                 let mut imported = Graph::default();
                 import_members(&mut imported, &arena, &ends).unwrap();
@@ -1727,7 +1727,7 @@ fn normalized(edition: Edition) -> (Arena, Vec<Certificate>)
     let mut arena = Arena::default();
     let mut certificates = Vec::new();
     let (body, exponents, inputs) = match edition {
-        | Edition::Generated { members, arms } => {
+        Edition::Generated { members, arms } => {
             for member in 0 .. members.0 {
                 let value = member.checked_rem(arms.0).unwrap();
                 let body = arena
@@ -1742,7 +1742,7 @@ fn normalized(edition: Edition) -> (Arena, Vec<Certificate>)
             }
             return (arena, certificates);
         },
-        | Edition::Staged {
+        Edition::Staged {
             body,
             exponents,
             inputs,
@@ -1751,11 +1751,11 @@ fn normalized(edition: Edition) -> (Arena, Vec<Certificate>)
     arena.alloc_type(Type::In(Model(0))).unwrap();
     let inner = arena.alloc_type(Type::Nat(Stage::Inner(Model(0)))).unwrap();
     let (program, inputs) = match body {
-        | Body::Power => (
+        Body::Power => (
             gandr_core_nbe::stage::power(&mut arena, Model(0)).unwrap(),
             &[Natural(0)][..],
         ),
-        | Body::Double | Body::Triple => (product_program(&mut arena, body), inputs),
+        Body::Double | Body::Triple => (product_program(&mut arena, body), inputs),
     };
     for exponent in exponents.low.0 ..= exponents.high.0 {
         for input in inputs {
@@ -1764,20 +1764,20 @@ fn normalized(edition: Edition) -> (Arena, Vec<Certificate>)
                 .unwrap();
             let source = arena.alloc(Term::Apply(program, number)).unwrap();
             let input = match body {
-                | Body::Power => arena.alloc(Term::Variable(Index(0))).unwrap(),
-                | Body::Double | Body::Triple => arena
+                Body::Power => arena.alloc(Term::Variable(Index(0))).unwrap(),
+                Body::Double | Body::Triple => arena
                     .alloc(Term::Natural(Stage::Inner(Model(0)), *input))
                     .unwrap(),
             };
             let input = arena.alloc(Term::Quote(input)).unwrap();
             let source = arena.alloc(Term::Apply(source, input)).unwrap();
             let source = match body {
-                | Body::Power => {
+                Body::Power => {
                     let source = arena.alloc(Term::Splice(source)).unwrap();
                     let source = arena.alloc(Term::Lambda(inner, source)).unwrap();
                     arena.alloc(Term::Quote(source)).unwrap()
                 },
-                | Body::Double | Body::Triple => source,
+                Body::Double | Body::Triple => source,
             };
             certificates.push(
                 gandr_core_nbe::stage::normalize(&mut arena, source, &mut Budget(10_000_000))
@@ -1819,12 +1819,12 @@ fn grouped_at_once(
             tags.push(core::mem::discriminant(&arena.term(child).unwrap()));
         }
         let key = (step.rule, tags);
-        match keys.iter().position(|known| *known == key) {
-            | Some(family) => families[family].push(*step),
-            | None => {
-                keys.push(key);
-                families.push(Vec::from([*step]));
-            },
+        if let Some(family) = keys.iter().position(|known| *known == key) {
+            families[family].push(*step);
+        }
+        else {
+            keys.push(key);
+            families.push(Vec::from([*step]));
         }
     }
     families
@@ -1968,8 +1968,8 @@ fn products(
         let b = arena.alloc(Term::Natural(Stage::Outer, right)).unwrap();
         let source = arena.alloc(Term::Multiply(a, b)).unwrap();
         let target = match target {
-            | Target::Swapped => arena.alloc(Term::Multiply(b, a)).unwrap(),
-            | Target::LeftPredecessor => {
+            Target::Swapped => arena.alloc(Term::Multiply(b, a)).unwrap(),
+            Target::LeftPredecessor => {
                 let below = Natural(left.0.checked_sub(1).unwrap());
                 arena.alloc(Term::Natural(Stage::Outer, below)).unwrap()
             },
@@ -2078,10 +2078,10 @@ fn product_draft(
         )
         .unwrap();
     let fresh = match analyze(&arena, &family).unwrap() {
-        | Analysis::Candidate(candidate) => {
+        Analysis::Candidate(candidate) => {
             Maybe::Present(candidate.admission_candidate().unwrap().proposal)
         },
-        | Analysis::Refused { reason, .. } => Maybe::Absent(reason),
+        Analysis::Refused { reason, .. } => Maybe::Absent(reason),
     };
     (finished, fresh)
 }
@@ -2169,8 +2169,8 @@ fn drafts_refuse_what_a_fresh_run_would_generalize_differently()
             .walk(&arena, &family, widening, Rebasing::Allowed, &mut drafter)
             .unwrap()
         {
-            | Walk::Missed(miss) => Maybe::Absent(miss),
-            | Walk::Matched { kind, .. } => Maybe::Present(kind),
+            Walk::Missed(miss) => Maybe::Absent(miss),
+            Walk::Matched { kind, .. } => Maybe::Present(kind),
         }
     };
     let pairs = [(n(1), n(2)), (n(3), n(4))];
@@ -2489,9 +2489,9 @@ fn drafts_equal_fresh_runs_across_the_edit_traces()
                     Production::Go(_)
                 ));
                 let count = match kind {
-                    | DraftKind::Exact => &mut exact,
-                    | DraftKind::Widened(_) => &mut widened,
-                    | DraftKind::Rebased(..) => &mut rebased,
+                    DraftKind::Exact => &mut exact,
+                    DraftKind::Widened(_) => &mut widened,
+                    DraftKind::Rebased(..) => &mut rebased,
                 };
                 *count = count.checked_add(1).unwrap();
             }
@@ -2581,8 +2581,8 @@ fn a_work_bound_family_admits_its_template_subfamily()
             normalized(staged(Body::Double, Natural(0), Natural(top), TWO_THREE));
         for family in harvest(&arena, ProgramId(0), &certificates).unwrap() {
             let held = match memo.template(&family) {
-                | Maybe::Present(template) => Maybe::Present(template.proposal().unwrap()),
-                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                Maybe::Present(template) => Maybe::Present(template.proposal().unwrap()),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
             };
             let report = memo
                 .admit_family(
@@ -2643,7 +2643,7 @@ fn schema_work_is_bounded_before_producer_inheritance()
                 .produce(PriceGate::Memoized, &mut cache, &mut budget)
                 .unwrap();
             match expected {
-                | Err(Refusal::SchemaWorkBound) => {
+                Err(Refusal::SchemaWorkBound) => {
                     assert!(matches!(actual, Production::SchemaWorkBound { .. }));
                     assert_eq!(budget.0, 1_000_000);
                     assert_eq!(usize::from(cache.checked()), 0);
@@ -2651,7 +2651,7 @@ fn schema_work_is_bounded_before_producer_inheritance()
                     assert_eq!(usize::from(actual.cost().triples_checked), 0);
                     refused = refused.checked_add(1).unwrap();
                 },
-                | Ok(_) | Err(_) => assert!(!matches!(actual, Production::SchemaWorkBound { .. })),
+                Ok(_) | Err(_) => assert!(!matches!(actual, Production::SchemaWorkBound { .. })),
             }
         }
         assert_eq!(refused, bounded);
@@ -2680,14 +2680,14 @@ fn every_member_analysis(
 {
     let cost = members_only(family);
     let generalization = match *family {
-        | [_, ref middle @ .., _] if !middle.is_empty() => match probe(arena, family).unwrap() {
-            | Probe::Outside(entry) => {
+        [_, ref middle @ .., _] if !middle.is_empty() => match probe(arena, family).unwrap() {
+            Probe::Outside(entry) => {
                 return Analysis::Refused {
                     reason: TemplateRefusal::EntryOutsidePeak { entry },
                     cost,
                 };
             },
-            | Probe::Open {
+            Probe::Open {
                 mut graph,
                 first,
                 last,
@@ -2700,7 +2700,7 @@ fn every_member_analysis(
                 generalize(graph, &members, &rows).unwrap()
             },
         },
-        | _ => generalize_all(arena, family).unwrap(),
+        _ => generalize_all(arena, family).unwrap(),
     };
     conclude(generalization, family[0].rule, cost).unwrap()
 }
@@ -2774,13 +2774,13 @@ fn distinct_members_generalize_as_every_member()
         let actual = analyze(arena, family).unwrap();
         let expected = every_member_analysis(arena, family);
         match (&actual, &expected) {
-            | (&Analysis::Candidate(ref actual), &Analysis::Candidate(ref expected)) => {
+            (&Analysis::Candidate(ref actual), &Analysis::Candidate(ref expected)) => {
                 assert_same_candidate(actual, expected);
                 if Distinct::of(family).firsts.len() < family.len() {
                     repeated = repeated.checked_add(1).unwrap();
                 }
             },
-            | (
+            (
                 &Analysis::Refused { reason, cost },
                 &Analysis::Refused {
                     reason: expected_reason,
@@ -2790,7 +2790,7 @@ fn distinct_members_generalize_as_every_member()
                 assert_eq!(reason, expected_reason);
                 assert_eq!(cost, expected_cost);
             },
-            | _ => panic!("one analysis refuses and the other does not"),
+            _ => panic!("one analysis refuses and the other does not"),
         }
     }
     assert!(repeated >= 4);

@@ -118,12 +118,12 @@ impl core::fmt::Display for FormatFault<'_>
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Unreadable(ref error) => write!(f, "unreadable: {error}"),
-            | Self::NoSource => f.write_str("names no `.gandr` source"),
-            | Self::Grammar(error) => write!(f, "the built-in grammar did not build: {error}"),
-            | Self::Parse(ref error) => write!(f, "the parse did not commit: {error}"),
-            | Self::Refused(ref error) => write!(f, "not formatted: {error}"),
-            | Self::Unwritable(ref error) => write!(f, "cannot write the formatted text: {error}"),
+            Self::Unreadable(ref error) => write!(f, "unreadable: {error}"),
+            Self::NoSource => f.write_str("names no `.gandr` source"),
+            Self::Grammar(error) => write!(f, "the built-in grammar did not build: {error}"),
+            Self::Parse(ref error) => write!(f, "the parse did not commit: {error}"),
+            Self::Refused(ref error) => write!(f, "not formatted: {error}"),
+            Self::Unwritable(ref error) => write!(f, "cannot write the formatted text: {error}"),
         }
     }
 }
@@ -269,8 +269,8 @@ impl Formatting
     pub fn step(&mut self) -> Maybe<FormatStep<'_>, walk_step::Absent>
     {
         let reached = match self.traversal.reach() {
-            | Maybe::Absent(absent) => return Maybe::Absent(absent),
-            | Maybe::Present(reached) => reached,
+            Maybe::Absent(absent) => return Maybe::Absent(absent),
+            Maybe::Present(reached) => reached,
         };
         let path = self.traversal.path();
         let (grammar, options, rewrite) = (self.grammar.as_ref(), self.options, self.rewrite);
@@ -324,8 +324,8 @@ impl Formatting
         Visitor: FnMut(FormatStep<'_>) -> ControlFlow<Stop>,
     {
         let grammar = match self.grammar {
-            | Ok(ref grammar) if self.width != Width::SERIAL => grammar,
-            | Ok(_) | Err(_) => {
+            Ok(ref grammar) if self.width != Width::SERIAL => grammar,
+            Ok(_) | Err(_) => {
                 while let Maybe::Present(step) = self.step() {
                     visitor(step)?;
                 }
@@ -352,8 +352,8 @@ impl Formatting
             .collect();
         order.sort_unstable();
         let threads = match order.len() {
-            | 0 | 1 => 1,
-            | sources => usize::from(NonZeroUsize::from(self.width.threads())).min(sources),
+            0 | 1 => 1,
+            sources => usize::from(NonZeroUsize::from(self.width.threads())).min(sources),
         };
         let cursor = AtomicUsize::new(0);
         let (options, rewrite) = (self.options, self.rewrite);
@@ -396,13 +396,13 @@ where
     Lay: FnOnce() -> Result<Laid, FormatFault<'step>>,
 {
     let fault = match reached {
-        | Reached::Source => match lay() {
-            | Ok(Laid::Unchanged) => return FormatStep::Unchanged { path },
-            | Ok(Laid::Changed) => return FormatStep::Changed { path },
-            | Err(fault) => fault,
+        Reached::Source => match lay() {
+            Ok(Laid::Unchanged) => return FormatStep::Unchanged { path },
+            Ok(Laid::Changed) => return FormatStep::Changed { path },
+            Err(fault) => fault,
         },
-        | Reached::Unreadable(error) => FormatFault::Unreadable(error),
-        | Reached::NoSource => FormatFault::NoSource,
+        Reached::Unreadable(error) => FormatFault::Unreadable(error),
+        Reached::NoSource => FormatFault::NoSource,
     };
     FormatStep::Fault { path, fault }
 }
@@ -520,17 +520,17 @@ mod tests
         let mut seen = Vec::new();
         let visited = formatting.visit(|step| {
             let (path, row) = match step {
-                | FormatStep::Unchanged { path } => (path, Seen::Unchanged),
-                | FormatStep::Changed { path } => (path, Seen::Changed),
-                | FormatStep::Fault {
+                FormatStep::Unchanged { path } => (path, Seen::Unchanged),
+                FormatStep::Changed { path } => (path, Seen::Changed),
+                FormatStep::Fault {
                     path,
                     fault: FormatFault::NoSource,
                 } => (path, Seen::NoSource),
-                | FormatStep::Fault {
+                FormatStep::Fault {
                     path,
                     fault: FormatFault::Unreadable(_),
                 } => (path, Seen::Unreadable),
-                | FormatStep::Fault { path, .. } => (path, Seen::Fault),
+                FormatStep::Fault { path, .. } => (path, Seen::Fault),
             };
             let relative = path.strip_prefix(base).unwrap_or(path).to_path_buf();
             seen.push((relative, row));

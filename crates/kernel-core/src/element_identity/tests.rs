@@ -636,8 +636,8 @@ fn declared_pair_identity(admitted: Admitted) -> Result<(), KernelError>
     let here_truth = arena.value_here(boolean.truth);
     let pair = arena.value_tuple(&[boolean.truth, here_truth]);
     let declaration = match admitted {
-        | Admitted::Defined => staging.def(LevelSignature::monomorphic(), sigma, pair),
-        | Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), sigma),
+        Admitted::Defined => staging.def(LevelSignature::monomorphic(), sigma, pair),
+        Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), sigma),
     };
     let position = environment.add_decl(declaration)?.position();
     let mut staging = environment.stage();
@@ -1142,7 +1142,7 @@ fn quantified(
     let mut children = Vec::new();
     for step in steps {
         match *step {
-            | Quantified::Return {
+            Quantified::Return {
                 ref left,
                 ref right,
                 proof,
@@ -1153,7 +1153,7 @@ fn quantified(
                 }));
                 children.extend([left.value, right.value, proof]);
             },
-            | Quantified::Apply {
+            Quantified::Apply {
                 fibre,
                 ref left,
                 ref right,
@@ -1803,10 +1803,8 @@ fn conjunction(
     let mut staging = environment.stage();
     let boolean = boolean(staging.arena());
     let declaration = match neutral {
-        | Admitted::Defined => {
-            staging.def(LevelSignature::monomorphic(), boolean.ty, boolean.truth)
-        },
-        | Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), boolean.ty),
+        Admitted::Defined => staging.def(LevelSignature::monomorphic(), boolean.ty, boolean.truth),
+        Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), boolean.ty),
     };
     let neutral = admit(environment, declarations, declaration)
         .expect("the neutral element")
@@ -1876,8 +1874,8 @@ fn unit_law(
     let neutral = arena.value_constant(monoid.neutral);
     let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
     let arguments = match unit {
-        | Unit::Left => [neutral, bound],
-        | Unit::Right => [bound, neutral],
+        Unit::Left => [neutral, bound],
+        Unit::Right => [bound, neutral],
     };
     let endpoint = applied(arena, monoid.mul, &arguments);
     let identity = arena.value_type_path(monoid.ty, endpoint, bound);
@@ -1922,11 +1920,11 @@ fn readmit(artifact: &DecodedArtifact) -> Result<Environment, KernelError>
         }
         let levels = marked.declaration().levels().clone();
         let staged = match *marked.declaration().content() {
-            | DeclarationContent::Def { declared, body } => staging
+            DeclarationContent::Def { declared, body } => staging
                 .def(levels, declared, body)
                 .relating(marked.declaration().related().to_vec()),
-            | DeclarationContent::Axiom { declared } => staging.axiom(levels, declared),
-            | DeclarationContent::Data { .. } | DeclarationContent::AbstractType { .. } => {
+            DeclarationContent::Axiom { declared } => staging.axiom(levels, declared),
+            DeclarationContent::Data { .. } | DeclarationContent::AbstractType { .. } => {
                 panic!("the fixture holds definitions and axioms")
             },
         };
@@ -1985,8 +1983,8 @@ fn a_certificate_with_a_returned_endpoint_decodes_checks_and_replays()
         .declarations()
         .iter()
         .map(|marked| match *marked.declaration().content() {
-            | DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
-            | DeclarationContent::Data { .. }
+            DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
+            DeclarationContent::Data { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
         })
@@ -2059,10 +2057,7 @@ fn a_stuck_returned_endpoint_compares_structurally()
         let arena = staging.arena();
         let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
         let left = applied(arena, f, &[bound]);
-        let right = match right {
-            | Some(head) => applied(arena, head, &[bound]),
-            | None => bound,
-        };
+        let right = right.map_or(bound, |head| applied(arena, head, &[bound]));
         let identity = arena.value_type_path(boolean.ty, left, right);
         let returns = arena.comp_type_returner(identity);
         let family = arena.comp_type_pi(boolean.ty, returns);
@@ -2109,10 +2104,8 @@ fn delayed_law(
     let mut staging = environment.stage();
     let named_k = staging.arena().value_constant(k);
     let declaration = match alias {
-        | Admitted::Defined => {
-            staging.def(LevelSignature::monomorphic(), boolean.function, named_k)
-        },
-        | Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), boolean.function),
+        Admitted::Defined => staging.def(LevelSignature::monomorphic(), boolean.function, named_k),
+        Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), boolean.function),
     };
     let j = environment.add_decl(declaration)?.position();
     let mut staging = environment.stage();
@@ -2168,10 +2161,10 @@ fn endpoint_refusal(
 ) -> Option<(EndpointSide, KernelVerdict)>
 {
     match *admitted {
-        | Err(KernelError::Identity(IdentityError::EndpointsDiffer { side, verdict, .. })) => {
+        Err(KernelError::Identity(IdentityError::EndpointsDiffer { side, verdict, .. })) => {
             Some((side, verdict))
         },
-        | _ => None,
+        _ => None,
     }
 }
 
@@ -2261,10 +2254,8 @@ fn ascribed_law(
     let mut staging = environment.stage();
     let named_k = staging.arena().value_constant(k);
     let declaration = match alias {
-        | Admitted::Defined => {
-            staging.def(LevelSignature::monomorphic(), boolean.function, named_k)
-        },
-        | Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), boolean.function),
+        Admitted::Defined => staging.def(LevelSignature::monomorphic(), boolean.function, named_k),
+        Admitted::Assumed => staging.axiom(LevelSignature::monomorphic(), boolean.function),
     };
     let j = admit(&mut environment, &mut declarations, declaration)?.position();
     let mut staging = environment.stage();
@@ -2303,10 +2294,10 @@ fn ascribed_law(
 fn relation_refusal(admitted: &Result<CheckedId, KernelError>) -> Option<KernelVerdict>
 {
     match *admitted {
-        | Err(KernelError::Identity(IdentityError::RelatedEndpointsDiffer { verdict, .. })) => {
+        Err(KernelError::Identity(IdentityError::RelatedEndpointsDiffer { verdict, .. })) => {
             Some(verdict)
         },
-        | _ => None,
+        _ => None,
     }
 }
 

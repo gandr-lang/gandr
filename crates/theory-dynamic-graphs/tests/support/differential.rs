@@ -121,8 +121,8 @@ pub fn run(
             .map_err(|failure| format!("offer {here}: insertion failed: {failure}"))?;
         let truly_refused = matches!(verdict, EdgeVerdict::Refused(_));
         let reported_refused = match fault {
-            | Fault::FlipVerdictAt(at) if at == here => !truly_refused,
-            | Fault::FlipVerdictAt(_) | Fault::None => truly_refused,
+            Fault::FlipVerdictAt(at) if at == here => !truly_refused,
+            Fault::FlipVerdictAt(_) | Fault::None => truly_refused,
         };
         if reported_refused != batch_refuses {
             return Err(format!(
@@ -132,7 +132,7 @@ pub fn run(
         }
 
         match verdict {
-            | EdgeVerdict::Refused(witness) => {
+            EdgeVerdict::Refused(witness) => {
                 report.refused = report.refused.increment();
                 if witness.nodes.first() != witness.nodes.last() {
                     return Err(format!("offer {here}: the witness walk is not closed"));
@@ -153,8 +153,8 @@ pub fn run(
                     .nodes
                     .windows(2)
                     .filter_map(|pair| match *pair {
-                        | [source, target] => Some(EdgeId::new(source, target)),
-                        | _ => None,
+                        [source, target] => Some(EdgeId::new(source, target)),
+                        _ => None,
                     })
                     .collect();
                 if walked != witness.edges {
@@ -163,11 +163,11 @@ pub fn run(
                     ));
                 }
             },
-            | EdgeVerdict::Admitted => {
+            EdgeVerdict::Admitted => {
                 report.admitted = report.admitted.increment();
                 admitted.push(offer);
             },
-            | EdgeVerdict::AdmittedAfterRepair => {
+            EdgeVerdict::AdmittedAfterRepair => {
                 report.repaired = report.repaired.increment();
                 admitted.push(offer);
             },

@@ -92,8 +92,8 @@ fn sequent_cell(
 {
     let face = |ctor: SequentCtor| {
         let name = match ctor {
-            | SequentCtor::Zero => "Zero",
-            | SequentCtor::Succ => "Succ",
+            SequentCtor::Zero => "Zero",
+            SequentCtor::Succ => "Succ",
         };
         CmdPat::cut(Polarity::Positive, ProdPat::ctor(name, []), ConsPat::top())
     };

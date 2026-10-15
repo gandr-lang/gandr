@@ -854,9 +854,9 @@ impl Family
     pub fn label(self) -> Label
     {
         match self {
-            | Self::AcyclicThenViolating => Label("acyclic-then-violating"),
-            | Self::AdversarialBackEdges => Label("adversarial-back-edges"),
-            | Self::Interleaved => Label("interleaved"),
+            Self::AcyclicThenViolating => Label("acyclic-then-violating"),
+            Self::AdversarialBackEdges => Label("adversarial-back-edges"),
+            Self::Interleaved => Label("interleaved"),
         }
     }
 }
@@ -902,7 +902,7 @@ pub fn stream(
             continue;
         }
         let (source, target) = match family {
-            | Family::AcyclicThenViolating => {
+            Family::AcyclicThenViolating => {
                 if step < midpoint {
                     // Respect the hidden permutation: an edge always runs from
                     // the lower rank to the higher one.
@@ -919,7 +919,7 @@ pub fn stream(
                     (left, right)
                 }
             },
-            | Family::AdversarialBackEdges => {
+            Family::AdversarialBackEdges => {
                 // A chain over the dense ids, offered mostly in reverse.
                 let wrapped = step
                     .checked_rem(usize::try_from(span).unwrap_or(1))
@@ -933,7 +933,7 @@ pub fn stream(
                     (successor, here)
                 }
             },
-            | Family::Interleaved => (left, right),
+            Family::Interleaved => (left, right),
         };
         offers.push(EdgeId::new(NodeId::from(source), NodeId::from(target)));
     }

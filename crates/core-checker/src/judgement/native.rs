@@ -67,12 +67,46 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let (datatype, tag, count) = match self.value(term)? {
-            | &Value::Constructor {
+            &Value::Constructor {
                 ref datatype,
                 ref tag,
                 ref fields,
             } => (*datatype, *tag, fields.len()),
-            | _ => return Err(CheckRefusal::MachineInvariant),
+            &Value::Primitive { .. }
+            | &Value::PathRefl(_)
+            | &Value::PathProduct(..)
+            | &Value::PathEquiv { .. }
+            | &Value::Here(_)
+            | &Value::Funext(..)
+            | &Value::Equiv(..)
+            | &Value::Ua { .. }
+            | &Value::SessionRelated { .. }
+            | &Value::Stay(_)
+            | &Value::Then(..)
+            | &Value::FlowProduct(..)
+            | &Value::Forward(_)
+            | &Value::FunctionFlow(..)
+            | &Value::Recorded(_)
+            | &Value::Returned(_)
+            | &Value::Nested(_)
+            | &Value::Run(_)
+            | &Value::Variable { .. }
+            | &Value::Constant(_)
+            | &Value::Literal(_)
+            | &Value::Tuple(_)
+            | &Value::Injection(..)
+            | &Value::ListNil
+            | &Value::ListCons(..)
+            | &Value::Thunk(_)
+            | &Value::Lift { .. }
+            | &Value::Quote(_)
+            | &Value::QuoteComputation(_)
+            | &Value::StaticLambda(_)
+            | &Value::StaticApplication(..)
+            | &Value::Record(_)
+            | &Value::Hole(_)
+            | &Value::Mark { .. }
+            | &Value::Reify(_) => return Err(CheckRefusal::MachineInvariant),
         };
         if !matches!(
             self.context.arena().value_type(datatype),
@@ -101,11 +135,45 @@ impl Machine<'_, '_>
                 gandr_core_term::BinderDepth::from(signature.parameters().len()),
             )?;
             let field = match self.value(term)? {
-                | &Value::Constructor { ref fields, .. } => fields
+                &Value::Constructor { ref fields, .. } => fields
                     .get(index)
                     .copied()
                     .ok_or(CheckRefusal::MachineInvariant)?,
-                | _ => return Err(CheckRefusal::MachineInvariant),
+                &Value::Primitive { .. }
+                | &Value::PathRefl(_)
+                | &Value::PathProduct(..)
+                | &Value::PathEquiv { .. }
+                | &Value::Here(_)
+                | &Value::Funext(..)
+                | &Value::Equiv(..)
+                | &Value::Ua { .. }
+                | &Value::SessionRelated { .. }
+                | &Value::Stay(_)
+                | &Value::Then(..)
+                | &Value::FlowProduct(..)
+                | &Value::Forward(_)
+                | &Value::FunctionFlow(..)
+                | &Value::Recorded(_)
+                | &Value::Returned(_)
+                | &Value::Nested(_)
+                | &Value::Run(_)
+                | &Value::Variable { .. }
+                | &Value::Constant(_)
+                | &Value::Literal(_)
+                | &Value::Tuple(_)
+                | &Value::Injection(..)
+                | &Value::ListNil
+                | &Value::ListCons(..)
+                | &Value::Thunk(_)
+                | &Value::Lift { .. }
+                | &Value::Quote(_)
+                | &Value::QuoteComputation(_)
+                | &Value::StaticLambda(_)
+                | &Value::StaticApplication(..)
+                | &Value::Record(_)
+                | &Value::Hole(_)
+                | &Value::Mark { .. }
+                | &Value::Reify(_) => return Err(CheckRefusal::MachineInvariant),
             };
             self.wait(Frame::NativeNext(Goal::Value {
                 term: field,
@@ -145,11 +213,11 @@ impl Machine<'_, '_>
                 gandr_core_term::BinderDepth::from(index),
             )?;
             let argument = match self.context.arena().value_type(datatype) {
-                | Some(&ValueType::Data { ref arguments, .. }) => arguments
+                Some(&ValueType::Data { ref arguments, .. }) => arguments
                     .get(index)
                     .copied()
                     .ok_or(CheckRefusal::MachineInvariant)?,
-                | _ => return Err(CheckRefusal::MachineInvariant),
+                _ => return Err(CheckRefusal::MachineInvariant),
             };
             self.wait(Frame::NativeNext(Goal::Value {
                 term: argument,
@@ -273,15 +341,15 @@ impl Machine<'_, '_>
         }
         let owner = self.owner;
         for (label, &field) in fields.iter().rev() {
-            let direction = match wanted.get(label) {
-                | Some(&expected) => Direction::Check(expected),
-                | None => {
-                    self.frames.push(Waiting {
-                        frame: Frame::NativeDiscard,
-                        owner,
-                    });
-                    Direction::Synthesise
-                },
+            let direction = if let Some(&expected) = wanted.get(label) {
+                Direction::Check(expected)
+            }
+            else {
+                self.frames.push(Waiting {
+                    frame: Frame::NativeDiscard,
+                    owner,
+                });
+                Direction::Synthesise
             };
             self.frames.push(Waiting {
                 frame: Frame::NativeNext(Goal::Value {
@@ -365,12 +433,39 @@ impl Machine<'_, '_>
         }
         let signature = former::signature(self.context, datatype)?;
         let (motive, count) = match self.computation(term)? {
-            | &Computation::DataCase {
+            &Computation::DataCase {
                 ref motive,
                 ref branches,
                 ..
             } => (*motive, branches.len()),
-            | _ => return Err(CheckRefusal::MachineInvariant),
+            &Computation::Primitive { .. }
+            | &Computation::Transport(..)
+            | &Computation::PathTransport { .. }
+            | &Computation::Ride { .. }
+            | &Computation::TelescopeTransport { .. }
+            | &Computation::Lambda(_)
+            | &Computation::Fixpoint { .. }
+            | &Computation::Application(..)
+            | &Computation::Return(_)
+            | &Computation::Bind(..)
+            | &Computation::Force(_)
+            | &Computation::Case { .. }
+            | &Computation::Split { .. }
+            | &Computation::RecordProjection(..)
+            | &Computation::TupleProjection(..)
+            | &Computation::Hole(_)
+            | &Computation::Mark { .. }
+            | &Computation::ListFold { .. }
+            | &Computation::Perform { .. }
+            | &Computation::Handle { .. }
+            | &Computation::Exercise { .. }
+            | &Computation::Scope { .. }
+            | &Computation::Resume(..)
+            | &Computation::Reset(_)
+            | &Computation::Shift(_)
+            | &Computation::With(..)
+            | &Computation::Project(..)
+            | &Computation::Session(_) => return Err(CheckRefusal::MachineInvariant),
         };
         let constructors = signature.constructors().len();
         // A case carries one branch per constructor, and then either no loop
@@ -385,8 +480,8 @@ impl Machine<'_, '_>
         }
         else {
             Maybe::Present(match root {
-                | Maybe::Present((case, reading)) if case == term => reading,
-                | Maybe::Present(_) | Maybe::Absent(_) => Reading::Case { datatype },
+                Maybe::Present((case, reading)) if case == term => reading,
+                Maybe::Present(_) | Maybe::Absent(_) => Reading::Case { datatype },
             })
         };
         self.wait(Frame::NativeMotive {
@@ -430,12 +525,39 @@ impl Machine<'_, '_>
     {
         self.close()?;
         let (scrutinee, motive, count) = match self.computation(term)? {
-            | &Computation::DataCase {
+            &Computation::DataCase {
                 ref scrutinee,
                 ref motive,
                 ref branches,
             } => (*scrutinee, *motive, branches.len()),
-            | _ => return Err(CheckRefusal::MachineInvariant),
+            &Computation::Primitive { .. }
+            | &Computation::Transport(..)
+            | &Computation::PathTransport { .. }
+            | &Computation::Ride { .. }
+            | &Computation::TelescopeTransport { .. }
+            | &Computation::Lambda(_)
+            | &Computation::Fixpoint { .. }
+            | &Computation::Application(..)
+            | &Computation::Return(_)
+            | &Computation::Bind(..)
+            | &Computation::Force(_)
+            | &Computation::Case { .. }
+            | &Computation::Split { .. }
+            | &Computation::RecordProjection(..)
+            | &Computation::TupleProjection(..)
+            | &Computation::Hole(_)
+            | &Computation::Mark { .. }
+            | &Computation::ListFold { .. }
+            | &Computation::Perform { .. }
+            | &Computation::Handle { .. }
+            | &Computation::Exercise { .. }
+            | &Computation::Scope { .. }
+            | &Computation::Resume(..)
+            | &Computation::Reset(_)
+            | &Computation::Shift(_)
+            | &Computation::With(..)
+            | &Computation::Project(..)
+            | &Computation::Session(_) => return Err(CheckRefusal::MachineInvariant),
         };
         let result =
             gandr_core_term::instantiate_comp_type(self.context.arena_mut(), motive, scrutinee);
@@ -470,14 +592,40 @@ impl Machine<'_, '_>
                     .len()
                     .checked_add(position)
                     .ok_or(CheckRefusal::MachineInvariant)?;
-                let arm =
-                    match self.computation(term)? {
-                        | &Computation::DataCase { ref branches, .. } => branches
-                            .get(index)
-                            .copied()
-                            .ok_or(CheckRefusal::MachineInvariant)?,
-                        | _ => return Err(CheckRefusal::MachineInvariant),
-                    };
+                let arm = match self.computation(term)? {
+                    &Computation::DataCase { ref branches, .. } => branches
+                        .get(index)
+                        .copied()
+                        .ok_or(CheckRefusal::MachineInvariant)?,
+                    &Computation::Primitive { .. }
+                    | &Computation::Transport(..)
+                    | &Computation::PathTransport { .. }
+                    | &Computation::Ride { .. }
+                    | &Computation::TelescopeTransport { .. }
+                    | &Computation::Lambda(_)
+                    | &Computation::Fixpoint { .. }
+                    | &Computation::Application(..)
+                    | &Computation::Return(_)
+                    | &Computation::Bind(..)
+                    | &Computation::Force(_)
+                    | &Computation::Case { .. }
+                    | &Computation::Split { .. }
+                    | &Computation::RecordProjection(..)
+                    | &Computation::TupleProjection(..)
+                    | &Computation::Hole(_)
+                    | &Computation::Mark { .. }
+                    | &Computation::ListFold { .. }
+                    | &Computation::Perform { .. }
+                    | &Computation::Handle { .. }
+                    | &Computation::Exercise { .. }
+                    | &Computation::Scope { .. }
+                    | &Computation::Resume(..)
+                    | &Computation::Reset(_)
+                    | &Computation::Shift(_)
+                    | &Computation::With(..)
+                    | &Computation::Project(..)
+                    | &Computation::Session(_) => return Err(CheckRefusal::MachineInvariant),
+                };
                 self.wait(Frame::NativeNext(Goal::Computation {
                     term: arm,
                     direction: Direction::Check(expected),
@@ -488,11 +636,38 @@ impl Machine<'_, '_>
             let expected =
                 former::branch_type(self.context, datatype, ConstructorTag::from(index), motive)?;
             let branch = match self.computation(term)? {
-                | &Computation::DataCase { ref branches, .. } => branches
+                &Computation::DataCase { ref branches, .. } => branches
                     .get(index)
                     .copied()
                     .ok_or(CheckRefusal::MachineInvariant)?,
-                | _ => return Err(CheckRefusal::MachineInvariant),
+                &Computation::Primitive { .. }
+                | &Computation::Transport(..)
+                | &Computation::PathTransport { .. }
+                | &Computation::Ride { .. }
+                | &Computation::TelescopeTransport { .. }
+                | &Computation::Lambda(_)
+                | &Computation::Fixpoint { .. }
+                | &Computation::Application(..)
+                | &Computation::Return(_)
+                | &Computation::Bind(..)
+                | &Computation::Force(_)
+                | &Computation::Case { .. }
+                | &Computation::Split { .. }
+                | &Computation::RecordProjection(..)
+                | &Computation::TupleProjection(..)
+                | &Computation::Hole(_)
+                | &Computation::Mark { .. }
+                | &Computation::ListFold { .. }
+                | &Computation::Perform { .. }
+                | &Computation::Handle { .. }
+                | &Computation::Exercise { .. }
+                | &Computation::Scope { .. }
+                | &Computation::Resume(..)
+                | &Computation::Reset(_)
+                | &Computation::Shift(_)
+                | &Computation::With(..)
+                | &Computation::Project(..)
+                | &Computation::Session(_) => return Err(CheckRefusal::MachineInvariant),
             };
             self.wait(Frame::NativeNext(Goal::Computation {
                 term: branch,
@@ -606,41 +781,41 @@ impl Machine<'_, '_>
             found: TypeNode::Value(projected),
         };
         let part = match (arena.computation(term), arena.value_type(head)) {
-            | (
+            (
                 Some(&Computation::RecordProjection(_, ref label)),
                 Some(&ValueType::Record(ref fields)),
             ) => fields
                 .get(label)
                 .copied()
                 .ok_or(CheckRefusal::AbsentRecordField(term))?,
-            | (Some(&Computation::RecordProjection(..)), _) => {
+            (Some(&Computation::RecordProjection(..)), _) => {
                 return Err(mismatch(ExpectedShape::Record));
             },
-            | (
+            (
                 Some(&Computation::TupleProjection(_, component)),
                 Some(&ValueType::Product(ref parts)),
             ) => parts
                 .get(usize::from(component))
                 .copied()
                 .ok_or(CheckRefusal::AbsentTupleComponent(term))?,
-            | (
+            (
                 Some(&Computation::TupleProjection(tuple, component)),
                 Some(&ValueType::Sigma { first, second }),
             ) => match usize::from(component) {
-                | 0 => first,
-                | 1 => {
+                0 => first,
+                1 => {
                     let arena = self.context.arena_mut();
                     let at_first =
                         arena.computation_tuple_projection(tuple, Component::from(0_usize));
                     let point = arena.value_returned(at_first);
                     gandr_core_term::instantiate_value_type(arena, second, point)
                 },
-                | _ => return Err(CheckRefusal::AbsentTupleComponent(term)),
+                _ => return Err(CheckRefusal::AbsentTupleComponent(term)),
             },
-            | (Some(&Computation::TupleProjection(..)), _) => {
+            (Some(&Computation::TupleProjection(..)), _) => {
                 return Err(mismatch(ExpectedShape::Product));
             },
-            | _ => return Err(CheckRefusal::MachineInvariant),
+            _ => return Err(CheckRefusal::MachineInvariant),
         };
         let result = self.context.arena_mut().comp_type_returner(part);
         Ok(Step::Ascend(Produced::CompType(result)))
@@ -741,9 +916,29 @@ impl Machine<'_, '_>
             return Err(CheckRefusal::MachineInvariant);
         };
         let (first, second) = match value_type_view(self.context.arena(), sigma)? {
-            | ValueTypeView::Sigma { first, second } => (first, second),
-            | ValueTypeView::Unknown => (sigma, sigma),
-            | _ => return Err(CheckRefusal::MachineInvariant),
+            ValueTypeView::Sigma { first, second } => (first, second),
+            ValueTypeView::Unknown => (sigma, sigma),
+            ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::Stack { .. }
+            | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Path { .. }
+            | ValueTypeView::Flow { .. }
+            | ValueTypeView::Run(_)
+            | ValueTypeView::Sum(_)
+            | ValueTypeView::List(_)
+            | ValueTypeView::Integer
+            | ValueTypeView::String
+            | ValueTypeView::Unit
+            | ValueTypeView::Thunk(_)
+            | ValueTypeView::Universe { .. }
+            | ValueTypeView::Lift { .. }
+            | ValueTypeView::Element { .. }
+            | ValueTypeView::Product(_)
+            | ValueTypeView::StaticPi { .. }
+            | ValueTypeView::Abstract(_)
+            | ValueTypeView::Capability { .. }
+            | ValueTypeView::Session(_) => return Err(CheckRefusal::MachineInvariant),
         };
         let arena = self.context.arena_mut();
         let result = instantiate_comp_type(arena, motive, scrutinee);

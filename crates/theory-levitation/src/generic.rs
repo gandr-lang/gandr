@@ -89,9 +89,9 @@ impl Head for PayloadHead
     fn arity(&self) -> ArgumentCount
     {
         ArgumentCount::from(match *self {
-            | Self::Unit | Self::Leaf(_) => 0_usize,
-            | Self::Rec(_) | Self::Inj(_) | Self::Abs(_) => 1_usize,
-            | Self::Pair => 2_usize,
+            Self::Unit | Self::Leaf(_) => 0_usize,
+            Self::Rec(_) | Self::Inj(_) | Self::Abs(_) => 1_usize,
+            Self::Pair => 2_usize,
         })
     }
 }
@@ -231,15 +231,15 @@ impl<'value> PayloadNode<'value>
     {
         let args = PayloadArgs(self.0.children());
         match *self.0.head() {
-            | PayloadHead::Unit => PayloadView::Unit,
-            | PayloadHead::Rec(ctor) => PayloadView::Rec {
+            PayloadHead::Unit => PayloadView::Unit,
+            PayloadHead::Rec(ctor) => PayloadView::Rec {
                 ctor,
                 payload: args,
             },
-            | PayloadHead::Pair => PayloadView::Pair(args),
-            | PayloadHead::Inj(side) => PayloadView::Inj { side, body: args },
-            | PayloadHead::Leaf(ref bytes) => PayloadView::Leaf(bytes),
-            | PayloadHead::Abs(ref atom) => PayloadView::Abs { atom, body: args },
+            PayloadHead::Pair => PayloadView::Pair(args),
+            PayloadHead::Inj(side) => PayloadView::Inj { side, body: args },
+            PayloadHead::Leaf(ref bytes) => PayloadView::Leaf(bytes),
+            PayloadHead::Abs(ref atom) => PayloadView::Abs { atom, body: args },
         }
     }
 
@@ -385,10 +385,10 @@ fn ctor_code<G>(
     ctor: ConstructorTag,
 ) -> Maybe<CodeNode<'_, G>, constructor_tag::Absent>
 {
-    match desc.ctors.get(usize::from(ctor)) {
-        | Some(described) => Maybe::Present(described.code.to_node()),
-        | None => Maybe::Absent(constructor_tag::Absent::OutOfRange),
-    }
+    desc.ctors.get(usize::from(ctor)).map_or(
+        Maybe::Absent(constructor_tag::Absent::OutOfRange),
+        |described| Maybe::Present(described.code.to_node()),
+    )
 }
 
 quenchant_shape::reason_enum! {
@@ -475,8 +475,8 @@ pub fn generic_eq<G>(
     let mut pending = vec![(code, left.payload.to_node(), right.payload.to_node())];
     while let Some((code, lhs, rhs)) = pending.pop() {
         match (code.view(), lhs.view(), rhs.view()) {
-            | (CodeView::Unit, PayloadView::Unit, PayloadView::Unit) => {},
-            | (
+            (CodeView::Unit, PayloadView::Unit, PayloadView::Unit) => {},
+            (
                 CodeView::Var(_),
                 PayloadView::Rec {
                     ctor: left_ctor,
@@ -500,7 +500,7 @@ pub fn generic_eq<G>(
                 };
                 pending.push((inner_code, left_inner, right_inner));
             },
-            | (CodeView::Prod(factors), PayloadView::Pair(lefts), PayloadView::Pair(rights)) => {
+            (CodeView::Prod(factors), PayloadView::Pair(lefts), PayloadView::Pair(rights)) => {
                 if factors.len() != lefts.len() || lefts.len() != rights.len() {
                     return GenericEquality::from(false);
                 }
@@ -512,7 +512,7 @@ pub fn generic_eq<G>(
                         .map(|((factor, first), second)| (factor, first, second)),
                 );
             },
-            | (
+            (
                 CodeView::Sum(mut summands),
                 PayloadView::Inj {
                     side: left_side,
@@ -527,8 +527,8 @@ pub fn generic_eq<G>(
                     return GenericEquality::from(false);
                 }
                 let summand = match left_side {
-                    | Side::Left => summands.next(),
-                    | Side::Right => summands.nth(1),
+                    Side::Left => summands.next(),
+                    Side::Right => summands.nth(1),
                 };
                 let (Some(summand), Some(left_body), Some(right_body)) =
                     (summand, left_body.next(), right_body.next())
@@ -537,12 +537,12 @@ pub fn generic_eq<G>(
                 };
                 pending.push((summand, left_body, right_body));
             },
-            | (
+            (
                 CodeView::Field { .. },
                 PayloadView::Leaf(left_bytes),
                 PayloadView::Leaf(right_bytes),
             ) if left_bytes == right_bytes => {},
-            | (
+            (
                 CodeView::Bind {
                     body: mut body_code,
                     ..
@@ -565,7 +565,7 @@ pub fn generic_eq<G>(
             },
             // Any code/payload shape mismatch: a mis-built value compares
             // unequal.
-            | _ => return GenericEquality::from(false),
+            _ => return GenericEquality::from(false),
         }
     }
     GenericEquality::from(true)
@@ -627,15 +627,15 @@ pub fn serialize_value<G>(
         vec![EncodeTask::Value(value.ctor, value.payload.to_node())];
     while let Some(task) = stack.pop() {
         match task {
-            | EncodeTask::Value(ctor, payload) => {
+            EncodeTask::Value(ctor, payload) => {
                 let tag = u32::try_from(usize::from(ctor)).unwrap_or(u32::MAX);
                 out.extend_from_slice(&tag.to_le_bytes());
                 if let Maybe::Present(code) = ctor_code(desc, ctor) {
                     stack.push(EncodeTask::Payload(code, payload));
                 }
             },
-            | EncodeTask::Payload(code, payload) => match (code.view(), payload.view()) {
-                | (
+            EncodeTask::Payload(code, payload) => match (code.view(), payload.view()) {
+                (
                     CodeView::Var(_),
                     PayloadView::Rec {
                         ctor,
@@ -644,7 +644,7 @@ pub fn serialize_value<G>(
                 ) => {
                     stack.extend(inner.map(|inner| EncodeTask::Value(ctor, inner)));
                 },
-                | (CodeView::Prod(factors), PayloadView::Pair(parts)) => {
+                (CodeView::Prod(factors), PayloadView::Pair(parts)) => {
                     let pairs: Vec<_> = factors.zip(parts).collect();
                     stack.extend(
                         pairs
@@ -653,13 +653,13 @@ pub fn serialize_value<G>(
                             .map(|(factor, part)| EncodeTask::Payload(factor, part)),
                     );
                 },
-                | (CodeView::Sum(mut summands), PayloadView::Inj { side, body }) => {
+                (CodeView::Sum(mut summands), PayloadView::Inj { side, body }) => {
                     let summand = match side {
-                        | Side::Left => {
+                        Side::Left => {
                             out.push(0_u8);
                             summands.next()
                         },
-                        | Side::Right => {
+                        Side::Right => {
                             out.push(1_u8);
                             summands.nth(1)
                         },
@@ -671,10 +671,10 @@ pub fn serialize_value<G>(
                             .map(|(summand, body)| EncodeTask::Payload(summand, body)),
                     );
                 },
-                | (CodeView::Field { .. }, PayloadView::Leaf(bytes)) => {
+                (CodeView::Field { .. }, PayloadView::Leaf(bytes)) => {
                     push_counted(&mut out, bytes.as_ref());
                 },
-                | (
+                (
                     CodeView::Bind {
                         body: body_code, ..
                     },
@@ -688,7 +688,7 @@ pub fn serialize_value<G>(
                     );
                 },
                 // `1` contributes no bytes, as does any mis-built payload.
-                | _ => {},
+                _ => {},
             },
         }
     }
@@ -804,8 +804,8 @@ fn render_oper_member(oper: &OperDesc) -> String
     let inputs: Vec<String> = oper.arity.inputs.iter().map(render_port).collect();
     let outputs: Vec<String> = oper.arity.outputs.iter().map(render_port).collect();
     let outputs = match *oper.arity.outputs {
-        | [ref only] if matches!(authored_name(only), Maybe::Absent(_)) => outputs.concat(),
-        | _ => format!("({})", outputs.join(", ")),
+        [ref only] if matches!(authored_name(only), Maybe::Absent(_)) => outputs.concat(),
+        _ => format!("({})", outputs.join(", ")),
     };
     format!("oper {} : ({}) --> {outputs}", oper.name, inputs.join(", "))
 }
@@ -830,8 +830,8 @@ fn render_oper_member(oper: &OperDesc) -> String
 fn render_port(port: &SortRef) -> String
 {
     match authored_name(port) {
-        | Maybe::Present(name) => format!("{name} : {}", port.sort),
-        | Maybe::Absent(port_name::Absent::Anonymous) => port.sort.to_string(),
+        Maybe::Present(name) => format!("{name} : {}", port.sort),
+        Maybe::Absent(port_name::Absent::Anonymous) => port.sort.to_string(),
     }
 }
 
@@ -864,8 +864,8 @@ fn render_telescope(ports: &[RewritePort]) -> String
     let rendered: Vec<String> = ports
         .iter()
         .map(|port| match port.face {
-            | PortFace::Sorted(ref sort) => format!("rule {} : {sort} ==> {sort}", port.name),
-            | PortFace::Pinned {
+            PortFace::Sorted(ref sort) => format!("rule {} : {sort} ==> {sort}", port.name),
+            PortFace::Pinned {
                 ref source,
                 ref target,
             } => format!("rule {} : {source} ==> {target}", port.name),

@@ -362,7 +362,7 @@ enum Kind
 const fn kind<Node>(former: &Former<'_, Node>) -> Kind
 {
     match *former {
-        | Former::Stack(..)
+        Former::Stack(..)
         | Former::PathUniverse(..)
         | Former::BaseType(_)
         | Former::Product(_)
@@ -381,13 +381,13 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Flow { .. }
         | Former::Data { .. }
         | Former::RunType(_) => Kind::ValueType,
-        | Former::Returner(_)
+        Former::Returner(_)
         | Former::With(..)
         | Former::EffectfulReturner { .. }
         | Former::Arrow { .. }
         | Former::Pi { .. }
         | Former::ComputationElement(_) => Kind::CompType,
-        | Former::PathRefl(_)
+        Former::PathRefl(_)
         | Former::PathProduct(..)
         | Former::PathEquiv(..)
         | Former::Variable { .. }
@@ -420,7 +420,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Constructor { .. }
         | Former::Recorded { .. }
         | Former::Returned(_) => Kind::Value,
-        | Former::Return(_)
+        Former::Return(_)
         | Former::Bind(..)
         | Former::Force(_)
         | Former::Application(..)
@@ -452,7 +452,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Offer { .. }
         | Former::Close(_)
         | Former::Fork { .. } => Kind::Computation,
-        | Former::Unreadable(_) => Kind::Unknown,
+        Former::Unreadable(_) => Kind::Unknown,
     }
 }
 
@@ -512,10 +512,10 @@ impl Bodies
     const fn of(admits: Admits) -> Self
     {
         match admits {
-            | Admits::Computation(_) | Admits::Type | Admits::ValueType | Admits::CompType => {
+            Admits::Computation(_) | Admits::Type | Admits::ValueType | Admits::CompType => {
                 Self::Spelled
             },
-            | Admits::Value => Self::Opaque,
+            Admits::Value => Self::Opaque,
         }
     }
 }
@@ -571,13 +571,13 @@ fn reach(
         return Reach::Deep;
     }
     match (admits, kind) {
-        | (_, Kind::Unknown)
+        (_, Kind::Unknown)
         | (Admits::Type, Kind::ValueType | Kind::CompType)
         | (Admits::ValueType, Kind::ValueType)
         | (Admits::CompType, Kind::CompType)
         | (Admits::Value, Kind::Value)
         | (Admits::Computation(_), Kind::Computation) => Reach::Spell,
-        | (Admits::Type, Kind::Value | Kind::Computation)
+        (Admits::Type, Kind::Value | Kind::Computation)
         | (Admits::ValueType, Kind::CompType | Kind::Value | Kind::Computation)
         | (Admits::CompType, Kind::ValueType | Kind::Value | Kind::Computation)
         | (Admits::Value, Kind::ValueType | Kind::CompType | Kind::Computation)
@@ -842,43 +842,41 @@ where
         slots
     };
     match *former {
-        | Former::Stack(first, second) | Former::With(first, second) => {
+        Former::Stack(first, second) | Former::With(first, second) => {
             Vec::from([comp_type(first), comp_type(second)])
         },
-        | Former::Product(arity) | Former::Sum(arity) => {
+        Former::Product(arity) | Former::Sum(arity) => {
             components(arity, Admits::ValueType, Binds::NONE, None)
         },
-        | Former::Session { payloads, .. } => {
+        Former::Session { payloads, .. } => {
             components(payloads, Admits::ValueType, Binds::NONE, None)
         },
-        | Former::RecordType(arity) => {
+        Former::RecordType(arity) => {
             components(arity, Admits::ValueType, Binds::NONE, Some(Label::Field))
         },
-        | Former::Tuple(arity)
+        Former::Tuple(arity)
         | Former::Data { arity, .. }
         | Former::Constructor { arity, .. }
         | Former::Primitive { arity, .. }
         | Former::Recorded {
             payloads: arity, ..
         } => components(arity, Admits::Value, Binds::NONE, None),
-        | Former::Record(arity) => {
+        Former::Record(arity) => {
             components(arity, Admits::Value, Binds::NONE, Some(Label::Assignment))
         },
-        | Former::StaticPi { domain, codomain } => {
+        Former::StaticPi { domain, codomain } => {
             Vec::from([value_type(domain), value_type(codomain)])
         },
-        | Former::Sigma { first, second } => Vec::from([
+        Former::Sigma { first, second } => Vec::from([
             value_type(first),
             Slot::of(second, Admits::ValueType, Binds::ONE),
         ]),
-        | Former::Arrow { domain, codomain } => {
-            Vec::from([value_type(domain), comp_type(codomain)])
-        },
-        | Former::Pi { domain, codomain } => Vec::from([
+        Former::Arrow { domain, codomain } => Vec::from([value_type(domain), comp_type(codomain)]),
+        Former::Pi { domain, codomain } => Vec::from([
             value_type(domain),
             Slot::of(codomain, Admits::CompType, Binds::ONE),
         ]),
-        | Former::PathUniverse(first, second)
+        Former::PathUniverse(first, second)
         | Former::PathProduct(first, second)
         | Former::Funext(first, second)
         | Former::Equiv(first, second)
@@ -895,7 +893,7 @@ where
         | Former::ListCons(first, second)
         | Former::StaticApplication(first, second)
         | Former::Transport(first, second) => Vec::from([value(first), value(second)]),
-        | Former::Path {
+        Former::Path {
             carrier,
             left,
             right,
@@ -905,14 +903,12 @@ where
             left,
             right,
         } => Vec::from([value_type(carrier), value(left), value(right)]),
-        | Former::ThunkType(child) | Former::QuoteComputation(child) => {
-            Vec::from([comp_type(child)])
-        },
-        | Former::List(child)
+        Former::ThunkType(child) | Former::QuoteComputation(child) => Vec::from([comp_type(child)]),
+        Former::List(child)
         | Former::Returner(child)
         | Former::EffectfulReturner { result: child, .. }
         | Former::Quote(child) => Vec::from([value_type(child)]),
-        | Former::PathRefl(child)
+        Former::PathRefl(child)
         | Former::Element(child)
         | Former::ComputationElement(child)
         | Former::Here(child)
@@ -925,7 +921,7 @@ where
         | Former::TupleProjection(child, _)
         | Former::Perform { payload: child, .. }
         | Former::Send { payload: child, .. } => Vec::from([value(child)]),
-        | Former::Injection(summand, child) => Vec::from([Slot {
+        Former::Injection(summand, child) => Vec::from([Slot {
             label: Some(Labelled {
                 of: node,
                 index: summand,
@@ -933,25 +929,25 @@ where
             }),
             ..value(child)
         }]),
-        | Former::StaticLambda(body) => Vec::from([Slot::of(body, Admits::Value, Binds::ONE)]),
-        | Former::Bind(bound, rest) => {
+        Former::StaticLambda(body) => Vec::from([Slot::of(body, Admits::Value, Binds::ONE)]),
+        Former::Bind(bound, rest) => {
             Vec::from([continues(bound), Slot::of(rest, admits, Binds::ONE)])
         },
-        | Former::Application(function, argument) => {
+        Former::Application(function, argument) => {
             Vec::from([continues(function), value(argument)])
         },
-        | Former::Lambda(body) | Former::Fixpoint(body) | Former::Shift(body) => {
+        Former::Lambda(body) | Former::Fixpoint(body) | Former::Shift(body) => {
             Vec::from([ends(body, Binds::ONE)])
         },
-        | Former::Thunk(body) => match bodies {
-            | Bodies::Spelled => Vec::from([ends(body, Binds::NONE)]),
-            | Bodies::Opaque => Vec::new(),
+        Former::Thunk(body) => match bodies {
+            Bodies::Spelled => Vec::from([ends(body, Binds::NONE)]),
+            Bodies::Opaque => Vec::new(),
         },
-        | Former::Nested(body)
+        Former::Nested(body)
         | Former::Run(body)
         | Former::Returned(body)
         | Former::Project(_, body) => Vec::from([continues(body)]),
-        | Former::PathTransport {
+        Former::PathTransport {
             motive,
             path,
             value: transported,
@@ -965,7 +961,7 @@ where
             value(path),
             value(transported),
         ]),
-        | Former::TelescopeTransport {
+        Former::TelescopeTransport {
             motive,
             path,
             start,
@@ -978,12 +974,12 @@ where
             value(over),
             value(transported),
         ]),
-        | Former::Case { scrutinee, arity } => {
+        Former::Case { scrutinee, arity } => {
             let mut slots = Vec::from([value(scrutinee)]);
             slots.extend(components(arity, admits, Binds::ONE, None));
             slots
         },
-        | Former::Split {
+        Former::Split {
             scrutinee,
             arity,
             body,
@@ -995,7 +991,7 @@ where
                 Binds::intuitionistic(OpenBinders(usize::from(arity))),
             ),
         ]),
-        | Former::DataCase { scrutinee, arity } => {
+        Former::DataCase { scrutinee, arity } => {
             let mut slots = Vec::from([value(scrutinee)]);
             slots.extend((0_usize .. usize::from(arity)).map(|index| {
                 let arm = arm(source, node, Component::from(index));
@@ -1008,34 +1004,34 @@ where
             }));
             slots
         },
-        | Former::ListFold { list, nil, cons } => Vec::from([
+        Former::ListFold { list, nil, cons } => Vec::from([
             value(list),
             Slot::of(nil, admits, Binds::NONE),
             Slot::of(cons, admits, Binds::intuitionistic(OpenBinders(2_usize))),
         ]),
-        | Former::Handle {
+        Former::Handle {
             subject,
             on_return,
             clauses: count,
         } => clauses(ends(subject, Binds::NONE), on_return, count),
-        | Former::Scope {
+        Former::Scope {
             subject,
             on_return,
             clauses: count,
             ..
         } => clauses(ends(subject, Binds::ONE), on_return, count),
-        | Former::Exercise {
+        Former::Exercise {
             capability,
             payload,
             ..
         } => Vec::from([value(capability), value(payload)]),
-        | Former::Resume(stack, computation) => Vec::from([value(stack), continues(computation)]),
-        | Former::Reset(body) => Vec::from([ends(body, Binds::NONE)]),
-        | Former::Lazy(first, second) => Vec::from([continues(first), continues(second)]),
-        | Former::Offer { arms, .. } => {
+        Former::Resume(stack, computation) => Vec::from([value(stack), continues(computation)]),
+        Former::Reset(body) => Vec::from([ends(body, Binds::NONE)]),
+        Former::Lazy(first, second) => Vec::from([continues(first), continues(second)]),
+        Former::Offer { arms, .. } => {
             components(arms, Admits::Computation(Tail::Ends), Binds::NONE, None)
         },
-        | Former::Fork {
+        Former::Fork {
             protocol,
             child,
             parent,
@@ -1050,7 +1046,7 @@ where
                 Slot::of(parent, admits, linear),
             ])
         },
-        | Former::BaseType(_)
+        Former::BaseType(_)
         | Former::Universe { .. }
         | Former::Abstract(_)
         | Former::Capability { .. }
@@ -1236,44 +1232,44 @@ fn protocol_template(
     let mut fidelity = Fidelity::Faithful;
     while let Some(step) = pending.pop() {
         let at = match step {
-            | Spelling::Text(glyphs) => {
+            Spelling::Text(glyphs) => {
                 text.push_str(glyphs);
                 continue;
             },
-            | Spelling::Label(label) => {
+            Spelling::Label(label) => {
                 text.push_str(label.as_ref());
                 text.push_str(" : ");
                 continue;
             },
-            | Spelling::Leave => {
+            Spelling::Leave => {
                 let _closed = binders.pop();
                 continue;
             },
-            | Spelling::State(at) => at,
+            Spelling::State(at) => at,
         };
         match protocol.node(at) {
-            | Err(_) => {
+            Err(_) => {
                 fidelity = Fidelity::Approximate;
                 text.push('?');
             },
-            | Ok(&ProtocolNode::Send { payload, next }) => {
+            Ok(&ProtocolNode::Send { payload, next }) => {
                 text.push('!');
                 segments.push(Segment::Text(core::mem::take(&mut text)));
                 segments.push(Segment::Payload(payload));
                 text.push_str(". ");
                 pending.push(Spelling::State(next));
             },
-            | Ok(&ProtocolNode::Receive { payload, next }) => {
+            Ok(&ProtocolNode::Receive { payload, next }) => {
                 text.push('?');
                 segments.push(Segment::Text(core::mem::take(&mut text)));
                 segments.push(Segment::Payload(payload));
                 text.push_str(". ");
                 pending.push(Spelling::State(next));
             },
-            | Ok(&(ProtocolNode::Select(ref branches) | ProtocolNode::Offer(ref branches))) => {
+            Ok(&(ProtocolNode::Select(ref branches) | ProtocolNode::Offer(ref branches))) => {
                 text.push_str(match protocol.node(at) {
-                    | Ok(&ProtocolNode::Offer(_)) => "&{",
-                    | _ => "+{",
+                    Ok(&ProtocolNode::Offer(_)) => "&{",
+                    _ => "+{",
                 });
                 pending.push(Spelling::Text("}"));
                 for (position, (label, &target)) in branches.iter().enumerate().rev() {
@@ -1284,8 +1280,8 @@ fn protocol_template(
                     }
                 }
             },
-            | Ok(&ProtocolNode::End) => text.push_str("end"),
-            | Ok(&ProtocolNode::Mu(body)) => {
+            Ok(&ProtocolNode::End) => text.push_str("end"),
+            Ok(&ProtocolNode::Mu(body)) => {
                 text.push_str("mu ");
                 text.push_str(&Nesting(binders.len()).name());
                 text.push_str(". ");
@@ -1293,10 +1289,10 @@ fn protocol_template(
                 pending.push(Spelling::Leave);
                 pending.push(Spelling::State(body));
             },
-            | Ok(&ProtocolNode::Recur(binder)) => {
+            Ok(&ProtocolNode::Recur(binder)) => {
                 match binders.iter().rposition(|&open| open == binder) {
-                    | Some(position) => text.push_str(&Nesting(position).name()),
-                    | None => pending.push(Spelling::State(binder)),
+                    Some(position) => text.push_str(&Nesting(position).name()),
+                    None => pending.push(Spelling::State(binder)),
                 }
             },
         }
@@ -1305,10 +1301,10 @@ fn protocol_template(
         segments.push(Segment::Text(text));
     }
     let binding = match protocol.node(state) {
-        | Ok(&(ProtocolNode::Select(_) | ProtocolNode::Offer(_) | ProtocolNode::End)) => {
+        Ok(&(ProtocolNode::Select(_) | ProtocolNode::Offer(_) | ProtocolNode::End)) => {
             Binding::Atom
         },
-        | _ => Binding::Arrow,
+        _ => Binding::Arrow,
     };
     (segments, binding, fidelity)
 }
@@ -1361,9 +1357,9 @@ impl Brace
     const fn opener(self) -> Glyphs<'static>
     {
         match self {
-            | Self::Hash => Glyphs("#{"),
-            | Self::Plus => Glyphs("+{"),
-            | Self::Ampersand => Glyphs("&{"),
+            Self::Hash => Glyphs("#{"),
+            Self::Plus => Glyphs("+{"),
+            Self::Ampersand => Glyphs("&{"),
         }
     }
 }
@@ -1441,23 +1437,23 @@ impl Bracket
     const fn opener(self) -> Glyphs<'static>
     {
         Glyphs(match self {
-            | Self::Stack => "Stack(",
-            | Self::List => "List(",
-            | Self::PathUniverse => "Path_U(",
-            | Self::Here => "here(",
-            | Self::Funext => "funext(",
-            | Self::Equiv | Self::PathEquiv => "equiv(",
-            | Self::PathRefl => "refl(",
-            | Self::PathProduct => "pathProduct(",
-            | Self::ListCons => "cons(",
-            | Self::Bisim => "bisim(",
-            | Self::Sim => "sim(",
-            | Self::Stay => "stay(",
-            | Self::Then => "then(",
-            | Self::FlowProduct => "flowProduct(",
-            | Self::Forward => "forward(",
-            | Self::Arrow => "arrow(",
-            | Self::Run => "Run(",
+            Self::Stack => "Stack(",
+            Self::List => "List(",
+            Self::PathUniverse => "Path_U(",
+            Self::Here => "here(",
+            Self::Funext => "funext(",
+            Self::Equiv | Self::PathEquiv => "equiv(",
+            Self::PathRefl => "refl(",
+            Self::PathProduct => "pathProduct(",
+            Self::ListCons => "cons(",
+            Self::Bisim => "bisim(",
+            Self::Sim => "sim(",
+            Self::Stay => "stay(",
+            Self::Then => "then(",
+            Self::FlowProduct => "flowProduct(",
+            Self::Forward => "forward(",
+            Self::Arrow => "arrow(",
+            Self::Run => "Run(",
         })
     }
 }
@@ -1483,9 +1479,9 @@ impl Infix
     const fn symbol(self) -> Glyphs<'static>
     {
         Glyphs(match self {
-            | Self::Product => " *",
-            | Self::Sum => " +",
-            | Self::Lazy => " &",
+            Self::Product => " *",
+            Self::Sum => " +",
+            Self::Lazy => " &",
         })
     }
 
@@ -1496,9 +1492,9 @@ impl Infix
     const fn binding(self) -> Binding
     {
         match self {
-            | Self::Product => Binding::Product,
-            | Self::Sum => Binding::Sum,
-            | Self::Lazy => Binding::Lazy,
+            Self::Product => Binding::Product,
+            Self::Sum => Binding::Sum,
+            Self::Lazy => Binding::Lazy,
         }
     }
 
@@ -1517,12 +1513,12 @@ impl Infix
     ) -> Binding
     {
         match self {
-            | Self::Product => Binding::Prefix,
-            | Self::Sum => Binding::Product,
-            | Self::Lazy if usize::from(position).saturating_add(1_usize) == usize::from(arity) => {
+            Self::Product => Binding::Prefix,
+            Self::Sum => Binding::Product,
+            Self::Lazy if usize::from(position).saturating_add(1_usize) == usize::from(arity) => {
                 Binding::Lazy
             },
-            | Self::Lazy => Binding::Sum,
+            Self::Lazy => Binding::Sum,
         }
     }
 }
@@ -2087,10 +2083,10 @@ fn universe(
     }
     let constant = u64::from(level.constant_part());
     Maybe::Present(Spelled(match (ground, constant) {
-        | (GroundSort::Value, 0_u64) => String::from("Type"),
-        | (GroundSort::Computation, 0_u64) => String::from("Type[-]"),
-        | (GroundSort::Value, _) => format!("Type[+, {constant}]"),
-        | (GroundSort::Computation, _) => format!("Type[-, {constant}]"),
+        (GroundSort::Value, 0_u64) => String::from("Type"),
+        (GroundSort::Computation, 0_u64) => String::from("Type[-]"),
+        (GroundSort::Value, _) => format!("Type[+, {constant}]"),
+        (GroundSort::Computation, _) => format!("Type[-, {constant}]"),
     }))
 }
 
@@ -2136,32 +2132,32 @@ fn universe(
 fn literal(literal: &Literal) -> Spelled
 {
     let sign = |sign: Sign| match sign {
-        | Sign::Negative => "-",
-        | Sign::NonNegative => "",
+        Sign::Negative => "-",
+        Sign::NonNegative => "",
     };
     Spelled(match *literal {
-        | Literal::Integer(ref integer) => {
+        Literal::Integer(ref integer) => {
             format!("{}{}", sign(integer.sign()), integer.magnitude().as_ref())
         },
-        | Literal::Text(ref text) => {
+        Literal::Text(ref text) => {
             let content: &str = text.as_ref();
             let mut spelled = String::with_capacity(content.len().saturating_add(2_usize));
             spelled.push('"');
             for character in content.chars() {
                 match character {
-                    | '\\' => spelled.push_str("\\\\"),
-                    | '"' => spelled.push_str("\\\""),
-                    | '\n' => spelled.push_str("\\n"),
-                    | '\t' => spelled.push_str("\\t"),
-                    | '\r' => spelled.push_str("\\r"),
-                    | '\0' => spelled.push_str("\\0"),
-                    | other => spelled.push(other),
+                    '\\' => spelled.push_str("\\\\"),
+                    '"' => spelled.push_str("\\\""),
+                    '\n' => spelled.push_str("\\n"),
+                    '\t' => spelled.push_str("\\t"),
+                    '\r' => spelled.push_str("\\r"),
+                    '\0' => spelled.push_str("\\0"),
+                    other => spelled.push(other),
                 }
             }
             spelled.push('"');
             spelled
         },
-        | Literal::Numeric(ref numeric) => {
+        Literal::Numeric(ref numeric) => {
             let fraction: &str = numeric.fraction().as_ref();
             let whole = format!(
                 "{}{}",
@@ -2448,8 +2444,8 @@ impl Walk<'_, '_>
         S: Source + ?Sized,
     {
         let spelled = match label {
-            | Label::Summand => format!(".{} = ", usize::from(index)),
-            | Label::Field | Label::Assignment => {
+            Label::Summand => format!(".{} = ", usize::from(index)),
+            Label::Field | Label::Assignment => {
                 let held = source.label(of, index);
                 let mut text: &str = held.as_ref().map_or("", AsRef::as_ref);
                 if text.is_empty() || text.contains(['\n', '\r', '\t']) {
@@ -2463,8 +2459,8 @@ impl Walk<'_, '_>
                     text = "?";
                 }
                 match label {
-                    | Label::Field => format!("{text} : "),
-                    | Label::Assignment | Label::Summand => format!(".{text} = "),
+                    Label::Field => format!("{text} : "),
+                    Label::Assignment | Label::Summand => format!(".{text} = "),
                 }
             },
         };
@@ -2525,12 +2521,12 @@ impl Walk<'_, '_>
             remaining = remaining.saturating_sub(1_usize);
         }
         let spelled = match found {
-            | Some(position) => match self.binders.name_at(OpenBinders(position)) {
-                | Maybe::Present(name) => Ok(name.0.clone()),
-                | Maybe::Absent(_) => Err(Unspelled::Exhausted),
+            Some(position) => match self.binders.name_at(OpenBinders(position)) {
+                Maybe::Present(name) => Ok(name.0.clone()),
+                Maybe::Absent(_) => Err(Unspelled::Exhausted),
             },
-            | None => match zone {
-                | Zone::Intuitionistic => self
+            None => match zone {
+                Zone::Intuitionistic => self
                     .context
                     .len()
                     .checked_sub(remaining)
@@ -2542,12 +2538,12 @@ impl Walk<'_, '_>
                     })
                     .map(|name| String::from(name.as_ref()))
                     .ok_or(Unspelled::Unbound),
-                | Zone::Linear => Err(Unspelled::Unbound),
+                Zone::Linear => Err(Unspelled::Unbound),
             },
         };
         match spelled {
-            | Ok(name) => self.leaf(Glyphs(name.as_str())),
-            | Err(reason) => {
+            Ok(name) => self.leaf(Glyphs(name.as_str())),
+            Err(reason) => {
                 self.fidelity = Fidelity::Approximate;
                 let _fresh = self.unspelled.insert(reason);
                 self.leaf(Glyphs("?"))
@@ -2711,12 +2707,100 @@ impl Walk<'_, '_>
         while let Some(left) = self.remaining.checked_sub(1_u32) {
             self.remaining = left;
             match source.read(link) {
-                | Former::Arrow { domain, codomain } => {
+                Former::Arrow { domain, codomain } => {
                     domains.push(domain);
                     link = codomain;
                 },
-                | Former::Returner(result) => return Some((domains, result)),
-                | _ => return None,
+                Former::Returner(result) => return Some((domains, result)),
+                Former::Reify
+                | Former::Stack(..)
+                | Former::With(..)
+                | Former::ListNil
+                | Former::ListCons(..)
+                | Former::PathUniverse(..)
+                | Former::PathRefl(_)
+                | Former::PathEquiv(..)
+                | Former::PathProduct(..)
+                | Former::BaseType(_)
+                | Former::Product(_)
+                | Former::Sum(_)
+                | Former::RecordType(_)
+                | Former::ThunkType(_)
+                | Former::Universe { .. }
+                | Former::Element(_)
+                | Former::Abstract(_)
+                | Former::StaticPi { .. }
+                | Former::Sigma { .. }
+                | Former::Capability { .. }
+                | Former::Session { .. }
+                | Former::EffectfulReturner { .. }
+                | Former::Pi { .. }
+                | Former::ComputationElement(_)
+                | Former::List(_)
+                | Former::Variable { .. }
+                | Former::Constant(_)
+                | Former::Unit
+                | Former::Literal(_)
+                | Former::Tuple(_)
+                | Former::Record(_)
+                | Former::Injection(..)
+                | Former::Thunk(_)
+                | Former::Quote(_)
+                | Former::QuoteComputation(_)
+                | Former::StaticLambda(_)
+                | Former::StaticApplication(..)
+                | Former::Here(_)
+                | Former::Funext(..)
+                | Former::Equiv(..)
+                | Former::SessionRelated(..)
+                | Former::Stay(_)
+                | Former::Then(..)
+                | Former::FlowProduct(..)
+                | Former::Forward(_)
+                | Former::FunctionFlow(..)
+                | Former::RunType(_)
+                | Former::Return(_)
+                | Former::Bind(..)
+                | Former::Force(_)
+                | Former::Application(..)
+                | Former::Lambda(_)
+                | Former::Nested(_)
+                | Former::Run(_)
+                | Former::Ua { .. }
+                | Former::Path { .. }
+                | Former::Data { .. }
+                | Former::Constructor { .. }
+                | Former::Flow { .. }
+                | Former::Recorded { .. }
+                | Former::Returned(_)
+                | Former::Primitive { .. }
+                | Former::Transport(..)
+                | Former::PathTransport { .. }
+                | Former::TelescopeTransport { .. }
+                | Former::Ride { .. }
+                | Former::Fixpoint(_)
+                | Former::Case { .. }
+                | Former::Split { .. }
+                | Former::DataCase { .. }
+                | Former::RecordProjection(..)
+                | Former::TupleProjection(..)
+                | Former::ListFold { .. }
+                | Former::Perform { .. }
+                | Former::Handle { .. }
+                | Former::Exercise { .. }
+                | Former::Scope { .. }
+                | Former::Resume(..)
+                | Former::Reset(_)
+                | Former::Shift(_)
+                | Former::Lazy(..)
+                | Former::Project(..)
+                | Former::Send { .. }
+                | Former::Receive(_)
+                | Former::Select { .. }
+                | Former::Offer { .. }
+                | Former::Close(_)
+                | Former::Fork { .. }
+                | Former::Unreadable(_) => return None,
             }
         }
         None
@@ -3037,9 +3121,9 @@ impl Walk<'_, '_>
     {
         let kind = kind(&former);
         match reach(admits, depth, kind) {
-            | Reach::Spell => {},
-            | Reach::Deep => return self.approximate(Glyphs("<deep>")),
-            | Reach::Misplaced => return self.unspell(Unspelled::Misplaced),
+            Reach::Spell => {},
+            Reach::Deep => return self.approximate(Glyphs("<deep>")),
+            Reach::Misplaced => return self.unspell(Unspelled::Misplaced),
         }
         let join = match former {
             | Former::BaseType(BaseType::Integer) => return self.atom(Glyphs("Integer")),
@@ -3538,11 +3622,11 @@ impl Walk<'_, '_>
     {
         let position = OpenBinders(self.opened.len().saturating_add(offset.0));
         match self.binders.name_at(position) {
-            | Maybe::Present(name) => {
+            Maybe::Present(name) => {
                 let name = name.clone();
                 self.leaf(Glyphs(name.0.as_str()))
             },
-            | Maybe::Absent(_) => {
+            Maybe::Absent(_) => {
                 self.fidelity = Fidelity::Approximate;
                 let _fresh = self.unspelled.insert(Unspelled::Exhausted);
                 self.leaf(Glyphs("?"))
@@ -3574,14 +3658,14 @@ impl Walk<'_, '_>
     ) -> Written
     {
         match name.as_ref().map(AsRef::as_ref) {
-            | Some(text) if !text.is_empty() && !text.contains(['\n', '\r', '\t']) => {
+            Some(text) if !text.is_empty() && !text.contains(['\n', '\r', '\t']) => {
                 Written(Cow::Owned(String::from(text)))
             },
-            | Some(_) | None => {
+            Some(_) | None => {
                 self.fidelity = Fidelity::Approximate;
                 let _fresh = self.unspelled.insert(match name {
-                    | Some(_) => Unspelled::Unprintable,
-                    | None => missing,
+                    Some(_) => Unspelled::Unprintable,
+                    None => missing,
                 });
                 Written(Cow::Borrowed("?"))
             },
@@ -3662,42 +3746,40 @@ impl Walk<'_, '_>
             let _ = parts.part(Part::Close);
         };
         let binding = match *former {
-            | Former::Path { .. } => {
+            Former::Path { .. } => {
                 let _ = parts.text("Path").arguments(Arity(3_usize));
                 Binding::Atom
             },
-            | Former::Flow { .. } => {
+            Former::Flow { .. } => {
                 let _ = parts.text("Flow").arguments(Arity(3_usize));
                 Binding::Atom
             },
-            | Former::Recorded { moves, .. } => {
+            Former::Recorded { moves, .. } => {
                 let _ = parts.text("recorded(");
                 for (index, step) in moves.moves().into_iter().enumerate() {
                     if index > 0_usize {
                         let _ = parts.text(",").part(Part::Space);
                     }
                     let _ = match step.action {
-                        | ActionKind::Send => {
-                            parts.text("sent(").piece(Binding::Sequence).text(")")
-                        },
-                        | ActionKind::Receive => {
+                        ActionKind::Send => parts.text("sent(").piece(Binding::Sequence).text(")"),
+                        ActionKind::Receive => {
                             parts.text("received(").piece(Binding::Sequence).text(")")
                         },
-                        | ActionKind::Select => {
+                        ActionKind::Select => {
                             let label = self.spelled(step.label, Unspelled::Missing);
                             parts.text("selected(").text(label).text(")")
                         },
-                        | ActionKind::Offer => {
+                        ActionKind::Offer => {
                             let label = self.spelled(step.label, Unspelled::Missing);
                             parts.text("offered(").text(label).text(")")
                         },
-                        | ActionKind::Close => parts.text("closed"),
+                        ActionKind::Close => parts.text("closed"),
                     };
                 }
                 let _ = parts.part(Part::Tight).text(")");
                 Binding::Atom
             },
-            | Former::Constructor {
+            Former::Constructor {
                 name,
                 placement: Placement::Consed,
                 ..
@@ -3706,7 +3788,7 @@ impl Walk<'_, '_>
                 let _ = parts.text(name).text(" ∷ ").piece(Binding::Cons);
                 Binding::Cons
             },
-            | Former::Data { name, arity }
+            Former::Data { name, arity }
             | Former::Constructor {
                 name,
                 arity,
@@ -3719,27 +3801,27 @@ impl Walk<'_, '_>
                 }
                 Binding::Atom
             },
-            | Former::Primitive { name, arity } => {
+            Former::Primitive { name, arity } => {
                 let name = self.spelled(Some(Name::from(name.as_ref())), Unspelled::Missing);
                 let _ = parts.text(name).arguments(Arity(usize::from(arity)));
                 Binding::Atom
             },
-            | Former::Perform { operation, .. } => {
+            Former::Perform { operation, .. } => {
                 let name = self.spelled(Some(operation), Unspelled::Missing);
                 let _ = parts.text(name).arguments(Arity(1_usize));
                 Binding::Atom
             },
-            | Former::Transport(..) => {
+            Former::Transport(..) => {
                 self.fidelity = Fidelity::Approximate;
                 let _ = parts.text("transport").arguments(Arity(2_usize));
                 Binding::Atom
             },
-            | Former::Resume(..) => {
+            Former::Resume(..) => {
                 self.fidelity = Fidelity::Approximate;
                 let _ = parts.text("resume").arguments(Arity(2_usize));
                 Binding::Atom
             },
-            | Former::PathTransport { .. } | Former::Ride { .. } => {
+            Former::PathTransport { .. } | Former::Ride { .. } => {
                 let lead = if matches!(*former, Former::Ride { .. }) {
                     "ride(\\"
                 }
@@ -3755,14 +3837,14 @@ impl Walk<'_, '_>
                     .rest(Arity(2_usize));
                 Binding::Atom
             },
-            | Former::TelescopeTransport { .. } => {
+            Former::TelescopeTransport { .. } => {
                 let _ = parts
                     .text("transport(+U ")
                     .piece(Binding::Atom)
                     .rest(Arity(4_usize));
                 Binding::Atom
             },
-            | Former::Fixpoint(_) => {
+            Former::Fixpoint(_) => {
                 self.fidelity = Fidelity::Approximate;
                 let _ = parts
                     .text("rec ")
@@ -3771,12 +3853,12 @@ impl Walk<'_, '_>
                     .body();
                 Binding::Prefix
             },
-            | Former::Reset(_) => {
+            Former::Reset(_) => {
                 self.fidelity = Fidelity::Approximate;
                 let _ = parts.text("reset {").body();
                 Binding::Prefix
             },
-            | Former::Shift(_) => {
+            Former::Shift(_) => {
                 self.fidelity = Fidelity::Approximate;
                 let _ = parts
                     .text("shift ")
@@ -3785,7 +3867,7 @@ impl Walk<'_, '_>
                     .body();
                 Binding::Prefix
             },
-            | Former::Case { arity, .. } => {
+            Former::Case { arity, .. } => {
                 let _ = parts
                     .text("case ")
                     .piece(Binding::Prefix)
@@ -3802,7 +3884,7 @@ impl Walk<'_, '_>
                 let _ = parts.part(Part::Close);
                 Binding::Prefix
             },
-            | Former::Split { arity, .. } => {
+            Former::Split { arity, .. } => {
                 let _ = parts
                     .text("case ")
                     .piece(Binding::Prefix)
@@ -3820,7 +3902,7 @@ impl Walk<'_, '_>
                 let _ = parts.text(" => ").piece(Binding::Arrow).part(Part::Close);
                 Binding::Prefix
             },
-            | Former::DataCase { arity, .. } => {
+            Former::DataCase { arity, .. } => {
                 let _ = parts
                     .text("case ")
                     .piece(Binding::Prefix)
@@ -3838,25 +3920,25 @@ impl Walk<'_, '_>
                 let _ = parts.part(Part::Close);
                 Binding::Prefix
             },
-            | Former::RecordProjection(_, label) => {
+            Former::RecordProjection(_, label) => {
                 let label = self.spelled(Some(label), Unspelled::Missing);
                 let _ = parts.piece(Binding::Atom).text(".").text(label);
                 Binding::Atom
             },
-            | Former::TupleProjection(_, index) => {
+            Former::TupleProjection(_, index) => {
                 let _ = parts
                     .piece(Binding::Atom)
                     .text(format!(".{}", usize::from(index)));
                 Binding::Atom
             },
-            | Former::Project(side, _) => {
+            Former::Project(side, _) => {
                 self.fidelity = Fidelity::Approximate;
                 let _ = parts
                     .piece(Binding::Atom)
                     .text(format!(".{}", usize::from(side)));
                 Binding::Atom
             },
-            | Former::ListFold { .. } => {
+            Former::ListFold { .. } => {
                 self.fidelity = Fidelity::Approximate;
                 let _ = parts
                     .text("fold ")
@@ -3874,12 +3956,12 @@ impl Walk<'_, '_>
                     .part(Part::Close);
                 Binding::Prefix
             },
-            | Former::Handle { clauses: count, .. } => {
+            Former::Handle { clauses: count, .. } => {
                 let _ = parts.text("handle {").body();
                 clauses(self, &mut parts, count);
                 Binding::Prefix
             },
-            | Former::Scope {
+            Former::Scope {
                 interface,
                 clauses: count,
                 ..
@@ -3895,7 +3977,7 @@ impl Walk<'_, '_>
                 clauses(self, &mut parts, count);
                 Binding::Prefix
             },
-            | Former::Exercise { operation, .. } => {
+            Former::Exercise { operation, .. } => {
                 let operation = self.spelled(Some(operation), Unspelled::Missing);
                 let _ = parts
                     .piece(Binding::Atom)
@@ -3904,7 +3986,7 @@ impl Walk<'_, '_>
                     .arguments(Arity(1_usize));
                 Binding::Atom
             },
-            | Former::Lazy(..) => {
+            Former::Lazy(..) => {
                 self.fidelity = Fidelity::Approximate;
                 let _ = parts
                     .text("&{")
@@ -3916,25 +3998,25 @@ impl Walk<'_, '_>
                     .text("}");
                 Binding::Atom
             },
-            | Former::Send { endpoint, .. } => {
+            Former::Send { endpoint, .. } => {
                 let _ = parts
                     .text("send(")
                     .part(Part::Endpoint(endpoint))
                     .rest(Arity(1_usize));
                 Binding::Atom
             },
-            | Former::Receive(endpoint) => {
+            Former::Receive(endpoint) => {
                 let _ = parts.text("recv(").part(Part::Endpoint(endpoint)).text(")");
                 Binding::Atom
             },
-            | Former::Close(endpoint) => {
+            Former::Close(endpoint) => {
                 let _ = parts
                     .text("close(")
                     .part(Part::Endpoint(endpoint))
                     .text(")");
                 Binding::Atom
             },
-            | Former::Select { endpoint, label } => {
+            Former::Select { endpoint, label } => {
                 let label = self.spelled(Some(label), Unspelled::Missing);
                 let _ = parts
                     .text("select(")
@@ -3944,7 +4026,7 @@ impl Walk<'_, '_>
                     .text(")");
                 Binding::Atom
             },
-            | Former::Offer { endpoint, arms } => {
+            Former::Offer { endpoint, arms } => {
                 let _ = parts
                     .text("offer(")
                     .part(Part::Endpoint(endpoint))
@@ -3962,7 +4044,7 @@ impl Walk<'_, '_>
                 let _ = parts.part(Part::Close);
                 Binding::Prefix
             },
-            | Former::Fork { .. } => {
+            Former::Fork { .. } => {
                 let _ = parts
                     .text("fork (")
                     .part(Part::Binder(0_usize))
@@ -3977,7 +4059,7 @@ impl Walk<'_, '_>
                     .piece(Binding::Sequence);
                 Binding::Sequence
             },
-            | Former::Reify
+            Former::Reify
             | Former::Stack(..)
             | Former::With(..)
             | Former::ListNil
@@ -4121,12 +4203,12 @@ impl Walk<'_, '_>
     ) -> Result<(), PresentationError>
     {
         let (doc, binding) = match join {
-            | Join::EffectReturner(head) => {
+            Join::EffectReturner(head) => {
                 let operand = self.pop()?;
                 let operand = self.bare_up_to(operand, Binding::Atom)?;
                 (self.builder.concat(head, operand)?, Binding::Prefix)
             },
-            | Join::Session {
+            Join::Session {
                 payloads: Arity(count),
                 binding,
             } => {
@@ -4142,8 +4224,8 @@ impl Walk<'_, '_>
                 let mut items = Vec::with_capacity(template.len());
                 for segment in &template {
                     items.push(match *segment {
-                        | Segment::Text(ref text) => self.leaf(Glyphs(text))?,
-                        | Segment::Payload(slot) => payloads
+                        Segment::Text(ref text) => self.leaf(Glyphs(text))?,
+                        Segment::Payload(slot) => payloads
                             .get(usize::from(slot))
                             .copied()
                             .ok_or(PresentationError::Unbalanced)?,
@@ -4151,26 +4233,26 @@ impl Walk<'_, '_>
                 }
                 (self.builder.concat_all(&items)?, binding)
             },
-            | Join::Prefix(prefix) => {
+            Join::Prefix(prefix) => {
                 let operand = self.pop()?;
                 let operand = self.bare_up_to(operand, Binding::Atom)?;
                 let head = self.leaf(match prefix {
-                    | Prefix::Thunk => Glyphs("+U "),
-                    | Prefix::Returner => Glyphs("-F "),
-                    | Prefix::Pure => Glyphs("pure "),
-                    | Prefix::Force => Glyphs("force "),
-                    | Prefix::Run => Glyphs("run "),
+                    Prefix::Thunk => Glyphs("+U "),
+                    Prefix::Returner => Glyphs("-F "),
+                    Prefix::Pure => Glyphs("pure "),
+                    Prefix::Force => Glyphs("force "),
+                    Prefix::Run => Glyphs("run "),
                 })?;
                 (self.builder.concat(head, operand)?, Binding::Prefix)
             },
-            | Join::Braced {
+            Join::Braced {
                 brace,
                 arity: Arity(count),
                 entries,
             } => {
                 let per_entry = match entries {
-                    | Entries::Positional => 1_usize,
-                    | Entries::Labelled(_) => 2_usize,
+                    Entries::Positional => 1_usize,
+                    Entries::Labelled(_) => 2_usize,
                 };
                 let taken = count
                     .checked_mul(per_entry)
@@ -4193,7 +4275,7 @@ impl Walk<'_, '_>
                 let close = self.leaf(Glyphs("}"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
-            | Join::Infix { infix, arity } => {
+            Join::Infix { infix, arity } => {
                 let mut joined = None;
                 for (position, operand) in self.take(arity)?.into_iter().enumerate() {
                     let place = infix.operand(
@@ -4202,8 +4284,8 @@ impl Walk<'_, '_>
                     );
                     let operand = self.bare_up_to(operand, place)?;
                     joined = Some(match joined {
-                        | None => operand,
-                        | Some(head) => {
+                        None => operand,
+                        Some(head) => {
                             let symbol = self.leaf(infix.symbol())?;
                             let head = self.builder.concat(head, symbol)?;
                             let head = self.space_or_break(head)?;
@@ -4216,24 +4298,24 @@ impl Walk<'_, '_>
                     infix.binding(),
                 )
             },
-            | Join::Tuple(arity) => {
+            Join::Tuple(arity) => {
                 let components = self.take(arity)?;
                 (self.listed(&components)?, Binding::Atom)
             },
-            | Join::ValueFunction(arity) => {
+            Join::ValueFunction(arity) => {
                 let codomain = self.pop()?;
                 let domains = self.take(arity)?;
                 let domain = match *domains.as_slice() {
-                    | [] => self.leaf(Glyphs("()"))?,
-                    | [only] => self.bare_up_to(only, Binding::Lazy)?,
-                    | _ => self.listed(&domains)?,
+                    [] => self.leaf(Glyphs("()"))?,
+                    [only] => self.bare_up_to(only, Binding::Lazy)?,
+                    _ => self.listed(&domains)?,
                 };
                 let arrow = self.leaf(Glyphs(" =>"))?;
                 let head = self.builder.concat(domain, arrow)?;
                 let head = self.space_or_break(head)?;
                 (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
             },
-            | Join::Arrow => {
+            Join::Arrow => {
                 let codomain = self.pop()?;
                 let domain = self.pop()?;
                 let domain = self.bare_up_to(domain, Binding::Lazy)?;
@@ -4242,7 +4324,7 @@ impl Walk<'_, '_>
                 let head = self.space_or_break(head)?;
                 (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
             },
-            | Join::Pi => {
+            Join::Pi => {
                 let codomain = self.pop()?;
                 let domain = self.pop()?;
                 let binder = self.binder(OpenBinders(0_usize))?;
@@ -4255,7 +4337,7 @@ impl Walk<'_, '_>
                 let head = self.space_or_break(head)?;
                 (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
             },
-            | Join::Sigma => {
+            Join::Sigma => {
                 let second = self.pop()?;
                 let first = self.pop()?;
                 let binder = self.binder(OpenBinders(0_usize))?;
@@ -4273,7 +4355,7 @@ impl Walk<'_, '_>
                 let close = self.leaf(Glyphs("}"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
-            | Join::StaticLambda => {
+            Join::StaticLambda => {
                 let body = self.pop()?;
                 let binder = self.binder(OpenBinders(0_usize))?;
                 let lead = self.leaf(Glyphs("\\"))?;
@@ -4282,7 +4364,7 @@ impl Walk<'_, '_>
                 let head = self.space_or_break(head)?;
                 (self.builder.concat(head, body.doc)?, Binding::Arrow)
             },
-            | Join::Sequence => {
+            Join::Sequence => {
                 let rest = self.pop()?;
                 let bound = self.pop()?;
                 let bound = self.bare_or_block(bound, Binding::Arrow)?;
@@ -4297,7 +4379,7 @@ impl Walk<'_, '_>
                     Binding::Sequence,
                 )
             },
-            | Join::Lambda => {
+            Join::Lambda => {
                 let body = self.pop()?;
                 let binder = self.binder(OpenBinders(0_usize))?;
                 let open = self.leaf(Glyphs("fn ("))?;
@@ -4305,12 +4387,12 @@ impl Walk<'_, '_>
                 let head = self.builder.concat_all(&[open, binder, close])?;
                 (self.block(head, body.doc)?, Binding::Prefix)
             },
-            | Join::Thunk => {
+            Join::Thunk => {
                 let body = self.pop()?;
                 let head = self.leaf(Glyphs("thunk {"))?;
                 (self.block(head, body.doc)?, Binding::Prefix)
             },
-            | Join::Apply(Arity(count)) => {
+            Join::Apply(Arity(count)) => {
                 let mut arguments = Vec::with_capacity(count);
                 for _ in 0_usize .. count {
                     arguments.push(self.pop()?);
@@ -4331,10 +4413,10 @@ impl Walk<'_, '_>
                 let close = self.leaf(Glyphs(")"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
-            | Join::Bracket(bracket) => {
+            Join::Bracket(bracket) => {
                 let mut items = Vec::new();
                 match bracket {
-                    | Bracket::PathUniverse
+                    Bracket::PathUniverse
                     | Bracket::Stack
                     | Bracket::PathEquiv
                     | Bracket::PathProduct
@@ -4353,7 +4435,7 @@ impl Walk<'_, '_>
                         let comma = self.space_or_break(comma)?;
                         items.extend([opener, first.doc, comma, second.doc]);
                     },
-                    | Bracket::Here
+                    Bracket::Here
                     | Bracket::PathRefl
                     | Bracket::List
                     | Bracket::Stay
@@ -4369,7 +4451,7 @@ impl Walk<'_, '_>
                 let close = self.leaf(Glyphs(")"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
-            | Join::Ua(head) => {
+            Join::Ua(head) => {
                 let backward = self.pop()?;
                 let forward = self.pop()?;
                 let head = self.space_or_break(head)?;
@@ -4382,7 +4464,7 @@ impl Walk<'_, '_>
                 let close = self.leaf(Glyphs(")"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
-            | Join::Form {
+            Join::Form {
                 pieces: Arity(count),
                 binding,
             } => {
@@ -4395,26 +4477,26 @@ impl Walk<'_, '_>
                 let mut heads = Vec::new();
                 for part in parts {
                     match part {
-                        | Part::Text(text) => current.push(self.leaf(Glyphs(text.as_ref()))?),
-                        | Part::Piece(loosest) => {
+                        Part::Text(text) => current.push(self.leaf(Glyphs(text.as_ref()))?),
+                        Part::Piece(loosest) => {
                             let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
                             current.push(self.bare_or_block(piece, loosest)?);
                         },
-                        | Part::Binder(offset) => current.push(self.binder(OpenBinders(offset))?),
-                        | Part::Endpoint(index) => {
+                        Part::Binder(offset) => current.push(self.binder(OpenBinders(offset))?),
+                        Part::Endpoint(index) => {
                             current.push(self.variable_leaf(Zone::Linear, index)?);
                         },
-                        | Part::Space => {
+                        Part::Space => {
                             let head = self.builder.concat_all(&core::mem::take(&mut current))?;
                             current.push(self.space_or_break(head)?);
                         },
-                        | Part::Tight => {
+                        Part::Tight => {
                             let head = self.builder.concat_all(&core::mem::take(&mut current))?;
                             current.push(self.none_or_break(head)?);
                         },
-                        | Part::Line => current.push(Doc::LINE),
-                        | Part::Open => heads.push(core::mem::take(&mut current)),
-                        | Part::Close => {
+                        Part::Line => current.push(Doc::LINE),
+                        Part::Open => heads.push(core::mem::take(&mut current)),
+                        Part::Close => {
                             let body = self.builder.concat_all(&core::mem::take(&mut current))?;
                             let head = heads.pop().ok_or(PresentationError::Unbalanced)?;
                             let head = self.builder.concat_all(&head)?;
@@ -4507,7 +4589,7 @@ where
     }]);
     while let Some(task) = tasks.pop() {
         match task {
-            | Task::Visit {
+            Task::Visit {
                 node,
                 admits,
                 depth,
@@ -4519,13 +4601,13 @@ where
                 walk.remaining = left;
                 walk.visit(source, node, source.read(node), admits, depth, &mut tasks)?;
             },
-            | Task::Bind(zone) => walk.opened.push(zone),
-            | Task::Unbind => {
+            Task::Bind(zone) => walk.opened.push(zone),
+            Task::Unbind => {
                 let _closed = walk.opened.pop();
             },
-            | Task::Missing => walk.unspell(Unspelled::Missing)?,
-            | Task::Label(Labelled { of, index, label }) => walk.label(source, of, index, label)?,
-            | Task::Join(join) => walk.join(join)?,
+            Task::Missing => walk.unspell(Unspelled::Missing)?,
+            Task::Label(Labelled { of, index, label }) => walk.label(source, of, index, label)?,
+            Task::Join(join) => walk.join(join)?,
         }
     }
     let root = walk.pop()?;
@@ -4535,8 +4617,8 @@ where
     // A body's statements break together: on one line when the whole body
     // fits, one statement per line otherwise.
     let doc = match admits {
-        | Admits::Computation(_) => walk.builder.group(root.doc)?,
-        | Admits::Type | Admits::ValueType | Admits::CompType | Admits::Value => root.doc,
+        Admits::Computation(_) => walk.builder.group(root.doc)?,
+        Admits::Type | Admits::ValueType | Admits::CompType | Admits::Value => root.doc,
     };
     Ok(Walked::Built {
         doc,

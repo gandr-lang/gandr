@@ -731,20 +731,20 @@ impl Measuring<'_>
     {
         while let Some(visit) = self.visits.pop() {
             match visit {
-                | Visit::Enter(node) => {
+                Visit::Enter(node) => {
                     self.enter(node)?;
                 },
-                | Visit::Bind => {
+                Visit::Bind => {
                     let Some(leg) = self.results.pop()
                     else {
                         return Err(MeasureFault::MachineInvariant);
                     };
                     self.legs.push(leg);
                 },
-                | Visit::Unbind { share } => {
+                Visit::Unbind { share } => {
                     self.unbind(share)?;
                 },
-                | Visit::Assemble { graft, base } => {
+                Visit::Assemble { graft, base } => {
                     self.assemble(graft, base)?;
                 },
             }
@@ -814,10 +814,10 @@ impl Measuring<'_>
         let shape = self.overlay.shape(node).map_err(MeasureFault::Refused)?;
         self.nodes = self.nodes.with(node)?;
         match shape {
-            | Shape::Opaque(_) => {
+            Shape::Opaque(_) => {
                 self.results.push(Measured::LEAF);
             },
-            | Shape::Bound(bound) => {
+            Shape::Bound(bound) => {
                 let distance = usize::try_from(u32::from(bound.distance)).unwrap_or(usize::MAX);
                 let Some(&leg) = self
                     .legs
@@ -833,7 +833,7 @@ impl Measuring<'_>
                     depth: ShareDepth::default(),
                 });
             },
-            | Shape::Shared(sharing) => {
+            Shape::Shared(sharing) => {
                 self.shares = self.shares.with(node)?;
                 self.occurrences = self.occurrences.with(sharing.arity, node)?;
                 self.visits.push(Visit::Unbind { share: node });
@@ -841,7 +841,7 @@ impl Measuring<'_>
                 self.visits.push(Visit::Bind);
                 self.visits.push(Visit::Enter(sharing.leg));
             },
-            | Shape::Grafted(children) => {
+            Shape::Grafted(children) => {
                 self.visits.push(Visit::Assemble {
                     graft: node,
                     base: Height(self.results.len()),

@@ -129,7 +129,7 @@ impl LoweringRefusal<'_>
     pub const fn classify(&self) -> FailureClass
     {
         match *self {
-            | Self::UnresolvedName { .. }
+            Self::UnresolvedName { .. }
             | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
             | Self::DuplicateSignature { .. }
@@ -156,7 +156,7 @@ impl LoweringRefusal<'_>
             | Self::RulesUnoriented { .. }
             | Self::RulesDiverge { .. }
             | Self::AcrossHandler { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. }
+            Self::OutOfFragment { .. }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. }
             | Self::UnstatedComponent { .. }
@@ -164,7 +164,7 @@ impl LoweringRefusal<'_>
             | Self::DirectedCell { .. }
             | Self::CellNotALoop { .. }
             | Self::ForNeedsListCase { .. } => FailureClass::Unrepresentable,
-            | Self::BudgetExceeded { .. }
+            Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
             | Self::UnknownMold { .. } => FailureClass::EngineFault,

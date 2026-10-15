@@ -50,8 +50,8 @@ impl Variance
     pub fn flip(self) -> Self
     {
         match self {
-            | Self::Covariant => Self::Contravariant,
-            | Self::Contravariant => Self::Covariant,
+            Self::Covariant => Self::Contravariant,
+            Self::Contravariant => Self::Covariant,
         }
     }
 
@@ -75,9 +75,9 @@ impl Variance
     pub fn of_cell(variance: CellVariance) -> Maybe<Self, variance_sorting::Absent>
     {
         match variance {
-            | CellVariance::Producer => Maybe::Present(Self::Covariant),
-            | CellVariance::Consumer => Maybe::Present(Self::Contravariant),
-            | CellVariance::Mixed => Maybe::Absent(variance_sorting::Absent::BothPolarities),
+            CellVariance::Producer => Maybe::Present(Self::Covariant),
+            CellVariance::Consumer => Maybe::Present(Self::Contravariant),
+            CellVariance::Mixed => Maybe::Absent(variance_sorting::Absent::BothPolarities),
         }
     }
 }
@@ -387,19 +387,19 @@ impl DirectedContext
                 continue;
             };
             match Variance::of_cell(var_meta.variance()) {
-                | Maybe::Absent(_) => {
+                Maybe::Absent(_) => {
                     return Err(VarianceError::MixedHole {
                         var: Name::from(name),
                     });
                 },
-                | Maybe::Present(derived) if derived != declared => {
+                Maybe::Present(derived) if derived != declared => {
                     return Err(VarianceError::Mismatch {
                         var: Name::from(name),
                         declared,
                         derived,
                     });
                 },
-                | Maybe::Present(_) => {},
+                Maybe::Present(_) => {},
             }
         }
         Ok(())
@@ -442,7 +442,7 @@ impl core::fmt::Display for VarianceError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Mismatch {
+            Self::Mismatch {
                 ref var,
                 declared,
                 derived,
@@ -451,15 +451,15 @@ impl core::fmt::Display for VarianceError
                 "variable {} is declared {} but derived {}",
                 var.as_ref(),
                 match declared {
-                    | Variance::Covariant => "covariant",
-                    | Variance::Contravariant => "contravariant",
+                    Variance::Covariant => "covariant",
+                    Variance::Contravariant => "contravariant",
                 },
                 match derived {
-                    | Variance::Covariant => "covariant",
-                    | Variance::Contravariant => "contravariant",
+                    Variance::Covariant => "covariant",
+                    Variance::Contravariant => "contravariant",
                 }
             ),
-            | Self::MixedHole { ref var } => {
+            Self::MixedHole { ref var } => {
                 write!(f, "variable {} occurs at both polarities", var.as_ref())
             },
         }

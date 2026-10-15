@@ -112,29 +112,29 @@ pub(in crate::lower) fn judged(
         .filter_map(|declaration| {
             let origin = OriginToken::from(usize::from(declaration.origin()));
             let (declared, defined) = match declaration.outcome() {
-                | DeclarationOutcome::Completed {
+                DeclarationOutcome::Completed {
                     declared_type,
                     body,
                 } => (Maybe::Present(declared_type), Maybe::Present(body)),
-                | DeclarationOutcome::Uncompleted { declared_type } => (
+                DeclarationOutcome::Uncompleted { declared_type } => (
                     Maybe::Present(declared_type),
                     Maybe::Absent(body::Absent::Hole),
                 ),
-                | DeclarationOutcome::Bodied { body } => (
+                DeclarationOutcome::Bodied { body } => (
                     Maybe::Absent(signature::Absent::Unsigned),
                     Maybe::Present(body),
                 ),
-                | DeclarationOutcome::Data(index) => {
+                DeclarationOutcome::Data(index) => {
                     return match module.data(index) {
-                        | Maybe::Present(held) => Some(Declaration::data(
+                        Maybe::Present(held) => Some(Declaration::data(
                             declaration.constant(),
                             Arc::clone(held),
                             origin,
                         )),
-                        | Maybe::Absent(_) => None,
+                        Maybe::Absent(_) => None,
                     };
                 },
-                | DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => return None,
+                DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => return None,
             };
             Some(Declaration::new(
                 declaration.constant(),
@@ -244,8 +244,11 @@ pub(in crate::lower) fn body_named(
 ) -> ValueId
 {
     match outcome_of(module, name) {
-        | DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
-        | other => panic!("`{name}` lowers a body: {other:?}"),
+        DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => body,
+        other @ (DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a body: {other:?}"),
     }
 }
 
@@ -299,17 +302,17 @@ fn reachable(
     while let Some(next) = pending.pop() {
         seen.push(next);
         match arena.computation(next) {
-            | Some(&Computation::Bind(first, second)) => pending.extend([second, first]),
-            | Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
+            Some(&Computation::Bind(first, second)) => pending.extend([second, first]),
+            Some(&Computation::Lambda(under) | &Computation::Split { body: under, .. }) => {
                 pending.push(under);
             },
-            | Some(&Computation::Case { ref branches, .. }) => {
+            Some(&Computation::Case { ref branches, .. }) => {
                 pending.extend(branches.iter().rev().copied());
             },
-            | Some(&Computation::DataCase { ref branches, .. }) => {
+            Some(&Computation::DataCase { ref branches, .. }) => {
                 pending.extend(branches.iter().rev().copied());
             },
-            | _ => {},
+            _ => {},
         }
     }
 
@@ -1469,8 +1472,8 @@ fn telescope_patterns_split_and_project()
         )
         .into_iter()
         .filter_map(|at| match arena.computation(at) {
-            | Some(&Computation::Split { arity, .. }) => Some(usize::from(arity)),
-            | _ => None,
+            Some(&Computation::Split { arity, .. }) => Some(usize::from(arity)),
+            _ => None,
         })
         .collect()
     };
@@ -1496,10 +1499,10 @@ fn telescope_patterns_split_and_project()
         )
         .into_iter()
         .filter_map(|at| match arena.computation(at) {
-            | Some(&Computation::RecordProjection(_, ref label)) => {
+            Some(&Computation::RecordProjection(_, ref label)) => {
                 Some(String::from(label.as_ref()))
             },
-            | _ => None,
+            _ => None,
         })
         .collect()
     };
@@ -1550,11 +1553,11 @@ fn a_pattern_at_a_dependent_record_splits_it_under_its_motive()
         )
         .into_iter()
         .filter_map(|at| match arena.computation(at) {
-            | Some(&Computation::Split { arity, motive, .. }) => Some((
+            Some(&Computation::Split { arity, motive, .. }) => Some((
                 usize::from(arity),
                 matches!(motive, gandr_core_term::SplitMotive::Scrutinee(_)),
             )),
-            | _ => None,
+            _ => None,
         })
         .collect()
     };
@@ -1602,12 +1605,12 @@ fn a_case_over_a_variable_answers_its_motive_at_each_constructor()
         reachable(arena, tail)
             .into_iter()
             .find_map(|at| match arena.computation(at) {
-                | Some(&Computation::DataCase {
+                Some(&Computation::DataCase {
                     motive,
                     ref branches,
                     ..
                 }) => Some((motive, branches.clone())),
-                | _ => None,
+                _ => None,
             })
             .expect("the body cases on its scrutinee")
     };
@@ -1616,11 +1619,11 @@ fn a_case_over_a_variable_answers_its_motive_at_each_constructor()
         reachable(arena, zero)
             .into_iter()
             .find_map(|at| match arena.computation(at) {
-                | Some(&Computation::Return(value)) => match arena.value(value) {
-                    | Some(&Value::Here(point)) => arena.value(point).cloned(),
-                    | _ => None,
+                Some(&Computation::Return(value)) => match arena.value(value) {
+                    Some(&Value::Here(point)) => arena.value(point).cloned(),
+                    _ => None,
                 },
-                | _ => None,
+                _ => None,
             })
             .expect("the zero branch returns a reflexivity")
     };
@@ -1714,8 +1717,8 @@ fn a_leaf_copy_keeps_each_use_naming_its_pattern_variable()
         )
         .into_iter()
         .find_map(|at| match arena.computation(at) {
-            | Some(&Computation::Return(value)) => Some(value),
-            | _ => None,
+            Some(&Computation::Return(value)) => Some(value),
+            _ => None,
         })
         .expect("the arm's copy returns")
     };
@@ -1764,8 +1767,8 @@ fn sum_patterns_case_on_the_stated_arity()
         )
         .into_iter()
         .filter_map(|at| match arena.computation(at) {
-            | Some(&Computation::Case { ref branches, .. }) => Some(branches.len()),
-            | _ => None,
+            Some(&Computation::Case { ref branches, .. }) => Some(branches.len()),
+            _ => None,
         })
         .collect()
     };
@@ -1860,8 +1863,12 @@ fn a_loop_mints_the_words_at_its_point()
     );
     assert_eq!(
         module.constructors(match words.outcome() {
-            | DeclarationOutcome::Data(index) => index,
-            | _ => panic!("the words are data"),
+            DeclarationOutcome::Data(index) => index,
+            DeclarationOutcome::Completed { .. }
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::Refused(_) => panic!("the words are data"),
         }),
         ["here", "loop", "back(loop)", "turn", "back(turn)"].map(String::from),
         "each constructor is named as the printer writes it"
@@ -2061,8 +2068,10 @@ fn a_word_conses_its_letters_and_matches_them()
                     && usize::from(label.span.end()) == start.saturating_add(text.len())
             })
             .map(|label| match label.labelled {
-                | crate::origin::Labelled::ValueType { ty, .. } => arena.value_type(ty).cloned(),
-                | _ => None,
+                crate::origin::Labelled::ValueType { ty, .. } => arena.value_type(ty).cloned(),
+                crate::origin::Labelled::CompType { .. }
+                | crate::origin::Labelled::Value(_)
+                | crate::origin::Labelled::Endpoint(_) => None,
             })
     };
     let after_word = source.find("def word =").expect("the word is written");
@@ -2097,8 +2106,8 @@ fn a_word_conses_its_letters_and_matches_them()
         reachable(&arena, cased)
             .into_iter()
             .find_map(|id| match arena.computation(id) {
-                | Some(&Computation::DataCase { ref branches, .. }) => Some(branches),
-                | _ => None,
+                Some(&Computation::DataCase { ref branches, .. }) => Some(branches),
+                _ => None,
             })
     else {
         panic!("a case over a word is a data case");

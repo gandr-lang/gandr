@@ -485,8 +485,8 @@ impl serde::Serialize for RenderFrame
         S: serde::Serializer,
     {
         let (doc_uri, doc_version) = match self.scope {
-            | FrameScope::Connection => (None, None),
-            | FrameScope::Document(ref document) => (Some(&document.uri), Some(document.version)),
+            FrameScope::Connection => (None, None),
+            FrameScope::Document(ref document) => (Some(&document.uri), Some(document.version)),
         };
         let image = RenderFrameImage {
             schema_version: WIRE_SCHEMA_VERSION,
@@ -592,27 +592,27 @@ impl fmt::Display for FrameDecodeError
     ) -> fmt::Result
     {
         match *self {
-            | Self::SchemaVersion { found } => write!(
+            Self::SchemaVersion { found } => write!(
                 f,
                 "render frame schema_version {found} is not the supported wire schema {WIRE_SCHEMA_VERSION}"
             ),
-            | Self::RoutingLockstep => f.write_str(
+            Self::RoutingLockstep => f.write_str(
                 "render frame doc_uri and doc_version must be present or absent in lockstep",
             ),
-            | Self::ConnectionScopedRouted { body } => {
+            Self::ConnectionScopedRouted { body } => {
                 let name = match body {
-                    | ConnectionBody::Hello => "hello",
-                    | ConnectionBody::Detach => "detach",
+                    ConnectionBody::Hello => "hello",
+                    ConnectionBody::Detach => "detach",
                 };
                 write!(
                     f,
                     "{name} render frames must not carry document routing keys"
                 )
             },
-            | Self::DocumentScopedUnrouted { body } => {
+            Self::DocumentScopedUnrouted { body } => {
                 let name = match body {
-                    | DocumentBody::Frame => "frame",
-                    | DocumentBody::Resync => "resync",
+                    DocumentBody::Frame => "frame",
+                    DocumentBody::Resync => "resync",
                 };
                 write!(f, "{name} render frames require document routing keys")
             },
@@ -695,29 +695,29 @@ impl RenderFrame
             });
         }
         let scope = match (wire.doc_uri, wire.doc_version) {
-            | (Some(uri), Some(version)) => FrameScope::Document(DocId { uri, version }),
-            | (None, None) => FrameScope::Connection,
-            | (Some(_), None) | (None, Some(_)) => return Err(FrameDecodeError::RoutingLockstep),
+            (Some(uri), Some(version)) => FrameScope::Document(DocId { uri, version }),
+            (None, None) => FrameScope::Connection,
+            (Some(_), None) | (None, Some(_)) => return Err(FrameDecodeError::RoutingLockstep),
         };
         match (&wire.body, &scope) {
-            | (&(FrameBody::Hello { .. } | FrameBody::Detach), &FrameScope::Connection)
+            (&(FrameBody::Hello { .. } | FrameBody::Detach), &FrameScope::Connection)
             | (&(FrameBody::Frame { .. } | FrameBody::Resync), &FrameScope::Document(_)) => {},
-            | (&FrameBody::Hello { .. }, &FrameScope::Document(_)) => {
+            (&FrameBody::Hello { .. }, &FrameScope::Document(_)) => {
                 return Err(FrameDecodeError::ConnectionScopedRouted {
                     body: ConnectionBody::Hello,
                 });
             },
-            | (&FrameBody::Detach, &FrameScope::Document(_)) => {
+            (&FrameBody::Detach, &FrameScope::Document(_)) => {
                 return Err(FrameDecodeError::ConnectionScopedRouted {
                     body: ConnectionBody::Detach,
                 });
             },
-            | (&FrameBody::Frame { .. }, &FrameScope::Connection) => {
+            (&FrameBody::Frame { .. }, &FrameScope::Connection) => {
                 return Err(FrameDecodeError::DocumentScopedUnrouted {
                     body: DocumentBody::Frame,
                 });
             },
-            | (&FrameBody::Resync, &FrameScope::Connection) => {
+            (&FrameBody::Resync, &FrameScope::Connection) => {
                 return Err(FrameDecodeError::DocumentScopedUnrouted {
                     body: DocumentBody::Resync,
                 });

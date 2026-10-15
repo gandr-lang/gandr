@@ -306,45 +306,43 @@ impl<Id> ConversionDecision<Id>
         Anchor: FnMut(Id) -> Other,
     {
         match self {
-            | Self::ReduceLeft { redex } => ConversionDecision::ReduceLeft {
+            Self::ReduceLeft { redex } => ConversionDecision::ReduceLeft {
                 redex: anchor(redex),
             },
-            | Self::ReduceRight { redex } => ConversionDecision::ReduceRight {
+            Self::ReduceRight { redex } => ConversionDecision::ReduceRight {
                 redex: anchor(redex),
             },
-            | Self::ConstShortcut { constant } => ConversionDecision::ConstShortcut {
+            Self::ConstShortcut { constant } => ConversionDecision::ConstShortcut {
                 constant: anchor(constant),
             },
-            | Self::Unfold { constant } => ConversionDecision::Unfold {
+            Self::Unfold { constant } => ConversionDecision::Unfold {
                 constant: anchor(constant),
             },
-            | Self::Postpone { constant } => ConversionDecision::Postpone {
+            Self::Postpone { constant } => ConversionDecision::Postpone {
                 constant: anchor(constant),
             },
-            | Self::Freeze { constant, side } => ConversionDecision::Freeze {
+            Self::Freeze { constant, side } => ConversionDecision::Freeze {
                 constant: anchor(constant),
                 side,
             },
-            | Self::EtaExpand { side, variable } => ConversionDecision::EtaExpand {
+            Self::EtaExpand { side, variable } => ConversionDecision::EtaExpand {
                 side,
                 variable: anchor(variable),
             },
-            | Self::ReturnEta { side } => ConversionDecision::ReturnEta { side },
-            | Self::Reassociate { side } => ConversionDecision::Reassociate { side },
-            | Self::Force { thunk } => ConversionDecision::Force {
+            Self::ReturnEta { side } => ConversionDecision::ReturnEta { side },
+            Self::Reassociate { side } => ConversionDecision::Reassociate { side },
+            Self::Force { thunk } => ConversionDecision::Force {
                 thunk: anchor(thunk),
             },
-            | Self::ComparedShared { left, right } => {
+            Self::ComparedShared { left, right } => {
                 let left = anchor(left);
                 ConversionDecision::ComparedShared {
                     left,
                     right: anchor(right),
                 }
             },
-            | Self::Decompose => ConversionDecision::Decompose,
-            | Self::NegativeSubgoal { position } => {
-                ConversionDecision::NegativeSubgoal { position }
-            },
+            Self::Decompose => ConversionDecision::Decompose,
+            Self::NegativeSubgoal { position } => ConversionDecision::NegativeSubgoal { position },
         }
     }
 }

@@ -157,11 +157,11 @@ impl fmt::Display for ReifyRefusal
     ) -> fmt::Result
     {
         match *self {
-            | Self::Metavariable(ref var) => write!(f, "metavariable {} is not ground", var.hole()),
-            | Self::UnresolvedConstructor(ref symbol) => {
+            Self::Metavariable(ref var) => write!(f, "metavariable {} is not ground", var.hole()),
+            Self::UnresolvedConstructor(ref symbol) => {
                 write!(f, "constructor {symbol} names no tag of the IL")
             },
-            | Self::ArityMismatch {
+            Self::ArityMismatch {
                 ref constructor,
                 expected,
                 found,
@@ -169,11 +169,11 @@ impl fmt::Display for ReifyRefusal
                 f,
                 "constructor {constructor} takes {expected} values, given {found}"
             ),
-            | Self::OperationFrame(ref op) => {
+            Self::OperationFrame(ref op) => {
                 write!(f, "operation frame {op} is the opaque boundary")
             },
-            | Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
-            | Self::ReificationInvariant => f.write_str("the reification lost a node it minted"),
+            Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
+            Self::ReificationInvariant => f.write_str("the reification lost a node it minted"),
         }
     }
 }
@@ -378,9 +378,9 @@ fn reify_producer(
     let mut minted: Vec<ProducerId> = Vec::new();
     while let Some(step) = steps.pop() {
         match step {
-            | Step::Enter(node) => match node.view() {
-                | ProdView::Meta(var) => return Err(ReifyRefusal::Metavariable(var.clone())),
-                | ProdView::Ctor { ctor, args } => {
+            Step::Enter(node) => match node.view() {
+                ProdView::Meta(var) => return Err(ReifyRefusal::Metavariable(var.clone())),
+                ProdView::Ctor { ctor, args } => {
                     let arity = ProducerArity::from(args.len());
                     let tag = resolved(resolver, ctor, arity)?;
                     steps.push(Step::Exit(tag, arity));
@@ -391,7 +391,7 @@ fn reify_producer(
                     }
                 },
             },
-            | Step::Exit(tag, arity) => {
+            Step::Exit(tag, arity) => {
                 let start = minted
                     .len()
                     .checked_sub(usize::from(arity))
@@ -458,10 +458,10 @@ fn reify_consumer(
     let mut cursor = root;
     loop {
         match cursor.view() {
-            | ConsView::Meta(var) => return Err(ReifyRefusal::Metavariable(var.clone())),
-            | ConsView::Op { op, .. } => return Err(ReifyRefusal::OperationFrame(op.clone())),
-            | ConsView::Top => break,
-            | ConsView::Frame { ctor, ret } => {
+            ConsView::Meta(var) => return Err(ReifyRefusal::Metavariable(var.clone())),
+            ConsView::Op { op, .. } => return Err(ReifyRefusal::OperationFrame(op.clone())),
+            ConsView::Top => break,
+            ConsView::Frame { ctor, ret } => {
                 frames.push(resolved(resolver, ctor, ProducerArity::ONE)?);
                 cursor = ret;
             },

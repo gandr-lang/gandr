@@ -282,8 +282,8 @@ impl Machine<'_, '_>
         let node = CoreNode::Term(TermNode::Computation(at));
         let slot = self.slot(node, index)?;
         match slot.use_state {
-            | LinearUse::Available => Ok(slot),
-            | LinearUse::Consumed => Err(CheckRefusal::Linearity {
+            LinearUse::Available => Ok(slot),
+            LinearUse::Consumed => Err(CheckRefusal::Linearity {
                 at: node,
                 defect: LinearityDefect::Closed {
                     endpoint: slot.endpoint,
@@ -371,16 +371,16 @@ impl Machine<'_, '_>
     ) -> Result<Vec<DeBruijnIndex>, CheckRefusal>
     {
         let node = match term {
-            | CoreTerm::Value(id) => CoreNode::Term(TermNode::Value(id)),
-            | CoreTerm::Computation(id) => CoreNode::Term(TermNode::Computation(id)),
+            CoreTerm::Value(id) => CoreNode::Term(TermNode::Value(id)),
+            CoreTerm::Computation(id) => CoreNode::Term(TermNode::Computation(id)),
         };
         self.sessions
             .free
             .linear(self.context.arena(), term)
             .map(<[DeBruijnIndex]>::to_vec)
             .map_err(|fault| match fault {
-                | gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
-                | gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
             })
     }
 
@@ -419,11 +419,44 @@ impl Machine<'_, '_>
             return Ok(());
         }
         let (term, node, by) = match goal {
-            | Goal::Value { term, .. } => {
+            Goal::Value { term, .. } => {
                 let by = match *self.value(term)? {
-                    | Value::Thunk(_) => Capture::Thunk,
-                    | Value::Reify(_) => Capture::Stack,
-                    | _ => return Ok(()),
+                    Value::Thunk(_) => Capture::Thunk,
+                    Value::Reify(_) => Capture::Stack,
+                    Value::Primitive { .. }
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Here(_)
+                    | Value::Funext(..)
+                    | Value::Equiv(..)
+                    | Value::Ua { .. }
+                    | Value::SessionRelated { .. }
+                    | Value::Stay(_)
+                    | Value::Then(..)
+                    | Value::FlowProduct(..)
+                    | Value::Forward(_)
+                    | Value::FunctionFlow(..)
+                    | Value::Recorded(_)
+                    | Value::Returned(_)
+                    | Value::Nested(_)
+                    | Value::Run(_)
+                    | Value::Variable { .. }
+                    | Value::Constant(_)
+                    | Value::Literal(_)
+                    | Value::Tuple(_)
+                    | Value::Injection(..)
+                    | Value::ListNil
+                    | Value::ListCons(..)
+                    | Value::Lift { .. }
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_)
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..)
+                    | Value::Constructor { .. }
+                    | Value::Record(_)
+                    | Value::Hole(_)
+                    | Value::Mark { .. } => return Ok(()),
                 };
                 (
                     CoreTerm::Value(term),
@@ -431,15 +464,15 @@ impl Machine<'_, '_>
                     by,
                 )
             },
-            | Goal::Computation { term, .. } => {
+            Goal::Computation { term, .. } => {
                 let by = match *self.computation(term)? {
-                    | Computation::Fixpoint { .. } => Capture::Recursion,
-                    | Computation::Case { .. }
+                    Computation::Fixpoint { .. } => Capture::Recursion,
+                    Computation::Case { .. }
                     | Computation::DataCase { .. }
                     | Computation::With(..)
                     | Computation::ListFold { .. } => Capture::Branch,
-                    | Computation::Handle { .. } => Capture::Continuation,
-                    | Computation::Shift(_) => {
+                    Computation::Handle { .. } => Capture::Continuation,
+                    Computation::Shift(_) => {
                         let node = CoreNode::Term(TermNode::Computation(term));
                         let endpoint = self.slot(node, DeBruijnIndex::from(0_u32))?.endpoint;
                         return Err(CheckRefusal::Linearity {
@@ -450,7 +483,28 @@ impl Machine<'_, '_>
                             },
                         });
                     },
-                    | _ => return Ok(()),
+                    Computation::Primitive { .. }
+                    | Computation::Transport(..)
+                    | Computation::PathTransport { .. }
+                    | Computation::Ride { .. }
+                    | Computation::TelescopeTransport { .. }
+                    | Computation::Lambda(_)
+                    | Computation::Application(..)
+                    | Computation::Return(_)
+                    | Computation::Bind(..)
+                    | Computation::Force(_)
+                    | Computation::Split { .. }
+                    | Computation::RecordProjection(..)
+                    | Computation::TupleProjection(..)
+                    | Computation::Hole(_)
+                    | Computation::Mark { .. }
+                    | Computation::Perform { .. }
+                    | Computation::Exercise { .. }
+                    | Computation::Scope { .. }
+                    | Computation::Resume(..)
+                    | Computation::Reset(_)
+                    | Computation::Project(..)
+                    | Computation::Session(_) => return Ok(()),
                 };
                 (
                     CoreTerm::Computation(term),
@@ -458,7 +512,7 @@ impl Machine<'_, '_>
                     by,
                 )
             },
-            | Goal::Form(_) | Goal::Stack { .. } => return Ok(()),
+            Goal::Form(_) | Goal::Stack { .. } => return Ok(()),
         };
         let Some(&first) = self.free_linear(term)?.first()
         else {
@@ -496,7 +550,7 @@ impl Machine<'_, '_>
     {
         let node = CoreNode::Term(TermNode::Value(term));
         let slot = self.slot(node, index).map_err(|refusal| match refusal {
-            | CheckRefusal::Linearity {
+            CheckRefusal::Linearity {
                 defect: LinearityDefect::Unbound { .. },
                 ..
             } => CheckRefusal::UnboundIndex {
@@ -505,7 +559,81 @@ impl Machine<'_, '_>
                 index,
                 depth: self.context.depth(Zone::Linear),
             },
-            | other => other,
+            other @ (CheckRefusal::NotADataType(_)
+            | CheckRefusal::DataKindNotUniverse(_)
+            | CheckRefusal::DataFieldLevel { .. }
+            | CheckRefusal::RuleNotPresentable { .. }
+            | CheckRefusal::RuleNotRespected { .. }
+            | CheckRefusal::NotApart { .. }
+            | CheckRefusal::LoopNotRespected { .. }
+            | CheckRefusal::AbstractKindNotUniverse(_)
+            | CheckRefusal::RepresentationAboveKind { .. }
+            | CheckRefusal::NotAnAbstractType(_)
+            | CheckRefusal::SealSiteRepeated(_)
+            | CheckRefusal::DataArgumentArity(_)
+            | CheckRefusal::UnknownConstructor { .. }
+            | CheckRefusal::ConstructorArity(_)
+            | CheckRefusal::NonExhaustiveDataCase(_)
+            | CheckRefusal::AbsentRecordField(_)
+            | CheckRefusal::AbsentTupleComponent(_)
+            | CheckRefusal::MissingRecordField { .. }
+            | CheckRefusal::UnknownOperation { .. }
+            | CheckRefusal::HandlerCoverage { .. }
+            | CheckRefusal::ShiftWithoutReset { .. }
+            | CheckRefusal::DependentStack { .. }
+            | CheckRefusal::PathCode(_)
+            | CheckRefusal::EndpointMismatch { .. }
+            | CheckRefusal::CompoundEndpoint { .. }
+            | CheckRefusal::FunextUnsupported { .. }
+            | CheckRefusal::PointwiseDistinct { .. }
+            | CheckRefusal::EquivUnsupported { .. }
+            | CheckRefusal::UncertifiedStratum { .. }
+            | CheckRefusal::RoundTripDistinct { .. }
+            | CheckRefusal::NotOver { .. }
+            | CheckRefusal::UaUncertified { .. }
+            | CheckRefusal::UaInequivalent { .. }
+            | CheckRefusal::TypeMismatch(_)
+            | CheckRefusal::EffectSignatureConflict { .. }
+            | CheckRefusal::ShapeMismatch { .. }
+            | CheckRefusal::NotSynthesisable { .. }
+            | CheckRefusal::UnknownConstant { .. }
+            | CheckRefusal::OutOfFragment { .. }
+            | CheckRefusal::UnboundIndex { .. }
+            | CheckRefusal::BudgetExceeded { .. }
+            | CheckRefusal::DanglingNode { .. }
+            | CheckRefusal::AdmissionOrder { .. }
+            | CheckRefusal::MachineInvariant
+            | CheckRefusal::SortMismatch { .. }
+            | CheckRefusal::LevelMismatch { .. }
+            | CheckRefusal::DependentBind { .. }
+            | CheckRefusal::Undecided { .. }
+            | CheckRefusal::FamilyArity { .. }
+            | CheckRefusal::FamilyArgumentClassifier { .. }
+            | CheckRefusal::StaticLambdaArgument { .. }
+            | CheckRefusal::StaticClassifierExpected { .. }
+            | CheckRefusal::NegativeOccurrence(_)
+            | CheckRefusal::NestedOccurrence(_)
+            | CheckRefusal::IndexOccurrence(_)
+            | CheckRefusal::NonUniformOccurrence(_)
+            | CheckRefusal::CrossBlockReference { .. }
+            | CheckRefusal::DescentNotReplayed { .. }
+            | CheckRefusal::SessionMismatch { .. }
+            | CheckRefusal::Linearity { .. }
+            | CheckRefusal::UnenclosedRun { .. }
+            | CheckRefusal::CapabilityForged { .. }
+            | CheckRefusal::CapabilityAmplified(_)
+            | CheckRefusal::CapabilityOutsideAuthority { .. }
+            | CheckRefusal::CapabilityEscaped { .. }
+            | CheckRefusal::CapabilityConsumable(_)
+            | CheckRefusal::CapabilityUngranted { .. }
+            | CheckRefusal::SessionNotEquivalent { .. }
+            | CheckRefusal::SessionNotSubtype { .. }
+            | CheckRefusal::SessionCodeExpected { .. }
+            | CheckRefusal::NonCovariantMotive { .. }
+            | CheckRefusal::RideUnsupported { .. }
+            | CheckRefusal::RunNotAdmitted { .. }
+            | CheckRefusal::ForwardUnsupported { .. }
+            | CheckRefusal::Boundary { .. }) => other,
         })?;
         Err(CheckRefusal::Linearity {
             at: node,
@@ -562,9 +690,9 @@ impl Machine<'_, '_>
             return Err(CheckRefusal::MachineInvariant);
         };
         match (action, direction) {
-            | (&SessionAction::Send { endpoint, payload }, _) => self.send(term, endpoint, payload),
-            | (&SessionAction::Receive { endpoint }, _) => self.receive(term, endpoint),
-            | (
+            (&SessionAction::Send { endpoint, payload }, _) => self.send(term, endpoint, payload),
+            (&SessionAction::Receive { endpoint }, _) => self.receive(term, endpoint),
+            (
                 &SessionAction::Select {
                     endpoint,
                     ref label,
@@ -574,16 +702,16 @@ impl Machine<'_, '_>
                 let label = label.clone();
                 self.select(term, endpoint, &label)
             },
-            | (&SessionAction::Close { endpoint }, _) => self.close_endpoint(term, endpoint),
-            | (&SessionAction::Offer { .. }, Direction::Check(expected)) => {
+            (&SessionAction::Close { endpoint }, _) => self.close_endpoint(term, endpoint),
+            (&SessionAction::Offer { .. }, Direction::Check(expected)) => {
                 self.offer(term, expected)
             },
-            | (&SessionAction::Offer { .. }, Direction::Synthesise) => {
+            (&SessionAction::Offer { .. }, Direction::Synthesise) => {
                 Err(CheckRefusal::NotSynthesisable {
                     form: crate::refusal::CheckingForm::Offer(term),
                 })
             },
-            | (&SessionAction::Fork { protocol, .. }, _) => {
+            (&SessionAction::Fork { protocol, .. }, _) => {
                 if let Direction::Check(expected) = direction {
                     self.pure_fork(term, expected)?;
                 }
@@ -1158,9 +1286,9 @@ impl Machine<'_, '_>
     {
         let head = self.context.whnf_comp_type(ty)?;
         let pure = match comp_type_view(self.context.arena(), head)? {
-            | CompTypeView::Returner { effects, .. } => effects.purity() == Purity::Pure,
-            | CompTypeView::Unknown => true,
-            | CompTypeView::With(..)
+            CompTypeView::Returner { effects, .. } => effects.purity() == Purity::Pure,
+            CompTypeView::Unknown => true,
+            CompTypeView::With(..)
             | CompTypeView::Arrow { .. }
             | CompTypeView::Pi { .. }
             | CompTypeView::Element { .. } => false,
@@ -1396,14 +1524,12 @@ impl Machine<'_, '_>
     {
         self.spend(at, &[])?;
         match (direction, produced) {
-            | (Direction::Check(_), Produced::Checked) => Ok(Step::Ascend(Produced::Checked)),
-            | (Direction::Synthesise, Produced::CompType(ty)) => {
+            (Direction::Check(_), Produced::Checked) => Ok(Step::Ascend(Produced::Checked)),
+            (Direction::Synthesise, Produced::CompType(ty)) => {
                 self.pure_fork(at, ty)?;
                 Ok(Step::Ascend(Produced::CompType(ty)))
             },
-            | (Direction::Check(_) | Direction::Synthesise, _) => {
-                Err(CheckRefusal::MachineInvariant)
-            },
+            (Direction::Check(_) | Direction::Synthesise, _) => Err(CheckRefusal::MachineInvariant),
         }
     }
 

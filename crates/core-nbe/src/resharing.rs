@@ -248,12 +248,12 @@ impl GoalSupport
     ) -> Result<Self, ConversionFault>
     {
         let (left, right) = match sides {
-            | SupportSides::Heads(left, right) => {
+            SupportSides::Heads(left, right) => {
                 let left = side_content(domain, left)?;
                 let right = side_content(domain, right)?;
                 (left, right)
             },
-            | SupportSides::Opened(left, right)
+            SupportSides::Opened(left, right)
             | SupportSides::Closed(left, right)
             | SupportSides::OpenedUnder(left, right, _) => {
                 domain
@@ -265,8 +265,10 @@ impl GoalSupport
                         .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
                 }
                 let content = match sides {
-                    | SupportSides::Closed(..) => SideContent::Closed,
-                    | _ => SideContent::Opened,
+                    SupportSides::Closed(..) => SideContent::Closed,
+                    SupportSides::Heads(..)
+                    | SupportSides::Opened(..)
+                    | SupportSides::OpenedUnder(..) => SideContent::Opened,
                 };
                 (content, content)
             },
@@ -429,21 +431,21 @@ fn side_content(
 ) -> Result<SideContent, ConversionFault>
 {
     let (guard, polarity, neutral) = match glued {
-        | Glued::Value(value) => {
+        Glued::Value(value) => {
             let guard = domain.value_guard(value).map_err(ConversionFault::Domain)?;
             let neutral = match domain.value(value) {
-                | Some(&DomainValue::Neutral { neutral, .. }) => Some(neutral),
-                | Some(_) => None,
-                | None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
+                Some(&DomainValue::Neutral { neutral, .. }) => Some(neutral),
+                Some(_) => None,
+                None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
             };
             (guard, Polarity::Value, neutral)
         },
-        | Glued::Computation(comp) => {
+        Glued::Computation(comp) => {
             let guard = domain.comp_guard(comp).map_err(ConversionFault::Domain)?;
             let neutral = match domain.computation(comp) {
-                | Some(&DomainComp::Neutral { neutral, .. }) => Some(neutral),
-                | Some(_) => None,
-                | None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
+                Some(&DomainComp::Neutral { neutral, .. }) => Some(neutral),
+                Some(_) => None,
+                None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
             };
             (guard, Polarity::Computation, neutral)
         },
@@ -835,10 +837,10 @@ impl Supports
                 .get(usize::from(child))
                 .ok_or(ConversionFault::MachineInvariant)?;
             match held.standing {
-                | Standing::Entry => {
+                Standing::Entry => {
                     gathered.insert(Edge::Entry(child));
                 },
-                | Standing::Inner => gathered.extend(held.edges.iter().copied()),
+                Standing::Inner => gathered.extend(held.edges.iter().copied()),
             }
         }
         let consulted = self
@@ -848,8 +850,8 @@ impl Supports
         consulted.edges.append(&mut gathered);
         if consulted.standing == Standing::Entry {
             let total = match settled {
-                | Settled::Convertible => &mut self.totals.acceptance,
-                | Settled::NotConvertible => &mut self.totals.refusal,
+                Settled::Convertible => &mut self.totals.acceptance,
+                Settled::NotConvertible => &mut self.totals.refusal,
             };
             total.0 = total.0.saturating_add(consulted.edges.len());
         }

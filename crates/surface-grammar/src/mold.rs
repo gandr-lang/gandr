@@ -887,10 +887,7 @@ impl MoldTable
             twins: Vec::new(),
             fingerprint,
         };
-        table.twins = match twins {
-            | Some(frozen) => frozen,
-            | None => table.twin_index(),
-        };
+        table.twins = twins.unwrap_or_else(|| table.twin_index());
         table
     }
 
@@ -978,8 +975,8 @@ impl MoldTable
         let mut class = None;
         for &(ref key, id) in &keyed {
             let twin = match class {
-                | Some((head, least)) if head == key => least,
-                | _ => {
+                Some((head, least)) if head == key => least,
+                _ => {
                     class = Some((key, id));
                     id
                 },
@@ -1118,10 +1115,10 @@ impl MoldTable
             .filter(|&(list, _bit)| list.binary_search(&id).is_ok())
             .fold(0_u8, |bits, (_list, bit)| bits | bit);
             let owner = self.owners.get(position).copied().unwrap_or(usize::MAX);
-            let closing = match self.closing.get(position).copied().flatten() {
-                | Some(class) => format!("Some(ClosingClass::{class:?})"),
-                | None => String::from("None"),
-            };
+            let closing = self.closing.get(position).copied().flatten().map_or_else(
+                || String::from("None"),
+                |class| format!("Some(ClosingClass::{class:?})"),
+            );
             let successors = self
                 .successor_starts
                 .get(position)
@@ -1172,8 +1169,8 @@ impl MoldTable
             let symbols = steps
                 .iter()
                 .map(|step| match step.crossed {
-                    | StepSym::Sort(sort) => format!("StepSym::Sort(Sort::{sort:?})"),
-                    | StepSym::Tile(label) => format!("StepSym::Tile({label:?})"),
+                    StepSym::Sort(sort) => format!("StepSym::Sort(Sort::{sort:?})"),
+                    StepSym::Tile(label) => format!("StepSym::Tile({label:?})"),
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -1212,10 +1209,7 @@ impl MoldTable
     {
         let index =
             usize::try_from(u32::from(id)).map_err(|_error| PbgError::UnknownMold { id })?;
-        match self.molds.get(index) {
-            | Some(def) => Ok(def),
-            | None => Err(PbgError::UnknownMold { id }),
-        }
+        self.molds.get(index).ok_or(PbgError::UnknownMold { id })
     }
 
     /// The rule mold `id` belongs to, among the `rules` the table was built
@@ -1254,10 +1248,7 @@ impl MoldTable
         else {
             return Err(PbgError::UnknownMold { id });
         };
-        match rules.get(owner) {
-            | Some(rule) => Ok(rule),
-            | None => Err(PbgError::UnknownMold { id }),
-        }
+        rules.get(owner).ok_or(PbgError::UnknownMold { id })
     }
 
     /// The precedence bounds of mold `id`.
@@ -1291,8 +1282,8 @@ impl MoldTable
         let index =
             usize::try_from(u32::from(id)).map_err(|_error| PbgError::UnknownMold { id })?;
         match self.bounds.get(index) {
-            | Some(&bounds) => Ok(bounds),
-            | None => Err(PbgError::UnknownMold { id }),
+            Some(&bounds) => Ok(bounds),
+            None => Err(PbgError::UnknownMold { id }),
         }
     }
 
@@ -1332,8 +1323,8 @@ impl MoldTable
             return Err(PbgError::UnknownRCtx { rctx });
         };
         Ok(match dir {
-            | Dir::Left => &data.left_steps,
-            | Dir::Right => &data.right_steps,
+            Dir::Left => &data.left_steps,
+            Dir::Right => &data.right_steps,
         })
     }
 
@@ -1964,9 +1955,9 @@ impl EndingVerdict
     ) -> Self
     {
         match self {
-            | Self::Empty => Self::Agree(class),
-            | Self::Agree(held) if held == class => self,
-            | Self::Agree(_) | Self::Divergent => Self::Divergent,
+            Self::Empty => Self::Agree(class),
+            Self::Agree(held) if held == class => self,
+            Self::Agree(_) | Self::Divergent => Self::Divergent,
         }
     }
 
@@ -1991,9 +1982,9 @@ impl EndingVerdict
     ) -> Self
     {
         match successor {
-            | Self::Empty => self,
-            | Self::Agree(class) => self.merge_class(class),
-            | Self::Divergent => Self::Divergent,
+            Self::Empty => self,
+            Self::Agree(class) => self.merge_class(class),
+            Self::Divergent => Self::Divergent,
         }
     }
 }
@@ -2226,12 +2217,9 @@ fn closing_classes(
                 if has_successors && !facet.last.contains(&key) {
                     continue;
                 }
-                verdict = match ClosingClass::closing(DelimSpelling::from(key.label().0))
+                verdict = ClosingClass::closing(DelimSpelling::from(key.label().0))
                     .filter(|reached| opened.contains(reached))
-                {
-                    | Some(class) => verdict.merge_class(class),
-                    | None => EndingVerdict::Divergent,
-                };
+                    .map_or(EndingVerdict::Divergent, |class| verdict.merge_class(class));
             }
         }
         if let Some(row) = successors.get(component) {
@@ -2267,8 +2255,8 @@ fn closing_classes(
                 .and_then(|index| component_of.get(index))
                 .and_then(|&component| verdicts.get(component));
             match verdict {
-                | Some(&EndingVerdict::Agree(class)) => Some(class),
-                | Some(&(EndingVerdict::Empty | EndingVerdict::Divergent)) | None => None,
+                Some(&EndingVerdict::Agree(class)) => Some(class),
+                Some(&(EndingVerdict::Empty | EndingVerdict::Divergent)) | None => None,
             }
         })
         .collect()
@@ -2358,15 +2346,15 @@ fn walk_regex(
 
     while let Some(frame) = frames.pop() {
         match frame {
-            | WalkFrame::Enter {
+            WalkFrame::Enter {
                 regex: node,
                 left: node_left,
                 right: node_right,
                 path: node_path,
             } => match node.shape() {
-                | RegexShape::Empty => values.push(TileFacet::empty()),
-                | RegexShape::Sym(Sym::Sort(_)) => values.push(TileFacet::required_hole()),
-                | RegexShape::Sym(Sym::Tile(tile)) => {
+                RegexShape::Empty => values.push(TileFacet::empty()),
+                RegexShape::Sym(Sym::Sort(_)) => values.push(TileFacet::required_hole()),
+                RegexShape::Sym(Sym::Tile(tile)) => {
                     let data = context_data(&node_left, &node_right);
                     let rctx = interner.intern(node_path, data);
                     out.push(Occurrence {
@@ -2375,7 +2363,7 @@ fn walk_regex(
                     });
                     values.push(TileFacet::leaf(TileKey::new(TileLabel(tile.label), rctx)));
                 },
-                | RegexShape::Seq(items) => {
+                RegexShape::Seq(items) => {
                     frames.push(WalkFrame::FinishSeq { count: items.len() });
                     // Each child's face and canonical form once, up front;
                     // recomputing them per position is quadratic in the
@@ -2426,7 +2414,7 @@ fn walk_regex(
                         });
                     }
                 },
-                | RegexShape::Alt(items) => {
+                RegexShape::Alt(items) => {
                     frames.push(WalkFrame::FinishAlt { count: items.len() });
                     // A branch's tag is the sorted join of its siblings'
                     // canonical forms: branches are unordered.
@@ -2448,7 +2436,7 @@ fn walk_regex(
                         });
                     }
                 },
-                | RegexShape::Optional(inner) => {
+                RegexShape::Optional(inner) => {
                     frames.push(WalkFrame::FinishOptional);
                     frames.push(WalkFrame::Enter {
                         regex: inner,
@@ -2457,7 +2445,7 @@ fn walk_regex(
                         path: format!("{node_path}\x1fO"),
                     });
                 },
-                | RegexShape::Repeat(inner) => {
+                RegexShape::Repeat(inner) => {
                     frames.push(WalkFrame::FinishRepeat);
                     frames.push(WalkFrame::Enter {
                         regex: inner,
@@ -2467,7 +2455,7 @@ fn walk_regex(
                     });
                 },
             },
-            | WalkFrame::FinishSeq { count } => {
+            WalkFrame::FinishSeq { count } => {
                 let split = values.len().saturating_sub(count);
                 let children = values.split_off(split);
                 let mut acc = TileFacet::empty();
@@ -2476,7 +2464,7 @@ fn walk_regex(
                 }
                 values.push(acc);
             },
-            | WalkFrame::FinishAlt { count } => {
+            WalkFrame::FinishAlt { count } => {
                 let split = values.len().saturating_sub(count);
                 let children = values.split_off(split);
                 let mut acc = TileFacet::void();
@@ -2485,7 +2473,7 @@ fn walk_regex(
                 }
                 values.push(acc);
             },
-            | WalkFrame::FinishOptional => {
+            WalkFrame::FinishOptional => {
                 let mut child = values.pop().unwrap_or_else(TileFacet::empty);
                 child.flags.set_nullable(FacetFlag::from(true));
                 child.flags.set_form_nullable(FacetFlag::from(true));
@@ -2493,7 +2481,7 @@ fn walk_regex(
                 child.flags.set_required_last(FacetFlag::from(false));
                 values.push(child);
             },
-            | WalkFrame::FinishRepeat => {
+            WalkFrame::FinishRepeat => {
                 let child = values.pop().unwrap_or_else(TileFacet::empty);
                 values.push(repeat_facet(&child));
             },
@@ -3090,11 +3078,11 @@ fn expand<'regex>(
 {
     let shape = regex.shape();
     let (finish, children) = match shape {
-        | RegexShape::Empty | RegexShape::Sym(_) => return Some(shape),
-        | RegexShape::Seq(items) => (FoldFrame::FinishSeq(items.len()), items),
-        | RegexShape::Alt(items) => (FoldFrame::FinishAlt(items.len()), items),
-        | RegexShape::Optional(inner) => (FoldFrame::FinishOptional, vec![inner]),
-        | RegexShape::Repeat(inner) => (FoldFrame::FinishRepeat, vec![inner]),
+        RegexShape::Empty | RegexShape::Sym(_) => return Some(shape),
+        RegexShape::Seq(items) => (FoldFrame::FinishSeq(items.len()), items),
+        RegexShape::Alt(items) => (FoldFrame::FinishAlt(items.len()), items),
+        RegexShape::Optional(inner) => (FoldFrame::FinishOptional, vec![inner]),
+        RegexShape::Repeat(inner) => (FoldFrame::FinishRepeat, vec![inner]),
     };
     frames.push(finish);
     frames.extend(children.into_iter().rev().map(FoldFrame::Enter));
@@ -3131,17 +3119,17 @@ fn face_of(regex: RegexView<'_>) -> FaceCtx
 
     while let Some(frame) = frames.pop() {
         match frame {
-            | FoldFrame::Enter(current) => match expand(current, &mut frames) {
-                | Some(RegexShape::Sym(Sym::Sort(sort))) => {
+            FoldFrame::Enter(current) => match expand(current, &mut frames) {
+                Some(RegexShape::Sym(Sym::Sort(sort))) => {
                     values.push(FaceCtx::leaf(StepSym::Sort(sort)));
                 },
-                | Some(RegexShape::Sym(Sym::Tile(tile))) => {
+                Some(RegexShape::Sym(Sym::Tile(tile))) => {
                     values.push(FaceCtx::leaf(StepSym::Tile(tile.label)));
                 },
-                | Some(_) => values.push(FaceCtx::empty()),
-                | None => {},
+                Some(_) => values.push(FaceCtx::empty()),
+                None => {},
             },
-            | FoldFrame::FinishSeq(count) => {
+            FoldFrame::FinishSeq(count) => {
                 let split = values.len().saturating_sub(count);
                 let children = values.split_off(split);
                 let mut acc = FaceCtx::empty();
@@ -3150,7 +3138,7 @@ fn face_of(regex: RegexView<'_>) -> FaceCtx
                 }
                 values.push(acc);
             },
-            | FoldFrame::FinishAlt(count) => {
+            FoldFrame::FinishAlt(count) => {
                 let split = values.len().saturating_sub(count);
                 let children = values.split_off(split);
                 let mut acc = FaceCtx::default();
@@ -3161,7 +3149,7 @@ fn face_of(regex: RegexView<'_>) -> FaceCtx
                 }
                 values.push(acc);
             },
-            | FoldFrame::FinishOptional | FoldFrame::FinishRepeat => {
+            FoldFrame::FinishOptional | FoldFrame::FinishRepeat => {
                 let mut summary = values.pop().unwrap_or_else(FaceCtx::empty);
                 summary.nullable = true;
                 values.push(summary);
@@ -3198,13 +3186,12 @@ fn bounds_for(
 ) -> (Bound<Prec>, Bound<Prec>)
 {
     let index = usize::try_from(u32::from(mold.rctx)).unwrap_or(usize::MAX);
-    match rctxs.get(index) {
-        | Some(data) => (
+    rctxs.get(index).map_or((Bound::Root, Bound::Root), |data| {
+        (
             side_bound(SortFacing(data.left_faces_sort), mold.prec),
             side_bound(SortFacing(data.right_faces_sort), mold.prec),
-        ),
-        | None => (Bound::Root, Bound::Root),
-    }
+        )
+    })
 }
 
 /// One side's precedence bound.
@@ -3266,32 +3253,32 @@ fn canon(regex: RegexView<'_>) -> String
 
     while let Some(frame) = frames.pop() {
         match frame {
-            | FoldFrame::Enter(current) => match expand(current, &mut frames) {
-                | Some(RegexShape::Sym(Sym::Sort(sort))) => {
+            FoldFrame::Enter(current) => match expand(current, &mut frames) {
+                Some(RegexShape::Sym(Sym::Sort(sort))) => {
                     values.push(format!("s{}", u16::from(sort.grout_sort())));
                 },
-                | Some(RegexShape::Sym(Sym::Tile(tile))) => {
+                Some(RegexShape::Sym(Sym::Tile(tile))) => {
                     values.push(format!("t{}:{}", tile.label.len(), tile.label));
                 },
-                | Some(_) => values.push(String::from("e")),
-                | None => {},
+                Some(_) => values.push(String::from("e")),
+                None => {},
             },
-            | FoldFrame::FinishSeq(count) => {
+            FoldFrame::FinishSeq(count) => {
                 let split = values.len().saturating_sub(count);
                 let parts = values.split_off(split);
                 values.push(format!("Q[{}]", parts.join(",")));
             },
-            | FoldFrame::FinishAlt(count) => {
+            FoldFrame::FinishAlt(count) => {
                 let split = values.len().saturating_sub(count);
                 let mut parts = values.split_off(split);
                 parts.sort();
                 values.push(format!("A[{}]", parts.join(",")));
             },
-            | FoldFrame::FinishOptional => {
+            FoldFrame::FinishOptional => {
                 let inner = values.pop().unwrap_or_default();
                 values.push(format!("O[{inner}]"));
             },
-            | FoldFrame::FinishRepeat => {
+            FoldFrame::FinishRepeat => {
                 let inner = values.pop().unwrap_or_default();
                 values.push(format!("R[{inner}]"));
             },
@@ -3546,11 +3533,11 @@ fn fold_steps(
     hasher.write_u64(u64::try_from(steps.len()).unwrap_or(u64::MAX));
     for step in steps {
         match step.crossed {
-            | StepSym::Sort(sort) => {
+            StepSym::Sort(sort) => {
                 hasher.write_byte(b'S');
                 hasher.write_u16(u16::from(sort.grout_sort()));
             },
-            | StepSym::Tile(label) => {
+            StepSym::Tile(label) => {
                 hasher.write_byte(b'T');
                 hasher.write_bytes(label.as_bytes());
                 hasher.write_byte(0_u8);

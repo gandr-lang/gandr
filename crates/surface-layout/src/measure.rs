@@ -68,8 +68,8 @@ impl PhysicalLineEnding
     pub(crate) fn byte_width(self) -> OutputBytes
     {
         match self {
-            | Self::Lf => OutputBytes::from(1u64),
-            | Self::CrLf => OutputBytes::from(2u64),
+            Self::Lf => OutputBytes::from(1u64),
+            Self::CrLf => OutputBytes::from(2u64),
         }
     }
 }

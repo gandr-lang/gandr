@@ -494,30 +494,30 @@ impl fmt::Display for RelationError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Arena => f.write_str("unreadable relation arena reference"),
-            | Self::UnsupportedCode(_) => f.write_str("relation domain is not a quoted code"),
-            | Self::UnsupportedType(_) => {
+            Self::Arena => f.write_str("unreadable relation arena reference"),
+            Self::UnsupportedCode(_) => f.write_str("relation domain is not a quoted code"),
+            Self::UnsupportedType(_) => {
                 f.write_str("relation code is outside the first-order fragment")
             },
-            | Self::AbstractInterface(_) => {
+            Self::AbstractInterface(_) => {
                 f.write_str("sealed type has no element-relation interface")
             },
-            | Self::Typing(ref error) => write!(f, "relation typing failed: {error}"),
-            | Self::Path(ref error) => write!(f, "universe identity failed: {error}"),
-            | Self::Boundary => f.write_str("relation indices do not match"),
-            | Self::NonFibrant => f.write_str("bridge has no identity transport structure"),
-            | Self::NeutralFiber => f.write_str("relation fibre is neutral"),
-            | Self::Evidence => f.write_str("relation fibre has no constructed evidence"),
-            | Self::Classifier => f.write_str("wrong relation classifier"),
-            | Self::HigherEvaluationRequired => f.write_str("higher-evaluation evidence required"),
-            | Self::Coverage => f.write_str("incomplete higher-evaluation coverage"),
-            | Self::Pointwise(component, ref error) => {
+            Self::Typing(ref error) => write!(f, "relation typing failed: {error}"),
+            Self::Path(ref error) => write!(f, "universe identity failed: {error}"),
+            Self::Boundary => f.write_str("relation indices do not match"),
+            Self::NonFibrant => f.write_str("bridge has no identity transport structure"),
+            Self::NeutralFiber => f.write_str("relation fibre is neutral"),
+            Self::Evidence => f.write_str("relation fibre has no constructed evidence"),
+            Self::Classifier => f.write_str("wrong relation classifier"),
+            Self::HigherEvaluationRequired => f.write_str("higher-evaluation evidence required"),
+            Self::Coverage => f.write_str("incomplete higher-evaluation coverage"),
+            Self::Pointwise(component, ref error) => {
                 write!(f, "pointwise component {}: {error}", component.0)
             },
-            | Self::Evaluation(component, side, _) => {
+            Self::Evaluation(component, side, _) => {
                 let side = match side {
-                    | EvaluationSide::Left => "left",
-                    | EvaluationSide::Right => "right",
+                    EvaluationSide::Left => "left",
+                    EvaluationSide::Right => "right",
                 };
                 write!(
                     f,
@@ -525,28 +525,26 @@ impl fmt::Display for RelationError
                     component.0
                 )
             },
-            | Self::QuantifiedStep(component) => {
+            Self::QuantifiedStep(component) => {
                 write!(
                     f,
                     "quantified component {} does not apply its premise's functions at one input",
                     component.0
                 )
             },
-            | Self::HigherOrderDomain(component) => {
+            Self::HigherOrderDomain(component) => {
                 write!(
                     f,
                     "quantified component {} applies a function whose domain is higher order",
                     component.0
                 )
             },
-            | Self::Budget => f.write_str("relation work allowance exhausted"),
-            | Self::HigherFieldRequired => {
-                f.write_str("certificate identity requires higher fields")
-            },
-            | Self::CertificateOperationRequired => {
+            Self::Budget => f.write_str("relation work allowance exhausted"),
+            Self::HigherFieldRequired => f.write_str("certificate identity requires higher fields"),
+            Self::CertificateOperationRequired => {
                 f.write_str("explicit universe certificate operation required")
             },
-            | Self::RecursiveObservationRequired => {
+            Self::RecursiveObservationRequired => {
                 f.write_str("recursive identity requires guarded observation")
             },
         }
@@ -604,13 +602,13 @@ pub fn interpret(
 ) -> Result<Interpretation, RelationError>
 {
     let code = match domain {
-        | Domain::Codes => {
+        Domain::Codes => {
             return Ok(match mode {
-                | Mode::Identity => Interpretation::UniverseIdentity,
-                | Mode::Bridge => Interpretation::UniverseBridge,
+                Mode::Identity => Interpretation::UniverseIdentity,
+                Mode::Bridge => Interpretation::UniverseBridge,
             });
         },
-        | Domain::Elements(code) => code,
+        Domain::Elements(code) => code,
     };
     let root = quoted(arena, code)?;
     let mut pending = Vec::from([(root, false)]);
@@ -622,17 +620,17 @@ pub fn interpret(
         }
         let node = arena.value_type(ty).ok_or(RelationError::Arena)?;
         let clause = match *node {
-            | ValueType::Product(ref parts) if parts.is_empty() => Clause::Unit,
-            | ValueType::Universe {
+            ValueType::Product(ref parts) if parts.is_empty() => Clause::Unit,
+            ValueType::Universe {
                 sort: GroundSort::Value,
                 ref level,
             } if mode == Mode::Identity && *level == Level::zero() => Clause::Universe,
-            | ValueType::PathUniverse(..) if mode == Mode::Identity => Clause::Certificate,
+            ValueType::PathUniverse(..) if mode == Mode::Identity => Clause::Certificate,
 
-            | ValueType::Base(_) => Clause::Discrete,
+            ValueType::Base(_) => Clause::Discrete,
             // The relation fold reads the unit and binary sums and products;
             // another arity is outside its vocabulary until the fold is n-ary.
-            | ValueType::Sum(ref parts) | ValueType::Product(ref parts) => {
+            ValueType::Sum(ref parts) | ValueType::Product(ref parts) => {
                 let &[left, right] = &**parts
                 else {
                     return Err(RelationError::UnsupportedType(ty));
@@ -646,11 +644,27 @@ pub fn interpret(
                 let left = *formed.get(&left).ok_or(RelationError::Arena)?;
                 let right = *formed.get(&right).ok_or(RelationError::Arena)?;
                 match *node {
-                    | ValueType::Sum(..) => Clause::Sum(left, right),
-                    | _ => Clause::Product(left, right),
+                    ValueType::Sum(..) => Clause::Sum(left, right),
+                    ValueType::Data { .. }
+                    | ValueType::Record(_)
+                    | ValueType::Session { .. }
+                    | ValueType::PathUniverse(..)
+                    | ValueType::FlowUniverse(..)
+                    | ValueType::Path { .. }
+                    | ValueType::Flow { .. }
+                    | ValueType::Base(_)
+                    | ValueType::Product(_)
+                    | ValueType::Sigma { .. }
+                    | ValueType::List(_)
+                    | ValueType::Thunk(_)
+                    | ValueType::Universe { .. }
+                    | ValueType::Lift { .. }
+                    | ValueType::Element { .. }
+                    | ValueType::Abstract(_)
+                    | ValueType::StaticPi { .. } => Clause::Product(left, right),
                 }
             },
-            | ValueType::List(element) => {
+            ValueType::List(element) => {
                 if !expanded {
                     pending.push((ty, true));
                     pending.push((element, false));
@@ -659,7 +673,7 @@ pub fn interpret(
                 let element = *formed.get(&element).ok_or(RelationError::Arena)?;
                 Clause::List(element)
             },
-            | ValueType::Thunk(computation) => {
+            ValueType::Thunk(computation) => {
                 let Some(&CompType::Arrow {
                     domain: argument,
                     codomain: result,
@@ -681,8 +695,19 @@ pub fn interpret(
                 let result = *formed.get(&result).ok_or(RelationError::Arena)?;
                 Clause::Function(argument, result)
             },
-            | ValueType::Abstract(_) => return Err(RelationError::AbstractInterface(ty)),
-            | _ => return Err(RelationError::UnsupportedType(ty)),
+            ValueType::Abstract(_) => return Err(RelationError::AbstractInterface(ty)),
+            ValueType::Data { .. }
+            | ValueType::Record(_)
+            | ValueType::Session { .. }
+            | ValueType::PathUniverse(..)
+            | ValueType::FlowUniverse(..)
+            | ValueType::Path { .. }
+            | ValueType::Flow { .. }
+            | ValueType::Sigma { .. }
+            | ValueType::Universe { .. }
+            | ValueType::Lift { .. }
+            | ValueType::Element { .. }
+            | ValueType::StaticPi { .. } => return Err(RelationError::UnsupportedType(ty)),
         };
         let id = RelationId(nodes.len());
         nodes.push(Node {
@@ -720,8 +745,8 @@ fn quoted(
 ) -> Result<ValueTypeId, RelationError>
 {
     match arena.value(code) {
-        | Some(&Value::Quote(ty)) => Ok(ty),
-        | _ => Err(RelationError::UnsupportedCode(code)),
+        Some(&Value::Quote(ty)) => Ok(ty),
+        _ => Err(RelationError::UnsupportedCode(code)),
     }
 }
 
@@ -749,8 +774,8 @@ impl Interpretation
     pub fn elements(self) -> Result<Relation, RelationError>
     {
         match self {
-            | Self::Elements(relation) => Ok(relation),
-            | Self::UniverseIdentity | Self::UniverseBridge => Err(RelationError::Classifier),
+            Self::Elements(relation) => Ok(relation),
+            Self::UniverseIdentity | Self::UniverseBridge => Err(RelationError::Classifier),
         }
     }
 
@@ -911,8 +936,8 @@ impl Relation
         let target = target.node(target.root)?;
         let target = target.source;
         let clause = match inhabited {
-            | Inhabitation::Unit => Clause::Unit,
-            | Inhabitation::Empty => Clause::Empty,
+            Inhabitation::Unit => Clause::Unit,
+            Inhabitation::Empty => Clause::Empty,
         };
         Ok(Self {
             mode: Mode::Bridge,
@@ -960,14 +985,14 @@ impl Relation
         let first = left.node(left.root)?;
         let second = right.node(right.root)?;
         let (source, target) = match index {
-            | CaseIndex::Left => {
+            CaseIndex::Left => {
                 same_type(arena, first.target, second.target)?;
                 (
                     arena.value_type_sum(&[first.source, second.source]),
                     first.target,
                 )
             },
-            | CaseIndex::Right => {
+            CaseIndex::Right => {
                 same_type(arena, first.source, second.source)?;
                 (
                     first.source,
@@ -979,27 +1004,29 @@ impl Relation
         let right_root = relocate(right.root, offset);
         for mut node in right.nodes {
             node.clause = match node.clause {
-                | Clause::Product(a, b) => {
-                    Clause::Product(relocate(a, offset), relocate(b, offset))
-                },
-                | Clause::Sum(a, b) => Clause::Sum(relocate(a, offset), relocate(b, offset)),
-                | Clause::List(element) => Clause::List(relocate(element, offset)),
-                | Clause::Function(a, b) => {
+                Clause::Product(a, b) => Clause::Product(relocate(a, offset), relocate(b, offset)),
+                Clause::Sum(a, b) => Clause::Sum(relocate(a, offset), relocate(b, offset)),
+                Clause::List(element) => Clause::List(relocate(element, offset)),
+                Clause::Function(a, b) => {
                     Clause::Function(relocate(a, offset), relocate(b, offset))
                 },
-                | Clause::CaseLeft(a, b) => {
+                Clause::CaseLeft(a, b) => {
                     Clause::CaseLeft(relocate(a, offset), relocate(b, offset))
                 },
-                | Clause::CaseRight(a, b) => {
+                Clause::CaseRight(a, b) => {
                     Clause::CaseRight(relocate(a, offset), relocate(b, offset))
                 },
-                | clause => clause,
+                clause @ (Clause::Unit
+                | Clause::Empty
+                | Clause::Discrete
+                | Clause::Universe
+                | Clause::Certificate) => clause,
             };
             left.nodes.push(node);
         }
         let clause = match index {
-            | CaseIndex::Left => Clause::CaseLeft(left.root, right_root),
-            | CaseIndex::Right => Clause::CaseRight(left.root, right_root),
+            CaseIndex::Left => Clause::CaseLeft(left.root, right_root),
+            CaseIndex::Right => Clause::CaseRight(left.root, right_root),
         };
         left.root = RelationId(left.nodes.len());
         left.nodes.push(Node {
@@ -1070,8 +1097,8 @@ fn same_type(
 ) -> Result<(), RelationError>
 {
     match convertible_value_types(arena, left, right) {
-        | Convertibility::Convertible => Ok(()),
-        | Convertibility::Distinct => Err(RelationError::Boundary),
+        Convertibility::Convertible => Ok(()),
+        Convertibility::Distinct => Err(RelationError::Boundary),
     }
 }
 

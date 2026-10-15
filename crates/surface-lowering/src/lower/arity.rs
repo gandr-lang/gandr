@@ -264,7 +264,7 @@ impl Held
     pub(super) const fn at(self) -> Placed
     {
         match self {
-            | Self::Operand(at) | Self::Punned(at) => at,
+            Self::Operand(at) | Self::Punned(at) => at,
         }
     }
 }
@@ -297,8 +297,8 @@ impl Entry<'_>
     pub(super) const fn keyed_at(self) -> Placed
     {
         match self.key {
-            | Key::Positional => self.held.at(),
-            | Key::Index(_, _, at) | Key::Label(_, at) => at,
+            Key::Positional => self.held.at(),
+            Key::Index(_, _, at) | Key::Label(_, at) => at,
         }
     }
 }
@@ -450,7 +450,7 @@ pub(super) fn arrange<'source>(
         return Ok(Arranged::Positional(entries));
     };
     match first.key {
-        | Key::Positional => {
+        Key::Positional => {
             if let Some(stray) = entries
                 .iter()
                 .find(|entry| !matches!(entry.key, Key::Positional))
@@ -459,7 +459,7 @@ pub(super) fn arrange<'source>(
             }
             Ok(Arranged::Positional(entries))
         },
-        | Key::Label(..) => {
+        Key::Label(..) => {
             let mut seen: BTreeMap<SurfaceName<'source>, Placed> = BTreeMap::new();
             for entry in &entries {
                 let Key::Label(name, written) = entry.key
@@ -477,7 +477,7 @@ pub(super) fn arrange<'source>(
             }
             Ok(Arranged::Labelled(entries))
         },
-        | Key::Index(..) => {
+        Key::Index(..) => {
             let mut slots: Vec<Option<Entry<'source>>> = alloc::vec![None; entries.len()];
             for entry in &entries {
                 let Key::Index(index, name, written) = entry.key
@@ -586,8 +586,8 @@ impl<'source> Lowerer<'_, 'source>
         };
 
         Ok(match shape_of(self.pbg, node)? {
-            | Shape::Form { name, former } => Some((name, former)),
-            | Shape::Root | Shape::Repair(_) | Shape::Layout => None,
+            Shape::Form { name, former } => Some((name, former)),
+            Shape::Root | Shape::Repair(_) | Shape::Layout => None,
         })
     }
 
@@ -824,11 +824,11 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 else {
                     match key {
-                        | Key::Label(_, label) => Held::Punned(label),
-                        | Key::Index(_, _, written) => {
+                        Key::Label(_, label) => Held::Punned(label),
+                        Key::Index(_, _, written) => {
                             return Err(here.fault(written.span, FormFault::MisplacedTile));
                         },
-                        | Key::Positional => {
+                        Key::Positional => {
                             return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
                         },
                     }
@@ -928,9 +928,9 @@ impl<'source> Lowerer<'_, 'source>
 
         Ok(
             match self.resolve_name(named, frame, self.name_at(scrutinee))? {
-                | Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-                | Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-                | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+                Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+                Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+                Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
             },
         )
     }
@@ -972,9 +972,9 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         match first {
-            | None => Ok(TypeZone::Ordinary),
-            | Some(_) if sessions == entries.len() => Ok(TypeZone::Session),
-            | Some(at) => Err(site.fault(at.span, FormFault::MisplacedTile)),
+            None => Ok(TypeZone::Ordinary),
+            Some(_) if sessions == entries.len() => Ok(TypeZone::Session),
+            Some(at) => Err(site.fault(at.span, FormFault::MisplacedTile)),
         }
     }
 
@@ -1019,11 +1019,64 @@ impl<'source> Lowerer<'_, 'source>
                 return Ok(TypeZone::Ordinary);
             };
             let opener = match former {
-                | Former::SessionType => continue,
-                | Former::ParenthesizedType => TileName::PAREN_OPEN,
-                | Former::LabelledSumType => TileName::PLUS,
-                | Former::LazyRecordType => TileName::AMPERSAND,
-                | _ => return Ok(TypeZone::Ordinary),
+                Former::SessionType => continue,
+                Former::ParenthesizedType => TileName::PAREN_OPEN,
+                Former::LabelledSumType => TileName::PLUS,
+                Former::LazyRecordType => TileName::AMPERSAND,
+                Former::Name
+                | Former::Constructor
+                | Former::Hole
+                | Former::Number
+                | Former::Text
+                | Former::Parenthesized
+                | Former::Unit
+                | Former::Thunk
+                | Former::Lambda
+                | Former::Block
+                | Former::Return
+                | Former::Exit
+                | Former::Become
+                | Former::Loop
+                | Former::While
+                | Former::For
+                | Former::Break
+                | Former::Continue
+                | Former::Force
+                | Former::Run
+                | Former::Call
+                | Former::Case
+                | Former::Telescope
+                | Former::Injection
+                | Former::LazyRecord
+                | Former::Binary
+                | Former::Unary
+                | Former::Projection
+                | Former::TypeHead
+                | Former::TypePath
+                | Former::Universe
+                | Former::TypeApplication
+                | Former::ThunkType
+                | Former::ReturnerType
+                | Former::ArrowType
+                | Former::ProductType
+                | Former::SumType
+                | Former::LazyProductType
+                | Former::TelescopeType
+                | Former::ValueFunctionType
+                | Former::StaticAbstraction
+                | Former::PathType
+                | Former::CapabilityType
+                | Former::Scope
+                | Former::Declaration
+                | Former::AttributeBlock
+                | Former::Import
+                | Former::Module
+                | Former::Data
+                | Former::Instantiation
+                | Former::Action
+                | Former::Offer
+                | Former::Reserved
+                | Former::Unadmitted => return Ok(TypeZone::Ordinary),
             };
             read_pieces(self.pbg, self.tree, next.node, &mut pieces)?;
             if let Maybe::Present(repaired) = pieces.repair {
@@ -1147,10 +1200,10 @@ impl<'source> Lowerer<'_, 'source>
             return;
         }
         let read = match reading {
-            | Reading::ValueType(frame) => LabelRead::ValueType(frame),
-            | Reading::CompType(frame) | Reading::Result(frame) => LabelRead::CompType(frame),
-            | Reading::Value(_) | Reading::Computation(_) | Reading::Head(_) => LabelRead::Term,
-            | Reading::Unread | Reading::Function => return,
+            Reading::ValueType(frame) => LabelRead::ValueType(frame),
+            Reading::CompType(frame) | Reading::Result(frame) => LabelRead::CompType(frame),
+            Reading::Value(_) | Reading::Computation(_) | Reading::Head(_) => LabelRead::Term,
+            Reading::Unread | Reading::Function => return,
         };
         self.labelled(written.span, held.node, read);
     }
@@ -1190,14 +1243,14 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, &mut cursor, TileName::RECORD)?;
         let entries = self.type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
         let plan = match arrange(site, entries)? {
-            | Arranged::Positional(entries) => {
+            Arranged::Positional(entries) => {
                 let components = self.stored(&entries);
                 for entry in &entries {
                     self.read(entry.held.at().node, Reading::ValueType(frame));
                 }
                 Plan::Product(components)
             },
-            | Arranged::Labelled(entries) => {
+            Arranged::Labelled(entries) => {
                 let Some((last, binding)) = entries.split_last()
                 else {
                     return Err(site.fault(site.at.span, FormFault::MissingOperand));
@@ -1434,14 +1487,14 @@ impl<'source> Lowerer<'_, 'source>
             self.hole_entries(site, &mut cursor)?
         };
         let plan = match arrange(site, entries)? {
-            | Arranged::Positional(entries) => {
+            Arranged::Positional(entries) => {
                 let members = self.stored(&entries);
                 for entry in &entries {
                     self.read(entry.held.at().node, Reading::Value(frame));
                 }
                 Plan::Tuple(members)
             },
-            | Arranged::Labelled(entries) => {
+            Arranged::Labelled(entries) => {
                 Plan::Record(self.fields(&entries, Reading::Value(frame)))
             },
         };
@@ -1536,9 +1589,9 @@ impl<'source> Lowerer<'_, 'source>
             };
             let placed = Placed::of(at, tree);
             let (name, held) = match self.form_at(placed) {
-                | Ok(Some(form)) => form,
-                | Ok(None) => break Ok(Maybe::Absent(stated_labels::Absent::Otherwise)),
-                | Err(refusal) => break Err(refusal),
+                Ok(Some(form)) => form,
+                Ok(None) => break Ok(Maybe::Absent(stated_labels::Absent::Otherwise)),
+                Err(refusal) => break Err(refusal),
             };
             if let Err(refusal) = read_pieces(self.pbg, self.tree, at, &mut scratch) {
                 break Err(refusal);
@@ -1574,15 +1627,15 @@ impl<'source> Lowerer<'_, 'source>
                 let _open = cursor.tile(TileName::PAREN_OPEN);
                 let run = cursor.operands();
                 match (run, cursor.at(TileName::PAREN_CLOSE)) {
-                    | (Run::One(inner), Maybe::Present(_)) => Some(inner),
-                    | (Run::Empty(_) | Run::Several { .. } | Run::One(_), _) => None,
+                    (Run::One(inner), Maybe::Present(_)) => Some(inner),
+                    (Run::Empty(_) | Run::Several { .. } | Run::One(_), _) => None,
                 }
             }
             else if held == Former::ThunkType && through.0 {
                 through = Thunked(false);
                 scratch.pieces.iter().rev().find_map(|piece| match *piece {
-                    | Piece::Operand(inner) => Some(inner),
-                    | Piece::Tile { .. } => None,
+                    Piece::Operand(inner) => Some(inner),
+                    Piece::Tile { .. } => None,
                 })
             }
             else {
@@ -1668,8 +1721,8 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, &mut cursor, TileName::BRACE_CLOSE)?;
         exhausted(site, &cursor)?;
         let summand = match key {
-            | Key::Index(index, ..) => index,
-            | Key::Label(name, written) => {
+            Key::Index(index, ..) => index,
+            Key::Label(name, written) => {
                 let Some(&annotation) = self.classifiers.get(&site.at.node)
                 else {
                     return Err(site.out(FragmentBoundary::Unannotated));
@@ -1681,7 +1734,7 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 Self::labelled_in(&stated, name, written)?.0.0
             },
-            | Key::Positional => return Err(site.fault(body.span, FormFault::MisplacedTile)),
+            Key::Positional => return Err(site.fault(body.span, FormFault::MisplacedTile)),
         };
         self.read(body.node, Reading::Value(frame));
         self.plan(site, Plan::Injection(Summand::from(summand), body.node));
@@ -1729,23 +1782,23 @@ impl<'source> Lowerer<'_, 'source>
         }
         let answer = self.answers.get(&site.at.node).copied();
         let stated = match answer {
-            | Some(answer) => {
+            Some(answer) => {
                 self.stated_entries(site, answer.node, Former::LazyRecordType, Thunked(false))?
             },
-            | None => Maybe::Absent(stated_labels::Absent::Otherwise),
+            None => Maybe::Absent(stated_labels::Absent::Otherwise),
         };
         let clauses: Vec<(Entry<'source>, Option<NodeIndex>)> = match arrange(site, entries)? {
-            | Arranged::Positional(clauses) => {
+            Arranged::Positional(clauses) => {
                 let typed = match stated {
-                    | Maybe::Present(ref stated) if stated.len() == clauses.len() => stated
+                    Maybe::Present(ref stated) if stated.len() == clauses.len() => stated
                         .iter()
                         .map(|entry| Some(entry.held.at().node))
                         .collect(),
-                    | Maybe::Present(_) | Maybe::Absent(_) => alloc::vec![None; clauses.len()],
+                    Maybe::Present(_) | Maybe::Absent(_) => alloc::vec![None; clauses.len()],
                 };
                 clauses.into_iter().zip(typed).collect()
             },
-            | Arranged::Labelled(clauses) => {
+            Arranged::Labelled(clauses) => {
                 let Maybe::Present(stated) = stated
                 else {
                     return Err(site.out(FragmentBoundary::Unannotated));
@@ -1778,7 +1831,7 @@ impl<'source> Lowerer<'_, 'source>
             self.operands.push(body);
             self.read(body, Reading::Computation(frame));
             let stated = match (answer, typed) {
-                | (Some(answer), Some(typed)) => {
+                (Some(answer), Some(typed)) => {
                     let stated = Answer {
                         node: typed,
                         frame: answer.frame,
@@ -1787,7 +1840,7 @@ impl<'source> Lowerer<'_, 'source>
                     let _first = self.answers.insert(body, stated);
                     Maybe::Present(stated)
                 },
-                | _ => Maybe::Absent(answered::Absent::Unstated),
+                _ => Maybe::Absent(answered::Absent::Unstated),
             };
             self.open_body(site, clause_body(body), stated)?;
         }
@@ -1847,9 +1900,9 @@ impl<'source> Lowerer<'_, 'source>
             reading: Reading::Value(frame),
         };
         let declared = match self.resolve_name(named, frame, self.name_at(target))? {
-            | Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-            | Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-            | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+            Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
         };
         let Maybe::Present(declared) = declared
         else {
@@ -1916,9 +1969,9 @@ impl<'source> Lowerer<'_, 'source>
             reading: Reading::Value(frame),
         };
         let declared = match self.resolve_name(named, frame, self.name_at(target))? {
-            | Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-            | Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-            | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+            Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
         };
         let Maybe::Present(declared) = declared
         else {
@@ -2133,7 +2186,7 @@ impl<'source> Lowerer<'_, 'source>
             self.read(declared.node, Reading::ValueType(inner));
             self.label_entry(entry, Reading::ValueType(inner));
             let (binder, bound, written) = match entry.key {
-                | Key::Label(bound, key) => {
+                Key::Label(bound, key) => {
                     if let Some(&earlier) = seen.get(&bound) {
                         return Err(LoweringRefusal::DuplicateDefinition {
                             span: key.span,
@@ -2145,7 +2198,7 @@ impl<'source> Lowerer<'_, 'source>
                     self.note_binder(key, bound)?;
                     (key, bound, Maybe::Present(key.span))
                 },
-                | Key::Positional | Key::Index(..) => (
+                Key::Positional | Key::Index(..) => (
                     declared,
                     SurfaceName::from(""),
                     Maybe::Absent(binder_site::Absent::Unwritten),
@@ -2304,8 +2357,8 @@ impl<'source> Lowerer<'_, 'source>
             return self.mint_record_type(fields, sink, origin);
         }
         let mut nested = match self.value_type_at(last) {
-            | Maybe::Present(nested) => nested,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(nested) => nested,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         for parameter in written.iter().rev() {
             let Maybe::Present(declared) = parameter.declared
@@ -2313,8 +2366,8 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
             let first = match self.value_type_at(declared) {
-                | Maybe::Present(first) => first,
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(first) => first,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
             nested = if bool::from(self.scope.mentioned(parameter.frame)) {
                 sink.arena.value_type_sigma(first, nested)
@@ -2351,10 +2404,10 @@ impl<'source> Lowerer<'_, 'source>
         let mut minted = BTreeMap::new();
         for (label, &field) in fields {
             match self.value_type_at(field) {
-                | Maybe::Present(id) => {
+                Maybe::Present(id) => {
                     let _first = minted.insert(label.clone(), id);
                 },
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let id = sink.arena.value_type_record(minted);
@@ -2386,10 +2439,10 @@ impl<'source> Lowerer<'_, 'source>
         let mut minted = BTreeMap::new();
         for (label, &field) in fields {
             match self.value_at(field) {
-                | Maybe::Present(id) => {
+                Maybe::Present(id) => {
                     let _first = minted.insert(label.clone(), id);
                 },
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let id = sink.arena.value_record(minted);
@@ -2421,8 +2474,8 @@ impl<'source> Lowerer<'_, 'source>
         let mut parts: Vec<ValueTypeId> = Vec::with_capacity(written.len());
         for &summand in written {
             match self.value_type_at(summand) {
-                | Maybe::Present(part) => parts.push(part),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(part) => parts.push(part),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let id = sink.arena.value_type_sum(&parts);
@@ -2484,8 +2537,8 @@ impl<'source> Lowerer<'_, 'source>
         let mut parts: Vec<CompTypeId> = Vec::with_capacity(written.len());
         for &entry in written {
             match self.comp_type_at(entry) {
-                | Maybe::Present(part) => parts.push(part),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(part) => parts.push(part),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let Some((&last, rest)) = parts.split_last()
@@ -2529,8 +2582,8 @@ impl<'source> Lowerer<'_, 'source>
         let mut parts: Vec<ComputationId> = Vec::with_capacity(written.len());
         for &clause in written {
             match self.mint_body(clause_body(clause), sink, origin) {
-                | Maybe::Present(part) => parts.push(part),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(part) => parts.push(part),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let Some((&last, rest)) = parts.split_last()
@@ -2573,8 +2626,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let thunk: ValueId = match self.value_at(subject) {
-            | Maybe::Present(thunk) => thunk,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(thunk) => thunk,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let mut observing = sink.arena.computation_force(thunk);
         sink.origins.record_computation(observing, origin);
@@ -2612,8 +2665,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let mut held: ValueId = match self.value_at(subject) {
-            | Maybe::Present(held) => held,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(held) => held,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let mut sides = path(selected);
         if sides.is_empty() {
@@ -2626,8 +2679,8 @@ impl<'source> Lowerer<'_, 'source>
                 sink.origins.record_value(held, origin);
             }
             let component = gandr_kernel_term::Component::from(match side {
-                | Side::Left => 0_usize,
-                | Side::Right => 1_usize,
+                Side::Left => 0_usize,
+                Side::Right => 1_usize,
             });
             let id = sink.arena.computation_tuple_projection(held, component);
             sink.origins.record_computation(id, origin);
@@ -2671,13 +2724,13 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
             match self.value_type_at(declared) {
-                | Maybe::Present(domain) => domains.push(domain),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                Maybe::Present(domain) => domains.push(domain),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
         let returned = match self.value_type_at(codomain) {
-            | Maybe::Present(returned) => returned,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(returned) => returned,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let mut arrow = sink.arena.comp_type_returner(returned);
         sink.origins.record_comp_type(arrow, origin);
@@ -2728,8 +2781,8 @@ impl<'source> Lowerer<'_, 'source>
             return Maybe::Absent(lowered::Absent::Unstated);
         };
         let (domain, body) = match (self.value_type_at(declared), self.comp_type_at(codomain)) {
-            | (Maybe::Present(domain), Maybe::Present(body)) => (domain, body),
-            | (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+            (Maybe::Present(domain), Maybe::Present(body)) => (domain, body),
+            (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
                 return Maybe::Absent(reason);
             },
         };

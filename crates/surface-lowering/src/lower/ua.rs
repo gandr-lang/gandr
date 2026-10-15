@@ -212,10 +212,10 @@ impl<'source> Lowerer<'_, 'source>
         let text = self.text_at(resident);
         let spelled: &str = text.as_ref();
         match spelled.parse::<usize>() {
-            | Ok(value) if spelled.bytes().all(|byte| byte.is_ascii_digit()) => {
+            Ok(value) if spelled.bytes().all(|byte| byte.is_ascii_digit()) => {
                 Ok(Count::from(value))
             },
-            | Ok(_) | Err(_) => Err(written.out(FragmentBoundary::Unadmitted)),
+            Ok(_) | Err(_) => Err(written.out(FragmentBoundary::Unadmitted)),
         }
     }
 
@@ -265,9 +265,11 @@ impl<'source> Lowerer<'_, 'source>
             source: self.description(site, source)?,
             target: self.description(site, target)?,
         };
-        let named = [source, target].map(|operand| match self.tree.node(operand) {
-            | Some(node) => Origin::new(operand, node.span()),
-            | None => Origin::new(operand, site.at.span),
+        let named = [source, target].map(|operand| {
+            self.tree.node(operand).map_or_else(
+                || Origin::new(operand, site.at.span),
+                |node| Origin::new(operand, node.span()),
+            )
         });
         self.read(forward, Reading::Value(frame));
         self.read(backward, Reading::Value(frame));
@@ -331,14 +333,14 @@ impl<'source> Lowerer<'_, 'source>
                 && self.name_at(entry.named).as_ref() == name.as_ref()
         });
         let entry = match (declared.next(), declared.next()) {
-            | (Some(entry), None) => entry,
-            | (None, _) => {
+            (Some(entry), None) => entry,
+            (None, _) => {
                 return Err(LoweringRefusal::UnresolvedName {
                     span: at.span,
                     name,
                 });
             },
-            | (Some(_), Some(_)) => return Err(written.out(FragmentBoundary::Unadmitted)),
+            (Some(_), Some(_)) => return Err(written.out(FragmentBoundary::Unadmitted)),
         };
         let block = entry.at.span;
         let inside = |span: gandr_surface_syntax::ByteSpan| {
@@ -360,8 +362,8 @@ impl<'source> Lowerer<'_, 'source>
         }
         Description::read(&entry.description).map_err(|unread| {
             written.out(match unread {
-                | Unread::Indexed => FragmentBoundary::Indexed,
-                | Unread::Sorts
+                Unread::Indexed => FragmentBoundary::Indexed,
+                Unread::Sorts
                 | Unread::Parameters
                 | Unread::Constructors
                 | Unread::Rules

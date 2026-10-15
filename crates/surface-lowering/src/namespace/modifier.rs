@@ -218,23 +218,23 @@ impl<Label> Constructor<Label>
     ) -> Self
     {
         match self {
-            | Self::In { path, inner } => Self::In {
+            Self::In { path, inner } => Self::In {
                 path,
                 inner: inner.shifted(offset),
             },
-            | Self::Seq(members) => Self::Seq(
+            Self::Seq(members) => Self::Seq(
                 members
                     .into_iter()
                     .map(|member| member.shifted(offset))
                     .collect(),
             ),
-            | Self::Union(branches) => Self::Union(
+            Self::Union(branches) => Self::Union(
                 branches
                     .into_iter()
                     .map(|branch| branch.shifted(offset))
                     .collect(),
             ),
-            | leaf @ (Self::AssertNonEmpty | Self::Relocation { .. } | Self::Hook(_)) => leaf,
+            leaf @ (Self::AssertNonEmpty | Self::Relocation { .. } | Self::Hook(_)) => leaf,
         }
     }
 }
@@ -766,13 +766,13 @@ impl<Label> Modifier<Label>
         });
         while let Some(instruction) = stack.pop() {
             match instruction {
-                | Instruction::Apply {
+                Instruction::Apply {
                     prefix,
                     constructor,
                 } => {
                     self.step(&mut current, &mut stack, handler, prefix, constructor)?;
                 },
-                | Instruction::Regraft {
+                Instruction::Regraft {
                     prefix,
                     mut outside,
                 } => {
@@ -780,7 +780,7 @@ impl<Label> Modifier<Label>
                     outside.graft_subtree(&prefix, inner);
                     current = outside;
                 },
-                | Instruction::UnionFold {
+                Instruction::UnionFold {
                     prefix,
                     input,
                     mut accumulated,
@@ -792,7 +792,7 @@ impl<Label> Modifier<Label>
                         handler.shadow(&path, collision)
                     })?;
                     match remaining.next() {
-                        | Some(&next) => {
+                        Some(&next) => {
                             current = input.clone();
                             stack.push(Instruction::UnionFold {
                                 prefix: prefix.clone(),
@@ -805,7 +805,7 @@ impl<Label> Modifier<Label>
                                 constructor: next,
                             });
                         },
-                        | None => current = accumulated,
+                        None => current = accumulated,
                     }
                 },
             }
@@ -904,12 +904,12 @@ impl<Label> Modifier<Label>
             return Ok(());
         };
         match *constructor {
-            | Constructor::AssertNonEmpty => {
+            Constructor::AssertNonEmpty => {
                 if current.emptiness() == Emptiness::EMPTY {
                     handler.not_found(&prefix)?;
                 }
             },
-            | Constructor::In {
+            Constructor::In {
                 path: ref subtree,
                 inner,
             } => {
@@ -924,14 +924,14 @@ impl<Label> Modifier<Label>
                     constructor: inner,
                 });
             },
-            | Constructor::Relocation {
+            Constructor::Relocation {
                 ref source,
                 ref target,
             } => {
                 let moved = current.detach_subtree(source);
                 current.graft_subtree(target, moved);
             },
-            | Constructor::Seq(ref members) => {
+            Constructor::Seq(ref members) => {
                 for &member in members.iter().rev() {
                     stack.push(Instruction::Apply {
                         prefix: prefix.clone(),
@@ -939,11 +939,11 @@ impl<Label> Modifier<Label>
                     });
                 }
             },
-            | Constructor::Union(ref branches) => {
+            Constructor::Union(ref branches) => {
                 let mut remaining = branches.iter();
                 match remaining.next() {
-                    | None => *current = Trie::empty(),
-                    | Some(&first) => {
+                    None => *current = Trie::empty(),
+                    Some(&first) => {
                         stack.push(Instruction::UnionFold {
                             prefix: prefix.clone(),
                             input: current.clone(),
@@ -957,7 +957,7 @@ impl<Label> Modifier<Label>
                     },
                 }
             },
-            | Constructor::Hook(ref label) => {
+            Constructor::Hook(ref label) => {
                 let subject = mem::take(current);
                 let replaced = handler.hook(&prefix, label, subject)?;
                 *current = replaced;

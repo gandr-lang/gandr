@@ -486,8 +486,8 @@ impl<A: CellAlphabet> ReplayWitness<A>
             .canonical_order()
             .into_iter()
             .filter_map(|index| match self.order.event(index) {
-                | Maybe::Present(event) => Some(event.step().clone()),
-                | Maybe::Absent(_) => None,
+                Maybe::Present(event) => Some(event.step().clone()),
+                Maybe::Absent(_) => None,
             })
             .collect()
     }
@@ -533,8 +533,8 @@ impl<A: CellAlphabet> ReplayWitness<A>
                 layer
                     .into_iter()
                     .filter_map(|index| match self.order.event(index) {
-                        | Maybe::Present(event) => Some(event.step().clone()),
-                        | Maybe::Absent(_) => None,
+                        Maybe::Present(event) => Some(event.step().clone()),
+                        Maybe::Absent(_) => None,
                     })
                     .collect()
             })
@@ -1081,10 +1081,10 @@ where
         };
         let cert = PrimCert(event.step().clone());
         match primitives.entry(event.address()) {
-            | Entry::Vacant(slot) => {
+            Entry::Vacant(slot) => {
                 slot.insert((cert, PrimMultiplicity::from(1_u32)));
             },
-            | Entry::Occupied(mut slot) => {
+            Entry::Occupied(mut slot) => {
                 let graded = slot.get_mut();
                 if graded.0 != cert {
                     return Err(NormalFormObstruction::ContentAddressCollision {
@@ -1462,8 +1462,8 @@ where
         let left_nf = normalize(store, &left.overlap.peak, &left.joins_at, left_path);
         let right_nf = normalize(store, &right.overlap.peak, &right.joins_at, right_path);
         match (left_nf, right_nf) {
-            | (Ok(left_nf), Ok(right_nf)) => bool::from(nf_equal(&left_nf, &right_nf)),
-            | (Err(_), _) | (_, Err(_)) => false,
+            (Ok(left_nf), Ok(right_nf)) => bool::from(nf_equal(&left_nf, &right_nf)),
+            (Err(_), _) | (_, Err(_)) => false,
         }
     });
     NormalFormEquality::from(agreed)
@@ -2417,8 +2417,8 @@ mod tests
             .canonical_order()
             .into_iter()
             .filter_map(|index| match order.key(index) {
-                | Maybe::Present(key) => Some(key),
-                | Maybe::Absent(_) => None,
+                Maybe::Present(key) => Some(key),
+                Maybe::Absent(_) => None,
             })
             .collect()
     }

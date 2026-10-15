@@ -344,8 +344,8 @@ mod namespace
         ) -> Result<Trie<Payload, ()>, EventRejection>
         {
             match *label {
-                | HookLabel::DropEverything => Ok(Trie::empty()),
-                | HookLabel::KeepEverything => Ok(subject),
+                HookLabel::DropEverything => Ok(Trie::empty()),
+                HookLabel::KeepEverything => Ok(subject),
             }
         }
     }

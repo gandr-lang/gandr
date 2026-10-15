@@ -360,13 +360,13 @@ impl Iterator for ArgumentFields<'_>
     fn next(&mut self) -> Option<Node>
     {
         match *self {
-            | Self::Source(ref mut values, ref place) => {
+            Self::Source(ref mut values, ref place) => {
                 values.next().map(|value| Node::Code(*value, *place))
             },
-            | Self::Record(ref mut values, ref place) => {
+            Self::Record(ref mut values, ref place) => {
                 values.next().map(|value| Node::Code(*value, *place))
             },
-            | Self::Held(ref mut values) => values.next().copied().map(Node::Held),
+            Self::Held(ref mut values) => values.next().copied().map(Node::Held),
         }
     }
     /// Preserve the exact remaining child count.
@@ -376,9 +376,9 @@ impl Iterator for ArgumentFields<'_>
     fn size_hint(&self) -> (usize, Option<usize>)
     {
         let count = match *self {
-            | Self::Source(ref values, _) => values.len(),
-            | Self::Record(ref values, _) => values.len(),
-            | Self::Held(ref values) => values.len(),
+            Self::Source(ref values, _) => values.len(),
+            Self::Record(ref values, _) => values.len(),
+            Self::Held(ref values) => values.len(),
         };
         (count, Some(count))
     }
@@ -709,26 +709,26 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
     {
         let dangling = ConversionFault::Domain(DomainFault::Dangling);
         let held = match node {
-            | Node::Code(code, place) => {
+            Node::Code(code, place) => {
                 let written = self
                     .core
                     .value(code)
                     .ok_or(ConversionFault::MachineInvariant)?;
                 match *written {
-                    | Value::Constructor { .. }
+                    Value::Constructor { .. }
                     | Value::Record(_)
                     | Value::Tuple(_)
                     | Value::ListNil
                     | Value::ListCons(..)
                     | Value::Literal(_)
                     | Value::Injection(..) => return Ok(Atom::FirstOrder(node)),
-                    | Value::Variable { zone, index } => {
+                    Value::Variable { zone, index } => {
                         let free = match zone {
-                            | Zone::Intuitionistic => match self.local(place.chain, index) {
-                                | Ok(binder) => return Ok(Atom::Local(binder)),
-                                | Err(free) => free,
+                            Zone::Intuitionistic => match self.local(place.chain, index) {
+                                Ok(binder) => return Ok(Atom::Local(binder)),
+                                Err(free) => free,
                             },
-                            | Zone::Linear => index,
+                            Zone::Linear => index,
                         };
                         let closure = self.domain.value_closure(place.closure).ok_or(dangling)?;
                         closure
@@ -736,22 +736,22 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                             .lookup(zone, free)
                             .ok_or(ConversionFault::MachineInvariant)?
                     },
-                    | Value::Constant(constant) => {
+                    Value::Constant(constant) => {
                         return Ok(Atom::Constant(constant, self.constant(constant)));
                     },
-                    | Value::Quote(quoted) => return Ok(Atom::Quote(quoted, place)),
-                    | Value::QuoteComputation(quoted) => {
+                    Value::Quote(quoted) => return Ok(Atom::Quote(quoted, place)),
+                    Value::QuoteComputation(quoted) => {
                         return Ok(Atom::QuoteComputation(quoted, place));
                     },
-                    | Value::Lift { .. } => return Ok(Atom::Lift(code, place)),
-                    | Value::StaticLambda(_) => return Ok(Atom::Operator(code, place)),
-                    | Value::StaticApplication(head, argument) => {
+                    Value::Lift { .. } => return Ok(Atom::Lift(code, place)),
+                    Value::StaticLambda(_) => return Ok(Atom::Operator(code, place)),
+                    Value::StaticApplication(head, argument) => {
                         return Ok(Atom::Applied(
                             Node::Code(head, place),
                             Node::Code(argument, place),
                         ));
                     },
-                    | Value::PathRefl(_)
+                    Value::PathRefl(_)
                     | Value::Here(_)
                     | Value::Stay(_)
                     | Value::Then(..)
@@ -775,41 +775,39 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                     | Value::Mark { .. } => return Ok(Atom::Other(node)),
                 }
             },
-            | Node::Held(value) => value,
-            | Node::Stuck(neutral, prefix) => return self.stuck(neutral, prefix),
-            | Node::ValueType(..) | Node::CompType(..) => return Ok(Atom::Other(node)),
+            Node::Held(value) => value,
+            Node::Stuck(neutral, prefix) => return self.stuck(neutral, prefix),
+            Node::ValueType(..) | Node::CompType(..) => return Ok(Atom::Other(node)),
         };
         let stood = Node::Held(held);
         match *self.domain.value(held).ok_or(dangling)? {
-            | DomainValue::Constructor { .. }
+            DomainValue::Constructor { .. }
             | DomainValue::Record { .. }
             | DomainValue::Tuple { .. }
             | DomainValue::ListNil { .. }
             | DomainValue::ListCons { .. }
             | DomainValue::Literal { .. }
             | DomainValue::Injection { .. } => Ok(Atom::FirstOrder(stood)),
-            | DomainValue::Neutral { neutral, .. } => {
+            DomainValue::Neutral { neutral, .. } => {
                 let stuck = self.domain.neutral(neutral).ok_or(dangling)?;
                 self.stuck(neutral, SpinePrefix(stuck.spine().len()))
             },
-            | DomainValue::Code { code, .. } => {
+            DomainValue::Code { code, .. } => {
                 let closure = self.domain.value_closure(code).ok_or(dangling)?;
                 let place = Self::opened(code);
                 match closure.body() {
-                    | crate::ValueBody::ValueType(quoted) => Ok(Atom::Quote(quoted, place)),
-                    | crate::ValueBody::CompType(quoted) => {
-                        Ok(Atom::QuoteComputation(quoted, place))
-                    },
-                    | crate::ValueBody::Source(body) => match *self
+                    crate::ValueBody::ValueType(quoted) => Ok(Atom::Quote(quoted, place)),
+                    crate::ValueBody::CompType(quoted) => Ok(Atom::QuoteComputation(quoted, place)),
+                    crate::ValueBody::Source(body) => match *self
                         .core
                         .value(body)
                         .ok_or(ConversionFault::MachineInvariant)?
                     {
-                        | Value::Quote(quoted) => Ok(Atom::Quote(quoted, place)),
-                        | Value::QuoteComputation(quoted) => {
+                        Value::Quote(quoted) => Ok(Atom::Quote(quoted, place)),
+                        Value::QuoteComputation(quoted) => {
                             Ok(Atom::QuoteComputation(quoted, place))
                         },
-                        | Value::PathRefl(_)
+                        Value::PathRefl(_)
                         | Value::Here(_)
                         | Value::Stay(_)
                         | Value::Then(..)
@@ -846,7 +844,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                     },
                 }
             },
-            | DomainValue::StaticLambda { lambda, .. } => {
+            DomainValue::StaticLambda { lambda, .. } => {
                 let closure = self.domain.value_closure(lambda).ok_or(dangling)?;
                 let crate::ValueBody::Source(body) = closure.body()
                 else {
@@ -854,7 +852,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                 };
                 Ok(Atom::Operator(body, Self::opened(lambda)))
             },
-            | DomainValue::PathCertificate { .. }
+            DomainValue::PathCertificate { .. }
             | DomainValue::PathProduct { .. }
             | DomainValue::Here { .. }
             | DomainValue::Flow { .. }
@@ -919,26 +917,26 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
         let Some(last) = prefix.0.checked_sub(1_usize)
         else {
             return Ok(match held.head() {
-                | NeutralHead::Variable { zone, level } => Atom::Variable(zone, level),
-                | NeutralHead::Constant(constant) => {
+                NeutralHead::Variable { zone, level } => Atom::Variable(zone, level),
+                NeutralHead::Constant(constant) => {
                     let rigidity = match held.unfolding() {
-                        | Unfolding::Rigid => Rigidity::Rigid,
-                        | Unfolding::Unforced(_) | Unfolding::Forced(_) => Rigidity::Flexible,
+                        Unfolding::Rigid => Rigidity::Rigid,
+                        Unfolding::Unforced(_) | Unfolding::Forced(_) => Rigidity::Flexible,
                     };
                     Atom::Constant(constant, rigidity)
                 },
-                | NeutralHead::Module(_)
+                NeutralHead::Module(_)
                 | NeutralHead::Hole { .. }
                 | NeutralHead::Mark { .. }
                 | NeutralHead::Returned(_) => Atom::Other(Node::Stuck(neutral, prefix)),
             });
         };
         match held.spine().get(last) {
-            | Some(&Elimination::StaticApply(argument)) => Ok(Atom::Applied(
+            Some(&Elimination::StaticApply(argument)) => Ok(Atom::Applied(
                 Node::Stuck(neutral, SpinePrefix(last)),
                 Node::Held(argument),
             )),
-            | Some(
+            Some(
                 &(Elimination::Transport(_)
                 | Elimination::DataCase(_)
                 | Elimination::Split(_)
@@ -954,7 +952,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                 | Elimination::Case { .. }
                 | Elimination::Fixpoint(_)),
             ) => Ok(Atom::Other(Node::Stuck(neutral, prefix))),
-            | None => Err(ConversionFault::MachineInvariant),
+            None => Err(ConversionFault::MachineInvariant),
         }
     }
 
@@ -985,10 +983,10 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
     ) -> Rigidity
     {
         match self.constants {
-            | ConstantReading::Unread => Rigidity::Flexible,
-            | ConstantReading::Read(definitions) => match definitions.unfolding(constant) {
-                | Unfolding::Rigid => Rigidity::Rigid,
-                | Unfolding::Unforced(_) | Unfolding::Forced(_) => Rigidity::Flexible,
+            ConstantReading::Unread => Rigidity::Flexible,
+            ConstantReading::Read(definitions) => match definitions.unfolding(constant) {
+                Unfolding::Rigid => Rigidity::Rigid,
+                Unfolding::Unforced(_) | Unfolding::Forced(_) => Rigidity::Flexible,
             },
         }
     }
@@ -1079,9 +1077,9 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
             .value_closure(closure)
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
         match held.body() {
-            | crate::ValueBody::Source(body) => self.atom(Node::Code(body, Self::opened(closure))),
-            | crate::ValueBody::ValueType(body) => Ok(Atom::Quote(body, Self::opened(closure))),
-            | crate::ValueBody::CompType(body) => {
+            crate::ValueBody::Source(body) => self.atom(Node::Code(body, Self::opened(closure))),
+            crate::ValueBody::ValueType(body) => Ok(Atom::Quote(body, Self::opened(closure))),
+            crate::ValueBody::CompType(body) => {
                 Ok(Atom::QuoteComputation(body, Self::opened(closure)))
             },
         }
@@ -1141,13 +1139,13 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
         let mut node = node;
         loop {
             let (code, place) = match node {
-                | Node::ValueType(at, place) => match *self
+                Node::ValueType(at, place) => match *self
                     .core
                     .value_type(at)
                     .ok_or(ConversionFault::MachineInvariant)?
                 {
-                    | ValueType::Element { code, .. } => (code, place),
-                    | ValueType::PathUniverse(..)
+                    ValueType::Element { code, .. } => (code, place),
+                    ValueType::PathUniverse(..)
                     | ValueType::Capability { .. }
                     | ValueType::Path { .. }
                     | ValueType::Data { .. }
@@ -1168,13 +1166,13 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                     | ValueType::Flow { .. }
                     | ValueType::Run(_) => return Ok(node),
                 },
-                | Node::CompType(at, place) => match *self
+                Node::CompType(at, place) => match *self
                     .core
                     .comp_type(at)
                     .ok_or(ConversionFault::MachineInvariant)?
                 {
-                    | CompType::Element { code, .. } => (code, place),
-                    | CompType::Returner { .. }
+                    CompType::Element { code, .. } => (code, place),
+                    CompType::Returner { .. }
                     | CompType::With(..)
                     | CompType::Arrow { .. }
                     | CompType::Pi { .. }
@@ -1182,16 +1180,14 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                         return Ok(node);
                     },
                 },
-                | Node::Code(..) | Node::Held(_) | Node::Stuck(..) => return Ok(node),
+                Node::Code(..) | Node::Held(_) | Node::Stuck(..) => return Ok(node),
             };
             node = match (node, self.atom(Node::Code(code, place))?) {
-                | (Node::ValueType(..), Atom::Quote(quoted, there)) => {
-                    Node::ValueType(quoted, there)
-                },
-                | (Node::CompType(..), Atom::QuoteComputation(quoted, there)) => {
+                (Node::ValueType(..), Atom::Quote(quoted, there)) => Node::ValueType(quoted, there),
+                (Node::CompType(..), Atom::QuoteComputation(quoted, there)) => {
                     Node::CompType(quoted, there)
                 },
-                | _ => return Ok(node),
+                _ => return Ok(node),
             };
         }
     }
@@ -1342,7 +1338,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         let one = self.decoded(one)?;
         let other = self.decoded(other)?;
         match (one, other) {
-            | (
+            (
                 left @ (Node::Code(..) | Node::Held(_) | Node::Stuck(..)),
                 right @ (Node::Code(..) | Node::Held(_) | Node::Stuck(..)),
             ) => {
@@ -1350,7 +1346,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 atoms.push(pair);
                 Ok(Alike::Same)
             },
-            | (Node::ValueType(first, here), Node::ValueType(second, there)) => {
+            (Node::ValueType(first, here), Node::ValueType(second, there)) => {
                 let (Some(left), Some(right)) =
                     (self.core.value_type(first), self.core.value_type(second))
                 else {
@@ -1628,7 +1624,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     else {
                         {
                             match *matched_left_value {
-                                | ValueType::PathUniverse(..)
+                                ValueType::PathUniverse(..)
                                 | ValueType::Capability { .. }
                                 | ValueType::Path { .. }
                                 | ValueType::Data { .. }
@@ -1654,21 +1650,21 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     }
                 }
             },
-            | (Node::CompType(first, here), Node::CompType(second, there)) => {
+            (Node::CompType(first, here), Node::CompType(second, there)) => {
                 let (Some(left), Some(right)) =
                     (self.core.comp_type(first), self.core.comp_type(second))
                 else {
                     return Err(ConversionFault::MachineInvariant);
                 };
                 match (left, right) {
-                    | (&CompType::With(a, b), &CompType::With(c, d)) => {
+                    (&CompType::With(a, b), &CompType::With(c, d)) => {
                         pending.extend([
                             (Node::CompType(b, here), Node::CompType(d, there)),
                             (Node::CompType(a, here), Node::CompType(c, there)),
                         ]);
                         Ok(Alike::Same)
                     },
-                    | (
+                    (
                         &CompType::Returner {
                             result: a,
                             effects: ref first,
@@ -1687,7 +1683,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         }));
                         Ok(Alike::Same)
                     },
-                    | (
+                    (
                         &CompType::Arrow { domain, codomain },
                         &CompType::Arrow {
                             domain: other_domain,
@@ -1704,7 +1700,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         ));
                         Ok(Alike::Same)
                     },
-                    | (
+                    (
                         &CompType::Pi { domain, codomain },
                         &CompType::Pi {
                             domain: other_domain,
@@ -1722,7 +1718,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         ));
                         Ok(Alike::Same)
                     },
-                    | (
+                    (
                         &CompType::Element { code, ref target },
                         &CompType::Element {
                             code: other_code,
@@ -1737,7 +1733,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         atoms.push((left_atom, right_atom));
                         Ok(Alike::Same)
                     },
-                    | (
+                    (
                         &(CompType::Returner { .. }
                         | CompType::With(..)
                         | CompType::Arrow { .. }
@@ -1748,7 +1744,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     ) => Ok(Alike::Different),
                 }
             },
-            | (
+            (
                 Node::ValueType(..)
                 | Node::CompType(..)
                 | Node::Code(..)
@@ -1825,21 +1821,21 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         let malformed = ConversionFault::MachineInvariant;
         let dangling = ConversionFault::Domain(DomainFault::Dangling);
         match node {
-            | Node::Code(value, place) => match *(self.core.value(value).ok_or(malformed)?) {
-                | Value::ListNil => Ok(FirstOrder::ListNil),
-                | Value::ListCons(first, second) => Ok(FirstOrder::ListCons(
+            Node::Code(value, place) => match *(self.core.value(value).ok_or(malformed)?) {
+                Value::ListNil => Ok(FirstOrder::ListNil),
+                Value::ListCons(first, second) => Ok(FirstOrder::ListCons(
                     Node::Code(first, place),
                     Node::Code(second, place),
                 )),
-                | Value::Literal(_) => Ok(FirstOrder::Literal(value)),
-                | Value::Tuple(ref components) => Ok(FirstOrder::Tuple(ArgumentFields::Source(
+                Value::Literal(_) => Ok(FirstOrder::Literal(value)),
+                Value::Tuple(ref components) => Ok(FirstOrder::Tuple(ArgumentFields::Source(
                     components.iter(),
                     place,
                 ))),
-                | Value::Injection(ref side, ref body) => {
+                Value::Injection(ref side, ref body) => {
                     Ok(FirstOrder::Injection(*side, Node::Code(*body, place)))
                 },
-                | Value::Constructor {
+                Value::Constructor {
                     ref datatype,
                     ref tag,
                     ref fields,
@@ -1848,28 +1844,56 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     tag: *tag,
                     fields: ArgumentFields::Source(fields.iter(), place),
                 }),
-                | Value::Record(ref labels) => Ok(FirstOrder::Record {
+                Value::Record(ref labels) => Ok(FirstOrder::Record {
                     labels,
                     fields: ArgumentFields::Record(labels.values(), place),
                 }),
-                | _ => Err(malformed),
+                Value::Primitive { .. }
+                | Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Here(_)
+                | Value::Funext(..)
+                | Value::Equiv(..)
+                | Value::Ua { .. }
+                | Value::SessionRelated { .. }
+                | Value::Stay(_)
+                | Value::Then(..)
+                | Value::FlowProduct(..)
+                | Value::Forward(_)
+                | Value::FunctionFlow(..)
+                | Value::Recorded(_)
+                | Value::Returned(_)
+                | Value::Nested(_)
+                | Value::Run(_)
+                | Value::Variable { .. }
+                | Value::Constant(_)
+                | Value::Thunk(_)
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticLambda(_)
+                | Value::StaticApplication(..)
+                | Value::Hole(_)
+                | Value::Mark { .. }
+                | Value::Reify(_) => Err(malformed),
             },
-            | Node::Held(value) => match *self.domain.value(value).ok_or(dangling)? {
-                | DomainValue::ListNil { .. } => Ok(FirstOrder::ListNil),
-                | DomainValue::ListCons { first, second, .. } => {
+            Node::Held(value) => match *self.domain.value(value).ok_or(dangling)? {
+                DomainValue::ListNil { .. } => Ok(FirstOrder::ListNil),
+                DomainValue::ListCons { first, second, .. } => {
                     Ok(FirstOrder::ListCons(Node::Held(first), Node::Held(second)))
                 },
-                | DomainValue::Literal { literal, .. } => Ok(FirstOrder::Literal(literal)),
-                | DomainValue::Tuple { fields, .. } => Ok(FirstOrder::Tuple(ArgumentFields::Held(
+                DomainValue::Literal { literal, .. } => Ok(FirstOrder::Literal(literal)),
+                DomainValue::Tuple { fields, .. } => Ok(FirstOrder::Tuple(ArgumentFields::Held(
                     self.domain
                         .fields(fields)
                         .map_err(ConversionFault::Domain)?
                         .iter(),
                 ))),
-                | DomainValue::Injection { summand, body, .. } => {
+                DomainValue::Injection { summand, body, .. } => {
                     Ok(FirstOrder::Injection(summand, Node::Held(body)))
                 },
-                | DomainValue::Constructor {
+                DomainValue::Constructor {
                     datatype,
                     tag,
                     fields,
@@ -1891,7 +1915,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         ),
                     })
                 },
-                | DomainValue::Record { source, fields, .. } => {
+                DomainValue::Record { source, fields, .. } => {
                     let Some(matched_native_node) = self.core.value(source)
                     else {
                         return Err(malformed);
@@ -1912,9 +1936,17 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         fields: ArgumentFields::Held(fields.iter()),
                     })
                 },
-                | _ => Err(malformed),
+                DomainValue::PathCertificate { .. }
+                | DomainValue::PathProduct { .. }
+                | DomainValue::Here { .. }
+                | DomainValue::Flow { .. }
+                | DomainValue::Thunk { .. }
+                | DomainValue::Lift { .. }
+                | DomainValue::Neutral { .. }
+                | DomainValue::Code { .. }
+                | DomainValue::StaticLambda { .. } => Err(malformed),
             },
-            | _ => Err(malformed),
+            Node::ValueType(..) | Node::CompType(..) | Node::Stuck(..) => Err(malformed),
         }
     }
 
@@ -1941,14 +1973,14 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     ) -> Result<Alike, ConversionFault>
     {
         match (self.first_order(left)?, self.first_order(right)?) {
-            | (FirstOrder::ListNil, FirstOrder::ListNil) => Ok(Alike::Same),
-            | (FirstOrder::Tuple(left_fields), FirstOrder::Tuple(right_fields))
+            (FirstOrder::ListNil, FirstOrder::ListNil) => Ok(Alike::Same),
+            (FirstOrder::Tuple(left_fields), FirstOrder::Tuple(right_fields))
                 if left_fields.len() == right_fields.len() =>
             {
                 pending.extend(left_fields.zip(right_fields));
                 Ok(Alike::Same)
             },
-            | (FirstOrder::Literal(a), FirstOrder::Literal(b)) => {
+            (FirstOrder::Literal(a), FirstOrder::Literal(b)) => {
                 let (Some(left_node), Some(right_node)) = (self.core.value(a), self.core.value(b))
                 else {
                     return Err(ConversionFault::MachineInvariant);
@@ -1963,15 +1995,15 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 };
                 Ok(Alike::between(a, b))
             },
-            | (FirstOrder::ListCons(a, b), FirstOrder::ListCons(c, d)) => {
+            (FirstOrder::ListCons(a, b), FirstOrder::ListCons(c, d)) => {
                 pending.extend([(a, c), (b, d)]);
                 Ok(Alike::Same)
             },
-            | (FirstOrder::Injection(a, b), FirstOrder::Injection(c, d)) if a == c => {
+            (FirstOrder::Injection(a, b), FirstOrder::Injection(c, d)) if a == c => {
                 pending.push((b, d));
                 Ok(Alike::Same)
             },
-            | (
+            (
                 FirstOrder::Constructor {
                     datatype: left_datatype,
                     tag: left_tag,
@@ -1987,7 +2019,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 pending.push((left_datatype, right_datatype));
                 Ok(Alike::Same)
             },
-            | (
+            (
                 FirstOrder::Record {
                     labels: a,
                     fields: b,
@@ -2000,7 +2032,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 pending.extend(b.zip(d));
                 Ok(Alike::Same)
             },
-            | _ => Ok(Alike::Different),
+            _ => Ok(Alike::Different),
         }
     }
 
@@ -2030,22 +2062,22 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         loop {
             while let Some((one, other)) = atoms.pop() {
                 match (one, other) {
-                    | (Atom::FirstOrder(first), Atom::FirstOrder(second)) => {
+                    (Atom::FirstOrder(first), Atom::FirstOrder(second)) => {
                         if self.first_order_pair(first, second, &mut pending)? == Alike::Different {
                             return Ok(Alike::Different);
                         }
                     },
-                    | (Atom::Quote(first, here), Atom::Quote(second, there)) => {
+                    (Atom::Quote(first, here), Atom::Quote(second, there)) => {
                         pending
                             .push((Node::ValueType(first, here), Node::ValueType(second, there)));
                     },
-                    | (
+                    (
                         Atom::QuoteComputation(first, here),
                         Atom::QuoteComputation(second, there),
                     ) => {
                         pending.push((Node::CompType(first, here), Node::CompType(second, there)));
                     },
-                    | (Atom::Lift(first, here), Atom::Lift(second, there)) => {
+                    (Atom::Lift(first, here), Atom::Lift(second, there)) => {
                         let (
                             Some(&Value::Lift {
                                 target: ref left_target,
@@ -2066,16 +2098,13 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         let other = self.atom(Node::Code(right_body, there))?;
                         atoms.push((one, other));
                     },
-                    | (
-                        Atom::Applied(head, argument),
-                        Atom::Applied(other_head, other_argument),
-                    ) => {
+                    (Atom::Applied(head, argument), Atom::Applied(other_head, other_argument)) => {
                         let arguments = (self.atom(argument)?, self.atom(other_argument)?);
                         let heads = (self.atom(head)?, self.atom(other_head)?);
                         atoms.push(arguments);
                         atoms.push(heads);
                     },
-                    | (Atom::Operator(first, here), Atom::Operator(second, there)) => {
+                    (Atom::Operator(first, here), Atom::Operator(second, there)) => {
                         let (
                             Some(&Value::StaticLambda(left_body)),
                             Some(&Value::StaticLambda(right_body)),
@@ -2088,13 +2117,12 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         let other = self.atom(Node::Code(right_body, other_inside))?;
                         atoms.push((one, other));
                     },
-                    | (Atom::Local(first), Atom::Local(second)) if first == second => {},
-                    | (Atom::Variable(zone, first), Atom::Variable(other_zone, second))
+                    (Atom::Local(first), Atom::Local(second)) if first == second => {},
+                    (Atom::Variable(zone, first), Atom::Variable(other_zone, second))
                         if (zone, first) == (other_zone, second) => {},
-                    | (Atom::Constant(first, _), Atom::Constant(second, _)) if first == second => {
-                    },
-                    | (Atom::Other(first), Atom::Other(second)) if first == second => {},
-                    | (
+                    (Atom::Constant(first, _), Atom::Constant(second, _)) if first == second => {},
+                    (Atom::Other(first), Atom::Other(second)) if first == second => {},
+                    (
                         Atom::Local(_)
                         | Atom::FirstOrder(_)
                         | Atom::Variable(..)
@@ -2142,14 +2170,14 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         while !atoms.is_empty() || !types.is_empty() {
             while let Some(atom) = atoms.pop() {
                 match atom {
-                    | Atom::FirstOrder(node) => match self.first_order(node)? {
-                        | FirstOrder::ListNil | FirstOrder::Literal(_) => {},
-                        | FirstOrder::ListCons(a, b) => {
+                    Atom::FirstOrder(node) => match self.first_order(node)? {
+                        FirstOrder::ListNil | FirstOrder::Literal(_) => {},
+                        FirstOrder::ListCons(a, b) => {
                             atoms.push(self.atom(a)?);
                             atoms.push(self.atom(b)?);
                         },
-                        | FirstOrder::Injection(_, body) => atoms.push(self.atom(body)?),
-                        | FirstOrder::Constructor {
+                        FirstOrder::Injection(_, body) => atoms.push(self.atom(body)?),
+                        FirstOrder::Constructor {
                             datatype, fields, ..
                         } => {
                             types.push(datatype);
@@ -2157,28 +2185,25 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 atoms.push(self.atom(field)?);
                             }
                         },
-                        | FirstOrder::Record { fields, .. } | FirstOrder::Tuple(fields) => {
+                        FirstOrder::Record { fields, .. } | FirstOrder::Tuple(fields) => {
                             for field in fields {
                                 atoms.push(self.atom(field)?);
                             }
                         },
                     },
-                    | Atom::Local(_) | Atom::Variable(..) | Atom::Constant(_, Rigidity::Rigid) => {
-                    },
-                    | Atom::Constant(_, Rigidity::Flexible)
-                    | Atom::Operator(..)
-                    | Atom::Other(_) => {
+                    Atom::Local(_) | Atom::Variable(..) | Atom::Constant(_, Rigidity::Rigid) => {},
+                    Atom::Constant(_, Rigidity::Flexible) | Atom::Operator(..) | Atom::Other(_) => {
                         return Ok(Rigidity::Flexible);
                     },
-                    | Atom::Applied(head, argument) => {
+                    Atom::Applied(head, argument) => {
                         atoms.push(self.atom(argument)?);
                         atoms.push(self.atom(head)?);
                     },
-                    | Atom::Quote(quoted, place) => types.push(Node::ValueType(quoted, place)),
-                    | Atom::QuoteComputation(quoted, place) => {
+                    Atom::Quote(quoted, place) => types.push(Node::ValueType(quoted, place)),
+                    Atom::QuoteComputation(quoted, place) => {
                         types.push(Node::CompType(quoted, place));
                     },
-                    | Atom::Lift(lift, place) => {
+                    Atom::Lift(lift, place) => {
                         let Some(&Value::Lift { body, .. }) = self.core.value(lift)
                         else {
                             return Err(ConversionFault::MachineInvariant);
@@ -2192,27 +2217,27 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 break;
             };
             match node {
-                | Node::ValueType(id, place) => {
+                Node::ValueType(id, place) => {
                     match *self
                         .core
                         .value_type(id)
                         .ok_or(ConversionFault::MachineInvariant)?
                     {
-                        | ValueType::Data { ref arguments, .. } => {
+                        ValueType::Data { ref arguments, .. } => {
                             for argument in arguments {
                                 atoms.push(self.atom(Node::Code(*argument, place))?);
                             }
                         },
-                        | ValueType::Record(ref fields) => types
+                        ValueType::Record(ref fields) => types
                             .extend(fields.values().map(|field| Node::ValueType(*field, place))),
-                        | ValueType::Stack { input, output } => types
+                        ValueType::Stack { input, output } => types
                             .extend([Node::CompType(input, place), Node::CompType(output, place)]),
-                        | ValueType::List(element) => types.push(Node::ValueType(element, place)),
-                        | ValueType::PathUniverse(source, target) => {
+                        ValueType::List(element) => types.push(Node::ValueType(element, place)),
+                        ValueType::PathUniverse(source, target) => {
                             atoms.push(self.atom(Node::Code(source, place))?);
                             atoms.push(self.atom(Node::Code(target, place))?);
                         },
-                        | ValueType::Path {
+                        ValueType::Path {
                             carrier,
                             left,
                             right,
@@ -2221,7 +2246,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             atoms.push(self.atom(Node::Code(left, place))?);
                             atoms.push(self.atom(Node::Code(right, place))?);
                         },
-                        | ValueType::Flow {
+                        ValueType::Flow {
                             carrier,
                             source,
                             target,
@@ -2230,45 +2255,45 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             atoms.push(self.atom(Node::Code(source, place))?);
                             atoms.push(self.atom(Node::Code(target, place))?);
                         },
-                        | ValueType::Run(session) => {
+                        ValueType::Run(session) => {
                             atoms.push(self.atom(Node::Code(session, place))?);
                         },
-                        | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
+                        ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                             types.extend(
                                 components
                                     .iter()
                                     .map(|component| Node::ValueType(*component, place)),
                             );
                         },
-                        | ValueType::Base(_)
+                        ValueType::Base(_)
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_) => {},
-                        | ValueType::Capability { ref authority, .. } => {
+                        ValueType::Capability { ref authority, .. } => {
                             types.extend(authority.types().map(|ty| Node::ValueType(ty, place)));
                         },
                         // An unknown type is what a fill may still decide, so
                         // nothing that holds one is apart from anything.
-                        | ValueType::Unknown => return Ok(Rigidity::Flexible),
-                        | ValueType::StaticPi {
+                        ValueType::Unknown => return Ok(Rigidity::Flexible),
+                        ValueType::StaticPi {
                             domain: first,
                             codomain: second,
                         } => {
                             types.push(Node::ValueType(first, place));
                             types.push(Node::ValueType(second, place));
                         },
-                        | ValueType::Sigma { first, second } => {
+                        ValueType::Sigma { first, second } => {
                             types.push(Node::ValueType(first, place));
                             let inside = self.crossed_alone(place);
                             types.push(Node::ValueType(second, inside));
                         },
-                        | ValueType::Thunk(body) => types.push(Node::CompType(body, place)),
-                        | ValueType::Lift { inner, .. } => {
+                        ValueType::Thunk(body) => types.push(Node::CompType(body, place)),
+                        ValueType::Lift { inner, .. } => {
                             types.push(Node::ValueType(inner, place));
                         },
-                        | ValueType::Element { code, .. } => {
+                        ValueType::Element { code, .. } => {
                             atoms.push(self.atom(Node::Code(code, place))?);
                         },
-                        | ValueType::Session(ref session) => types.extend(
+                        ValueType::Session(ref session) => types.extend(
                             session
                                 .payloads()
                                 .iter()
@@ -2276,37 +2301,37 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         ),
                     }
                 },
-                | Node::CompType(id, place) => {
+                Node::CompType(id, place) => {
                     match *self
                         .core
                         .comp_type(id)
                         .ok_or(ConversionFault::MachineInvariant)?
                     {
-                        | CompType::With(first, second) => types
+                        CompType::With(first, second) => types
                             .extend([Node::CompType(first, place), Node::CompType(second, place)]),
-                        | CompType::Returner {
+                        CompType::Returner {
                             result,
                             ref effects,
                         } => {
                             types.push(Node::ValueType(result, place));
                             types.extend(effects.types().map(|ty| Node::ValueType(ty, place)));
                         },
-                        | CompType::Arrow { domain, codomain } => {
+                        CompType::Arrow { domain, codomain } => {
                             types.push(Node::ValueType(domain, place));
                             types.push(Node::CompType(codomain, place));
                         },
-                        | CompType::Pi { domain, codomain } => {
+                        CompType::Pi { domain, codomain } => {
                             types.push(Node::ValueType(domain, place));
                             let inside = self.crossed_alone(place);
                             types.push(Node::CompType(codomain, inside));
                         },
-                        | CompType::Element { code, .. } => {
+                        CompType::Element { code, .. } => {
                             atoms.push(self.atom(Node::Code(code, place))?);
                         },
-                        | CompType::Unknown => return Ok(Rigidity::Flexible),
+                        CompType::Unknown => return Ok(Rigidity::Flexible),
                     }
                 },
-                | Node::Code(..) | Node::Held(_) | Node::Stuck(..) => {
+                Node::Code(..) | Node::Held(_) | Node::Stuck(..) => {
                     return Err(ConversionFault::MachineInvariant);
                 },
             }
@@ -2422,8 +2447,8 @@ pub fn compare_codes(
         return Ok(CodeComparison::Equal);
     }
     match (walk.rigidity(left)?, walk.rigidity(right)?) {
-        | (Rigidity::Rigid, Rigidity::Rigid) => Ok(CodeComparison::Apart),
-        | (Rigidity::Rigid | Rigidity::Flexible, _) => Ok(CodeComparison::Undecided),
+        (Rigidity::Rigid, Rigidity::Rigid) => Ok(CodeComparison::Apart),
+        (Rigidity::Rigid | Rigidity::Flexible, _) => Ok(CodeComparison::Undecided),
     }
 }
 

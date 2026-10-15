@@ -491,8 +491,8 @@ impl History
                 .filter_map(|(key, samples)| {
                     let (ref binary, ref lane) = *key;
                     match Timing::of(lane, binary, samples) {
-                        | Maybe::Present(timing) => Some(timing),
-                        | Maybe::Absent(summary::Absent::NoSamples) => None,
+                        Maybe::Present(timing) => Some(timing),
+                        Maybe::Absent(summary::Absent::NoSamples) => None,
                     }
                 })
                 .max_by_key(|timing| timing.median);

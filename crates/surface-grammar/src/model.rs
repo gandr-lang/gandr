@@ -251,12 +251,12 @@ impl Sort
     pub fn grout_sort(self) -> GroutSort
     {
         GroutSort::from(match self {
-            | Self::Item => 0_u16,
-            | Self::Pattern => 1,
-            | Self::Expression => 2,
-            | Self::Type => 3,
-            | Self::Instantiation => 4,
-            | Self::ModuleMember => 5,
+            Self::Item => 0_u16,
+            Self::Pattern => 1,
+            Self::Expression => 2,
+            Self::Type => 3,
+            Self::Instantiation => 4,
+            Self::ModuleMember => 5,
         })
     }
 
@@ -269,12 +269,12 @@ impl Sort
     pub const fn name(self) -> SortName
     {
         match self {
-            | Self::Item => SortName("item"),
-            | Self::Pattern => SortName("pattern"),
-            | Self::Expression => SortName("expression"),
-            | Self::Type => SortName("type"),
-            | Self::Instantiation => SortName("instantiation"),
-            | Self::ModuleMember => SortName("module_member"),
+            Self::Item => SortName("item"),
+            Self::Pattern => SortName("pattern"),
+            Self::Expression => SortName("expression"),
+            Self::Type => SortName("type"),
+            Self::Instantiation => SortName("instantiation"),
+            Self::ModuleMember => SortName("module_member"),
         }
     }
 
@@ -302,13 +302,13 @@ impl Sort
     pub fn try_from_tag(sort: GroutSort) -> Result<Self, PbgError>
     {
         match u16::from(sort) {
-            | 0 => Ok(Self::Item),
-            | 1 => Ok(Self::Pattern),
-            | 2 => Ok(Self::Expression),
-            | 3 => Ok(Self::Type),
-            | 4 => Ok(Self::Instantiation),
-            | 5 => Ok(Self::ModuleMember),
-            | _ => Err(PbgError::InvalidSort { sort }),
+            0 => Ok(Self::Item),
+            1 => Ok(Self::Pattern),
+            2 => Ok(Self::Expression),
+            3 => Ok(Self::Type),
+            4 => Ok(Self::Instantiation),
+            5 => Ok(Self::ModuleMember),
+            _ => Err(PbgError::InvalidSort { sort }),
         }
     }
 }
@@ -468,8 +468,8 @@ impl Regex
         }
         let extent = RegexExtent(entries.len());
         let node = match kind {
-            | Composite::Seq => RegexNode::Seq(RegexArity(arity)),
-            | Composite::Alt => RegexNode::Alt(RegexArity(arity)),
+            Composite::Seq => RegexNode::Seq(RegexArity(arity)),
+            Composite::Alt => RegexNode::Alt(RegexArity(arity)),
         };
         if let Some(root) = entries.first_mut() {
             *root = RegexEntry { node, extent };
@@ -647,8 +647,8 @@ impl Regex
     pub(crate) fn alternatives(&self) -> Vec<Self>
     {
         match self.view().shape() {
-            | RegexShape::Alt(items) => items.into_iter().map(RegexView::to_regex).collect(),
-            | RegexShape::Empty
+            RegexShape::Alt(items) => items.into_iter().map(RegexView::to_regex).collect(),
+            RegexShape::Empty
             | RegexShape::Sym(_)
             | RegexShape::Seq(_)
             | RegexShape::Optional(_)
@@ -720,12 +720,12 @@ impl<'regex> RegexView<'regex>
             return RegexShape::Empty;
         };
         match root.node {
-            | RegexNode::Empty => RegexShape::Empty,
-            | RegexNode::Sym(sym) => RegexShape::Sym(sym),
-            | RegexNode::Seq(arity) => RegexShape::Seq(children(rest, arity)),
-            | RegexNode::Alt(arity) => RegexShape::Alt(children(rest, arity)),
-            | RegexNode::Optional => RegexShape::Optional(first_child(rest)),
-            | RegexNode::Repeat => RegexShape::Repeat(first_child(rest)),
+            RegexNode::Empty => RegexShape::Empty,
+            RegexNode::Sym(sym) => RegexShape::Sym(sym),
+            RegexNode::Seq(arity) => RegexShape::Seq(children(rest, arity)),
+            RegexNode::Alt(arity) => RegexShape::Alt(children(rest, arity)),
+            RegexNode::Optional => RegexShape::Optional(first_child(rest)),
+            RegexNode::Repeat => RegexShape::Repeat(first_child(rest)),
         }
     }
 
@@ -1067,26 +1067,26 @@ impl RulesDigest
             hasher.write_u64(u64::try_from(rule.regex.entries.len()).unwrap_or(u64::MAX));
             for entry in &rule.regex.entries {
                 match entry.node {
-                    | RegexNode::Empty => hasher.write_byte(b'E'),
-                    | RegexNode::Sym(Sym::Sort(sort)) => {
+                    RegexNode::Empty => hasher.write_byte(b'E'),
+                    RegexNode::Sym(Sym::Sort(sort)) => {
                         hasher.write_byte(b'S');
                         hasher.write_u16(u16::from(sort.grout_sort()));
                     },
-                    | RegexNode::Sym(Sym::Tile(tile)) => {
+                    RegexNode::Sym(Sym::Tile(tile)) => {
                         hasher.write_byte(b'T');
                         hasher.write_bytes(tile.label.as_bytes());
                         hasher.write_byte(0_u8);
                     },
-                    | RegexNode::Seq(arity) => {
+                    RegexNode::Seq(arity) => {
                         hasher.write_byte(b'Q');
                         hasher.write_u64(u64::try_from(arity.0).unwrap_or(u64::MAX));
                     },
-                    | RegexNode::Alt(arity) => {
+                    RegexNode::Alt(arity) => {
                         hasher.write_byte(b'A');
                         hasher.write_u64(u64::try_from(arity.0).unwrap_or(u64::MAX));
                     },
-                    | RegexNode::Optional => hasher.write_byte(b'O'),
-                    | RegexNode::Repeat => hasher.write_byte(b'R'),
+                    RegexNode::Optional => hasher.write_byte(b'O'),
+                    RegexNode::Repeat => hasher.write_byte(b'R'),
                 }
                 hasher.write_u64(u64::try_from(entry.extent.0).unwrap_or(u64::MAX));
             }
@@ -1211,10 +1211,7 @@ impl PrecTable
         name: PrecName,
     ) -> Result<Prec, PbgError>
     {
-        match self.get(name) {
-            | Some(prec) => Ok(prec),
-            | None => Err(PbgError::MissingPrec { name: name.0 }),
-        }
+        self.get(name).ok_or(PbgError::MissingPrec { name: name.0 })
     }
 }
 
@@ -1338,31 +1335,31 @@ impl Display for PbgError
     ) -> FmtResult
     {
         match *self {
-            | Self::InvalidSort { sort } => {
+            Self::InvalidSort { sort } => {
                 write!(f, "invalid grammar sort tag {}", u16::from(sort))
             },
-            | Self::MissingPrec { name } => write!(f, "missing precedence group {name}"),
-            | Self::PrecedenceSpec(ref error) => Display::fmt(error, f),
-            | Self::PrecedenceCycle { ref witness } => {
+            Self::MissingPrec { name } => write!(f, "missing precedence group {name}"),
+            Self::PrecedenceSpec(ref error) => Display::fmt(error, f),
+            Self::PrecedenceCycle { ref witness } => {
                 f.write_str("precedence cycle")?;
                 for name in witness {
                     write!(f, " {name}")?;
                 }
                 Ok(())
             },
-            | Self::PrecedenceDag(ref error) => Display::fmt(error, f),
-            | Self::Walk(ref error) => Display::fmt(error, f),
-            | Self::InvalidPrec { rule, prec } => {
+            Self::PrecedenceDag(ref error) => Display::fmt(error, f),
+            Self::Walk(ref error) => Display::fmt(error, f),
+            Self::InvalidPrec { rule, prec } => {
                 write!(f, "rule {rule} names unknown precedence {}", prec.index())
             },
-            | Self::DuplicateRule { name } => write!(f, "duplicate grammar rule {name}"),
-            | Self::AdjacentSorts { rule, left, right } => write!(
+            Self::DuplicateRule { name } => write!(f, "duplicate grammar rule {name}"),
+            Self::AdjacentSorts { rule, left, right } => write!(
                 f,
                 "rule {rule} can put a {} hole beside a {} hole",
                 left.name(),
                 right.name()
             ),
-            | Self::DuplicateTile {
+            Self::DuplicateTile {
                 label,
                 sort,
                 prec,
@@ -1374,7 +1371,7 @@ impl Display for PbgError
                 sort.name(),
                 prec.index()
             ),
-            | Self::Assumption3Conflict {
+            Self::Assumption3Conflict {
                 first_sort,
                 second_sort,
             } => write!(
@@ -1385,9 +1382,9 @@ impl Display for PbgError
                 first_sort.name(),
                 second_sort.name()
             ),
-            | Self::MoldOverflow => f.write_str("mold table exceeds the 32-bit mold identity"),
-            | Self::UnknownMold { id } => write!(f, "unknown mold id {}", u32::from(id)),
-            | Self::UnknownRCtx { rctx } => {
+            Self::MoldOverflow => f.write_str("mold table exceeds the 32-bit mold identity"),
+            Self::UnknownMold { id } => write!(f, "unknown mold id {}", u32::from(id)),
+            Self::UnknownRCtx { rctx } => {
                 write!(f, "unknown context id {}", u32::from(rctx))
             },
         }
@@ -1420,10 +1417,10 @@ impl Error for PbgError
     fn source(&self) -> Option<&(dyn Error + 'static)>
     {
         match *self {
-            | Self::PrecedenceSpec(ref error) => Some(error),
-            | Self::PrecedenceDag(ref error) => Some(error),
-            | Self::Walk(ref error) => Some(error),
-            | Self::InvalidSort { .. }
+            Self::PrecedenceSpec(ref error) => Some(error),
+            Self::PrecedenceDag(ref error) => Some(error),
+            Self::Walk(ref error) => Some(error),
+            Self::InvalidSort { .. }
             | Self::MissingPrec { .. }
             | Self::PrecedenceCycle { .. }
             | Self::InvalidPrec { .. }

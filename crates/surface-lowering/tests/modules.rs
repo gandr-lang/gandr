@@ -594,12 +594,12 @@ mod modules
             .iter()
             .map(|declaration| {
                 let amounts = match declaration.outcome() {
-                    | DeclarationOutcome::Completed { .. } => Amounts::Completed,
-                    | DeclarationOutcome::Uncompleted { .. } => Amounts::Uncompleted,
-                    | DeclarationOutcome::Bodied { .. } => Amounts::Bodied,
-                    | DeclarationOutcome::Data(_) => Amounts::Data,
-                    | DeclarationOutcome::Abstract(_) => Amounts::Abstract,
-                    | DeclarationOutcome::Refused(refusal) => Amounts::Refused(refusal),
+                    DeclarationOutcome::Completed { .. } => Amounts::Completed,
+                    DeclarationOutcome::Uncompleted { .. } => Amounts::Uncompleted,
+                    DeclarationOutcome::Bodied { .. } => Amounts::Bodied,
+                    DeclarationOutcome::Data(_) => Amounts::Data,
+                    DeclarationOutcome::Abstract(_) => Amounts::Abstract,
+                    DeclarationOutcome::Refused(refusal) => Amounts::Refused(refusal),
                 };
                 (
                     dotted(&lowered.module, declaration),
@@ -713,10 +713,10 @@ mod modules
     {
         let path = path.as_ref();
         match declaration(lowered, path, Role::Declared).outcome() {
-            | DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => {
+            DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => {
                 body
             },
-            | outcome @ (DeclarationOutcome::Uncompleted { .. }
+            outcome @ (DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::Refused(_)) => {
@@ -777,8 +777,8 @@ mod modules
     {
         let path = path.as_ref();
         match lowered.arena.value(body_of(lowered, path)) {
-            | Some(&Value::Constant(constant)) => constant,
-            | other => panic!("`{path}` is a constant, not {other:?}"),
+            Some(&Value::Constant(constant)) => constant,
+            other => panic!("`{path}` is a constant, not {other:?}"),
         }
     }
 
@@ -813,9 +813,9 @@ mod modules
     {
         let path = path.as_ref();
         match declaration(lowered, path, role).outcome() {
-            | DeclarationOutcome::Completed { declared_type, .. }
+            DeclarationOutcome::Completed { declared_type, .. }
             | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
-            | outcome @ (DeclarationOutcome::Bodied { .. }
+            outcome @ (DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::Refused(_)) => {
@@ -847,8 +847,8 @@ mod modules
     ) -> ByteSpan
     {
         match lowered.module.origins().value_type(declared) {
-            | Maybe::Present(origin) => origin.span(),
-            | Maybe::Absent(absent) => panic!("every minted type has an origin, not {absent:?}"),
+            Maybe::Present(origin) => origin.span(),
+            Maybe::Absent(absent) => panic!("every minted type has an origin, not {absent:?}"),
         }
     }
 
@@ -970,29 +970,29 @@ mod modules
             .iter()
             .filter_map(|declaration| {
                 let (declared, defined) = match declaration.outcome() {
-                    | DeclarationOutcome::Completed {
+                    DeclarationOutcome::Completed {
                         declared_type,
                         body,
                     } => (Maybe::Present(declared_type), Maybe::Present(body)),
-                    | DeclarationOutcome::Uncompleted { declared_type } => (
+                    DeclarationOutcome::Uncompleted { declared_type } => (
                         Maybe::Present(declared_type),
                         Maybe::Absent(body::Absent::Hole),
                     ),
-                    | DeclarationOutcome::Bodied { body } => (
+                    DeclarationOutcome::Bodied { body } => (
                         Maybe::Absent(signature::Absent::Unsigned),
                         Maybe::Present(body),
                     ),
-                    | DeclarationOutcome::Data(index) => {
+                    DeclarationOutcome::Data(index) => {
                         return match lowered.module.data(index) {
-                            | Maybe::Present(signature) => Some(Declaration::data(
+                            Maybe::Present(signature) => Some(Declaration::data(
                                 declaration.constant(),
                                 Arc::clone(signature),
                                 OriginToken::from(usize::from(declaration.origin())),
                             )),
-                            | Maybe::Absent(_) => None,
+                            Maybe::Absent(_) => None,
                         };
                     },
-                    | DeclarationOutcome::Abstract(sealing) => {
+                    DeclarationOutcome::Abstract(sealing) => {
                         let site = SealSite::new(
                             SealingSite::from(usize::from(sealing.sealing)),
                             ComponentOrdinal::from(usize::from(sealing.component)),
@@ -1008,7 +1008,7 @@ mod modules
                             OriginToken::from(usize::from(declaration.origin())),
                         ));
                     },
-                    | DeclarationOutcome::Refused(_) => return None,
+                    DeclarationOutcome::Refused(_) => return None,
                 };
                 Some(Declaration::new(
                     declaration.constant(),
@@ -1094,12 +1094,12 @@ mod modules
             .iter()
             .map(|judged| {
                 let judgement = match judged.verdict() {
-                    | Verdict::Data => Judgement::Declared,
-                    | Verdict::Checked { .. } => Judgement::Checked,
-                    | Verdict::Synthesised { .. } => Judgement::Synthesised,
-                    | Verdict::Owed(_) => Judgement::Owed,
-                    | Verdict::Refused(CheckRefusal::TypeMismatch(_)) => Judgement::Mismatched,
-                    | Verdict::Refused(_) => Judgement::Refused,
+                    Verdict::Data => Judgement::Declared,
+                    Verdict::Checked { .. } => Judgement::Checked,
+                    Verdict::Synthesised { .. } => Judgement::Synthesised,
+                    Verdict::Owed(_) => Judgement::Owed,
+                    Verdict::Refused(CheckRefusal::TypeMismatch(_)) => Judgement::Mismatched,
+                    Verdict::Refused(_) => Judgement::Refused,
                 };
                 (judged.constant(), judgement)
             })
@@ -1296,8 +1296,8 @@ mod modules
             .iter()
             .map(|marked| {
                 let body = match *marked.declaration().content() {
-                    | DeclarationContent::Def { body, .. } => artifact.arena().value(body).cloned(),
-                    | DeclarationContent::Axiom { .. }
+                    DeclarationContent::Def { body, .. } => artifact.arena().value(body).cloned(),
+                    DeclarationContent::Axiom { .. }
                     | DeclarationContent::Data { .. }
                     | DeclarationContent::AbstractType { .. } => None,
                 };
@@ -1653,8 +1653,8 @@ mod modules
             .first()
             .expect("the module has a stratum item");
         let defined = match *structure.types() {
-            | [ref manifest] if manifest.name == name("T") => manifest.defined,
-            | ref other => panic!("one manifest component `T`, not {other:?}"),
+            [ref manifest] if manifest.name == name("T") => manifest.defined,
+            ref other => panic!("one manifest component `T`, not {other:?}"),
         };
         assert_eq!(
             Maybe::Present(declared_type_of(&lowered, "M.value", Role::Declared)),
@@ -2040,8 +2040,8 @@ mod modules
             .first()
             .expect("the module has a stratum item");
         let defined = match *structure.types() {
-            | [ref component] if component.name == name("T") => component.defined,
-            | ref other => panic!("one type component `T`, not {other:?}"),
+            [ref component] if component.name == name("T") => component.defined,
+            ref other => panic!("one type component `T`, not {other:?}"),
         };
         assert!(
             structure.sealed().is_empty(),
@@ -2183,8 +2183,8 @@ mod modules
             "a type member declares nothing of its own"
         );
         let defined = match *lowered.module.structures().first().expect("module").types() {
-            | [ref member] if member.name == name("T") => member.defined,
-            | ref other => panic!("one exported type member `T`, not {other:?}"),
+            [ref member] if member.name == name("T") => member.defined,
+            ref other => panic!("one exported type member `T`, not {other:?}"),
         };
         for path in ["M.value", "M.N.inner"] {
             assert_eq!(
@@ -2631,8 +2631,8 @@ mod modules
         let origin = |lowered: &Lowered<'_>, path: &str| {
             let token = declaration(lowered, path, Role::Declared).origin();
             match lowered.module.origins().declaration(token) {
-                | Maybe::Present(origin) => origin.span(),
-                | Maybe::Absent(absent) => panic!("the declaration has an origin, not {absent:?}"),
+                Maybe::Present(origin) => origin.span(),
+                Maybe::Absent(absent) => panic!("the declaration has an origin, not {absent:?}"),
             }
         };
         assert_eq!(
@@ -2964,8 +2964,12 @@ mod modules
         let refused: Vec<_> = rows(&lowered)
             .into_iter()
             .filter_map(|(name, _, amounts)| match amounts {
-                | Amounts::Refused(refusal) => Some((name, refusal)),
-                | _ => None,
+                Amounts::Refused(refusal) => Some((name, refusal)),
+                Amounts::Completed
+                | Amounts::Uncompleted
+                | Amounts::Bodied
+                | Amounts::Data
+                | Amounts::Abstract => None,
             })
             .collect();
         assert!(

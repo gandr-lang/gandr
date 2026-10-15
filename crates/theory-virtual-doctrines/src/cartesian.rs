@@ -81,14 +81,14 @@ impl WCartesianAction
     pub fn checked_witness(&self) -> Result<CartesianWitness, CartesianLawError>
     {
         let source = match self.source.parts() {
-            | quenchant_shape::shape::Maybe::Present(parts) => parts,
-            | quenchant_shape::shape::Maybe::Absent(_) => {
+            quenchant_shape::shape::Maybe::Present(parts) => parts,
+            quenchant_shape::shape::Maybe::Absent(_) => {
                 return Err(CartesianLawError::SourceNotProduct);
             },
         };
         let target = match self.target.parts() {
-            | quenchant_shape::shape::Maybe::Present(parts) => parts,
-            | quenchant_shape::shape::Maybe::Absent(_) => {
+            quenchant_shape::shape::Maybe::Present(parts) => parts,
+            quenchant_shape::shape::Maybe::Absent(_) => {
                 return Err(CartesianLawError::TargetNotProduct);
             },
         };
@@ -159,9 +159,9 @@ impl core::fmt::Display for CartesianLawError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::SourceNotProduct => f.write_str("cartesian source is not a product"),
-            | Self::TargetNotProduct => f.write_str("cartesian target is not a product"),
-            | Self::Violation(witness) => write!(
+            Self::SourceNotProduct => f.write_str("cartesian source is not a product"),
+            Self::TargetNotProduct => f.write_str("cartesian target is not a product"),
+            Self::Violation(witness) => write!(
                 f,
                 "cartesian laws fail: projections={}, diagonal={}, structure={}",
                 bool::from(witness.projections),

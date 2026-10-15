@@ -251,8 +251,8 @@ impl Cost
     ) -> Self
     {
         Self(self.0.saturating_add(match crossed {
-            | Crossed::Nothing => 1,
-            | Crossed::Hole(_) => 2,
+            Crossed::Nothing => 1,
+            Crossed::Hole(_) => 2,
         }))
     }
 
@@ -383,12 +383,12 @@ pub fn push_closing(
         }
         let start = mold == frontier;
         let end = match ending(pbg, mold) {
-            | Ending::Here if start => Some(End {
+            Ending::Here if start => Some(End {
                 mold,
                 tail: Crossed::Nothing,
                 cost,
             }),
-            | Ending::Here => {
+            Ending::Here => {
                 offer(&mut best, End {
                     mold,
                     tail: Crossed::Nothing,
@@ -396,17 +396,17 @@ pub fn push_closing(
                 });
                 continue;
             },
-            | Ending::AfterHole(_) if start && leading == LeadingSlot::Occupied => Some(End {
+            Ending::AfterHole(_) if start && leading == LeadingSlot::Occupied => Some(End {
                 mold,
                 tail: Crossed::Nothing,
                 cost,
             }),
-            | Ending::AfterHole(sort) => Some(End {
+            Ending::AfterHole(sort) => Some(End {
                 mold,
                 tail: Crossed::Hole(sort),
                 cost: cost.hole(),
             }),
-            | Ending::Not => None,
+            Ending::Not => None,
         };
         if let Some(end) = end {
             offer(&mut best, end);
@@ -477,9 +477,9 @@ fn offer(
 )
 {
     match best.first_mut() {
-        | Some(held) if held.cost <= end.cost => {},
-        | Some(held) => *held = end,
-        | None => best.push(end),
+        Some(held) if held.cost <= end.cost => {},
+        Some(held) => *held = end,
+        None => best.push(end),
     }
 }
 
@@ -509,8 +509,8 @@ fn ending(
     }
     if bool::from(pbg.mold_has_required_tail(mold)) {
         return match right_sort(pbg, mold) {
-            | Crossed::Hole(sort) => Ending::AfterHole(sort),
-            | Crossed::Nothing => Ending::Not,
+            Crossed::Hole(sort) => Ending::AfterHole(sort),
+            Crossed::Nothing => Ending::Not,
         };
     }
     Ending::Not
@@ -584,8 +584,8 @@ fn right_sort(
     steps
         .iter()
         .find_map(|step| match step.crossed {
-            | StepSym::Sort(sort) => Some(Crossed::Hole(sort)),
-            | StepSym::Tile(_) => None,
+            StepSym::Sort(sort) => Some(Crossed::Hole(sort)),
+            StepSym::Tile(_) => None,
         })
         .unwrap_or(Crossed::Nothing)
 }
@@ -792,12 +792,12 @@ pub fn closings(
             .get(at.0)
             .is_some_and(|trail| trail.link == Link::Root);
         let end = match ending(pbg, mold) {
-            | Ending::Here => Some((cost, Crossed::Nothing)),
-            | Ending::AfterHole(_) if start && leading == LeadingSlot::Occupied => {
+            Ending::Here => Some((cost, Crossed::Nothing)),
+            Ending::AfterHole(_) if start && leading == LeadingSlot::Occupied => {
                 Some((cost, Crossed::Nothing))
             },
-            | Ending::AfterHole(sort) => Some((cost.hole(), Crossed::Hole(sort))),
-            | Ending::Not => None,
+            Ending::AfterHole(sort) => Some((cost.hole(), Crossed::Hole(sort))),
+            Ending::Not => None,
         };
         if let Some((charged, tail)) = end {
             let _queued = queue.insert((charged, Next::End(tail), mold, at));
@@ -941,8 +941,8 @@ fn on_trail(
             return Visited::Already;
         }
         match trail.link {
-            | Link::Root => return Visited::Not,
-            | Link::After { previous, .. } => index = previous,
+            Link::Root => return Visited::Not,
+            Link::After { previous, .. } => index = previous,
         }
     }
     Visited::Not
@@ -991,9 +991,9 @@ fn trace(
         if let Some(before) = trails.get(previous.0) {
             let filled = before.link == Link::Root && leading == LeadingSlot::Occupied;
             let hole = match crossed {
-                | Crossed::Hole(sort) => Crossed::Hole(sort),
-                | Crossed::Nothing if filled => Crossed::Nothing,
-                | Crossed::Nothing => empty_pair(pbg, before.mold, mold),
+                Crossed::Hole(sort) => Crossed::Hole(sort),
+                Crossed::Nothing if filled => Crossed::Nothing,
+                Crossed::Nothing => empty_pair(pbg, before.mold, mold),
             };
             if let Crossed::Hole(sort) = hole {
                 reversed.push(Step::Hole {
@@ -1095,8 +1095,8 @@ fn reads_alike(
             .iter()
             .zip(&closing.0)
             .all(|(&left_step, &right_step)| match (left_step, right_step) {
-                | (Step::Tile(left), Step::Tile(right)) => label(left) == label(right),
-                | (
+                (Step::Tile(left), Step::Tile(right)) => label(left) == label(right),
+                (
                     Step::Hole {
                         sort: left,
                         after: left_after,
@@ -1106,7 +1106,7 @@ fn reads_alike(
                         after: right_after,
                     },
                 ) => left == right && label(left_after) == label(right_after),
-                | (Step::Tile(_), Step::Hole { .. }) | (Step::Hole { .. }, Step::Tile(_)) => false,
+                (Step::Tile(_), Step::Hole { .. }) | (Step::Hole { .. }, Step::Tile(_)) => false,
             });
     if alike {
         Reading::Alike
@@ -1256,8 +1256,8 @@ mod tests
             .steps()
             .iter()
             .map(|&step| match step {
-                | Step::Tile(mold) => label(mold).to_owned(),
-                | Step::Hole { sort, after } => alloc::format!("<{sort:?}@{}>", label(after)),
+                Step::Tile(mold) => label(mold).to_owned(),
+                Step::Hole { sort, after } => alloc::format!("<{sort:?}@{}>", label(after)),
             })
             .collect::<Vec<_>>()
             .join(" ")
@@ -1345,11 +1345,11 @@ mod tests
             lexemes.insert(alloc::format!("{:?}", token.lexeme));
             for offered in candidate_labels(token.lexeme, TokenText::from(text)) {
                 match tile_spelling(offered) {
-                    | TileSpelling::Literal(spelled) => assert!(
+                    TileSpelling::Literal(spelled) => assert!(
                         spelled == text || (text.starts_with("#!") && spelled == "#!{"),
                         "`{text}` offers `{offered:?}`, spelled `{spelled}`"
                     ),
-                    | TileSpelling::Class(class) => {
+                    TileSpelling::Class(class) => {
                         assert_eq!(class, <&str>::from(offered), "a class names itself");
                         assert_ne!(class, text, "`{text}` is not its own class");
                     },

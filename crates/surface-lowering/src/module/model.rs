@@ -424,8 +424,8 @@ impl<'source> Collector<'_, 'source>
             })
             .and_then(|slot| self.collected.descriptions.get(&slot.introduced_by.node))
             .and_then(|entry| match entry.presentation {
-                | Maybe::Present(ref presentation) => Some(presentation),
-                | Maybe::Absent(_) => None,
+                Maybe::Present(ref presentation) => Some(presentation),
+                Maybe::Absent(_) => None,
             });
         let Some(presentation) = presented
         else {
@@ -451,11 +451,11 @@ impl<'source> Collector<'_, 'source>
                 name: self.name_of(derived.named),
                 named: sign,
                 form: match derived.form {
-                    | Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
+                    Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
                         ComponentForm::Abstract(Maybe::Absent(component_kind::Absent::Derived))
                     },
-                    | Ok(ModelForm::Sort { .. }) => ComponentForm::Family(FamilyForm::Derived),
-                    | Ok(ModelForm::Operation { .. } | ModelForm::Law { .. }) | Err(_) => {
+                    Ok(ModelForm::Sort { .. }) => ComponentForm::Family(FamilyForm::Derived),
+                    Ok(ModelForm::Operation { .. } | ModelForm::Law { .. }) | Err(_) => {
                         ComponentForm::Derived
                     },
                 },
@@ -495,13 +495,13 @@ impl<'source> Collector<'_, 'source>
         }
         loop {
             let named = match cursor.peek() {
-                | Maybe::Present(Piece::Tile { label, at })
+                Maybe::Present(Piece::Tile { label, at })
                     if label == TileName::TYPE_VARIABLE || label == TileName::IDENTIFIER =>
                 {
                     let _named = cursor.tile(label);
                     at
                 },
-                | Maybe::Present(_) | Maybe::Absent(_) => {
+                Maybe::Present(_) | Maybe::Absent(_) => {
                     return Err(misplaced_in(FormName::PARAMETER, cursor.here()));
                 },
             };
@@ -558,8 +558,8 @@ impl<'source> Collector<'_, 'source>
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, kind.node, &mut pieces)?;
         let Some(domain) = pieces.pieces.iter().find_map(|piece| match *piece {
-            | Piece::Operand(operand) => Some(operand),
-            | Piece::Tile { .. } => None,
+            Piece::Operand(operand) => Some(operand),
+            Piece::Tile { .. } => None,
         })
         else {
             return Ok(OperandCount::from(0_usize));
@@ -582,8 +582,8 @@ impl<'source> Collector<'_, 'source>
         let mut written = false;
         for piece in &entries.pieces {
             match *piece {
-                | Piece::Operand(_) => written = true,
-                | Piece::Tile { label, .. } => {
+                Piece::Operand(_) => written = true,
+                Piece::Tile { label, .. } => {
                     if label == TileName::COMMA || label == TileName::PAREN_CLOSE {
                         count = count.saturating_add(usize::from(written));
                         written = false;
@@ -661,14 +661,14 @@ impl<'source> Collector<'_, 'source>
             return;
         }
         let stated = match form {
-            | FamilyForm::Written(kind) => match self.kind_arity(kind) {
-                | Ok(count) => count,
-                | Err(refusal) => {
+            FamilyForm::Written(kind) => match self.kind_arity(kind) {
+                Ok(count) => count,
+                Err(refusal) => {
                     refuse(self, refusal);
                     return;
                 },
             },
-            | FamilyForm::Derived => self.derived_indices(model, place),
+            FamilyForm::Derived => self.derived_indices(model, place),
         };
         let Some(member) = member
         else {
@@ -680,8 +680,8 @@ impl<'source> Collector<'_, 'source>
             return;
         };
         let family = match member.meaning {
-            | TypeMeaning::Family(family) => Some(family),
-            | TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
+            TypeMeaning::Family(family) => Some(family),
+            TypeMeaning::Manifest(_) | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
                 None
             },
         };
@@ -711,7 +711,7 @@ impl<'source> Collector<'_, 'source>
             held: member.held,
         });
         let check = match form {
-            | FamilyForm::Written(kind) => {
+            FamilyForm::Written(kind) => {
                 let (expectation, attributes) = self.member_expectation(member.held);
                 let witness = SlotIndex(self.collected.slots.len());
                 self.collected.slots.push(DeclarationSlot {
@@ -731,7 +731,7 @@ impl<'source> Collector<'_, 'source>
                 self.collected.scopes.push((kind.node, scope));
                 witness
             },
-            | FamilyForm::Derived => {
+            FamilyForm::Derived => {
                 self.held(container, component.name, component.named, component.named)
             },
         };
@@ -772,8 +772,8 @@ impl<'source> Collector<'_, 'source>
                 .get(index.0)
                 .and_then(|signature| signature.components.get(place.0))
                 .map_or(0_usize, |component| match component.form {
-                    | Ok(ModelForm::Sort { ref indices }) => indices.len(),
-                    | Ok(ModelForm::Operation { .. } | ModelForm::Law { .. }) | Err(_) => 0_usize,
+                    Ok(ModelForm::Sort { ref indices }) => indices.len(),
+                    Ok(ModelForm::Operation { .. } | ModelForm::Law { .. }) | Err(_) => 0_usize,
                 }),
         )
     }
@@ -830,12 +830,12 @@ impl<'source> Collector<'_, 'source>
             .and_then(|signature| signature.components.get(place.0))
             .and_then(|derived| derived.form.as_ref().err().copied());
         let refusal = match (fault, self.member_named(container, component.name)) {
-            | (Some(fault), _) => LoweringRefusal::UnstatedComponent {
+            (Some(fault), _) => LoweringRefusal::UnstatedComponent {
                 span: component.named.span,
                 name: component.name,
                 fault,
             },
-            | (None, Maybe::Present(Member::Slot(slot))) => {
+            (None, Maybe::Present(Member::Slot(slot))) => {
                 let part = ModelPart {
                     model,
                     component: place,
@@ -848,13 +848,13 @@ impl<'source> Collector<'_, 'source>
                 );
                 return Maybe::Present(Member::Slot(slot));
             },
-            | (None, Maybe::Present(Member::Module(_))) => LoweringRefusal::OutOfFragment {
+            (None, Maybe::Present(Member::Module(_))) => LoweringRefusal::OutOfFragment {
                 span: component.named.span,
                 form: FormName::MODULE,
                 sort: FragmentSort::Module,
                 boundary: FragmentBoundary::WrongSort,
             },
-            | (None, Maybe::Absent(_)) => LoweringRefusal::UnknownMember {
+            (None, Maybe::Absent(_)) => LoweringRefusal::UnknownMember {
                 span: component.named.span,
                 module,
                 member: component.name,
@@ -913,27 +913,83 @@ pub fn spine_domains<'source>(
             return Ok(domains);
         };
         let former = match shape_of(pbg, node)? {
-            | Shape::Form { former, .. } => former,
-            | Shape::Root | Shape::Repair(_) | Shape::Layout => return Ok(domains),
+            Shape::Form { former, .. } => former,
+            Shape::Root | Shape::Repair(_) | Shape::Layout => return Ok(domains),
         };
         let mut pieces = Pieces::new();
         read_pieces(pbg, tree, position.node, &mut pieces)?;
         let mut cursor = Cursor::new(&pieces.pieces, position.span);
         position = match former {
-            | Former::ArrowType => {
+            Former::ArrowType => {
                 domains.push(one_in(FormName::MODULE, cursor.operands())?);
                 if let Maybe::Absent(_) = cursor.tile(TileName::ARROW) {
                     return Err(misplaced_in(FormName::MODULE, cursor.here()));
                 }
                 one_in(FormName::MODULE, cursor.operands())?
             },
-            | Former::ParenthesizedType if !domains.is_empty() => {
+            Former::ParenthesizedType if !domains.is_empty() => {
                 if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
                     return Err(misplaced_in(FormName::MODULE, cursor.here()));
                 }
                 one_in(FormName::MODULE, cursor.operands())?
             },
-            | _ => return Ok(domains),
+            Former::Name
+            | Former::Constructor
+            | Former::Hole
+            | Former::Number
+            | Former::Text
+            | Former::Parenthesized
+            | Former::Unit
+            | Former::Thunk
+            | Former::Lambda
+            | Former::Block
+            | Former::Return
+            | Former::Exit
+            | Former::Become
+            | Former::Loop
+            | Former::While
+            | Former::For
+            | Former::Break
+            | Former::Continue
+            | Former::Force
+            | Former::Run
+            | Former::Call
+            | Former::Case
+            | Former::Telescope
+            | Former::Injection
+            | Former::LazyRecord
+            | Former::Binary
+            | Former::Unary
+            | Former::Projection
+            | Former::TypeHead
+            | Former::TypePath
+            | Former::Universe
+            | Former::TypeApplication
+            | Former::ThunkType
+            | Former::ReturnerType
+            | Former::ProductType
+            | Former::SumType
+            | Former::LazyProductType
+            | Former::TelescopeType
+            | Former::LabelledSumType
+            | Former::LazyRecordType
+            | Former::ValueFunctionType
+            | Former::StaticAbstraction
+            | Former::ParenthesizedType
+            | Former::PathType
+            | Former::CapabilityType
+            | Former::Scope
+            | Former::Declaration
+            | Former::AttributeBlock
+            | Former::Import
+            | Former::Module
+            | Former::Data
+            | Former::Instantiation
+            | Former::SessionType
+            | Former::Action
+            | Former::Offer
+            | Former::Reserved
+            | Former::Unadmitted => return Ok(domains),
         };
     }
 }

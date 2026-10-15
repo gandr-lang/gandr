@@ -479,53 +479,47 @@ impl fmt::Display for IdentityError
     ) -> fmt::Result
     {
         match *self {
-            | Self::OutsideFold(_) => f.write_str("identity at a type outside the identity fold"),
-            | Self::EndpointsDiffer { .. } => {
-                f.write_str("reflexivity between differing endpoints")
-            },
-            | Self::RelatedEndpointsDiffer { .. } => {
+            Self::OutsideFold(_) => f.write_str("identity at a type outside the identity fold"),
+            Self::EndpointsDiffer { .. } => f.write_str("reflexivity between differing endpoints"),
+            Self::RelatedEndpointsDiffer { .. } => {
                 f.write_str("a definition's related endpoints do not replay")
             },
-            | Self::NeutralFibre => f.write_str("an identity fibre is neutral"),
-            | Self::EmptyFibre => f.write_str("an identity fibre is empty"),
-            | Self::HigherFieldRequired => {
+            Self::NeutralFibre => f.write_str("an identity fibre is neutral"),
+            Self::EmptyFibre => f.write_str("an identity fibre is empty"),
+            Self::HigherFieldRequired => {
                 f.write_str("an identity of universe paths needs a higher field")
             },
-            | Self::HigherEvaluationRequired => {
+            Self::HigherEvaluationRequired => {
                 f.write_str("an identity of functions needs a higher evaluation")
             },
-            | Self::RecursiveObservation => {
+            Self::RecursiveObservation => {
                 f.write_str("a list identity needs a guarded observation")
             },
-            | Self::CertificateOperation => {
+            Self::CertificateOperation => {
                 f.write_str("a universe identity needs certificate evidence")
             },
-            | Self::Boundary => f.write_str("identity endpoints do not share a boundary"),
-            | Self::ZeroDepth => f.write_str("a higher field requests no layer"),
-            | Self::NonProductive(_) => f.write_str("non-productive higher field"),
-            | Self::DepthBound => f.write_str("a higher field exhausted its allowance"),
-            | Self::UnknownLayer(_) => f.write_str("a higher field names an absent layer"),
-            | Self::GuardEvidence => {
+            Self::Boundary => f.write_str("identity endpoints do not share a boundary"),
+            Self::ZeroDepth => f.write_str("a higher field requests no layer"),
+            Self::NonProductive(_) => f.write_str("non-productive higher field"),
+            Self::DepthBound => f.write_str("a higher field exhausted its allowance"),
+            Self::UnknownLayer(_) => f.write_str("a higher field names an absent layer"),
+            Self::GuardEvidence => {
                 f.write_str("a higher field's evidence does not match its guards")
             },
-            | Self::Coverage => f.write_str("a higher evaluation does not match its coverage"),
-            | Self::CoverageBudget => {
+            Self::Coverage => f.write_str("a higher evaluation does not match its coverage"),
+            Self::CoverageBudget => {
                 f.write_str("higher-evaluation coverage exhausted its allowance")
             },
-            | Self::Evaluation { .. } => {
-                f.write_str("a higher evaluation's dialogue did not replay")
-            },
-            | Self::OpenFunctions => f.write_str("a higher evaluation relates open functions"),
-            | Self::QuantifiedStep { .. } => {
+            Self::Evaluation { .. } => f.write_str("a higher evaluation's dialogue did not replay"),
+            Self::OpenFunctions => f.write_str("a higher evaluation relates open functions"),
+            Self::QuantifiedStep { .. } => {
                 f.write_str("a quantified step does not apply its premise's functions at one input")
             },
-            | Self::HigherOrderDomain { .. } => f.write_str(
+            Self::HigherOrderDomain { .. } => f.write_str(
                 "a quantified evaluation applies a function whose domain is higher order",
             ),
-            | Self::ReturnedNonReturner(_) => {
-                f.write_str("a returned endpoint over a non-returner")
-            },
-            | Self::NotOver { .. } => f.write_str("an identity that does not lie over its path"),
+            Self::ReturnedNonReturner(_) => f.write_str("a returned endpoint over a non-returner"),
+            Self::NotOver { .. } => f.write_str("an identity that does not lie over its path"),
         }
     }
 }
@@ -1001,12 +995,12 @@ fn diagonal_endpoint(
 ) -> Result<ValueId, KernelError>
 {
     match arena.value(endpoint) {
-        | Some(&Value::Here { .. }) => fibers
+        Some(&Value::Here { .. }) => fibers
             .diagonal(arena)
             .map(|diagonal| diagonal.value)
             .map_err(|error| relation_refusal(arena, error)),
-        | Some(_) => Ok(endpoint),
-        | None => Err(KernelError::ArenaFault),
+        Some(_) => Ok(endpoint),
+        None => Err(KernelError::ArenaFault),
     }
 }
 
@@ -1097,13 +1091,13 @@ pub fn higher_codata(
     let mut nodes = Vec::with_capacity(program.layers.len());
     for layer in &program.layers {
         nodes.push(match *layer {
-            | HigherLayer::Guard { tail } => Layer::Guard {
+            HigherLayer::Guard { tail } => Layer::Guard {
                 evidence: guards
                     .next()
                     .ok_or(KernelError::Identity(IdentityError::GuardEvidence))?,
                 tail: higher_id(tail)?,
             },
-            | HigherLayer::Redirect(target) => Layer::Redirect(higher_id(target)?),
+            HigherLayer::Redirect(target) => Layer::Redirect(higher_id(target)?),
         });
     }
     if guards.next().is_some() {
@@ -1249,7 +1243,7 @@ pub(crate) fn quantified_obligations(
         let first = values.next().ok_or_else(coverage)?;
         let second = values.next().ok_or_else(coverage)?;
         quantified.push(match *step {
-            | QuantifiedStep::Return(_) => Quantified::Return {
+            QuantifiedStep::Return(_) => Quantified::Return {
                 left: Evaluation {
                     value: first,
                     dialogue: left_dialogue,
@@ -1260,7 +1254,7 @@ pub(crate) fn quantified_obligations(
                 },
                 proof: values.next().ok_or_else(coverage)?,
             },
-            | QuantifiedStep::Apply { fibre, .. } => Quantified::Apply {
+            QuantifiedStep::Apply { fibre, .. } => Quantified::Apply {
                 fibre,
                 left: NormalForm {
                     normal: first,
@@ -1372,12 +1366,12 @@ pub(crate) fn path_parts(
 ) -> Result<(ValueTypeId, ValueId, ValueId), KernelError>
 {
     match arena.value_type(ty) {
-        | Some(&ValueType::Path {
+        Some(&ValueType::Path {
             domain,
             left,
             right,
         }) => Ok((domain, left, right)),
-        | _ => Err(KernelError::ValueShapeMismatch {
+        _ => Err(KernelError::ValueShapeMismatch {
             expected: ExpectedValueShape::Path,
             actual: value_type_witness(arena, ty),
         }),
@@ -1404,35 +1398,35 @@ fn relation_refusal(
 ) -> KernelError
 {
     let refusal = match error {
-        | RelationError::UnsupportedType(ty) => {
+        RelationError::UnsupportedType(ty) => {
             IdentityError::OutsideFold(value_type_witness(arena, ty))
         },
         // The fold refuses a sealed atom for want of its interface; every
         // reading here meets that domain as open first, where the identity is
         // its own neutral fibre.
-        | RelationError::AbstractInterface(_) | RelationError::NeutralFiber => {
+        RelationError::AbstractInterface(_) | RelationError::NeutralFiber => {
             IdentityError::NeutralFibre
         },
-        | RelationError::Typing(error) | RelationError::Pointwise(_, error) => return *error,
-        | RelationError::Path(error) => return KernelError::Path(*error),
-        | RelationError::Evidence => IdentityError::EmptyFibre,
-        | RelationError::HigherFieldRequired => IdentityError::HigherFieldRequired,
-        | RelationError::HigherEvaluationRequired => IdentityError::HigherEvaluationRequired,
-        | RelationError::RecursiveObservationRequired => IdentityError::RecursiveObservation,
-        | RelationError::CertificateOperationRequired => IdentityError::CertificateOperation,
-        | RelationError::Boundary => IdentityError::Boundary,
-        | RelationError::Coverage => IdentityError::Coverage,
-        | RelationError::Budget => IdentityError::CoverageBudget,
-        | RelationError::Evaluation(component, side, verdict) => IdentityError::Evaluation {
+        RelationError::Typing(error) | RelationError::Pointwise(_, error) => return *error,
+        RelationError::Path(error) => return KernelError::Path(*error),
+        RelationError::Evidence => IdentityError::EmptyFibre,
+        RelationError::HigherFieldRequired => IdentityError::HigherFieldRequired,
+        RelationError::HigherEvaluationRequired => IdentityError::HigherEvaluationRequired,
+        RelationError::RecursiveObservationRequired => IdentityError::RecursiveObservation,
+        RelationError::CertificateOperationRequired => IdentityError::CertificateOperation,
+        RelationError::Boundary => IdentityError::Boundary,
+        RelationError::Coverage => IdentityError::Coverage,
+        RelationError::Budget => IdentityError::CoverageBudget,
+        RelationError::Evaluation(component, side, verdict) => IdentityError::Evaluation {
             component,
             side,
             verdict,
         },
-        | RelationError::QuantifiedStep(component) => IdentityError::QuantifiedStep { component },
-        | RelationError::HigherOrderDomain(component) => {
+        RelationError::QuantifiedStep(component) => IdentityError::QuantifiedStep { component },
+        RelationError::HigherOrderDomain(component) => {
             IdentityError::HigherOrderDomain { component }
         },
-        | RelationError::Arena
+        RelationError::Arena
         | RelationError::UnsupportedCode(_)
         | RelationError::NonFibrant
         | RelationError::Classifier => return KernelError::ArenaFault,
@@ -1459,20 +1453,20 @@ fn higher_refusal(
 {
     let position = |id: HigherId| u32::try_from(id.0).map(LayerPosition);
     let refusal = match error {
-        | HigherError::Relation(error) => return relation_refusal(arena, error),
-        | HigherError::Path(error) => return KernelError::Path(*error),
-        | HigherError::Boundary => IdentityError::Boundary,
-        | HigherError::NonProductive(id) => match position(id) {
-            | Ok(layer) => IdentityError::NonProductive(layer),
-            | Err(_) => return KernelError::ArenaFault,
+        HigherError::Relation(error) => return relation_refusal(arena, error),
+        HigherError::Path(error) => return KernelError::Path(*error),
+        HigherError::Boundary => IdentityError::Boundary,
+        HigherError::NonProductive(id) => match position(id) {
+            Ok(layer) => IdentityError::NonProductive(layer),
+            Err(_) => return KernelError::ArenaFault,
         },
-        | HigherError::UnknownLayer(id) => match position(id) {
-            | Ok(layer) => IdentityError::UnknownLayer(layer),
-            | Err(_) => return KernelError::ArenaFault,
+        HigherError::UnknownLayer(id) => match position(id) {
+            Ok(layer) => IdentityError::UnknownLayer(layer),
+            Err(_) => return KernelError::ArenaFault,
         },
-        | HigherError::DepthBound => IdentityError::DepthBound,
-        | HigherError::ZeroDepth => IdentityError::ZeroDepth,
-        | HigherError::ExpectedEquivalence
+        HigherError::DepthBound => IdentityError::DepthBound,
+        HigherError::ZeroDepth => IdentityError::ZeroDepth,
+        HigherError::ExpectedEquivalence
         | HigherError::Replay(_)
         | HigherError::NeutralTransport => return KernelError::ArenaFault,
     };
@@ -1530,11 +1524,11 @@ where
         value,
     } = term;
     match arena.value(path) {
-        | Some(&Value::Here { .. }) => {
+        Some(&Value::Here { .. }) => {
             return Ok(Reduction::Reduced(arena.computation_return(value)));
         },
-        | Some(_) => {},
-        | None => return Err(KernelError::ArenaFault),
+        Some(_) => {},
+        None => return Err(KernelError::ArenaFault),
     }
     if binder_use(arena, table, memo, Family::Type(motive)) == BinderUse::Ignored {
         return Ok(Reduction::Reduced(arena.computation_return(value)));
@@ -1544,13 +1538,13 @@ where
         .cloned()
         .ok_or(KernelError::ArenaFault)?;
     match family {
-        | ValueType::Product(parts) => {
+        ValueType::Product(parts) => {
             let components = match arena.value(value) {
-                | Some(&Value::Tuple(ref components)) if components.len() == parts.len() => {
+                Some(&Value::Tuple(ref components)) if components.len() == parts.len() => {
                     components.clone()
                 },
-                | Some(_) => return Ok(Reduction::Stuck),
-                | None => return Err(KernelError::ArenaFault),
+                Some(_) => return Ok(Reduction::Stuck),
+                None => return Err(KernelError::ArenaFault),
             };
             Ok(Reduction::Reduced(componentwise(
                 arena,
@@ -1561,11 +1555,11 @@ where
                 path,
             )?))
         },
-        | ValueType::Sum(parts) => {
+        ValueType::Sum(parts) => {
             let (summand, payload) = match arena.value(value) {
-                | Some(&Value::Injection(summand, payload)) => (summand, payload),
-                | Some(_) => return Ok(Reduction::Stuck),
-                | None => return Err(KernelError::ArenaFault),
+                Some(&Value::Injection(summand, payload)) => (summand, payload),
+                Some(_) => return Ok(Reduction::Stuck),
+                None => return Err(KernelError::ArenaFault),
             };
             let Some(&part) = parts.get(usize::from(summand))
             else {
@@ -1577,7 +1571,7 @@ where
             let returned = arena.computation_return(injected);
             Ok(Reduction::Reduced(arena.computation_bind(step, returned)))
         },
-        | ValueType::Element { code, target } => {
+        ValueType::Element { code, target } => {
             let universe_family = matches!(arena.value(code), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
                 && target == Level::zero();
             Ok(if universe_family {
@@ -1587,7 +1581,7 @@ where
                 Reduction::Stuck
             })
         },
-        | ValueType::Path {
+        ValueType::Path {
             domain,
             left,
             right,
@@ -1603,14 +1597,14 @@ where
                 Reduction::Stuck
             })
         },
-        | ValueType::List(element) => {
+        ValueType::List(element) => {
             let (head, tail) = match arena.value(value) {
-                | Some(&Value::ListNil) => {
+                Some(&Value::ListNil) => {
                     return Ok(Reduction::Reduced(arena.computation_return(value)));
                 },
-                | Some(&Value::ListCons(head, tail)) => (head, tail),
-                | Some(_) => return Ok(Reduction::Stuck),
-                | None => return Err(KernelError::ArenaFault),
+                Some(&Value::ListCons(head, tail)) => (head, tail),
+                Some(_) => return Ok(Reduction::Stuck),
+                None => return Err(KernelError::ArenaFault),
             };
             Ok(Reduction::Reduced(cell(
                 arena,
@@ -1622,7 +1616,19 @@ where
                 (head, tail),
             )))
         },
-        | _ => Ok(Reduction::Stuck),
+        ValueType::Data { .. }
+        | ValueType::Record(_)
+        | ValueType::Session { .. }
+        | ValueType::PathUniverse(..)
+        | ValueType::FlowUniverse(..)
+        | ValueType::Flow { .. }
+        | ValueType::Base(_)
+        | ValueType::Sigma { .. }
+        | ValueType::Thunk(_)
+        | ValueType::Universe { .. }
+        | ValueType::Lift { .. }
+        | ValueType::Abstract(_)
+        | ValueType::StaticPi { .. } => Ok(Reduction::Stuck),
     }
 }
 
@@ -1680,19 +1686,19 @@ pub(crate) fn telescope(
 ) -> Result<Maybe<Telescope, telescope_motive::Absent>, KernelError>
 {
     let (carrier, inner) = match arena.comp_type(motive) {
-        | Some(&CompType::Pi { domain, codomain }) => (domain, codomain),
-        | Some(_) => return Ok(Maybe::Absent(telescope_motive::Absent::Shape)),
-        | None => return Err(KernelError::ArenaFault),
+        Some(&CompType::Pi { domain, codomain }) => (domain, codomain),
+        Some(_) => return Ok(Maybe::Absent(telescope_motive::Absent::Shape)),
+        None => return Err(KernelError::ArenaFault),
     };
     let (family, innermost) = match arena.comp_type(inner) {
-        | Some(&CompType::Pi { domain, codomain }) => (domain, codomain),
-        | Some(_) => return Ok(Maybe::Absent(telescope_motive::Absent::Shape)),
-        | None => return Err(KernelError::ArenaFault),
+        Some(&CompType::Pi { domain, codomain }) => (domain, codomain),
+        Some(_) => return Ok(Maybe::Absent(telescope_motive::Absent::Shape)),
+        None => return Err(KernelError::ArenaFault),
     };
     let body = match arena.comp_type(innermost) {
-        | Some(&CompType::Returner(body)) => body,
-        | Some(_) => return Ok(Maybe::Absent(telescope_motive::Absent::Shape)),
-        | None => return Err(KernelError::ArenaFault),
+        Some(&CompType::Returner(body)) => body,
+        Some(_) => return Ok(Maybe::Absent(telescope_motive::Absent::Shape)),
+        None => return Err(KernelError::ArenaFault),
     };
     if [carrier, family, body]
         .iter()
@@ -1797,23 +1803,23 @@ where
         ..
     } = term;
     let body = match telescope(arena, motive)? {
-        | Maybe::Present(Telescope { body, .. }) => body,
-        | Maybe::Absent(telescope_motive::Absent::Shape) => return Ok(Reduction::Stuck),
+        Maybe::Present(Telescope { body, .. }) => body,
+        Maybe::Absent(telescope_motive::Absent::Shape) => return Ok(Reduction::Stuck),
     };
     let point = match arena.value(path) {
-        | Some(&Value::Here { point, .. }) => point,
-        | Some(_) => return Ok(Reduction::Stuck),
-        | None => return Err(KernelError::ArenaFault),
+        Some(&Value::Here { point, .. }) => point,
+        Some(_) => return Ok(Reduction::Stuck),
+        None => return Err(KernelError::ArenaFault),
     };
     match arena.value(over) {
-        | Some(&Value::Here { .. }) => Ok(Reduction::Reduced(arena.computation_return(value))),
-        | Some(_) => {
+        Some(&Value::Here { .. }) => Ok(Reduction::Reduced(arena.computation_return(value))),
+        Some(_) => {
             let fibre = substitute_outer_value_type(arena, table, memo, body, point);
             Ok(Reduction::Reduced(
                 arena.computation_path_transport(fibre, over, value),
             ))
         },
-        | None => Err(KernelError::ArenaFault),
+        None => Err(KernelError::ArenaFault),
     }
 }
 
@@ -1843,8 +1849,8 @@ impl Mover
     ) -> ComputationId
     {
         match self {
-            | Self::Transport => arena.computation_path_transport(motive, along, value),
-            | Self::Ride => arena.computation_ride(motive, along, value),
+            Self::Transport => arena.computation_path_transport(motive, along, value),
+            Self::Ride => arena.computation_ride(motive, along, value),
         }
     }
 }
@@ -2002,8 +2008,8 @@ where
 {
     let mut reach = LooseDepths::new();
     let before = u32::from(match family {
-        | Family::Type(ty) => reach.value_type_reach(arena, ty),
-        | Family::Value(value) => reach.value_reach(arena, value),
+        Family::Type(ty) => reach.value_type_reach(arena, ty),
+        Family::Value(value) => reach.value_reach(arena, value),
     });
     if before == 0 {
         return BinderUse::Ignored;
@@ -2014,11 +2020,11 @@ where
     let fresh = arena.value_variable(DeBruijnIndex::from(before));
     let mut reach = LooseDepths::new();
     let after = u32::from(match family {
-        | Family::Type(ty) => {
+        Family::Type(ty) => {
             let instantiated = substitute_value_type(arena, table, memo, ty, fresh);
             reach.value_type_reach(arena, instantiated)
         },
-        | Family::Value(value) => {
+        Family::Value(value) => {
             let instantiated = substitute_value(arena, table, memo, value, fresh);
             reach.value_reach(arena, instantiated)
         },
@@ -2077,11 +2083,11 @@ where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let function = match arena.value(term.path) {
-        | Some(&Value::Here {
+        Some(&Value::Here {
             point: function, ..
         }) => function,
-        | Some(_) => return Ok(Reduction::Stuck),
-        | None => return Err(KernelError::ArenaFault),
+        Some(_) => return Ok(Reduction::Stuck),
+        None => return Err(KernelError::ArenaFault),
     };
     if equal_values(arena, term.left, term.right) != Convertibility::Convertible {
         return Ok(Reduction::Stuck);

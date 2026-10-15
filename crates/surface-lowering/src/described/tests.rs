@@ -171,8 +171,8 @@ fn a_sign_answers_at_every_member()
     let wire = entry(&types, span("(x′)", "x′"), DescribedRole::Term);
     let joined = entry(&types, span("==> x′", "x′"), DescribedRole::Term);
     let code = |entry: DescribedType| match arena.value_type(entry.ty) {
-        | Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
-        | _ => None,
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
     };
     assert!(code(wire).is_some(), "an element of a sort");
     assert_eq!(code(wire), code(joined), "a rewrite's sides share a sort");

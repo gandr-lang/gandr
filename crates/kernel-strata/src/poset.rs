@@ -183,8 +183,8 @@ impl EvidenceSubject
     pub(crate) const fn to_horn(self) -> HVar
     {
         match self {
-            | Self::Bottom => HVar::Bottom,
-            | Self::Variable(variable) => HVar::Var(variable),
+            Self::Bottom => HVar::Bottom,
+            Self::Variable(variable) => HVar::Var(variable),
         }
     }
 
@@ -196,8 +196,8 @@ impl EvidenceSubject
     pub(crate) const fn from_horn(variable: HVar) -> Self
     {
         match variable {
-            | HVar::Bottom => Self::Bottom,
-            | HVar::Var(level_var) => Self::Variable(level_var),
+            HVar::Bottom => Self::Bottom,
+            HVar::Var(level_var) => Self::Variable(level_var),
         }
     }
 }
@@ -215,8 +215,8 @@ impl fmt::Display for EvidenceSubject
     ) -> fmt::Result
     {
         match *self {
-            | Self::Bottom => f.write_str("the constant (bottom) generator"),
-            | Self::Variable(variable) => write!(f, "variable {}", variable.index()),
+            Self::Bottom => f.write_str("the constant (bottom) generator"),
+            Self::Variable(variable) => write!(f, "variable {}", variable.index()),
         }
     }
 }
@@ -271,16 +271,14 @@ impl fmt::Display for PosetError
     ) -> fmt::Result
     {
         match *self {
-            | Self::ConstantInConstraint => {
+            Self::ConstantInConstraint => {
                 f.write_str("a declared constraint side mentions a constant")
             },
-            | Self::Overflow => {
-                f.write_str("poset arithmetic stepped past the representable range")
-            },
-            | Self::UnexpectedDivergence => {
+            Self::Overflow => f.write_str("poset arithmetic stepped past the representable range"),
+            Self::UnexpectedDivergence => {
                 f.write_str("a query diverged on an admitted poset (excluded by admission)")
             },
-            | Self::EvidenceIncomplete => {
+            Self::EvidenceIncomplete => {
                 f.write_str("evidence extraction missed its targets (excluded by the theory)")
             },
         }
@@ -857,40 +855,40 @@ impl fmt::Display for PosetEvidenceError
     ) -> fmt::Result
     {
         match *self {
-            | Self::EmptyLoop => f.write_str("the loop witness has no members"),
-            | Self::UnknownClause { clause } => {
+            Self::EmptyLoop => f.write_str("the loop witness has no members"),
+            Self::UnknownClause { clause } => {
                 write!(f, "step names clause {clause} outside the compiled system")
             },
-            | Self::ShiftBelowMinimum { clause } => {
+            Self::ShiftBelowMinimum { clause } => {
                 write!(f, "step on clause {clause} fires below the minimum shift")
             },
-            | Self::BodyUnavailable { clause } => {
+            Self::BodyUnavailable { clause } => {
                 write!(f, "step on clause {clause} fires without its body")
             },
-            | Self::TargetUncovered { subject } => {
+            Self::TargetUncovered { subject } => {
                 write!(f, "the target over {subject} is not covered")
             },
-            | Self::MissingAssignment { variable } => write!(
+            Self::MissingAssignment { variable } => write!(
                 f,
                 "the witness assigns no value to variable {}",
                 variable.index()
             ),
-            | Self::ConstraintViolated { index } => {
+            Self::ConstraintViolated { index } => {
                 write!(f, "declared constraint {index} fails under the witness")
             },
-            | Self::MissingValue { variable } => write!(
+            Self::MissingValue { variable } => write!(
                 f,
                 "the countermodel assigns no value to variable {}",
                 variable.index()
             ),
-            | Self::SeedUnsatisfied { subject } => {
+            Self::SeedUnsatisfied { subject } => {
                 write!(f, "the countermodel misses the seed over {subject}")
             },
-            | Self::ClauseUnsatisfied { clause } => {
+            Self::ClauseUnsatisfied { clause } => {
                 write!(f, "the countermodel violates clause {clause}")
             },
-            | Self::NotRefuting => f.write_str("the recorded goal is not refuted"),
-            | Self::Overflow => f.write_str("evaluating the evidence overflowed"),
+            Self::NotRefuting => f.write_str("the recorded goal is not refuted"),
+            Self::Overflow => f.write_str("evaluating the evidence overflowed"),
         }
     }
 }
@@ -1243,8 +1241,8 @@ fn extract_loop_witness(
 ) -> Result<LoopWitness, PosetError>
 {
     let inside = |variable: HVar| match variable {
-        | HVar::Var(level_var) => members.contains(&level_var),
-        | HVar::Bottom => false,
+        HVar::Var(level_var) => members.contains(&level_var),
+        HVar::Bottom => false,
     };
     let mut filtered = Vec::new();
     let mut indices = Vec::new();
@@ -1422,10 +1420,10 @@ fn compile(constraints: &[LandmarkConstraint]) -> Vec<HornClause>
         let left_atoms = level_atoms(constraint.left());
         let right_atoms = level_atoms(constraint.right());
         match constraint.relation() {
-            | ConstraintRelation::Leq => {
+            ConstraintRelation::Leq => {
                 push_family(&mut clauses, &right_atoms, &left_atoms);
             },
-            | ConstraintRelation::Eq => {
+            ConstraintRelation::Eq => {
                 push_family(&mut clauses, &left_atoms, &right_atoms);
                 push_family(&mut clauses, &right_atoms, &left_atoms);
             },
@@ -1628,8 +1626,8 @@ pub fn validate_consistency(
         let left = evaluate_side(constraint.left(), witness)?;
         let right = evaluate_side(constraint.right(), witness)?;
         let holds = match constraint.relation() {
-            | ConstraintRelation::Leq => left <= right,
-            | ConstraintRelation::Eq => left == right,
+            ConstraintRelation::Leq => left <= right,
+            ConstraintRelation::Eq => left == right,
         };
         if !holds {
             return Err(PosetEvidenceError::ConstraintViolated {
@@ -2384,8 +2382,8 @@ mod tests
     fn admitted(constraints: Vec<LandmarkConstraint>) -> LandmarkPoset
     {
         match LandmarkPoset::admit(constraints).expect("admission does not overflow") {
-            | AdmissionOutcome::Admitted(poset) => poset,
-            | AdmissionOutcome::Loop(witness) => {
+            AdmissionOutcome::Admitted(poset) => poset,
+            AdmissionOutcome::Loop(witness) => {
                 panic!(
                     "expected admission, got a loop over {:?}",
                     witness.members()
@@ -2415,8 +2413,8 @@ mod tests
     fn looped(constraints: &[LandmarkConstraint]) -> LoopWitness
     {
         match LandmarkPoset::admit(constraints.to_vec()).expect("admission does not overflow") {
-            | AdmissionOutcome::Loop(witness) => witness,
-            | AdmissionOutcome::Admitted(_poset) => panic!("expected a loop, got admission"),
+            AdmissionOutcome::Loop(witness) => witness,
+            AdmissionOutcome::Admitted(_poset) => panic!("expected a loop, got admission"),
         }
     }
 }

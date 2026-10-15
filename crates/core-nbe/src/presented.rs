@@ -157,8 +157,8 @@ fn declaration(
         return Ok(None);
     };
     match core.value_type(classifier) {
-        | Some(&ValueType::Data { declaration, .. }) => Ok(Some(declaration)),
-        | Some(_) | None => Ok(None),
+        Some(&ValueType::Data { declaration, .. }) => Ok(Some(declaration)),
+        Some(_) | None => Ok(None),
     }
 }
 
@@ -244,21 +244,21 @@ pub fn normal_form(
         else {
             let slice = Fuel::from(u32::try_from(u64::from(*fuel)).unwrap_or(u32::MAX));
             let (read, left) = match crate::eval::run_held(core, domain, definitions, slice, id) {
-                | Ok(ran) => ran,
-                | Err(EvalFault::OutOfFuel) => {
+                Ok(ran) => ran,
+                Err(EvalFault::OutOfFuel) => {
                     *fuel = RewriteFuel::from(0_u64);
                     return Ok(NormalForm::Exhausted);
                 },
-                | Err(fault) => return Err(ConversionFault::Evaluation(fault)),
+                Err(fault) => return Err(ConversionFault::Evaluation(fault)),
             };
             let spent = u32::from(slice).saturating_sub(u32::from(left));
             *fuel = RewriteFuel::from(u64::from(*fuel).saturating_sub(u64::from(spent)));
             match read {
-                | Some(read) => {
+                Some(read) => {
                     read_any = true;
                     pending.push(read);
                 },
-                | None => term.push(RuleTerm::Leaf(id)),
+                None => term.push(RuleTerm::Leaf(id)),
             }
             continue;
         };
@@ -281,9 +281,9 @@ pub fn normal_form(
         fuel,
     );
     match normalized {
-        | Err(_) => return Ok(NormalForm::Exhausted),
-        | Ok(Normalized::Unchanged) if !read_any => return Ok(NormalForm::Kept),
-        | Ok(Normalized::Unchanged | Normalized::Rewritten) => {},
+        Err(_) => return Ok(NormalForm::Exhausted),
+        Ok(Normalized::Unchanged) if !read_any => return Ok(NormalForm::Kept),
+        Ok(Normalized::Unchanged | Normalized::Rewritten) => {},
     }
     let mut built: Vec<DomainValueId> = Vec::new();
     while let Some(node) = term.pop() {
@@ -302,8 +302,8 @@ pub fn normal_form(
         fields.reverse();
         let kept = kept(domain, origin, &fields)?;
         let rebuilt = match kept {
-            | Origin::Written(id) => id,
-            | Origin::Rewritten => {
+            Origin::Written(id) => id,
+            Origin::Rewritten => {
                 let span = domain.hold_fields(fields);
                 domain.value_constructor(datatype, tag, span, TermFace::Reduced)
             },
@@ -429,8 +429,8 @@ mod tests
         fn tag(self) -> ConstructorTag
         {
             ConstructorTag::from(match self {
-                | Self::Loop => 1_usize,
-                | Self::Unloop => 2,
+                Self::Loop => 1_usize,
+                Self::Unloop => 2,
             })
         }
     }
@@ -574,8 +574,8 @@ mod tests
             EngineClaim::Convertible,
             decisions.iter().map(|decision| {
                 decision.map(|node: TraceNode| match node {
-                    | TraceNode::Constant(constant) => ReplayNode::Constant(constant),
-                    | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+                    TraceNode::Constant(constant) => ReplayNode::Constant(constant),
+                    TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
                 })
             }),
             ReplayBudget::DEFAULT,
@@ -712,8 +712,8 @@ mod tests
             EngineClaim::Convertible,
             decisions.iter().map(|decision| {
                 decision.map(|node: TraceNode| match node {
-                    | TraceNode::Constant(constant) => ReplayNode::Constant(constant),
-                    | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+                    TraceNode::Constant(constant) => ReplayNode::Constant(constant),
+                    TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
                 })
             }),
             ReplayBudget::DEFAULT,

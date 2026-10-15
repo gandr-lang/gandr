@@ -183,8 +183,8 @@ fn head(
 ) -> Head
 {
     match arena.value(word) {
-        | Some(&Value::Here { .. }) => Head::Empty,
-        | Some(&Value::Constructor {
+        Some(&Value::Here { .. }) => Head::Empty,
+        Some(&Value::Constructor {
             datatype,
             tag,
             ref fields,
@@ -206,11 +206,11 @@ fn head(
                 return Head::Empty;
             }
             match *fields.as_slice() {
-                | [rest] => Head::Letter { tag, words, rest },
-                | _ => Head::Other,
+                [rest] => Head::Letter { tag, words, rest },
+                _ => Head::Other,
             }
         },
-        | _ => Head::Other,
+        _ => Head::Other,
     }
 }
 
@@ -242,12 +242,12 @@ fn spelled(
     let mut at = word;
     loop {
         match head(arena, presentations, at) {
-            | Head::Empty => return Some((letters, at)),
-            | Head::Letter { rest, .. } => {
+            Head::Empty => return Some((letters, at)),
+            Head::Letter { rest, .. } => {
                 letters.push(at);
                 at = rest;
             },
-            | Head::Other => return None,
+            Head::Other => return None,
         }
     }
 }
@@ -450,14 +450,14 @@ fn calls(
     };
     let bound = |argument: ValueId| matches!(arena.value(argument), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32));
     let applied = |call: ComputationId| match arena.computation(call) {
-        | Some(&Computation::Application(head, argument)) => match arena.computation(head) {
-            | Some(&Computation::Force(function)) => match arena.value(function) {
-                | Some(&Value::Constant(constant)) => Some((constant, argument)),
-                | _ => None,
+        Some(&Computation::Application(head, argument)) => match arena.computation(head) {
+            Some(&Computation::Force(function)) => match arena.value(function) {
+                Some(&Value::Constant(constant)) => Some((constant, argument)),
+                _ => None,
             },
-            | _ => None,
+            _ => None,
         },
-        | _ => None,
+        _ => None,
     };
     let mut outermost_first = Vec::new();
     loop {
@@ -512,8 +512,8 @@ fn point(
     let sort = arena.value_type_data(cells.sort(), Vec::new());
     let mut open = false;
     let built = build_side(cells.point(), arities, |node, fields| match node {
-        | RuleNode::Constructor(tag) => arena.value_constructor(sort, tag, fields),
-        | RuleNode::Variable(_) => {
+        RuleNode::Constructor(tag) => arena.value_constructor(sort, tag, fields),
+        RuleNode::Variable(_) => {
             open = true;
             arena.value_unit()
         },
@@ -683,8 +683,8 @@ where
     let fixed = shift_value(arena, table, memo, fixed, BinderDepth::NONE, amount);
     let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
     match moving {
-        | gandr_kernel_term::Side::Left => arena.value_type_path(carrier, bound, fixed),
-        | gandr_kernel_term::Side::Right => arena.value_type_path(carrier, fixed, bound),
+        gandr_kernel_term::Side::Left => arena.value_type_path(carrier, bound, fixed),
+        gandr_kernel_term::Side::Right => arena.value_type_path(carrier, fixed, bound),
     }
 }
 
@@ -729,9 +729,9 @@ where
     };
     let cell = FreeCells::generator(tag)?;
     let mut built = match loop_arm(arena, (table, memo), unfoldings, innermost, (words, cell))? {
-        | Arm::Unwritten => arena.computation_return(rest),
-        | Arm::Written(arm) if usize::from(tag) % 2 == 1 => arm,
-        | Arm::Written(arm) => {
+        Arm::Unwritten => arena.computation_return(rest),
+        Arm::Written(arm) if usize::from(tag) % 2 == 1 => arm,
+        Arm::Written(arm) => {
             let back = path_family(
                 arena,
                 (table, memo),
@@ -845,9 +845,9 @@ where
         return Reduction::Reduced(arena.computation_bind(along, transported));
     }
     let (tag, words, rest) = match head(arena, presentations, path) {
-        | Head::Empty => (FreeCells::nil(), None, path),
-        | Head::Letter { tag, words, rest } => (tag, Some(words), rest),
-        | Head::Other => return Reduction::Stuck,
+        Head::Empty => (FreeCells::nil(), None, path),
+        Head::Letter { tag, words, rest } => (tag, Some(words), rest),
+        Head::Other => return Reduction::Stuck,
     };
     if words.is_some() && head(arena, presentations, rest) != Head::Empty {
         let Some(&Value::Constructor { datatype, .. }) = arena.value(path)
@@ -902,9 +902,9 @@ where
         return Reduction::Stuck;
     };
     let fixed_image = |action: &Action| match *action {
-        | Action::Fixed => Some(rest),
-        | Action::Moving => Some(path),
-        | Action::Through(_) => None,
+        Action::Fixed => Some(rest),
+        Action::Moving => Some(path),
+        Action::Through(_) => None,
     };
     if let (Some(left_image), Some(right_image)) =
         (fixed_image(&left_action), fixed_image(&right_action))
@@ -927,9 +927,9 @@ where
     let left_at = substitute_value(arena, table, memo, left, at);
     let right_at = substitute_value(arena, table, memo, right, at);
     let mut images = |action: &Action, fixed: ValueId| match *action {
-        | Action::Fixed => Some(None),
-        | Action::Moving => Some(Some(arena.computation_return(path))),
-        | Action::Through(ref chain) => image(
+        Action::Fixed => Some(None),
+        Action::Moving => Some(Some(arena.computation_return(path))),
+        Action::Through(ref chain) => image(
             arena,
             (table, memo),
             unfoldings,
@@ -968,8 +968,8 @@ where
     });
     // `w · r(ℓ)`, along the right image in `z. Path(C, l(pt), z)`.
     let reduct = match (before, right_image) {
-        | (Some(before), None) => before,
-        | (None, Some(right_image)) => {
+        (Some(before), None) => before,
+        (None, Some(right_image)) => {
             let family = path_family(
                 arena,
                 (table, memo),
@@ -989,7 +989,7 @@ where
             let moved = arena.computation_path_transport(family, bound, lifted);
             arena.computation_bind(right_image, moved)
         },
-        | (Some(before), Some(right_image)) => {
+        (Some(before), Some(right_image)) => {
             let one = BinderDepth::from(1_u32);
             let lifted_image =
                 shift_computation(arena, table, memo, right_image, BinderDepth::NONE, one);
@@ -1006,7 +1006,7 @@ where
             let after = arena.computation_bind(lifted_image, moved);
             arena.computation_bind(before, after)
         },
-        | (None, None) => return Reduction::Stuck,
+        (None, None) => return Reduction::Stuck,
     };
     Reduction::Reduced(reduct)
 }

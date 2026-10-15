@@ -160,10 +160,9 @@ impl Liveness
         branches: Vec<BranchStatus>,
     ) -> Maybe<Vec<BranchStatus>, displaced::Absent>
     {
-        match self.matches.insert(origin, branches) {
-            | Some(previous) => Maybe::Present(previous),
-            | None => Maybe::Absent(displaced::Absent::Fresh),
-        }
+        self.matches
+            .insert(origin, branches)
+            .map_or(Maybe::Absent(displaced::Absent::Fresh), Maybe::Present)
     }
 
     /// Name a submission whose source records were not retained.
@@ -678,8 +677,11 @@ mod tests
         events
             .iter()
             .filter_map(|event| match *event {
-                | SynthesisEvent::Match { origin, .. } => Some(origin),
-                | _ => None,
+                SynthesisEvent::Match { origin, .. } => Some(origin),
+                SynthesisEvent::Started { .. }
+                | SynthesisEvent::Item { .. }
+                | SynthesisEvent::SourceNotRetained { .. }
+                | SynthesisEvent::Completed => None,
             })
             .collect()
     }

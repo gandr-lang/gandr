@@ -801,8 +801,8 @@ where
             };
         };
         let result = match rewrite_at(cell, &current, &step.at) {
-            | Maybe::Present(result) => result,
-            | Maybe::Absent(reason) => {
+            Maybe::Present(result) => result,
+            Maybe::Absent(reason) => {
                 return ReplayPathOutcome::Stuck {
                     application: step.clone(),
                     reason: StuckStep::DoesNotFire(reason),
@@ -1102,8 +1102,8 @@ mod tests
         let mut covered = [false; 2];
         for (application, reason, class) in rows {
             let row = match reason {
-                | StuckStep::UnissuedCell => 0,
-                | StuckStep::DoesNotFire(_) => 1,
+                StuckStep::UnissuedCell => 0,
+                StuckStep::DoesNotFire(_) => 1,
             };
             covered[row] = true;
             assert_eq!(

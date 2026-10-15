@@ -465,8 +465,35 @@ impl Value
     pub fn components(&self) -> Option<&[ValueId]>
     {
         match *self {
-            | Self::Tuple(ref components) => Some(components),
-            | _ => None,
+            Self::Tuple(ref components) => Some(components),
+            Self::Constructor { .. }
+            | Self::Record(_)
+            | Self::SessionPath { .. }
+            | Self::SessionFlow { .. }
+            | Self::Stay { .. }
+            | Self::ForwardFlow { .. }
+            | Self::FunctionFlow { .. }
+            | Self::Then { .. }
+            | Self::FlowProduct(..)
+            | Self::PathRefl(_)
+            | Self::PathProduct(..)
+            | Self::PathEquiv { .. }
+            | Self::Here { .. }
+            | Self::Returned(_)
+            | Self::Higher { .. }
+            | Self::HigherEvaluation { .. }
+            | Self::QuantifiedEvaluation { .. }
+            | Self::Variable(_)
+            | Self::Constant(_)
+            | Self::Literal(_)
+            | Self::Injection(..)
+            | Self::ListNil
+            | Self::ListCons(..)
+            | Self::Thunk(_)
+            | Self::Lift { .. }
+            | Self::Quote(_)
+            | Self::QuoteComputation(_)
+            | Self::StaticApplication(..) => None,
         }
     }
 }
@@ -747,52 +774,52 @@ impl TryFrom<EvidenceWord> for gandr_kernel_conversion_trace::ConversionDecision
         use gandr_kernel_conversion_trace::ConversionSide;
         let invalid = crate::MalformedSite::PathEvidence;
         Ok(match word.0 {
-            | 0 => Self::ReduceLeft { redex: () },
-            | 1 => Self::ReduceRight { redex: () },
-            | 2 => Self::ConstShortcut { constant: () },
-            | 3 => Self::Unfold { constant: () },
-            | 4 => Self::Postpone { constant: () },
-            | 5 => Self::Freeze {
+            0 => Self::ReduceLeft { redex: () },
+            1 => Self::ReduceRight { redex: () },
+            2 => Self::ConstShortcut { constant: () },
+            3 => Self::Unfold { constant: () },
+            4 => Self::Postpone { constant: () },
+            5 => Self::Freeze {
                 constant: (),
                 side: ConversionSide::Left,
             },
-            | 6 => Self::Freeze {
+            6 => Self::Freeze {
                 constant: (),
                 side: ConversionSide::Right,
             },
-            | 7 => Self::EtaExpand {
+            7 => Self::EtaExpand {
                 variable: (),
                 side: ConversionSide::Left,
             },
-            | 8 => Self::EtaExpand {
+            8 => Self::EtaExpand {
                 variable: (),
                 side: ConversionSide::Right,
             },
-            | 9 => Self::Force { thunk: () },
-            | 10 => Self::ComparedShared {
+            9 => Self::Force { thunk: () },
+            10 => Self::ComparedShared {
                 left: (),
                 right: (),
             },
-            | 11 => Self::Decompose,
-            | value if value & 0xFF_u64 == 0x0C_u64 => {
+            11 => Self::Decompose,
+            value if value & 0xFF_u64 == 0x0C_u64 => {
                 let position = u32::try_from(value >> 8_u32).map_err(|_error| invalid)?;
                 Self::NegativeSubgoal {
                     position: position.into(),
                 }
             },
-            | 0x0D => Self::ReturnEta {
+            0x0D => Self::ReturnEta {
                 side: ConversionSide::Left,
             },
-            | 0x0E => Self::ReturnEta {
+            0x0E => Self::ReturnEta {
                 side: ConversionSide::Right,
             },
-            | 0x0F => Self::Reassociate {
+            0x0F => Self::Reassociate {
                 side: ConversionSide::Left,
             },
-            | 0x10 => Self::Reassociate {
+            0x10 => Self::Reassociate {
                 side: ConversionSide::Right,
             },
-            | _ => return Err(invalid),
+            _ => return Err(invalid),
         })
     }
 }
@@ -855,43 +882,43 @@ pub fn decision_word(
     use gandr_kernel_conversion_trace::ConversionDecision;
     use gandr_kernel_conversion_trace::ConversionSide;
     EvidenceWord(match decision {
-        | ConversionDecision::ReduceLeft { .. } => 0,
-        | ConversionDecision::ReduceRight { .. } => 1,
-        | ConversionDecision::ConstShortcut { .. } => 2,
-        | ConversionDecision::Unfold { .. } => 3,
-        | ConversionDecision::Postpone { .. } => 4,
-        | ConversionDecision::Freeze {
+        ConversionDecision::ReduceLeft { .. } => 0,
+        ConversionDecision::ReduceRight { .. } => 1,
+        ConversionDecision::ConstShortcut { .. } => 2,
+        ConversionDecision::Unfold { .. } => 3,
+        ConversionDecision::Postpone { .. } => 4,
+        ConversionDecision::Freeze {
             side: ConversionSide::Left,
             ..
         } => 5,
-        | ConversionDecision::Freeze {
+        ConversionDecision::Freeze {
             side: ConversionSide::Right,
             ..
         } => 6,
-        | ConversionDecision::EtaExpand {
+        ConversionDecision::EtaExpand {
             side: ConversionSide::Left,
             ..
         } => 7,
-        | ConversionDecision::EtaExpand {
+        ConversionDecision::EtaExpand {
             side: ConversionSide::Right,
             ..
         } => 8,
-        | ConversionDecision::Force { .. } => 9,
-        | ConversionDecision::ComparedShared { .. } => 10,
-        | ConversionDecision::Decompose => 11,
-        | ConversionDecision::NegativeSubgoal { position } => {
+        ConversionDecision::Force { .. } => 9,
+        ConversionDecision::ComparedShared { .. } => 10,
+        ConversionDecision::Decompose => 11,
+        ConversionDecision::NegativeSubgoal { position } => {
             (u64::from(u32::from(position)) << 8_u32) | 0x0C_u64
         },
-        | ConversionDecision::ReturnEta {
+        ConversionDecision::ReturnEta {
             side: ConversionSide::Left,
         } => 0x0D,
-        | ConversionDecision::ReturnEta {
+        ConversionDecision::ReturnEta {
             side: ConversionSide::Right,
         } => 0x0E,
-        | ConversionDecision::Reassociate {
+        ConversionDecision::Reassociate {
             side: ConversionSide::Left,
         } => 0x0F,
-        | ConversionDecision::Reassociate {
+        ConversionDecision::Reassociate {
             side: ConversionSide::Right,
         } => 0x10,
     })
@@ -1048,8 +1075,8 @@ impl From<Side> for Summand
     fn from(side: Side) -> Self
     {
         match side {
-            | Side::Left => Self(0),
-            | Side::Right => Self(1),
+            Side::Left => Self(0),
+            Side::Right => Self(1),
         }
     }
 }
@@ -1069,9 +1096,9 @@ impl TryFrom<Summand> for Side
     fn try_from(summand: Summand) -> Result<Self, Self::Error>
     {
         match summand.0 {
-            | 0 => Ok(Self::Left),
-            | 1 => Ok(Self::Right),
-            | _ => Err(summand),
+            0 => Ok(Self::Left),
+            1 => Ok(Self::Right),
+            _ => Err(summand),
         }
     }
 }

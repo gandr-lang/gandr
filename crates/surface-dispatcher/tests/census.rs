@@ -80,9 +80,9 @@ mod census
         ) -> core::fmt::Result
         {
             match *self {
-                | Self::Entry(at) => write!(f, "{}", usize::from(at)),
-                | Self::Declaration => f.write_str("declaration"),
-                | Self::Run(constant) => write!(f, "run {}", usize::from(constant)),
+                Self::Entry(at) => write!(f, "{}", usize::from(at)),
+                Self::Declaration => f.write_str("declaration"),
+                Self::Run(constant) => write!(f, "run {}", usize::from(constant)),
             }
         }
     }
@@ -258,13 +258,13 @@ mod census
             };
             for read in table.read_back(&grammar, page, Form::Sugared) {
                 let class = match read.trip {
-                    | RoundTrip::Equal => "Equal",
-                    | RoundTrip::Different => "Different",
-                    | RoundTrip::Open => "Open",
-                    | RoundTrip::Refused(_) => "Refused",
-                    | RoundTrip::Unknown => "Unknown",
-                    | RoundTrip::Unparsed => "Unparsed",
-                    | RoundTrip::Unspelled => "Unspelled",
+                    RoundTrip::Equal => "Equal",
+                    RoundTrip::Different => "Different",
+                    RoundTrip::Open => "Open",
+                    RoundTrip::Refused(_) => "Refused",
+                    RoundTrip::Unknown => "Unknown",
+                    RoundTrip::Unparsed => "Unparsed",
+                    RoundTrip::Unspelled => "Unspelled",
                 };
                 *trips.entry(class).or_default() += 1;
             }

@@ -259,10 +259,10 @@ fn shape(
         focus = codomain;
     }
     match arena.comp_type(focus) {
-        | Some(&CompType::Returner { result, .. }) if focus != chain && names(result) => {
+        Some(&CompType::Returner { result, .. }) if focus != chain && names(result) => {
             FieldShape::Function(chain)
         },
-        | Some(
+        Some(
             &(CompType::Returner { .. }
             | CompType::With(..)
             | CompType::Arrow { .. }
@@ -307,17 +307,17 @@ fn function_hypothesis(
     let mut dependent = Binders::NONE;
     loop {
         match arena.comp_type(focus) {
-            | Some(&CompType::Arrow { domain, codomain }) => {
+            Some(&CompType::Arrow { domain, codomain }) => {
                 domains.push((domain, CompBinding::Closed));
                 focus = codomain;
             },
-            | Some(&CompType::Pi { domain, codomain }) => {
+            Some(&CompType::Pi { domain, codomain }) => {
                 domains.push((domain, CompBinding::Binds));
                 dependent = plus(dependent, Binders::ONE)?;
                 focus = codomain;
             },
-            | Some(&CompType::Returner { .. }) => break,
-            | Some(&(CompType::With(..) | CompType::Element { .. } | CompType::Unknown)) | None => {
+            Some(&CompType::Returner { .. }) => break,
+            Some(&(CompType::With(..) | CompType::Element { .. } | CompType::Unknown)) | None => {
                 return Err(DerivationRefusal::BinderCeiling);
             },
         }
@@ -326,8 +326,8 @@ fn function_hypothesis(
     let mut rebuilt = gandr_core_term::shift_comp_type(arena, closed, past);
     for &(domain, binding) in domains.iter().rev() {
         rebuilt = match binding {
-            | CompBinding::Closed => arena.comp_type_arrow(domain, rebuilt),
-            | CompBinding::Binds => arena.comp_type_pi(domain, rebuilt),
+            CompBinding::Closed => arena.comp_type_arrow(domain, rebuilt),
+            CompBinding::Binds => arena.comp_type_pi(domain, rebuilt),
         };
     }
     Ok(rebuilt)
@@ -437,14 +437,14 @@ pub fn derive(
             let distance = after;
             after = plus(after, Binders::ONE)?;
             let hypothesis = match *found {
-                | FieldShape::Plain => continue,
-                | FieldShape::Direct => {
+                FieldShape::Plain => continue,
+                FieldShape::Direct => {
                     let at = variable(arena, distance);
                     gandr_core_term::instantiate_comp_type(arena, lifted, at)
                 },
-                | FieldShape::Function(chain) => match closed {
-                    | Maybe::Present(motive) => function_hypothesis(arena, chain, motive, width)?,
-                    | Maybe::Absent(_) => return Err(DerivationRefusal::BinderCeiling),
+                FieldShape::Function(chain) => match closed {
+                    Maybe::Present(motive) => function_hypothesis(arena, chain, motive, width)?,
+                    Maybe::Absent(_) => return Err(DerivationRefusal::BinderCeiling),
                 },
             };
             let suspended = arena.value_type_thunk(hypothesis);
@@ -492,14 +492,14 @@ pub fn derive(
             let at = variable(arena, distance);
             applied = arena.computation_application(applied, at);
             let hypothesis = match *found {
-                | FieldShape::Plain => continue,
-                | FieldShape::Direct => {
+                FieldShape::Plain => continue,
+                FieldShape::Direct => {
                     let recursive = variable(arena, plus(width, Binders::ONE)?);
                     let forced = arena.computation_force(recursive);
                     let call = arena.computation_application(forced, at);
                     arena.value_thunk(call)
                 },
-                | FieldShape::Function(chain) => {
+                FieldShape::Function(chain) => {
                     let domains = arity(arena, chain)?;
                     let field_under = variable(arena, plus(distance, domains)?);
                     let mut run = arena.computation_force(field_under);

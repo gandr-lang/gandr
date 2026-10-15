@@ -23,8 +23,8 @@ where
     Reason: core::fmt::Debug,
 {
     match value {
-        | quenchant_shape::shape::Maybe::Present(value) => value,
-        | quenchant_shape::shape::Maybe::Absent(reason) => {
+        quenchant_shape::shape::Maybe::Present(value) => value,
+        quenchant_shape::shape::Maybe::Absent(reason) => {
             panic!("required witness is absent: {reason:?}")
         },
     }

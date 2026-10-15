@@ -117,10 +117,10 @@ impl Pattern
     pub fn parts(&self) -> Vec<PatternId>
     {
         match *self {
-            | Self::Pair(first, second) => Vec::from([first, second]),
-            | Self::Injection(_, body) => Vec::from([body]),
-            | Self::Constructor { ref fields, .. } => fields.clone(),
-            | Self::Wildcard | Self::Binder | Self::Unit | Self::Literal(_) | Self::Hole(_) => {
+            Self::Pair(first, second) => Vec::from([first, second]),
+            Self::Injection(_, body) => Vec::from([body]),
+            Self::Constructor { ref fields, .. } => fields.clone(),
+            Self::Wildcard | Self::Binder | Self::Unit | Self::Literal(_) | Self::Hole(_) => {
                 Vec::new()
             },
         }
@@ -269,11 +269,11 @@ impl BranchStatus
     ) -> Self
     {
         match (self, other) {
-            | (Self::Refuted, Self::Satisfied | Self::Possibly | Self::Refuted)
+            (Self::Refuted, Self::Satisfied | Self::Possibly | Self::Refuted)
             | (Self::Satisfied | Self::Possibly, Self::Refuted) => Self::Refuted,
-            | (Self::Possibly, Self::Satisfied | Self::Possibly)
+            (Self::Possibly, Self::Satisfied | Self::Possibly)
             | (Self::Satisfied, Self::Possibly) => Self::Possibly,
-            | (Self::Satisfied, Self::Satisfied) => Self::Satisfied,
+            (Self::Satisfied, Self::Satisfied) => Self::Satisfied,
         }
     }
 }

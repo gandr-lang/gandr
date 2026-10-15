@@ -109,10 +109,10 @@ impl Domain
     pub const fn tag(self) -> DomainTag
     {
         match self {
-            | Self::Node => DomainTag(b"gandr:storage-records:node:v1"),
-            | Self::Root => DomainTag(b"gandr:storage-records:root:v1"),
-            | Self::Record => DomainTag(b"gandr:storage-records:record:v1"),
-            | Self::Boundary => DomainTag(b"gandr:storage-records:boundary:v1"),
+            Self::Node => DomainTag(b"gandr:storage-records:node:v1"),
+            Self::Root => DomainTag(b"gandr:storage-records:root:v1"),
+            Self::Record => DomainTag(b"gandr:storage-records:record:v1"),
+            Self::Boundary => DomainTag(b"gandr:storage-records:boundary:v1"),
         }
     }
 }

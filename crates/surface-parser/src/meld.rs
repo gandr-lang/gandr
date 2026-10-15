@@ -1611,8 +1611,8 @@ impl<'pbg> MeldState<'pbg>
     )
     {
         let def = match self.pbg.mold(mold) {
-            | Ok(def) => *def,
-            | Err(_error) => {
+            Ok(def) => *def,
+            Err(_error) => {
                 self.push_unmolded(SourceFragment::from(text));
                 return;
             },
@@ -1637,20 +1637,20 @@ impl<'pbg> MeldState<'pbg>
         };
 
         match self.classify(mold) {
-            | Kind::FormStart { absorb_left } => {
+            Kind::FormStart { absorb_left } => {
                 self.open_form(mold, def.sort, cell, AbsorbsLeft::from(absorb_left));
             },
-            | Kind::FormMid => {
+            Kind::FormMid => {
                 self.continue_form(mold, def.sort, cell, FormEndTile::from(false));
             },
-            | Kind::FormEnd => {
+            Kind::FormEnd => {
                 self.continue_form(mold, def.sort, cell, FormEndTile::from(true));
             },
-            | Kind::Operand => {
+            Kind::Operand => {
                 self.reduce_toward(def.sort, def.prec, mold, span);
                 self.push_cell(cell);
             },
-            | Kind::Operator(shape) => {
+            Kind::Operator(shape) => {
                 self.reduce_toward(def.sort, def.prec, mold, span);
                 self.push_cell(Cell {
                     role: Role::Operator {
@@ -1742,8 +1742,8 @@ impl<'pbg> MeldState<'pbg>
             .iter()
             .rev()
             .filter_map(|&index| match self.stack.get(index)?.role {
-                | Role::FormTile { mold, .. } => Some(mold),
-                | Role::Operand | Role::Operator { .. } => None,
+                Role::FormTile { mold, .. } => Some(mold),
+                Role::Operand | Role::Operator { .. } => None,
             })
     }
 
@@ -1898,8 +1898,8 @@ impl<'pbg> MeldState<'pbg>
     {
         let index = self.nearest_open_form()?;
         match self.stack.get(usize::from(index)).map(|cell| cell.role) {
-            | Some(Role::FormTile { mold, .. }) => Some(mold),
-            | _ => None,
+            Some(Role::FormTile { mold, .. }) => Some(mold),
+            _ => None,
         }
     }
 
@@ -2215,10 +2215,10 @@ impl<'pbg> MeldState<'pbg>
             return MoldAdmissibility::from(false);
         }
         let admissible = match self.classify(mold) {
-            | Kind::FormEnd => frontier
+            Kind::FormEnd => frontier
                 .open
                 .is_some_and(|open| bool::from(self.adjacent(open, mold))),
-            | Kind::FormMid => {
+            Kind::FormMid => {
                 frontier
                     .open
                     .is_some_and(|open| bool::from(self.adjacent(open, mold)))
@@ -2234,7 +2234,7 @@ impl<'pbg> MeldState<'pbg>
             // — before any dry-run, collapsing the `[` / `(` / `#{` sort families
             // to their context-correct reading (Item form-starts stay exempt, so a
             // top-level `def` survives the Expression-defaulted slot).
-            | Kind::FormStart { absorb_left } => {
+            Kind::FormStart { absorb_left } => {
                 if absorb_left {
                     // The absorbing start applies only to a head operand of its
                     // own sort — never a top-level `def` item's Item-sorted head.
@@ -2247,16 +2247,14 @@ impl<'pbg> MeldState<'pbg>
                     bool::from(self.sort_admits(mold, frontier.expected))
                 }
             },
-            | Kind::Operator(OpShape::Infix | OpShape::Postfix) => {
-                bool::from(frontier.head_operand)
-            },
+            Kind::Operator(OpShape::Infix | OpShape::Postfix) => bool::from(frontier.head_operand),
             // An operand fills the open slot directly: the hole-sort check
             // discards one whose sort mismatches the expected slot, so a
             // lowercase word's expression-atom and pattern-atom molds
             // no longer both survive at every position — the matching-sort one is
             // usually the lone admissible candidate, taken with no dry-run.
-            | Kind::Operand => bool::from(self.sort_admits(mold, frontier.expected)),
-            | Kind::Operator(OpShape::Prefix) => true,
+            Kind::Operand => bool::from(self.sort_admits(mold, frontier.expected)),
+            Kind::Operator(OpShape::Prefix) => true,
         };
         MoldAdmissibility::from(admissible)
     }
@@ -2382,8 +2380,8 @@ impl<'pbg> MeldState<'pbg>
     {
         let cell = self.stack.last()?;
         match cell.role {
-            | Role::Operand => Some(cell.sort),
-            | _ => None,
+            Role::Operand => Some(cell.sort),
+            Role::FormTile { .. } | Role::Operator { .. } => None,
         }
     }
 
@@ -2447,17 +2445,17 @@ impl<'pbg> MeldState<'pbg>
         // rather than walking the whole top operand run — a shell block's run
         // holds every juxtaposed command atom (the sibling scan).
         let top_non_operand = match (self.operators.last(), self.barriers.last()) {
-            | (Some(&op), Some(&tile)) => op.max(tile),
-            | (Some(&op), None) => op,
-            | (None, Some(&tile)) => tile,
-            | (None, None) => return None,
+            (Some(&op), Some(&tile)) => op.max(tile),
+            (Some(&op), None) => op,
+            (None, Some(&tile)) => tile,
+            (None, None) => return None,
         };
         let limit = top_non_operand.checked_add(1)?;
         let mut index = limit.min(self.stack.len());
         while let Some(next_index) = index.checked_sub(1) {
             index = next_index;
             match self.stack.get(index).map(|cell| cell.role) {
-                | Some(Role::Operator { sort, shape, .. }) => {
+                Some(Role::Operator { sort, shape, .. }) => {
                     let wants_right = matches!(shape, OpShape::Infix | OpShape::Prefix);
                     let right_filled = index
                         .checked_add(1)
@@ -2466,13 +2464,13 @@ impl<'pbg> MeldState<'pbg>
                         return Some(sort);
                     }
                 },
-                | Some(Role::FormTile {
+                Some(Role::FormTile {
                     mold, open: true, ..
                 }) => {
                     return Some(self.frontier_hole_sort(mold).unwrap_or(Sort::Expression));
                 },
-                | Some(Role::FormTile { open: false, .. } | Role::Operand) => {},
-                | None => break,
+                Some(Role::FormTile { open: false, .. } | Role::Operand) => {},
+                None => break,
             }
         }
         None
@@ -2712,16 +2710,16 @@ impl<'pbg> MeldState<'pbg>
                 return TailWhole::from(false);
             }
             let fits = match cell.role {
-                | Role::Operand
+                Role::Operand
                 | Role::Operator {
                     shape: OpShape::Prefix,
                     ..
                 } => wants_operand,
-                | Role::Operator {
+                Role::Operator {
                     shape: OpShape::Infix | OpShape::Postfix,
                     ..
                 } => !wants_operand,
-                | Role::FormTile { .. } => false,
+                Role::FormTile { .. } => false,
             };
             if !fits {
                 return TailWhole::from(false);
@@ -2793,8 +2791,8 @@ impl<'pbg> MeldState<'pbg>
             .stack
             .get(usize::from(frontier))
             .and_then(|cell| match cell.role {
-                | Role::FormTile { mold, .. } => Some(mold),
-                | Role::Operand | Role::Operator { .. } => None,
+                Role::FormTile { mold, .. } => Some(mold),
+                Role::Operand | Role::Operator { .. } => None,
             })
             .and_then(|mold| {
                 Some((
@@ -2817,8 +2815,8 @@ impl<'pbg> MeldState<'pbg>
             })
         };
         TailExtension::from(match incoming {
-            | Incoming::Tile(tile) => continues(tile),
-            | Incoming::Token(labels) => <&[&str]>::from(labels).iter().any(|&label| {
+            Incoming::Tile(tile) => continues(tile),
+            Incoming::Token(labels) => <&[&str]>::from(labels).iter().any(|&label| {
                 self.pbg
                     .candidates(TileLabel(label))
                     .iter()
@@ -2898,14 +2896,14 @@ impl<'pbg> MeldState<'pbg>
                 self.stack
                     .get(content_index)
                     .is_some_and(|content| match content.role {
-                        | Role::Operand => {
+                        Role::Operand => {
                             self.stack.len() == content_index.saturating_add(1)
                                 && content.sort == expected
                         },
-                        | Role::FormTile {
+                        Role::FormTile {
                             start: true, sort, ..
                         } => sort == expected,
-                        | Role::FormTile { start: false, .. } | Role::Operator { .. } => false,
+                        Role::FormTile { start: false, .. } | Role::Operator { .. } => false,
                     })
             });
         TailUnderWay::from(under_way)
@@ -3283,13 +3281,13 @@ impl<'pbg> MeldState<'pbg>
         };
         // A left-bounded start absorbs the operand immediately below it.
         let low = match start_cell.role {
-            | Role::FormTile {
+            Role::FormTile {
                 absorb_left: true, ..
             } => start_index
                 .checked_sub(1)
                 .filter(|&below| bool::from(self.is_operand_at(StackIndex::from(below))))
                 .unwrap_or(start_index),
-            | _ => start_index,
+            Role::Operand | Role::FormTile { .. } | Role::Operator { .. } => start_index,
         };
         let Some(high_exclusive) = end_index.checked_add(1)
         else {
@@ -3413,11 +3411,11 @@ impl<'pbg> MeldState<'pbg>
             grouped
                 .iter()
                 .find_map(|&child| match self.emit_op(child) {
-                    | Some(&EmitOp::Token {
+                    Some(&EmitOp::Token {
                         label: NodeLabel::Tile(tile),
                         ..
                     }) => Some(tile),
-                    | Some(_) | None => None,
+                    Some(_) | None => None,
                 })
                 .unwrap_or(mold)
         }
@@ -3470,7 +3468,7 @@ impl<'pbg> MeldState<'pbg>
     {
         let source = self.source.as_str();
         let tile = |position: usize| match children.get(position).and_then(|&id| self.emit_op(id)) {
-            | Some(&EmitOp::Token {
+            Some(&EmitOp::Token {
                 label: NodeLabel::Tile(_),
                 start,
                 end,
@@ -3478,7 +3476,7 @@ impl<'pbg> MeldState<'pbg>
                 usize::try_from(start).unwrap_or(usize::MAX)
                     .. usize::try_from(end).unwrap_or(usize::MAX),
             ),
-            | Some(_) | None => None,
+            Some(_) | None => None,
         };
         let string = |position: usize| {
             matches!(
@@ -3523,12 +3521,12 @@ impl<'pbg> MeldState<'pbg>
                 entries.push((next, last, documentation));
                 let after = last.saturating_add(1);
                 match tile(after) {
-                    | Some(SEPARATOR) if tile(after.saturating_add(1)) == Some(ATTRIBUTE_CLOSE) => {
+                    Some(SEPARATOR) if tile(after.saturating_add(1)) == Some(ATTRIBUTE_CLOSE) => {
                         break Some(after.saturating_add(1));
                     },
-                    | Some(SEPARATOR) => next = after.saturating_add(1),
-                    | Some(ATTRIBUTE_CLOSE) => break Some(after),
-                    | Some(_) | None => break None,
+                    Some(SEPARATOR) => next = after.saturating_add(1),
+                    Some(ATTRIBUTE_CLOSE) => break Some(after),
+                    Some(_) | None => break None,
                 }
             };
             let Some(close) = close
@@ -3603,10 +3601,8 @@ impl<'pbg> MeldState<'pbg>
         id: EmitId,
     ) -> Option<NodeLabel>
     {
-        match self.emit_op(id) {
-            | Some(&(EmitOp::Token { label, .. } | EmitOp::Interior { label, .. })) => Some(label),
-            | None => None,
-        }
+        self.emit_op(id)
+            .map(|&(EmitOp::Token { label, .. } | EmitOp::Interior { label, .. })| label)
     }
 
     /// Return the start index of the form whose frontier is at `end_index`,
@@ -3690,16 +3686,16 @@ impl<'pbg> MeldState<'pbg>
             match self.compare(
                 head_mold, head_prec, head_sort, tau_mold, tau_prec, tau_sort,
             ) {
-                | Rel::Yields | Rel::Match => break,
-                | Rel::Takes => self.reduce_operator(head_index),
-                | Rel::Ambiguous => {
+                Rel::Yields | Rel::Match => break,
+                Rel::Takes => self.reduce_operator(head_index),
+                Rel::Ambiguous => {
                     // Route through the completion path: flag the ambiguity at
                     // the smallest responsible span (the incoming tile) and
                     // reduce the head level so the parse stays total.
                     self.flag(Oblig::AmbiguousPrec, tau_span);
                     self.reduce_operator(head_index);
                 },
-                | Rel::CrossSort => {
+                Rel::CrossSort => {
                     self.flag(Oblig::InconMeld, tau_span);
                     self.reduce_operator(head_index);
                 },
@@ -3807,14 +3803,14 @@ impl<'pbg> MeldState<'pbg>
         // flags, required tail and bounds; an id past the table is an operand,
         // which push routes to the unmolded path before classifying.
         match self.pbg.tile_kind(mold) {
-            | Ok(TileKind::Start) => Kind::FormStart { absorb_left: false },
-            | Ok(TileKind::AbsorbingStart) => Kind::FormStart { absorb_left: true },
-            | Ok(TileKind::Mid) => Kind::FormMid,
-            | Ok(TileKind::End) => Kind::FormEnd,
-            | Ok(TileKind::Prefix) => Kind::Operator(OpShape::Prefix),
-            | Ok(TileKind::Postfix) => Kind::Operator(OpShape::Postfix),
-            | Ok(TileKind::Infix) => Kind::Operator(OpShape::Infix),
-            | Ok(TileKind::Operand) | Err(_) => Kind::Operand,
+            Ok(TileKind::Start) => Kind::FormStart { absorb_left: false },
+            Ok(TileKind::AbsorbingStart) => Kind::FormStart { absorb_left: true },
+            Ok(TileKind::Mid) => Kind::FormMid,
+            Ok(TileKind::End) => Kind::FormEnd,
+            Ok(TileKind::Prefix) => Kind::Operator(OpShape::Prefix),
+            Ok(TileKind::Postfix) => Kind::Operator(OpShape::Postfix),
+            Ok(TileKind::Infix) => Kind::Operator(OpShape::Infix),
+            Ok(TileKind::Operand) | Err(_) => Kind::Operand,
         }
     }
 
@@ -3841,8 +3837,8 @@ impl<'pbg> MeldState<'pbg>
     {
         let operator = self.operators.last().copied()?;
         match self.barriers.last() {
-            | Some(&barrier) if barrier > operator => None,
-            | _ => Some(OperatorIndex::from(operator)),
+            Some(&barrier) if barrier > operator => None,
+            _ => Some(OperatorIndex::from(operator)),
         }
     }
 
@@ -3865,10 +3861,10 @@ impl<'pbg> MeldState<'pbg>
     ) -> Option<(MoldId, Prec, Sort)>
     {
         match self.stack.get(usize::from(index)).map(|cell| cell.role) {
-            | Some(Role::Operator {
+            Some(Role::Operator {
                 mold, prec, sort, ..
             }) => Some((mold, prec, sort)),
-            | _ => None,
+            _ => None,
         }
     }
 
@@ -3944,46 +3940,42 @@ impl<'pbg> MeldState<'pbg>
         let mut span_end = cell.end;
 
         if wants_left {
-            match left_index.and_then(|left| self.stack.get(left)) {
-                | Some(left_cell) => {
-                    children.push(left_cell.emit);
-                    span_start = left_cell.start;
-                },
-                | None => {
-                    let span = SourceSpan::point(SourceOffset::from(cell.start));
-                    let grout = self.emit_token(
-                        NodeLabel::Grout {
-                            sort: sort.grout_sort(),
-                            shape: GroutShape::Convex,
-                        },
-                        span,
-                    );
-                    children.push(grout);
-                    self.flag(Oblig::MissingMeld, span);
-                },
+            if let Some(left_cell) = left_index.and_then(|left| self.stack.get(left)) {
+                children.push(left_cell.emit);
+                span_start = left_cell.start;
+            }
+            else {
+                let span = SourceSpan::point(SourceOffset::from(cell.start));
+                let grout = self.emit_token(
+                    NodeLabel::Grout {
+                        sort: sort.grout_sort(),
+                        shape: GroutShape::Convex,
+                    },
+                    span,
+                );
+                children.push(grout);
+                self.flag(Oblig::MissingMeld, span);
             }
         }
 
         children.push(cell.emit);
 
         if wants_right {
-            match right_index.and_then(|right| self.stack.get(right)) {
-                | Some(right_cell) => {
-                    children.push(right_cell.emit);
-                    span_end = right_cell.end;
-                },
-                | None => {
-                    let span = SourceSpan::point(SourceOffset::from(cell.end));
-                    let grout = self.emit_token(
-                        NodeLabel::Grout {
-                            sort: sort.grout_sort(),
-                            shape: GroutShape::Convex,
-                        },
-                        span,
-                    );
-                    children.push(grout);
-                    self.flag(Oblig::MissingMeld, span);
-                },
+            if let Some(right_cell) = right_index.and_then(|right| self.stack.get(right)) {
+                children.push(right_cell.emit);
+                span_end = right_cell.end;
+            }
+            else {
+                let span = SourceSpan::point(SourceOffset::from(cell.end));
+                let grout = self.emit_token(
+                    NodeLabel::Grout {
+                        sort: sort.grout_sort(),
+                        shape: GroutShape::Convex,
+                    },
+                    span,
+                );
+                children.push(grout);
+                self.flag(Oblig::MissingMeld, span);
             }
         }
 
@@ -4034,8 +4026,8 @@ impl<'pbg> MeldState<'pbg>
         // is needed.
         while let Some(step) = self.highest_reducible(floor) {
             match step {
-                | CollapseStep::ForceCloseForm(frontier) => self.force_close_form(frontier),
-                | CollapseStep::ReduceOperator(operator) => self.reduce_operator(operator),
+                CollapseStep::ForceCloseForm(frontier) => self.force_close_form(frontier),
+                CollapseStep::ReduceOperator(operator) => self.reduce_operator(operator),
             }
         }
     }
@@ -4081,7 +4073,7 @@ impl<'pbg> MeldState<'pbg>
             .copied()
             .filter(|&index| index >= floor);
         match (operator, frontier) {
-            | (Some(op), Some(fr)) => {
+            (Some(op), Some(fr)) => {
                 if fr > op {
                     Some(CollapseStep::ForceCloseForm(FrontierIndex::from(fr)))
                 }
@@ -4089,9 +4081,9 @@ impl<'pbg> MeldState<'pbg>
                     Some(CollapseStep::ReduceOperator(OperatorIndex::from(op)))
                 }
             },
-            | (None, Some(fr)) => Some(CollapseStep::ForceCloseForm(FrontierIndex::from(fr))),
-            | (Some(op), None) => Some(CollapseStep::ReduceOperator(OperatorIndex::from(op))),
-            | (None, None) => None,
+            (None, Some(fr)) => Some(CollapseStep::ForceCloseForm(FrontierIndex::from(fr))),
+            (Some(op), None) => Some(CollapseStep::ReduceOperator(OperatorIndex::from(op))),
+            (None, None) => None,
         }
     }
 
@@ -4137,10 +4129,10 @@ impl<'pbg> MeldState<'pbg>
             .stack
             .get(frontier_index)
             .and_then(|cell| match cell.role {
-                | Role::FormTile { mold, .. } => {
+                Role::FormTile { mold, .. } => {
                     Some(bool::from(self.pbg.mold_has_required_tail(mold)))
                 },
-                | Role::Operand | Role::Operator { .. } => None,
+                Role::Operand | Role::Operator { .. } => None,
             })
             .unwrap_or(false);
         // A completable frontier (its mold in the grammar's LAST set) is already
@@ -4162,8 +4154,8 @@ impl<'pbg> MeldState<'pbg>
         };
         let sort = frontier_cell.sort;
         let frontier_mold = match frontier_cell.role {
-            | Role::FormTile { mold, .. } => mold,
-            | Role::Operand | Role::Operator { .. } => MoldId::from(u32::MAX),
+            Role::FormTile { mold, .. } => mold,
+            Role::Operand | Role::Operator { .. } => MoldId::from(u32::MAX),
         };
 
         // Append a ghost end tile so the form reads as a completed shape.
@@ -4293,14 +4285,14 @@ impl<'pbg> MeldState<'pbg>
     {
         let index = usize::from(index);
         match cell.role {
-            | Role::FormTile { open, .. } => {
+            Role::FormTile { open, .. } => {
                 self.barriers.push(index);
                 if open {
                     self.frontiers.push(index);
                 }
             },
-            | Role::Operator { .. } => self.operators.push(index),
-            | Role::Operand => {},
+            Role::Operator { .. } => self.operators.push(index),
+            Role::Operand => {},
         }
     }
 
@@ -4463,14 +4455,14 @@ impl<'pbg> MeldState<'pbg>
         let mut barriers = Vec::new();
         for (index, cell) in self.stack.iter().enumerate() {
             match cell.role {
-                | Role::FormTile { open, .. } => {
+                Role::FormTile { open, .. } => {
                     barriers.push(index);
                     if open {
                         frontiers.push(index);
                     }
                 },
-                | Role::Operator { .. } => operators.push(index),
-                | Role::Operand => {},
+                Role::Operator { .. } => operators.push(index),
+                Role::Operand => {},
             }
         }
         assert_eq!(self.frontiers, frontiers, "open-frontier cache is exact");
@@ -4827,7 +4819,7 @@ impl<'pbg> MeldState<'pbg>
         let mut obligations: Vec<ObligationInstance> = Vec::new();
         let mut innermost: Vec<usize> = Vec::with_capacity(1);
         self.shortfalls(|shortfall| match shortfall {
-            | Shortfall::Continuation {
+            Shortfall::Continuation {
                 mold,
                 frontier,
                 leading,
@@ -4843,7 +4835,7 @@ impl<'pbg> MeldState<'pbg>
                     obligations.push(ObligationInstance::new(Oblig::MissingTile, span));
                 }
             },
-            | Shortfall::RightOperand {
+            Shortfall::RightOperand {
                 sort, at, pending, ..
             } => {
                 if pending == PendingOperand::Absent {
@@ -4853,7 +4845,7 @@ impl<'pbg> MeldState<'pbg>
                     obligations.push(ObligationInstance::new(Oblig::MissingMeld, span));
                 }
             },
-            | Shortfall::LeftOperand { at } => {
+            Shortfall::LeftOperand { at } => {
                 if let Ok(span) = at.byte_span() {
                     obligations.push(ObligationInstance::new(Oblig::MissingMeld, span));
                 }
@@ -4902,8 +4894,8 @@ impl<'pbg> MeldState<'pbg>
         let mut delta = base;
         self.shortfalls(|shortfall| {
             let (class, span) = match shortfall {
-                | Shortfall::Continuation { frontier, .. } => (Oblig::MissingTile, frontier),
-                | Shortfall::RightOperand { at, .. } | Shortfall::LeftOperand { at } => {
+                Shortfall::Continuation { frontier, .. } => (Oblig::MissingTile, frontier),
+                Shortfall::RightOperand { at, .. } | Shortfall::LeftOperand { at } => {
                     (Oblig::MissingMeld, at)
                 },
             };
@@ -4949,7 +4941,7 @@ impl<'pbg> MeldState<'pbg>
                 break;
             };
             match cell.role {
-                | Role::FormTile {
+                Role::FormTile {
                     mold, open: true, ..
                 } => {
                     // A completable frontier (a `?` hole before its optional
@@ -4985,7 +4977,7 @@ impl<'pbg> MeldState<'pbg>
                         },
                     });
                 },
-                | Role::Operator {
+                Role::Operator {
                     mold, sort, shape, ..
                 } => {
                     let wants_right = matches!(shape, OpShape::Infix | OpShape::Prefix);
@@ -5020,7 +5012,7 @@ impl<'pbg> MeldState<'pbg>
                         });
                     }
                 },
-                | Role::FormTile { open: false, .. } | Role::Operand => {},
+                Role::FormTile { open: false, .. } | Role::Operand => {},
             }
         }
     }
@@ -5112,10 +5104,10 @@ impl<'pbg> MeldState<'pbg>
                 return;
             }
             match shortfall {
-                | Shortfall::Continuation { mold, leading, .. } => {
+                Shortfall::Continuation { mold, leading, .. } => {
                     head = HeadForm::Open { mold, leading };
                 },
-                | Shortfall::RightOperand {
+                Shortfall::RightOperand {
                     operator,
                     sort,
                     pending: under_way,
@@ -5131,14 +5123,14 @@ impl<'pbg> MeldState<'pbg>
                     }
                     operated = true;
                 },
-                | Shortfall::LeftOperand { .. } => {},
+                Shortfall::LeftOperand { .. } => {},
             }
         });
         let closings = match head {
-            | HeadForm::Open { mold, leading } => {
+            HeadForm::Open { mold, leading } => {
                 crate::closing::closings(self.pbg, mold, leading, limit)
             },
-            | HeadForm::Closed => Vec::new(),
+            HeadForm::Closed => Vec::new(),
         };
         Continuations {
             pending,
@@ -5326,10 +5318,10 @@ impl<'pbg> MeldState<'pbg>
             return SourceOffset::from(0);
         };
         match self.emit.get(index) {
-            | Some(&EmitOp::Token { start, .. } | &EmitOp::Interior { start, .. }) => {
+            Some(&EmitOp::Token { start, .. } | &EmitOp::Interior { start, .. }) => {
                 SourceOffset::from(start)
             },
-            | None => SourceOffset::from(0),
+            None => SourceOffset::from(0),
         }
     }
 
@@ -5347,10 +5339,10 @@ impl<'pbg> MeldState<'pbg>
             .ok()
             .and_then(|index| self.emit.get(index));
         match entry {
-            | Some(&EmitOp::Token { start, end, .. } | &EmitOp::Interior { start, end, .. }) => {
+            Some(&EmitOp::Token { start, end, .. } | &EmitOp::Interior { start, end, .. }) => {
                 SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
             },
-            | None => SourceSpan::point(SourceOffset::from(0)),
+            None => SourceSpan::point(SourceOffset::from(0)),
         }
     }
 
@@ -5368,8 +5360,8 @@ impl<'pbg> MeldState<'pbg>
             .ok()
             .and_then(|index| self.emit.get(index))
         {
-            | Some(&EmitOp::Interior { ref children, .. }) => children,
-            | Some(&EmitOp::Token { .. }) | None => &[],
+            Some(&EmitOp::Interior { ref children, .. }) => children,
+            Some(&EmitOp::Token { .. }) | None => &[],
         }
     }
 
@@ -5427,9 +5419,9 @@ impl<'pbg> MeldState<'pbg>
         let mut standing: Vec<EmitId> = Vec::new();
         for &child in self.emit_children(root) {
             match self.label_of(child) {
-                | Some(NodeLabel::Space) => layout.push(child),
-                | Some(NodeLabel::Doc) => standing.push(child),
-                | Some(_) | None => top.push(child),
+                Some(NodeLabel::Space) => layout.push(child),
+                Some(NodeLabel::Doc) => standing.push(child),
+                Some(_) | None => top.push(child),
             }
         }
         let written = |id: EmitId| {
@@ -5605,9 +5597,9 @@ impl<'pbg> MeldState<'pbg>
                 let breaks = written.matches('\n').count();
                 let blank = breaks > 1 && written.trim().is_empty();
                 seen = match (seen, breaks, blank) {
-                    | (Gap::Blank, ..) | (_, _, true) => Gap::Blank,
-                    | (Gap::Inline, 0, false) => Gap::Inline,
-                    | (Gap::Inline | Gap::Lines, ..) => Gap::Lines,
+                    (Gap::Blank, ..) | (_, _, true) => Gap::Blank,
+                    (Gap::Inline, 0, false) => Gap::Inline,
+                    (Gap::Inline | Gap::Lines, ..) => Gap::Lines,
                 };
             }
             seen
@@ -5877,13 +5869,13 @@ impl<'pbg> MeldState<'pbg>
             base, state: unit, ..
         } = unit;
         match base {
-            | UnitBase::SourceStart => {
+            UnitBase::SourceStart => {
                 if !self.emit.is_empty() || !self.source.is_empty() {
                     return UnitSeam::Broken(SeamBreak::NotAtStart);
                 }
                 *self = unit;
             },
-            | UnitBase::FormBoundary => {
+            UnitBase::FormBoundary => {
                 let Some(top) = self.stack.last()
                 else {
                     return UnitSeam::Broken(SeamBreak::NoForm);
@@ -5944,12 +5936,12 @@ impl<'pbg> MeldState<'pbg>
         self.source.push_str(&source);
         self.emit
             .extend(emit.into_iter().skip(1).map(|op| match op {
-                | EmitOp::Token { label, start, end } => EmitOp::Token {
+                EmitOp::Token { label, start, end } => EmitOp::Token {
                     label,
                     start: start.saturating_add(offset),
                     end: end.saturating_add(offset),
                 },
-                | EmitOp::Interior {
+                EmitOp::Interior {
                     label,
                     start,
                     end,
@@ -6121,17 +6113,17 @@ impl<'pbg> MeldState<'pbg>
                 break;
             };
             match edit {
-                | SlopeEdit::Pushed => {
+                SlopeEdit::Pushed => {
                     self.stack.pop();
                     floor = floor.min(self.stack.len());
                 },
-                | SlopeEdit::Overwritten { index, cell } => {
+                SlopeEdit::Overwritten { index, cell } => {
                     if let Some(slot) = self.stack.get_mut(index) {
                         *slot = cell;
                     }
                     floor = floor.min(index);
                 },
-                | SlopeEdit::Spliced { low, removed } => {
+                SlopeEdit::Spliced { low, removed } => {
                     let from = self.removed.len().saturating_sub(removed);
                     let end = low.saturating_add(1).min(self.stack.len());
                     self.stack
@@ -6831,11 +6823,11 @@ impl fmt::Display for MeldError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Build(ref error) => fmt::Display::fmt(error, f),
-            | Self::SourceMismatch => {
+            Self::Build(ref error) => fmt::Display::fmt(error, f),
+            Self::SourceMismatch => {
                 f.write_str("the source offered at commit is not the text the melder assembled")
             },
-            | Self::Corrupt => f.write_str("emission log referenced an out-of-range id"),
+            Self::Corrupt => f.write_str("emission log referenced an out-of-range id"),
         }
     }
 }
@@ -6861,8 +6853,8 @@ impl Error for MeldError
     fn source(&self) -> Option<&(dyn Error + 'static)>
     {
         match *self {
-            | Self::Build(ref error) => Some(error),
-            | Self::SourceMismatch | Self::Corrupt => None,
+            Self::Build(ref error) => Some(error),
+            Self::SourceMismatch | Self::Corrupt => None,
         }
     }
 }
@@ -6920,9 +6912,9 @@ impl fmt::Display for CheckpointError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Truncated => f.write_str("checkpoint byte stream is truncated"),
-            | Self::BadTag { tag } => write!(f, "checkpoint has an unknown discriminant tag {tag}"),
-            | Self::Malformed => f.write_str("checkpoint content is malformed"),
+            Self::Truncated => f.write_str("checkpoint byte stream is truncated"),
+            Self::BadTag { tag } => write!(f, "checkpoint has an unknown discriminant tag {tag}"),
+            Self::Malformed => f.write_str("checkpoint content is malformed"),
         }
     }
 }
@@ -7565,7 +7557,7 @@ fn read_emit_op(reader: &mut Reader<'_>) -> Result<EmitOp, CheckpointError>
 {
     let wire_tag = reader.u8()?;
     match u8::from(wire_tag) {
-        | 0 => {
+        0 => {
             let label = read_label(reader)?;
             let wire_start = reader.u32()?;
             let start = u32::from(wire_start);
@@ -7573,7 +7565,7 @@ fn read_emit_op(reader: &mut Reader<'_>) -> Result<EmitOp, CheckpointError>
             let end = u32::from(wire_end);
             Ok(EmitOp::Token { label, start, end })
         },
-        | 1 => {
+        1 => {
             let label = read_label(reader)?;
             let wire_start = reader.u32()?;
             let start = u32::from(wire_start);
@@ -7594,7 +7586,7 @@ fn read_emit_op(reader: &mut Reader<'_>) -> Result<EmitOp, CheckpointError>
                 children,
             })
         },
-        | tag => Err(CheckpointError::BadTag { tag }),
+        tag => Err(CheckpointError::BadTag { tag }),
     }
 }
 
@@ -7619,13 +7611,13 @@ fn write_emit_op(
 )
 {
     match *op {
-        | EmitOp::Token { label, start, end } => {
+        EmitOp::Token { label, start, end } => {
             writer.u8(WireByte::from(0));
             write_label(writer, label);
             writer.u32(WireU32::from(start));
             writer.u32(WireU32::from(end));
         },
-        | EmitOp::Interior {
+        EmitOp::Interior {
             label,
             start,
             end,
@@ -7666,30 +7658,30 @@ fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
 {
     let wire_tag = reader.u8()?;
     match u8::from(wire_tag) {
-        | 0x01 => Ok(NodeLabel::Wald),
-        | 0x02 => {
+        0x01 => Ok(NodeLabel::Wald),
+        0x02 => {
             let wire_mold = reader.u32()?;
             Ok(NodeLabel::Meld(MoldId::from(u32::from(wire_mold))))
         },
-        | 0x03 => {
+        0x03 => {
             let wire_mold = reader.u32()?;
             Ok(NodeLabel::Tile(MoldId::from(u32::from(wire_mold))))
         },
-        | 0x04 => {
+        0x04 => {
             let wire_sort = reader.u16()?;
             let sort = GroutSort::from(u16::from(wire_sort));
             let shape = read_shape(reader)?;
             Ok(NodeLabel::Grout { sort, shape })
         },
-        | 0x05 => {
+        0x05 => {
             let wire_sort = reader.u16()?;
             let sort = GroutSort::from(u16::from(wire_sort));
             let class = read_class(reader)?;
             Ok(NodeLabel::GhostClose { sort, class })
         },
-        | 0x06 => Ok(NodeLabel::Space),
-        | 0x07 => Ok(NodeLabel::Doc),
-        | tag => Err(CheckpointError::BadTag { tag }),
+        0x06 => Ok(NodeLabel::Space),
+        0x07 => Ok(NodeLabel::Doc),
+        tag => Err(CheckpointError::BadTag { tag }),
     }
 }
 
@@ -7714,15 +7706,15 @@ fn write_label(
 {
     writer.u8(WireByte::from(u8::from(label.tag())));
     match label {
-        | NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => {},
-        | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+        NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => {},
+        NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
             writer.u32(WireU32::from(u32::from(mold)));
         },
-        | NodeLabel::Grout { sort, shape } => {
+        NodeLabel::Grout { sort, shape } => {
             writer.u16(WireU16::from(u16::from(sort)));
             write_shape(writer, shape);
         },
-        | NodeLabel::GhostClose { sort, class } => {
+        NodeLabel::GhostClose { sort, class } => {
             writer.u16(WireU16::from(u16::from(sort)));
             write_class(writer, class);
         },
@@ -7749,10 +7741,10 @@ fn write_shape(
 )
 {
     writer.u8(WireByte::from(match shape {
-        | GroutShape::Convex => 0,
-        | GroutShape::Prefix => 1,
-        | GroutShape::Postfix => 2,
-        | GroutShape::Infix => 3,
+        GroutShape::Convex => 0,
+        GroutShape::Prefix => 1,
+        GroutShape::Postfix => 2,
+        GroutShape::Infix => 3,
     }));
 }
 
@@ -7778,11 +7770,11 @@ fn read_shape(reader: &mut Reader<'_>) -> Result<GroutShape, CheckpointError>
 {
     let wire_tag = reader.u8()?;
     match u8::from(wire_tag) {
-        | 0 => Ok(GroutShape::Convex),
-        | 1 => Ok(GroutShape::Prefix),
-        | 2 => Ok(GroutShape::Postfix),
-        | 3 => Ok(GroutShape::Infix),
-        | tag => Err(CheckpointError::BadTag { tag }),
+        0 => Ok(GroutShape::Convex),
+        1 => Ok(GroutShape::Prefix),
+        2 => Ok(GroutShape::Postfix),
+        3 => Ok(GroutShape::Infix),
+        tag => Err(CheckpointError::BadTag { tag }),
     }
 }
 
@@ -7806,9 +7798,9 @@ fn write_class(
 )
 {
     writer.u8(WireByte::from(match class {
-        | ClosingClass::Paren => 0,
-        | ClosingClass::Bracket => 1,
-        | ClosingClass::Brace => 2,
+        ClosingClass::Paren => 0,
+        ClosingClass::Bracket => 1,
+        ClosingClass::Brace => 2,
     }));
 }
 
@@ -7834,10 +7826,10 @@ fn read_class(reader: &mut Reader<'_>) -> Result<ClosingClass, CheckpointError>
 {
     let wire_tag = reader.u8()?;
     match u8::from(wire_tag) {
-        | 0 => Ok(ClosingClass::Paren),
-        | 1 => Ok(ClosingClass::Bracket),
-        | 2 => Ok(ClosingClass::Brace),
-        | tag => Err(CheckpointError::BadTag { tag }),
+        0 => Ok(ClosingClass::Paren),
+        1 => Ok(ClosingClass::Bracket),
+        2 => Ok(ClosingClass::Brace),
+        tag => Err(CheckpointError::BadTag { tag }),
     }
 }
 
@@ -7878,8 +7870,8 @@ fn read_cell(reader: &mut Reader<'_>) -> Result<Cell, CheckpointError>
     let sort = read_sort(reader)?;
     let wire_role = reader.u8()?;
     let role = match u8::from(wire_role) {
-        | 0 => Role::Operand,
-        | 1 => {
+        0 => Role::Operand,
+        1 => {
             let wire_mold_id = reader.u32()?;
             let mold_id = u32::from(wire_mold_id);
             let mold = MoldId::from(mold_id);
@@ -7898,7 +7890,7 @@ fn read_cell(reader: &mut Reader<'_>) -> Result<Cell, CheckpointError>
                 absorb_left,
             }
         },
-        | 2 => {
+        2 => {
             let wire_mold_id = reader.u32()?;
             let mold_id = u32::from(wire_mold_id);
             let mold = MoldId::from(mold_id);
@@ -7914,7 +7906,7 @@ fn read_cell(reader: &mut Reader<'_>) -> Result<Cell, CheckpointError>
                 shape,
             }
         },
-        | tag => return Err(CheckpointError::BadTag { tag }),
+        tag => return Err(CheckpointError::BadTag { tag }),
     };
     Ok(Cell {
         emit,
@@ -8056,15 +8048,15 @@ fn read_oblig(reader: &mut Reader<'_>) -> Result<Oblig, CheckpointError>
 {
     let wire_tag = reader.u8()?;
     match u8::from(wire_tag) {
-        | 0 => Ok(Oblig::MissingMeld),
-        | 1 => Ok(Oblig::MissingTile),
-        | 2 => Ok(Oblig::IncompleteTile),
-        | 3 => Ok(Oblig::UnmoldedTok),
-        | 4 => Ok(Oblig::InconMeld),
-        | 5 => Ok(Oblig::ExtraMeld),
-        | 6 => Ok(Oblig::ReservedKeyword),
-        | 7 => Ok(Oblig::AmbiguousPrec),
-        | tag => Err(CheckpointError::BadTag { tag }),
+        0 => Ok(Oblig::MissingMeld),
+        1 => Ok(Oblig::MissingTile),
+        2 => Ok(Oblig::IncompleteTile),
+        3 => Ok(Oblig::UnmoldedTok),
+        4 => Ok(Oblig::InconMeld),
+        5 => Ok(Oblig::ExtraMeld),
+        6 => Ok(Oblig::ReservedKeyword),
+        7 => Ok(Oblig::AmbiguousPrec),
+        tag => Err(CheckpointError::BadTag { tag }),
     }
 }
 
@@ -8096,8 +8088,8 @@ fn write_cell(
     writer.u32(WireU32::from(cell.end));
     write_sort(writer, cell.sort);
     match cell.role {
-        | Role::Operand => writer.u8(WireByte::from(0)),
-        | Role::FormTile {
+        Role::Operand => writer.u8(WireByte::from(0)),
+        Role::FormTile {
             mold,
             sort,
             open,
@@ -8111,7 +8103,7 @@ fn write_cell(
             writer.u8(WireByte::from(u8::from(start)));
             writer.u8(WireByte::from(u8::from(absorb_left)));
         },
-        | Role::Operator {
+        Role::Operator {
             mold,
             prec,
             sort,
@@ -8167,9 +8159,9 @@ fn write_shape_op(
 )
 {
     writer.u8(WireByte::from(match shape {
-        | OpShape::Prefix => 0,
-        | OpShape::Infix => 1,
-        | OpShape::Postfix => 2,
+        OpShape::Prefix => 0,
+        OpShape::Infix => 1,
+        OpShape::Postfix => 2,
     }));
 }
 
@@ -8195,10 +8187,10 @@ fn read_shape_op(reader: &mut Reader<'_>) -> Result<OpShape, CheckpointError>
 {
     let wire_tag = reader.u8()?;
     match u8::from(wire_tag) {
-        | 0 => Ok(OpShape::Prefix),
-        | 1 => Ok(OpShape::Infix),
-        | 2 => Ok(OpShape::Postfix),
-        | tag => Err(CheckpointError::BadTag { tag }),
+        0 => Ok(OpShape::Prefix),
+        1 => Ok(OpShape::Infix),
+        2 => Ok(OpShape::Postfix),
+        tag => Err(CheckpointError::BadTag { tag }),
     }
 }
 
@@ -8588,8 +8580,8 @@ mod tests
             assert_eq!(reader.pos, golden.len());
             assert_eq!(u8::from(reader.u8()?), 0xdd);
             let cuts = match role {
-                | super::Role::Operand => 0 .. 15,
-                | super::Role::Operator {
+                super::Role::Operand => 0 .. 15,
+                super::Role::Operator {
                     shape: super::OpShape::Prefix,
                     ..
                 }
@@ -8599,7 +8591,7 @@ mod tests
                     absorb_left: false,
                     ..
                 } => 15 .. 24,
-                | _ => 0 .. 0,
+                super::Role::FormTile { .. } | super::Role::Operator { .. } => 0 .. 0,
             };
             for cut in cuts {
                 let mut reader = super::Reader {
@@ -10645,8 +10637,13 @@ mod tests
                 .positions()
                 .find(|&position| children(&tree, position).contains(&at))?;
             match label(&tree, parent)? {
-                | NodeLabel::Wald => Some("the root".to_owned()),
-                | _ => tree
+                NodeLabel::Wald => Some("the root".to_owned()),
+                NodeLabel::Meld(_)
+                | NodeLabel::Tile(_)
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc => tree
                     .fragment(parent)
                     .map(|text| <&str>::from(text).to_owned()),
             }
@@ -10746,8 +10743,8 @@ mod tests
                     .positions()
                     .find(|&parent| children(&tree, parent).contains(&position))
                     .map_or_else(String::new, |parent| match label(&tree, parent) {
-                        | Some(NodeLabel::Wald) => "the root".to_owned(),
-                        | _ => text(parent),
+                        Some(NodeLabel::Wald) => "the root".to_owned(),
+                        _ => text(parent),
                     });
                 (text(position), owner)
             })
@@ -10797,8 +10794,8 @@ mod tests
         let pbg = built_in()?;
         let mold_of = |text: &'static str, kind: &str| -> Result<MoldId, Box<dyn Error>> {
             let label = match text {
-                | "g" => "identifier",
-                | other => other,
+                "g" => "identifier",
+                other => other,
             };
             pbg.candidates(TileLabel(label))
                 .iter()
@@ -10881,8 +10878,8 @@ mod tests
         let pbg = built_in()?;
         let mold_of = |text: &'static str, kind: &str| -> Result<MoldId, Box<dyn Error>> {
             let label = match text {
-                | "g" => "identifier",
-                | other => other,
+                "g" => "identifier",
+                other => other,
             };
             pbg.candidates(TileLabel(label))
                 .iter()
@@ -10972,8 +10969,8 @@ mod tests
             steps
                 .iter()
                 .map(|&step| match step {
-                    | crate::Step::Tile(mold) => label(mold).to_owned(),
-                    | crate::Step::Hole { sort, after } => format!("<{sort:?}@{}>", label(after)),
+                    crate::Step::Tile(mold) => label(mold).to_owned(),
+                    crate::Step::Hole { sort, after } => format!("<{sort:?}@{}>", label(after)),
                 })
                 .collect::<Vec<_>>()
                 .join(" ")
@@ -10996,8 +10993,8 @@ mod tests
             molder.mold_stream(&mut state, &tokens, SourceText::from(source));
             let menu = state.continuations(crate::ClosingLimit::from(2_usize));
             let found_head = match menu.head() {
-                | super::HeadForm::Open { mold, leading } => format!("{} {leading:?}", label(mold)),
-                | super::HeadForm::Closed => "closed".to_owned(),
+                super::HeadForm::Open { mold, leading } => format!("{} {leading:?}", label(mold)),
+                super::HeadForm::Closed => "closed".to_owned(),
             };
             let found_first = menu
                 .closings()

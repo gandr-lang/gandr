@@ -403,8 +403,8 @@ impl Tree
                 .get(usize::from(at))
                 .and_then(|node| children(node).nth(slot.0));
             match next {
-                | Some(child) => at = child,
-                | None => return Maybe::Absent(addressed::Absent::NoChild),
+                Some(child) => at = child,
+                None => return Maybe::Absent(addressed::Absent::NoChild),
             }
         }
         Maybe::Present(at)
@@ -577,11 +577,11 @@ impl ItemTree
     pub const fn signature(&self) -> Option<&Tree>
     {
         match self.declaration {
-            | DeclarationTree::Value {
+            DeclarationTree::Value {
                 signature: Maybe::Present(ref tree),
                 ..
             } => Some(tree),
-            | DeclarationTree::Value {
+            DeclarationTree::Value {
                 signature: Maybe::Absent(_),
                 ..
             }
@@ -600,11 +600,11 @@ impl ItemTree
     pub const fn body(&self) -> Option<&Tree>
     {
         match self.declaration {
-            | DeclarationTree::Value {
+            DeclarationTree::Value {
                 body: Maybe::Present(ref tree),
                 ..
             } => Some(tree),
-            | DeclarationTree::Value {
+            DeclarationTree::Value {
                 body: Maybe::Absent(_),
                 ..
             }
@@ -765,22 +765,22 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
             program.items().iter().zip(program.references()).enumerate()
         {
             let (declaration, located) = match *(item.declaration().content()) {
-                | gandr_core_checker::DeclarationContent::Value {
+                gandr_core_checker::DeclarationContent::Value {
                     ref signature,
                     ref body,
                 } => {
                     let signature =
                         signature.map(|root| read(program, origins, Root::ValueType(root)).0);
                     let (body, located) = match *body {
-                        | Maybe::Present(root) => {
+                        Maybe::Present(root) => {
                             let (tree, located) = read(program, origins, Root::Value(root));
                             (Maybe::Present(tree), located)
                         },
-                        | Maybe::Absent(reason) => (Maybe::Absent(reason), Vec::new()),
+                        Maybe::Absent(reason) => (Maybe::Absent(reason), Vec::new()),
                     };
                     (DeclarationTree::Value { signature, body }, located)
                 },
-                | gandr_core_checker::DeclarationContent::Data(ref signature) => {
+                gandr_core_checker::DeclarationContent::Data(ref signature) => {
                     let parameters = signature
                         .parameters()
                         .iter()
@@ -806,7 +806,7 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
                         Vec::new(),
                     )
                 },
-                | gandr_core_checker::DeclarationContent::Abstract(sealed) => (
+                gandr_core_checker::DeclarationContent::Abstract(sealed) => (
                     DeclarationTree::Abstract {
                         kind: read(program, origins, Root::ValueType(sealed.kind())).0,
                         representation: read(
@@ -908,11 +908,11 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
         else {
             return Maybe::Absent(addressed::Absent::NoBody);
         };
-        tree.resolve(&path.slots)
-            .and_then(|at| match tree.nodes.get(usize::from(at)) {
-                | Some(node) => Maybe::Present(node),
-                | None => Maybe::Absent(addressed::Absent::NoChild),
-            })
+        tree.resolve(&path.slots).and_then(|at| {
+            tree.nodes
+                .get(usize::from(at))
+                .map_or(Maybe::Absent(addressed::Absent::NoChild), Maybe::Present)
+        })
     }
 
     /// The source span of the body node `path` names.
@@ -982,11 +982,11 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
             return Maybe::Absent(spanned::Absent::Unaddressed);
         };
         match tree.resolve(&path.slots) {
-            | Maybe::Present(at) => spans
+            Maybe::Present(at) => spans
                 .get(usize::from(at))
                 .copied()
                 .unwrap_or(Maybe::Absent(spanned::Absent::Unaddressed)),
-            | Maybe::Absent(_) => Maybe::Absent(spanned::Absent::Unaddressed),
+            Maybe::Absent(_) => Maybe::Absent(spanned::Absent::Unaddressed),
         }
     }
 
@@ -1019,15 +1019,11 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
         range: ByteSpan,
     ) -> Maybe<&(ByteSpan, ItemOrdinal), located::Absent>
     {
-        match self
-            .bodies
+        self.bodies
             .partition_point(|&(span, _)| span.start() <= range.start())
             .checked_sub(1_usize)
             .and_then(|at| self.bodies.get(at))
-        {
-            | Some(body) => Maybe::Present(body),
-            | None => Maybe::Absent(located::Absent::Outside),
-        }
+            .map_or(Maybe::Absent(located::Absent::Outside), Maybe::Present)
     }
 
     /// The smallest body term enclosing `range`.
@@ -1485,11 +1481,11 @@ impl Action
     pub const fn path(&self) -> Maybe<&CorePath, body_path::Absent>
     {
         match *self {
-            | Self::Replace { ref path, .. }
+            Self::Replace { ref path, .. }
             | Self::SetLiteral { ref path, .. }
             | Self::SetVariable { ref path, .. }
             | Self::SetConstant { ref path, .. } => Maybe::Present(path),
-            | Self::InsertItem { .. }
+            Self::InsertItem { .. }
             | Self::DeleteItem { .. }
             | Self::SetSignature { .. }
             | Self::FillHole { .. }
@@ -1731,15 +1727,15 @@ pub fn diff(
             });
         }
         match (before_body, after_body) {
-            | (&Maybe::Absent(_), &Maybe::Absent(_)) => {},
-            | (&Maybe::Absent(_), &Maybe::Present(ref body)) => {
+            (&Maybe::Absent(_), &Maybe::Absent(_)) => {},
+            (&Maybe::Absent(_), &Maybe::Present(ref body)) => {
                 actions.push(Action::FillHole {
                     at,
                     to: body.clone(),
                 });
             },
-            | (&Maybe::Present(_), &Maybe::Absent(_)) => actions.push(Action::EraseToHole { at }),
-            | (&Maybe::Present(ref from), &Maybe::Present(ref to)) => {
+            (&Maybe::Present(_), &Maybe::Absent(_)) => actions.push(Action::EraseToHole { at }),
+            (&Maybe::Present(ref from), &Maybe::Present(ref to)) => {
                 diff_trees(from, to, at, &mut actions);
             },
         }
@@ -1813,13 +1809,13 @@ pub fn apply(
     let mut inserted: Vec<(ItemOrdinal, &ItemTree)> = Vec::new();
     for action in script.actions() {
         match *action {
-            | Action::InsertItem { at, ref item } => inserted.push((at, item)),
-            | Action::DeleteItem { at } => {
+            Action::InsertItem { at, ref item } => inserted.push((at, item)),
+            Action::DeleteItem { at } => {
                 if let Some(slot) = items.get_mut(usize::from(at)) {
                     *slot = None;
                 }
             },
-            | Action::SetSignature { at, ref to, .. } => {
+            Action::SetSignature { at, ref to, .. } => {
                 if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
                     && let DeclarationTree::Value {
                         ref mut signature, ..
@@ -1828,27 +1824,27 @@ pub fn apply(
                     signature.clone_from(to);
                 }
             },
-            | Action::FillHole { at, ref to } => {
+            Action::FillHole { at, ref to } => {
                 if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
                     && let DeclarationTree::Value { ref mut body, .. } = item.declaration
                 {
                     *body = Maybe::Present(to.clone());
                 }
             },
-            | Action::EraseToHole { at } => {
+            Action::EraseToHole { at } => {
                 if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
                     && let DeclarationTree::Value { ref mut body, .. } = item.declaration
                 {
                     *body = Maybe::Absent(body::Absent::Hole);
                 }
             },
-            | Action::Replace { ref path, ref to } => {
+            Action::Replace { ref path, ref to } => {
                 grafts
                     .entry(path.item)
                     .or_default()
                     .push((path, Graft::Subtree(to)));
             },
-            | Action::SetLiteral {
+            Action::SetLiteral {
                 ref path, ref to, ..
             } => {
                 grafts
@@ -1856,7 +1852,7 @@ pub fn apply(
                     .or_default()
                     .push((path, Graft::Leaf(ContentNode::Literal(to.clone()))));
             },
-            | Action::SetVariable {
+            Action::SetVariable {
                 ref path,
                 to: (zone, index),
                 ..
@@ -1866,7 +1862,7 @@ pub fn apply(
                     .or_default()
                     .push((path, Graft::Leaf(ContentNode::Variable { zone, index })));
             },
-            | Action::SetConstant {
+            Action::SetConstant {
                 ref path, ref to, ..
             } => {
                 grafts
@@ -2022,21 +2018,21 @@ fn graft(
     let mut numbered = 1_usize;
     while let Some(source) = queue.pop_front() {
         let source = match source {
-            | Source::Old(index) => match at_node.get(&index) {
-                | Some(&&Graft::Subtree(subtree)) => {
+            Source::Old(index) => match at_node.get(&index) {
+                Some(&&Graft::Subtree(subtree)) => {
                     Source::Grafted(subtree, NodeIndex::from(0_usize))
                 },
-                | Some(&&Graft::Leaf(ref leaf)) => {
+                Some(&&Graft::Leaf(ref leaf)) => {
                     nodes.push(leaf.clone());
                     continue;
                 },
-                | None => source,
+                None => source,
             },
-            | Source::Grafted(..) => source,
+            Source::Grafted(..) => source,
         };
         let node = match source {
-            | Source::Old(index) => tree.nodes.get(usize::from(index)),
-            | Source::Grafted(subtree, index) => subtree.nodes.get(usize::from(index)),
+            Source::Old(index) => tree.nodes.get(usize::from(index)),
+            Source::Grafted(subtree, index) => subtree.nodes.get(usize::from(index)),
         };
         let Some(node) = node
         else {
@@ -2044,8 +2040,8 @@ fn graft(
         };
         nodes.push(map_children(node, &mut |child| {
             queue.push_back(match source {
-                | Source::Old(_) => Source::Old(child),
-                | Source::Grafted(subtree, _) => Source::Grafted(subtree, child),
+                Source::Old(_) => Source::Old(child),
+                Source::Grafted(subtree, _) => Source::Grafted(subtree, child),
             });
             let renumbered = NodeIndex::from(numbered);
             numbered = numbered.saturating_add(1_usize);
@@ -2340,14 +2336,14 @@ fn diff_trees(
         }
         let path = path_of(&frames, at, item);
         actions.push(match (before, after) {
-            | (&ContentNode::Literal(ref from), &ContentNode::Literal(ref to)) => {
+            (&ContentNode::Literal(ref from), &ContentNode::Literal(ref to)) => {
                 Action::SetLiteral {
                     path,
                     from: from.clone(),
                     to: to.clone(),
                 }
             },
-            | (
+            (
                 &ContentNode::Variable {
                     zone: from_zone,
                     index: from_index,
@@ -2361,14 +2357,14 @@ fn diff_trees(
                 from: (from_zone, from_index),
                 to: (to_zone, to_index),
             },
-            | (&ContentNode::Constant(ref from), &ContentNode::Constant(ref to)) => {
+            (&ContentNode::Constant(ref from), &ContentNode::Constant(ref to)) => {
                 Action::SetConstant {
                     path,
                     from: from.clone(),
                     to: to.clone(),
                 }
             },
-            | _ => Action::Replace {
+            _ => Action::Replace {
                 path,
                 to: new.subtree(new_at),
             },
@@ -2496,11 +2492,11 @@ fn agreement(
 ) -> Agreement
 {
     let same = match (old, new) {
-        | (&ContentNode::Reify(ref left), &ContentNode::Reify(ref right)) => {
+        (&ContentNode::Reify(ref left), &ContentNode::Reify(ref right)) => {
             left.iter()
                 .zip(right.iter())
                 .all(|(left, right)| match (*left, *right) {
-                    | (
+                    (
                         gandr_core_term::control::StackFrame::Apply(_),
                         gandr_core_term::control::StackFrame::Apply(_),
                     )
@@ -2508,17 +2504,17 @@ fn agreement(
                         gandr_core_term::control::StackFrame::Bind(_),
                         gandr_core_term::control::StackFrame::Bind(_),
                     ) => true,
-                    | (
+                    (
                         gandr_core_term::control::StackFrame::Project(left),
                         gandr_core_term::control::StackFrame::Project(right),
                     ) => left == right,
-                    | _ => false,
+                    _ => false,
                 })
                 && left.len() == right.len()
         },
-        | (&ContentNode::Project(left, _), &ContentNode::Project(right, _)) => left == right,
-        | (&ContentNode::Injection(left, _), &ContentNode::Injection(right, _)) => left == right,
-        | (
+        (&ContentNode::Project(left, _), &ContentNode::Project(right, _)) => left == right,
+        (&ContentNode::Injection(left, _), &ContentNode::Injection(right, _)) => left == right,
+        (
             &ContentNode::Perform {
                 signature: ref left,
                 operation: ref first,
@@ -2537,7 +2533,7 @@ fn agreement(
                     .map(|op| &op.name)
                     .eq(right.operations().map(|op| &op.name))
         },
-        | (
+        (
             &ContentNode::Handle {
                 signature: ref left,
                 clauses: ref first,
@@ -2559,7 +2555,7 @@ fn agreement(
                     .map(|op| &op.name)
                     .eq(right.operations().map(|op| &op.name))
         },
-        | (
+        (
             &ContentNode::Returner {
                 effects: ref left, ..
             },
@@ -2580,7 +2576,7 @@ fn agreement(
                                 .all(|(left, right)| left.name == right.name)
                     })
         },
-        | (
+        (
             &ContentNode::Exercise {
                 signature: ref left,
                 operation: ref first,
@@ -2599,7 +2595,7 @@ fn agreement(
                     .map(|op| &op.name)
                     .eq(right.operations().map(|op| &op.name))
         },
-        | (
+        (
             &ContentNode::Scope {
                 signature: ref left,
                 clauses: ref first,
@@ -2621,7 +2617,7 @@ fn agreement(
                     .map(|op| &op.name)
                     .eq(right.operations().map(|op| &op.name))
         },
-        | (
+        (
             &ContentNode::Capability {
                 authority: ref left,
                 grade: first_grade,
@@ -2648,7 +2644,7 @@ fn agreement(
                                 .all(|(left, right)| left.name == right.name)
                     })
         },
-        | (
+        (
             &ContentNode::Data {
                 declaration: ref left,
                 arguments: ref a,
@@ -2658,7 +2654,7 @@ fn agreement(
                 arguments: ref b,
             },
         ) => left == right && a.len() == b.len(),
-        | (
+        (
             &ContentNode::Constructor {
                 tag: a,
                 fields: ref left,
@@ -2670,11 +2666,11 @@ fn agreement(
                 ..
             },
         ) => a == b && left.len() == right.len(),
-        | (&ContentNode::Record(ref left), &ContentNode::Record(ref right))
+        (&ContentNode::Record(ref left), &ContentNode::Record(ref right))
         | (&ContentNode::RecordType(ref left), &ContentNode::RecordType(ref right)) => {
             left.keys().eq(right.keys())
         },
-        | (
+        (
             &ContentNode::DataCase {
                 branches: ref left, ..
             },
@@ -2683,14 +2679,14 @@ fn agreement(
                 ..
             },
         ) => left.len() == right.len(),
-        | (
+        (
             &ContentNode::RecordProjection(_, ref left),
             &ContentNode::RecordProjection(_, ref right),
         ) => left == right,
-        | (&ContentNode::TupleProjection(_, left), &ContentNode::TupleProjection(_, right)) => {
+        (&ContentNode::TupleProjection(_, left), &ContentNode::TupleProjection(_, right)) => {
             left == right
         },
-        | (
+        (
             &ContentNode::PathEquiv {
                 evidence: ref left, ..
             },
@@ -2699,7 +2695,7 @@ fn agreement(
                 ..
             },
         ) => left == right,
-        | (
+        (
             &ContentNode::ValueLift {
                 target: ref left, ..
             },
@@ -2731,8 +2727,8 @@ fn agreement(
                 target: ref right, ..
             },
         ) => left == right,
-        | _ if children(old).next().is_none() => old == new,
-        | _ => mem::discriminant(old) == mem::discriminant(new),
+        _ if children(old).next().is_none() => old == new,
+        _ => mem::discriminant(old) == mem::discriminant(new),
     };
     if same && children(old).count() == children(new).count() {
         Agreement::Same
@@ -2863,24 +2859,24 @@ fn read(
             index
         };
         let (node, origin) = match at {
-            | Root::Value(id) => (read_value(program, id, &mut child), origins.value(id)),
-            | Root::Computation(id) => (
+            Root::Value(id) => (read_value(program, id, &mut child), origins.value(id)),
+            Root::Computation(id) => (
                 read_computation(program, id, &mut child),
                 origins.computation(id),
             ),
-            | Root::ValueType(id) => (
+            Root::ValueType(id) => (
                 read_value_type(program, id, &mut child),
                 origins.value_type(id),
             ),
-            | Root::CompType(id) => (
+            Root::CompType(id) => (
                 read_comp_type(program, id, &mut child),
                 origins.comp_type(id),
             ),
         };
         nodes.push(node);
         spans.push(match origin {
-            | Maybe::Present(origin) => Maybe::Present(origin.span()),
-            | Maybe::Absent(_) => Maybe::Absent(spanned::Absent::Unrecorded),
+            Maybe::Present(origin) => Maybe::Present(origin.span()),
+            Maybe::Absent(_) => Maybe::Absent(spanned::Absent::Unrecorded),
         });
     }
     let tree = Tree { nodes };
@@ -3011,7 +3007,7 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().value(id) {
-        | Some(&Value::Constructor {
+        Some(&Value::Constructor {
             datatype,
             tag,
             ref fields,
@@ -3023,51 +3019,51 @@ where
                 .map(|&field| child(Root::Value(field)))
                 .collect(),
         },
-        | Some(&Value::Record(ref fields)) => ContentNode::Record(
+        Some(&Value::Record(ref fields)) => ContentNode::Record(
             fields
                 .iter()
                 .map(|(label, &field)| (label.clone(), child(Root::Value(field))))
                 .collect(),
         ),
-        | Some(&Value::Reify(ref frames)) => ContentNode::Reify(
+        Some(&Value::Reify(ref frames)) => ContentNode::Reify(
             frames
                 .iter()
                 .map(|frame| match *frame {
-                    | gandr_core_term::control::StackFrame::Apply(value) => {
+                    gandr_core_term::control::StackFrame::Apply(value) => {
                         gandr_core_term::control::StackFrame::Apply(child(Root::Value(value)))
                     },
-                    | gandr_core_term::control::StackFrame::Bind(body) => {
+                    gandr_core_term::control::StackFrame::Bind(body) => {
                         gandr_core_term::control::StackFrame::Bind(child(Root::Computation(body)))
                     },
-                    | gandr_core_term::control::StackFrame::Project(side) => {
+                    gandr_core_term::control::StackFrame::Project(side) => {
                         gandr_core_term::control::StackFrame::Project(side)
                     },
                 })
                 .collect(),
         ),
-        | Some(&Value::Primitive { primitive, .. }) => ContentNode::PrimitiveValue(primitive),
-        | Some(&Value::PathRefl(code)) => ContentNode::PathRefl(child(Root::Value(code))),
-        | Some(&Value::Here(point)) => ContentNode::Here(child(Root::Value(point))),
-        | Some(&Value::Returned(computation)) => {
+        Some(&Value::Primitive { primitive, .. }) => ContentNode::PrimitiveValue(primitive),
+        Some(&Value::PathRefl(code)) => ContentNode::PathRefl(child(Root::Value(code))),
+        Some(&Value::Here(point)) => ContentNode::Here(child(Root::Value(point))),
+        Some(&Value::Returned(computation)) => {
             ContentNode::Returned(child(Root::Computation(computation)))
         },
-        | Some(&Value::Nested(computation)) => {
+        Some(&Value::Nested(computation)) => {
             ContentNode::Nested(child(Root::Computation(computation)))
         },
-        | Some(&Value::Run(computation)) => ContentNode::Run(child(Root::Computation(computation))),
-        | Some(&Value::PathProduct(first, second)) => {
+        Some(&Value::Run(computation)) => ContentNode::Run(child(Root::Computation(computation))),
+        Some(&Value::PathProduct(first, second)) => {
             let first = child(Root::Value(first));
             ContentNode::PathProduct(first, child(Root::Value(second)))
         },
-        | Some(&Value::Funext(left, right)) => {
+        Some(&Value::Funext(left, right)) => {
             let left = child(Root::Value(left));
             ContentNode::Funext(left, child(Root::Value(right)))
         },
-        | Some(&Value::Equiv(forward, backward)) => {
+        Some(&Value::Equiv(forward, backward)) => {
             let forward = child(Root::Value(forward));
             ContentNode::Equiv(forward, child(Root::Value(backward)))
         },
-        | Some(&Value::SessionRelated {
+        Some(&Value::SessionRelated {
             relation,
             source,
             target,
@@ -3079,21 +3075,21 @@ where
                 target: child(Root::Value(target)),
             }
         },
-        | Some(&Value::Stay(point)) => ContentNode::Stay(child(Root::Value(point))),
-        | Some(&Value::Then(first, second)) => {
+        Some(&Value::Stay(point)) => ContentNode::Stay(child(Root::Value(point))),
+        Some(&Value::Then(first, second)) => {
             let first = child(Root::Value(first));
             ContentNode::Then(first, child(Root::Value(second)))
         },
-        | Some(&Value::FlowProduct(first, second)) => {
+        Some(&Value::FlowProduct(first, second)) => {
             let first = child(Root::Value(first));
             ContentNode::FlowProduct(first, child(Root::Value(second)))
         },
-        | Some(&Value::Forward(translator)) => ContentNode::Forward(child(Root::Value(translator))),
-        | Some(&Value::FunctionFlow(domain, codomain)) => {
+        Some(&Value::Forward(translator)) => ContentNode::Forward(child(Root::Value(translator))),
+        Some(&Value::FunctionFlow(domain, codomain)) => {
             let domain = child(Root::Value(domain));
             ContentNode::FunctionFlow(domain, child(Root::Value(codomain)))
         },
-        | Some(&Value::Recorded(ref moves)) => ContentNode::Recorded(
+        Some(&Value::Recorded(ref moves)) => ContentNode::Recorded(
             moves
                 .iter()
                 .map(|step| {
@@ -3104,7 +3100,7 @@ where
                 })
                 .collect(),
         ),
-        | Some(&Value::Ua {
+        Some(&Value::Ua {
             stratum,
             ref sides,
             forward,
@@ -3118,7 +3114,7 @@ where
                 backward: child(Root::Value(backward)),
             }
         },
-        | Some(&Value::PathEquiv {
+        Some(&Value::PathEquiv {
             path_type,
             forward,
             backward,
@@ -3129,42 +3125,42 @@ where
             backward: child(Root::Value(backward)),
             evidence: alloc::sync::Arc::clone(evidence),
         },
-        | Some(&Value::Variable { zone, index }) => ContentNode::Variable { zone, index },
-        | Some(&Value::Constant(position)) => ContentNode::Constant(program.resolve(position)),
-        | Some(&Value::ListNil) => ContentNode::ListNil,
-        | Some(&Value::ListCons(head, tail)) => {
+        Some(&Value::Variable { zone, index }) => ContentNode::Variable { zone, index },
+        Some(&Value::Constant(position)) => ContentNode::Constant(program.resolve(position)),
+        Some(&Value::ListNil) => ContentNode::ListNil,
+        Some(&Value::ListCons(head, tail)) => {
             ContentNode::ListCons(child(Root::Value(head)), child(Root::Value(tail)))
         },
-        | Some(&Value::Literal(ref literal)) => ContentNode::Literal(literal.clone()),
-        | Some(&Value::Tuple(ref components)) => ContentNode::Tuple(
+        Some(&Value::Literal(ref literal)) => ContentNode::Literal(literal.clone()),
+        Some(&Value::Tuple(ref components)) => ContentNode::Tuple(
             components
                 .iter()
                 .map(|&component| child(Root::Value(component)))
                 .collect(),
         ),
-        | Some(&Value::Injection(side, body)) => {
+        Some(&Value::Injection(side, body)) => {
             ContentNode::Injection(side, child(Root::Value(body)))
         },
-        | Some(&Value::Thunk(body)) => ContentNode::Thunk(child(Root::Computation(body))),
-        | Some(&Value::Lift { ref target, body }) => ContentNode::ValueLift {
+        Some(&Value::Thunk(body)) => ContentNode::Thunk(child(Root::Computation(body))),
+        Some(&Value::Lift { ref target, body }) => ContentNode::ValueLift {
             target: target.clone(),
             body: child(Root::Value(body)),
         },
-        | Some(&Value::Quote(quoted)) => ContentNode::Quote(child(Root::ValueType(quoted))),
-        | Some(&Value::QuoteComputation(quoted)) => {
+        Some(&Value::Quote(quoted)) => ContentNode::Quote(child(Root::ValueType(quoted))),
+        Some(&Value::QuoteComputation(quoted)) => {
             ContentNode::QuoteComputation(child(Root::CompType(quoted)))
         },
-        | Some(&Value::StaticLambda(body)) => ContentNode::StaticLambda(child(Root::Value(body))),
-        | Some(&Value::StaticApplication(head, argument)) => {
+        Some(&Value::StaticLambda(body)) => ContentNode::StaticLambda(child(Root::Value(body))),
+        Some(&Value::StaticApplication(head, argument)) => {
             let head = child(Root::Value(head));
             ContentNode::StaticApplication(head, child(Root::Value(argument)))
         },
-        | Some(&Value::Hole(hole)) => ContentNode::Hole(hole),
-        | Some(&Value::Mark { mark, body }) => ContentNode::ValueMark {
+        Some(&Value::Hole(hole)) => ContentNode::Hole(hole),
+        Some(&Value::Mark { mark, body }) => ContentNode::ValueMark {
             mark,
             body: child(Root::Value(body)),
         },
-        | None => ContentNode::Unresolved(Sort::Value),
+        None => ContentNode::Unresolved(Sort::Value),
     }
 }
 
@@ -3246,7 +3242,7 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().computation(id) {
-        | Some(&Computation::DataCase {
+        Some(&Computation::DataCase {
             scrutinee,
             motive,
             ref branches,
@@ -3258,13 +3254,13 @@ where
                 .map(|&branch| child(Root::Computation(branch)))
                 .collect(),
         },
-        | Some(&Computation::RecordProjection(record, ref label)) => {
+        Some(&Computation::RecordProjection(record, ref label)) => {
             ContentNode::RecordProjection(child(Root::Value(record)), label.clone())
         },
-        | Some(&Computation::TupleProjection(tuple, component)) => {
+        Some(&Computation::TupleProjection(tuple, component)) => {
             ContentNode::TupleProjection(child(Root::Value(tuple)), component)
         },
-        | Some(&Computation::Ride {
+        Some(&Computation::Ride {
             motive,
             flow,
             value,
@@ -3277,7 +3273,7 @@ where
                 value: child(Root::Value(value)),
             }
         },
-        | Some(&Computation::Perform {
+        Some(&Computation::Perform {
             ref signature,
             ref operation,
             payload,
@@ -3292,7 +3288,7 @@ where
                 payload,
             }
         },
-        | Some(
+        Some(
             computation @ &(Computation::Handle {
                 ref signature,
                 subject,
@@ -3335,7 +3331,7 @@ where
                 }
             }
         },
-        | Some(&Computation::Exercise {
+        Some(&Computation::Exercise {
             capability,
             ref signature,
             ref operation,
@@ -3353,10 +3349,10 @@ where
                 payload,
             }
         },
-        | Some(&Computation::Resume(stack, body)) => {
+        Some(&Computation::Resume(stack, body)) => {
             ContentNode::Resume(child(Root::Value(stack)), child(Root::Computation(body)))
         },
-        | Some(&Computation::Split {
+        Some(&Computation::Split {
             scrutinee,
             arity,
             motive: SplitMotive::Ambient,
@@ -3366,7 +3362,7 @@ where
             arity,
             child(Root::Computation(body)),
         ),
-        | Some(&Computation::Split {
+        Some(&Computation::Split {
             scrutinee,
             arity,
             motive: SplitMotive::Scrutinee(motive),
@@ -3381,16 +3377,16 @@ where
                 body: child(Root::Computation(body)),
             }
         },
-        | Some(&Computation::Reset(body)) => ContentNode::Reset(child(Root::Computation(body))),
-        | Some(&Computation::Shift(body)) => ContentNode::Shift(child(Root::Computation(body))),
-        | Some(&Computation::With(first, second)) => ContentNode::With(
+        Some(&Computation::Reset(body)) => ContentNode::Reset(child(Root::Computation(body))),
+        Some(&Computation::Shift(body)) => ContentNode::Shift(child(Root::Computation(body))),
+        Some(&Computation::With(first, second)) => ContentNode::With(
             child(Root::Computation(first)),
             child(Root::Computation(second)),
         ),
-        | Some(&Computation::Project(side, body)) => {
+        Some(&Computation::Project(side, body)) => {
             ContentNode::Project(side, child(Root::Computation(body)))
         },
-        | Some(&Computation::ListFold {
+        Some(&Computation::ListFold {
             element,
             result,
             list,
@@ -3403,24 +3399,24 @@ where
             on_nil: child(Root::Computation(on_nil)),
             on_cons: child(Root::Computation(on_cons)),
         },
-        | Some(&Computation::Primitive {
+        Some(&Computation::Primitive {
             primitive,
             arguments,
         }) => {
             use gandr_core_term::primitive::Arguments;
             let arguments = match arguments {
-                | Arguments::Unary(argument) => Arguments::Unary(child(Root::Value(argument))),
-                | Arguments::Binary([first, second]) => {
+                Arguments::Unary(argument) => Arguments::Unary(child(Root::Value(argument))),
+                Arguments::Binary([first, second]) => {
                     Arguments::Binary([child(Root::Value(first)), child(Root::Value(second))])
                 },
             };
             ContentNode::Primitive(primitive, arguments)
         },
-        | Some(&Computation::Transport(path, value)) => {
+        Some(&Computation::Transport(path, value)) => {
             let path = child(Root::Value(path));
             ContentNode::Transport(path, child(Root::Value(value)))
         },
-        | Some(&Computation::PathTransport {
+        Some(&Computation::PathTransport {
             motive,
             path,
             value,
@@ -3433,7 +3429,7 @@ where
                 value: child(Root::Value(value)),
             }
         },
-        | Some(&Computation::TelescopeTransport {
+        Some(&Computation::TelescopeTransport {
             motive,
             path,
             start,
@@ -3452,18 +3448,18 @@ where
                 value: child(Root::Value(value)),
             }
         },
-        | Some(&Computation::Lambda(body)) => ContentNode::Lambda(child(Root::Computation(body))),
-        | Some(&Computation::Application(head, argument)) => {
+        Some(&Computation::Lambda(body)) => ContentNode::Lambda(child(Root::Computation(body))),
+        Some(&Computation::Application(head, argument)) => {
             let head = child(Root::Computation(head));
             ContentNode::Application(head, child(Root::Value(argument)))
         },
-        | Some(&Computation::Return(value)) => ContentNode::Return(child(Root::Value(value))),
-        | Some(&Computation::Bind(bound, rest)) => {
+        Some(&Computation::Return(value)) => ContentNode::Return(child(Root::Value(value))),
+        Some(&Computation::Bind(bound, rest)) => {
             let bound = child(Root::Computation(bound));
             ContentNode::Bind(bound, child(Root::Computation(rest)))
         },
-        | Some(&Computation::Force(value)) => ContentNode::Force(child(Root::Value(value))),
-        | Some(&Computation::Case {
+        Some(&Computation::Force(value)) => ContentNode::Force(child(Root::Value(value))),
+        Some(&Computation::Case {
             scrutinee,
             ref branches,
         }) => {
@@ -3476,16 +3472,16 @@ where
                     .collect(),
             }
         },
-        | Some(&Computation::Hole(hole)) => ContentNode::ComputationHole(hole),
-        | Some(&Computation::Mark { mark, body }) => ContentNode::ComputationMark {
+        Some(&Computation::Hole(hole)) => ContentNode::ComputationHole(hole),
+        Some(&Computation::Mark { mark, body }) => ContentNode::ComputationMark {
             mark,
             body: child(Root::Computation(body)),
         },
-        | Some(&Computation::Fixpoint { body, evidence }) => ContentNode::Fixpoint {
+        Some(&Computation::Fixpoint { body, evidence }) => ContentNode::Fixpoint {
             body: child(Root::Computation(body)),
             evidence,
         },
-        | Some(&Computation::Session(ref action)) => ContentNode::Session(
+        Some(&Computation::Session(ref action)) => ContentNode::Session(
             action
                 .try_map(
                     gandr_core_term::session::ChildOrder::Forward,
@@ -3496,7 +3492,7 @@ where
                 )
                 .unwrap_or_else(|never| match never {}),
         ),
-        | None => ContentNode::Unresolved(Sort::Computation),
+        None => ContentNode::Unresolved(Sort::Computation),
     }
 }
 
@@ -3592,7 +3588,7 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().value_type(id) {
-        | Some(&ValueType::Data {
+        Some(&ValueType::Data {
             declaration,
             ref arguments,
         }) => ContentNode::Data {
@@ -3602,17 +3598,17 @@ where
                 .map(|&argument| child(Root::Value(argument)))
                 .collect(),
         },
-        | Some(&ValueType::Record(ref fields)) => ContentNode::RecordType(
+        Some(&ValueType::Record(ref fields)) => ContentNode::RecordType(
             fields
                 .iter()
                 .map(|(label, &field)| (label.clone(), child(Root::ValueType(field))))
                 .collect(),
         ),
-        | Some(&ValueType::Stack { input, output }) => ContentNode::Stack {
+        Some(&ValueType::Stack { input, output }) => ContentNode::Stack {
             input: child(Root::CompType(input)),
             output: child(Root::CompType(output)),
         },
-        | Some(&ValueType::Capability {
+        Some(&ValueType::Capability {
             ref authority,
             grade,
             region,
@@ -3623,11 +3619,11 @@ where
             grade,
             region,
         },
-        | Some(&ValueType::PathUniverse(source, target)) => {
+        Some(&ValueType::PathUniverse(source, target)) => {
             let source = child(Root::Value(source));
             ContentNode::PathUniverse(source, child(Root::Value(target)))
         },
-        | Some(&ValueType::Path {
+        Some(&ValueType::Path {
             carrier,
             left,
             right,
@@ -3640,7 +3636,7 @@ where
                 right: child(Root::Value(right)),
             }
         },
-        | Some(&ValueType::Flow {
+        Some(&ValueType::Flow {
             carrier,
             source,
             target,
@@ -3653,56 +3649,56 @@ where
                 target: child(Root::Value(target)),
             }
         },
-        | Some(&ValueType::Run(code)) => ContentNode::RunType(child(Root::Value(code))),
-        | Some(&ValueType::Base(base)) => ContentNode::Base(base),
-        | Some(&ValueType::Product(ref parts)) => ContentNode::Product(
+        Some(&ValueType::Run(code)) => ContentNode::RunType(child(Root::Value(code))),
+        Some(&ValueType::Base(base)) => ContentNode::Base(base),
+        Some(&ValueType::Product(ref parts)) => ContentNode::Product(
             parts
                 .iter()
                 .map(|&part| child(Root::ValueType(part)))
                 .collect(),
         ),
-        | Some(&ValueType::Sum(ref parts)) => ContentNode::Sum(
+        Some(&ValueType::Sum(ref parts)) => ContentNode::Sum(
             parts
                 .iter()
                 .map(|&part| child(Root::ValueType(part)))
                 .collect(),
         ),
-        | Some(&ValueType::List(element)) => ContentNode::List(child(Root::ValueType(element))),
-        | Some(&ValueType::Thunk(body)) => ContentNode::ThunkType(child(Root::CompType(body))),
-        | Some(&ValueType::Universe { sort, ref level }) => ContentNode::Universe {
+        Some(&ValueType::List(element)) => ContentNode::List(child(Root::ValueType(element))),
+        Some(&ValueType::Thunk(body)) => ContentNode::ThunkType(child(Root::CompType(body))),
+        Some(&ValueType::Universe { sort, ref level }) => ContentNode::Universe {
             sort,
             level: level.clone(),
         },
-        | Some(&ValueType::Lift { inner, ref target }) => ContentNode::TypeLift {
+        Some(&ValueType::Lift { inner, ref target }) => ContentNode::TypeLift {
             inner: child(Root::ValueType(inner)),
             target: target.clone(),
         },
-        | Some(&ValueType::Element { code, ref target }) => ContentNode::Element {
+        Some(&ValueType::Element { code, ref target }) => ContentNode::Element {
             code: child(Root::Value(code)),
             target: target.clone(),
         },
-        | Some(&ValueType::Abstract(position)) => ContentNode::Abstract(program.resolve(position)),
-        | Some(&ValueType::StaticPi { domain, codomain }) => {
+        Some(&ValueType::Abstract(position)) => ContentNode::Abstract(program.resolve(position)),
+        Some(&ValueType::StaticPi { domain, codomain }) => {
             let domain = child(Root::ValueType(domain));
             ContentNode::StaticPi {
                 domain,
                 codomain: child(Root::ValueType(codomain)),
             }
         },
-        | Some(&ValueType::Sigma { first, second }) => {
+        Some(&ValueType::Sigma { first, second }) => {
             let first = child(Root::ValueType(first));
             ContentNode::Sigma {
                 first,
                 second: child(Root::ValueType(second)),
             }
         },
-        | Some(&ValueType::Session(ref session)) => ContentNode::SessionType(
+        Some(&ValueType::Session(ref session)) => ContentNode::SessionType(
             session
                 .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
                 .unwrap_or_else(|never| match never {}),
         ),
-        | Some(&ValueType::Unknown) => ContentNode::UnknownType,
-        | None => ContentNode::Unresolved(Sort::ValueType),
+        Some(&ValueType::Unknown) => ContentNode::UnknownType,
+        None => ContentNode::Unresolved(Sort::ValueType),
     }
 }
 
@@ -3759,10 +3755,10 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().comp_type(id) {
-        | Some(&CompType::With(first, second)) => {
+        Some(&CompType::With(first, second)) => {
             ContentNode::WithType(child(Root::CompType(first)), child(Root::CompType(second)))
         },
-        | Some(&CompType::Returner {
+        Some(&CompType::Returner {
             result,
             ref effects,
         }) => {
@@ -3772,26 +3768,26 @@ where
                 .unwrap_or_else(|never| match never {});
             ContentNode::Returner { result, effects }
         },
-        | Some(&CompType::Arrow { domain, codomain }) => {
+        Some(&CompType::Arrow { domain, codomain }) => {
             let domain = child(Root::ValueType(domain));
             ContentNode::Arrow {
                 domain,
                 codomain: child(Root::CompType(codomain)),
             }
         },
-        | Some(&CompType::Pi { domain, codomain }) => {
+        Some(&CompType::Pi { domain, codomain }) => {
             let domain = child(Root::ValueType(domain));
             ContentNode::Pi {
                 domain,
                 codomain: child(Root::CompType(codomain)),
             }
         },
-        | Some(&CompType::Element { code, ref target }) => ContentNode::ComputationElement {
+        Some(&CompType::Element { code, ref target }) => ContentNode::ComputationElement {
             code: child(Root::Value(code)),
             target: target.clone(),
         },
-        | Some(&CompType::Unknown) => ContentNode::UnknownComputationType,
-        | None => ContentNode::Unresolved(Sort::CompType),
+        Some(&CompType::Unknown) => ContentNode::UnknownComputationType,
+        None => ContentNode::Unresolved(Sort::CompType),
     }
 }
 
@@ -3872,8 +3868,8 @@ fn hull(
     // from the last node back settles each child before its parent.
     for (index, node) in tree.nodes.iter().enumerate().rev() {
         let mut covered = match spans.get(index) {
-            | Some(&Maybe::Present(span)) => Some(span),
-            | Some(&Maybe::Absent(_)) | None => None,
+            Some(&Maybe::Present(span)) => Some(span),
+            Some(&Maybe::Absent(_)) | None => None,
         };
         for child in children(node) {
             if let Some(&Maybe::Present(span)) = spans.get(usize::from(child)) {
@@ -4051,8 +4047,8 @@ mod tests
             }
         }
         match best {
-            | Some((_, _, path)) => Maybe::Present(path),
-            | None => Maybe::Absent(located::Absent::Outside),
+            Some((_, _, path)) => Maybe::Present(path),
+            None => Maybe::Absent(located::Absent::Outside),
         }
     }
 

@@ -142,8 +142,8 @@ pub fn submit<'text>(
 {
     let Text(text) = text.into();
     match session.submit(SourceText::from(text)) {
-        | Ok(submission) => submission,
-        | Err(fault) => panic!("{text:?} faulted: {fault}"),
+        Ok(submission) => submission,
+        Err(fault) => panic!("{text:?} faulted: {fault}"),
     }
 }
 
@@ -174,8 +174,8 @@ pub fn submit<'text>(
 pub fn corpus(root: CorpusRoot) -> PathBuf
 {
     let name = match root {
-        | CorpusRoot::Strict => "strict",
-        | CorpusRoot::Fixture => "fixture",
+        CorpusRoot::Strict => "strict",
+        CorpusRoot::Fixture => "fixture",
     };
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -205,8 +205,8 @@ pub fn corpus(root: CorpusRoot) -> PathBuf
 pub fn resumed<Store, Blocks>(session: &Session<Store, Blocks>) -> Vec<Typing>
 {
     match session.last() {
-        | Maybe::Present(resume) => resume.typings().cloned().collect(),
-        | Maybe::Absent(reason) => panic!("the session holds no resume: {reason:?}"),
+        Maybe::Present(resume) => resume.typings().cloned().collect(),
+        Maybe::Absent(reason) => panic!("the session holds no resume: {reason:?}"),
     }
 }
 
@@ -248,13 +248,13 @@ pub fn footprints<Store, Blocks>(session: &Session<Store, Blocks>) -> Vec<(ItemK
         .iter()
         .zip(resume.checkpoints().items())
         .map(|(&handle, checkpoint)| match resume.reference(handle) {
-            | Maybe::Present(&Reference::Item { ref key, .. }) => {
+            Maybe::Present(&Reference::Item { ref key, .. }) => {
                 (key.clone(), checkpoint.footprint().hole())
             },
-            | Maybe::Present(&Reference::Unoccupied) => {
+            Maybe::Present(&Reference::Unoccupied) => {
                 panic!("a resume's handle names an occupied position")
             },
-            | Maybe::Absent(reason) => panic!("the resume's own handle is live: {reason:?}"),
+            Maybe::Absent(reason) => panic!("the resume's own handle is live: {reason:?}"),
         })
         .collect()
 }
@@ -321,12 +321,12 @@ pub fn batch(program: &Program) -> Vec<Typing>
 pub fn names(composed: &Composed<'_>) -> Vec<String>
 {
     match *composed {
-        | Composed::Settled { ref report, .. } => report
+        Composed::Settled { ref report, .. } => report
             .declarations()
             .iter()
             .map(|declaration| declaration.name().to_string())
             .collect(),
-        | Composed::Refused(ref refusal) => panic!("refused as a whole: {refusal}"),
+        Composed::Refused(ref refusal) => panic!("refused as a whole: {refusal}"),
     }
 }
 /// A sink that refuses the first attempted write.

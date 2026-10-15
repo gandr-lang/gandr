@@ -136,9 +136,9 @@ struct Telescope(usize);
 const fn nest(reach: Reach) -> Reach
 {
     match reach {
-        | Reach::Domain => Reach::Domain,
-        | Reach::Term => Reach::Term,
-        | Reach::Head { .. } | Reach::Thunk | Reach::Chain { .. } | Reach::Nested => Reach::Nested,
+        Reach::Domain => Reach::Domain,
+        Reach::Term => Reach::Term,
+        Reach::Head { .. } | Reach::Thunk | Reach::Chain { .. } | Reach::Nested => Reach::Nested,
     }
 }
 
@@ -150,8 +150,8 @@ const fn nest(reach: Reach) -> Reach
 const fn term(reach: Reach) -> Reach
 {
     match reach {
-        | Reach::Domain => Reach::Domain,
-        | Reach::Head { .. } | Reach::Thunk | Reach::Chain { .. } | Reach::Nested | Reach::Term => {
+        Reach::Domain => Reach::Domain,
+        Reach::Head { .. } | Reach::Thunk | Reach::Chain { .. } | Reach::Nested | Reach::Term => {
             Reach::Term
         },
     }
@@ -215,11 +215,11 @@ const fn found(
 ) -> Finding
 {
     match (reach, uniformity) {
-        | (Reach::Domain, _) => Finding::Negative,
-        | (Reach::Term, _) => Finding::Index,
-        | (Reach::Nested | Reach::Thunk | Reach::Chain { .. }, _) => Finding::Nested,
-        | (Reach::Head { .. }, Uniformity::Uniform) => Finding::Admitted,
-        | (Reach::Head { .. }, Uniformity::NonUniform) => Finding::NonUniform,
+        (Reach::Domain, _) => Finding::Negative,
+        (Reach::Term, _) => Finding::Index,
+        (Reach::Nested | Reach::Thunk | Reach::Chain { .. }, _) => Finding::Nested,
+        (Reach::Head { .. }, Uniformity::Uniform) => Finding::Admitted,
+        (Reach::Head { .. }, Uniformity::NonUniform) => Finding::NonUniform,
     }
 }
 
@@ -231,11 +231,11 @@ const fn found(
 const fn thunked(reach: Reach) -> Reach
 {
     match reach {
-        | Reach::Head {
+        Reach::Head {
             site: HeadSite::Field,
             ..
         } => Reach::Thunk,
-        | Reach::Head {
+        Reach::Head {
             site: HeadSite::Codomain,
             ..
         }
@@ -259,15 +259,15 @@ fn codomain(
 ) -> Reach
 {
     let past = |depth: Binders| match binds {
-        | Binding::Binds => depth.deeper(),
-        | Binding::Closed => depth,
+        Binding::Binds => depth.deeper(),
+        Binding::Closed => depth,
     };
     match reach {
-        | Reach::Thunk => Reach::Chain {
+        Reach::Thunk => Reach::Chain {
             depth: past(Binders::NONE),
         },
-        | Reach::Chain { depth } => Reach::Chain { depth: past(depth) },
-        | Reach::Head { .. } | Reach::Domain | Reach::Nested | Reach::Term => reach,
+        Reach::Chain { depth } => Reach::Chain { depth: past(depth) },
+        Reach::Head { .. } | Reach::Domain | Reach::Nested | Reach::Term => reach,
     }
 }
 
@@ -328,8 +328,8 @@ fn worst(
             continue;
         }
         match node {
-            | AnyNode::ValueType(id) => match arena.value_type(id) {
-                | Some(&ValueType::Data {
+            AnyNode::ValueType(id) => match arena.value_type(id) {
+                Some(&ValueType::Data {
                     declaration,
                     ref arguments,
                 }) => {
@@ -338,8 +338,8 @@ fn worst(
                     }
                     let inner = if declaration == position {
                         let depth = match reach {
-                            | Reach::Head { depth, .. } => depth,
-                            | Reach::Thunk
+                            Reach::Head { depth, .. } => depth,
+                            Reach::Thunk
                             | Reach::Chain { .. }
                             | Reach::Domain
                             | Reach::Nested
@@ -358,7 +358,7 @@ fn worst(
                             .map(|&argument| (AnyNode::Value(argument), inner)),
                     );
                 },
-                | Some(&ValueType::Abstract(index)) => {
+                Some(&ValueType::Abstract(index)) => {
                     if index > position {
                         return Err(index);
                     }
@@ -366,39 +366,39 @@ fn worst(
                         worst = worst.max(found(term(reach), Uniformity::NonUniform));
                     }
                 },
-                | Some(&ValueType::Record(ref fields)) => {
+                Some(&ValueType::Record(ref fields)) => {
                     pending.extend(
                         fields
                             .values()
                             .map(|&field| (AnyNode::ValueType(field), nest(reach))),
                     );
                 },
-                | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
+                Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
                     pending.extend(
                         parts
                             .iter()
                             .map(|&part| (AnyNode::ValueType(part), nest(reach))),
                     );
                 },
-                | Some(&ValueType::Sigma { first, second }) => {
+                Some(&ValueType::Sigma { first, second }) => {
                     pending.push((AnyNode::ValueType(first), nest(reach)));
                     pending.push((AnyNode::ValueType(second), nest(reach)));
                 },
-                | Some(&ValueType::Lift { inner, .. }) => {
+                Some(&ValueType::Lift { inner, .. }) => {
                     pending.push((AnyNode::ValueType(inner), term(reach)));
                 },
-                | Some(&ValueType::StaticPi { domain, codomain }) => {
+                Some(&ValueType::StaticPi { domain, codomain }) => {
                     pending.push((AnyNode::ValueType(domain), term(reach)));
                     pending.push((AnyNode::ValueType(codomain), term(reach)));
                 },
-                | Some(&ValueType::Element { code, .. }) => {
+                Some(&ValueType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), term(reach)));
                 },
-                | Some(&ValueType::PathUniverse(source, target)) => {
+                Some(&ValueType::PathUniverse(source, target)) => {
                     pending.push((AnyNode::Value(source), term(reach)));
                     pending.push((AnyNode::Value(target), term(reach)));
                 },
-                | Some(&ValueType::Path {
+                Some(&ValueType::Path {
                     carrier,
                     left,
                     right,
@@ -407,7 +407,7 @@ fn worst(
                     pending.push((AnyNode::Value(left), term(reach)));
                     pending.push((AnyNode::Value(right), term(reach)));
                 },
-                | Some(&ValueType::Flow {
+                Some(&ValueType::Flow {
                     carrier,
                     source,
                     target,
@@ -416,22 +416,22 @@ fn worst(
                     pending.push((AnyNode::Value(source), term(reach)));
                     pending.push((AnyNode::Value(target), term(reach)));
                 },
-                | Some(&ValueType::Run(session)) => {
+                Some(&ValueType::Run(session)) => {
                     pending.push((AnyNode::Value(session), term(reach)));
                 },
-                | Some(&ValueType::Thunk(body)) => {
+                Some(&ValueType::Thunk(body)) => {
                     pending.push((AnyNode::CompType(body), thunked(reach)));
                 },
-                | Some(&ValueType::List(element)) => {
+                Some(&ValueType::List(element)) => {
                     pending.push((AnyNode::ValueType(element), nest(reach)));
                 },
-                | Some(&ValueType::Stack { input, output }) => {
+                Some(&ValueType::Stack { input, output }) => {
                     pending.push((AnyNode::CompType(input), Reach::Domain));
                     pending.push((AnyNode::CompType(output), nest(reach)));
                 },
                 // A payload is sent as well as received: read it at a domain,
                 // the conservative polarity.
-                | Some(&ValueType::Session(ref session)) => {
+                Some(&ValueType::Session(ref session)) => {
                     pending.extend(
                         session
                             .payloads()
@@ -439,42 +439,42 @@ fn worst(
                             .map(|&payload| (AnyNode::ValueType(payload), Reach::Domain)),
                     );
                 },
-                | Some(&ValueType::Capability { ref authority, .. }) => {
+                Some(&ValueType::Capability { ref authority, .. }) => {
                     pending.extend(
                         authority
                             .types()
                             .map(|operation| (AnyNode::ValueType(operation), nest(reach))),
                     );
                 },
-                | Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Unknown))
+                Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Unknown))
                 | None => {},
             },
-            | AnyNode::CompType(id) => match arena.comp_type(id) {
-                | Some(&CompType::Arrow {
+            AnyNode::CompType(id) => match arena.comp_type(id) {
+                Some(&CompType::Arrow {
                     domain,
                     codomain: rest,
                 }) => {
                     pending.push((AnyNode::ValueType(domain), Reach::Domain));
                     pending.push((AnyNode::CompType(rest), codomain(reach, Binding::Closed)));
                 },
-                | Some(&CompType::Pi {
+                Some(&CompType::Pi {
                     domain,
                     codomain: rest,
                 }) => {
                     pending.push((AnyNode::ValueType(domain), Reach::Domain));
                     pending.push((AnyNode::CompType(rest), codomain(reach, Binding::Binds)));
                 },
-                | Some(&CompType::Returner {
+                Some(&CompType::Returner {
                     result,
                     ref effects,
                 }) => {
                     let inner = match reach {
-                        | Reach::Chain { depth } => Reach::Head {
+                        Reach::Chain { depth } => Reach::Head {
                             depth,
                             site: HeadSite::Codomain,
                         },
-                        | Reach::Thunk => Reach::Nested,
-                        | Reach::Head { .. } | Reach::Domain | Reach::Nested | Reach::Term => reach,
+                        Reach::Thunk => Reach::Nested,
+                        Reach::Head { .. } | Reach::Domain | Reach::Nested | Reach::Term => reach,
                     };
                     pending.push((AnyNode::ValueType(result), inner));
                     pending.extend(
@@ -483,17 +483,17 @@ fn worst(
                             .map(|operation| (AnyNode::ValueType(operation), nest(reach))),
                     );
                 },
-                | Some(&CompType::With(first, second)) => {
+                Some(&CompType::With(first, second)) => {
                     pending.push((AnyNode::CompType(first), nest(reach)));
                     pending.push((AnyNode::CompType(second), nest(reach)));
                 },
-                | Some(&CompType::Element { code, .. }) => {
+                Some(&CompType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), term(reach)));
                 },
-                | Some(&CompType::Unknown) | None => {},
+                Some(&CompType::Unknown) | None => {},
             },
-            | AnyNode::Value(id) => match arena.value(id) {
-                | Some(&Value::Constant(index)) => {
+            AnyNode::Value(id) => match arena.value(id) {
+                Some(&Value::Constant(index)) => {
                     if index > position {
                         return Err(index);
                     }
@@ -501,7 +501,7 @@ fn worst(
                         worst = worst.max(found(term(reach), Uniformity::NonUniform));
                     }
                 },
-                | Some(&Value::Constructor {
+                Some(&Value::Constructor {
                     datatype,
                     ref fields,
                     ..
@@ -509,10 +509,10 @@ fn worst(
                     pending.push((AnyNode::ValueType(datatype), reach));
                     pending.extend(fields.iter().map(|&field| (AnyNode::Value(field), reach)));
                 },
-                | Some(&Value::Record(ref fields)) => {
+                Some(&Value::Record(ref fields)) => {
                     pending.extend(fields.values().map(|&field| (AnyNode::Value(field), reach)));
                 },
-                | Some(&Value::PathEquiv {
+                Some(&Value::PathEquiv {
                     path_type,
                     forward,
                     backward,
@@ -522,24 +522,24 @@ fn worst(
                     pending.push((AnyNode::Value(forward), reach));
                     pending.push((AnyNode::Value(backward), reach));
                 },
-                | Some(&Value::Tuple(ref components)) => {
+                Some(&Value::Tuple(ref components)) => {
                     pending.extend(
                         components
                             .iter()
                             .map(|&component| (AnyNode::Value(component), reach)),
                     );
                 },
-                | Some(&Value::Recorded(ref moves)) => {
+                Some(&Value::Recorded(ref moves)) => {
                     pending.extend(
                         moves
                             .iter()
                             .filter_map(|movement| match movement.payload() {
-                                | Maybe::Present(payload) => Some((AnyNode::Value(payload), reach)),
-                                | Maybe::Absent(_) => None,
+                                Maybe::Present(payload) => Some((AnyNode::Value(payload), reach)),
+                                Maybe::Absent(_) => None,
                             }),
                     );
                 },
-                | Some(
+                Some(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
@@ -562,20 +562,20 @@ fn worst(
                     pending.push((AnyNode::Value(first), reach));
                     pending.push((AnyNode::Value(second), reach));
                 },
-                | Some(&Value::Reify(ref frames)) => {
+                Some(&Value::Reify(ref frames)) => {
                     for frame in frames.iter() {
                         match *frame {
-                            | StackFrame::Apply(value) => {
+                            StackFrame::Apply(value) => {
                                 pending.push((AnyNode::Value(value), reach));
                             },
-                            | StackFrame::Bind(body) => {
+                            StackFrame::Bind(body) => {
                                 pending.push((AnyNode::Computation(body), reach));
                             },
-                            | StackFrame::Project(_) => {},
+                            StackFrame::Project(_) => {},
                         }
                     }
                 },
-                | Some(
+                Some(
                     &(Value::PathRefl(body)
                     | Value::Here(body)
                     | Value::Stay(body)
@@ -587,7 +587,7 @@ fn worst(
                 ) => {
                     pending.push((AnyNode::Value(body), reach));
                 },
-                | Some(
+                Some(
                     &(Value::Thunk(body)
                     | Value::Returned(body)
                     | Value::Nested(body)
@@ -595,11 +595,11 @@ fn worst(
                 ) => {
                     pending.push((AnyNode::Computation(body), reach));
                 },
-                | Some(&Value::Quote(quoted)) => pending.push((AnyNode::ValueType(quoted), reach)),
-                | Some(&Value::QuoteComputation(quoted)) => {
+                Some(&Value::Quote(quoted)) => pending.push((AnyNode::ValueType(quoted), reach)),
+                Some(&Value::QuoteComputation(quoted)) => {
                     pending.push((AnyNode::CompType(quoted), reach));
                 },
-                | Some(
+                Some(
                     &(Value::Primitive { .. }
                     | Value::Variable { .. }
                     | Value::ListNil
@@ -608,8 +608,8 @@ fn worst(
                 )
                 | None => {},
             },
-            | AnyNode::Computation(id) => match arena.computation(id) {
-                | Some(&Computation::DataCase {
+            AnyNode::Computation(id) => match arena.computation(id) {
+                Some(&Computation::DataCase {
                     scrutinee,
                     motive,
                     ref branches,
@@ -622,14 +622,14 @@ fn worst(
                             .map(|&branch| (AnyNode::Computation(branch), reach)),
                     );
                 },
-                | Some(&Computation::Primitive { ref arguments, .. }) => {
+                Some(&Computation::Primitive { ref arguments, .. }) => {
                     pending.extend(
                         arguments
                             .iter()
                             .map(|&argument| (AnyNode::Value(argument), reach)),
                     );
                 },
-                | Some(
+                Some(
                     &(Computation::RecordProjection(value, _)
                     | Computation::TupleProjection(value, _)
                     | Computation::Return(value)
@@ -637,7 +637,7 @@ fn worst(
                 ) => {
                     pending.push((AnyNode::Value(value), reach));
                 },
-                | Some(
+                Some(
                     &(Computation::Lambda(body)
                     | Computation::Fixpoint { body, .. }
                     | Computation::Mark { body, .. }
@@ -647,11 +647,11 @@ fn worst(
                 ) => {
                     pending.push((AnyNode::Computation(body), reach));
                 },
-                | Some(&Computation::With(first, second)) => {
+                Some(&Computation::With(first, second)) => {
                     pending.push((AnyNode::Computation(first), reach));
                     pending.push((AnyNode::Computation(second), reach));
                 },
-                | Some(
+                Some(
                     &(Computation::Resume(stack, body)
                     | Computation::Split {
                         scrutinee: stack,
@@ -662,7 +662,7 @@ fn worst(
                     pending.push((AnyNode::Value(stack), reach));
                     pending.push((AnyNode::Computation(body), reach));
                 },
-                | Some(&Computation::Perform {
+                Some(&Computation::Perform {
                     ref signature,
                     payload,
                     ..
@@ -674,7 +674,7 @@ fn worst(
                             .map(|operation| (AnyNode::ValueType(operation), reach)),
                     );
                 },
-                | Some(&Computation::Exercise {
+                Some(&Computation::Exercise {
                     capability,
                     ref signature,
                     payload,
@@ -688,7 +688,7 @@ fn worst(
                             .map(|operation| (AnyNode::ValueType(operation), reach)),
                     );
                 },
-                | Some(
+                Some(
                     &(Computation::Handle {
                         ref signature,
                         subject,
@@ -715,7 +715,7 @@ fn worst(
                             .map(|operation| (AnyNode::ValueType(operation), reach)),
                     );
                 },
-                | Some(&Computation::ListFold {
+                Some(&Computation::ListFold {
                     element,
                     result,
                     list,
@@ -728,15 +728,15 @@ fn worst(
                     pending.push((AnyNode::Computation(on_nil), reach));
                     pending.push((AnyNode::Computation(on_cons), reach));
                 },
-                | Some(&Computation::Application(head, argument)) => {
+                Some(&Computation::Application(head, argument)) => {
                     pending.push((AnyNode::Computation(head), reach));
                     pending.push((AnyNode::Value(argument), reach));
                 },
-                | Some(&Computation::Bind(bound, body)) => {
+                Some(&Computation::Bind(bound, body)) => {
                     pending.push((AnyNode::Computation(bound), reach));
                     pending.push((AnyNode::Computation(body), reach));
                 },
-                | Some(&Computation::Case {
+                Some(&Computation::Case {
                     scrutinee,
                     ref branches,
                 }) => {
@@ -747,11 +747,11 @@ fn worst(
                             .map(|&branch| (AnyNode::Computation(branch), reach)),
                     );
                 },
-                | Some(&Computation::Transport(path, value)) => {
+                Some(&Computation::Transport(path, value)) => {
                     pending.push((AnyNode::Value(path), reach));
                     pending.push((AnyNode::Value(value), reach));
                 },
-                | Some(
+                Some(
                     &(Computation::PathTransport {
                         motive,
                         path,
@@ -767,7 +767,7 @@ fn worst(
                     pending.push((AnyNode::Value(path), reach));
                     pending.push((AnyNode::Value(value), reach));
                 },
-                | Some(&Computation::TelescopeTransport {
+                Some(&Computation::TelescopeTransport {
                     motive,
                     path,
                     start,
@@ -779,7 +779,7 @@ fn worst(
                         [path, start, over, value].map(|child| (AnyNode::Value(child), reach)),
                     );
                 },
-                | Some(&Computation::Session(ref action)) => {
+                Some(&Computation::Session(ref action)) => {
                     pending.extend(action.values().map(|value| (AnyNode::Value(value), reach)));
                     pending.extend(
                         action
@@ -792,7 +792,7 @@ fn worst(
                             .map(|child| (AnyNode::Computation(child), reach)),
                     );
                 },
-                | Some(&Computation::Hole(_)) | None => {},
+                Some(&Computation::Hole(_)) | None => {},
             },
         }
     }
@@ -810,11 +810,11 @@ const fn refusal(
 ) -> Result<(), CheckRefusal>
 {
     match finding {
-        | Finding::Admitted => Ok(()),
-        | Finding::NonUniform => Err(CheckRefusal::NonUniformOccurrence(site)),
-        | Finding::Nested => Err(CheckRefusal::NestedOccurrence(site)),
-        | Finding::Index => Err(CheckRefusal::IndexOccurrence(site)),
-        | Finding::Negative => Err(CheckRefusal::NegativeOccurrence(site)),
+        Finding::Admitted => Ok(()),
+        Finding::NonUniform => Err(CheckRefusal::NonUniformOccurrence(site)),
+        Finding::Nested => Err(CheckRefusal::NestedOccurrence(site)),
+        Finding::Index => Err(CheckRefusal::IndexOccurrence(site)),
+        Finding::Negative => Err(CheckRefusal::NegativeOccurrence(site)),
     }
 }
 

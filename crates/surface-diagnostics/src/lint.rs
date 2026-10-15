@@ -59,8 +59,8 @@ impl AsRef<str> for Lint
     fn as_ref(&self) -> &str
     {
         match *self {
-            | Self::ExplicitExits => "explicit-exits",
-            | Self::ExplicitRuns => "explicit-runs",
+            Self::ExplicitExits => "explicit-exits",
+            Self::ExplicitRuns => "explicit-runs",
         }
     }
 }

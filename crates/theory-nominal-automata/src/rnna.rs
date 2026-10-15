@@ -177,7 +177,7 @@ impl<A: Copy + Ord> Rnna<A>
         for rule in &rules {
             let source_arity = arity_at(&arities, rule.source)?;
             let allocation = match rule.kind {
-                | RnnaRuleKind::Free { register } => {
+                RnnaRuleKind::Free { register } => {
                     if usize::from(register) >= usize::from(source_arity) {
                         return Err(AutomatonError::UnknownRegister {
                             control: rule.source,
@@ -186,7 +186,7 @@ impl<A: Copy + Ord> Rnna<A>
                     }
                     Allocation::Forbidden
                 },
-                | RnnaRuleKind::Allocate => Allocation::Allowed,
+                RnnaRuleKind::Allocate => Allocation::Allowed,
             };
             validate_transfer(
                 &arities,

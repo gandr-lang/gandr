@@ -214,17 +214,17 @@ fn ends_in_repair(
             return EndsInRepair(false);
         };
         match node.label() {
-            | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => return EndsInRepair(true),
-            | NodeLabel::Tile(_) | NodeLabel::Space => return EndsInRepair(false),
-            | NodeLabel::Wald | NodeLabel::Meld(_) | NodeLabel::Doc => {
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => return EndsInRepair(true),
+            NodeLabel::Tile(_) | NodeLabel::Space => return EndsInRepair(false),
+            NodeLabel::Wald | NodeLabel::Meld(_) | NodeLabel::Doc => {
                 let last = tree.children(at).filter(|&child| {
                     tree.node(child).is_some_and(|child| {
                         !matches!(child.label(), NodeLabel::Space | NodeLabel::Doc)
                     })
                 });
                 match last.last() {
-                    | Some(child) => at = child,
-                    | None => return EndsInRepair(false),
+                    Some(child) => at = child,
+                    None => return EndsInRepair(false),
                 }
             },
         }
@@ -319,10 +319,10 @@ impl Deadlines
     {
         for logged in log {
             match (logged.holding().0, now.checked_add(quiet)) {
-                | (true, Some(deadline)) => {
+                (true, Some(deadline)) => {
                     let _armed = self.0.insert(logged.uri().clone(), deadline);
                 },
-                | (true, None) | (false, _) => {
+                (true, None) | (false, _) => {
                     let _disarmed = self.0.remove(logged.uri());
                 },
             }
@@ -434,25 +434,27 @@ where
         loop {
             if want.send(()).is_err() {
                 return match visit(Met::Closed, &mut deadlines)? {
-                    | ControlFlow::Break(ended) => Ok(ended),
-                    | ControlFlow::Continue(()) => continue,
+                    ControlFlow::Break(ended) => Ok(ended),
+                    ControlFlow::Continue(()) => continue,
                 };
             }
             let frame = loop {
-                let received = match deadlines.next() {
-                    | None => frames
-                        .recv()
-                        .map_err(|_gone| RecvTimeoutError::Disconnected),
-                    | Some(deadline) => {
+                let received = deadlines.next().map_or_else(
+                    || {
+                        frames
+                            .recv()
+                            .map_err(|_gone| RecvTimeoutError::Disconnected)
+                    },
+                    |deadline| {
                         frames.recv_timeout(deadline.saturating_duration_since(Instant::now()))
                     },
-                };
+                );
                 match received {
-                    | Ok(frame) => break frame,
-                    | Err(RecvTimeoutError::Disconnected) => {
+                    Ok(frame) => break frame,
+                    Err(RecvTimeoutError::Disconnected) => {
                         break Ok(Maybe::Absent(read_frame::Absent::Closed));
                     },
-                    | Err(RecvTimeoutError::Timeout) => {
+                    Err(RecvTimeoutError::Timeout) => {
                         for uri in deadlines.due(Instant::now()) {
                             if let ControlFlow::Break(ended) =
                                 visit(Met::Quiet(uri), &mut deadlines)?
@@ -464,8 +466,8 @@ where
                 }
             };
             let met = match frame? {
-                | Maybe::Present(body) => Met::Frame(body),
-                | Maybe::Absent(_) => Met::Closed,
+                Maybe::Present(body) => Met::Frame(body),
+                Maybe::Absent(_) => Met::Closed,
             };
             if let ControlFlow::Break(ended) = visit(met, &mut deadlines)? {
                 return Ok(ended);
@@ -495,11 +497,11 @@ mod tests
         let held = |text: &'static str, at: usize| {
             let parsed = parse(grammar, SourceText::from(text)).expect("the text parses");
             match caret_form(parsed.tree(), ByteOffset::from(at)) {
-                | Maybe::Present(span) => Maybe::Present(
+                Maybe::Present(span) => Maybe::Present(
                     text.get(usize::from(span.start()) .. usize::from(span.end()))
                         .unwrap_or_default(),
                 ),
-                | Maybe::Absent(absent) => Maybe::Absent(absent),
+                Maybe::Absent(absent) => Maybe::Absent(absent),
             }
         };
         let text = "def a = 1 ;\ndef b = ";

@@ -292,8 +292,8 @@ impl<'store> Scan<'store>
     {
         let position = self.position;
         let front = split_record(self.remaining).map_err(|fault| match fault {
-            | RecordFault::Truncated => ValueError::TruncatedStream { position },
-            | RecordFault::UnknownKind => ValueError::UnknownTokenKind { position },
+            RecordFault::Truncated => ValueError::TruncatedStream { position },
+            RecordFault::UnknownKind => ValueError::UnknownTokenKind { position },
         });
         let BodyFront::Record(record, rest) = front?
         else {
@@ -441,8 +441,8 @@ impl<'store> Scan<'store>
         };
 
         match record {
-            | Record::Child(pointer) => return Ok(Scanned::Child(pointer)),
-            | Record::Open(_tag) => {
+            Record::Child(pointer) => return Ok(Scanned::Child(pointer)),
+            Record::Open(_tag) => {
                 let Some(deeper) = self.depth.0.checked_add(1_u64)
                 else {
                     return Err(ValueError::ArithmeticOverflow {
@@ -451,12 +451,12 @@ impl<'store> Scan<'store>
                 };
                 self.depth = SubtreeDepth(deeper);
             },
-            | Record::Word(_) | Record::Bytes(_) => {
+            Record::Word(_) | Record::Bytes(_) => {
                 if self.depth == SubtreeDepth::OUTSIDE {
                     return Err(outside(record.kind()));
                 }
             },
-            | Record::Close => {
+            Record::Close => {
                 let Some(shallower) = self.depth.0.checked_sub(1_u64)
                 else {
                     return Err(outside(TokenKind::Close));
@@ -681,8 +681,8 @@ where
     loop {
         let scanned = current.step(&mut walk.spent)?;
         match scanned {
-            | Scanned::Delivered => {},
-            | Scanned::Child(pointer) => {
+            Scanned::Delivered => {},
+            Scanned::Child(pointer) => {
                 if let Some(&count) = walk.counted.get(&pointer) {
                     current.absorb(count)?;
                 }
@@ -691,7 +691,7 @@ where
                     suspended.push(mem::replace(&mut current, child));
                 }
             },
-            | Scanned::Complete => {
+            Scanned::Complete => {
                 let total = current.delivered;
                 let _counted = walk.counted.insert(current.at, total);
                 let Some(parent) = suspended.pop()

@@ -131,10 +131,10 @@ impl fmt::Display for Failure
     ) -> fmt::Result
     {
         match *self {
-            | Self::Grammar(ref fault) => write!(f, "the built-in grammar did not build: {fault}"),
-            | Self::Fault(ref fault) => f.write_str(fault),
-            | Self::Write(ref fault) => write!(f, "the output refused a row: {fault}"),
-            | Self::Unmeasured => f.write_str("a measured value was not recorded"),
+            Self::Grammar(ref fault) => write!(f, "the built-in grammar did not build: {fault}"),
+            Self::Fault(ref fault) => f.write_str(fault),
+            Self::Write(ref fault) => write!(f, "the output refused a row: {fault}"),
+            Self::Unmeasured => f.write_str("a measured value was not recorded"),
         }
     }
 }
@@ -175,8 +175,8 @@ impl Setting
     fn read(self) -> Configured
     {
         let (name, default) = match self {
-            | Self::Forms => ("FORMS", NonZeroUsize::new(2_000)),
-            | Self::Repeats => ("REPEATS", NonZeroUsize::new(9)),
+            Self::Forms => ("FORMS", NonZeroUsize::new(2_000)),
+            Self::Repeats => ("REPEATS", NonZeroUsize::new(9)),
         };
         Configured(
             std::env::var(name)

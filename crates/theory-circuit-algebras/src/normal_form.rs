@@ -499,10 +499,11 @@ impl Relabelling
         wire: Wire,
     ) -> Maybe<Wire, relabelled_wire::Absent>
     {
-        match self.wires.get(&wire) {
-            | Some(image) => Maybe::Present(*image),
-            | None => Maybe::Absent(relabelled_wire::Absent::Unmapped),
-        }
+        self.wires
+            .get(&wire)
+            .map_or(Maybe::Absent(relabelled_wire::Absent::Unmapped), |image| {
+                Maybe::Present(*image)
+            })
     }
 
     /// Where the generator at `edge` went.
@@ -526,10 +527,10 @@ impl Relabelling
         edge: Edge,
     ) -> Maybe<Edge, relabelled_generator::Absent>
     {
-        match self.generators.get(&edge) {
-            | Some(image) => Maybe::Present(*image),
-            | None => Maybe::Absent(relabelled_generator::Absent::Unmapped),
-        }
+        self.generators.get(&edge).map_or(
+            Maybe::Absent(relabelled_generator::Absent::Unmapped),
+            |image| Maybe::Present(*image),
+        )
     }
 
     /// How many wires the relabelling maps.
@@ -1036,25 +1037,21 @@ impl core::fmt::Display for RelabellingDefect
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::WireCountMismatch { .. } => "the two sides declare different numbers of wires",
-            | Self::EdgeCountMismatch { .. } => {
-                "the two sides hold different numbers of generators"
-            },
-            | Self::WireImageOutOfRange { .. } => "a wire's image is not a wire of the form",
-            | Self::WireImageReused { .. } => "two wires share an image",
-            | Self::WireUnmapped { .. } => "a wire of the source has no image",
-            | Self::GeneratorImageOutOfRange { .. } => {
+            Self::WireCountMismatch { .. } => "the two sides declare different numbers of wires",
+            Self::EdgeCountMismatch { .. } => "the two sides hold different numbers of generators",
+            Self::WireImageOutOfRange { .. } => "a wire's image is not a wire of the form",
+            Self::WireImageReused { .. } => "two wires share an image",
+            Self::WireUnmapped { .. } => "a wire of the source has no image",
+            Self::GeneratorImageOutOfRange { .. } => {
                 "a generator's image is not a generator of the form"
             },
-            | Self::GeneratorImageReused { .. } => "two generators share an image",
-            | Self::GeneratorUnmapped { .. } => "a generator of the source has no image",
-            | Self::LabelMismatch { .. } => "a generator's image carries another label",
-            | Self::ArityMismatch { .. } => "a generator's image has another arity on one leg",
-            | Self::PortMismatch { .. } => {
-                "a port's image is not the image's port at that position"
-            },
-            | Self::BoundaryArityMismatch { .. } => "an interface leg has another arity",
-            | Self::BoundaryMismatch { .. } => {
+            Self::GeneratorImageReused { .. } => "two generators share an image",
+            Self::GeneratorUnmapped { .. } => "a generator of the source has no image",
+            Self::LabelMismatch { .. } => "a generator's image carries another label",
+            Self::ArityMismatch { .. } => "a generator's image has another arity on one leg",
+            Self::PortMismatch { .. } => "a port's image is not the image's port at that position",
+            Self::BoundaryArityMismatch { .. } => "an interface leg has another arity",
+            Self::BoundaryMismatch { .. } => {
                 "an interface port's image is not the form's port at that position"
             },
         })
@@ -1406,8 +1403,8 @@ pub fn same_diagram(
     let (form, left) = canonicalize(left).into_parts();
     let (other, right) = canonicalize(right).into_parts();
     match divergence_of(&form, &other) {
-        | Maybe::Present(divergence) => DiagramEquality::Distinct(divergence),
-        | Maybe::Absent(form_divergence::Absent::Equal) => {
+        Maybe::Present(divergence) => DiagramEquality::Distinct(divergence),
+        Maybe::Absent(form_divergence::Absent::Equal) => {
             DiagramEquality::Same(SharedCanon { form, left, right })
         },
     }

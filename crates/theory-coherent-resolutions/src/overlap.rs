@@ -418,8 +418,8 @@ impl OverlapSupport
                     .all(|held| bool::from(self.overlaps_are_independent(held, overlap)))
             });
             match open {
-                | Some(batch) => batch.push(overlap.clone()),
-                | None => batches.push(alloc::vec![overlap.clone()]),
+                Some(batch) => batch.push(overlap.clone()),
+                None => batches.push(alloc::vec![overlap.clone()]),
             }
         }
         batches
@@ -504,12 +504,12 @@ impl core::fmt::Display for OverlapRefusal
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::NotAComposition => f.write_str("the overlap is not a composition"),
-            | Self::NotAConfluence => f.write_str("the overlap is not a confluence"),
-            | Self::UnissuedCell(cell) => {
+            Self::NotAComposition => f.write_str("the overlap is not a composition"),
+            Self::NotAConfluence => f.write_str("the overlap is not a confluence"),
+            Self::UnissuedCell(cell) => {
                 write!(f, "the store holds no cell {}", usize::from(cell))
             },
-            | Self::SeamSplice(refusal) => write!(f, "the seam splice is refused: {refusal}"),
+            Self::SeamSplice(refusal) => write!(f, "the seam splice is refused: {refusal}"),
         }
     }
 }
@@ -524,8 +524,8 @@ impl core::error::Error for OverlapRefusal
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)>
     {
         match *self {
-            | Self::SeamSplice(ref refusal) => Some(refusal),
-            | Self::NotAComposition | Self::NotAConfluence | Self::UnissuedCell(_) => None,
+            Self::SeamSplice(ref refusal) => Some(refusal),
+            Self::NotAComposition | Self::NotAConfluence | Self::UnissuedCell(_) => None,
         }
     }
 }
@@ -636,8 +636,8 @@ impl<A: CellAlphabet> Overlap<A>
     ) -> Result<A::Cmd, OverlapRefusal>
     {
         match store.get(self.left) {
-            | Maybe::Present(left) => Ok(A::apply_subst(&self.unifier, left.rhs())),
-            | Maybe::Absent(_) => Err(OverlapRefusal::UnissuedCell(self.left)),
+            Maybe::Present(left) => Ok(A::apply_subst(&self.unifier, left.rhs())),
+            Maybe::Absent(_) => Err(OverlapRefusal::UnissuedCell(self.left)),
         }
     }
 
@@ -996,12 +996,12 @@ where
         .into_iter()
         .filter(|seam| *seam != root)
         .filter_map(|seam| match A::subterm_cmd_at(left_cell.lhs(), &seam) {
-            | Maybe::Present(sub)
+            Maybe::Present(sub)
                 if A::metavariables(&sub).len() != 1 || A::command_positions(&sub).len() != 1 =>
             {
                 Some((seam, sub))
             },
-            | Maybe::Present(_) | Maybe::Absent(_) => None,
+            Maybe::Present(_) | Maybe::Absent(_) => None,
         })
         .collect();
     if seams.is_empty() {

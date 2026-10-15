@@ -284,8 +284,8 @@ where
     A: CellAlphabet,
 {
     let redex = match A::subterm_cmd_at(term, pos) {
-        | Maybe::Present(redex) => redex,
-        | Maybe::Absent(reason) => return Maybe::Absent(firing::Absent::NoCommand(reason)),
+        Maybe::Present(redex) => redex,
+        Maybe::Absent(reason) => return Maybe::Absent(firing::Absent::NoCommand(reason)),
     };
     if !bool::from(A::may_fire(&cell.provenance(), &redex)) {
         return Maybe::Absent(firing::Absent::Refused);
@@ -296,8 +296,8 @@ where
     }
     let contractum = A::apply_subst(&subst, cell.rhs());
     match A::splice_cmd_at(term, pos, contractum) {
-        | Ok(result) => Maybe::Present(result),
-        | Err(refusal) => Maybe::Absent(firing::Absent::SpliceRefused(refusal)),
+        Ok(result) => Maybe::Present(result),
+        Err(refusal) => Maybe::Absent(firing::Absent::SpliceRefused(refusal)),
     }
 }
 

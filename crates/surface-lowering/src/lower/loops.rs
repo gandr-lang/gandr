@@ -283,11 +283,11 @@ impl<'source> Lowerer<'_, 'source>
             let _owner = self.bodies.insert(body.last, owner);
         }
         let answer = match self.answers.get(&site.at.node) {
-            | Some(&answer) => {
+            Some(&answer) => {
                 let _passed = self.answers.insert(body.last, answer);
                 Maybe::Present(answer)
             },
-            | None => Maybe::Absent(answered::Absent::Unstated),
+            None => Maybe::Absent(answered::Absent::Unstated),
         };
         self.paths_through(site, body, answer)
     }
@@ -334,13 +334,13 @@ impl<'source> Lowerer<'_, 'source>
         self.on_loop_path(site, LoopExit::Break)?;
         let _keyword = cursor.tile(TileName::BREAK);
         let plan = match cursor.tile(TileName::PAREN_OPEN) {
-            | Maybe::Present(_) => {
+            Maybe::Present(_) => {
                 let operand = site.one(cursor.operands())?;
                 closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
                 self.read(operand.node, Reading::Value(frame));
                 Plan::Return(operand.node)
             },
-            | Maybe::Absent(_) => Plan::Break,
+            Maybe::Absent(_) => Plan::Break,
         };
         exhausted(site, &cursor)?;
         let _first = self.breaking.insert(site.at.node);
@@ -451,8 +451,8 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(LoweringRefusal::AcrossHandler {
                     span: site.at.span,
                     exit: match exit {
-                        | LoopExit::Break => CrossedExit::Break,
-                        | LoopExit::Continue => CrossedExit::Continue,
+                        LoopExit::Break => CrossedExit::Break,
+                        LoopExit::Continue => CrossedExit::Continue,
                     },
                 });
             }
@@ -611,8 +611,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let under = match self.mint_block(body, sink) {
-            | Maybe::Present(under) => under,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(under) => under,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let id = sink
             .arena
@@ -655,12 +655,12 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let tested = match self.computation_at(condition) {
-            | Maybe::Present(tested) => tested,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(tested) => tested,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let under = match self.mint_block(body, sink) {
-            | Maybe::Present(under) => under,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(under) => under,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let inserted = origin.inserted(Insertion::Loop);
         let unit = sink.arena.value_unit();
@@ -674,21 +674,19 @@ impl<'source> Lowerer<'_, 'source>
         sink.origins.record_value(bound, inserted);
         let tests = sink.arena.computation_case(bound, &[under, left]);
         sink.origins.record_computation(tests, inserted);
-        let tested = match sink.arena.computation(tested) {
-            | Some(&Computation::Return(value)) => {
-                let mark = sink.arena.watermark();
-                let mut carried = Vec::new();
-                let instantiated =
-                    instantiate_computation_traced(sink.arena, tests, value, &mut carried);
-                record_copies(sink, mark, &carried, inserted);
-                mark_copies(sink, &carried);
-                instantiated
-            },
-            | _ => {
-                let bound = sink.arena.computation_bind(tested, tests);
-                sink.origins.record_computation(bound, inserted);
-                bound
-            },
+        let tested = if let Some(&Computation::Return(value)) = sink.arena.computation(tested) {
+            let mark = sink.arena.watermark();
+            let mut carried = Vec::new();
+            let instantiated =
+                instantiate_computation_traced(sink.arena, tests, value, &mut carried);
+            record_copies(sink, mark, &carried, inserted);
+            mark_copies(sink, &carried);
+            instantiated
+        }
+        else {
+            let bound = sink.arena.computation_bind(tested, tests);
+            sink.origins.record_computation(bound, inserted);
+            bound
         };
         let id = sink
             .arena

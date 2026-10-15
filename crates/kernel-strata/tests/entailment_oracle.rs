@@ -257,14 +257,14 @@ mod entailment_oracle
         for shape in shapes {
             let built = TermId(nodes.len());
             let node = match *shape {
-                | TermShape::Zero => TermNode::Zero,
-                | TermShape::Var(index) => TermNode::Var(index),
-                | TermShape::Succ(selector) => {
+                TermShape::Zero => TermNode::Zero,
+                TermShape::Var(index) => TermNode::Var(index),
+                TermShape::Succ(selector) => {
                     pick(selector, built).map_or(TermNode::Zero, TermNode::Succ)
                 },
-                | TermShape::Max(left, right) => match (pick(left, built), pick(right, built)) {
-                    | (Some(left), Some(right)) => TermNode::Max(left, right),
-                    | _ => TermNode::Zero,
+                TermShape::Max(left, right) => match (pick(left, built), pick(right, built)) {
+                    (Some(left), Some(right)) => TermNode::Max(left, right),
+                    _ => TermNode::Zero,
                 },
             };
             nodes.push(node);
@@ -357,13 +357,13 @@ mod entailment_oracle
         let mut levels: Vec<Level> = Vec::with_capacity(term.nodes.len());
         for &node in &term.nodes {
             let level = match node {
-                | TermNode::Zero => Level::zero(),
-                | TermNode::Var(index) => Level::var(LevelVar::new(index)),
-                | TermNode::Succ(inner) => {
+                TermNode::Zero => Level::zero(),
+                TermNode::Var(index) => Level::var(LevelVar::new(index)),
+                TermNode::Succ(inner) => {
                     let inner = child(&levels, inner)?;
                     inner.succ()?
                 },
-                | TermNode::Max(left, right) => {
+                TermNode::Max(left, right) => {
                     let left = child(&levels, left)?;
                     let right = child(&levels, right)?;
                     left.max(&right)
@@ -420,8 +420,8 @@ mod entailment_oracle
     {
         let outcome = LandmarkPoset::admit(constraints)?;
         match outcome {
-            | AdmissionOutcome::Admitted(poset) => Ok(poset),
-            | AdmissionOutcome::Loop(_witness) => Err(TermFailure::NotAdmitted),
+            AdmissionOutcome::Admitted(poset) => Ok(poset),
+            AdmissionOutcome::Loop(_witness) => Err(TermFailure::NotAdmitted),
         }
     }
 
@@ -524,7 +524,7 @@ mod entailment_oracle
             poset.entails_leq_with_evidence(left, right)
         }?;
         match decision {
-            | Entailment::Holds(witness) => {
+            Entailment::Holds(witness) => {
                 assert_eq!(witness.strict(), strict, "the witness records its mode");
                 assert_eq!(
                     validate_entailment_witness(poset, left, right, &witness),
@@ -533,7 +533,7 @@ mod entailment_oracle
                 );
                 Ok(EntailmentHolds::from(true))
             },
-            | Entailment::Refuted(countermodel) => {
+            Entailment::Refuted(countermodel) => {
                 assert_eq!(
                     countermodel.strict(),
                     strict,
@@ -848,21 +848,21 @@ mod entailment_oracle
         let mut seen = alloc::collections::BTreeSet::new();
         for _draw in 0_u32 .. 256 {
             let kind = match shapes.new_tree(&mut runner).expect("shape draw").current() {
-                | TermShape::Zero => 0_u8,
-                | TermShape::Var(index) => {
+                TermShape::Zero => 0_u8,
+                TermShape::Var(index) => {
                     assert!(u32::from(index) < VARIABLE_COUNT);
                     1
                 },
-                | TermShape::Succ(_) => 2,
-                | TermShape::Max(..) => 3,
+                TermShape::Succ(_) => 2,
+                TermShape::Max(..) => 3,
             };
             let _fresh = seen.insert(kind);
             let term = terms.new_tree(&mut runner).expect("term draw").current();
             assert!((1 ..= NODE_BUDGET).contains(&term.nodes.len()));
             assert!(term.nodes.iter().enumerate().all(|(at, node)| match *node {
-                | TermNode::Zero | TermNode::Var(_) => true,
-                | TermNode::Succ(child) => child.0 < at,
-                | TermNode::Max(left, right) => left.0 < at && right.0 < at,
+                TermNode::Zero | TermNode::Var(_) => true,
+                TermNode::Succ(child) => child.0 < at,
+                TermNode::Max(left, right) => left.0 < at && right.0 < at,
             }));
         }
         assert_eq!(seen, alloc::collections::BTreeSet::from([0_u8, 1, 2, 3]));

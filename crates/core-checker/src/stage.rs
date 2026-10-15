@@ -109,8 +109,8 @@ impl fmt::Display for ReadmissionError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Stage(ref error) => error.fmt(f),
-            | Self::Kernel(ref error) => error.fmt(f),
+            Self::Stage(ref error) => error.fmt(f),
+            Self::Kernel(ref error) => error.fmt(f),
         }
     }
 }
@@ -201,14 +201,22 @@ pub fn compile(
             continue;
         }
         let instruction = match term {
-            | Term::Variable(Index(0)) => Instruction::Input,
-            | Term::Natural(actual, value) if actual == stage => Instruction::Natural(value),
-            | Term::Multiply(left, right) => {
+            Term::Variable(Index(0)) => Instruction::Input,
+            Term::Natural(actual, value) if actual == stage => Instruction::Natural(value),
+            Term::Multiply(left, right) => {
                 let left = *registers.get(&left).ok_or(StageError::Unbalanced)?;
                 let right = *registers.get(&right).ok_or(StageError::Unbalanced)?;
                 Instruction::Multiply(left, right)
             },
-            | _ => return Err(StageError::NotResidual),
+            Term::Variable(_)
+            | Term::Natural(..)
+            | Term::Code(_)
+            | Term::Lambda(..)
+            | Term::Apply(..)
+            | Term::Quote(_)
+            | Term::Splice(_)
+            | Term::Iterate(..)
+            | Term::Eliminate(..) => return Err(StageError::NotResidual),
         };
         let register = Register(instructions.len());
         instructions.push(instruction);
@@ -264,8 +272,8 @@ fn operand(
 ) -> Result<ValueId, StageError>
 {
     match *operands.get(register.0).ok_or(StageError::Unbalanced)? {
-        | Operand::Literal(value) => Ok(value),
-        | Operand::Local(level) => {
+        Operand::Literal(value) => Ok(value),
+        Operand::Local(level) => {
             let distance = depth.0.checked_sub(level.0).ok_or(StageError::Unbalanced)?;
             let distance = u32::try_from(distance).map_err(|_overflow| StageError::Overflow)?;
             Ok(arena.value_variable(DeBruijnIndex::from(distance)))
@@ -329,9 +337,9 @@ impl Program
         let mut values: Vec<Natural> = Vec::with_capacity(self.instructions.len());
         for instruction in &self.instructions {
             let value = match *instruction {
-                | Instruction::Input => input,
-                | Instruction::Natural(value) => value,
-                | Instruction::Multiply(left, right) => {
+                Instruction::Input => input,
+                Instruction::Natural(value) => value,
+                Instruction::Multiply(left, right) => {
                     let left = values.get(left.0).ok_or(StageError::Unbalanced)?;
                     let right = values.get(right.0).ok_or(StageError::Unbalanced)?;
                     Natural(left.0.checked_mul(right.0).ok_or(StageError::Overflow)?)
@@ -403,14 +411,14 @@ impl Program
         let mut depth = Index(0);
         for instruction in &self.instructions {
             let value = match *instruction {
-                | Instruction::Input => Operand::Local(Index(0)),
-                | Instruction::Natural(Natural(value)) => {
+                Instruction::Input => Operand::Local(Index(0)),
+                Instruction::Natural(Natural(value)) => {
                     let magnitude = Magnitude::from_decimal_text(value.to_string())
                         .ok_or(StageError::Unbalanced)?;
                     let literal = IntegerLiteral::new(Sign::NonNegative, magnitude);
                     Operand::Literal(arena.value_literal(Literal::Integer(literal)))
                 },
-                | Instruction::Multiply(left, right) => {
+                Instruction::Multiply(left, right) => {
                     let left = operand(arena, &operands, left, depth)?;
                     let right = operand(arena, &operands, right, depth)?;
                     let head = arena.computation_force(primitive);

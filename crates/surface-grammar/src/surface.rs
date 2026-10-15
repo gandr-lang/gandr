@@ -654,13 +654,13 @@ fn dag_error(
 ) -> PbgError
 {
     match error {
-        | PrecDagError::Cycle(PrecCycle { witness }) => PbgError::PrecedenceCycle {
+        PrecDagError::Cycle(PrecCycle { witness }) => PbgError::PrecedenceCycle {
             witness: witness
                 .into_iter()
                 .map(|prec| static_prec_name(spec, prec).0)
                 .collect(),
         },
-        | PrecDagError::Graph(_) | PrecDagError::Inconsistent => PbgError::PrecedenceDag(error),
+        PrecDagError::Graph(_) | PrecDagError::Inconsistent => PbgError::PrecedenceDag(error),
     }
 }
 
@@ -788,8 +788,8 @@ mod tests
         let walked: Vec<(&str, &str)> = witness
             .windows(2)
             .filter_map(|pair| match *pair {
-                | [from, to] => Some((from, to)),
-                | _ => None,
+                [from, to] => Some((from, to)),
+                _ => None,
             })
             .collect();
         assert!(

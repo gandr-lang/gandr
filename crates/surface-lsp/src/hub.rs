@@ -232,15 +232,15 @@ pub fn bind(socket: &Path) -> Result<Maybe<UnixListener, bind::Absent>, io::Erro
             .create(directory)?;
     }
     match UnixListener::bind(socket) {
-        | Ok(listener) => Ok(Maybe::Present(listener)),
-        | Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
+        Ok(listener) => Ok(Maybe::Present(listener)),
+        Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
             if UnixStream::connect(socket).is_ok() {
                 return Ok(Maybe::Absent(bind::Absent::Served));
             }
             std::fs::remove_file(socket)?;
             UnixListener::bind(socket).map(Maybe::Present)
         },
-        | Err(error) => Err(error),
+        Err(error) => Err(error),
     }
 }
 
@@ -319,8 +319,8 @@ where
     };
     loop {
         match listener.accept() {
-            | Ok((stream, _address)) => start(stream)?,
-            | Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+            Ok((stream, _address)) => start(stream)?,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 if open.load(Ordering::SeqCst) != 0 {
                     quiet_since = Instant::now();
                 }
@@ -329,13 +329,13 @@ where
                 }
                 thread::sleep(POLL);
             },
-            | Err(error) => return Err(error),
+            Err(error) => return Err(error),
         }
     }
     match std::fs::remove_file(socket) {
-        | Ok(()) => {},
-        | Err(error) if error.kind() == io::ErrorKind::NotFound => {},
-        | Err(error) => return Err(error),
+        Ok(()) => {},
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+        Err(error) => return Err(error),
     }
     while let Ok((stream, _address)) = listener.accept() {
         start(stream)?;
@@ -376,9 +376,9 @@ fn connection<Log>(
         .ok()
         .and_then(|bytes| bytes.first().copied());
     let face: Option<Face> = match (first, lines) {
-        | (Some(b'{'), Some(lines)) => Some(lines),
-        | (Some(b'r'), _) => Some(crate::bus::serve),
-        | _ => None,
+        (Some(b'{'), Some(lines)) => Some(lines),
+        (Some(b'r'), _) => Some(crate::bus::serve),
+        _ => None,
     };
     if let Some(face) = face {
         face(&mut reading, peer, workspace);
@@ -404,15 +404,15 @@ fn connection<Log>(
     if writer.is_ok() {
         let _ended = paced(&mut reading, |met, deadlines| {
             let body = match met {
-                | Met::Closed => return Ok(ControlFlow::Break(())),
-                | Met::Quiet(uri) => {
+                Met::Closed => return Ok(ControlFlow::Break(())),
+                Met::Quiet(uri) => {
                     let mut held = lock(workspace);
                     for message in server.release(&mut held, &uri) {
                         drop(outbox.send(message));
                     }
                     return Ok(ControlFlow::Continue(()));
                 },
-                | Met::Frame(body) => body,
+                Met::Frame(body) => body,
             };
             let mut held = lock(workspace);
             let mut outcome = server.handle(&mut held, &body);
@@ -430,8 +430,8 @@ fn connection<Log>(
             }
             drop(written);
             Ok(match outcome.flow {
-                | Flow::Exit(_) => ControlFlow::Break(()),
-                | Flow::Continue => ControlFlow::Continue(()),
+                Flow::Exit(_) => ControlFlow::Break(()),
+                Flow::Continue => ControlFlow::Continue(()),
             })
         });
     }
@@ -487,17 +487,17 @@ where
         let mut shut = false;
         let served = loop {
             let body = match read_frame(&mut input) {
-                | Ok(Maybe::Present(body)) => body,
-                | Ok(Maybe::Absent(_closed)) => break Ok(Served::Abrupt),
-                | Err(fault) => break Err(fault),
+                Ok(Maybe::Present(body)) => body,
+                Ok(Maybe::Absent(_closed)) => break Ok(Served::Abrupt),
+                Err(fault) => break Err(fault),
             };
             let exit = match classify(&body) {
-                | Ok(Incoming::Request { ref method, .. }) => {
+                Ok(Incoming::Request { ref method, .. }) => {
                     shut |= method.as_ref() == "shutdown";
                     false
                 },
-                | Ok(Incoming::Notification { ref method, .. }) => method.as_ref() == "exit",
-                | Ok(Incoming::Response) | Err(_) => false,
+                Ok(Incoming::Notification { ref method, .. }) => method.as_ref() == "exit",
+                Ok(Incoming::Response) | Err(_) => false,
             };
             if exit {
                 // The verdict is sent before the hub can read `exit`, so it
@@ -989,8 +989,8 @@ mod tests
             "the view is greeted with the held document"
         );
         let report = |frame: &RenderFrame| match *frame.body() {
-            | FrameBody::Frame { ref report } => report.clone(),
-            | FrameBody::Hello { .. } | FrameBody::Resync | FrameBody::Detach => {
+            FrameBody::Frame { ref report } => report.clone(),
+            FrameBody::Hello { .. } | FrameBody::Resync | FrameBody::Detach => {
                 panic!("a report was owed, not {frame:?}")
             },
         };

@@ -245,10 +245,8 @@ fn located(source: Text<'_>) -> Vec<(RefusalSpelling, Maybe<ByteSpan, report_spa
                 diagnostic.message.text
             );
             match diagnostic.identifier {
-                | Maybe::Present(Identifier::Refusal(spelling)) => {
-                    Some((spelling, diagnostic.span))
-                },
-                | Maybe::Present(Identifier::Lint(_)) | Maybe::Absent(_) => None,
+                Maybe::Present(Identifier::Refusal(spelling)) => Some((spelling, diagnostic.span)),
+                Maybe::Present(Identifier::Lint(_)) | Maybe::Absent(_) => None,
             }
         })
         .collect()

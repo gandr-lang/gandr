@@ -76,9 +76,9 @@ impl fmt::Display for PresentationError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Build(ref error) => write!(f, "the presentation did not build: {error}"),
-            | Self::Render(ref error) => write!(f, "the presentation did not render: {error}"),
-            | Self::Unbalanced => {
+            Self::Build(ref error) => write!(f, "the presentation did not build: {error}"),
+            Self::Render(ref error) => write!(f, "the presentation did not render: {error}"),
+            Self::Unbalanced => {
                 f.write_str("the presentation walk ended without exactly one document")
             },
         }
@@ -112,9 +112,9 @@ impl core::error::Error for PresentationError
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)>
     {
         match *self {
-            | Self::Build(ref error) => Some(error),
-            | Self::Render(ref error) => Some(error),
-            | Self::Unbalanced => None,
+            Self::Build(ref error) => Some(error),
+            Self::Render(ref error) => Some(error),
+            Self::Unbalanced => None,
         }
     }
 }

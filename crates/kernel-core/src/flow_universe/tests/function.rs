@@ -263,10 +263,10 @@ fn symmetry_refusal_holds_at_a_thunk_code()
     ] {
         let flow = function(&mut arena, (narrow, wide), (domain, codomain));
         match (refused, admit(&mut arena, flow)) {
-            | (None, Ok(_)) => {},
-            | (Some(expected), Err(KernelError::Flow(FlowError::Boundary(found))))
+            (None, Ok(_)) => {},
+            (Some(expected), Err(KernelError::Flow(FlowError::Boundary(found))))
                 if found == expected => {},
-            | (_, other) => panic!("unexpected boundary verdict: {other:?}"),
+            (_, other) => panic!("unexpected boundary verdict: {other:?}"),
         }
     }
     let reversed = function(

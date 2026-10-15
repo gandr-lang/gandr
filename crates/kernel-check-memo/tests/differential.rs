@@ -183,8 +183,8 @@ impl Plane
     const fn tag(self) -> PlaneTag
     {
         match self {
-            | Self::Value => PlaneTag(0x10),
-            | Self::Weight => PlaneTag(0x11),
+            Self::Value => PlaneTag(0x10),
+            Self::Weight => PlaneTag(0x11),
         }
     }
 
@@ -210,8 +210,8 @@ impl Plane
     ) -> Outcome
     {
         match self {
-            | Self::Value => Outcome(u64::from(tag.0)),
-            | Self::Weight => Outcome(1),
+            Self::Value => Outcome(u64::from(tag.0)),
+            Self::Weight => Outcome(1),
         }
     }
 
@@ -247,10 +247,10 @@ impl Plane
     {
         match self {
             // Bitwise and total; the two rotations give the operands different roles.
-            | Self::Value => Ok(Outcome(
+            Self::Value => Ok(Outcome(
                 left.0.rotate_left(1) ^ right.0.rotate_left(3) ^ 0x9e37_79b9,
             )),
-            | Self::Weight => {
+            Self::Weight => {
                 let operands = left
                     .0
                     .checked_add(right.0)
@@ -1074,11 +1074,11 @@ where
     let mut operands: Vec<Outcome> = Vec::new();
     while let Some(frame) = frames.pop() {
         match frame {
-            | Frame::Expand { plane, node } => {
+            Frame::Expand { plane, node } => {
                 if matches!(Memo::ACTIVITY, MemoActivity::Active) {
                     let support = arena.support(plane, node)?;
                     let served = match memo.recall(&support) {
-                        | Some(hit) => {
+                        Some(hit) => {
                             // A hit carries its support, so adoption is a
                             // pointwise comparison of demanded against
                             // supplied rather than an assertion.
@@ -1088,7 +1088,7 @@ where
                             }
                             Some(*hit.outcome())
                         },
-                        | None => None,
+                        None => None,
                     };
                     if let Some(outcome) = served {
                         tally.record_hit(plane)?;
@@ -1099,19 +1099,19 @@ where
                 tally.record_expansion(plane)?;
                 let node_at = arena.node(node)?;
                 match node_at {
-                    | Node::Leaf(tag) => {
+                    Node::Leaf(tag) => {
                         let outcome = plane.leaf_outcome(tag);
                         operands.push(outcome);
                         remember(arena, plane, node, outcome, memo)?;
                     },
-                    | Node::Pair { left, right } => {
+                    Node::Pair { left, right } => {
                         frames.push(Frame::Combine { plane, node });
                         frames.push(Frame::Expand { plane, node: right });
                         frames.push(Frame::Expand { plane, node: left });
                     },
                 }
             },
-            | Frame::Combine { plane, node } => {
+            Frame::Combine { plane, node } => {
                 let right = operands.pop().ok_or(WorkloadError::ResultStackUnderflow)?;
                 let left = operands.pop().ok_or(WorkloadError::ResultStackUnderflow)?;
                 let outcome = plane.combine(left, right)?;
@@ -1686,11 +1686,11 @@ mod tests
         assert_eq!(Ok(WalkCount(0x1_ffff_ffff)), goal_count(Depth(u32::MAX)));
         assert_eq!(Ok(MemoEntryCount::zero()), as_entries(WalkCount(0)));
         match usize::try_from(u64::MAX) {
-            | Ok(maximum) => assert_eq!(
+            Ok(maximum) => assert_eq!(
                 Ok(MemoEntryCount::from(maximum)),
                 as_entries(WalkCount(u64::MAX))
             ),
-            | Err(_error) => assert_eq!(
+            Err(_error) => assert_eq!(
                 Err(WorkloadError::TallyOverflow),
                 as_entries(WalkCount(u64::MAX))
             ),

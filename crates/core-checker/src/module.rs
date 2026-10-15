@@ -653,8 +653,8 @@ fn decide(
 ) -> Decision
 {
     let untyped = match run {
-        | Run::Judged => typed::Absent::Unasked,
-        | Run::Typed => typed::Absent::Unrun,
+        Run::Judged => typed::Absent::Unasked,
+        Run::Typed => typed::Absent::Unrun,
     };
     let unrun = |refusal| Decision {
         verdict: Verdict::Refused(refusal),
@@ -675,25 +675,25 @@ fn decide(
         outer.map(|outer| context.finish_typings(outer))
     };
     let kept = |signed: Option<Kept>| match signed {
-        | Some(signed) if !(signed.typings.is_empty() && signed.formed.is_empty()) => {
+        Some(signed) if !(signed.typings.is_empty() && signed.formed.is_empty()) => {
             Maybe::Present(Typings::after(signed, Typings::default()))
         },
-        | Some(_) | None => Maybe::Absent(untyped),
+        Some(_) | None => Maybe::Absent(untyped),
     };
     let formed = |verdict: Result<(), CheckRefusal>, typings| match verdict {
-        | Ok(()) => Decision {
+        Ok(()) => Decision {
             verdict: Verdict::Data,
             failure: Maybe::Absent(kept::Absent::Accepted),
             typings,
             elaboration: Maybe::Absent(elaborated::Absent::Unnested),
         },
-        | Err(refusal) => Decision {
+        Err(refusal) => Decision {
             typings,
             ..unrun(refusal)
         },
     };
     let (signature, body) = match *(declaration.content()) {
-        | crate::DeclarationContent::Data(ref signature) => {
+        crate::DeclarationContent::Data(ref signature) => {
             let verdict = crate::former::form_signature(context, constant, signature);
             if verdict.is_ok() {
                 context.record_data(constant, alloc::sync::Arc::clone(signature));
@@ -701,28 +701,28 @@ fn decide(
             let signed = finish(context, outer);
             return formed(verdict, kept(signed));
         },
-        | crate::DeclarationContent::Abstract(declared) => {
+        crate::DeclarationContent::Abstract(declared) => {
             let verdict = crate::former::form_abstract(context, declared)
                 .and_then(|level| context.seal_abstract(constant, declared, level))
                 .map(|_atom| ());
             let signed = finish(context, outer);
             return formed(verdict, kept(signed));
         },
-        | crate::DeclarationContent::Value {
+        crate::DeclarationContent::Value {
             ref signature,
             ref body,
         } => (*signature, *body),
     };
     let direction = match signature {
-        | Maybe::Present(declared) => form_value_type(context, declared)
+        Maybe::Present(declared) => form_value_type(context, declared)
             .and_then(|formed| crate::session::unrestricted(context, formed.id()).map(|()| formed))
             .map(Direction::Check),
-        | Maybe::Absent(signature::Absent::Unsigned) => Ok(Direction::Synthesise),
+        Maybe::Absent(signature::Absent::Unsigned) => Ok(Direction::Synthesise),
     };
     let mut signed = finish(context, outer);
     let direction = match direction {
-        | Ok(direction) => direction,
-        | Err(refusal) => {
+        Ok(direction) => direction,
+        Err(refusal) => {
             return Decision {
                 typings: kept(signed),
                 ..unrun(refusal)
@@ -733,24 +733,24 @@ fn decide(
     let mut elaboration = Maybe::Absent(elaborated::Absent::Unnested);
     let mut relating = Vec::new();
     let (verdict, failure) = match body {
-        | Maybe::Present(body) => {
+        Maybe::Present(body) => {
             let _stale = context.take_nesting();
             let first = judge(context, body, direction);
             let decisions = context.take_nesting();
             let judged = match first {
-                | Ok(_) if !decisions.is_empty() => {
+                Ok(_) if !decisions.is_empty() => {
                     match crate::nested::elaborate(context.arena_mut(), body, &decisions) {
-                        | Ok((elaborated, done)) => {
+                        Ok((elaborated, done)) => {
                             elaboration = Maybe::Present(done);
                             // The verdict is the second run's, and so are the
                             // pairs it relates.
                             let _first = context.take_relating();
                             judge(context, elaborated, direction)
                         },
-                        | Err(unenclosed) => Err(unenclosed_failure(unenclosed.run())),
+                        Err(unenclosed) => Err(unenclosed_failure(unenclosed.run())),
                     }
                 },
-                | Ok(_) | Err(_) => {
+                Ok(_) | Err(_) => {
                     if !decisions.is_empty() {
                         elaboration = Maybe::Absent(elaborated::Absent::Unaccepted);
                     }
@@ -764,21 +764,21 @@ fn decide(
                 let _typed = context.take_nesting();
             }
             match judged {
-                | Ok(verdict) => (verdict, Maybe::Absent(kept::Absent::Accepted)),
-                | Err(failure) => (Verdict::Refused(failure.refusal()), Maybe::Present(failure)),
+                Ok(verdict) => (verdict, Maybe::Absent(kept::Absent::Accepted)),
+                Err(failure) => (Verdict::Refused(failure.refusal()), Maybe::Present(failure)),
             }
         },
-        | Maybe::Absent(body::Absent::Hole) => {
+        Maybe::Absent(body::Absent::Hole) => {
             let owed = hole(direction, constant, declaration.origin()).and_then(|absence| {
                 crate::capability::held(context, constant, absence.declared())?;
                 Ok(absence)
             });
             match owed {
-                | Ok(absence) => (
+                Ok(absence) => (
                     Verdict::Owed(ObligationEntry::from(absence)),
                     Maybe::Absent(kept::Absent::Accepted),
                 ),
-                | Err(refusal) => (
+                Err(refusal) => (
                     Verdict::Refused(refusal),
                     Maybe::Absent(kept::Absent::Unrun),
                 ),
@@ -789,22 +789,22 @@ fn decide(
         typings = kept(signed);
     }
     match (direction, verdict) {
-        | (Direction::Check(declared), Verdict::Checked { body, .. }) => {
+        (Direction::Check(declared), Verdict::Checked { body, .. }) => {
             // Native declarations return before the value judgment.
             context.record(constant, declared);
             context.define(constant, declared, body);
             context.keep_relations(constant, relating);
         },
-        | (
+        (
             Direction::Check(declared),
             Verdict::Data | Verdict::Synthesised { .. } | Verdict::Owed(_) | Verdict::Refused(_),
         ) => context.record(constant, declared),
-        | (Direction::Synthesise, Verdict::Synthesised { synthesised, body }) => {
+        (Direction::Synthesise, Verdict::Synthesised { synthesised, body }) => {
             context.record(constant, synthesised.produced());
             context.define(constant, synthesised.produced(), body);
             context.keep_relations(constant, relating);
         },
-        | (
+        (
             Direction::Synthesise,
             Verdict::Data | Verdict::Checked { .. } | Verdict::Owed(_) | Verdict::Refused(_),
         ) => {},
@@ -846,9 +846,9 @@ fn judge(
 ) -> Result<Verdict, Failure>
 {
     match direction {
-        | Direction::Synthesise => synthesise_value_with_failure(context, body)
+        Direction::Synthesise => synthesise_value_with_failure(context, body)
             .map(|synthesised| Verdict::Synthesised { body, synthesised }),
-        | Direction::Check(declared) => {
+        Direction::Check(declared) => {
             check_value_with_failure(context, body, declared).map(|evidence| Verdict::Checked {
                 declared,
                 body,
@@ -1089,8 +1089,8 @@ fn hole(
 ) -> Result<Absence, CheckRefusal>
 {
     match direction {
-        | Direction::Check(expected) => Ok(Absence::new(constant, expected, origin)),
-        | Direction::Synthesise => Err(CheckRefusal::NotSynthesisable {
+        Direction::Check(expected) => Ok(Absence::new(constant, expected, origin)),
+        Direction::Synthesise => Err(CheckRefusal::NotSynthesisable {
             form: CheckingForm::Hole(constant),
         }),
     }

@@ -233,12 +233,12 @@ impl ExpectationSchema
     {
         let spelled: &str = attribute.as_ref();
         match spelled {
-            | "checks" => Maybe::Present(Self::Checks),
-            | "owes" => Maybe::Present(Self::Owes),
-            | "refuses" => Maybe::Present(Self::Refuses),
-            | "runs" => Maybe::Present(Self::Runs),
-            | "normalizes" => Maybe::Present(Self::Normalizes),
-            | _ => Maybe::Absent(expectation_schema::Absent::Unrelated),
+            "checks" => Maybe::Present(Self::Checks),
+            "owes" => Maybe::Present(Self::Owes),
+            "refuses" => Maybe::Present(Self::Refuses),
+            "runs" => Maybe::Present(Self::Runs),
+            "normalizes" => Maybe::Present(Self::Normalizes),
+            _ => Maybe::Absent(expectation_schema::Absent::Unrelated),
         }
     }
 }
@@ -273,11 +273,11 @@ impl fmt::Display for ExpectationSchema
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Checks => "checks",
-            | Self::Owes => "owes",
-            | Self::Refuses => "refuses",
-            | Self::Runs => "runs",
-            | Self::Normalizes => "normalizes",
+            Self::Checks => "checks",
+            Self::Owes => "owes",
+            Self::Refuses => "refuses",
+            Self::Runs => "runs",
+            Self::Normalizes => "normalizes",
         })
     }
 }
@@ -349,10 +349,10 @@ impl fmt::Display for Outcome
     ) -> fmt::Result
     {
         match *self {
-            | Self::Checks(owed) => write!(f, "checks owing {owed}"),
-            | Self::Refuses(name) => write!(f, "refuses {name}"),
-            | Self::Runs(ref spelled) => write!(f, "runs to {spelled}"),
-            | Self::Normalizes(ref spelled) => write!(f, "normalizes {spelled}"),
+            Self::Checks(owed) => write!(f, "checks owing {owed}"),
+            Self::Refuses(name) => write!(f, "refuses {name}"),
+            Self::Runs(ref spelled) => write!(f, "runs to {spelled}"),
+            Self::Normalizes(ref spelled) => write!(f, "normalizes {spelled}"),
         }
     }
 }
@@ -415,8 +415,8 @@ impl fmt::Display for Stated
     ) -> fmt::Result
     {
         match *self {
-            | Self::Verdict(ref outcome) => fmt::Display::fmt(outcome, f),
-            | Self::Malformed(fault) => write!(f, "no verdict, {fault}"),
+            Self::Verdict(ref outcome) => fmt::Display::fmt(outcome, f),
+            Self::Malformed(fault) => write!(f, "no verdict, {fault}"),
         }
     }
 }
@@ -511,15 +511,15 @@ impl fmt::Display for ExpectationFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::UnknownRefusal { .. } => f.write_str("the `refuses` payload names no refusal"),
-            | Self::NegativeObligations { .. } => f.write_str("the `owes` payload is below zero"),
-            | Self::ObligationsBeyondRange { .. } => {
+            Self::UnknownRefusal { .. } => f.write_str("the `refuses` payload names no refusal"),
+            Self::NegativeObligations { .. } => f.write_str("the `owes` payload is below zero"),
+            Self::ObligationsBeyondRange { .. } => {
                 f.write_str("the `owes` payload is past every ledger size")
             },
-            | Self::ConflictingExpectations { .. } => {
+            Self::ConflictingExpectations { .. } => {
                 f.write_str("the expectation contradicts an earlier one")
             },
-            | Self::UnwrittenNormalForm { .. } => {
+            Self::UnwrittenNormalForm { .. } => {
                 f.write_str("the `normalizes` payload writes no `~>` before a normal form")
             },
         }
@@ -667,8 +667,8 @@ where
 {
     let written: Vec<(ExpectationSchema, &AttributeEntry)> = attributes
         .filter_map(|entry| match ExpectationSchema::of(entry.name()) {
-            | Maybe::Present(schema) => Some((schema, entry)),
-            | Maybe::Absent(expectation_schema::Absent::Unrelated) => None,
+            Maybe::Present(schema) => Some((schema, entry)),
+            Maybe::Absent(expectation_schema::Absent::Unrelated) => None,
         })
         .collect();
     let Some(&(schema, entry)) = written.first()
@@ -690,13 +690,11 @@ where
         });
     }
     let stated = match written.get(1_usize) {
-        | Some(&(_schema, second)) => {
-            Stated::Malformed(ExpectationFault::ConflictingExpectations {
-                first: entry.span(),
-                second: second.span(),
-            })
-        },
-        | None => stated_by(schema, entry, arena)?,
+        Some(&(_schema, second)) => Stated::Malformed(ExpectationFault::ConflictingExpectations {
+            first: entry.span(),
+            second: second.span(),
+        }),
+        None => stated_by(schema, entry, arena)?,
     };
     Ok(Expectations {
         membership: Membership::Fixture,
@@ -802,8 +800,8 @@ fn stated_by(
     let span = entry.span();
     let unreadable = SettleFault::UnreadablePayload { span };
     match schema {
-        | ExpectationSchema::Checks => Ok(owing_nothing()),
-        | ExpectationSchema::Owes => {
+        ExpectationSchema::Checks => Ok(owing_nothing()),
+        ExpectationSchema::Owes => {
             let literal = payload(entry, arena)?;
             let Literal::Integer(ref integer) = *literal
             else {
@@ -811,20 +809,20 @@ fn stated_by(
             };
             Ok(obligations(integer, span))
         },
-        | ExpectationSchema::Refuses => {
+        ExpectationSchema::Refuses => {
             let literal = payload(entry, arena)?;
             let Literal::Text(ref text) = *literal
             else {
                 return Err(unreadable);
             };
             Ok(match RefusalName::named_by(text) {
-                | Maybe::Present(name) => Stated::Verdict(Outcome::Refuses(name)),
-                | Maybe::Absent(refusal_name::Absent::Unnamed) => {
+                Maybe::Present(name) => Stated::Verdict(Outcome::Refuses(name)),
+                Maybe::Absent(refusal_name::Absent::Unnamed) => {
                     Stated::Malformed(ExpectationFault::UnknownRefusal { span })
                 },
             })
         },
-        | ExpectationSchema::Runs => {
+        ExpectationSchema::Runs => {
             let literal = payload(entry, arena)?;
             let Literal::Text(ref text) = *literal
             else {
@@ -834,17 +832,17 @@ fn stated_by(
                 String::from(text.as_ref()),
             ))))
         },
-        | ExpectationSchema::Normalizes => {
+        ExpectationSchema::Normalizes => {
             let literal = payload(entry, arena)?;
             let Literal::Text(ref text) = *literal
             else {
                 return Err(unreadable);
             };
             Ok(match normalized_call(text) {
-                | Maybe::Present(_) => Stated::Verdict(Outcome::Normalizes(RunSpelling::from(
+                Maybe::Present(_) => Stated::Verdict(Outcome::Normalizes(RunSpelling::from(
                     String::from(text.as_ref()),
                 ))),
-                | Maybe::Absent(normalized_call::Absent::Unwritten) => {
+                Maybe::Absent(normalized_call::Absent::Unwritten) => {
                     Stated::Malformed(ExpectationFault::UnwrittenNormalForm { span })
                 },
             })
@@ -871,8 +869,8 @@ where
     L: AsRef<str>,
 {
     match line.as_ref().split_once(NORMAL_FORM_ARROW) {
-        | Some((call, _normal)) => Maybe::Present(CallText::from(call.trim())),
-        | None => Maybe::Absent(normalized_call::Absent::Unwritten),
+        Some((call, _normal)) => Maybe::Present(CallText::from(call.trim())),
+        None => Maybe::Absent(normalized_call::Absent::Unwritten),
     }
 }
 
@@ -1017,8 +1015,8 @@ fn obligations(
 ) -> Stated
 {
     match integer.sign() {
-        | Sign::Negative => Stated::Malformed(ExpectationFault::NegativeObligations { span }),
-        | Sign::NonNegative => {
+        Sign::Negative => Stated::Malformed(ExpectationFault::NegativeObligations { span }),
+        Sign::NonNegative => {
             let digits: &str = integer.magnitude().as_ref();
             digits.parse::<usize>().map_or(
                 Stated::Malformed(ExpectationFault::ObligationsBeyondRange { span }),

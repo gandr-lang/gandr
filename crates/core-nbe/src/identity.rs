@@ -236,29 +236,27 @@ pub fn clause(
             .value_type(carrier)
             .ok_or(IdentityFault::DanglingTerm)?
         {
-            | ValueType::Product(ref components) if components.is_empty() => Clause::Unit,
-            | ValueType::Product(_) => Clause::Product,
-            | ValueType::Base(_) => Clause::Discrete,
-            | ValueType::Sum(_) => Clause::Sum,
-            | ValueType::List(_) => Clause::List,
-            | ValueType::Thunk(body) => {
+            ValueType::Product(ref components) if components.is_empty() => Clause::Unit,
+            ValueType::Product(_) => Clause::Product,
+            ValueType::Base(_) => Clause::Discrete,
+            ValueType::Sum(_) => Clause::Sum,
+            ValueType::List(_) => Clause::List,
+            ValueType::Thunk(body) => {
                 match *core.comp_type(body).ok_or(IdentityFault::DanglingTerm)? {
-                    | CompType::Arrow { .. } => Clause::Function,
-                    | CompType::Returner { .. }
+                    CompType::Arrow { .. } => Clause::Function,
+                    CompType::Returner { .. }
                     | CompType::Pi { .. }
                     | CompType::With(..)
                     | CompType::Element { .. }
                     | CompType::Unknown => Clause::Unclassified,
                 }
             },
-            | ValueType::Universe {
+            ValueType::Universe {
                 sort: Sort::Ground(GroundSort::Value),
                 ..
             } => Clause::Universe,
-            | ValueType::Abstract(_) | ValueType::Element { .. } | ValueType::Unknown => {
-                Clause::Open
-            },
-            | ValueType::Universe { .. }
+            ValueType::Abstract(_) | ValueType::Element { .. } | ValueType::Unknown => Clause::Open,
+            ValueType::Universe { .. }
             | ValueType::Data { .. }
             | ValueType::Record(_)
             | ValueType::PathUniverse(..)
@@ -324,13 +322,13 @@ pub fn fibre(
         .value_type(carrier)
         .ok_or(IdentityFault::DanglingTerm)?;
     Ok(match (selected, node) {
-        | (Clause::Unit, _) => Fibre::Unit,
-        | (Clause::Discrete, _) => match ends {
-            | (
+        (Clause::Unit, _) => Fibre::Unit,
+        (Clause::Discrete, _) => match ends {
+            (
                 DomainValue::Literal { literal: one, .. },
                 DomainValue::Literal { literal: other, .. },
             ) => match (core.value(one), core.value(other)) {
-                | (Some(&Value::Literal(ref one)), Some(&Value::Literal(ref other))) => {
+                (Some(&Value::Literal(ref one)), Some(&Value::Literal(ref other))) => {
                     if one == other {
                         Fibre::Unit
                     }
@@ -338,12 +336,12 @@ pub fn fibre(
                         Fibre::Empty
                     }
                 },
-                | _ => return Err(IdentityFault::DanglingTerm),
+                _ => return Err(IdentityFault::DanglingTerm),
             },
-            | _ => Fibre::Discrete,
+            _ => Fibre::Discrete,
         },
-        | (Clause::Sum, &ValueType::Sum(ref summands)) => match ends {
-            | (
+        (Clause::Sum, &ValueType::Sum(ref summands)) => match ends {
+            (
                 DomainValue::Injection {
                     summand: one,
                     body: first,
@@ -369,13 +367,10 @@ pub fn fibre(
                     Fibre::Empty
                 }
             },
-            | _ => Fibre::Suspended,
+            _ => Fibre::Suspended,
         },
-        | (Clause::Product, &ValueType::Product(ref components)) => match ends {
-            | (
-                DomainValue::Tuple { fields: one, .. },
-                DomainValue::Tuple { fields: other, .. },
-            ) => {
+        (Clause::Product, &ValueType::Product(ref components)) => match ends {
+            (DomainValue::Tuple { fields: one, .. }, DomainValue::Tuple { fields: other, .. }) => {
                 let one = domain.fields(one).map_err(IdentityFault::Domain)?;
                 let other = domain.fields(other).map_err(IdentityFault::Domain)?;
                 if one.len() != components.len() || other.len() != components.len() {
@@ -393,11 +388,11 @@ pub fn fibre(
                         .collect(),
                 )
             },
-            | _ => Fibre::Suspended,
+            _ => Fibre::Suspended,
         },
-        | (Clause::List, &ValueType::List(element)) => match ends {
-            | (DomainValue::ListNil { .. }, DomainValue::ListNil { .. }) => Fibre::Unit,
-            | (
+        (Clause::List, &ValueType::List(element)) => match ends {
+            (DomainValue::ListNil { .. }, DomainValue::ListNil { .. }) => Fibre::Unit,
+            (
                 DomainValue::ListCons {
                     first: head,
                     second: tail,
@@ -420,26 +415,30 @@ pub fn fibre(
                     right: other_tail,
                 },
             ])),
-            | (DomainValue::ListNil { .. }, DomainValue::ListCons { .. })
+            (DomainValue::ListNil { .. }, DomainValue::ListCons { .. })
             | (DomainValue::ListCons { .. }, DomainValue::ListNil { .. }) => Fibre::Empty,
-            | _ => Fibre::Suspended,
+            _ => Fibre::Suspended,
         },
-        | (Clause::Function, &ValueType::Thunk(body)) => {
+        (Clause::Function, &ValueType::Thunk(body)) => {
             match *core.comp_type(body).ok_or(IdentityFault::DanglingTerm)? {
-                | CompType::Arrow {
+                CompType::Arrow {
                     domain: input,
                     codomain,
                 } => Fibre::Related {
                     domain: input,
                     codomain,
                 },
-                | _ => return Err(IdentityFault::DanglingTerm),
+                CompType::Returner { .. }
+                | CompType::Pi { .. }
+                | CompType::Element { .. }
+                | CompType::Unknown
+                | CompType::With(..) => return Err(IdentityFault::DanglingTerm),
             }
         },
-        | (Clause::Universe, _) => Fibre::Universe,
-        | (Clause::Open, _) => Fibre::Open,
-        | (Clause::Unclassified, _) => Fibre::Unclassified,
-        | (Clause::Sum | Clause::Product | Clause::List | Clause::Function, _) => {
+        (Clause::Universe, _) => Fibre::Universe,
+        (Clause::Open, _) => Fibre::Open,
+        (Clause::Unclassified, _) => Fibre::Unclassified,
+        (Clause::Sum | Clause::Product | Clause::List | Clause::Function, _) => {
             return Err(IdentityFault::DanglingTerm);
         },
     })
@@ -598,8 +597,8 @@ pub(crate) fn transport_family(
             .intuitionistic()
             .holds(bound)
         {
-            | Membership::Held => TransportFamily::Other,
-            | Membership::Absent => TransportFamily::Singleton,
+            Membership::Held => TransportFamily::Other,
+            Membership::Absent => TransportFamily::Singleton,
         },
     )
 }
@@ -712,9 +711,9 @@ mod tests
     ) -> ValueId
     {
         let content = match word {
-            | Word::Five => "five",
-            | Word::Six => "six",
-            | Word::Seven => "seven",
+            Word::Five => "five",
+            Word::Six => "six",
+            Word::Seven => "seven",
         };
         core.value_literal(Literal::Text(StringLiteral::new(String::from(content))))
     }

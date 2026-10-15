@@ -216,11 +216,11 @@ impl fmt::Display for Severity
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Error => "error",
-            | Self::Warning => "warning",
-            | Self::Goal => "goal",
-            | Self::Note => "note",
-            | Self::Ledger => "line",
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Goal => "goal",
+            Self::Note => "note",
+            Self::Ledger => "line",
         })
     }
 }
@@ -255,11 +255,11 @@ impl fmt::Display for MessageKey
     ) -> fmt::Result
     {
         match *self {
-            | Self::Refusal(name) => f.write_str(name.spelling().as_ref()),
-            | Self::Lint(lint) => fmt::Display::fmt(&lint, f),
-            | Self::Unsettled(_) => f.write_str("unsettled"),
-            | Self::Goal => f.write_str("goal"),
-            | Self::Ledger => f.write_str("ledger"),
+            Self::Refusal(name) => f.write_str(name.spelling().as_ref()),
+            Self::Lint(lint) => fmt::Display::fmt(&lint, f),
+            Self::Unsettled(_) => f.write_str("unsettled"),
+            Self::Goal => f.write_str("goal"),
+            Self::Ledger => f.write_str("ledger"),
         }
     }
 }
@@ -297,14 +297,14 @@ impl fmt::Display for Compared
     ) -> fmt::Result
     {
         match (&self.expected, &self.found) {
-            | (&Maybe::Present(ref expected), &Maybe::Present(ref found)) => {
+            (&Maybe::Present(ref expected), &Maybe::Present(ref found)) => {
                 write!(f, "expected `{expected}`, found `{found}`")
             },
-            | (&Maybe::Present(ref expected), &Maybe::Absent(_)) => {
+            (&Maybe::Present(ref expected), &Maybe::Absent(_)) => {
                 write!(f, "expected `{expected}`")
             },
-            | (&Maybe::Absent(_), &Maybe::Present(ref found)) => write!(f, "found `{found}`"),
-            | (&Maybe::Absent(_), &Maybe::Absent(_)) => Ok(()),
+            (&Maybe::Absent(_), &Maybe::Present(ref found)) => write!(f, "found `{found}`"),
+            (&Maybe::Absent(_), &Maybe::Absent(_)) => Ok(()),
         }
     }
 }
@@ -370,12 +370,12 @@ impl fmt::Display for Binding
     ) -> fmt::Result
     {
         let name = match self.name {
-            | Maybe::Present(ref name) => name.as_str(),
-            | Maybe::Absent(_) => "_",
+            Maybe::Present(ref name) => name.as_str(),
+            Maybe::Absent(_) => "_",
         };
         let ty = match self.ty {
-            | Maybe::Present(ref ty) => ty.as_str(),
-            | Maybe::Absent(_) => "?",
+            Maybe::Present(ref ty) => ty.as_str(),
+            Maybe::Absent(_) => "?",
         };
         write!(f, "{name} : {ty}")
     }
@@ -406,12 +406,12 @@ impl fmt::Display for Judged
     ) -> fmt::Result
     {
         match *self {
-            | Self::Checked(Maybe::Present(ref expected)) => {
+            Self::Checked(Maybe::Present(ref expected)) => {
                 write!(f, "checked against `{expected}`")
             },
-            | Self::Checked(Maybe::Absent(_)) => f.write_str("checked"),
-            | Self::Synthesised => f.write_str("synthesised"),
-            | Self::Formed => f.write_str("formed"),
+            Self::Checked(Maybe::Absent(_)) => f.write_str("checked"),
+            Self::Synthesised => f.write_str("synthesised"),
+            Self::Formed => f.write_str("formed"),
         }
     }
 }
@@ -571,8 +571,8 @@ impl AsRef<str> for Identifier
     fn as_ref(&self) -> &str
     {
         match *self {
-            | Self::Refusal(ref spelling) => spelling.as_ref(),
-            | Self::Lint(ref lint) => lint.as_ref(),
+            Self::Refusal(ref spelling) => spelling.as_ref(),
+            Self::Lint(ref lint) => lint.as_ref(),
         }
     }
 }
@@ -669,11 +669,11 @@ impl Diagnostic
     pub fn primary(&self) -> Maybe<&DiagnosticAnnotation, report_span::Absent>
     {
         match (self.span, self.annotations.first()) {
-            | (Maybe::Present(_), Some(primary)) if primary.kind == AnnotationKind::Primary => {
+            (Maybe::Present(_), Some(primary)) if primary.kind == AnnotationKind::Primary => {
                 Maybe::Present(primary)
             },
-            | (Maybe::Absent(reason), _) => Maybe::Absent(reason),
-            | (Maybe::Present(_), _) => Maybe::Absent(report_span::Absent::OutsideText),
+            (Maybe::Absent(reason), _) => Maybe::Absent(reason),
+            (Maybe::Present(_), _) => Maybe::Absent(report_span::Absent::OutsideText),
         }
     }
 
@@ -742,8 +742,8 @@ impl Diagnostic
             return details;
         }
         let mut spans = match self.span {
-            | Maybe::Present(span) => alloc::format!("primary {span}"),
-            | Maybe::Absent(reason) => alloc::format!("primary unlocated ({reason:?})"),
+            Maybe::Present(span) => alloc::format!("primary {span}"),
+            Maybe::Absent(reason) => alloc::format!("primary unlocated ({reason:?})"),
         };
         for annotation in self.annotations.iter().skip(1) {
             let _written = fmt::Write::write_fmt(
@@ -828,14 +828,14 @@ impl Diagnostic
             label,
         };
         let primary = match self.primary() {
-            | Maybe::Present(annotation) => Some(locus(annotation.locus, annotation.label.clone())),
-            | Maybe::Absent(_) => None,
+            Maybe::Present(annotation) => Some(locus(annotation.locus, annotation.label.clone())),
+            Maybe::Absent(_) => None,
         };
         let image = JsonDiagnostic {
             level: alloc::format!("{}", self.severity),
             name: match self.identifier {
-                | Maybe::Present(ref identifier) => Some(String::from(identifier.as_ref())),
-                | Maybe::Absent(_) => None,
+                Maybe::Present(ref identifier) => Some(String::from(identifier.as_ref())),
+                Maybe::Absent(_) => None,
             },
             key: alloc::format!("{}", self.message.key),
             class: alloc::format!("{}", self.detail.class),
@@ -862,8 +862,8 @@ impl Diagnostic
                         .map(|binder| alloc::format!("{binder}"))
                         .collect(),
                     locus: match context.locus {
-                        | Maybe::Present(at) => Some(locus(at, context.label())),
-                        | Maybe::Absent(_) => None,
+                        Maybe::Present(at) => Some(locus(at, context.label())),
+                        Maybe::Absent(_) => None,
                     },
                 })
                 .collect(),
@@ -873,16 +873,16 @@ impl Diagnostic
                 .map(|binding| alloc::format!("{binding}"))
                 .collect(),
             note: match self.note {
-                | Maybe::Present(ref note) => Some(note.clone()),
-                | Maybe::Absent(_) => None,
+                Maybe::Present(ref note) => Some(note.clone()),
+                Maybe::Absent(_) => None,
             },
             fix: match self.fix {
-                | Maybe::Present(ref fix) => Some(JsonFix {
+                Maybe::Present(ref fix) => Some(JsonFix {
                     start: usize::from(fix.span.start()),
                     end: usize::from(fix.span.end()),
                     replacement: fix.replacement.clone(),
                 }),
-                | Maybe::Absent(_) => None,
+                Maybe::Absent(_) => None,
             },
         };
         serde_json::to_string(&image).unwrap_or_default()

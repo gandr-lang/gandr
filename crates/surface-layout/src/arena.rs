@@ -987,12 +987,12 @@ fn scan_verbatim(source: VerbatimSource<'_>) -> Result<Vec<VerbatimLine>, BuildE
     let mut width = 0u32;
     while let Some(character) = chars.next() {
         let ending = match character {
-            | '\n' => Some(StoredLineEnding::Lf),
-            | '\r' => match chars.next() {
-                | Some('\n') => Some(StoredLineEnding::CrLf),
-                | Some(_) | None => return Err(BuildError::InvalidVerbatimLineEnding),
+            '\n' => Some(StoredLineEnding::Lf),
+            '\r' => match chars.next() {
+                Some('\n') => Some(StoredLineEnding::CrLf),
+                Some(_) | None => return Err(BuildError::InvalidVerbatimLineEnding),
             },
-            | _ => {
+            _ => {
                 width = width
                     .checked_add(1u32)
                     .ok_or(BuildError::ArithmeticOverflow {
@@ -1542,8 +1542,8 @@ impl DocArena
             .ok()
             .and_then(|index| self.nodes.get(index))
         {
-            | Some(&stored) => Maybe::Present(stored),
-            | None => Maybe::Absent(stored::Absent::OutOfRange),
+            Some(&stored) => Maybe::Present(stored),
+            None => Maybe::Absent(stored::Absent::OutOfRange),
         }
     }
 
@@ -1578,8 +1578,8 @@ impl DocArena
             .ok()
             .and_then(|index| self.flattened.get(index))
         {
-            | Some(&image) => Maybe::Present(image),
-            | None => Maybe::Absent(stored::Absent::OutOfRange),
+            Some(&image) => Maybe::Present(image),
+            None => Maybe::Absent(stored::Absent::OutOfRange),
         }
     }
 
@@ -1610,13 +1610,10 @@ impl DocArena
         text: TextId,
     ) -> Maybe<&CheckedText, stored::Absent>
     {
-        match usize::try_from(u32::from(text))
+        usize::try_from(u32::from(text))
             .ok()
             .and_then(|index| self.texts.get(index))
-        {
-            | Some(identity) => Maybe::Present(identity),
-            | None => Maybe::Absent(stored::Absent::OutOfRange),
-        }
+            .map_or(Maybe::Absent(stored::Absent::OutOfRange), Maybe::Present)
     }
 
     /// Returns a verbatim identity by its private store id.
@@ -1646,13 +1643,10 @@ impl DocArena
         verbatim: VerbatimId,
     ) -> Maybe<&VerbatimText, stored::Absent>
     {
-        match usize::try_from(u32::from(verbatim))
+        usize::try_from(u32::from(verbatim))
             .ok()
             .and_then(|index| self.verbatim.get(index))
-        {
-            | Some(identity) => Maybe::Present(identity),
-            | None => Maybe::Absent(stored::Absent::OutOfRange),
-        }
+            .map_or(Maybe::Absent(stored::Absent::OutOfRange), Maybe::Present)
     }
 }
 

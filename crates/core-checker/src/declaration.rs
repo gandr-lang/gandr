@@ -382,8 +382,8 @@ impl Declaration
     ) -> Self
     {
         match self.content {
-            | DeclarationContent::Value { .. } => Self { laws, ..self },
-            | DeclarationContent::Data(_) | DeclarationContent::Abstract(_) => self,
+            DeclarationContent::Value { .. } => Self { laws, ..self },
+            DeclarationContent::Data(_) | DeclarationContent::Abstract(_) => self,
         }
     }
 }

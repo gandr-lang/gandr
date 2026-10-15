@@ -199,8 +199,8 @@ impl fmt::Display for Exit
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Return => "return",
-            | Self::Become => "become",
+            Self::Return => "return",
+            Self::Become => "become",
         })
     }
 }
@@ -467,20 +467,60 @@ impl<'source> Lowerer<'_, 'source>
             return (held.min(Leaves::Sometimes), broken);
         };
         match former {
-            | Former::Break => (Leaves::Always, Breaks::Held),
-            | Former::Exit | Former::Become | Former::Continue => (Leaves::Always, Breaks::Never),
-            | Former::Thunk
+            Former::Break => (Leaves::Always, Breaks::Held),
+            Former::Exit | Former::Become | Former::Continue => (Leaves::Always, Breaks::Never),
+            Former::Thunk
             | Former::Lambda
             | Former::LazyRecord
             | Former::Scope
             | Former::Declaration
             | Former::Module => (Leaves::Never, Breaks::Never),
-            | Former::Loop if broken == Breaks::Never => (Leaves::Always, Breaks::Never),
-            | Former::Loop | Former::While | Former::For => (Leaves::Sometimes, Breaks::Never),
-            | _ if held == Leaves::Never => (Leaves::Never, Breaks::Never),
-            | Former::Block | Former::Parenthesized => (held, broken),
-            | Former::Case | Former::Offer => (self.arms_leave(position, pieces), broken),
-            | _ => (Leaves::Sometimes, broken),
+            Former::Loop if broken == Breaks::Never => (Leaves::Always, Breaks::Never),
+            Former::Loop | Former::While | Former::For => (Leaves::Sometimes, Breaks::Never),
+            _ if held == Leaves::Never => (Leaves::Never, Breaks::Never),
+            Former::Block | Former::Parenthesized => (held, broken),
+            Former::Case | Former::Offer => (self.arms_leave(position, pieces), broken),
+            Former::Name
+            | Former::Constructor
+            | Former::Hole
+            | Former::Number
+            | Former::Text
+            | Former::Unit
+            | Former::Return
+            | Former::Force
+            | Former::Run
+            | Former::Call
+            | Former::Telescope
+            | Former::Injection
+            | Former::Binary
+            | Former::Unary
+            | Former::Projection
+            | Former::TypeHead
+            | Former::TypePath
+            | Former::Universe
+            | Former::TypeApplication
+            | Former::ThunkType
+            | Former::ReturnerType
+            | Former::ArrowType
+            | Former::ProductType
+            | Former::SumType
+            | Former::LazyProductType
+            | Former::TelescopeType
+            | Former::LabelledSumType
+            | Former::LazyRecordType
+            | Former::ValueFunctionType
+            | Former::StaticAbstraction
+            | Former::ParenthesizedType
+            | Former::PathType
+            | Former::CapabilityType
+            | Former::AttributeBlock
+            | Former::Import
+            | Former::Data
+            | Former::Instantiation
+            | Former::SessionType
+            | Former::Action
+            | Former::Reserved
+            | Former::Unadmitted => (Leaves::Sometimes, broken),
         }
     }
 
@@ -514,13 +554,13 @@ impl<'source> Lowerer<'_, 'source>
         let mut every = Leaves::Always;
         for piece in &pieces.pieces {
             match *piece {
-                | Piece::Tile { label, .. } => arrow = label == TileName::FAT_ARROW,
-                | Piece::Operand(body) if arrow => {
+                Piece::Tile { label, .. } => arrow = label == TileName::FAT_ARROW,
+                Piece::Operand(body) if arrow => {
                     arrow = false;
                     every = every.min(self.leaves_at(body.node));
                     leaves = every.max(Leaves::Sometimes);
                 },
-                | Piece::Operand(_) => {},
+                Piece::Operand(_) => {},
             }
         }
 
@@ -763,8 +803,8 @@ impl<'source> Lowerer<'_, 'source>
                 let _owner = self.bodies.insert(statement.bound, body);
             }
             match self.leaves_at(statement.bound) {
-                | Leaves::Never => {},
-                | Leaves::Sometimes => {
+                Leaves::Never => {},
+                Leaves::Sometimes => {
                     if let Some(held) = self.statements.get_mut(position) {
                         held.rest = Rest::Distributed;
                     }
@@ -773,7 +813,7 @@ impl<'source> Lowerer<'_, 'source>
                         let _first = self.answers.insert(statement.bound, stated);
                     }
                 },
-                | Leaves::Always => {
+                Leaves::Always => {
                     let after = super::Stretch {
                         start: position.saturating_add(1_usize),
                         end: block.statements.end,
@@ -823,9 +863,9 @@ impl<'source> Lowerer<'_, 'source>
         };
         let span_of = |node: NodeIndex| self.tree.node(node).map(gandr_surface_syntax::Node::span);
         match (span_of(first), span_of(block.last)) {
-            | (Some(start), Some(end)) => start.join(end),
-            | (Some(only), None) | (None, Some(only)) => only,
-            | (None, None) => site.at.span,
+            (Some(start), Some(end)) => start.join(end),
+            (Some(only), None) | (None, Some(only)) => only,
+            (None, None) => site.at.span,
         }
     }
 
@@ -953,8 +993,8 @@ impl<'source> Lowerer<'_, 'source>
             .filter_map(|&(position, exit)| {
                 let tail = self.tree.node(position)?;
                 let explicitness = match self.collected.owner_of(position) {
-                    | Maybe::Present(slot) if self.asked.contains(&slot) => Explicitness::Asked,
-                    | Maybe::Present(_) | Maybe::Absent(_) => Explicitness::Unasked,
+                    Maybe::Present(slot) if self.asked.contains(&slot) => Explicitness::Asked,
+                    Maybe::Present(_) | Maybe::Absent(_) => Explicitness::Unasked,
                 };
                 Some(InferredExit {
                     span: tail.span(),
@@ -1078,7 +1118,7 @@ pub(super) fn commute(
     let mut steps = Vec::from([Step::Open(body, outermost, Binders::NONE)]);
     while let Some(step) = steps.pop() {
         match step {
-            | Step::Open(node, ends, depth) => {
+            Step::Open(node, ends, depth) => {
                 let ends = if sink.exits.contains(&node) {
                     Ends {
                         rests: Maybe::Absent(enclosing::Absent::Outermost),
@@ -1096,7 +1136,7 @@ pub(super) fn commute(
                 };
                 let held = sink.arena.computation(node).cloned();
                 match held {
-                    | Some(Computation::Bind(bound, rest)) => {
+                    Some(Computation::Bind(bound, rest)) => {
                         if let Some(&origin) = sink.distributed.get(&node) {
                             let at = RestAt(pending.len());
                             pending.push(Pending {
@@ -1117,7 +1157,7 @@ pub(super) fn commute(
                             steps.push(Step::Open(rest, ends, depth.deeper()));
                         }
                     },
-                    | Some(Computation::Fixpoint { body: under, .. })
+                    Some(Computation::Fixpoint { body: under, .. })
                         if sink.loops.contains(&node) =>
                     {
                         steps.push(Step::Close(node));
@@ -1127,42 +1167,42 @@ pub(super) fn commute(
                         };
                         steps.push(Step::Open(under, iterated, depth.deeper()));
                     },
-                    | Some(Computation::Case { ref branches, .. }) => {
+                    Some(Computation::Case { ref branches, .. }) => {
                         steps.push(Step::Close(node));
                         for &branch in branches.iter().rev() {
                             steps.push(Step::Open(branch, ends, depth.deeper()));
                         }
                     },
-                    | Some(Computation::DataCase { ref branches, .. }) => {
+                    Some(Computation::DataCase { ref branches, .. }) => {
                         steps.push(Step::Close(node));
                         for &branch in branches.iter().rev() {
                             steps.push(Step::Open(branch, ends, depth));
                         }
                     },
-                    | Some(Computation::Split {
+                    Some(Computation::Split {
                         arity, body: under, ..
                     }) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(under, ends, depth.deeper_by(arity)));
                     },
-                    | Some(Computation::Lambda(under)) => {
+                    Some(Computation::Lambda(under)) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(under, ends, depth.deeper()));
                     },
-                    | Some(Computation::Session(SessionAction::Offer { ref arms, .. })) => {
+                    Some(Computation::Session(SessionAction::Offer { ref arms, .. })) => {
                         steps.push(Step::Close(node));
                         for &arm in arms.values().rev() {
                             steps.push(Step::Open(arm, ends, depth));
                         }
                     },
-                    | Some(Computation::Session(SessionAction::Fork { parent, .. })) => {
+                    Some(Computation::Session(SessionAction::Fork { parent, .. })) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(parent, ends, depth));
                     },
-                    | _ => match ends.rests {
-                        | Maybe::Absent(_) => results.push(node),
-                        | Maybe::Present(at) => match settled.get(at.0) {
-                            | Some(&Maybe::Present(rest)) => {
+                    _ => match ends.rests {
+                        Maybe::Absent(_) => results.push(node),
+                        Maybe::Present(at) => match settled.get(at.0) {
+                            Some(&Maybe::Present(rest)) => {
                                 let Some(&continued) = pending.get(at.0)
                                 else {
                                     results.push(node);
@@ -1176,7 +1216,7 @@ pub(super) fn commute(
                                     &mut carried,
                                 ));
                             },
-                            | Some(&Maybe::Absent(_)) | None => {
+                            Some(&Maybe::Absent(_)) | None => {
                                 let Some(&continued) = pending.get(at.0)
                                 else {
                                     results.push(node);
@@ -1194,18 +1234,18 @@ pub(super) fn commute(
                     },
                 }
             },
-            | Step::Close(node) => {
+            Step::Close(node) => {
                 let rebuilt = rebuild(sink, node, &mut results, fallback);
                 results.push(rebuilt);
             },
-            | Step::Settle(at) => {
+            Step::Settle(at) => {
                 if let Some(commuted) = results.pop()
                     && let Some(slot) = settled.get_mut(at.0)
                 {
                     *slot = Maybe::Present(commuted);
                 }
             },
-            | Step::Continue(node, at, depth) => {
+            Step::Continue(node, at, depth) => {
                 let (Some(&Maybe::Present(rest)), Some(&continued)) =
                     (settled.get(at.0), pending.get(at.0))
                 else {
@@ -1263,13 +1303,13 @@ fn continue_end(
     // reason: a binder count uses u32::MAX as its conservative ceiling, and an
     // end stands at least as deep as its statement.
     let amount = Binders::from(u32::from(depth).saturating_sub(u32::from(statement.depth)));
-    let copy = match copies.get(&(at, amount)) {
-        | Some(&copy) => copy,
-        | None => {
-            let copy = carry(sink, rest, amount, statement.origin, carried);
-            let _first = copies.insert((at, amount), copy);
-            copy
-        },
+    let copy = if let Some(&copy) = copies.get(&(at, amount)) {
+        copy
+    }
+    else {
+        let copy = carry(sink, rest, amount, statement.origin, carried);
+        let _first = copies.insert((at, amount), copy);
+        copy
     };
     if let Some(&Computation::Return(value)) = sink.arena.computation(node) {
         let mark = sink.arena.watermark();
@@ -1320,7 +1360,7 @@ pub(super) fn label_replaced(
 {
     for pair in carried {
         match *pair {
-            | Carried::Value(replaced, standing) => {
+            Carried::Value(replaced, standing) => {
                 if !matches!(sink.arena.value(replaced), Some(&Value::Variable { .. })) {
                     continue;
                 }
@@ -1338,7 +1378,7 @@ pub(super) fn label_replaced(
                     });
                 }
             },
-            | Carried::ValueType(replaced, standing) => {
+            Carried::ValueType(replaced, standing) => {
                 let (Maybe::Present(written), Maybe::Present(now)) = (
                     sink.origins.value_type(replaced),
                     sink.origins.value_type(standing),
@@ -1350,7 +1390,7 @@ pub(super) fn label_replaced(
                     sink.origins.record_stand_in(standing, written);
                 }
             },
-            | Carried::Computation(replaced, standing) => {
+            Carried::Computation(replaced, standing) => {
                 if matches!(
                     sink.arena.computation(replaced),
                     Some(&Computation::Session(_))
@@ -1359,7 +1399,7 @@ pub(super) fn label_replaced(
                         .relabel(&Labelled::Endpoint(replaced), &Labelled::Endpoint(standing));
                 }
             },
-            | Carried::CompType(..) => {},
+            Carried::CompType(..) => {},
         }
     }
 }
@@ -1502,16 +1542,16 @@ impl Sources
         let mut sources = Self::default();
         for pair in carried {
             match *pair {
-                | Carried::Value(held, written) => {
+                Carried::Value(held, written) => {
                     let _first = sources.values.entry(written).or_insert(held);
                 },
-                | Carried::Computation(held, written) => {
+                Carried::Computation(held, written) => {
                     let _first = sources.computations.entry(written).or_insert(held);
                 },
-                | Carried::ValueType(held, written) => {
+                Carried::ValueType(held, written) => {
                     let _first = sources.value_types.entry(written).or_insert(held);
                 },
-                | Carried::CompType(held, written) => {
+                Carried::CompType(held, written) => {
                     let _first = sources.comp_types.entry(written).or_insert(held);
                 },
             }
@@ -1531,8 +1571,8 @@ impl Sources
     ) -> Origin
     {
         match self.values.get(&id) {
-            | Some(&held) => found_or(sink.origins.value(held), fallback),
-            | None => fallback,
+            Some(&held) => found_or(sink.origins.value(held), fallback),
+            None => fallback,
         }
     }
 
@@ -1548,8 +1588,8 @@ impl Sources
     ) -> Origin
     {
         match self.computations.get(&id) {
-            | Some(&held) => found_or(sink.origins.computation(held), fallback),
-            | None => fallback,
+            Some(&held) => found_or(sink.origins.computation(held), fallback),
+            None => fallback,
         }
     }
 
@@ -1565,8 +1605,8 @@ impl Sources
     ) -> Origin
     {
         match self.value_types.get(&id) {
-            | Some(&held) => found_or(sink.origins.value_type(held), fallback),
-            | None => fallback,
+            Some(&held) => found_or(sink.origins.value_type(held), fallback),
+            None => fallback,
         }
     }
 
@@ -1582,8 +1622,8 @@ impl Sources
     ) -> Origin
     {
         match self.comp_types.get(&id) {
-            | Some(&held) => found_or(sink.origins.comp_type(held), fallback),
-            | None => fallback,
+            Some(&held) => found_or(sink.origins.comp_type(held), fallback),
+            None => fallback,
         }
     }
 
@@ -1645,25 +1685,48 @@ fn rebuild(
         return node;
     };
     let count = match held {
-        | Computation::Case { ref branches, .. } => branches.len(),
-        | Computation::DataCase { ref branches, .. } => branches.len(),
-        | Computation::Session(SessionAction::Offer { ref arms, .. }) => arms.len(),
-        | Computation::Bind(..)
+        Computation::Case { ref branches, .. } => branches.len(),
+        Computation::DataCase { ref branches, .. } => branches.len(),
+        Computation::Session(SessionAction::Offer { ref arms, .. }) => arms.len(),
+        Computation::Bind(..)
         | Computation::Split { .. }
         | Computation::Lambda(_)
         | Computation::Session(SessionAction::Fork { .. }) => 1_usize,
-        | Computation::Fixpoint { .. } if sink.loops.contains(&node) => 1_usize,
-        | _ => 0_usize,
+        Computation::Fixpoint { .. } if sink.loops.contains(&node) => 1_usize,
+        Computation::Primitive { .. }
+        | Computation::Transport(..)
+        | Computation::PathTransport { .. }
+        | Computation::Ride { .. }
+        | Computation::TelescopeTransport { .. }
+        | Computation::Fixpoint { .. }
+        | Computation::Application(..)
+        | Computation::Return(_)
+        | Computation::Force(_)
+        | Computation::RecordProjection(..)
+        | Computation::TupleProjection(..)
+        | Computation::Hole(_)
+        | Computation::Mark { .. }
+        | Computation::ListFold { .. }
+        | Computation::Perform { .. }
+        | Computation::Handle { .. }
+        | Computation::Exercise { .. }
+        | Computation::Scope { .. }
+        | Computation::Resume(..)
+        | Computation::Reset(_)
+        | Computation::Shift(_)
+        | Computation::With(..)
+        | Computation::Project(..)
+        | Computation::Session(_) => 0_usize,
     };
     let commuted = results.split_off(results.len().saturating_sub(count));
     let rebuilt = match (held, commuted.as_slice()) {
-        | (Computation::Bind(bound, rest), &[commuted]) if commuted != rest => {
+        (Computation::Bind(bound, rest), &[commuted]) if commuted != rest => {
             sink.arena.computation_bind(bound, commuted)
         },
-        | (Computation::Lambda(under), &[commuted]) if commuted != under => {
+        (Computation::Lambda(under), &[commuted]) if commuted != under => {
             sink.arena.computation_lambda(commuted)
         },
-        | (
+        (
             Computation::Split {
                 scrutinee,
                 arity,
@@ -1672,19 +1735,19 @@ fn rebuild(
             },
             &[commuted],
         ) if commuted != body => match motive {
-            | SplitMotive::Ambient => sink.arena.computation_split(scrutinee, arity, commuted),
-            | SplitMotive::Scrutinee(motive) => sink
+            SplitMotive::Ambient => sink.arena.computation_split(scrutinee, arity, commuted),
+            SplitMotive::Scrutinee(motive) => sink
                 .arena
                 .computation_dependent_split(scrutinee, arity, motive, commuted),
         },
-        | (
+        (
             Computation::Case {
                 scrutinee,
                 ref branches,
             },
             branched,
         ) if **branches != *branched => sink.arena.computation_case(scrutinee, branched),
-        | (
+        (
             Computation::DataCase {
                 scrutinee,
                 motive,
@@ -1695,14 +1758,14 @@ fn rebuild(
             sink.arena
                 .computation_data_case(scrutinee, motive, branched.to_vec())
         },
-        | (Computation::Session(SessionAction::Offer { endpoint, ref arms }), branched)
+        (Computation::Session(SessionAction::Offer { endpoint, ref arms }), branched)
             if !arms.values().copied().eq(branched.iter().copied()) =>
         {
             let arms = arms.keys().cloned().zip(branched.iter().copied()).collect();
             sink.arena
                 .computation_session(SessionAction::Offer { endpoint, arms })
         },
-        | (
+        (
             Computation::Session(SessionAction::Fork {
                 protocol,
                 child,
@@ -1714,12 +1777,12 @@ fn rebuild(
             child,
             parent: commuted,
         }),
-        | (Computation::Fixpoint { body, evidence }, &[commuted]) if commuted != body => {
+        (Computation::Fixpoint { body, evidence }, &[commuted]) if commuted != body => {
             let looped = sink.arena.computation_fixpoint(commuted, evidence);
             let _first = sink.loops.insert(looped);
             looped
         },
-        | _ => return node,
+        _ => return node,
     };
     let origin = found_or(sink.origins.computation(node), fallback);
     sink.origins.record_computation(rebuilt, origin);
@@ -1743,7 +1806,7 @@ where
     Reason: Copy,
 {
     match found {
-        | Maybe::Present(origin) => origin,
-        | Maybe::Absent(_) => fallback,
+        Maybe::Present(origin) => origin,
+        Maybe::Absent(_) => fallback,
     }
 }

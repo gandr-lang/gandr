@@ -55,16 +55,16 @@ impl fmt::Display for InvalidParameterReason
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::ZeroByteLimit => "a byte limit is zero",
-            | Self::MinByteExceedsTargetByte => "the minimum byte limit exceeds the target",
-            | Self::InvertedByteLimits => "the target byte limit exceeds the maximum",
-            | Self::TargetByteExceedsU32 => "the target byte limit exceeds u32::MAX",
-            | Self::ZeroRecordLimit => "a record limit is zero",
-            | Self::InvertedRecordLimits => {
+            Self::ZeroByteLimit => "a byte limit is zero",
+            Self::MinByteExceedsTargetByte => "the minimum byte limit exceeds the target",
+            Self::InvertedByteLimits => "the target byte limit exceeds the maximum",
+            Self::TargetByteExceedsU32 => "the target byte limit exceeds u32::MAX",
+            Self::ZeroRecordLimit => "a record limit is zero",
+            Self::InvertedRecordLimits => {
                 "the record limits are not ordered minimum, target, maximum"
             },
-            | Self::ZeroKappa => "kappa is zero",
-            | Self::ZeroTokenCap => "the token cap is zero",
+            Self::ZeroKappa => "kappa is zero",
+            Self::ZeroTokenCap => "the token cap is zero",
         })
     }
 }
@@ -110,11 +110,11 @@ impl fmt::Display for ArithmeticOperation
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::ByteOffset => "byte offset",
-            | Self::RecordIndex => "record index",
-            | Self::RecordLength => "record length",
-            | Self::ChunkByteCount => "chunk byte count",
-            | Self::ChunkRecordCount => "chunk record count",
+            Self::ByteOffset => "byte offset",
+            Self::RecordIndex => "record index",
+            Self::RecordLength => "record length",
+            Self::ChunkByteCount => "chunk byte count",
+            Self::ChunkRecordCount => "chunk record count",
         })
     }
 }
@@ -159,10 +159,10 @@ impl fmt::Display for ProfileField
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Algorithm => "algorithm",
-            | Self::GearTable => "Gear table version",
-            | Self::Normalization => "normalization policy",
-            | Self::RecordBoundaryRule => "record-boundary rule",
+            Self::Algorithm => "algorithm",
+            Self::GearTable => "Gear table version",
+            Self::Normalization => "normalization policy",
+            Self::RecordBoundaryRule => "record-boundary rule",
         })
     }
 }
@@ -354,19 +354,19 @@ impl fmt::Display for ChunkerError
     ) -> fmt::Result
     {
         match *self {
-            | Self::InvalidParameters { reason } => {
+            Self::InvalidParameters { reason } => {
                 write!(f, "chunker parameters are invalid: {reason}")
             },
-            | Self::ArithmeticOverflow { operation } => {
+            Self::ArithmeticOverflow { operation } => {
                 write!(f, "arithmetic overflowed computing a {operation}")
             },
-            | Self::UnsupportedProfileValue { field, raw } => {
+            Self::UnsupportedProfileValue { field, raw } => {
                 write!(f, "unsupported {field} {raw}")
             },
-            | Self::NonMonotonicRecordSpans { index } => {
+            Self::NonMonotonicRecordSpans { index } => {
                 write!(f, "record span {index} does not continue the partition")
             },
-            | Self::RecordSpanOutOfBounds {
+            Self::RecordSpanOutOfBounds {
                 index,
                 end,
                 canonical_len,
@@ -376,7 +376,7 @@ impl fmt::Display for ChunkerError
                     "record span {index} ends at {end}, past the canonical length {canonical_len}"
                 )
             },
-            | Self::UncoveredCanonicalBytes {
+            Self::UncoveredCanonicalBytes {
                 covered_end,
                 canonical_len,
             } => {
@@ -385,7 +385,7 @@ impl fmt::Display for ChunkerError
                     "record spans cover bytes to {covered_end}, not the canonical length {canonical_len}"
                 )
             },
-            | Self::RecordByteLengthCapViolation {
+            Self::RecordByteLengthCapViolation {
                 record_index,
                 record_len,
                 max_bytes,
@@ -395,7 +395,7 @@ impl fmt::Display for ChunkerError
                     "record {record_index} is {record_len} bytes, over the chunk cap of {max_bytes}"
                 )
             },
-            | Self::ChunkByteCapViolation {
+            Self::ChunkByteCapViolation {
                 chunk_start_record,
                 next_record_index,
                 attempted_bytes,

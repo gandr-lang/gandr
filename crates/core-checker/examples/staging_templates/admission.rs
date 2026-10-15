@@ -378,13 +378,13 @@ pub fn run(output: &mut io::BufWriter<io::StdoutLock<'_>>) -> Result<(), super::
             }
             let rule = members.first().ok_or(StageError::Unbalanced)?.rule;
             let rule = match rule {
-                | gandr_kernel_term::stage::Rule::Congruence => "congruence",
-                | gandr_kernel_term::stage::Rule::Beta => "beta",
-                | gandr_kernel_term::stage::Rule::SpliceQuote => "splice-quote",
-                | gandr_kernel_term::stage::Rule::QuoteSplice => "quote-splice",
-                | gandr_kernel_term::stage::Rule::IterateZero => "iterate-zero",
-                | gandr_kernel_term::stage::Rule::IterateSuccessor => "iterate-successor",
-                | gandr_kernel_term::stage::Rule::Eliminate => "eliminate",
+                gandr_kernel_term::stage::Rule::Congruence => "congruence",
+                gandr_kernel_term::stage::Rule::Beta => "beta",
+                gandr_kernel_term::stage::Rule::SpliceQuote => "splice-quote",
+                gandr_kernel_term::stage::Rule::QuoteSplice => "quote-splice",
+                gandr_kernel_term::stage::Rule::IterateZero => "iterate-zero",
+                gandr_kernel_term::stage::Rule::IterateSuccessor => "iterate-successor",
+                gandr_kernel_term::stage::Rule::Eliminate => "eliminate",
             };
             for threads in [1, 2, 4, 8] {
                 let admitted = admission_measure(

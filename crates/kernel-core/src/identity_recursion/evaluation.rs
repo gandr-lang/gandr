@@ -260,17 +260,17 @@ impl Relation
         let mut completed = BTreeMap::new();
         while let Some(task) = tasks.pop() {
             let fibre = match task {
-                | Task::Remember(relation, left, right) => {
+                Task::Remember(relation, left, right) => {
                     let value = *values.last().ok_or(RelationError::Arena)?;
                     completed.insert((relation, left, right), value);
                     continue;
                 },
-                | Task::Pair => {
+                Task::Pair => {
                     let right = values.pop().ok_or(RelationError::Arena)?;
                     let left = values.pop().ok_or(RelationError::Arena)?;
                     Fiber::Product(left, right)
                 },
-                | Task::Visit(relation, left, right) => {
+                Task::Visit(relation, left, right) => {
                     if let Some(&value) = completed.get(&(relation, left, right)) {
                         values.push(value);
                         continue;
@@ -278,15 +278,15 @@ impl Relation
                     tasks.push(Task::Remember(relation, left, right));
                     let node = self.node(relation)?;
                     match node.clause {
-                        | Clause::Unit => Fiber::Unit,
-                        | Clause::Empty => Fiber::Empty,
-                        | Clause::Universe => Fiber::Universe(left, right),
-                        | Clause::Certificate => Fiber::Certificate(left, right),
-                        | Clause::Discrete => result.discrete(arena, left, right)?,
-                        | Clause::List(_) => {
+                        Clause::Unit => Fiber::Unit,
+                        Clause::Empty => Fiber::Empty,
+                        Clause::Universe => Fiber::Universe(left, right),
+                        Clause::Certificate => Fiber::Certificate(left, right),
+                        Clause::Discrete => result.discrete(arena, left, right)?,
+                        Clause::List(_) => {
                             return Err(RelationError::RecursiveObservationRequired);
                         },
-                        | Clause::Function(argument, result) => {
+                        Clause::Function(argument, result) => {
                             let argument = self.node(argument)?;
                             let result = self.node(result)?;
                             Fiber::Function {
@@ -297,7 +297,7 @@ impl Relation
                                 right,
                             }
                         },
-                        | Clause::Product(first, second) => {
+                        Clause::Product(first, second) => {
                             let first_left =
                                 result.project(arena, left, Coordinate::First, &mut shared)?;
                             let first_right =
@@ -311,15 +311,15 @@ impl Relation
                             tasks.push(Task::Visit(first, first_left, first_right));
                             continue;
                         },
-                        | Clause::Sum(first, second) => {
+                        Clause::Sum(first, second) => {
                             let left_injection = result.injection(arena, left)?;
                             let right_injection = result.injection(arena, right)?;
                             match (left_injection, right_injection) {
-                                | (Injection::Known(a, x), Injection::Known(b, y)) => {
+                                (Injection::Known(a, x), Injection::Known(b, y)) => {
                                     if a == b {
                                         let relation = match a {
-                                            | Side::Left => first,
-                                            | Side::Right => second,
+                                            Side::Left => first,
+                                            Side::Right => second,
                                         };
                                         let left = result.index(Index::Value(x), &mut shared);
                                         let right = result.index(Index::Value(y), &mut shared);
@@ -328,31 +328,49 @@ impl Relation
                                     }
                                     Fiber::Empty
                                 },
-                                | _ => Fiber::Suspended(left, right),
+                                _ => Fiber::Suspended(left, right),
                             }
                         },
-                        | clause @ (Clause::CaseLeft(first, second)
+                        clause @ (Clause::CaseLeft(first, second)
                         | Clause::CaseRight(first, second)) => {
                             let index = match clause {
-                                | Clause::CaseLeft(..) => left,
-                                | _ => right,
+                                Clause::CaseLeft(..) => left,
+                                Clause::Unit
+                                | Clause::Empty
+                                | Clause::Discrete
+                                | Clause::Universe
+                                | Clause::Certificate
+                                | Clause::Product(..)
+                                | Clause::Sum(..)
+                                | Clause::Function(..)
+                                | Clause::List(_)
+                                | Clause::CaseRight(..) => right,
                             };
                             let injection = result.injection(arena, index)?;
                             match injection {
-                                | Injection::Known(side, value) => {
+                                Injection::Known(side, value) => {
                                     let relation = match side {
-                                        | Side::Left => first,
-                                        | Side::Right => second,
+                                        Side::Left => first,
+                                        Side::Right => second,
                                     };
                                     let payload = result.index(Index::Value(value), &mut shared);
                                     let (left, right) = match clause {
-                                        | Clause::CaseLeft(..) => (payload, right),
-                                        | _ => (left, payload),
+                                        Clause::CaseLeft(..) => (payload, right),
+                                        Clause::Unit
+                                        | Clause::Empty
+                                        | Clause::Discrete
+                                        | Clause::Universe
+                                        | Clause::Certificate
+                                        | Clause::Product(..)
+                                        | Clause::Sum(..)
+                                        | Clause::Function(..)
+                                        | Clause::List(_)
+                                        | Clause::CaseRight(..) => (left, payload),
                                     };
                                     tasks.push(Task::Visit(relation, left, right));
                                     continue;
                                 },
-                                | Injection::Neutral => Fiber::Suspended(left, right),
+                                Injection::Neutral => Fiber::Suspended(left, right),
                             }
                         },
                     }
@@ -497,9 +515,9 @@ impl Fibers
         let mut types = Vec::with_capacity(self.nodes.len());
         for &node in &self.nodes {
             let ty = match node {
-                | Fiber::Unit => arena.value_type_unit(),
-                | Fiber::Empty => arena.value_type_empty(),
-                | Fiber::Universe(left, right) => {
+                Fiber::Unit => arena.value_type_unit(),
+                Fiber::Empty => arena.value_type_empty(),
+                Fiber::Universe(left, right) => {
                     let (left, right) = self.native_indices(left, right)?;
                     let ty = arena.value_type_path_universe(left, right);
                     crate::path_universe::endpoints(
@@ -510,13 +528,13 @@ impl Fibers
                     .map_err(|error| RelationError::Path(alloc::boxed::Box::new(error)))?;
                     ty
                 },
-                | Fiber::Certificate(..) => return Err(RelationError::HigherFieldRequired),
-                | Fiber::Product(left, right) => {
+                Fiber::Certificate(..) => return Err(RelationError::HigherFieldRequired),
+                Fiber::Product(left, right) => {
                     let left = *types.get(left.0).ok_or(RelationError::Arena)?;
                     let right = *types.get(right.0).ok_or(RelationError::Arena)?;
                     arena.value_type_product(&[left, right])
                 },
-                | Fiber::Function {
+                Fiber::Function {
                     classifier,
                     left,
                     right,
@@ -525,7 +543,7 @@ impl Fibers
                     let (left, right) = self.native_indices(left, right)?;
                     arena.value_type_path(classifier, left, right)
                 },
-                | Fiber::Discrete(..) | Fiber::Suspended(..) => {
+                Fiber::Discrete(..) | Fiber::Suspended(..) => {
                     return Err(RelationError::NeutralFiber);
                 },
             };
@@ -603,14 +621,14 @@ impl Fibers
             && let Some(&[left, right]) = arena.value(value).and_then(Value::components)
         {
             let value = match coordinate {
-                | Coordinate::First => left,
-                | Coordinate::Second => right,
+                Coordinate::First => left,
+                Coordinate::Second => right,
             };
             return Ok(self.index(Index::Value(value), shared));
         }
         let projection = match coordinate {
-            | Coordinate::First => Index::First(index),
-            | Coordinate::Second => Index::Second(index),
+            Coordinate::First => Index::First(index),
+            Coordinate::Second => Index::Second(index),
         };
         Ok(self.index(projection, shared))
     }
@@ -642,14 +660,14 @@ impl Fibers
     {
         let index = self.get_index(index)?;
         match index {
-            | Index::Value(value) => match arena.value(value) {
+            Index::Value(value) => match arena.value(value) {
                 // The fold's sums are binary, so only the first two summands
                 // select a branch; a further one stays neutral.
-                | Some(&Value::Injection(summand, payload)) => Ok(Side::try_from(summand)
+                Some(&Value::Injection(summand, payload)) => Ok(Side::try_from(summand)
                     .map_or(Injection::Neutral, |side| Injection::Known(side, payload))),
-                | _ => Ok(Injection::Neutral),
+                _ => Ok(Injection::Neutral),
             },
-            | Index::First(_) | Index::Second(_) => Ok(Injection::Neutral),
+            Index::First(_) | Index::Second(_) => Ok(Injection::Neutral),
         }
     }
 

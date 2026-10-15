@@ -92,14 +92,21 @@ fn power_residualizes()
         let mut multiplications = 0_usize;
         while let Some(term) = pending.pop() {
             match arena.term(term).unwrap() {
-                | Term::Variable(Index(0)) | Term::Natural(Stage::Inner(Model(0)), Natural(1)) => {
-                },
-                | Term::Multiply(left, right) => {
+                Term::Variable(Index(0)) | Term::Natural(Stage::Inner(Model(0)), Natural(1)) => {},
+                Term::Multiply(left, right) => {
                     multiplications += 1;
                     pending.push(left);
                     pending.push(right);
                 },
-                | other => panic!("non-first-order residual: {other:?}"),
+                other @ (Term::Variable(_)
+                | Term::Natural(..)
+                | Term::Code(_)
+                | Term::Lambda(..)
+                | Term::Apply(..)
+                | Term::Quote(_)
+                | Term::Splice(_)
+                | Term::Iterate(..)
+                | Term::Eliminate(..)) => panic!("non-first-order residual: {other:?}"),
             }
         }
         assert_eq!(multiplications, exponent);
@@ -108,19 +115,26 @@ fn power_residualizes()
             let mut values = Vec::new();
             while let Some((term, ready)) = tasks.pop() {
                 match arena.term(term).unwrap() {
-                    | Term::Variable(Index(0)) => values.push(input),
-                    | Term::Natural(_, Natural(value)) => values.push(value),
-                    | Term::Multiply(left, right) if !ready => {
+                    Term::Variable(Index(0)) => values.push(input),
+                    Term::Natural(_, Natural(value)) => values.push(value),
+                    Term::Multiply(left, right) if !ready => {
                         tasks.push((term, true));
                         tasks.push((right, false));
                         tasks.push((left, false));
                     },
-                    | Term::Multiply(..) => {
+                    Term::Multiply(..) => {
                         let right = values.pop().unwrap();
                         let left = values.pop().unwrap();
                         values.push(left.checked_mul(right).unwrap());
                     },
-                    | _ => panic!("residual grammar"),
+                    Term::Variable(_)
+                    | Term::Code(_)
+                    | Term::Lambda(..)
+                    | Term::Apply(..)
+                    | Term::Quote(_)
+                    | Term::Splice(_)
+                    | Term::Iterate(..)
+                    | Term::Eliminate(..) => panic!("residual grammar"),
                 }
             }
             assert_eq!(
@@ -187,19 +201,27 @@ fn double_residualizes()
             let mut multiplications = 0_u32;
             while let Some((term, ready)) = tasks.pop() {
                 match arena.term(term).unwrap() {
-                    | Term::Natural(Stage::Inner(Model(0)), Natural(value)) => values.push(value),
-                    | Term::Multiply(left, right) if !ready => {
+                    Term::Natural(Stage::Inner(Model(0)), Natural(value)) => values.push(value),
+                    Term::Multiply(left, right) if !ready => {
                         tasks.push((term, true));
                         tasks.push((right, false));
                         tasks.push((left, false));
                     },
-                    | Term::Multiply(..) => {
+                    Term::Multiply(..) => {
                         multiplications += 1;
                         let right = values.pop().unwrap();
                         let left = values.pop().unwrap();
                         values.push(left.checked_mul(right).unwrap());
                     },
-                    | other => panic!("non-first-order residual: {other:?}"),
+                    other @ (Term::Variable(_)
+                    | Term::Natural(..)
+                    | Term::Code(_)
+                    | Term::Lambda(..)
+                    | Term::Apply(..)
+                    | Term::Quote(_)
+                    | Term::Splice(_)
+                    | Term::Iterate(..)
+                    | Term::Eliminate(..)) => panic!("non-first-order residual: {other:?}"),
                 }
             }
             assert_eq!(multiplications, 2 * exponent);

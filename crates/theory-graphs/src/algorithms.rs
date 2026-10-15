@@ -172,19 +172,19 @@ impl Display for GraphValidationError
     ) -> FmtResult
     {
         match *self {
-            | Self::NodeCountTooLarge { node_count } => {
+            Self::NodeCountTooLarge { node_count } => {
                 write!(f, "{node_count} nodes do not fit the address space")
             },
-            | Self::NodeOutOfBounds { node, node_count } => {
+            Self::NodeOutOfBounds { node, node_count } => {
                 write!(f, "node {node} is outside 0..{node_count}")
             },
-            | Self::EdgeOutOfBounds {
+            Self::EdgeOutOfBounds {
                 source,
                 target,
                 node_count,
             } => write!(f, "edge {source}>{target} leaves 0..{node_count}"),
-            | Self::EdgeCountTooLarge => f.write_str("the edges exceed the 32-bit edge indices"),
-            | Self::ArithmeticOverflow => f.write_str("a graph algorithm's arithmetic overflowed"),
+            Self::EdgeCountTooLarge => f.write_str("the edges exceed the 32-bit edge indices"),
+            Self::ArithmeticOverflow => f.write_str("a graph algorithm's arithmetic overflowed"),
         }
     }
 }
@@ -659,7 +659,7 @@ fn cycle_witness_from_rows(
             let source = frame.node;
             let target_colour = slot_of(&mut colours, target, node_count)?;
             match *target_colour {
-                | Colour::Unvisited => {
+                Colour::Unvisited => {
                     *target_colour = Colour::Active;
                     path.push(target);
                     frames.push(Frame {
@@ -667,8 +667,8 @@ fn cycle_witness_from_rows(
                         next: 0,
                     });
                 },
-                | Colour::Active => return Ok(Some(closed_walk(&path, source, target))),
-                | Colour::Finished => {},
+                Colour::Active => return Ok(Some(closed_walk(&path, source, target))),
+                Colour::Finished => {},
             }
         }
     }
@@ -719,8 +719,8 @@ fn closed_walk(
     let edges = nodes
         .windows(2)
         .filter_map(|pair| match *pair {
-            | [from, to] => Some(EdgeId::new(from, to)),
-            | _ => None,
+            [from, to] => Some(EdgeId::new(from, to)),
+            _ => None,
         })
         .collect();
     CycleWitness { nodes, edges }

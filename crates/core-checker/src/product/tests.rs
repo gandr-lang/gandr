@@ -108,8 +108,8 @@ fn refusal(
 ) -> CheckRefusal
 {
     match report.judged().get(position).map(Judged::verdict) {
-        | Some(Verdict::Refused(refusal)) => refusal,
-        | other => panic!("the declaration at {position} is refused: {other:?}"),
+        Some(Verdict::Refused(refusal)) => refusal,
+        other => panic!("the declaration at {position} is refused: {other:?}"),
     }
 }
 

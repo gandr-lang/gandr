@@ -104,7 +104,7 @@ mod artifact_contract
         let mut declarations = Vec::with_capacity(kinds.len());
         for (position, &kind) in kinds.iter().enumerate() {
             let declaration = match (kind, position) {
-                | (Kind::UnitDefinition, _) | (Kind::ReferenceToFirst, 0) => {
+                (Kind::UnitDefinition, _) | (Kind::ReferenceToFirst, 0) => {
                     let declared = arena.value_type_unit();
                     let body = arena.value_unit();
                     DeclarationBuilder::new(&mut arena).def(
@@ -113,17 +113,17 @@ mod artifact_contract
                         body,
                     )
                 },
-                | (Kind::UnitAxiom, _) => {
+                (Kind::UnitAxiom, _) => {
                     let declared = arena.value_type_unit();
                     DeclarationBuilder::new(&mut arena)
                         .axiom(LevelSignature::monomorphic(), declared)
                 },
-                | (Kind::UniverseAxiom, _) => {
+                (Kind::UniverseAxiom, _) => {
                     let declared = arena.value_type_universe(GroundSort::Value, Level::zero());
                     DeclarationBuilder::new(&mut arena)
                         .axiom(LevelSignature::monomorphic(), declared)
                 },
-                | (Kind::ReferenceToFirst, _) => {
+                (Kind::ReferenceToFirst, _) => {
                     let declared = arena.value_type_unit();
                     let body = arena.value_constant(ConstantIndex::from(0_usize));
                     DeclarationBuilder::new(&mut arena).def(

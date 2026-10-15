@@ -163,8 +163,10 @@ mod tests
     {
         let line = line.into();
         match offer(repl, line) {
-            | LoopEvent::Block(block) => block,
-            | other => panic!("`{line}` answers a block, not {other:?}"),
+            LoopEvent::Block(block) => block,
+            other @ (LoopEvent::Continue | LoopEvent::Quit) => {
+                panic!("`{line}` answers a block, not {other:?}")
+            },
         }
     }
 
@@ -272,14 +274,14 @@ mod tests
             .into_step(Path::new(""));
         entries(&step, Verb::Check(Goals::Reported))
             .filter_map(|diagnostic| match diagnostic.severity {
-                | Severity::Error | Severity::Note | Severity::Warning => Some((
+                Severity::Error | Severity::Note | Severity::Warning => Some((
                     OutKind::Diag,
                     render(&diagnostic, style, Verbosity::User)
                         .to_string()
                         .trim_end()
                         .to_owned(),
                 )),
-                | Severity::Goal | Severity::Ledger => None,
+                Severity::Goal | Severity::Ledger => None,
             })
             .collect()
     }

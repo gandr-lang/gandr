@@ -89,8 +89,8 @@ struct PromptText(&'static str);
 const fn prompt_text(prompt: Prompt) -> PromptText
 {
     PromptText(match prompt {
-        | Prompt::Fresh => "gandr> ",
-        | Prompt::Continuing => "  ...> ",
+        Prompt::Fresh => "gandr> ",
+        Prompt::Continuing => "  ...> ",
     })
 }
 
@@ -129,13 +129,13 @@ impl LineSource for Terminal
     {
         let PromptText(text) = prompt_text(prompt);
         match self.editor.readline(text) {
-            | Ok(line) => match self.editor.add_history_entry(line.as_str()) {
-                | Ok(_) => Read::Line(line),
-                | Err(error) => Read::Failed(Fault::Editor(error)),
+            Ok(line) => match self.editor.add_history_entry(line.as_str()) {
+                Ok(_) => Read::Line(line),
+                Err(error) => Read::Failed(Fault::Editor(error)),
             },
-            | Err(ReadlineError::Interrupted) => Read::Interrupted,
-            | Err(ReadlineError::Eof) => Read::End,
-            | Err(error) => Read::Failed(Fault::Editor(error)),
+            Err(ReadlineError::Interrupted) => Read::Interrupted,
+            Err(ReadlineError::Eof) => Read::End,
+            Err(error) => Read::Failed(Fault::Editor(error)),
         }
     }
 }
@@ -210,29 +210,29 @@ where
     Output: Write,
 {
     let mut repl = match SessionLoop::new(style) {
-        | Ok(repl) => repl,
-        | Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
+        Ok(repl) => repl,
+        Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
     };
     loop {
         match source.read(repl.prompt()) {
-            | Read::Line(line) => match repl.offer(SourceText::from(line.as_str())) {
-                | Ok(LoopEvent::Continue) => {},
-                | Ok(LoopEvent::Block(block)) => {
+            Read::Line(line) => match repl.offer(SourceText::from(line.as_str())) {
+                Ok(LoopEvent::Continue) => {},
+                Ok(LoopEvent::Block(block)) => {
                     write_block(output, &block)?;
                     output.flush()?;
                 },
-                | Ok(LoopEvent::Quit) => break,
-                | Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
+                Ok(LoopEvent::Quit) => break,
+                Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
             },
-            | Read::Interrupted => repl.discard(),
-            | Read::End => break,
-            | Read::Failed(fault) => return Ok(Ended::Faulted(fault)),
+            Read::Interrupted => repl.discard(),
+            Read::End => break,
+            Read::Failed(fault) => return Ok(Ended::Faulted(fault)),
         }
     }
     match repl.finish() {
-        | Ok(Maybe::Present(block)) => write_block(output, &block)?,
-        | Ok(Maybe::Absent(_)) => {},
-        | Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
+        Ok(Maybe::Present(block)) => write_block(output, &block)?,
+        Ok(Maybe::Absent(_)) => {},
+        Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
     }
     Ok(Ended::Completed)
 }
@@ -269,8 +269,8 @@ where
     Output: Write,
 {
     let editor = match DefaultEditor::new() {
-        | Ok(editor) => editor,
-        | Err(error) => return Ok(Ended::Faulted(Fault::Editor(error))),
+        Ok(editor) => editor,
+        Err(error) => return Ok(Ended::Faulted(Fault::Editor(error))),
     };
     drive(&mut Terminal { editor }, output, style)
 }

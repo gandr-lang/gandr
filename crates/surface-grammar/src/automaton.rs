@@ -211,22 +211,22 @@ impl TileSet
     const fn position(self) -> SetPosition
     {
         SetPosition(match self {
-            | Self::Fills(Sort::Item) => 0,
-            | Self::Fills(Sort::Pattern) => 1,
-            | Self::Fills(Sort::Expression) => 2,
-            | Self::Fills(Sort::Type) => 3,
-            | Self::Fills(Sort::Instantiation) => 4,
-            | Self::Fills(Sort::ModuleMember) => 5,
-            | Self::Absorbs(Sort::Item) => 6,
-            | Self::Absorbs(Sort::Pattern) => 7,
-            | Self::Absorbs(Sort::Expression) => 8,
-            | Self::Absorbs(Sort::Type) => 9,
-            | Self::Absorbs(Sort::Instantiation) => 10,
-            | Self::Absorbs(Sort::ModuleMember) => 11,
-            | Self::Prefixes => 12,
-            | Self::LeftOperators => 13,
-            | Self::FirstMids => 14,
-            | Self::Continuations => 15,
+            Self::Fills(Sort::Item) => 0,
+            Self::Fills(Sort::Pattern) => 1,
+            Self::Fills(Sort::Expression) => 2,
+            Self::Fills(Sort::Type) => 3,
+            Self::Fills(Sort::Instantiation) => 4,
+            Self::Fills(Sort::ModuleMember) => 5,
+            Self::Absorbs(Sort::Item) => 6,
+            Self::Absorbs(Sort::Pattern) => 7,
+            Self::Absorbs(Sort::Expression) => 8,
+            Self::Absorbs(Sort::Type) => 9,
+            Self::Absorbs(Sort::Instantiation) => 10,
+            Self::Absorbs(Sort::ModuleMember) => 11,
+            Self::Prefixes => 12,
+            Self::LeftOperators => 13,
+            Self::FirstMids => 14,
+            Self::Continuations => 15,
         })
     }
 }
@@ -410,9 +410,9 @@ impl BoundShape
     const fn of(bound: Bound<Prec>) -> Self
     {
         match bound {
-            | Bound::Bottom => Self::Bottom,
-            | Bound::Value(_) => Self::Value,
-            | Bound::Root => Self::Root,
+            Bound::Bottom => Self::Bottom,
+            Bound::Value(_) => Self::Value,
+            Bound::Root => Self::Root,
         }
     }
 }
@@ -472,22 +472,22 @@ impl Reading
         let has_succ = flag(|held| bool::from(held.successor));
         let required_tail = flag(|held| bool::from(held.required_tail));
         let kind = match (has_pred, has_succ) {
-            | (false, true) if left == BoundShape::Value => TileKind::AbsorbingStart,
-            | (false, true) => TileKind::Start,
-            | (true, true) => TileKind::Mid,
-            | (true, false) if required_tail => TileKind::Mid,
-            | (true, false) => TileKind::End,
-            | (false, false) => match (left == BoundShape::Value, right == BoundShape::Value) {
-                | (false, false) => TileKind::Operand,
-                | (false, true) => TileKind::Prefix,
-                | (true, false) => TileKind::Postfix,
-                | (true, true) => TileKind::Infix,
+            (false, true) if left == BoundShape::Value => TileKind::AbsorbingStart,
+            (false, true) => TileKind::Start,
+            (true, true) => TileKind::Mid,
+            (true, false) if required_tail => TileKind::Mid,
+            (true, false) => TileKind::End,
+            (false, false) => match (left == BoundShape::Value, right == BoundShape::Value) {
+                (false, false) => TileKind::Operand,
+                (false, true) => TileKind::Prefix,
+                (true, false) => TileKind::Postfix,
+                (true, true) => TileKind::Infix,
             },
         };
         let hole = columns.and_then(|held| {
             held.right_steps.iter().find_map(|step| match step.crossed {
-                | StepSym::Sort(sort) => Some(sort),
-                | StepSym::Tile(_) => None,
+                StepSym::Sort(sort) => Some(sort),
+                StepSym::Tile(_) => None,
             })
         });
         Self {
@@ -524,15 +524,15 @@ impl Reading
     fn sets(self) -> [Option<TileSet>; 2]
     {
         match self.kind {
-            | TileKind::Operand | TileKind::Start => [Some(TileSet::Fills(self.sort)), None],
-            | TileKind::AbsorbingStart => [Some(TileSet::Absorbs(self.sort)), None],
-            | TileKind::Prefix => [Some(TileSet::Prefixes), None],
-            | TileKind::Infix | TileKind::Postfix => [Some(TileSet::LeftOperators), None],
-            | TileKind::Mid => [
+            TileKind::Operand | TileKind::Start => [Some(TileSet::Fills(self.sort)), None],
+            TileKind::AbsorbingStart => [Some(TileSet::Absorbs(self.sort)), None],
+            TileKind::Prefix => [Some(TileSet::Prefixes), None],
+            TileKind::Infix | TileKind::Postfix => [Some(TileSet::LeftOperators), None],
+            TileKind::Mid => [
                 Some(TileSet::Continuations),
                 self.membership.0.then_some(TileSet::FirstMids),
             ],
-            | TileKind::End => [Some(TileSet::Continuations), None],
+            TileKind::End => [Some(TileSet::Continuations), None],
         }
     }
 }
@@ -642,8 +642,8 @@ impl TileAutomaton
             .ok()
             .and_then(|at| self.kinds.get(at))
         {
-            | Some(&kind) => Ok(kind),
-            | None => Err(PbgError::UnknownMold { id }),
+            Some(&kind) => Ok(kind),
+            None => Err(PbgError::UnknownMold { id }),
         }
     }
 
@@ -673,8 +673,8 @@ impl TileAutomaton
             .ok()
             .and_then(|at| self.observations.get(at))
         {
-            | Some(&class) => Ok(class),
-            | None => Err(PbgError::UnknownMold { id }),
+            Some(&class) => Ok(class),
+            None => Err(PbgError::UnknownMold { id }),
         }
     }
 

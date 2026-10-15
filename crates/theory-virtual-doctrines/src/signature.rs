@@ -28,9 +28,9 @@ impl Head for SignatureKind
     #[inline]
     fn arity(&self) -> ArgumentCount
     {
-        match self {
-            | &Self::Single(_) => 0_usize.into(),
-            | &Self::Product(count) => count,
+        match *self {
+            Self::Single(_) => 0_usize.into(),
+            Self::Product(count) => count,
         }
     }
 }
@@ -92,11 +92,9 @@ impl SignatureRef
     #[inline]
     pub fn parts(&self) -> Maybe<SignatureParts<'_>, product_shape::Absent>
     {
-        match self.0.to_ref().head() {
-            | &SignatureKind::Single(_) => Maybe::Absent(product_shape::Absent::Nominal),
-            | &SignatureKind::Product(_) => {
-                Maybe::Present(SignatureParts(self.0.to_ref().children()))
-            },
+        match *self.0.to_ref().head() {
+            SignatureKind::Single(_) => Maybe::Absent(product_shape::Absent::Nominal),
+            SignatureKind::Product(_) => Maybe::Present(SignatureParts(self.0.to_ref().children())),
         }
     }
     /// Borrow the complete signature.

@@ -371,8 +371,8 @@ impl PartSet
             return Liveness::Dead;
         };
         match self.words.get(word.0) {
-            | Some(bits) if bits & mask.0 != 0_u64 => Liveness::Live,
-            | Some(_) | None => Liveness::Dead,
+            Some(bits) if bits & mask.0 != 0_u64 => Liveness::Live,
+            Some(_) | None => Liveness::Dead,
         }
     }
 
@@ -515,10 +515,7 @@ impl Iterator for LiveParts<'_>
             if self.remaining != 0_u64 {
                 let bit = self.remaining.trailing_zeros();
                 self.remaining &= self.remaining.saturating_sub(1_u64);
-                return match self.word.key(BitIndex(bit)) {
-                    | Ok(key) => Some(key),
-                    | Err(Unaddressable) => None,
-                };
+                return self.word.key(BitIndex(bit)).ok();
             }
             let next = self.word.0.checked_add(1_usize)?;
             let bits = self.words.get(next)?;

@@ -91,17 +91,17 @@ fn shown(
     let mut tokens = Vec::new();
     while let Some(next) = pending.pop() {
         let (token, children): (String, Vec<Root>) = match next {
-            | Root::ValueType(at) => match arena.value_type(at) {
-                | Some(&ValueType::Base(base)) => (format!("{base:?}"), Vec::new()),
-                | Some(&ValueType::Product(ref parts)) => (
+            Root::ValueType(at) => match arena.value_type(at) {
+                Some(&ValueType::Base(base)) => (format!("{base:?}"), Vec::new()),
+                Some(&ValueType::Product(ref parts)) => (
                     format!("*{}", parts.len()),
                     parts.iter().map(|&part| Root::ValueType(part)).collect(),
                 ),
-                | Some(&ValueType::Sum(ref parts)) => (
+                Some(&ValueType::Sum(ref parts)) => (
                     format!("+{}", parts.len()),
                     parts.iter().map(|&part| Root::ValueType(part)).collect(),
                 ),
-                | Some(&ValueType::Record(ref fields)) => (
+                Some(&ValueType::Record(ref fields)) => (
                     format!(
                         "#{{{}}}",
                         labels(fields.keys().map(AsRef::as_ref).collect())
@@ -111,11 +111,11 @@ fn shown(
                         .map(|&field| Root::ValueType(field))
                         .collect(),
                 ),
-                | Some(&ValueType::Sigma { first, second }) => (String::from("S"), vec![
+                Some(&ValueType::Sigma { first, second }) => (String::from("S"), vec![
                     Root::ValueType(first),
                     Root::ValueType(second),
                 ]),
-                | Some(&ValueType::Path {
+                Some(&ValueType::Path {
                     carrier,
                     left,
                     right,
@@ -124,91 +124,87 @@ fn shown(
                     Root::Value(left),
                     Root::Value(right),
                 ]),
-                | Some(&ValueType::Thunk(inner)) => {
-                    (String::from("U"), vec![Root::CompType(inner)])
-                },
-                | other => (format!("{other:?}"), Vec::new()),
+                Some(&ValueType::Thunk(inner)) => (String::from("U"), vec![Root::CompType(inner)]),
+                other => (format!("{other:?}"), Vec::new()),
             },
-            | Root::CompType(at) => match arena.comp_type(at) {
-                | Some(&CompType::Returner { result, .. }) => {
+            Root::CompType(at) => match arena.comp_type(at) {
+                Some(&CompType::Returner { result, .. }) => {
                     (String::from("F"), vec![Root::ValueType(result)])
                 },
-                | Some(&CompType::Arrow { domain, codomain }) => (String::from("->"), vec![
+                Some(&CompType::Arrow { domain, codomain }) => (String::from("->"), vec![
                     Root::ValueType(domain),
                     Root::CompType(codomain),
                 ]),
-                | Some(&CompType::Pi { domain, codomain }) => (String::from("Pi"), vec![
+                Some(&CompType::Pi { domain, codomain }) => (String::from("Pi"), vec![
                     Root::ValueType(domain),
                     Root::CompType(codomain),
                 ]),
-                | Some(&CompType::With(first, second)) => (String::from("&"), vec![
+                Some(&CompType::With(first, second)) => (String::from("&"), vec![
                     Root::CompType(first),
                     Root::CompType(second),
                 ]),
-                | other => (format!("{other:?}"), Vec::new()),
+                other => (format!("{other:?}"), Vec::new()),
             },
-            | Root::Value(at) => match arena.value(at) {
-                | Some(&Value::Tuple(ref components)) => (
+            Root::Value(at) => match arena.value(at) {
+                Some(&Value::Tuple(ref components)) => (
                     format!("tuple{}", components.len()),
                     components
                         .iter()
                         .map(|&component| Root::Value(component))
                         .collect(),
                 ),
-                | Some(&Value::Injection(summand, body)) => (
+                Some(&Value::Injection(summand, body)) => (
                     format!("in{}", usize::from(summand)),
                     vec![Root::Value(body)],
                 ),
-                | Some(&Value::Record(ref fields)) => (
+                Some(&Value::Record(ref fields)) => (
                     format!(
                         "record{{{}}}",
                         labels(fields.keys().map(AsRef::as_ref).collect())
                     ),
                     fields.values().map(|&field| Root::Value(field)).collect(),
                 ),
-                | Some(&Value::Returned(computation)) => {
+                Some(&Value::Returned(computation)) => {
                     (String::from("returned"), vec![Root::Computation(
                         computation,
                     )])
                 },
-                | Some(&Value::Nested(computation)) => {
+                Some(&Value::Nested(computation)) => {
                     (String::from("nested"), vec![Root::Computation(computation)])
                 },
-                | Some(&Value::Thunk(body)) => {
-                    (String::from("thunk"), vec![Root::Computation(body)])
-                },
-                | Some(&Value::Variable { index, .. }) => {
+                Some(&Value::Thunk(body)) => (String::from("thunk"), vec![Root::Computation(body)]),
+                Some(&Value::Variable { index, .. }) => {
                     (format!("#{}", u32::from(index)), Vec::new())
                 },
-                | Some(&Value::Constant(constant)) => {
+                Some(&Value::Constant(constant)) => {
                     (format!("const{}", usize::from(constant)), Vec::new())
                 },
-                | Some(&Value::Literal(ref literal)) => (format!("{literal:?}"), Vec::new()),
-                | other => (format!("{other:?}"), Vec::new()),
+                Some(&Value::Literal(ref literal)) => (format!("{literal:?}"), Vec::new()),
+                other => (format!("{other:?}"), Vec::new()),
             },
-            | Root::Computation(at) => match arena.computation(at) {
-                | Some(&Computation::Return(value)) => {
+            Root::Computation(at) => match arena.computation(at) {
+                Some(&Computation::Return(value)) => {
                     (String::from("return"), vec![Root::Value(value)])
                 },
-                | Some(&Computation::Force(value)) => {
+                Some(&Computation::Force(value)) => {
                     (String::from("force"), vec![Root::Value(value)])
                 },
-                | Some(&Computation::Lambda(body)) => {
+                Some(&Computation::Lambda(body)) => {
                     (String::from("lambda"), vec![Root::Computation(body)])
                 },
-                | Some(&Computation::With(first, second)) => (String::from("with"), vec![
+                Some(&Computation::With(first, second)) => (String::from("with"), vec![
                     Root::Computation(first),
                     Root::Computation(second),
                 ]),
-                | Some(&Computation::TupleProjection(tuple, component)) => {
+                Some(&Computation::TupleProjection(tuple, component)) => {
                     (format!("component{}", usize::from(component)), vec![
                         Root::Value(tuple),
                     ])
                 },
-                | Some(&Computation::Project(side, body)) => {
+                Some(&Computation::Project(side, body)) => {
                     (format!("project-{side:?}"), vec![Root::Computation(body)])
                 },
-                | other => (format!("{other:?}"), Vec::new()),
+                other => (format!("{other:?}"), Vec::new()),
             },
         };
         tokens.push(token);
@@ -300,11 +296,14 @@ where
 {
     let name = name.into();
     match outcome(module, name) {
-        | DeclarationOutcome::Completed { declared_type, .. }
+        DeclarationOutcome::Completed { declared_type, .. }
         | DeclarationOutcome::Uncompleted { declared_type } => {
             shown(arena, Root::ValueType(declared_type))
         },
-        | other => panic!("`{name}` lowers a signature, not {other:?}"),
+        other @ (DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),
     }
 }
 
@@ -330,10 +329,13 @@ where
 {
     let name = name.into();
     match outcome(module, name) {
-        | DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => {
+        DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => {
             shown(arena, Root::Value(body))
         },
-        | other => panic!("`{name}` lowers a body, not {other:?}"),
+        other @ (DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a body, not {other:?}"),
     }
 }
 
@@ -360,8 +362,8 @@ where
         .last()
         .map(LoweredDeclaration::outcome)
     {
-        | Some(DeclarationOutcome::Refused(refusal)) => refusal,
-        | other => panic!("the last declaration is refused, not {other:?}"),
+        Some(DeclarationOutcome::Refused(refusal)) => refusal,
+        other => panic!("the last declaration is refused, not {other:?}"),
     }
 }
 
@@ -1010,8 +1012,12 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
         "a computation arrow whose codomain names its binder is dependent"
     );
     let signature = |name: &str| match outcome(&module, name) {
-        | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
-        | other => panic!("`{name}` lowers a signature, not {other:?}"),
+        DeclarationOutcome::Uncompleted { declared_type } => declared_type,
+        other @ (DeclarationOutcome::Completed { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),
     };
     let (spelled, aliased) = (signature("spelled"), signature("aliased"));
     let (spelled, aliased) = (arena.value_quote(spelled), arena.value_quote(aliased));
@@ -1050,12 +1056,12 @@ fn each_label_names_what_it_labels()
         .labels()
         .iter()
         .filter_map(|label| match label.labelled {
-            | Labelled::ValueType { ty, ref context } => Some((
+            Labelled::ValueType { ty, ref context } => Some((
                 written(label),
                 arena.value_type(ty).cloned(),
                 context.clone(),
             )),
-            | Labelled::CompType { .. } | Labelled::Value(_) | Labelled::Endpoint(_) => None,
+            Labelled::CompType { .. } | Labelled::Value(_) | Labelled::Endpoint(_) => None,
         })
         .collect();
     let terms: Vec<(&str, Option<Value>)> = module
@@ -1063,10 +1069,8 @@ fn each_label_names_what_it_labels()
         .labels()
         .iter()
         .filter_map(|label| match label.labelled {
-            | Labelled::Value(value) => Some((written(label), arena.value(value).cloned())),
-            | Labelled::ValueType { .. } | Labelled::CompType { .. } | Labelled::Endpoint(_) => {
-                None
-            },
+            Labelled::Value(value) => Some((written(label), arena.value(value).cloned())),
+            Labelled::ValueType { .. } | Labelled::CompType { .. } | Labelled::Endpoint(_) => None,
         })
         .collect();
     let integer = Some(ValueType::Base(gandr_kernel_term::BaseType::Integer));

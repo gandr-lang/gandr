@@ -291,10 +291,10 @@ impl ClosingClass
     pub fn opening(spelling: DelimSpelling<'_>) -> Option<Self>
     {
         match spelling.0 {
-            | "(" => Some(Self::Paren),
-            | "[" => Some(Self::Bracket),
-            | "{" | "#{" => Some(Self::Brace),
-            | _ => None,
+            "(" => Some(Self::Paren),
+            "[" => Some(Self::Bracket),
+            "{" | "#{" => Some(Self::Brace),
+            _ => None,
         }
     }
 
@@ -317,10 +317,10 @@ impl ClosingClass
     pub fn closing(spelling: DelimSpelling<'_>) -> Option<Self>
     {
         match spelling.0 {
-            | ")" => Some(Self::Paren),
-            | "]" => Some(Self::Bracket),
-            | "}" => Some(Self::Brace),
-            | _ => None,
+            ")" => Some(Self::Paren),
+            "]" => Some(Self::Bracket),
+            "}" => Some(Self::Brace),
+            _ => None,
         }
     }
 }

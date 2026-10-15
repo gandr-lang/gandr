@@ -352,7 +352,7 @@ impl Composed<'_>
     ) -> Self
     {
         match self {
-            | Self::Settled {
+            Self::Settled {
                 report,
                 exercised,
                 unstatable,
@@ -377,7 +377,7 @@ impl Composed<'_>
                 kernel: Maybe::Present(kernel),
                 program,
             },
-            | Self::Refused(refusal) => Self::Refused(refusal),
+            Self::Refused(refusal) => Self::Refused(refusal),
         }
     }
 }
@@ -579,23 +579,23 @@ impl fmt::Display for ComposeFault<'_>
     ) -> fmt::Result
     {
         match *self {
-            | Self::Parse(ref fault) => write!(f, "the parser could not commit its tree: {fault}"),
-            | Self::Lowering(ref refusal) => write!(f, "the lowering faulted: {refusal}"),
-            | Self::Settle(ref fault) => write!(f, "the settle comparison faulted: {fault}"),
-            | Self::Readmission(ref readmitted) => {
+            Self::Parse(ref fault) => write!(f, "the parser could not commit its tree: {fault}"),
+            Self::Lowering(ref refusal) => write!(f, "the lowering faulted: {refusal}"),
+            Self::Settle(ref fault) => write!(f, "the settle comparison faulted: {fault}"),
+            Self::Readmission(ref readmitted) => {
                 write!(
                     f,
                     "the kernel did not re-derive the declaration at position {} the checker accepted: ",
                     usize::from(readmitted.constant())
                 )?;
                 match *readmitted.outcome() {
-                    | bridge::Outcome::Rejected(ref error) => {
+                    bridge::Outcome::Rejected(ref error) => {
                         write!(f, "the kernel rejected it: {error}")
                     },
-                    | bridge::Outcome::Refused(refusal) => {
+                    bridge::Outcome::Refused(refusal) => {
                         write!(f, "the bridge refused to offer it ({})", refusal.classify())
                     },
-                    | bridge::Outcome::Data { .. }
+                    bridge::Outcome::Data { .. }
                     | bridge::Outcome::Defined { .. }
                     | bridge::Outcome::Assumed { .. }
                     | bridge::Outcome::Marked(_)
@@ -838,11 +838,11 @@ pub fn lower_parsed<'source>(
     let tree = parsed.into_tree();
     let mut arena = CoreArena::new();
     let lowered = match lowering::lower(grammar, &tree, &mut arena, lowerings) {
-        | Ok(module) => Lowered::Module { module, arena },
-        | Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
+        Ok(module) => Lowered::Module { module, arena },
+        Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
             return Err(ComposeFault::Lowering(refusal));
         },
-        | Err(refusal) => Lowered::Refused(refusal),
+        Err(refusal) => Lowered::Refused(refusal),
     };
     Ok(Lowering {
         obligations,
@@ -910,7 +910,7 @@ pub fn judge<'source>(
     let names = module.structured_names();
     let mut program = Program::new(&arena, &module, &verdicts);
     let settled = match settle(root, &arena, &module, &verdicts, &mut program) {
-        | Ok(report) => {
+        Ok(report) => {
             let exercised = Exercised::of(&arena, &module, &report);
             let unstatable = unstatable(&module);
             let failures = Failures::of(&verdicts);
@@ -932,7 +932,7 @@ pub fn judge<'source>(
                 program,
             })
         },
-        | Err(fault) => Err(fault),
+        Err(fault) => Err(fault),
     };
     Judged {
         settled,
@@ -975,8 +975,8 @@ fn inferred_runs(
                     .decisions()
                     .iter()
                     .filter_map(|(&at, &decided)| match decided {
-                        | Nesting::Ran(purity) => Some((at, purity)),
-                        | Nesting::Suspended => None,
+                        Nesting::Ran(purity) => Some((at, purity)),
+                        Nesting::Suspended => None,
                     })
             }),
     )
@@ -1189,8 +1189,8 @@ pub fn judge_lowering<'source>(
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
     match lowering.into_lowered() {
-        | Lowered::Module { module, arena } => judge_module(root, module, arena, grant),
-        | Lowered::Refused(refusal) => Ok(Composed::Refused(refusal)),
+        Lowered::Module { module, arena } => judge_module(root, module, arena, grant),
+        Lowered::Refused(refusal) => Ok(Composed::Refused(refusal)),
     }
 }
 
@@ -1228,10 +1228,10 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
         .iter()
         .filter_map(|lowered| {
             match (lowered.outcome(), lowered.signature(), lowered.definition()) {
-                | (DeclarationOutcome::Refused(refusal), Maybe::Absent(_), Maybe::Absent(_)) => {
+                (DeclarationOutcome::Refused(refusal), Maybe::Absent(_), Maybe::Absent(_)) => {
                     Some(refusal)
                 },
-                | (DeclarationOutcome::Refused(_), Maybe::Present(_), _)
+                (DeclarationOutcome::Refused(_), Maybe::Present(_), _)
                 | (DeclarationOutcome::Refused(_), _, Maybe::Present(_))
                 | (
                     DeclarationOutcome::Completed { .. }
@@ -1299,19 +1299,19 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
     let mut declarations = Vec::with_capacity(module.declarations().len());
     for lowered in module.declarations() {
         let (declared, defined) = match lowered.outcome() {
-            | DeclarationOutcome::Completed {
+            DeclarationOutcome::Completed {
                 declared_type,
                 body,
             } => (Maybe::Present(declared_type), Maybe::Present(body)),
-            | DeclarationOutcome::Uncompleted { declared_type } => (
+            DeclarationOutcome::Uncompleted { declared_type } => (
                 Maybe::Present(declared_type),
                 Maybe::Absent(body::Absent::Hole),
             ),
-            | DeclarationOutcome::Bodied { body } => (
+            DeclarationOutcome::Bodied { body } => (
                 Maybe::Absent(signature::Absent::Unsigned),
                 Maybe::Present(body),
             ),
-            | DeclarationOutcome::Data(index) => {
+            DeclarationOutcome::Data(index) => {
                 if let Maybe::Present(signature) = module.data(index) {
                     declarations.push(Declaration::data(
                         lowered.constant(),
@@ -1321,7 +1321,7 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                 }
                 continue;
             },
-            | DeclarationOutcome::Abstract(sealing) => {
+            DeclarationOutcome::Abstract(sealing) => {
                 declarations.push(Declaration::abstract_type(
                     lowered.constant(),
                     abstract_type(sealing),
@@ -1329,7 +1329,7 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                 ));
                 continue;
             },
-            | DeclarationOutcome::Refused(_) => continue,
+            DeclarationOutcome::Refused(_) => continue,
         };
         declarations.push(
             Declaration::new(
@@ -1424,7 +1424,7 @@ fn readmitted(
     let readmission = bridge::readmit(arena, verdicts);
     for readmitted in readmission.readmitted() {
         match *readmitted.outcome() {
-            | bridge::Outcome::Data { .. }
+            bridge::Outcome::Data { .. }
             | bridge::Outcome::Defined { .. }
             | bridge::Outcome::Assumed { .. }
             | bridge::Outcome::Marked(_)
@@ -1436,9 +1436,9 @@ fn readmitted(
                 | bridge::Refusal::Unknown { .. }
                 | bridge::Refusal::Session { .. },
             ) => {},
-            | bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. })
+            bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. })
                 if residence(former) == Residence::Checker => {},
-            | bridge::Outcome::Refused(
+            bridge::Outcome::Refused(
                 bridge::Refusal::OutOfFragment { .. }
                 | bridge::Refusal::DanglingNode { .. }
                 | bridge::Refusal::Cyclic { .. }
@@ -1494,7 +1494,7 @@ enum Residence
 fn residence(former: UnadmittedFormer) -> Residence
 {
     match former {
-        | UnadmittedFormer::EffectRow
+        UnadmittedFormer::EffectRow
         | UnadmittedFormer::Reify
         | UnadmittedFormer::Stack
         | UnadmittedFormer::Perform
@@ -1507,7 +1507,7 @@ fn residence(former: UnadmittedFormer) -> Residence
         | UnadmittedFormer::Scope
         | UnadmittedFormer::Run
         | UnadmittedFormer::HigherFlow => Residence::Checker,
-        | UnadmittedFormer::ValueLift
+        UnadmittedFormer::ValueLift
         | UnadmittedFormer::NumericLiteral
         | UnadmittedFormer::NumericAtom
         | UnadmittedFormer::TypeLift
@@ -1626,9 +1626,9 @@ mod tests
     {
         let mut lowerings = LoweringCount::default();
         match compose(grammar, root, source, &mut lowerings) {
-            | Ok(Composed::Settled { report, .. }) => report,
-            | Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),
-            | Err(fault) => panic!("faulted: {fault}"),
+            Ok(Composed::Settled { report, .. }) => report,
+            Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),
+            Err(fault) => panic!("faulted: {fault}"),
         }
     }
 
@@ -2294,9 +2294,14 @@ def h = 1 ;"#,
                 .find(|declaration| declaration.name().as_ref() == wanted)
                 .unwrap_or_else(|| panic!("`{wanted}` is declared"));
             match declaration.outcome() {
-                | DeclarationOutcome::Completed { body, .. }
+                DeclarationOutcome::Completed { body, .. }
                 | DeclarationOutcome::Bodied { body } => body,
-                | other => panic!("`{wanted}` lowers a body, not {other:?}"),
+                other @ (DeclarationOutcome::Uncompleted { .. }
+                | DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::Refused(_)) => {
+                    panic!("`{wanted}` lowers a body, not {other:?}")
+                },
             }
         };
         let printed = |wanted: &str| {
@@ -2411,13 +2416,22 @@ def h = 1 ;"#,
                 .outcome()
         };
         let declared = |wanted: &str| match outcome(wanted) {
-            | DeclarationOutcome::Completed { declared_type, .. }
+            DeclarationOutcome::Completed { declared_type, .. }
             | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
-            | other => panic!("`{wanted}` lowers a signature, not {other:?}"),
+            other @ (DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::Refused(_)) => {
+                panic!("`{wanted}` lowers a signature, not {other:?}")
+            },
         };
         let body = |wanted: &str| match outcome(wanted) {
-            | DeclarationOutcome::Completed { body, .. } => body,
-            | other => panic!("`{wanted}` lowers a body, not {other:?}"),
+            DeclarationOutcome::Completed { body, .. } => body,
+            other @ (DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::Refused(_)) => panic!("`{wanted}` lowers a body, not {other:?}"),
         };
         let shown = |presented: Result<_, _>| {
             let presentation: gandr_surface_pretty::Presentation =
@@ -2445,8 +2459,8 @@ def h = 1 ;"#,
             );
         }
         let suspended = match arena.value(body("pure_pair")) {
-            | Some(&Value::Thunk(computation)) => computation,
-            | other => panic!("`pure_pair` is a suspended computation, not {other:?}"),
+            Some(&Value::Thunk(computation)) => computation,
+            other => panic!("`pure_pair` is a suspended computation, not {other:?}"),
         };
         for (name, expected, presented) in [
             (
@@ -2644,19 +2658,19 @@ def h = 1 ;"#,
             });
         // `rec dbl { fn (n) { case n { …, S(x) => arm, … } } }`: the arm at `S`.
         let arm = match arena.value(defined("dbl")) {
-            | Some(&Value::Thunk(fixpoint)) => match arena.computation(fixpoint) {
-                | Some(&Computation::Fixpoint { body, .. }) => match arena.computation(body) {
-                    | Some(&Computation::Lambda(case)) => match arena.computation(case) {
-                        | Some(&Computation::DataCase { ref branches, .. }) => {
+            Some(&Value::Thunk(fixpoint)) => match arena.computation(fixpoint) {
+                Some(&Computation::Fixpoint { body, .. }) => match arena.computation(body) {
+                    Some(&Computation::Lambda(case)) => match arena.computation(case) {
+                        Some(&Computation::DataCase { ref branches, .. }) => {
                             branches.get(1_usize).copied()
                         },
-                        | _ => None,
+                        _ => None,
                     },
-                    | _ => None,
+                    _ => None,
                 },
-                | _ => None,
+                _ => None,
             },
-            | _ => None,
+            _ => None,
         }
         .expect("`dbl` is a fixpoint over a case with an arm at `S`");
         let context = [Some(Name::from("dbl")), Some(Name::from("n"))];

@@ -121,8 +121,8 @@ impl core::fmt::Display for NonLinearPattern
     ) -> core::fmt::Result
     {
         let side = match self.copied.cat() {
-            | Cat::Producer => "producer",
-            | Cat::Consumer => "consumer",
+            Cat::Producer => "producer",
+            Cat::Consumer => "consumer",
         };
         write!(
             f,
@@ -242,8 +242,8 @@ where
 pub fn admit_linear_cell(cell: &Cell<SequentAlphabet>) -> Result<(), NonLinearPattern>
 {
     match copied_hole(cell) {
-        | Maybe::Present(copied) => Err(NonLinearPattern { copied }),
-        | Maybe::Absent(copy_search::Absent::Linear) => Ok(()),
+        Maybe::Present(copied) => Err(NonLinearPattern { copied }),
+        Maybe::Absent(copy_search::Absent::Linear) => Ok(()),
     }
 }
 

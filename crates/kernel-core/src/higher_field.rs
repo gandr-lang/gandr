@@ -268,24 +268,24 @@ impl fmt::Display for HigherError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Relation(ref error) => write!(f, "higher relation refused: {error}"),
-            | Self::Path(ref error) => write!(f, "higher certificate refused: {error}"),
-            | Self::Boundary => f.write_str("higher-field boundary mismatch"),
-            | Self::NonProductive(id) => write!(f, "non-productive higher field at {}", id.0),
-            | Self::DepthBound => f.write_str("higher-field observation depth bound reached"),
-            | Self::ZeroDepth => f.write_str("higher-field observation requires positive depth"),
-            | Self::UnknownLayer(id) => write!(f, "unknown higher layer {}", id.0),
-            | Self::ExpectedEquivalence => f.write_str("expected equivalence certificate record"),
-            | Self::Replay(KernelVerdict::Convertible) => {
+            Self::Relation(ref error) => write!(f, "higher relation refused: {error}"),
+            Self::Path(ref error) => write!(f, "higher certificate refused: {error}"),
+            Self::Boundary => f.write_str("higher-field boundary mismatch"),
+            Self::NonProductive(id) => write!(f, "non-productive higher field at {}", id.0),
+            Self::DepthBound => f.write_str("higher-field observation depth bound reached"),
+            Self::ZeroDepth => f.write_str("higher-field observation requires positive depth"),
+            Self::UnknownLayer(id) => write!(f, "unknown higher layer {}", id.0),
+            Self::ExpectedEquivalence => f.write_str("expected equivalence certificate record"),
+            Self::Replay(KernelVerdict::Convertible) => {
                 f.write_str("unexpected positive replay refusal")
             },
-            | Self::Replay(KernelVerdict::NotConvertible) => {
+            Self::Replay(KernelVerdict::NotConvertible) => {
                 f.write_str("higher-field reduction not convertible")
             },
-            | Self::Replay(KernelVerdict::Declined(_)) => {
+            Self::Replay(KernelVerdict::Declined(_)) => {
                 f.write_str("higher-field reduction declined")
             },
-            | Self::NeutralTransport => f.write_str("higher fibre transport remains neutral"),
+            Self::NeutralTransport => f.write_str("higher fibre transport remains neutral"),
         }
     }
 }
@@ -511,8 +511,8 @@ impl Codata
                 .get(current.0)
                 .ok_or(HigherError::UnknownLayer(current))?;
             match *layer {
-                | Layer::Redirect(next) => current = next,
-                | Layer::Guard { evidence, tail } => {
+                Layer::Redirect(next) => current = next,
+                Layer::Guard { evidence, tail } => {
                     let cell = Cell {
                         code: goal.code,
                         left: goal.left,

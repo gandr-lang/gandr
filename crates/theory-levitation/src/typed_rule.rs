@@ -302,14 +302,18 @@ mod tests
     fn decode(code: &Code<Grade>) -> Result<TestType, TestDecodeError>
     {
         match code.view() {
-            | CodeView::Unit => Ok(TestType::Unit),
-            | CodeView::Field { ty, .. } => match ty.view() {
-                | ValueTypeView::Prim(PrimTy::Integer) => Ok(TestType::Integer),
-                | _ => Err(TestDecodeError::Unsupported),
+            CodeView::Unit => Ok(TestType::Unit),
+            CodeView::Field { ty, .. } => match ty.view() {
+                ValueTypeView::Prim(PrimTy::Integer) => Ok(TestType::Integer),
+                ValueTypeView::Param(_) | ValueTypeView::Prim(_) | ValueTypeView::Ctor { .. } => {
+                    Err(TestDecodeError::Unsupported)
+                },
             },
-            | CodeView::Var(sort) if sort.as_ref() == "Self" => Ok(TestType::Carrier),
-            | CodeView::Bind { .. } => Err(TestDecodeError::AtomAbstraction),
-            | _ => Err(TestDecodeError::Unsupported),
+            CodeView::Var(sort) if sort.as_ref() == "Self" => Ok(TestType::Carrier),
+            CodeView::Bind { .. } => Err(TestDecodeError::AtomAbstraction),
+            CodeView::Var(_) | CodeView::Prod(_) | CodeView::Sum(_) => {
+                Err(TestDecodeError::Unsupported)
+            },
         }
     }
 

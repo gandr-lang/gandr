@@ -141,8 +141,8 @@ enum Head
 fn free_fault(fault: FreeFault) -> EvalFault
 {
     match fault {
-        | FreeFault::Dangling => EvalFault::DanglingTerm,
-        | FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+        FreeFault::Dangling => EvalFault::DanglingTerm,
+        FreeFault::MachineInvariant => EvalFault::MachineInvariant,
     }
 }
 
@@ -285,11 +285,11 @@ pub(super) fn reread(
         env: Machine::root_env(),
     };
     match side {
-        | Side::Left => {
+        Side::Left => {
             machine.tasks.push(Task::Supply(value));
             machine.tasks.push(evaluated);
         },
-        | Side::Right => {
+        Side::Right => {
             machine.tasks.push(evaluated);
             machine.tasks.push(Task::Supply(path));
         },
@@ -329,8 +329,8 @@ fn head(
 {
     let dangling = EvalFault::Domain(DomainFault::Dangling);
     match *domain.value(word).ok_or(dangling)? {
-        | DomainValue::Here { .. } => Ok(Head::Empty),
-        | DomainValue::Constructor {
+        DomainValue::Here { .. } => Ok(Head::Empty),
+        DomainValue::Constructor {
             datatype,
             tag,
             fields,
@@ -344,11 +344,24 @@ fn head(
                 return Ok(Head::Empty);
             }
             match *domain.fields(fields).map_err(EvalFault::Domain)? {
-                | [rest] => Ok(Head::Letter { tag, words, rest }),
-                | _ => Ok(Head::Other),
+                [rest] => Ok(Head::Letter { tag, words, rest }),
+                _ => Ok(Head::Other),
             }
         },
-        | _ => Ok(Head::Other),
+        DomainValue::Record { .. }
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
+        | DomainValue::Flow { .. }
+        | DomainValue::Literal { .. }
+        | DomainValue::Tuple { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
+        | DomainValue::Injection { .. }
+        | DomainValue::Thunk { .. }
+        | DomainValue::Lift { .. }
+        | DomainValue::Neutral { .. }
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => Ok(Head::Other),
     }
 }
 
@@ -386,12 +399,12 @@ fn spelled(
     let mut at = word;
     loop {
         match head(core, domain, machine, at)? {
-            | Head::Empty => return Ok(Some((letters, at))),
-            | Head::Letter { rest, .. } => {
+            Head::Empty => return Ok(Some((letters, at))),
+            Head::Letter { rest, .. } => {
                 letters.push(at);
                 at = rest;
             },
-            | Head::Other => return Ok(None),
+            Head::Other => return Ok(None),
         }
     }
 }
@@ -708,14 +721,14 @@ fn calls(
     };
     let bound = |argument: ValueId| matches!(core.value(argument), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0);
     let applied = |call: ComputationId| match core.computation(call) {
-        | Some(&Computation::Application(head, argument)) => match core.computation(head) {
-            | Some(&Computation::Force(function)) => match core.value(function) {
-                | Some(&Value::Constant(constant)) => Some((constant, argument)),
-                | _ => None,
+        Some(&Computation::Application(head, argument)) => match core.computation(head) {
+            Some(&Computation::Force(function)) => match core.value(function) {
+                Some(&Value::Constant(constant)) => Some((constant, argument)),
+                _ => None,
             },
-            | _ => None,
+            _ => None,
         },
-        | _ => None,
+        _ => None,
     };
     let mut outermost_first = Vec::new();
     loop {
@@ -907,7 +920,7 @@ pub(super) fn transport(
 ) -> Result<Moved, EvalFault>
 {
     let (tag, rest) = match head(core, domain, machine, path)? {
-        | Head::Empty => {
+        Head::Empty => {
             // Along the empty word an operand a definition names reads as its
             // word, as it does along a letter.
             if let Some(body) = named(core, domain, machine, value)? {
@@ -919,8 +932,8 @@ pub(super) fn transport(
                 .push(domain.comp_return(value, CompTermFace::Reduced));
             return Ok(Moved::Stepped);
         },
-        | Head::Letter { tag, rest, .. } => (tag, rest),
-        | Head::Other => return Ok(Moved::Unmoved),
+        Head::Letter { tag, rest, .. } => (tag, rest),
+        Head::Other => return Ok(Moved::Unmoved),
     };
     if head(core, domain, machine, rest)? != Head::Empty {
         let Some(&DomainValue::Constructor { datatype, .. }) = domain.value(path)
@@ -941,12 +954,12 @@ pub(super) fn transport(
         return Ok(Moved::Unmoved);
     };
     let static_image = |action: Action| match action {
-        | Action::Fixed => Some(rest),
-        | Action::Moving => Some(path),
-        | Action::Through => None,
+        Action::Fixed => Some(rest),
+        Action::Moving => Some(path),
+        Action::Through => None,
     };
     match (static_image(left), static_image(right)) {
-        | (Some(left), Some(right)) => {
+        (Some(left), Some(right)) => {
             if let Some(body) = named(core, domain, machine, value)? {
                 reread(machine, motive, (path, value), (Side::Right, body));
                 return Ok(Moved::Stepped);
@@ -960,7 +973,7 @@ pub(super) fn transport(
                 .push(domain.comp_return(moved, CompTermFace::Reduced));
             Ok(Moved::Stepped)
         },
-        | (None, _) => {
+        (None, _) => {
             let onward = domain.native_continuation(CompBody::Conjugated {
                 motive,
                 along: path,
@@ -978,7 +991,7 @@ pub(super) fn transport(
             })?;
             Ok(Moved::Stepped)
         },
-        | (Some(left), None) => {
+        (Some(left), None) => {
             let onward = domain.native_continuation(CompBody::Conjugated {
                 motive,
                 along: path,
@@ -1130,8 +1143,8 @@ pub(super) fn map(
         return Err(stuck);
     };
     let endpoint = match state.side {
-        | Side::Left => left,
-        | Side::Right => right,
+        Side::Left => left,
+        Side::Right => right,
     };
     let chain = calls(core, endpoint).ok_or(stuck)?;
     loop {
@@ -1143,19 +1156,19 @@ pub(super) fn map(
             return Ok(());
         };
         let (tag, words, rest) = match head(core, domain, machine, state.rest)? {
-            | Head::Empty => {
+            Head::Empty => {
                 state.call = Call::from(usize::from(state.call).saturating_add(1));
                 state.rest = state.mapped;
                 // The empty image of the word mapped so far, which is its own
                 // end: an image adds letters after it only once one is read.
                 state.mapped = match spelled(core, domain, machine, state.mapped)? {
-                    | Some((_, end)) => end,
-                    | None => return Err(stuck),
+                    Some((_, end)) => end,
+                    None => return Err(stuck),
                 };
                 continue;
             },
-            | Head::Letter { tag, words, rest } => (tag, words, rest),
-            | Head::Other => return Err(stuck),
+            Head::Letter { tag, words, rest } => (tag, words, rest),
+            Head::Other => return Err(stuck),
         };
         let cell = FreeCells::generator(tag).ok_or(stuck)?;
         let case = cased(core, machine, function).ok_or(stuck)?;
@@ -1222,8 +1235,8 @@ pub(super) fn mapped(
 {
     let stuck = EvalFault::TransportedNonPath;
     let image = match state.orientation {
-        | Orientation::Forward => image,
-        | Orientation::Inverse => inverted(core, domain, machine, image)?.ok_or(stuck)?,
+        Orientation::Forward => image,
+        Orientation::Inverse => inverted(core, domain, machine, image)?.ok_or(stuck)?,
     };
     state.mapped = concatenated(core, domain, machine, (state.mapped, image))?.ok_or(stuck)?;
     map(core, domain, machine, state)
@@ -1267,13 +1280,13 @@ pub(super) fn conjugated(
         return Err(EvalFault::MachineInvariant);
     };
     let (left, right) = match stage {
-        | Conjugating::Right(left) => (left, image),
-        | Conjugating::Left => {
+        Conjugating::Right(left) => (left, image),
+        Conjugating::Left => {
             let (_, right) = family_actions(core, domain, motive)?.ok_or(stuck)?;
             match right {
-                | Action::Fixed => (image, empty),
-                | Action::Moving => (image, along),
-                | Action::Through => {
+                Action::Fixed => (image, empty),
+                Action::Moving => (image, along),
+                Action::Through => {
                     let onward = domain.native_continuation(CompBody::Conjugated {
                         motive,
                         along,

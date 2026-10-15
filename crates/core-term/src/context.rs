@@ -282,8 +282,8 @@ impl Context
     ) -> BinderDepth
     {
         BinderDepth(match zone {
-            | Zone::Intuitionistic => self.intuitionistic.len(),
-            | Zone::Linear => self.linear.len(),
+            Zone::Intuitionistic => self.intuitionistic.len(),
+            Zone::Linear => self.linear.len(),
         })
     }
 
@@ -330,8 +330,8 @@ impl Context
     )
     {
         match zone {
-            | Zone::Intuitionistic => self.intuitionistic.push(declared),
-            | Zone::Linear => self.linear.push(LinearSlot {
+            Zone::Intuitionistic => self.intuitionistic.push(declared),
+            Zone::Linear => self.linear.push(LinearSlot {
                 declared,
                 use_state: LinearUse::Available,
             }),
@@ -391,11 +391,11 @@ impl Context
     ) -> Result<ValueTypeId, ContextError>
     {
         match zone {
-            | Zone::Intuitionistic => self
+            Zone::Intuitionistic => self
                 .intuitionistic
                 .pop()
                 .ok_or(ContextError::NoBinderToClose { zone }),
-            | Zone::Linear => {
+            Zone::Linear => {
                 // Pop first and restore on refusal, rather than reading the top
                 // and shortening the vector by a computed length. The slot is
                 // `Copy`, so the restore puts back exactly what was taken and
@@ -478,8 +478,8 @@ impl Context
             return Err(unbound);
         };
         match zone {
-            | Zone::Intuitionistic => self.intuitionistic.get(offset.0).copied().ok_or(unbound),
-            | Zone::Linear => self
+            Zone::Intuitionistic => self.intuitionistic.get(offset.0).copied().ok_or(unbound),
+            Zone::Linear => self
                 .linear
                 .get(offset.0)
                 .map(|slot| slot.declared)
@@ -561,8 +561,8 @@ impl Context
             return Err(unbound);
         };
         match zone {
-            | Zone::Intuitionistic => self.intuitionistic.get(offset.0).copied().ok_or(unbound),
-            | Zone::Linear => {
+            Zone::Intuitionistic => self.intuitionistic.get(offset.0).copied().ok_or(unbound),
+            Zone::Linear => {
                 let Some(slot) = self.linear.get_mut(offset.0)
                 else {
                     return Err(unbound);
@@ -780,8 +780,8 @@ impl Context
     )
     {
         match zone {
-            | Zone::Intuitionistic => self.intuitionistic.truncate(depth.0),
-            | Zone::Linear => self.linear.truncate(depth.0),
+            Zone::Intuitionistic => self.intuitionistic.truncate(depth.0),
+            Zone::Linear => self.linear.truncate(depth.0),
         }
     }
 }

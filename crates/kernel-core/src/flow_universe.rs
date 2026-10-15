@@ -281,8 +281,8 @@ impl Boundary
     pub const fn variance(self) -> Variance
     {
         match self {
-            | Self::Domain => Variance::Contravariant,
-            | Self::Codomain => Variance::Covariant,
+            Self::Domain => Variance::Contravariant,
+            Self::Codomain => Variance::Covariant,
         }
     }
 }
@@ -296,8 +296,8 @@ impl Variance
     const fn reverse(self) -> Self
     {
         match self {
-            | Self::Contravariant => Self::Covariant,
-            | Self::Covariant => Self::Contravariant,
+            Self::Contravariant => Self::Covariant,
+            Self::Covariant => Self::Contravariant,
         }
     }
 }
@@ -385,12 +385,12 @@ fn universe_codes(
 ) -> Result<(ValueId, ValueId), FlowError>
 {
     match arena.value_type(classifier) {
-        | Some(&ValueType::FlowUniverse(source, target)) => Ok((source, target)),
-        | Some(&ValueType::PathUniverse(..)) => Err(FlowError::FamilyMismatch {
+        Some(&ValueType::FlowUniverse(source, target)) => Ok((source, target)),
+        Some(&ValueType::PathUniverse(..)) => Err(FlowError::FamilyMismatch {
             expected: Family::Flow,
             actual: Family::Path,
         }),
-        | _ => Err(FlowError::ExpectedFlow(classifier)),
+        _ => Err(FlowError::ExpectedFlow(classifier)),
     }
 }
 
@@ -486,11 +486,11 @@ pub(crate) fn level_zero_universe(
 ) -> Reading
 {
     match arena.value_type(ty) {
-        | Some(&ValueType::Universe {
+        Some(&ValueType::Universe {
             sort: GroundSort::Value,
             ref level,
         }) if *level == Level::zero() => Reading::Universe,
-        | _ => Reading::Element,
+        _ => Reading::Element,
     }
 }
 
@@ -516,7 +516,7 @@ pub(crate) fn ends(
 ) -> Result<Ends, FlowError>
 {
     match arena.value_type(classifier) {
-        | Some(&ValueType::Flow {
+        Some(&ValueType::Flow {
             domain,
             source,
             target,
@@ -526,19 +526,19 @@ pub(crate) fn ends(
             target,
             reading: Reading::Element,
         }),
-        | Some(&ValueType::FlowUniverse(source, target)) => Ok(Ends {
+        Some(&ValueType::FlowUniverse(source, target)) => Ok(Ends {
             carrier: arena.value_type_universe(GroundSort::Value, Level::zero()),
             source,
             target,
             reading: Reading::Universe,
         }),
-        | Some(&(ValueType::Path { .. } | ValueType::PathUniverse(..))) => {
+        Some(&(ValueType::Path { .. } | ValueType::PathUniverse(..))) => {
             Err(FlowError::FamilyMismatch {
                 expected: Family::Flow,
                 actual: Family::Path,
             })
         },
-        | _ => Err(FlowError::ExpectedFlow(classifier)),
+        _ => Err(FlowError::ExpectedFlow(classifier)),
     }
 }
 
@@ -566,10 +566,10 @@ pub(crate) fn universe_reading(
 {
     let read = ends(arena, classifier)?;
     let universe = match read.reading {
-        | Reading::Universe => classifier,
-        | Reading::Element => match level_zero_universe(arena, read.carrier) {
-            | Reading::Universe => arena.value_type_flow_universe(read.source, read.target),
-            | Reading::Element => return Err(FlowError::ExpectedFlow(classifier)),
+        Reading::Universe => classifier,
+        Reading::Element => match level_zero_universe(arena, read.carrier) {
+            Reading::Universe => arena.value_type_flow_universe(read.source, read.target),
+            Reading::Element => return Err(FlowError::ExpectedFlow(classifier)),
         },
     };
     endpoints(arena, universe, budget)
@@ -770,38 +770,36 @@ impl fmt::Display for FlowError
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        match self {
-            | &Self::RecordedRunRequired => {
-                f.write_str("session transport requires a recorded run")
-            },
-            | &Self::ExpectedFlow(_) => f.write_str("expected a flow classifier"),
-            | &Self::Arena => f.write_str("unresolved term arena reference"),
-            | &Self::UnsupportedCode(_) => f.write_str("unsupported universe-flow code"),
-            | &Self::UnsupportedType(_) => f.write_str("unsupported universe-flow type"),
-            | &Self::Coverage => f.write_str("forward image coverage mismatch"),
-            | &Self::NonNatural(_) => f.write_str("non-natural forward image"),
-            | &Self::ForwardReplay { pattern, .. } => {
+        match *self {
+            Self::RecordedRunRequired => f.write_str("session transport requires a recorded run"),
+            Self::ExpectedFlow(_) => f.write_str("expected a flow classifier"),
+            Self::Arena => f.write_str("unresolved term arena reference"),
+            Self::UnsupportedCode(_) => f.write_str("unsupported universe-flow code"),
+            Self::UnsupportedType(_) => f.write_str("unsupported universe-flow type"),
+            Self::Coverage => f.write_str("forward image coverage mismatch"),
+            Self::NonNatural(_) => f.write_str("non-natural forward image"),
+            Self::ForwardReplay { pattern, .. } => {
                 write!(f, "forward replay refused at pattern {}", pattern.0)
             },
-            | &Self::EndpointMismatch => f.write_str("composition endpoint mismatch"),
-            | &Self::Cycle { .. } => f.write_str("a feedback seam closes a cycle"),
-            | &Self::FamilyMismatch {
+            Self::EndpointMismatch => f.write_str("composition endpoint mismatch"),
+            Self::Cycle { .. } => f.write_str("a feedback seam closes a cycle"),
+            Self::FamilyMismatch {
                 expected: Family::Flow,
                 ..
             } => f.write_str("expected Flow, found Path"),
-            | &Self::FamilyMismatch {
+            Self::FamilyMismatch {
                 expected: Family::Path,
                 ..
             } => f.write_str("expected Path, found Flow"),
-            | &Self::NonCovariantMotive(_) => f.write_str("non-covariant directed motive"),
-            | &Self::Boundary(Boundary::Domain) => {
+            Self::NonCovariantMotive(_) => f.write_str("non-covariant directed motive"),
+            Self::Boundary(Boundary::Domain) => {
                 f.write_str("the domain boundary flow must run contravariantly")
             },
-            | &Self::Boundary(Boundary::Codomain) => {
+            Self::Boundary(Boundary::Codomain) => {
                 f.write_str("the codomain boundary flow must run covariantly")
             },
-            | &Self::Budget => f.write_str("universe-flow budget exhausted"),
-            | &Self::Path(ref error) => write!(f, "universe-path formation: {error}"),
+            Self::Budget => f.write_str("universe-flow budget exhausted"),
+            Self::Path(ref error) => write!(f, "universe-path formation: {error}"),
         }
     }
 }

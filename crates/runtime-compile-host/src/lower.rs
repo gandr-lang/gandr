@@ -131,60 +131,60 @@ impl core::fmt::Display for Form
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::Constructor => "a nominal constructor",
-            | Self::Record => "a structural record",
-            | Self::DataCase => "a nominal case",
-            | Self::RecordProjection => "a record projection",
-            | Self::TupleProjection => "a tuple projection",
-            | Self::Split => "a split",
-            | Self::Control(former) => match former {
-                | ControlFormer::Reify => "a stack literal",
-                | ControlFormer::Perform => "a perform",
-                | ControlFormer::Handle => "a handler",
-                | ControlFormer::Resume => "a resumption",
-                | ControlFormer::Reset => "a reset",
-                | ControlFormer::Shift => "a shift",
-                | ControlFormer::With => "a lazy pair",
-                | ControlFormer::Project => "a lazy projection",
-                | ControlFormer::Exercise => "an exercised capability",
-                | ControlFormer::Scope => "a capability scope",
+            Self::Constructor => "a nominal constructor",
+            Self::Record => "a structural record",
+            Self::DataCase => "a nominal case",
+            Self::RecordProjection => "a record projection",
+            Self::TupleProjection => "a tuple projection",
+            Self::Split => "a split",
+            Self::Control(former) => match former {
+                ControlFormer::Reify => "a stack literal",
+                ControlFormer::Perform => "a perform",
+                ControlFormer::Handle => "a handler",
+                ControlFormer::Resume => "a resumption",
+                ControlFormer::Reset => "a reset",
+                ControlFormer::Shift => "a shift",
+                ControlFormer::With => "a lazy pair",
+                ControlFormer::Project => "a lazy projection",
+                ControlFormer::Exercise => "an exercised capability",
+                ControlFormer::Scope => "a capability scope",
             },
-            | Self::List => "a native List introduction",
-            | Self::ListFold => "a native List fold",
-            | Self::Primitive => "a native primitive",
-            | Self::Lambda => "an abstraction",
-            | Self::Application => "an application",
-            | Self::Force => "a forced thunk",
-            | Self::Transport => "path transport",
-            | Self::String => "a string literal",
-            | Self::Numeric => "a numeric literal",
-            | Self::Constant => "a constant",
-            | Self::Thunk => "a thunk",
-            | Self::Lift => "a lift",
-            | Self::Quote => "a quoted value type",
-            | Self::QuoteComputation => "a quoted computation type",
-            | Self::StaticLambda => "a static abstraction",
-            | Self::StaticApplication => "a static application",
-            | Self::PathRefl => "path reflexivity",
-            | Self::PathProduct => "a product path",
-            | Self::PathEquiv => "an equivalence path",
-            | Self::Here => "element reflexivity",
-            | Self::Funext => "function extensionality",
-            | Self::Equiv => "a universe equivalence",
-            | Self::Ua => "univalence at a stratum",
-            | Self::Returned => "a compound endpoint",
-            | Self::Nested => "an unelaborated nested computation",
-            | Self::ElementTransport => "element-path transport",
-            | Self::Hole => "a term hole",
-            | Self::Mark => "a mark",
-            | Self::Fixpoint => "a fixpoint",
-            | Self::Session => "a session action",
-            | Self::SessionIdentity => "a session identity",
-            | Self::Flow => "a flow",
-            | Self::RecordedRun => "a recorded run",
-            | Self::Ride => "a ride along a flow",
-            | Self::TupleArity => "a tuple of neither zero nor two components",
-            | Self::SumArity => "a sum other than binary",
+            Self::List => "a native List introduction",
+            Self::ListFold => "a native List fold",
+            Self::Primitive => "a native primitive",
+            Self::Lambda => "an abstraction",
+            Self::Application => "an application",
+            Self::Force => "a forced thunk",
+            Self::Transport => "path transport",
+            Self::String => "a string literal",
+            Self::Numeric => "a numeric literal",
+            Self::Constant => "a constant",
+            Self::Thunk => "a thunk",
+            Self::Lift => "a lift",
+            Self::Quote => "a quoted value type",
+            Self::QuoteComputation => "a quoted computation type",
+            Self::StaticLambda => "a static abstraction",
+            Self::StaticApplication => "a static application",
+            Self::PathRefl => "path reflexivity",
+            Self::PathProduct => "a product path",
+            Self::PathEquiv => "an equivalence path",
+            Self::Here => "element reflexivity",
+            Self::Funext => "function extensionality",
+            Self::Equiv => "a universe equivalence",
+            Self::Ua => "univalence at a stratum",
+            Self::Returned => "a compound endpoint",
+            Self::Nested => "an unelaborated nested computation",
+            Self::ElementTransport => "element-path transport",
+            Self::Hole => "a term hole",
+            Self::Mark => "a mark",
+            Self::Fixpoint => "a fixpoint",
+            Self::Session => "a session action",
+            Self::SessionIdentity => "a session identity",
+            Self::Flow => "a flow",
+            Self::RecordedRun => "a recorded run",
+            Self::Ride => "a ride along a flow",
+            Self::TupleArity => "a tuple of neither zero nor two components",
+            Self::SumArity => "a sum other than binary",
         })
     }
 }
@@ -226,19 +226,19 @@ impl core::fmt::Display for LowerError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::OutsideSlice(form) => write!(f, "image does not represent {form}"),
-            | Self::UnboundVariable { zone, index } => {
+            Self::OutsideSlice(form) => write!(f, "image does not represent {form}"),
+            Self::UnboundVariable { zone, index } => {
                 let zone = match zone {
-                    | Zone::Intuitionistic => "intuitionistic",
-                    | Zone::Linear => "linear",
+                    Zone::Intuitionistic => "intuitionistic",
+                    Zone::Linear => "linear",
                 };
                 write!(f, "unbound {zone} variable {}", u32::from(index))
             },
-            | Self::DanglingComputation(_) => f.write_str("computation address does not resolve"),
-            | Self::DanglingValue(_) => f.write_str("value address does not resolve"),
-            | Self::IntegerOutOfRange => f.write_str("integer exceeds signed 64-bit image range"),
-            | Self::ImageRefused(error) => write!(f, "{error}"),
-            | Self::MachineInvariant => {
+            Self::DanglingComputation(_) => f.write_str("computation address does not resolve"),
+            Self::DanglingValue(_) => f.write_str("value address does not resolve"),
+            Self::IntegerOutOfRange => f.write_str("integer exceeds signed 64-bit image range"),
+            Self::ImageRefused(error) => write!(f, "{error}"),
+            Self::MachineInvariant => {
                 f.write_str("lowering operand stack disagrees with traversal")
             },
         }
@@ -287,11 +287,11 @@ impl TryFrom<&IntegerLiteral> for Literal
             .parse::<u64>()
             .map_err(|_range| LowerError::IntegerOutOfRange)?;
         let value = match integer.sign() {
-            | Sign::NonNegative => {
+            Sign::NonNegative => {
                 i64::try_from(magnitude).map_err(|_range| LowerError::IntegerOutOfRange)
             },
-            | Sign::Negative if magnitude == i64::MIN.unsigned_abs() => Ok(i64::MIN),
-            | Sign::Negative => {
+            Sign::Negative if magnitude == i64::MIN.unsigned_abs() => Ok(i64::MIN),
+            Sign::Negative => {
                 let positive =
                     i64::try_from(magnitude).map_err(|_range| LowerError::IntegerOutOfRange)?;
                 positive.checked_neg().ok_or(LowerError::IntegerOutOfRange)
@@ -358,81 +358,81 @@ pub fn lower_computation(
     let mut emitted: Vec<NodeIndex> = Vec::new();
     while let Some(step) = steps.pop() {
         match step {
-            | Step::Computation(id, depth) => {
+            Step::Computation(id, depth) => {
                 let computation = core
                     .computation(id)
                     .ok_or(LowerError::DanglingComputation(id))?;
                 match *computation {
-                    | Computation::DataCase { .. } => {
+                    Computation::DataCase { .. } => {
                         return Err(LowerError::OutsideSlice(Form::DataCase));
                     },
-                    | Computation::RecordProjection(..) => {
+                    Computation::RecordProjection(..) => {
                         return Err(LowerError::OutsideSlice(Form::RecordProjection));
                     },
-                    | Computation::TupleProjection(..) => {
+                    Computation::TupleProjection(..) => {
                         return Err(LowerError::OutsideSlice(Form::TupleProjection));
                     },
-                    | Computation::Split { .. } => {
+                    Computation::Split { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Split));
                     },
-                    | Computation::Perform { .. } => {
+                    Computation::Perform { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Control(
                             gandr_core_term::control::ControlFormer::Perform,
                         )));
                     },
-                    | Computation::Handle { .. } => {
+                    Computation::Handle { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Control(
                             gandr_core_term::control::ControlFormer::Handle,
                         )));
                     },
-                    | Computation::Exercise { .. } => {
+                    Computation::Exercise { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Control(
                             gandr_core_term::control::ControlFormer::Exercise,
                         )));
                     },
-                    | Computation::Scope { .. } => {
+                    Computation::Scope { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Control(
                             gandr_core_term::control::ControlFormer::Scope,
                         )));
                     },
-                    | Computation::Resume(..) => {
+                    Computation::Resume(..) => {
                         return Err(LowerError::OutsideSlice(Form::Control(
                             gandr_core_term::control::ControlFormer::Resume,
                         )));
                     },
-                    | Computation::Reset(_) => {
+                    Computation::Reset(_) => {
                         return Err(LowerError::OutsideSlice(Form::Control(
                             gandr_core_term::control::ControlFormer::Reset,
                         )));
                     },
-                    | Computation::Shift(_) => {
+                    Computation::Shift(_) => {
                         return Err(LowerError::OutsideSlice(Form::Control(
                             gandr_core_term::control::ControlFormer::Shift,
                         )));
                     },
-                    | Computation::With(..) => {
+                    Computation::With(..) => {
                         return Err(LowerError::OutsideSlice(Form::Control(
                             gandr_core_term::control::ControlFormer::With,
                         )));
                     },
-                    | Computation::Project(..) => {
+                    Computation::Project(..) => {
                         return Err(LowerError::OutsideSlice(Form::Control(
                             gandr_core_term::control::ControlFormer::Project,
                         )));
                     },
-                    | Computation::ListFold { .. } => {
+                    Computation::ListFold { .. } => {
                         return Err(LowerError::OutsideSlice(Form::ListFold));
                     },
-                    | Computation::Primitive { .. } => {
+                    Computation::Primitive { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Primitive));
                     },
-                    | Computation::Return(value) => steps.push(Step::Value(value, depth)),
-                    | Computation::Bind(bound, body) => {
+                    Computation::Return(value) => steps.push(Step::Value(value, depth)),
+                    Computation::Bind(bound, body) => {
                         steps.push(Step::Build(NodeKind::Bind, CtorTag::Unit, Arity(2)));
                         steps.push(Step::Computation(body, Depth(depth.0.saturating_add(1))));
                         steps.push(Step::Computation(bound, depth));
                     },
-                    | Computation::Case {
+                    Computation::Case {
                         scrutinee,
                         ref branches,
                     } => {
@@ -446,32 +446,31 @@ pub fn lower_computation(
                         steps.push(Step::Computation(on_left, inner));
                         steps.push(Step::Value(scrutinee, depth));
                     },
-                    | Computation::Lambda(_) => return Err(LowerError::OutsideSlice(Form::Lambda)),
-                    | Computation::Application(..) => {
+                    Computation::Lambda(_) => return Err(LowerError::OutsideSlice(Form::Lambda)),
+                    Computation::Application(..) => {
                         return Err(LowerError::OutsideSlice(Form::Application));
                     },
-                    | Computation::Force(_) => return Err(LowerError::OutsideSlice(Form::Force)),
-                    | Computation::Transport(..) => {
+                    Computation::Force(_) => return Err(LowerError::OutsideSlice(Form::Force)),
+                    Computation::Transport(..) => {
                         return Err(LowerError::OutsideSlice(Form::Transport));
                     },
-                    | Computation::PathTransport { .. }
-                    | Computation::TelescopeTransport { .. } => {
+                    Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } => {
                         return Err(LowerError::OutsideSlice(Form::ElementTransport));
                     },
-                    | Computation::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),
-                    | Computation::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),
-                    | Computation::Fixpoint { .. } => {
+                    Computation::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),
+                    Computation::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),
+                    Computation::Fixpoint { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Fixpoint));
                     },
-                    | Computation::Session(_) => {
+                    Computation::Session(_) => {
                         return Err(LowerError::OutsideSlice(Form::Session));
                     },
-                    | Computation::Ride { .. } => {
+                    Computation::Ride { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Ride));
                     },
                 }
             },
-            | Step::Value(id, depth) => {
+            Step::Value(id, depth) => {
                 let value = core.value(id).ok_or(LowerError::DanglingValue(id))?;
                 let mut node = Node {
                     kind: NodeKind::Ctor,
@@ -481,109 +480,109 @@ pub fn lower_computation(
                     operands: Vec::new(),
                 };
                 match *value {
-                    | Value::Constructor { .. } => {
+                    Value::Constructor { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Constructor));
                     },
-                    | Value::Record(_) => return Err(LowerError::OutsideSlice(Form::Record)),
-                    | Value::Reify(_) => {
+                    Value::Record(_) => return Err(LowerError::OutsideSlice(Form::Record)),
+                    Value::Reify(_) => {
                         return Err(LowerError::OutsideSlice(Form::Control(
                             gandr_core_term::control::ControlFormer::Reify,
                         )));
                     },
-                    | Value::ListNil | Value::ListCons(..) => {
+                    Value::ListNil | Value::ListCons(..) => {
                         return Err(LowerError::OutsideSlice(Form::List));
                     },
-                    | Value::Primitive { .. } => {
+                    Value::Primitive { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Primitive));
                     },
-                    | Value::Literal(CoreLiteral::Integer(ref integer)) => {
+                    Value::Literal(CoreLiteral::Integer(ref integer)) => {
                         node.kind = NodeKind::Lit;
                         let literal = Literal::try_from(integer)?;
                         node.literal = literal;
                     },
-                    | Value::Variable { zone, index } => {
+                    Value::Variable { zone, index } => {
                         if zone != Zone::Intuitionistic || u32::from(index) >= depth.0 {
                             return Err(LowerError::UnboundVariable { zone, index });
                         }
                         node.kind = NodeKind::Var;
                         node.binder = BinderIndex::from(u32::from(index));
                     },
-                    | Value::Tuple(ref components) => match **components {
-                        | [] => {},
-                        | [first, second] => {
+                    Value::Tuple(ref components) => match **components {
+                        [] => {},
+                        [first, second] => {
                             steps.push(Step::Build(NodeKind::Ctor, CtorTag::Pair, Arity(2)));
                             steps.push(Step::Value(second, depth));
                             steps.push(Step::Value(first, depth));
                             continue;
                         },
-                        | _ => return Err(LowerError::OutsideSlice(Form::TupleArity)),
+                        _ => return Err(LowerError::OutsideSlice(Form::TupleArity)),
                     },
-                    | Value::Injection(summand, payload) => {
+                    Value::Injection(summand, payload) => {
                         let tag = match Side::try_from(summand) {
-                            | Ok(Side::Left) => CtorTag::Inl,
-                            | Ok(Side::Right) => CtorTag::Inr,
-                            | Err(_) => return Err(LowerError::OutsideSlice(Form::SumArity)),
+                            Ok(Side::Left) => CtorTag::Inl,
+                            Ok(Side::Right) => CtorTag::Inr,
+                            Err(_) => return Err(LowerError::OutsideSlice(Form::SumArity)),
                         };
                         steps.push(Step::Build(NodeKind::Ctor, tag, Arity(1)));
                         steps.push(Step::Value(payload, depth));
                         continue;
                     },
-                    | Value::Literal(CoreLiteral::Text(_)) => {
+                    Value::Literal(CoreLiteral::Text(_)) => {
                         return Err(LowerError::OutsideSlice(Form::String));
                     },
-                    | Value::Literal(CoreLiteral::Numeric(_)) => {
+                    Value::Literal(CoreLiteral::Numeric(_)) => {
                         return Err(LowerError::OutsideSlice(Form::Numeric));
                     },
-                    | Value::Constant(_) => return Err(LowerError::OutsideSlice(Form::Constant)),
-                    | Value::Thunk(_) => return Err(LowerError::OutsideSlice(Form::Thunk)),
-                    | Value::Lift { .. } => return Err(LowerError::OutsideSlice(Form::Lift)),
-                    | Value::Quote(_) => return Err(LowerError::OutsideSlice(Form::Quote)),
-                    | Value::QuoteComputation(_) => {
+                    Value::Constant(_) => return Err(LowerError::OutsideSlice(Form::Constant)),
+                    Value::Thunk(_) => return Err(LowerError::OutsideSlice(Form::Thunk)),
+                    Value::Lift { .. } => return Err(LowerError::OutsideSlice(Form::Lift)),
+                    Value::Quote(_) => return Err(LowerError::OutsideSlice(Form::Quote)),
+                    Value::QuoteComputation(_) => {
                         return Err(LowerError::OutsideSlice(Form::QuoteComputation));
                     },
-                    | Value::StaticLambda(_) => {
+                    Value::StaticLambda(_) => {
                         return Err(LowerError::OutsideSlice(Form::StaticLambda));
                     },
-                    | Value::StaticApplication(..) => {
+                    Value::StaticApplication(..) => {
                         return Err(LowerError::OutsideSlice(Form::StaticApplication));
                     },
-                    | Value::PathRefl(_) => return Err(LowerError::OutsideSlice(Form::PathRefl)),
-                    | Value::PathProduct(..) => {
+                    Value::PathRefl(_) => return Err(LowerError::OutsideSlice(Form::PathRefl)),
+                    Value::PathProduct(..) => {
                         return Err(LowerError::OutsideSlice(Form::PathProduct));
                     },
-                    | Value::PathEquiv { .. } => {
+                    Value::PathEquiv { .. } => {
                         return Err(LowerError::OutsideSlice(Form::PathEquiv));
                     },
-                    | Value::Here(_) => return Err(LowerError::OutsideSlice(Form::Here)),
-                    | Value::Funext(..) => return Err(LowerError::OutsideSlice(Form::Funext)),
-                    | Value::Equiv(..) => return Err(LowerError::OutsideSlice(Form::Equiv)),
-                    | Value::Ua { .. } => return Err(LowerError::OutsideSlice(Form::Ua)),
-                    | Value::Returned(_) => {
+                    Value::Here(_) => return Err(LowerError::OutsideSlice(Form::Here)),
+                    Value::Funext(..) => return Err(LowerError::OutsideSlice(Form::Funext)),
+                    Value::Equiv(..) => return Err(LowerError::OutsideSlice(Form::Equiv)),
+                    Value::Ua { .. } => return Err(LowerError::OutsideSlice(Form::Ua)),
+                    Value::Returned(_) => {
                         return Err(LowerError::OutsideSlice(Form::Returned));
                     },
-                    | Value::Nested(_) | Value::Run(_) => {
+                    Value::Nested(_) | Value::Run(_) => {
                         return Err(LowerError::OutsideSlice(Form::Nested));
                     },
-                    | Value::SessionRelated { .. } => {
+                    Value::SessionRelated { .. } => {
                         return Err(LowerError::OutsideSlice(Form::SessionIdentity));
                     },
-                    | Value::Stay(_)
+                    Value::Stay(_)
                     | Value::Then(..)
                     | Value::FlowProduct(..)
                     | Value::Forward(_)
                     | Value::FunctionFlow(..) => {
                         return Err(LowerError::OutsideSlice(Form::Flow));
                     },
-                    | Value::Recorded(_) => {
+                    Value::Recorded(_) => {
                         return Err(LowerError::OutsideSlice(Form::RecordedRun));
                     },
-                    | Value::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),
-                    | Value::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),
+                    Value::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),
+                    Value::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),
                 }
                 let index = image.push(node)?;
                 emitted.push(index);
             },
-            | Step::Build(kind, tag, arity) => {
+            Step::Build(kind, tag, arity) => {
                 let start = emitted
                     .len()
                     .checked_sub(arity.0)

@@ -121,27 +121,27 @@ enum Shape
 fn shape_of(owner: &Owner) -> Shape
 {
     match owner.kind.as_str() {
-        | "pattern constructor_pattern name" => Shape::Constructor,
-        | "expression number" | "type number" => Shape::Native("Integer"),
-        | "expression string" => Shape::Native("String"),
-        | "expression unit" => Shape::Native("Unit"),
-        | "expression boolean" => Shape::Native("Bool"),
-        | "expression identifier"
+        "pattern constructor_pattern name" => Shape::Constructor,
+        "expression number" | "type number" => Shape::Native("Integer"),
+        "expression string" => Shape::Native("String"),
+        "expression unit" => Shape::Native("Unit"),
+        "expression boolean" => Shape::Native("Bool"),
+        "expression identifier"
         | "expression constructor"
         | "pattern identifier"
         | "type type_variable" => Shape::Subject,
-        | named if named.ends_with(" name") => Shape::Subject,
-        | pattern if pattern.starts_with("pattern ") => Shape::Subject,
-        | ty if ty.starts_with("type ") => Shape::Universe,
-        | term if term.starts_with("expression ") || term.starts_with("instantiation ") => {
+        named if named.ends_with(" name") => Shape::Subject,
+        pattern if pattern.starts_with("pattern ") => Shape::Subject,
+        ty if ty.starts_with("type ") => Shape::Universe,
+        term if term.starts_with("expression ") || term.starts_with("instantiation ") => {
             Shape::Form
         },
-        | declaration
+        declaration
             if declaration.starts_with("item ") || declaration.starts_with("module_member ") =>
         {
             Shape::Declaration
         },
-        | other => panic!("no shape for the kind `{other}`"),
+        other => panic!("no shape for the kind `{other}`"),
     }
 }
 
@@ -222,9 +222,9 @@ fn result(spelled: Text<'_>) -> Text<'_>
     let mut after = 0_usize;
     for (at, glyph) in spelled.0.char_indices() {
         match glyph {
-            | '(' | '[' | '{' | '⟨' => depth = depth.saturating_add(1),
-            | ')' | ']' | '}' | '⟩' => depth = depth.saturating_sub(1),
-            | '=' if depth == 0
+            '(' | '[' | '{' | '⟨' => depth = depth.saturating_add(1),
+            ')' | ']' | '}' | '⟩' => depth = depth.saturating_sub(1),
+            '=' if depth == 0
                 && spelled
                     .0
                     .get(at ..)
@@ -232,7 +232,7 @@ fn result(spelled: Text<'_>) -> Text<'_>
             {
                 after = at.saturating_add("=> ".len());
             },
-            | _ => {},
+            _ => {},
         }
     }
     Text(spelled.0.get(after ..).unwrap_or(spelled.0).trim())
@@ -341,9 +341,9 @@ pub(super) fn judged(
                 rest.strip_prefix(" : ")
             };
             let shaped = match shape_of(owner) {
-                | Shape::Subject | Shape::Constructor if node.contains('\n') => parses(block),
-                | Shape::Subject => typed(node).is_some_and(&mut parses) || refused(node),
-                | Shape::Constructor => typed(node).is_some_and(|ty| {
+                Shape::Subject | Shape::Constructor if node.contains('\n') => parses(block),
+                Shape::Subject => typed(node).is_some_and(&mut parses) || refused(node),
+                Shape::Constructor => typed(node).is_some_and(|ty| {
                     let scrutinee = if owner.form == owner.node {
                         Some(ty)
                     }
@@ -357,11 +357,11 @@ pub(super) fn judged(
                         result(Text(ty)) == result(Text(scrutinee)) || ty == scrutinee
                     }) && parses(ty)
                 }),
-                | Shape::Universe if node.contains('\n') => universe(block),
-                | Shape::Universe => typed(node).is_some_and(universe),
-                | Shape::Native(native) => block == native,
-                | Shape::Form => parses(block) || typed(node).is_some_and(&mut parses),
-                | Shape::Declaration => {
+                Shape::Universe if node.contains('\n') => universe(block),
+                Shape::Universe => typed(node).is_some_and(universe),
+                Shape::Native(native) => block == native,
+                Shape::Form => parses(block) || typed(node).is_some_and(&mut parses),
+                Shape::Declaration => {
                     // A statement's keyword in the body — `run`, `fork` — is a
                     // tile of the declaration's own form, and answers the
                     // statement's computation about a range starting past the
@@ -417,29 +417,31 @@ fn golden(
             at.character.saturating_add(1)
         )
     };
-    let answer = |shown: &Value| match shown["contents"]["value"].as_str() {
-        | Some(value) => {
-            let start = spot(&shown["range"]["start"]);
-            let end = spot(&shown["range"]["end"]);
-            format!(
-                "{} @{}:{}-{}:{}",
-                value
-                    .replace("```gandr\n", "")
-                    .replace("\n```", "")
-                    .replace('\n', "⏎"),
-                start.line.saturating_add(1),
-                start.character.saturating_add(1),
-                end.line.saturating_add(1),
-                end.character.saturating_add(1)
-            )
-        },
-        | None => String::from("∅"),
+    let answer = |shown: &Value| {
+        shown["contents"]["value"].as_str().map_or_else(
+            || String::from("∅"),
+            |value| {
+                let start = spot(&shown["range"]["start"]);
+                let end = spot(&shown["range"]["end"]);
+                format!(
+                    "{} @{}:{}-{}:{}",
+                    value
+                        .replace("```gandr\n", "")
+                        .replace("\n```", "")
+                        .replace('\n', "⏎"),
+                    start.line.saturating_add(1),
+                    start.character.saturating_add(1),
+                    end.line.saturating_add(1),
+                    end.character.saturating_add(1)
+                )
+            },
+        )
     };
     let mut runs: Vec<(usize, usize, &Value)> = Vec::new();
     for hover in hovers.iter().filter(|hover| hover.owner.is_some()) {
         match runs.last_mut() {
-            | Some(&mut (_, ref mut last, shown)) if *shown == hover.shown => *last = hover.offset,
-            | Some(_) | None => runs.push((hover.offset, hover.offset, &hover.shown)),
+            Some(&mut (_, ref mut last, shown)) if *shown == hover.shown => *last = hover.offset,
+            Some(_) | None => runs.push((hover.offset, hover.offset, &hover.shown)),
         }
     }
     let mut out = String::new();

@@ -316,14 +316,14 @@ impl FormStore
         let mut molder = Molder::new(grammar);
         let text = <&str>::from(revision);
         let labeling = match core::mem::take(&mut self.labeled) {
-            | Labeled::Revision {
+            Labeled::Revision {
                 text: before,
                 labeling,
             } => labeling.relabel(
                 SourceFragment::from(before.as_str()),
                 SourceFragment::from(text),
             ),
-            | Labeled::Nothing => Labeling::new(SourceFragment::from(text)),
+            Labeled::Nothing => Labeling::new(SourceFragment::from(text)),
         };
         let split = FormSplit::labeled(&molder, revision, labeling);
         let runs = split.runs();
@@ -338,11 +338,11 @@ impl FormStore
         let mut planned = BTreeSet::new();
         for (position, (&run, identity)) in runs.iter().zip(&identities).enumerate() {
             match self.units.get_mut(identity) {
-                | Some(held) if held.parked.fingerprint() == grammar.fingerprint() => {
+                Some(held) if held.parked.fingerprint() == grammar.fingerprint() => {
                     held.seen = generation;
                     taken.push(FormUnit::resume(grammar, run, &held.parked));
                 },
-                | Some(_) | None => {
+                Some(_) | None => {
                     pending.push(RunPosition(position));
                     if planned.insert(identity) {
                         missing.push((RunPosition(position), run));
@@ -371,20 +371,17 @@ impl FormStore
         for (position, (&run, identity)) in runs.iter().zip(&identities).enumerate() {
             let unit = if pending.next_if_eq(&RunPosition(position)).is_some() {
                 match (fresh.remove(&position), self.units.get(identity)) {
-                    | (Some(unit), _) => unit,
+                    (Some(unit), _) => unit,
                     // A later run of an identity molded above takes up its
                     // unit.
-                    | (None, Some(held)) => FormUnit::resume(grammar, run, &held.parked),
+                    (None, Some(held)) => FormUnit::resume(grammar, run, &held.parked),
                     // Every identity was parked above; molding here keeps the
                     // parse total should that ever not hold.
-                    | (None, None) => split.mold(&mut molder, run),
+                    (None, None) => split.mold(&mut molder, run),
                 }
             }
             else {
-                match taken.next() {
-                    | Some(unit) => unit,
-                    | None => split.mold(&mut molder, run),
-                }
+                taken.next().unwrap_or_else(|| split.mold(&mut molder, run))
             };
             units.push(unit);
         }
@@ -470,11 +467,11 @@ impl FormStore
         let mut units = Vec::with_capacity(runs.len());
         for (position, (&run, parked)) in runs.iter().zip(&held).enumerate() {
             units.push(match (*parked, molded.remove(&position)) {
-                | (Some(parked), _) => FormUnit::resume(grammar, run, parked),
-                | (None, Some(unit)) => unit,
+                (Some(parked), _) => FormUnit::resume(grammar, run, parked),
+                (None, Some(unit)) => unit,
                 // Every run the store does not hold was molded above; molding
                 // here keeps the parse total should that ever not hold.
-                | (None, None) => split.mold(&mut molder, run),
+                (None, None) => split.mold(&mut molder, run),
             });
         }
         Ok((split.join(&mut molder, units)?.into_result(), census))

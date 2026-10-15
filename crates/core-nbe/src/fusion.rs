@@ -231,8 +231,21 @@ pub fn fused(
         .ok_or(dangling)?
         .iter()
         .filter_map(|elimination| match *elimination {
-            | Elimination::Bind(continuation) => Some(continuation),
-            | _ => None,
+            Elimination::Bind(continuation) => Some(continuation),
+            Elimination::DataCase(_)
+            | Elimination::Split(_)
+            | Elimination::Projection(_)
+            | Elimination::Transport(_)
+            | Elimination::ProductTransport(_)
+            | Elimination::PathTransport { .. }
+            | Elimination::Ride { .. }
+            | Elimination::TelescopeTransport { .. }
+            | Elimination::Apply(_)
+            | Elimination::Force
+            | Elimination::Case(_)
+            | Elimination::ListFold { .. }
+            | Elimination::StaticApply(_)
+            | Elimination::Fixpoint(_) => None,
         })
         .collect();
     let point = variable(domain, fresh)?;
@@ -289,24 +302,24 @@ pub fn fused(
         let slice = Fuel::from(u32::try_from(u64::from(*fuel)).unwrap_or(u32::MAX));
         let (read, left) =
             match eval_value_within(core, domain, manifest, slice, right, environment) {
-                | Ok(ran) => ran,
-                | Err(EvalFault::OutOfFuel) => {
+                Ok(ran) => ran,
+                Err(EvalFault::OutOfFuel) => {
                     *fuel = RewriteFuel::from(0_u64);
                     return Ok(Fusion::Exhausted);
                 },
-                | Err(fault) => return Err(ConversionFault::Evaluation(fault)),
+                Err(fault) => return Err(ConversionFault::Evaluation(fault)),
             };
         let spent = u32::from(slice).saturating_sub(u32::from(left));
         *fuel = RewriteFuel::from(u64::from(*fuel).saturating_sub(u64::from(spent)));
         image = read;
     }
     let image = match normal_form(core, domain, manifest, image, fuel)? {
-        | NormalForm::Kept => image,
-        | NormalForm::Rewritten(normal) => normal,
-        | NormalForm::Exhausted => return Ok(Fusion::Exhausted),
+        NormalForm::Kept => image,
+        NormalForm::Rewritten(normal) => normal,
+        NormalForm::Exhausted => return Ok(Fusion::Exhausted),
     };
     let returned_point = match domain.value(image) {
-        | Some(&DomainValue::Neutral { neutral, .. }) => {
+        Some(&DomainValue::Neutral { neutral, .. }) => {
             let read = domain.neutral(neutral).ok_or(dangling)?;
             read.spine().is_empty()
                 && read.head()
@@ -315,8 +328,8 @@ pub fn fused(
                         level: fresh,
                     }
         },
-        | Some(_) => false,
-        | None => return Err(dangling),
+        Some(_) => false,
+        None => return Err(dangling),
     };
     if !returned_point {
         return Ok(Fusion::Kept);
@@ -388,8 +401,8 @@ fn link(
 {
     let refused = |fault| {
         ConversionFault::Evaluation(match fault {
-            | FreeFault::Dangling => EvalFault::DanglingTerm,
-            | FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+            FreeFault::Dangling => EvalFault::DanglingTerm,
+            FreeFault::MachineInvariant => EvalFault::MachineInvariant,
         })
     };
     let Some(&ValueType::Path {
@@ -506,8 +519,8 @@ mod tests
         fn tag(self) -> ConstructorTag
         {
             ConstructorTag::from(match self {
-                | Self::Loop => 1_usize,
-                | Self::Unloop => 2,
+                Self::Loop => 1_usize,
+                Self::Unloop => 2,
             })
         }
 
@@ -518,8 +531,8 @@ mod tests
         fn constant(self) -> ConstantIndex
         {
             ConstantIndex::from(match self {
-                | Self::Loop => 1_usize,
-                | Self::Unloop => 2,
+                Self::Loop => 1_usize,
+                Self::Unloop => 2,
             })
         }
     }
@@ -592,8 +605,8 @@ mod tests
         let first = gandr_core_term::identity::cong(core, own, inner, base, path);
         let outer = core.value_constant(spelled.outer.constant());
         let start = match spelled.start {
-            | Start::Base => base,
-            | Start::Bound => path,
+            Start::Base => base,
+            Start::Bound => path,
         };
         let second = gandr_core_term::identity::cong(core, own, outer, start, path);
         let chain = core.computation_bind(first, second);
@@ -669,7 +682,7 @@ mod tests
         bound.extend(Zone::Intuitionistic, path);
         let fuel = Fuel::from(256_u32);
         let problem = match sides {
-            | Sides::Computations => {
+            Sides::Computations => {
                 let (left, _) = eval_comp_within(
                     &core,
                     &mut domain,
@@ -684,7 +697,7 @@ mod tests
                         .expect("the return evaluates");
                 Problem::computations(left, right)
             },
-            | Sides::Endpoints => {
+            Sides::Endpoints => {
                 let held = core.value_returned(chain_term);
                 let (left, _) =
                     eval_value_within(&core, &mut domain, definitions, fuel, held, bound)
@@ -753,13 +766,13 @@ mod tests
             let application = arena.computation_application(forced, moving);
             let image = arena.value_returned(application);
             let lifted = match start {
-                | Start::Base => base,
-                | Start::Bound => arena.value_variable(DeBruijnIndex::from(1_u32)),
+                Start::Base => base,
+                Start::Bound => arena.value_variable(DeBruijnIndex::from(1_u32)),
             };
             let motive = arena.value_type_path(own, lifted, image);
             let point = match start {
-                | Start::Base => base,
-                | Start::Bound => path,
+                Start::Base => base,
+                Start::Bound => path,
             };
             let reflexivity = arena.value_here(point);
             arena.computation_path_transport(motive, path, reflexivity)
@@ -768,11 +781,11 @@ mod tests
         let second = cong(&mut arena, spelled.outer, spelled.start);
         let chain = arena.computation_bind(first, second);
         let sides = match sides {
-            | Sides::Computations => {
+            Sides::Computations => {
                 let returned = arena.computation_return(path);
                 ReplaySides::Computations(chain, returned)
             },
-            | Sides::Endpoints => ReplaySides::Values(arena.value_returned(chain), path),
+            Sides::Endpoints => ReplaySides::Values(arena.value_returned(chain), path),
         };
         let unfoldings = Unfoldings::new(alloc::vec![
             Unfoldable::Opaque,
@@ -787,8 +800,8 @@ mod tests
             EngineClaim::Convertible,
             decisions.iter().map(|decision| {
                 decision.map(|node: TraceNode| match node {
-                    | TraceNode::Constant(constant) => ReplayNode::Constant(constant),
-                    | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+                    TraceNode::Constant(constant) => ReplayNode::Constant(constant),
+                    TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
                 })
             }),
             ReplayBudget::DEFAULT,

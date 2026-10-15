@@ -119,18 +119,18 @@ pub fn render(
         alloc::format!("{}", diagnostic.path.display())
     };
     let level = match diagnostic.severity {
-        | Severity::Ledger => {
+        Severity::Ledger => {
             return Rendered::from(alloc::format!("{origin}: {}", diagnostic.message.text));
         },
-        | Severity::Goal => Level::INFO.with_name("goal"),
-        | Severity::Note => Level::NOTE,
-        | Severity::Warning => Level::WARNING,
-        | Severity::Error => Level::ERROR,
+        Severity::Goal => Level::INFO.with_name("goal"),
+        Severity::Note => Level::NOTE,
+        Severity::Warning => Level::WARNING,
+        Severity::Error => Level::ERROR,
     };
     let title = level.primary_title(diagnostic.message.text.as_str());
     let title = match diagnostic.identifier {
-        | Maybe::Present(ref spelling) => title.id(spelling.as_ref()),
-        | Maybe::Absent(_) => title,
+        Maybe::Present(ref spelling) => title.id(spelling.as_ref()),
+        Maybe::Absent(_) => title,
     };
     let labels: Vec<String> = diagnostic
         .contexts
@@ -140,7 +140,7 @@ pub fn render(
     let mut group = Group::with_title(title);
     let mut help: Vec<Group<'_>> = Vec::new();
     match diagnostic.excerpt {
-        | Maybe::Present(ref excerpt) => {
+        Maybe::Present(ref excerpt) => {
             let base = usize::from(excerpt.start);
             let range = |span: ByteSpan| {
                 usize::from(span.start()).saturating_sub(base)
@@ -151,8 +151,8 @@ pub fn render(
                 .path(origin.as_str());
             for annotation in &diagnostic.annotations {
                 let mark = match annotation.kind {
-                    | AnnotationKind::Primary => Mark::Primary,
-                    | AnnotationKind::Context => Mark::Context,
+                    AnnotationKind::Primary => Mark::Primary,
+                    AnnotationKind::Context => Mark::Context,
                 };
                 snippet = snippet.annotation(
                     mark.span(range(annotation.locus.span))
@@ -180,7 +180,7 @@ pub fn render(
                 );
             }
         },
-        | Maybe::Absent(_) => {
+        Maybe::Absent(_) => {
             group = group.element(Origin::path(origin.as_str()));
         },
     }
@@ -205,8 +205,8 @@ pub fn render(
         );
     }
     let renderer = match style {
-        | RenderStyle::Plain => Renderer::plain(),
-        | RenderStyle::Styled => Renderer::styled(),
+        RenderStyle::Plain => Renderer::plain(),
+        RenderStyle::Styled => Renderer::styled(),
     };
     let mut report = Vec::from([group]);
     report.append(&mut help);

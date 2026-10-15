@@ -33,8 +33,8 @@ impl core::fmt::Display for BridgeError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::NotChecked(ref _error) => f.write_str("core checker refused the computation"),
-            | Self::NotLowered(ref error) => write!(f, "image lowering refused: {error}"),
+            Self::NotChecked(ref _error) => f.write_str("core checker refused the computation"),
+            Self::NotLowered(ref error) => write!(f, "image lowering refused: {error}"),
         }
     }
 }
@@ -98,7 +98,7 @@ pub fn is_typed(
 ) -> TypedVerdict
 {
     match check_and_lower(context, computation, expected) {
-        | Ok(_) => TypedVerdict::Admitted,
-        | Err(error) => TypedVerdict::Refused(error),
+        Ok(_) => TypedVerdict::Admitted,
+        Err(error) => TypedVerdict::Refused(error),
     }
 }

@@ -12,8 +12,8 @@ mod tests
         Reason: core::fmt::Debug,
     {
         match value {
-            | Maybe::Present(value) => value,
-            | Maybe::Absent(reason) => panic!("fixture absent: {reason:?}"),
+            Maybe::Present(value) => value,
+            Maybe::Absent(reason) => panic!("fixture absent: {reason:?}"),
         }
     }
 

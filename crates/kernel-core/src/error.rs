@@ -92,24 +92,24 @@ impl ValueTypeHead
     pub const fn of(value_type: &ValueType) -> Self
     {
         match *value_type {
-            | ValueType::Data { .. } => Self::Data,
-            | ValueType::Record(_) => Self::Record,
-            | ValueType::PathUniverse(..) => Self::PathUniverse,
-            | ValueType::FlowUniverse(..) => Self::FlowUniverse,
-            | ValueType::Path { .. } => Self::Path,
-            | ValueType::Flow { .. } => Self::Flow,
-            | ValueType::Base(_) => Self::Base,
-            | ValueType::Element { .. } => Self::Element,
-            | ValueType::Product(..) => Self::Product,
-            | ValueType::Sigma { .. } => Self::Sigma,
-            | ValueType::Sum(..) => Self::Sum,
-            | ValueType::Session { .. } => Self::Session,
-            | ValueType::List(_) => Self::List,
-            | ValueType::Thunk(_) => Self::Thunk,
-            | ValueType::Universe { .. } => Self::Universe,
-            | ValueType::Lift { .. } => Self::Lift,
-            | ValueType::Abstract(_) => Self::Abstract,
-            | ValueType::StaticPi { .. } => Self::StaticPi,
+            ValueType::Data { .. } => Self::Data,
+            ValueType::Record(_) => Self::Record,
+            ValueType::PathUniverse(..) => Self::PathUniverse,
+            ValueType::FlowUniverse(..) => Self::FlowUniverse,
+            ValueType::Path { .. } => Self::Path,
+            ValueType::Flow { .. } => Self::Flow,
+            ValueType::Base(_) => Self::Base,
+            ValueType::Element { .. } => Self::Element,
+            ValueType::Product(..) => Self::Product,
+            ValueType::Sigma { .. } => Self::Sigma,
+            ValueType::Sum(..) => Self::Sum,
+            ValueType::Session { .. } => Self::Session,
+            ValueType::List(_) => Self::List,
+            ValueType::Thunk(_) => Self::Thunk,
+            ValueType::Universe { .. } => Self::Universe,
+            ValueType::Lift { .. } => Self::Lift,
+            ValueType::Abstract(_) => Self::Abstract,
+            ValueType::StaticPi { .. } => Self::StaticPi,
         }
     }
 }
@@ -143,11 +143,11 @@ impl CompTypeHead
     pub const fn of(comp_type: &CompType) -> Self
     {
         match *comp_type {
-            | CompType::Returner(_) => Self::Returner,
-            | CompType::Arrow { .. } => Self::Arrow,
-            | CompType::Pi { .. } => Self::Pi,
-            | CompType::Element { .. } => Self::Element,
-            | CompType::With(..) => Self::With,
+            CompType::Returner(_) => Self::Returner,
+            CompType::Arrow { .. } => Self::Arrow,
+            CompType::Pi { .. } => Self::Pi,
+            CompType::Element { .. } => Self::Element,
+            CompType::With(..) => Self::With,
         }
     }
 }
@@ -801,117 +801,115 @@ impl core::fmt::Display for KernelError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::NotADataType { .. } => f.write_str("a nominal head named no data declaration"),
-            | Self::DataKindNotUniverse => {
+            Self::NotADataType { .. } => f.write_str("a nominal head named no data declaration"),
+            Self::DataKindNotUniverse => {
                 f.write_str("a data declaration kind was not a positive universe")
             },
-            | Self::DataArgumentArity => {
+            Self::DataArgumentArity => {
                 f.write_str("a data application had the wrong argument arity")
             },
-            | Self::UnknownConstructor { .. } => {
+            Self::UnknownConstructor { .. } => {
                 f.write_str("a constructor tag was absent from its declaration")
             },
-            | Self::ConstructorArity => f.write_str("a constructor had the wrong field arity"),
-            | Self::NonExhaustiveDataCase => {
+            Self::ConstructorArity => f.write_str("a constructor had the wrong field arity"),
+            Self::NonExhaustiveDataCase => {
                 f.write_str("a data case did not cover exactly its constructor table")
             },
-            | Self::NegativeOccurrence(_) => {
+            Self::NegativeOccurrence(_) => {
                 f.write_str("a data declaration's family stood under a function's domain")
             },
-            | Self::NestedOccurrence(_) => {
+            Self::NestedOccurrence(_) => {
                 f.write_str("a data declaration's family stood nested inside another former")
             },
-            | Self::IndexOccurrence(_) => {
+            Self::IndexOccurrence(_) => {
                 f.write_str("a data declaration's family stood inside a term a type reads")
             },
-            | Self::NonUniformOccurrence(_) => {
+            Self::NonUniformOccurrence(_) => {
                 f.write_str("a data declaration's family was applied to non-parameter arguments")
             },
-            | Self::CrossBlockReference { .. } => {
+            Self::CrossBlockReference { .. } => {
                 f.write_str("a data declaration named a declaration after its own block")
             },
-            | Self::RuleNotPresentable(_) => {
+            Self::RuleNotPresentable(_) => {
                 f.write_str("a data declaration's rule did not present its type")
             },
-            | Self::WordsRefused(_) => {
+            Self::WordsRefused(_) => {
                 f.write_str("a type of words was not the words its free cells mint")
             },
-            | Self::RuleNotRespected(_) => {
+            Self::RuleNotRespected(_) => {
                 f.write_str("a case over a presented type was not shown to respect its rules")
             },
-            | Self::NotApart(_) => {
+            Self::NotApart(_) => {
                 f.write_str("a case of no branches met a path whose endpoints are not apart")
             },
-            | Self::LoopNotRespected(_) => {
+            Self::LoopNotRespected(_) => {
                 f.write_str("a case over a looped sort was not shown to respect its loops")
             },
-            | Self::DescentNotReplayed(_) => {
+            Self::DescentNotReplayed(_) => {
                 f.write_str("a fixpoint's structural-descent claim did not replay")
             },
-            | Self::AbsentRecordField { .. } => f.write_str("a required record field was absent"),
-            | Self::AbsentTupleComponent { .. } => {
+            Self::AbsentRecordField { .. } => f.write_str("a required record field was absent"),
+            Self::AbsentTupleComponent { .. } => {
                 f.write_str("a tuple projection named a component the product does not have")
             },
-            | Self::Session(ref error) => error.fmt(f),
-            | Self::Path(ref error) => error.fmt(f),
-            | Self::Flow(ref error) => error.fmt(f),
-            | Self::Identity(ref error) => error.fmt(f),
-            | Self::UnboundVariable { .. } => f.write_str("a variable escaped its context"),
-            | Self::UnboundConstant { .. } => {
-                f.write_str("a constant named no admitted declaration")
-            },
-            | Self::NotInferable { .. } => {
+            Self::Session(ref error) => error.fmt(f),
+            Self::Path(ref error) => error.fmt(f),
+            Self::Flow(ref error) => error.fmt(f),
+            Self::Identity(ref error) => error.fmt(f),
+            Self::UnboundVariable { .. } => f.write_str("a variable escaped its context"),
+            Self::UnboundConstant { .. } => f.write_str("a constant named no admitted declaration"),
+            Self::NotInferable { .. } => {
                 f.write_str("a checking-only form was used where a type had to be inferred")
             },
-            | Self::ValueShapeMismatch { .. } => f.write_str("a value type had a wrong shape"),
-            | Self::ComputationShapeMismatch { .. } => {
+            Self::ValueShapeMismatch { .. } => f.write_str("a value type had a wrong shape"),
+            Self::ComputationShapeMismatch { .. } => {
                 f.write_str("a computation type had a wrong shape")
             },
-            | Self::CodeObligationCeiling { .. } => {
+            Self::CodeObligationCeiling { .. } => {
                 f.write_str("the deferred code obligations reached their ceiling")
             },
-            | Self::ValueTypeMismatch(_) => f.write_str("two value types are not convertible"),
-            | Self::ComputationTypeMismatch(_) => {
+            Self::ValueTypeMismatch(_) => f.write_str("two value types are not convertible"),
+            Self::ComputationTypeMismatch(_) => {
                 f.write_str("two computation types are not convertible")
             },
-            | Self::CaseBranchMismatch(_) => {
+            Self::CaseBranchMismatch(_) => {
                 f.write_str("the two branches of a case produced inconvertible types")
             },
-            | Self::BinderEscape { .. } => {
+            Self::BinderEscape { .. } => {
                 f.write_str("a type synthesized under a binder mentions the value it bound")
             },
-            | Self::LevelVariableOutOfScope { .. } => {
+            Self::LevelVariableOutOfScope { .. } => {
                 f.write_str("a level variable escaped the declaration's prenex parameters")
             },
-            | Self::LevelArithmetic => f.write_str("level arithmetic left the representable range"),
-            | Self::UniverseViolation(_) => f.write_str("a universe judgement does not hold"),
-            | Self::InconsistentLevelConstraints(_) => {
+            Self::LevelArithmetic => f.write_str("level arithmetic left the representable range"),
+            Self::UniverseViolation(_) => f.write_str("a universe judgement does not hold"),
+            Self::InconsistentLevelConstraints(_) => {
                 f.write_str("the declared level constraints have no model")
             },
-            | Self::LevelOracleFault(_) => f.write_str("the level oracle reported a fault"),
-            | Self::CheckerRegisterFault(_) => {
+            Self::LevelOracleFault(_) => f.write_str("the level oracle reported a fault"),
+            Self::CheckerRegisterFault(_) => {
                 f.write_str("the checker's produced register held the wrong polarity")
             },
-            | Self::ArenaFault => f.write_str("an arena id resolved to no node"),
-            | Self::AbstractTypeKindNotUniverse { .. } => {
+            Self::ArenaFault => f.write_str("an arena id resolved to no node"),
+            Self::AbstractTypeKindNotUniverse { .. } => {
                 f.write_str("an abstract type's kind is not a universe")
             },
-            | Self::NotAnAbstractType { .. } => {
+            Self::NotAnAbstractType { .. } => {
                 f.write_str("a sealed-atom reference named no abstract-type declaration")
             },
-            | Self::SealNotOpen { .. } => {
+            Self::SealNotOpen { .. } => {
                 f.write_str("a seal named no abstract type whose minting admission is open")
             },
-            | Self::SealingProvenanceNotProjected { .. } => {
+            Self::SealingProvenanceNotProjected { .. } => {
                 f.write_str("a claimed sealing atom does not occur in the declared type")
             },
-            | Self::SealingProvenanceNotCanonical { .. } => {
+            Self::SealingProvenanceNotCanonical { .. } => {
                 f.write_str("a sealing-provenance slot is not strictly ascending")
             },
-            | Self::OutstandingStagedContent { .. } => {
+            Self::OutstandingStagedContent { .. } => {
                 f.write_str("a later staged declaration is still unresolved")
             },
-            | Self::StaticClassifierExpected { .. } => {
+            Self::StaticClassifierExpected { .. } => {
                 f.write_str("a static Pi stands over a type that classifies no codes")
             },
         }

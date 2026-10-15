@@ -48,14 +48,14 @@ fn forced(
     reachable(arena, tail)
         .into_iter()
         .filter_map(|node| match arena.computation(node) {
-            | Some(&Computation::Force(forced)) => match arena.value(forced) {
-                | Some(&Value::Variable {
+            Some(&Computation::Force(forced)) => match arena.value(forced) {
+                Some(&Value::Variable {
                     zone: Zone::Intuitionistic,
                     index,
                 }) => Some(index),
-                | _ => None,
+                _ => None,
             },
-            | _ => None,
+            _ => None,
         })
         .collect()
 }
@@ -207,15 +207,15 @@ fn a_while_tests_its_condition_on_every_pass()
     for (name, bound) in [("down", true), ("held", false)] {
         let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
         let body = match arena.computation(tail) {
-            | Some(&Computation::Fixpoint {
+            Some(&Computation::Fixpoint {
                 body,
                 evidence: FixpointEvidence::Partial,
             }) => body,
-            | other => panic!("`{name}` lowers to a partial fixpoint: {other:?}"),
+            other => panic!("`{name}` lowers to a partial fixpoint: {other:?}"),
         };
         let cases = match arena.computation(body) {
-            | Some(&Computation::Bind(_, tests)) => bound && tested(&arena, tests),
-            | _ => !bound && tested(&arena, body),
+            Some(&Computation::Bind(_, tests)) => bound && tested(&arena, tests),
+            _ => !bound && tested(&arena, body),
         };
         assert!(
             cases,

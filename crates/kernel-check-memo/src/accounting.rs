@@ -36,7 +36,7 @@ impl core::fmt::Display for MemoError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::EntryCountOverflow => {
+            Self::EntryCountOverflow => {
                 f.write_str("memo entry count is at its ceiling and cannot be incremented")
             },
         }

@@ -540,30 +540,30 @@ impl<'source> Collector<'_, 'source>
                 before: types.len(),
             };
             let form = match component.form {
-                | ComponentForm::Value(typed) => ParameterForm::Value(typed),
-                | ComponentForm::Abstract(Maybe::Present(kind))
+                ComponentForm::Value(typed) => ParameterForm::Value(typed),
+                ComponentForm::Abstract(Maybe::Present(kind))
                     if matches!(self.kind_form(kind), Ok(super::sealing::KindForm::Arrow)) =>
                 {
                     self.refuse_component(container, component, AscriptionForm::Kinded);
                     continue;
                 },
-                | ComponentForm::Abstract(kind) => ParameterForm::Abstract(kind),
-                | ComponentForm::Manifest(defined) => ParameterForm::Manifest(defined),
-                | ComponentForm::Family(_) | ComponentForm::Derived => {
+                ComponentForm::Abstract(kind) => ParameterForm::Abstract(kind),
+                ComponentForm::Manifest(defined) => ParameterForm::Manifest(defined),
+                ComponentForm::Family(_) | ComponentForm::Derived => {
                     self.refuse_component(container, component, AscriptionForm::Kinded);
                     continue;
                 },
-                | ComponentForm::Parameterized { .. } => {
+                ComponentForm::Parameterized { .. } => {
                     self.refuse_component(container, component, AscriptionForm::Parameterized);
                     continue;
                 },
-                | ComponentForm::Unread(form) => {
+                ComponentForm::Unread(form) => {
                     self.refuse_component(container, component, form);
                     continue;
                 },
             };
             let slot = match form {
-                | ParameterForm::Manifest(defined) => {
+                ParameterForm::Manifest(defined) => {
                     let held =
                         self.held(container, component.name, component.named, component.named);
                     self.collected.own(defined.node, held);
@@ -575,14 +575,14 @@ impl<'source> Collector<'_, 'source>
                     });
                     held
                 },
-                | ParameterForm::Value(typed) => {
+                ParameterForm::Value(typed) => {
                     let slot = self.parameter_slot(container, component, Maybe::Present(typed));
                     self.collected.own(typed.node, slot);
                     self.collected.scopes.push((typed.node, scope));
                     exports.push(Member::Slot(slot));
                     slot
                 },
-                | ParameterForm::Abstract(kind) => {
+                ParameterForm::Abstract(kind) => {
                     let slot = self.parameter_slot(
                         container,
                         component,
@@ -842,8 +842,8 @@ impl<'source> Collector<'_, 'source>
             return;
         };
         let argument = match self.argument(head, rest) {
-            | Ok(argument) => argument,
-            | Err(refusal) => {
+            Ok(argument) => argument,
+            Err(refusal) => {
                 refuse(self, refusal);
                 return;
             },
@@ -859,8 +859,8 @@ impl<'source> Collector<'_, 'source>
         let mut found = Vec::new();
         for component in &template.components {
             match self.argument_component(argument, component) {
-                | Maybe::Present(argued) => found.push(argued),
-                | Maybe::Absent(_) => {
+                Maybe::Present(argued) => found.push(argued),
+                Maybe::Absent(_) => {
                     refuse(self, LoweringRefusal::UnknownMember {
                         span: argument_span,
                         module: argument_name,
@@ -906,14 +906,14 @@ impl<'source> Collector<'_, 'source>
             .get(&(Container::TopLevel, head_name))
             .copied()
         {
-            | Some(found)
+            Some(found)
                 if self.collected.structures.get(found.0).is_some_and(|entry| {
                     matches!(entry.stratum, Stratum::Module | Stratum::Instance(_))
                 }) =>
             {
                 found
             },
-            | Some(_) | None => {
+            Some(_) | None => {
                 return Err(LoweringRefusal::UnresolvedName {
                     span: head.span,
                     name: head_name,
@@ -925,7 +925,7 @@ impl<'source> Collector<'_, 'source>
             let name = self.name_of(segment);
             let nested = self.collected.structures.get(current.0).and_then(|entry| {
                 entry.exports.iter().find_map(|&export| match export {
-                    | Member::Module(nested)
+                    Member::Module(nested)
                         if self
                             .collected
                             .structures
@@ -934,7 +934,7 @@ impl<'source> Collector<'_, 'source>
                     {
                         Some(nested)
                     },
-                    | Member::Module(_) | Member::Slot(_) => None,
+                    Member::Module(_) | Member::Slot(_) => None,
                 })
             });
             let Some(nested) = nested
@@ -984,11 +984,11 @@ impl<'source> Collector<'_, 'source>
             return Maybe::Absent(argued::Absent::Unexported);
         };
         match component.form {
-            | ParameterForm::Value(_) => entry
+            ParameterForm::Value(_) => entry
                 .exports
                 .iter()
                 .find_map(|&export| match export {
-                    | Member::Slot(slot)
+                    Member::Slot(slot)
                         if self
                             .collected
                             .slots
@@ -999,10 +999,10 @@ impl<'source> Collector<'_, 'source>
                             entry.exported_as.get(&slot).copied().unwrap_or(slot),
                         ))
                     },
-                    | Member::Slot(_) | Member::Module(_) => None,
+                    Member::Slot(_) | Member::Module(_) => None,
                 })
                 .map_or(Maybe::Absent(argued::Absent::Unexported), Maybe::Present),
-            | ParameterForm::Abstract(_) | ParameterForm::Manifest(_) => entry
+            ParameterForm::Abstract(_) | ParameterForm::Manifest(_) => entry
                 .exported_types()
                 .iter()
                 .find(|stated| {
@@ -1072,10 +1072,10 @@ impl<'source> Collector<'_, 'source>
         let mut matched = Vec::with_capacity(found.len());
         for (component, &argued) in template.components.iter().zip(found) {
             let paired = match (component.form, argued) {
-                | (ParameterForm::Value(_), Argued::Value(member)) => Paired::Value(member),
-                | (ParameterForm::Abstract(_), Argued::Type(stated)) => Paired::Abstract(stated),
-                | (ParameterForm::Manifest(_), Argued::Type(stated)) => Paired::Manifest(stated),
-                | (ParameterForm::Value(_), Argued::Type(_))
+                (ParameterForm::Value(_), Argued::Value(member)) => Paired::Value(member),
+                (ParameterForm::Abstract(_), Argued::Type(stated)) => Paired::Abstract(stated),
+                (ParameterForm::Manifest(_), Argued::Type(stated)) => Paired::Manifest(stated),
+                (ParameterForm::Value(_), Argued::Type(_))
                 | (ParameterForm::Abstract(_) | ParameterForm::Manifest(_), Argued::Value(_)) => {
                     continue;
                 },
@@ -1083,17 +1083,17 @@ impl<'source> Collector<'_, 'source>
             let witness = self.witness_slot(container, component.name, component.named, form);
             let parameter = component.slot;
             matched.push(match paired {
-                | Paired::Value(member) => Matched::Value {
+                Paired::Value(member) => Matched::Value {
                     parameter,
                     witness,
                     member,
                 },
-                | Paired::Abstract(argument) => Matched::Abstract {
+                Paired::Abstract(argument) => Matched::Abstract {
                     parameter,
                     witness,
                     argument,
                 },
-                | Paired::Manifest(argument) => Matched::Manifest {
+                Paired::Manifest(argument) => Matched::Manifest {
                     parameter,
                     witness,
                     argument,
@@ -1110,10 +1110,10 @@ impl<'source> Collector<'_, 'source>
                 continue;
             }
             let container = match entry.container {
-                | Container::Module(parent) => images
+                Container::Module(parent) => images
                     .get(&parent)
                     .map_or(entry.container, |&image| Container::Module(image)),
-                | Container::TopLevel => Container::TopLevel,
+                Container::TopLevel => Container::TopLevel,
             };
             let image = StructureIndex(self.collected.structures.len());
             self.collected.structures.push(Structure {
@@ -1145,11 +1145,11 @@ impl<'source> Collector<'_, 'source>
                 continue;
             };
             let container = match slot.container {
-                | Container::Module(owner) => instance
+                Container::Module(owner) => instance
                     .images
                     .get(&owner)
                     .map_or(slot.container, |&image| Container::Module(image)),
-                | Container::TopLevel => Container::TopLevel,
+                Container::TopLevel => Container::TopLevel,
             };
             let minted = SlotIndex(self.collected.slots.len());
             self.collected.slots.push(DeclarationSlot {
@@ -1167,18 +1167,18 @@ impl<'source> Collector<'_, 'source>
             });
         }
         let slot_image = |slot: SlotIndex| match instance.image(template, slot) {
-            | Maybe::Present(image) => image,
-            | Maybe::Absent(_) => slot,
+            Maybe::Present(image) => image,
+            Maybe::Absent(_) => slot,
         };
         let member_image = |member: Member| match member {
-            | Member::Slot(slot) => Member::Slot(slot_image(slot)),
-            | Member::Module(module) => {
+            Member::Slot(slot) => Member::Slot(slot_image(slot)),
+            Member::Module(module) => {
                 Member::Module(instance.images.get(&module).copied().unwrap_or(module))
             },
         };
         let type_image = |stated: &TypeComponent<'source>| match stated.meaning {
-            | TypeMeaning::Family(_) => None,
-            | TypeMeaning::Manifest(defined) => Some(TypeComponent {
+            TypeMeaning::Family(_) => None,
+            TypeMeaning::Manifest(defined) => Some(TypeComponent {
                 name: stated.name,
                 meaning: TypeMeaning::Instantiated {
                     defined,
@@ -1186,7 +1186,7 @@ impl<'source> Collector<'_, 'source>
                 },
                 held: slot_image(stated.held),
             }),
-            | TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => Some(TypeComponent {
+            TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => Some(TypeComponent {
                 name: stated.name,
                 meaning: stated.meaning,
                 held: slot_image(stated.held),

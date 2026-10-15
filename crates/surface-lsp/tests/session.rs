@@ -389,8 +389,8 @@ mod session
         }
         let range = |span: gandr_surface_syntax::ByteSpan| json!({"start": position(index, span.start()), "end": position(index, span.end())});
         let code = match diagnostic.identifier {
-            | Maybe::Present(ref spelling) => json!(spelling.to_string()),
-            | Maybe::Absent(_) => Value::Null,
+            Maybe::Present(ref spelling) => json!(spelling.to_string()),
+            Maybe::Absent(_) => Value::Null,
         };
         let mut related: Vec<_> = diagnostic
             .annotations
@@ -400,19 +400,19 @@ mod session
             .collect();
         let mut message = diagnostic.message.text.clone();
         let lead = match diagnostic.primary() {
-            | Maybe::Present(primary) => {
+            Maybe::Present(primary) => {
                 message.push('\n');
                 message.push_str(&primary.label);
                 range(primary.locus.span)
             },
-            | Maybe::Absent(_) => at_origin,
+            Maybe::Absent(_) => at_origin,
         };
         for context in &diagnostic.contexts {
             match context.locus {
-                | Maybe::Present(locus) => {
+                Maybe::Present(locus) => {
                     related.push(json!({"range": range(locus.span), "message": context.label()}));
                 },
-                | Maybe::Absent(_) => {
+                Maybe::Absent(_) => {
                     message.push('\n');
                     message.push_str(&context.note());
                 },
@@ -754,19 +754,23 @@ mod session
         assert_eq!(served, Served::Abrupt, "the stream closes without shutdown");
         written(&Body::from(output))
             .iter()
-            .map(|message| match message.get("method") {
-                | Some(method) => json!([
-                    method,
-                    message.pointer("/params/version"),
-                    message
-                        .pointer("/params/diagnostics")
-                        .and_then(Value::as_array)
-                        .map(|diagnostics| diagnostics
-                            .iter()
-                            .map(|diagnostic| diagnostic.get("code"))
-                            .collect::<Vec<_>>()),
-                ]),
-                | None => json!(message.get("id")),
+            .map(|message| {
+                message.get("method").map_or_else(
+                    || json!(message.get("id")),
+                    |method| {
+                        json!([
+                            method,
+                            message.pointer("/params/version"),
+                            message
+                                .pointer("/params/diagnostics")
+                                .and_then(Value::as_array)
+                                .map(|diagnostics| diagnostics
+                                    .iter()
+                                    .map(|diagnostic| diagnostic.get("code"))
+                                    .collect::<Vec<_>>()),
+                        ])
+                    },
+                )
             })
             .collect()
     }

@@ -345,8 +345,8 @@ where
     let value = Value::decode_tokens(&mut reader)?;
 
     match reader.end() {
-        | StreamEnd::Ended => Ok(value),
-        | StreamEnd::Continues => Err(ValueError::TrailingTokens {
+        StreamEnd::Ended => Ok(value),
+        StreamEnd::Continues => Err(ValueError::TrailingTokens {
             position: reader.position(),
         }),
     }

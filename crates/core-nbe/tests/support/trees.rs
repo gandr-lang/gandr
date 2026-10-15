@@ -103,13 +103,13 @@ pub fn same_tree(
     let mut pending = Vec::from([(left, right)]);
     while let Some(pair) = pending.pop() {
         match pair {
-            | (Term::Value(left), Term::Value(right)) => {
+            (Term::Value(left), Term::Value(right)) => {
                 let (Some(left), Some(right)) = (left_arena.value(left), right_arena.value(right))
                 else {
                     return Trees::Different;
                 };
                 match (left, right) {
-                    | (
+                    (
                         &Value::PathEquiv {
                             path_type,
                             forward,
@@ -127,7 +127,7 @@ pub fn same_tree(
                         pending.push((Term::Value(forward), Term::Value(other_forward)));
                         pending.push((Term::ValueType(path_type), Term::ValueType(other_type)));
                     },
-                    | (
+                    (
                         &Value::PathProduct(first, second),
                         &Value::PathProduct(other_first, other_second),
                     )
@@ -142,13 +142,12 @@ pub fn same_tree(
                         pending.push((Term::Value(second), Term::Value(other_second)));
                         pending.push((Term::Value(first), Term::Value(other_first)));
                     },
-                    | (
-                        &Value::Injection(side, body),
-                        &Value::Injection(other_side, other_body),
-                    ) if side == other_side => {
+                    (&Value::Injection(side, body), &Value::Injection(other_side, other_body))
+                        if side == other_side =>
+                    {
                         pending.push((Term::Value(body), Term::Value(other_body)));
                     },
-                    | (
+                    (
                         &Value::Lift { ref target, body },
                         &Value::Lift {
                             target: ref other_target,
@@ -157,44 +156,44 @@ pub fn same_tree(
                     ) if target == other_target => {
                         pending.push((Term::Value(body), Term::Value(other_body)));
                     },
-                    | (&Value::PathRefl(body), &Value::PathRefl(other_body))
+                    (&Value::PathRefl(body), &Value::PathRefl(other_body))
                     | (&Value::StaticLambda(body), &Value::StaticLambda(other_body)) => {
                         pending.push((Term::Value(body), Term::Value(other_body)));
                     },
-                    | (&Value::Thunk(body), &Value::Thunk(other_body)) => {
+                    (&Value::Thunk(body), &Value::Thunk(other_body)) => {
                         pending.push((Term::Computation(body), Term::Computation(other_body)));
                     },
-                    | (&Value::Quote(body), &Value::Quote(other_body)) => {
+                    (&Value::Quote(body), &Value::Quote(other_body)) => {
                         pending.push((Term::ValueType(body), Term::ValueType(other_body)));
                     },
-                    | (&Value::QuoteComputation(body), &Value::QuoteComputation(other_body)) => {
+                    (&Value::QuoteComputation(body), &Value::QuoteComputation(other_body)) => {
                         pending.push((Term::CompType(body), Term::CompType(other_body)));
                     },
-                    | (&Value::Tuple(ref components), &Value::Tuple(ref others))
+                    (&Value::Tuple(ref components), &Value::Tuple(ref others))
                         if components.len() == others.len() =>
                     {
                         pending.extend(components.iter().zip(others.iter()).rev().map(
                             |(&component, &other)| (Term::Value(component), Term::Value(other)),
                         ));
                     },
-                    | (
+                    (
                         &(Value::Variable { .. }
                         | Value::Constant(_)
                         | Value::ListNil
                         | Value::Literal(_)),
                         _,
                     ) if left == right => {},
-                    | _ => return Trees::Different,
+                    _ => return Trees::Different,
                 }
             },
-            | (Term::Computation(left), Term::Computation(right)) => {
+            (Term::Computation(left), Term::Computation(right)) => {
                 let (Some(left), Some(right)) =
                     (left_arena.computation(left), right_arena.computation(right))
                 else {
                     return Trees::Different;
                 };
                 match (left, right) {
-                    | (
+                    (
                         &Computation::ListFold {
                             element,
                             result,
@@ -216,35 +215,35 @@ pub fn same_tree(
                         (Term::Computation(on_nil), Term::Computation(other_nil)),
                         (Term::Computation(on_cons), Term::Computation(other_cons)),
                     ]),
-                    | (
+                    (
                         &Computation::Transport(path, value),
                         &Computation::Transport(other_path, other_value),
                     ) => {
                         pending.push((Term::Value(value), Term::Value(other_value)));
                         pending.push((Term::Value(path), Term::Value(other_path)));
                     },
-                    | (&Computation::Lambda(body), &Computation::Lambda(other_body)) => {
+                    (&Computation::Lambda(body), &Computation::Lambda(other_body)) => {
                         pending.push((Term::Computation(body), Term::Computation(other_body)));
                     },
-                    | (
+                    (
                         &Computation::Application(head, argument),
                         &Computation::Application(other_head, other_argument),
                     ) => {
                         pending.push((Term::Value(argument), Term::Value(other_argument)));
                         pending.push((Term::Computation(head), Term::Computation(other_head)));
                     },
-                    | (&Computation::Return(value), &Computation::Return(other_value))
+                    (&Computation::Return(value), &Computation::Return(other_value))
                     | (&Computation::Force(value), &Computation::Force(other_value)) => {
                         pending.push((Term::Value(value), Term::Value(other_value)));
                     },
-                    | (
+                    (
                         &Computation::Bind(bound, body),
                         &Computation::Bind(other_bound, other_body),
                     ) => {
                         pending.push((Term::Computation(body), Term::Computation(other_body)));
                         pending.push((Term::Computation(bound), Term::Computation(other_bound)));
                     },
-                    | (
+                    (
                         &Computation::Case {
                             scrutinee,
                             ref branches,
@@ -261,27 +260,27 @@ pub fn same_tree(
                         ));
                         pending.push((Term::Value(scrutinee), Term::Value(other_scrutinee)));
                     },
-                    | _ => return Trees::Different,
+                    _ => return Trees::Different,
                 }
             },
-            | (Term::ValueType(left), Term::ValueType(right)) => {
+            (Term::ValueType(left), Term::ValueType(right)) => {
                 let (Some(left), Some(right)) =
                     (left_arena.value_type(left), right_arena.value_type(right))
                 else {
                     return Trees::Different;
                 };
                 match (left, right) {
-                    | (&ValueType::List(element), &ValueType::List(other_element)) => {
+                    (&ValueType::List(element), &ValueType::List(other_element)) => {
                         pending.push((Term::ValueType(element), Term::ValueType(other_element)));
                     },
-                    | (
+                    (
                         &ValueType::PathUniverse(source, target),
                         &ValueType::PathUniverse(other_source, other_target),
                     ) => {
                         pending.push((Term::Value(target), Term::Value(other_target)));
                         pending.push((Term::Value(source), Term::Value(other_source)));
                     },
-                    | (&ValueType::Product(ref parts), &ValueType::Product(ref other_parts))
+                    (&ValueType::Product(ref parts), &ValueType::Product(ref other_parts))
                     | (&ValueType::Sum(ref parts), &ValueType::Sum(ref other_parts))
                         if parts.len() == other_parts.len() =>
                     {
@@ -289,7 +288,7 @@ pub fn same_tree(
                             |(&part, &other)| (Term::ValueType(part), Term::ValueType(other)),
                         ));
                     },
-                    | (
+                    (
                         &ValueType::StaticPi {
                             domain: first,
                             codomain: second,
@@ -302,10 +301,10 @@ pub fn same_tree(
                         pending.push((Term::ValueType(second), Term::ValueType(other_second)));
                         pending.push((Term::ValueType(first), Term::ValueType(other_first)));
                     },
-                    | (&ValueType::Thunk(body), &ValueType::Thunk(other_body)) => {
+                    (&ValueType::Thunk(body), &ValueType::Thunk(other_body)) => {
                         pending.push((Term::CompType(body), Term::CompType(other_body)));
                     },
-                    | (
+                    (
                         &ValueType::Lift { inner, ref target },
                         &ValueType::Lift {
                             inner: other_inner,
@@ -314,7 +313,7 @@ pub fn same_tree(
                     ) if target == other_target => {
                         pending.push((Term::ValueType(inner), Term::ValueType(other_inner)));
                     },
-                    | (
+                    (
                         &ValueType::Element { code, ref target },
                         &ValueType::Element {
                             code: other_code,
@@ -323,21 +322,21 @@ pub fn same_tree(
                     ) if target == other_target => {
                         pending.push((Term::Value(code), Term::Value(other_code)));
                     },
-                    | (
+                    (
                         &(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_)),
                         _,
                     ) if left == right => {},
-                    | _ => return Trees::Different,
+                    _ => return Trees::Different,
                 }
             },
-            | (Term::CompType(left), Term::CompType(right)) => {
+            (Term::CompType(left), Term::CompType(right)) => {
                 let (Some(left), Some(right)) =
                     (left_arena.comp_type(left), right_arena.comp_type(right))
                 else {
                     return Trees::Different;
                 };
                 match (left, right) {
-                    | (
+                    (
                         &CompType::Returner {
                             result: value,
                             effects: ref left,
@@ -371,7 +370,7 @@ pub fn same_tree(
                         }
                         pending.push((Term::ValueType(value), Term::ValueType(other_value)));
                     },
-                    | (
+                    (
                         &CompType::Arrow { domain, codomain },
                         &CompType::Arrow {
                             domain: other_domain,
@@ -388,7 +387,7 @@ pub fn same_tree(
                         pending.push((Term::CompType(codomain), Term::CompType(other_codomain)));
                         pending.push((Term::ValueType(domain), Term::ValueType(other_domain)));
                     },
-                    | (
+                    (
                         &CompType::Element { code, ref target },
                         &CompType::Element {
                             code: other_code,
@@ -397,10 +396,10 @@ pub fn same_tree(
                     ) if target == other_target => {
                         pending.push((Term::Value(code), Term::Value(other_code)));
                     },
-                    | _ => return Trees::Different,
+                    _ => return Trees::Different,
                 }
             },
-            | _ => return Trees::Different,
+            _ => return Trees::Different,
         }
     }
     Trees::Same

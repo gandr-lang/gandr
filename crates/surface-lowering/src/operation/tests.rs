@@ -86,29 +86,29 @@ fn judged(
         .filter_map(|declaration| {
             let origin = OriginToken::from(usize::from(declaration.origin()));
             let (declared, defined) = match declaration.outcome() {
-                | DeclarationOutcome::Completed {
+                DeclarationOutcome::Completed {
                     declared_type,
                     body,
                 } => (Maybe::Present(declared_type), Maybe::Present(body)),
-                | DeclarationOutcome::Uncompleted { declared_type } => (
+                DeclarationOutcome::Uncompleted { declared_type } => (
                     Maybe::Present(declared_type),
                     Maybe::Absent(body::Absent::Hole),
                 ),
-                | DeclarationOutcome::Bodied { body } => (
+                DeclarationOutcome::Bodied { body } => (
                     Maybe::Absent(signature::Absent::Unsigned),
                     Maybe::Present(body),
                 ),
-                | DeclarationOutcome::Data(index) => {
+                DeclarationOutcome::Data(index) => {
                     return match module.data(index) {
-                        | Maybe::Present(held) => Some(Declaration::data(
+                        Maybe::Present(held) => Some(Declaration::data(
                             declaration.constant(),
                             Arc::clone(held),
                             origin,
                         )),
-                        | Maybe::Absent(_) => None,
+                        Maybe::Absent(_) => None,
                     };
                 },
-                | DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => return None,
+                DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => return None,
             };
             Some(Declaration::new(
                 declaration.constant(),

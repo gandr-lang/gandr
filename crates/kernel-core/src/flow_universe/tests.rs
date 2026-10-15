@@ -282,12 +282,12 @@ fn lowered(
         }
         let node = arena.value(id).cloned().expect("flow resolves");
         let translator = match node {
-            | gandr_kernel_term::Value::Stay { .. } => {
+            gandr_kernel_term::Value::Stay { .. } => {
                 let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
                 returning(arena, variable)
             },
-            | gandr_kernel_term::Value::ForwardFlow { translator, .. } => translator,
-            | gandr_kernel_term::Value::Then { first, second, .. }
+            gandr_kernel_term::Value::ForwardFlow { translator, .. } => translator,
+            gandr_kernel_term::Value::Then { first, second, .. }
             | gandr_kernel_term::Value::FunctionFlow {
                 domain: first,
                 codomain: second,
@@ -298,7 +298,7 @@ fn lowered(
                 pending.push((first, false));
                 continue;
             },
-            | gandr_kernel_term::Value::Then { first, second, .. } => {
+            gandr_kernel_term::Value::Then { first, second, .. } => {
                 let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
                 let first = apply(arena, lowered[&first], variable);
                 let second = apply(arena, lowered[&second], variable);
@@ -306,7 +306,7 @@ fn lowered(
                 let lambda = arena.computation_lambda(body);
                 arena.value_thunk(lambda)
             },
-            | gandr_kernel_term::Value::FunctionFlow {
+            gandr_kernel_term::Value::FunctionFlow {
                 domain, codomain, ..
             } => {
                 let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -322,7 +322,33 @@ fn lowered(
                 let lambda = arena.computation_lambda(returned);
                 arena.value_thunk(lambda)
             },
-            | _ => panic!("no forward action in the fixture"),
+            gandr_kernel_term::Value::Constructor { .. }
+            | gandr_kernel_term::Value::Record(_)
+            | gandr_kernel_term::Value::SessionPath { .. }
+            | gandr_kernel_term::Value::SessionFlow { .. }
+            | gandr_kernel_term::Value::FlowProduct(..)
+            | gandr_kernel_term::Value::PathRefl(_)
+            | gandr_kernel_term::Value::PathProduct(..)
+            | gandr_kernel_term::Value::PathEquiv { .. }
+            | gandr_kernel_term::Value::Here { .. }
+            | gandr_kernel_term::Value::Returned(_)
+            | gandr_kernel_term::Value::Higher { .. }
+            | gandr_kernel_term::Value::HigherEvaluation { .. }
+            | gandr_kernel_term::Value::QuantifiedEvaluation { .. }
+            | gandr_kernel_term::Value::Variable(_)
+            | gandr_kernel_term::Value::Constant(_)
+            | gandr_kernel_term::Value::Literal(_)
+            | gandr_kernel_term::Value::Tuple(_)
+            | gandr_kernel_term::Value::Injection(..)
+            | gandr_kernel_term::Value::ListNil
+            | gandr_kernel_term::Value::ListCons(..)
+            | gandr_kernel_term::Value::Thunk(_)
+            | gandr_kernel_term::Value::Lift { .. }
+            | gandr_kernel_term::Value::Quote(_)
+            | gandr_kernel_term::Value::QuoteComputation(_)
+            | gandr_kernel_term::Value::StaticApplication(..) => {
+                panic!("no forward action in the fixture")
+            },
         };
         lowered.insert(id, translator);
     }
@@ -1141,8 +1167,8 @@ fn a_flow_product_rides_a_pair_componentwise()
     let product = arena.value_flow_product(terminal, stay);
     let classifier = admit(&mut arena, product).expect("the product admits");
     let decoded = |arena: &TermArena, code: ValueId| match arena.value(code) {
-        | Some(&gandr_kernel_term::Value::Quote(root)) => arena.value_type(root).cloned(),
-        | _ => None,
+        Some(&gandr_kernel_term::Value::Quote(root)) => arena.value_type(root).cloned(),
+        _ => None,
     };
     let Some(&gandr_kernel_term::ValueType::FlowUniverse(source, target)) =
         arena.value_type(classifier)

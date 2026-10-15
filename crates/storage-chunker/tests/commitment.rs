@@ -191,9 +191,9 @@ fn raw_discriminators_round_trip_and_refuse_by_field()
 {
     for raw in 0_u16 ..= u16::MAX {
         let algorithm = match raw {
-            | 1 => Ok(AlgorithmVersion::FastCdc2020),
-            | 2 => Ok(AlgorithmVersion::TypedCdc),
-            | _ => Err(unsupported(ProfileField::Algorithm, RawDiscriminator(raw))),
+            1 => Ok(AlgorithmVersion::FastCdc2020),
+            2 => Ok(AlgorithmVersion::TypedCdc),
+            _ => Err(unsupported(ProfileField::Algorithm, RawDiscriminator(raw))),
         };
         assert_eq!(AlgorithmVersion::try_from(raw), algorithm);
         let gear = if raw == 1 {

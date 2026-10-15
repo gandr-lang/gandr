@@ -278,8 +278,8 @@ impl RevisionFault
         Self::Refused {
             class: refusal.classify(),
             span: match refusal.span() {
-                | Maybe::Present(span) => Maybe::Present(span),
-                | Maybe::Absent(_) => Maybe::Absent(fault_span::Absent::Run),
+                Maybe::Present(span) => Maybe::Present(span),
+                Maybe::Absent(_) => Maybe::Absent(fault_span::Absent::Run),
             },
         }
     }
@@ -314,15 +314,15 @@ impl fmt::Display for RevisionFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::Faulted(ref fault) => fault.fmt(f),
-            | Self::Refused { class, span } => {
+            Self::Faulted(ref fault) => fault.fmt(f),
+            Self::Refused { class, span } => {
                 write!(f, "the lowering refused the revision as a whole ({class})")?;
                 match span {
-                    | Maybe::Present(span) => write!(f, " at {span}"),
-                    | Maybe::Absent(_) => Ok(()),
+                    Maybe::Present(span) => write!(f, " at {span}"),
+                    Maybe::Absent(_) => Ok(()),
                 }
             },
-            | Self::Unordered(ref error) => error.fmt(f),
+            Self::Unordered(ref error) => error.fmt(f),
         }
     }
 }
@@ -420,27 +420,27 @@ impl ItemSource for SurfaceItems
     {
         let mut lowerings = LoweringCount::default();
         let lowering = match lower_source(&self.grammar, revision.text(), &mut lowerings) {
-            | Ok(lowering) => lowering,
-            | Err(ComposeFault::Lowering(ref refusal)) => {
+            Ok(lowering) => lowering,
+            Err(ComposeFault::Lowering(ref refusal)) => {
                 return Err(RevisionFault::refused(refusal));
             },
-            | Err(ComposeFault::Parse(error)) => {
+            Err(ComposeFault::Parse(error)) => {
                 return Err(RevisionFault::Faulted(ComposeFault::Parse(error)));
             },
-            | Err(ComposeFault::Settle(fault)) => {
+            Err(ComposeFault::Settle(fault)) => {
                 return Err(RevisionFault::Faulted(ComposeFault::Settle(fault)));
             },
-            | Err(ComposeFault::Readmission(readmitted)) => {
+            Err(ComposeFault::Readmission(readmitted)) => {
                 return Err(RevisionFault::Faulted(ComposeFault::Readmission(
                     readmitted,
                 )));
             },
         };
         match lowering.into_lowered() {
-            | Lowered::Module { module, arena } => {
+            Lowered::Module { module, arena } => {
                 program(&module, arena).map_err(RevisionFault::Unordered)
             },
-            | Lowered::Refused(ref refusal) => Err(RevisionFault::refused(refusal)),
+            Lowered::Refused(ref refusal) => Err(RevisionFault::refused(refusal)),
         }
     }
 }

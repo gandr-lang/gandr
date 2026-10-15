@@ -245,8 +245,8 @@ impl<'pbg> Admission<'pbg>
     {
         let at = MoldWordIndex::of(mold);
         let word = match self.cached {
-            | Some((cached, word)) if cached == at => word,
-            | Some(_) | None => {
+            Some((cached, word)) if cached == at => word,
+            Some(_) | None => {
                 let word = self
                     .sets
                     .iter()

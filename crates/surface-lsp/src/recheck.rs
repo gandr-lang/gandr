@@ -435,25 +435,25 @@ impl fmt::Display for Timing
             usize::from(self.forms.forms())
         )?;
         match self.judged {
-            | Maybe::Present(census) => write!(
+            Maybe::Present(census) => write!(
                 f,
                 "{}/{} items judged",
                 usize::from(census.judged),
                 usize::from(census.items)
             )?,
-            | Maybe::Absent(judged::Absent::RefusedWhole) => f.write_str("refused whole")?,
-            | Maybe::Absent(judged::Absent::Unchecked) => f.write_str("unchecked")?,
+            Maybe::Absent(judged::Absent::RefusedWhole) => f.write_str("refused whole")?,
+            Maybe::Absent(judged::Absent::Unchecked) => f.write_str("unchecked")?,
         }
         write!(f, ", {:.1} ms", self.wall.as_secs_f64() * 1_000.0_f64)?;
         match self.admitted {
-            | Maybe::Present(wall) => {
+            Maybe::Present(wall) => {
                 write!(
                     f,
                     ", admitted in {:.1} ms",
                     wall.as_secs_f64() * 1_000.0_f64
                 )
             },
-            | Maybe::Absent(admitted::Absent::Pending | admitted::Absent::Unadmitted) => Ok(()),
+            Maybe::Absent(admitted::Absent::Pending | admitted::Absent::Unadmitted) => Ok(()),
         }
     }
 }
@@ -542,8 +542,8 @@ pub fn recheck(
         },
     };
     let session = match *session {
-        | Ok(ref mut session) => session,
-        | Err(fault) => {
+        Ok(ref mut session) => session,
+        Err(fault) => {
             return unchecked(Diagnostic::at_origin(format!(
                 "the built-in grammar did not build: {fault}"
             )));
@@ -552,21 +552,21 @@ pub fn recheck(
     let mut form = Maybe::Absent(formless::Absent::Unparsed);
     let outcome = session.judge_reading(text, |tree| {
         form = match caret {
-            | Maybe::Present(at) => caret_form(tree, at),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(at) => caret_form(tree, at),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         };
     });
     let submission = match outcome {
-        | Ok(submission) => submission,
-        | Err(fault) => return unchecked(Diagnostic::at_origin(fault.to_string())),
+        Ok(submission) => submission,
+        Err(fault) => return unchecked(Diagnostic::at_origin(fault.to_string())),
     };
     let forms = submission.forms();
     let (judged, admission) = match submission.resumed() {
-        | Maybe::Present(resumed) => (
+        Maybe::Present(resumed) => (
             Maybe::Present(resumed.census()),
             Maybe::Absent(admitted::Absent::Pending),
         ),
-        | Maybe::Absent(_) => (
+        Maybe::Absent(_) => (
             Maybe::Absent(judged::Absent::RefusedWhole),
             Maybe::Absent(admitted::Absent::Unadmitted),
         ),
@@ -654,8 +654,8 @@ pub fn admit(
     };
     let started = Instant::now();
     let fault = match session.admit() {
-        | Ok(_) => Maybe::Absent(agreed::Absent::Agreed),
-        | Err(disagreement) => Maybe::Present(Diagnostic::at_origin(
+        Ok(_) => Maybe::Absent(agreed::Absent::Agreed),
+        Err(disagreement) => Maybe::Present(Diagnostic::at_origin(
             SessionFault::Compose(ComposeFault::Readmission(disagreement)).to_string(),
         )),
     };
@@ -721,8 +721,8 @@ pub fn trial(
 ) -> Vec<Tried>
 {
     let session = match *session {
-        | Ok(ref session) => session,
-        | Err(fault) => {
+        Ok(ref session) => session,
+        Err(fault) => {
             let diagnostic =
                 Diagnostic::at_origin(format!("the built-in grammar did not build: {fault}"));
             return (0_usize .. candidates.len())
@@ -744,15 +744,15 @@ pub fn trial(
                 .copied()
                 .unwrap_or_else(|| SourceText::from(""));
             match tried.into_outcome() {
-                | Ok(submission) => Tried {
+                Ok(submission) => Tried {
                     candidate,
                     reached: match *submission.composed() {
-                        | Composed::Refused(_) => Reached::RefusedWhole,
-                        | Composed::Settled { .. } => Reached::Judged,
+                        Composed::Refused(_) => Reached::RefusedWhole,
+                        Composed::Settled { .. } => Reached::Judged,
                     },
                     diagnostics: diagnostics_of(submission, uri, text, Verbosity::User),
                 },
-                | Err(fault) => Tried {
+                Err(fault) => Tried {
                     candidate,
                     reached: Reached::Faulted,
                     diagnostics: vec![Diagnostic::at_origin(fault.to_string())],
@@ -780,10 +780,10 @@ fn diagnostics_of(
     let step = submission.into_step(Path::new(&path));
     entries(&step, Verb::Check(Goals::Reported))
         .map(|found| match found.severity {
-            | Seriousness::Ledger => {
+            Seriousness::Ledger => {
                 Diagnostic::at_origin(format!("{}: {}", found.path.display(), found.message.text))
             },
-            | Seriousness::Error | Seriousness::Warning | Seriousness::Goal | Seriousness::Note => {
+            Seriousness::Error | Seriousness::Warning | Seriousness::Goal | Seriousness::Note => {
                 diagnostic(&found, &index, uri, verbosity)
             },
         })
@@ -849,14 +849,14 @@ fn diagnostic(
     };
     let primary = found.primary();
     let range = match primary {
-        | Maybe::Present(annotation) => range_of(annotation.locus.span),
-        | Maybe::Absent(_) => Range::default(),
+        Maybe::Present(annotation) => range_of(annotation.locus.span),
+        Maybe::Absent(_) => Range::default(),
     };
     let severity = match found.severity {
-        | Seriousness::Goal => Severity::INFORMATION,
-        | Seriousness::Warning => Severity::WARNING,
-        | Seriousness::Note => Severity::HINT,
-        | Seriousness::Error | Seriousness::Ledger => Severity::ERROR,
+        Seriousness::Goal => Severity::INFORMATION,
+        Seriousness::Warning => Severity::WARNING,
+        Seriousness::Note => Severity::HINT,
+        Seriousness::Error | Seriousness::Ledger => Severity::ERROR,
     };
     let message = if verbosity == Verbosity::Json {
         found.json()
@@ -891,14 +891,14 @@ fn diagnostic(
         .contexts
         .iter()
         .filter_map(|context| match context.locus {
-            | Maybe::Present(locus) => Some(RelatedInformation {
+            Maybe::Present(locus) => Some(RelatedInformation {
                 location: Location {
                     uri: uri.clone(),
                     range: range_of(locus.span),
                 },
                 message: context.label(),
             }),
-            | Maybe::Absent(_) => None,
+            Maybe::Absent(_) => None,
         });
     diagnostic.related_information = found
         .annotations

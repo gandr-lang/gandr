@@ -195,15 +195,15 @@ fn machine(
     let definitions = Definitions::new();
     let mut machine = Machine::new(&arena, &definitions);
     match machine.run(command, StepCount::from(1_000_000_usize)) {
-        | Ok(Outcome::Halted(value)) => {
+        Ok(Outcome::Halted(value)) => {
             let mut read = CoreArena::new();
             let term = machine
                 .read_back(value, &mut read)
                 .expect("a halted value of the pure fragment reads back");
             Answer::Term { core: read, term }
         },
-        | Ok(Outcome::Stuck(stuck)) => Answer::Stopped(machine_stop(&arena, &stuck)),
-        | Err(fault) => panic!("the machine faulted: {fault}"),
+        Ok(Outcome::Stuck(stuck)) => Answer::Stopped(machine_stop(&arena, &stuck)),
+        Err(fault) => panic!("the machine faulted: {fault}"),
     }
 }
 
@@ -243,18 +243,18 @@ fn machine_stop(
 ) -> Stop
 {
     match *stuck {
-        | Stuck::Unobservable {
+        Stuck::Unobservable {
             head: DestructorTag::Apply,
             ..
         } => Stop::AppliedNonFunction,
-        | Stuck::Unobservable {
+        Stuck::Unobservable {
             head: DestructorTag::Force,
             ..
         } => Stop::ForcedNonThunk,
-        | Stuck::Unmatched { arms, .. } => match arena.consumer(arms) {
-            | Some(&ConsumerNode::DataCase { .. }) => Stop::UnmatchedConstructor,
-            | Some(&ConsumerNode::Select { .. }) => Stop::UnprojectedField,
-            | Some(
+        Stuck::Unmatched { arms, .. } => match arena.consumer(arms) {
+            Some(&ConsumerNode::DataCase { .. }) => Stop::UnmatchedConstructor,
+            Some(&ConsumerNode::Select { .. }) => Stop::UnprojectedField,
+            Some(
                 &(ConsumerNode::Case { .. }
                 | ConsumerNode::ListFold { .. }
                 | ConsumerNode::Covariable(_)
@@ -264,8 +264,8 @@ fn machine_stop(
             )
             | None => Stop::CasedNonInjection,
         },
-        | Stuck::UnboundVariable { .. } => Stop::UnboundVariable,
-        | Stuck::UnboundCovariable(_)
+        Stuck::UnboundVariable { .. } => Stop::UnboundVariable,
+        Stuck::UnboundCovariable(_)
         | Stuck::PerformNoHandler(_)
         | Stuck::ShiftNoReset(_)
         | Stuck::ResumedNonStack { .. }
@@ -325,7 +325,7 @@ fn normalised(
     let mut normal = core.clone();
     let mut domain = DomainArena::new();
     match eval_computation(&normal, &mut domain, definitions, fuel, root) {
-        | Ok(head) => {
+        Ok(head) => {
             let term = readback_computation(
                 &mut normal,
                 &mut domain,
@@ -337,7 +337,7 @@ fn normalised(
             .expect("a weak head of the pure fragment reads back");
             Answer::Term { core: normal, term }
         },
-        | Err(fault) => Answer::Stopped(normaliser_stop(fault)),
+        Err(fault) => Answer::Stopped(normaliser_stop(fault)),
     }
 }
 
@@ -376,20 +376,18 @@ fn normalised(
 fn normaliser_stop(fault: EvalFault) -> Stop
 {
     match fault {
-        | EvalFault::AppliedNonFunction => Stop::AppliedNonFunction,
-        | EvalFault::ForcedNonThunk => Stop::ForcedNonThunk,
-        | EvalFault::CasedNonInjection | EvalFault::UnknownSummand { .. } => {
-            Stop::CasedNonInjection
-        },
-        | EvalFault::CasedNonConstructor | EvalFault::UnknownConstructor { .. } => {
+        EvalFault::AppliedNonFunction => Stop::AppliedNonFunction,
+        EvalFault::ForcedNonThunk => Stop::ForcedNonThunk,
+        EvalFault::CasedNonInjection | EvalFault::UnknownSummand { .. } => Stop::CasedNonInjection,
+        EvalFault::CasedNonConstructor | EvalFault::UnknownConstructor { .. } => {
             Stop::UnmatchedConstructor
         },
-        | EvalFault::UnboundVariable { .. } => Stop::UnboundVariable,
-        | EvalFault::ProjectedNonRecord
+        EvalFault::UnboundVariable { .. } => Stop::UnboundVariable,
+        EvalFault::ProjectedNonRecord
         | EvalFault::AbsentRecordField
         | EvalFault::ProjectedNonTuple
         | EvalFault::AbsentTupleComponent => Stop::UnprojectedField,
-        | EvalFault::TransportedNonPath
+        EvalFault::TransportedNonPath
         | EvalFault::TransportedUnderived
         | EvalFault::RodeUncomputed
         | EvalFault::SplitNonTuple
@@ -439,8 +437,8 @@ fn normaliser_stop(fault: EvalFault) -> Stop
 fn settled(answer: &Answer) -> Answer
 {
     match *answer {
-        | Answer::Term { ref core, term } => normalised(core, term),
-        | Answer::Stopped(stop) => Answer::Stopped(stop),
+        Answer::Term { ref core, term } => normalised(core, term),
+        Answer::Stopped(stop) => Answer::Stopped(stop),
     }
 }
 
@@ -478,7 +476,7 @@ fn agreement(
 ) -> Agreement
 {
     match (left, right) {
-        | (
+        (
             &Answer::Term {
                 core: ref left_core,
                 term: left_term,
@@ -488,10 +486,10 @@ fn agreement(
                 term: right_term,
             },
         ) => same_computation(left_core, left_term, right_core, right_term),
-        | (&Answer::Stopped(left_stop), &Answer::Stopped(right_stop)) if left_stop == right_stop => {
+        (&Answer::Stopped(left_stop), &Answer::Stopped(right_stop)) if left_stop == right_stop => {
             Agreement::Same
         },
-        | (&Answer::Stopped(_), &Answer::Stopped(_) | &Answer::Term { .. })
+        (&Answer::Stopped(_), &Answer::Stopped(_) | &Answer::Term { .. })
         | (&Answer::Term { .. }, &Answer::Stopped(_)) => Agreement::Differ,
     }
 }
@@ -524,12 +522,12 @@ fn assert_cases(cases: Vec<Case>)
         let ran = machine(&case.core, case.root);
         let normal = normalised(&case.core, case.root);
         match case.expected {
-            | Expected::Exactly => assert_eq!(
+            Expected::Exactly => assert_eq!(
                 Agreement::Same,
                 agreement(&ran, &normal),
                 "{label}: the machine's reading is the normal form"
             ),
-            | Expected::Normalised => {
+            Expected::Normalised => {
                 assert_eq!(
                     Agreement::Differ,
                     agreement(&ran, &normal),
@@ -541,7 +539,7 @@ fn assert_cases(cases: Vec<Case>)
                     "{label}: the reading, normalised, is the normal form"
                 );
             },
-            | Expected::Stops(stop) => {
+            Expected::Stops(stop) => {
                 assert_eq!(
                     Agreement::Same,
                     agreement(&ran, &Answer::Stopped(stop)),

@@ -704,7 +704,7 @@ mod deep_evaluation
         let installed = TracedDuplication::install(stance, &mut log)
             .expect("a recording sink carries either stance");
         let read = match root {
-            | OverlayId::Value(id) => {
+            OverlayId::Value(id) => {
                 let (value, _remaining) = installed
                     .eval_overlay_value(overlay, &mut core, &mut domain, definitions, ample(), id)
                     .unwrap_or_else(|fault| panic!("{stance:?} evaluates the root: {fault:?}"));
@@ -720,7 +720,7 @@ mod deep_evaluation
                     .expect("a closed value reads back"),
                 )
             },
-            | OverlayId::Computation(id) => {
+            OverlayId::Computation(id) => {
                 let (head, _remaining) = installed
                     .eval_overlay_computation(
                         overlay,
@@ -743,7 +743,7 @@ mod deep_evaluation
                     .expect("a closed weak head reads back"),
                 )
             },
-            | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+            OverlayId::ValueType(_) | OverlayId::CompType(_) => {
                 panic!("the deep cases are evaluation roots")
             },
         };

@@ -53,8 +53,8 @@ fn classes(case: &MapCase) -> (ShapeKey, ShapeKey)
 fn links(outcome: &Outcome<Chain>) -> &[MapCase]
 {
     match outcome.witness() {
-        | Maybe::Present(chain) => chain.links(),
-        | Maybe::Absent(_) => panic!("the condition fails"),
+        Maybe::Present(chain) => chain.links(),
+        Maybe::Absent(_) => panic!("the condition fails"),
     }
 }
 

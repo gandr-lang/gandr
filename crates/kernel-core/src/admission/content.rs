@@ -56,8 +56,8 @@ impl Slot
     pub(super) const fn id(self) -> Result<TermId, Refusal>
     {
         match self {
-            | Self::Known(id) => Ok(id),
-            | Self::Pending => Err(Refusal::Malformed),
+            Self::Known(id) => Ok(id),
+            Self::Pending => Err(Refusal::Malformed),
         }
     }
 }
@@ -147,9 +147,9 @@ impl Prepared
     ) -> Result<Dependence, Refusal>
     {
         match self.dynamic.0.get(id.0).copied() {
-            | Some(true) => Ok(Dependence::Dependent),
-            | Some(false) => Ok(Dependence::Fixed),
-            | None => Err(Refusal::Malformed),
+            Some(true) => Ok(Dependence::Dependent),
+            Some(false) => Ok(Dependence::Fixed),
+            None => Err(Refusal::Malformed),
         }
     }
 }
@@ -223,9 +223,9 @@ impl Instance
         for ty in &schema.proposal.classifiers {
             budget.spend()?;
             let ty = match *ty {
-                | Type::Arrow(a, b) => Type::Arrow(result.classifier(a)?, result.classifier(b)?),
-                | Type::Lift(inner) => Type::Lift(result.classifier(inner)?),
-                | leaf => leaf,
+                Type::Arrow(a, b) => Type::Arrow(result.classifier(a)?, result.classifier(b)?),
+                Type::Lift(inner) => Type::Lift(result.classifier(inner)?),
+                leaf @ (Type::In(_) | Type::Universe(_) | Type::Nat(_)) => leaf,
             };
             let id = result.arena.alloc_type(ty)?;
             result.types.push(id);
@@ -305,8 +305,8 @@ impl Instance
     ) -> Result<TermId, Refusal>
     {
         match self.nodes.get(id.0).copied().ok_or(Refusal::Malformed)? {
-            | Slot::Known(id) => Ok(id),
-            | Slot::Pending => coordinates.get(id.0).ok_or(Refusal::Malformed)?.id(),
+            Slot::Known(id) => Ok(id),
+            Slot::Pending => coordinates.get(id.0).ok_or(Refusal::Malformed)?.id(),
         }
     }
 
@@ -340,10 +340,16 @@ impl Instance
     ) -> Result<Term, Refusal>
     {
         let term = match term {
-            | Term::Code(ty) => Term::Code(self.classifier(ty)?),
-            | Term::Lambda(ty, body) => Term::Lambda(self.classifier(ty)?, body),
-            | Term::Eliminate(body, ty) => Term::Eliminate(body, self.classifier(ty)?),
-            | term => term,
+            Term::Code(ty) => Term::Code(self.classifier(ty)?),
+            Term::Lambda(ty, body) => Term::Lambda(self.classifier(ty)?, body),
+            Term::Eliminate(body, ty) => Term::Eliminate(body, self.classifier(ty)?),
+            term @ (Term::Variable(_)
+            | Term::Natural(..)
+            | Term::Apply(..)
+            | Term::Multiply(..)
+            | Term::Quote(_)
+            | Term::Splice(_)
+            | Term::Iterate(..)) => term,
         };
         let mut children = [Child::Vacant; 3];
         for (child, output) in term.children().into_iter().zip(&mut children) {
@@ -481,11 +487,11 @@ fn planned(
 ) -> Result<Planned, Refusal>
 {
     Ok(match schema.proposal.node(id)? {
-        | Node::Point(point) => {
+        Node::Point(point) => {
             let arm = arm(schema, selected, point)?;
             Planned::Bound(instance.locate(arm, coordinates)?)
         },
-        | Node::Predecessor(point) => {
+        Node::Predecessor(point) => {
             let arm = arm(schema, selected, point)?;
             let Node::Rigid(Term::Natural(Stage::Outer, Natural(value))) =
                 schema.proposal.node(arm)?
@@ -497,7 +503,7 @@ fn planned(
                 Natural(value.checked_sub(1).ok_or(Refusal::Transparency)?),
             ))
         },
-        | Node::Rigid(term) => Planned::Record(instance.rebuild(term, coordinates)?),
+        Node::Rigid(term) => Planned::Record(instance.rebuild(term, coordinates)?),
     })
 }
 
@@ -616,12 +622,12 @@ pub(super) fn compare(
     for id in &schema.content.plan {
         budget.spend()?;
         let value = match planned(schema, selected, instance, coordinates, *id)? {
-            | Planned::Bound(value) => value,
-            | Planned::Record(term) => {
+            Planned::Bound(value) => value,
+            Planned::Record(term) => {
                 work.instantiations.0 = work.instantiations.0.saturating_add(1);
                 match instance.arena.find(&term) {
-                    | Maybe::Present(value) => value,
-                    | Maybe::Absent(_) => return Err(Refusal::SidesMismatch),
+                    Maybe::Present(value) => value,
+                    Maybe::Absent(_) => return Err(Refusal::SidesMismatch),
                 }
             },
         };

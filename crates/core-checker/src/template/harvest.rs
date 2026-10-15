@@ -195,13 +195,13 @@ impl Grouping
                 rule: step.rule,
                 shape,
             };
-            let group = match keys.iter().position(|known| *known == key) {
-                | Some(group) => group,
-                | None => {
+            let group = keys
+                .iter()
+                .position(|known| *known == key)
+                .unwrap_or_else(|| {
                     keys.push(key);
                     keys.len().saturating_sub(1)
-                },
-            };
+                });
             steps.push(GroupIndex(group));
         }
         Ok(Self { keys, steps })
@@ -287,17 +287,18 @@ impl Harvest
         }
         self.joined.clear();
         for key in &grouping.keys {
-            let family = match self.families.iter().position(|family| family.key == *key) {
-                | Some(family) => family,
-                | None => {
+            let family =
+                if let Some(family) = self.families.iter().position(|family| family.key == *key) {
+                    family
+                }
+                else {
                     self.families.push(Family {
                         program: self.program,
                         members: Vec::new(),
                         key: *key,
                     });
                     self.families.len().saturating_sub(1)
-                },
-            };
+                };
             self.joined.push(FamilyIndex(family));
         }
         for (step, group) in steps.iter().zip(&grouping.steps) {

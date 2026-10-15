@@ -314,11 +314,11 @@ mod tests
         {
             let mut builder = DocBuilder::try_new(&mut meter)?;
             match shape {
-                | ConcatShape::Shared => {
+                ConcatShape::Shared => {
                     let text = builder.text(TextSource::from("shared"))?;
                     let _joined = builder.concat(text, text)?;
                 },
-                | ConcatShape::Distinct => {
+                ConcatShape::Distinct => {
                     let left = builder.text(TextSource::from("shared"))?;
                     let right = builder.text(TextSource::from("shared"))?;
                     let _joined = builder.concat(left, right)?;
@@ -370,8 +370,8 @@ mod tests
             "the iterative witness must not overflow its stack"
         );
         match joined {
-            | Ok(result) => result,
-            | Err(_panic) => Err(BuildError::AllocationFailed {
+            Ok(result) => result,
+            Err(_panic) => Err(BuildError::AllocationFailed {
                 site: BuildAllocationSite::FinalizeStack,
             }),
         }
@@ -1352,11 +1352,11 @@ mod tests
         let middle = builder.text(middle_text)?;
         let right = builder.text(right_text)?;
         let root = match associativity {
-            | Associativity::Left => {
+            Associativity::Left => {
                 let prefix = builder.concat(left, middle)?;
                 builder.concat(prefix, right)?
             },
-            | Associativity::Right => {
+            Associativity::Right => {
                 let suffix = builder.concat(middle, right)?;
                 builder.concat(left, suffix)?
             },

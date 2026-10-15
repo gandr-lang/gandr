@@ -1576,8 +1576,8 @@ mod sharing_format
     {
         let declaration = artifact.declarations().get(position.0)?;
         match *declaration.declaration().content() {
-            | DeclarationContent::Def { body, .. } => Some(body),
-            | DeclarationContent::Data { .. }
+            DeclarationContent::Def { body, .. } => Some(body),
+            DeclarationContent::Data { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => None,
         }
@@ -1697,7 +1697,7 @@ mod sharing_format
             .value(first_body)
             .and_then(Value::components)
         {
-            | Some(&[left, right]) => {
+            Some(&[left, right]) => {
                 assert_eq!(
                     left, right,
                     "the shared pair children decode to one arena id"
@@ -1707,7 +1707,7 @@ mod sharing_format
                     "the second declaration's unit is the first's very node"
                 );
             },
-            | other => panic!("the first body decodes to a pair, not {other:?}"),
+            other => panic!("the first body decodes to a pair, not {other:?}"),
         }
 
         assert_eq!(
@@ -1799,7 +1799,7 @@ mod sharing_format
             artifact.arena().comp_type(dependent),
             artifact.arena().comp_type(plain),
         ) {
-            | (
+            (
                 Some(&CompType::Pi { domain, codomain }),
                 Some(&CompType::Arrow {
                     domain: plain_domain,
@@ -1815,7 +1815,7 @@ mod sharing_format
                     "and so is the codomain: only the tag separates them"
                 );
             },
-            | other => {
+            other => {
                 panic!("the two formers decode to a dependent and a plain arrow, not {other:?}")
             },
         }
@@ -2865,14 +2865,14 @@ mod sharing_format
             let previous = position.checked_sub(1).map(ConstantIndex::from);
             let mut builder = DeclarationBuilder::new(arena);
             let reference = match previous {
-                | Some(previous) => builder.arena().value_constant(previous),
-                | None => builder.arena().value_unit(),
+                Some(previous) => builder.arena().value_constant(previous),
+                None => builder.arena().value_unit(),
             };
             let declared = builder.arena().value_type_unit();
             let declaration = match position % 3 {
-                | 0 => builder.def(LevelSignature::monomorphic(), declared, reference),
-                | 1 => builder.axiom(LevelSignature::monomorphic(), declared),
-                | _ => builder.abstract_type(
+                0 => builder.def(LevelSignature::monomorphic(), declared, reference),
+                1 => builder.axiom(LevelSignature::monomorphic(), declared),
+                _ => builder.abstract_type(
                     LevelSignature::monomorphic(),
                     declared,
                     declared,

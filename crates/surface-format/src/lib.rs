@@ -142,14 +142,14 @@ impl fmt::Display for FormatError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Unbalanced => write!(f, "a form's brackets do not pair"),
-            | Self::Build(ref error) => write!(f, "the layout could not be built: {error}"),
-            | Self::Render(ref error) => write!(f, "the layout could not be rendered: {error}"),
-            | Self::Reparse(ref error) => write!(f, "the formatted text does not parse: {error}"),
-            | Self::Changed(Change::Meaning) => {
+            Self::Unbalanced => write!(f, "a form's brackets do not pair"),
+            Self::Build(ref error) => write!(f, "the layout could not be built: {error}"),
+            Self::Render(ref error) => write!(f, "the layout could not be rendered: {error}"),
+            Self::Reparse(ref error) => write!(f, "the formatted text does not parse: {error}"),
+            Self::Changed(Change::Meaning) => {
                 write!(f, "formatting would change what the source means")
             },
-            | Self::Changed(Change::Material) => {
+            Self::Changed(Change::Material) => {
                 write!(f, "formatting would change the source's tokens or comments")
             },
         }
@@ -294,13 +294,13 @@ pub fn format(
         };
         if !text.is_empty() {
             match (unit.joins, unit.gap) {
-                | (Joins::Touching, _) => {},
-                | (Joins::SameLine, _) => text.push(' '),
-                | (Joins::OwnLine, Gap::Blank) => {
+                (Joins::Touching, _) => {},
+                (Joins::SameLine, _) => text.push(' '),
+                (Joins::OwnLine, Gap::Blank) => {
                     text.push_str(breaks);
                     text.push_str(breaks);
                 },
-                | (Joins::OwnLine, Gap::Adjacent | Gap::Space | Gap::Break) => {
+                (Joins::OwnLine, Gap::Adjacent | Gap::Space | Gap::Break) => {
                     text.push_str(breaks);
                 },
             }
@@ -313,11 +313,11 @@ pub fn format(
             continue;
         };
         let laid = match flat.integrity(form) {
-            | Integrity::Clean => {
+            Integrity::Clean => {
                 text.push_str(&layout::lay_out(unit.leaves, &layout, ending.spelling())?);
                 Layout::Formatted
             },
-            | Integrity::Repaired => {
+            Integrity::Repaired => {
                 if let Ok(written) = source.fragment(span) {
                     text.push_str(<&str>::from(written));
                 }
@@ -408,10 +408,10 @@ fn units<'leaves, 'source>(leaves: &'leaves [Leaf<'source>]) -> Vec<Unit<'leaves
             Material::LineComment | Material::BlockComment
         );
         let joins = match gap {
-            | Gap::Adjacent if separator => Joins::Touching,
-            | Gap::Adjacent | Gap::Space if comment || separator => Joins::SameLine,
-            | Gap::Break | Gap::Blank if separator => Joins::SameLine,
-            | Gap::Adjacent | Gap::Space | Gap::Break | Gap::Blank => Joins::OwnLine,
+            Gap::Adjacent if separator => Joins::Touching,
+            Gap::Adjacent | Gap::Space if comment || separator => Joins::SameLine,
+            Gap::Break | Gap::Blank if separator => Joins::SameLine,
+            Gap::Adjacent | Gap::Space | Gap::Break | Gap::Blank => Joins::OwnLine,
         };
         let last = unit.last().map_or(first.span, |last| last.span);
         units.push(Unit {
@@ -463,8 +463,8 @@ impl Ending
     fn spelling(self) -> SourceFragment<'static>
     {
         SourceFragment::from(match self {
-            | Self::Lf => "\n",
-            | Self::CrLf => "\r\n",
+            Self::Lf => "\n",
+            Self::CrLf => "\r\n",
         })
     }
 
@@ -475,8 +475,8 @@ impl Ending
     const fn physical(self) -> PhysicalLineEnding
     {
         match self {
-            | Self::Lf => PhysicalLineEnding::Lf,
-            | Self::CrLf => PhysicalLineEnding::CrLf,
+            Self::Lf => PhysicalLineEnding::Lf,
+            Self::CrLf => PhysicalLineEnding::CrLf,
         }
     }
 }

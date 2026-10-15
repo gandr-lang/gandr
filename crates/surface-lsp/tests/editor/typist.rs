@@ -226,12 +226,12 @@ impl Session
         }
         let on_line = junk.0.split('\n').next().unwrap_or_default();
         let splits = match self.buffer().previous_char() {
-            | Maybe::Present(previous) => {
+            Maybe::Present(previous) => {
                 previous != Key('"')
                     && matches!(closer_of(previous), Maybe::Present(Key(closer))
                         if on_line.starts_with(closer) && on_line.len() == closer.len_utf8())
             },
-            | Maybe::Absent(_) => false,
+            Maybe::Absent(_) => false,
         };
         if !splits {
             for _ in on_line.chars() {

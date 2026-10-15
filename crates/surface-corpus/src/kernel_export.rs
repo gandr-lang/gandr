@@ -338,8 +338,8 @@ enum Swept
 fn sources(root: Root) -> Vec<PathBuf>
 {
     let directory = match root {
-        | Root::Strict => concat!(env!("CARGO_MANIFEST_DIR"), "/strict"),
-        | Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/fixture"),
+        Root::Strict => concat!(env!("CARGO_MANIFEST_DIR"), "/strict"),
+        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/fixture"),
     };
     let mut pending = vec![PathBuf::from(directory)];
     let mut found = Vec::new();
@@ -454,37 +454,37 @@ fn class_of(
 ) -> Class
 {
     match (verdict, outcome) {
-        | (
+        (
             Verdict::Checked { .. } | Verdict::Synthesised { .. },
             &bridge::Outcome::Defined { .. },
         ) => Class::Defined,
-        | (Verdict::Checked { .. } | Verdict::Synthesised { .. }, &bridge::Outcome::Static) => {
+        (Verdict::Checked { .. } | Verdict::Synthesised { .. }, &bridge::Outcome::Static) => {
             Class::Static
         },
-        | (Verdict::Owed(_), &bridge::Outcome::Assumed { .. }) => Class::Assumed,
-        | (Verdict::Data, &bridge::Outcome::Data { .. }) => Class::Data,
-        | (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) if refusal == mark => {
+        (Verdict::Owed(_), &bridge::Outcome::Assumed { .. }) => Class::Assumed,
+        (Verdict::Data, &bridge::Outcome::Data { .. }) => Class::Data,
+        (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) if refusal == mark => {
             Class::Marked(Refusal::Checking(refusal).name())
         },
-        | (
+        (
             Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
             &bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }),
         ) => Class::Withheld,
-        | (
+        (
             Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
             &bridge::Outcome::Refused(
                 bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. },
             ),
         ) => Class::Unfinished,
-        | (
+        (
             Verdict::Checked { .. } | Verdict::Synthesised { .. },
             &bridge::Outcome::Refused(bridge::Refusal::Session { .. }),
         ) => Class::Session,
-        | (
+        (
             Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
             &bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }),
         ) => Class::Unrepresentable(former),
-        | (verdict, outcome) => panic!(
+        (verdict, outcome) => panic!(
             "{}: the verdict {verdict:?} and the kernel's outcome {outcome:?} disagree",
             path.display()
         ),
@@ -576,8 +576,8 @@ fn export(
         LoweringBudget::DEFAULT,
         Recognition::default(),
     ) {
-        | Ok(module) => module,
-        | Err(refusal) => {
+        Ok(module) => module,
+        Err(refusal) => {
             assert_ne!(
                 refusal.classify(),
                 FailureClass::EngineFault,
@@ -938,8 +938,8 @@ mod kernel_generative_distinctness
             "/fixture/model/modules/functor-pair.gandr"
         ));
         match export(&pbg, path, Root::Fixture) {
-            | Swept::Exported(exported) => exported,
-            | Swept::RefusedWhole => panic!("the functor pair lowers"),
+            Swept::Exported(exported) => exported,
+            Swept::RefusedWhole => panic!("the functor pair lowers"),
         }
     }
 
@@ -1122,10 +1122,23 @@ mod kernel_ride_readmission
         };
         if let Some(reduction) = tampered.left.get_mut(misread) {
             *reduction = match *reduction {
-                | ConversionDecision::ReduceLeft { .. } => {
+                ConversionDecision::ReduceLeft { .. } => {
                     ConversionDecision::ReduceRight { redex: () }
                 },
-                | _ => ConversionDecision::ReduceLeft { redex: () },
+                ConversionDecision::ReduceRight { .. }
+                | ConversionDecision::ConstShortcut { .. }
+                | ConversionDecision::Unfold { .. }
+                | ConversionDecision::Postpone { .. }
+                | ConversionDecision::Freeze { .. }
+                | ConversionDecision::EtaExpand { .. }
+                | ConversionDecision::ReturnEta { .. }
+                | ConversionDecision::Reassociate { .. }
+                | ConversionDecision::Force { .. }
+                | ConversionDecision::ComparedShared { .. }
+                | ConversionDecision::Decompose
+                | ConversionDecision::NegativeSubgoal { .. } => {
+                    ConversionDecision::ReduceLeft { redex: () }
+                },
             };
         }
         let forged = arena.value_here_relating(point, Arc::new(tampered));

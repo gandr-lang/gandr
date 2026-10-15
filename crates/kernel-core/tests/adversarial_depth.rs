@@ -125,7 +125,7 @@ mod adversarial_depth
         let mut census = ExpansionCensus::new();
         let mut session = SupportContext::new();
         let verdict = match active {
-            | MemoActivityChoice::Live => {
+            MemoActivityChoice::Live => {
                 let mut memo: DefaultMemo = DefaultMemo::new();
                 check_declaration_with_memo(
                     &mut arena,
@@ -136,7 +136,7 @@ mod adversarial_depth
                     &mut census,
                 )
             },
-            | MemoActivityChoice::Null => {
+            MemoActivityChoice::Null => {
                 let mut memo = NullMemo;
                 check_declaration_with_memo(
                     &mut arena,

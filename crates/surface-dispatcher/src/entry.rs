@@ -108,21 +108,21 @@ impl Line<'_>
     ) -> Diagnostic
     {
         let (line, at) = match self {
-            | Line::Fixture(declaration) => (
+            Line::Fixture(declaration) => (
                 alloc::format!("{declaration}"),
                 Maybe::Present(declaration.span()),
             ),
-            | Line::Pending(refusal) => match refusal.span() {
-                | Maybe::Present(span) => (
+            Line::Pending(refusal) => match refusal.span() {
+                Maybe::Present(span) => (
                     alloc::format!("pending: {refusal} at {span}"),
                     Maybe::Present(span),
                 ),
-                | Maybe::Absent(_) => (
+                Maybe::Absent(_) => (
                     alloc::format!("pending: {refusal}"),
                     Maybe::Absent(report_span::Absent::Standing),
                 ),
             },
-            | Line::Lowered => (
+            Line::Lowered => (
                 String::from(
                     "unsettled: a pending source whose every expectation can be stated; it \
                      belongs under the fixture root",
@@ -257,8 +257,8 @@ pub fn entries<'step>(
 ) -> Entries<'step>
 {
     let (path, text, cursor) = match *step {
-        | Step::Fault { path, .. } => (path, SourceText::from(""), Cursor::Done),
-        | Step::Source {
+        Step::Fault { path, .. } => (path, SourceText::from(""), Cursor::Done),
+        Step::Source {
             path,
             text,
             ref composed,
@@ -333,21 +333,21 @@ fn cursor<'step>(
 ) -> Cursor<'step>
 {
     match (standing, composed) {
-        | (Standing::Pending, &Composed::Refused(refusal)) => match verb {
-            | Verb::Test => Cursor::Last(Last::Line(refusal)),
-            | Verb::Check(_) => Cursor::Done,
+        (Standing::Pending, &Composed::Refused(refusal)) => match verb {
+            Verb::Test => Cursor::Last(Last::Line(refusal)),
+            Verb::Check(_) => Cursor::Done,
         },
-        | (Standing::Pending, &Composed::Settled { ref unstatable, .. }) => match verb {
-            | Verb::Test => Cursor::Pending {
+        (Standing::Pending, &Composed::Settled { ref unstatable, .. }) => match verb {
+            Verb::Test => Cursor::Pending {
                 unstatable: unstatable.iter(),
             },
-            | Verb::Check(_) => Cursor::Done,
+            Verb::Check(_) => Cursor::Done,
         },
-        | (
+        (
             Standing::Settled | Standing::Unsettled | Standing::Refused | Standing::Lowered,
             &Composed::Refused(refusal),
         ) => Cursor::Last(Last::Source(refusal)),
-        | (
+        (
             standing @ (Standing::Lowered
             | Standing::Settled
             | Standing::Unsettled
@@ -421,12 +421,12 @@ fn upstream<'step>(
     else {
         return Maybe::Absent(upstream::Absent::Own);
     };
-    match admitted.iter().find(|declaration| {
-        declaration.constant() == constant && declaration.settlement() == Settlement::Unsettled
-    }) {
-        | Some(found) => Maybe::Present(found),
-        | None => Maybe::Absent(upstream::Absent::Own),
-    }
+    admitted
+        .iter()
+        .find(|declaration| {
+            declaration.constant() == constant && declaration.settlement() == Settlement::Unsettled
+        })
+        .map_or(Maybe::Absent(upstream::Absent::Own), Maybe::Present)
 }
 
 /// The shadowing warnings `verb` prints of `shadowed`: every one under
@@ -440,8 +440,8 @@ fn warned(
 ) -> slice::Iter<'_, ShadowedBuiltin>
 {
     match verb {
-        | Verb::Check(_) => shadowed.iter(),
-        | Verb::Test => [].iter(),
+        Verb::Check(_) => shadowed.iter(),
+        Verb::Test => [].iter(),
     }
 }
 
@@ -456,8 +456,8 @@ fn considered<Finding>(
 ) -> slice::Iter<'_, Finding>
 {
     match verb {
-        | Verb::Check(_) => found.iter(),
-        | Verb::Test => [].iter(),
+        Verb::Check(_) => found.iter(),
+        Verb::Test => [].iter(),
     }
 }
 
@@ -490,9 +490,9 @@ fn asks(
 ) -> Asked
 {
     Asked(match asked {
-        | AskedRuns::Unasked => false,
-        | AskedRuns::Effectful => purity == Purity::Effectful,
-        | AskedRuns::Every => true,
+        AskedRuns::Unasked => false,
+        AskedRuns::Effectful => purity == Purity::Effectful,
+        AskedRuns::Every => true,
     })
 }
 
@@ -579,12 +579,12 @@ impl<'step> Entries<'step>
     {
         Maybe::Present(
             match (shown(declaration, self.verb), declaration.settlement()) {
-                | (Shown::Counted, _) => return Maybe::Absent(unshown::Absent::Counted),
-                | (Shown::Line, Settlement::Settled) => Printed::Line(Line::Fixture(declaration)),
-                | (Shown::Goal, _) => Printed::Subject(Subject::Goal(declaration)),
-                | (Shown::Line, Settlement::Unsettled) => {
+                (Shown::Counted, _) => return Maybe::Absent(unshown::Absent::Counted),
+                (Shown::Line, Settlement::Settled) => Printed::Line(Line::Fixture(declaration)),
+                (Shown::Goal, _) => Printed::Subject(Subject::Goal(declaration)),
+                (Shown::Line, Settlement::Unsettled) => {
                     Printed::Subject(match declaration.produced().refusal() {
-                        | Maybe::Present(refusal) => Subject::Refused {
+                        Maybe::Present(refusal) => Subject::Refused {
                             declaration,
                             refusal,
                             origins: held.origins,
@@ -592,33 +592,27 @@ impl<'step> Entries<'step>
                             failure: held.failures.get(declaration.constant()),
                             upstream: upstream(refusal, held.admitted),
                         },
-                        | Maybe::Absent(produced_refusal::Absent::Unrefused) => {
-                            Subject::Unsettled {
-                                declaration,
-                                unsettlement: match (declaration.stated(), declaration.outcome()) {
-                                    | (&Stated::Verdict(Outcome::Checks(_)), _)
-                                    | (
-                                        &Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_)),
-                                        Outcome::Checks(_),
-                                    ) => Unsettlement::Obligations,
-                                    | (&Stated::Verdict(Outcome::Refuses(_)), _) => {
-                                        Unsettlement::Unproduced
-                                    },
-                                    | (
-                                        &Stated::Verdict(Outcome::Runs(_)),
-                                        Outcome::Runs(_)
-                                        | Outcome::Refuses(_)
-                                        | Outcome::Normalizes(_),
-                                    ) => Unsettlement::RunOutcome,
-                                    | (
-                                        &Stated::Verdict(Outcome::Normalizes(_)),
-                                        Outcome::Normalizes(_)
-                                        | Outcome::Refuses(_)
-                                        | Outcome::Runs(_),
-                                    ) => Unsettlement::NormalForm,
-                                    | (&Stated::Malformed(_), _) => Unsettlement::Malformed,
+                        Maybe::Absent(produced_refusal::Absent::Unrefused) => Subject::Unsettled {
+                            declaration,
+                            unsettlement: match (declaration.stated(), declaration.outcome()) {
+                                (&Stated::Verdict(Outcome::Checks(_)), _)
+                                | (
+                                    &Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_)),
+                                    Outcome::Checks(_),
+                                ) => Unsettlement::Obligations,
+                                (&Stated::Verdict(Outcome::Refuses(_)), _) => {
+                                    Unsettlement::Unproduced
                                 },
-                            }
+                                (
+                                    &Stated::Verdict(Outcome::Runs(_)),
+                                    Outcome::Runs(_) | Outcome::Refuses(_) | Outcome::Normalizes(_),
+                                ) => Unsettlement::RunOutcome,
+                                (
+                                    &Stated::Verdict(Outcome::Normalizes(_)),
+                                    Outcome::Normalizes(_) | Outcome::Refuses(_) | Outcome::Runs(_),
+                                ) => Unsettlement::NormalForm,
+                                (&Stated::Malformed(_), _) => Unsettlement::Malformed,
+                            },
                         },
                     })
                 },
@@ -636,8 +630,8 @@ impl<'step> Entries<'step>
     ) -> Diagnostic
     {
         match printed {
-            | Printed::Line(line) => line.diagnostic(self.path, self.text),
-            | Printed::Subject(subject) => diagnose(self.path, self.text, subject),
+            Printed::Line(line) => line.diagnostic(self.path, self.text),
+            Printed::Subject(subject) => diagnose(self.path, self.text, subject),
         }
     }
 }
@@ -693,23 +687,23 @@ impl Iterator for Entries<'_>
     fn next(&mut self) -> Option<Self::Item>
     {
         match core::mem::replace(&mut self.cursor, Cursor::Done) {
-            | Cursor::Done => None,
-            | Cursor::Last(Last::Line(refusal)) => {
+            Cursor::Done => None,
+            Cursor::Last(Last::Line(refusal)) => {
                 Some(Line::Pending(refusal).diagnostic(self.path, self.text))
             },
-            | Cursor::Last(Last::Source(refusal)) => {
+            Cursor::Last(Last::Source(refusal)) => {
                 Some(diagnose(self.path, self.text, Subject::Source(refusal)))
             },
-            | Cursor::Lowered(held) => {
+            Cursor::Lowered(held) => {
                 self.cursor = Cursor::Declarations(held);
                 Some(Line::Lowered.diagnostic(self.path, self.text))
             },
-            | Cursor::Pending { mut unstatable } => {
+            Cursor::Pending { mut unstatable } => {
                 let line = unstatable.next().map(|&refusal| Line::Pending(refusal));
                 self.cursor = Cursor::Pending { unstatable };
                 line.map(|line| line.diagnostic(self.path, self.text))
             },
-            | Cursor::Declarations(mut held) => {
+            Cursor::Declarations(mut held) => {
                 if let Some(warned) = held.shadowed.next() {
                     self.cursor = Cursor::Declarations(held);
                     return Some(diagnose(self.path, self.text, Subject::Shadowed(warned)));

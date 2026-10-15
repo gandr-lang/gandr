@@ -290,8 +290,8 @@ impl Guard
         for child in children {
             let child = *core::borrow::Borrow::<Self>::borrow(&child);
             match child {
-                | Self::Rigid(ContentHash(hash)) => fold.write_u64(hash),
-                | Self::Flexible => return Self::Flexible,
+                Self::Rigid(ContentHash(hash)) => fold.write_u64(hash),
+                Self::Flexible => return Self::Flexible,
             }
         }
         Self::Rigid(ContentHash(fold.finish()))
@@ -324,8 +324,8 @@ impl Guard
     ) -> GuardAnswer
     {
         match (self, other) {
-            | (Self::Rigid(one), Self::Rigid(two)) if one != two => GuardAnswer::Apart,
-            | (Self::Rigid(_) | Self::Flexible, Self::Rigid(_) | Self::Flexible) => {
+            (Self::Rigid(one), Self::Rigid(two)) if one != two => GuardAnswer::Apart,
+            (Self::Rigid(_) | Self::Flexible, Self::Rigid(_) | Self::Flexible) => {
                 GuardAnswer::Inconclusive
             },
         }

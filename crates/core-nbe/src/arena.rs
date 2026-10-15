@@ -238,8 +238,8 @@ impl From<ForceRefusal> for DomainFault
     fn from(refusal: ForceRefusal) -> Self
     {
         match refusal {
-            | ForceRefusal::Rigid => Self::NeutralIsRigid,
-            | ForceRefusal::AlreadyForced => Self::NeutralAlreadyForced,
+            ForceRefusal::Rigid => Self::NeutralIsRigid,
+            ForceRefusal::AlreadyForced => Self::NeutralAlreadyForced,
         }
     }
 }
@@ -786,37 +786,37 @@ impl DomainArena
     ) -> Guard
     {
         let mut word = match (head, unfolding) {
-            | (_, Unfolding::Unforced(_) | Unfolding::Forced(_))
+            (_, Unfolding::Unforced(_) | Unfolding::Forced(_))
             | (
                 NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_),
                 Unfolding::Rigid,
             ) => {
                 return Guard::Flexible;
             },
-            | (NeutralHead::Variable { zone, level }, Unfolding::Rigid) => {
+            (NeutralHead::Variable { zone, level }, Unfolding::Rigid) => {
                 Guard::compose(GuardTag::Variable, &(zone, level), &[])
             },
-            | (NeutralHead::Constant(constant), Unfolding::Rigid) => {
+            (NeutralHead::Constant(constant), Unfolding::Rigid) => {
                 Guard::compose(GuardTag::Constant, &constant, &[])
             },
-            | (NeutralHead::Module(module), Unfolding::Rigid) => {
+            (NeutralHead::Module(module), Unfolding::Rigid) => {
                 Guard::compose(GuardTag::Module, &module, &[])
             },
         };
         for &elimination in spine {
             word = match elimination {
-                | Elimination::Apply(argument) => Guard::compose(GuardTag::Apply, &(), &[
+                Elimination::Apply(argument) => Guard::compose(GuardTag::Apply, &(), &[
                     word,
                     self.folded_value_guard(argument),
                 ]),
-                | Elimination::StaticApply(argument) => {
+                Elimination::StaticApply(argument) => {
                     Guard::compose(GuardTag::StaticApply, &(), &[
                         word,
                         self.folded_value_guard(argument),
                     ])
                 },
-                | Elimination::Force => Guard::compose(GuardTag::Force, &(), &[word]),
-                | Elimination::Transport(_)
+                Elimination::Force => Guard::compose(GuardTag::Force, &(), &[word]),
+                Elimination::Transport(_)
                 | Elimination::DataCase(_)
                 | Elimination::Split(_)
                 | Elimination::Projection(_)
@@ -997,16 +997,16 @@ impl DomainArena
     ) -> Result<NeutralId, DomainFault>
     {
         let unfoldable = match head {
-            | NeutralHead::Constant(_) => true,
-            | NeutralHead::Variable { .. }
+            NeutralHead::Constant(_) => true,
+            NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
             | NeutralHead::Hole { .. }
             | NeutralHead::Mark { .. }
             | NeutralHead::Returned(_) => false,
         };
         let loaded = match unfolding {
-            | Unfolding::Rigid => false,
-            | Unfolding::Unforced(_) | Unfolding::Forced(_) => true,
+            Unfolding::Rigid => false,
+            Unfolding::Unforced(_) | Unfolding::Forced(_) => true,
         };
         if loaded && !unfoldable {
             return Err(DomainFault::RigidHeadCarriesBody);
@@ -1284,8 +1284,22 @@ impl DomainArena
     ) -> Option<&[DomainValueId]>
     {
         match *value {
-            | DomainValue::Tuple { fields, .. } => self.fields(fields).ok(),
-            | _ => None,
+            DomainValue::Tuple { fields, .. } => self.fields(fields).ok(),
+            DomainValue::Constructor { .. }
+            | DomainValue::Record { .. }
+            | DomainValue::PathCertificate { .. }
+            | DomainValue::PathProduct { .. }
+            | DomainValue::Here { .. }
+            | DomainValue::Flow { .. }
+            | DomainValue::Literal { .. }
+            | DomainValue::ListNil { .. }
+            | DomainValue::ListCons { .. }
+            | DomainValue::Injection { .. }
+            | DomainValue::Thunk { .. }
+            | DomainValue::Lift { .. }
+            | DomainValue::Neutral { .. }
+            | DomainValue::Code { .. }
+            | DomainValue::StaticLambda { .. } => None,
         }
     }
 
@@ -1512,12 +1526,11 @@ impl DomainArena
         face: TermFace,
     ) -> DomainValueId
     {
-        let guard = match self.level(target) {
-            | Some(entry) => Guard::compose(GuardTag::Lift, entry.level(), &[
+        let guard = self.level(target).map_or(Guard::Flexible, |entry| {
+            Guard::compose(GuardTag::Lift, entry.level(), &[
                 self.folded_value_guard(body)
-            ]),
-            | None => Guard::Flexible,
-        };
+            ])
+        });
         self.alloc_value(DomainValue::Lift { target, body, face }, guard)
     }
 

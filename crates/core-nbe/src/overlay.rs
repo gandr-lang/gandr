@@ -233,10 +233,10 @@ impl OverlayId
     pub fn family(self) -> OverlayFamily
     {
         match self {
-            | Self::Value(_) => OverlayFamily::Value,
-            | Self::Computation(_) => OverlayFamily::Computation,
-            | Self::ValueType(_) => OverlayFamily::ValueType,
-            | Self::CompType(_) => OverlayFamily::CompType,
+            Self::Value(_) => OverlayFamily::Value,
+            Self::Computation(_) => OverlayFamily::Computation,
+            Self::ValueType(_) => OverlayFamily::ValueType,
+            Self::CompType(_) => OverlayFamily::CompType,
         }
     }
 }
@@ -1308,17 +1308,17 @@ impl Overlay
         let mut frames: Vec<Frame> = Vec::new();
         while let Some(task) = tasks.pop() {
             match task {
-                | Check::Enter(node) => {
+                Check::Enter(node) => {
                     let shape = self.shape(node)?;
                     if !reached.insert(node) {
                         return Err(OverlayRefusal::ReachedTwice { node });
                     }
                     match shape {
-                        | Shape::Opaque(held) => observe(node, held),
-                        | Shape::Bound(bound) => {
+                        Shape::Opaque(held) => observe(node, held),
+                        Shape::Bound(bound) => {
                             occur(&mut frames, node, bound)?;
                         },
-                        | Shape::Shared(sharing) => {
+                        Shape::Shared(sharing) => {
                             if sharing.arity == ShareArity(0) {
                                 return Err(OverlayRefusal::ZeroArity { share: node });
                             }
@@ -1331,13 +1331,13 @@ impl Overlay
                             }));
                             tasks.push(Check::Enter(sharing.leg));
                         },
-                        | Shape::Grafted(children) => {
+                        Shape::Grafted(children) => {
                             children.push_reversed(&mut tasks, Check::Enter);
                         },
                     }
                 },
-                | Check::Open(frame) => frames.push(frame),
-                | Check::Close { share } => {
+                Check::Open(frame) => frames.push(frame),
+                Check::Close { share } => {
                     let Some(frame) = frames.pop()
                     else {
                         return Err(OverlayRefusal::MachineInvariant);
@@ -1390,10 +1390,10 @@ impl Overlay
     ) -> Result<Shape, OverlayRefusal>
     {
         let shape = match node {
-            | OverlayId::Value(id) => self.value(id).map(ValueNode::shape),
-            | OverlayId::Computation(id) => self.computation(id).map(CompNode::shape),
-            | OverlayId::ValueType(id) => self.value_type(id).map(ValueTypeNode::shape),
-            | OverlayId::CompType(id) => self.comp_type(id).map(CompTypeNode::shape),
+            OverlayId::Value(id) => self.value(id).map(ValueNode::shape),
+            OverlayId::Computation(id) => self.computation(id).map(CompNode::shape),
+            OverlayId::ValueType(id) => self.value_type(id).map(ValueTypeNode::shape),
+            OverlayId::CompType(id) => self.comp_type(id).map(CompTypeNode::shape),
         };
         shape.ok_or(OverlayRefusal::Unresolved { node })
     }
@@ -1426,10 +1426,10 @@ impl Overlay
     ) -> Result<(), OverlayFault>
     {
         let present = match child {
-            | OverlayId::Value(id) => self.value(id).is_some(),
-            | OverlayId::Computation(id) => self.computation(id).is_some(),
-            | OverlayId::ValueType(id) => self.value_type(id).is_some(),
-            | OverlayId::CompType(id) => self.comp_type(id).is_some(),
+            OverlayId::Value(id) => self.value(id).is_some(),
+            OverlayId::Computation(id) => self.computation(id).is_some(),
+            OverlayId::ValueType(id) => self.value_type(id).is_some(),
+            OverlayId::CompType(id) => self.comp_type(id).is_some(),
         };
         if present {
             Ok(())
@@ -1554,15 +1554,15 @@ impl Children
     ) -> Result<(), OverlayFault>
     {
         match self {
-            | Self::Leaf => {},
-            | Self::One(only) => {
+            Self::Leaf => {},
+            Self::One(only) => {
                 overlay.held(only)?;
             },
-            | Self::Two(first, second) => {
+            Self::Two(first, second) => {
                 overlay.held(first)?;
                 overlay.held(second)?;
             },
-            | Self::Three(first, second, third) => {
+            Self::Three(first, second, third) => {
                 overlay.held(first)?;
                 overlay.held(second)?;
                 overlay.held(third)?;
@@ -1600,13 +1600,13 @@ impl Children
     )
     {
         match self {
-            | Self::Leaf => {},
-            | Self::One(only) => tasks.push(enter(only)),
-            | Self::Two(first, second) => {
+            Self::Leaf => {},
+            Self::One(only) => tasks.push(enter(only)),
+            Self::Two(first, second) => {
                 tasks.push(enter(second));
                 tasks.push(enter(first));
             },
-            | Self::Three(first, second, third) => {
+            Self::Three(first, second, third) => {
                 tasks.push(enter(third));
                 tasks.push(enter(second));
                 tasks.push(enter(first));
@@ -1654,9 +1654,9 @@ impl Shape
     fn children(self) -> Children
     {
         match self {
-            | Self::Opaque(_) | Self::Bound(_) => Children::Leaf,
-            | Self::Shared(sharing) => Children::Two(sharing.leg, sharing.body),
-            | Self::Grafted(children) => children,
+            Self::Opaque(_) | Self::Bound(_) => Children::Leaf,
+            Self::Shared(sharing) => Children::Two(sharing.leg, sharing.body),
+            Self::Grafted(children) => children,
         }
     }
 }
@@ -1686,10 +1686,10 @@ impl ValueNode
     fn shape(&self) -> Shape
     {
         match *self {
-            | Self::Opaque(id) => Shape::Opaque(CoreId::Value(id)),
-            | Self::Bound(bound) => Shape::Bound(bound),
-            | Self::Shared(sharing) => Shape::Shared(sharing.widened()),
-            | Self::Grafted(ref graft) => Shape::Grafted(graft.children()),
+            Self::Opaque(id) => Shape::Opaque(CoreId::Value(id)),
+            Self::Bound(bound) => Shape::Bound(bound),
+            Self::Shared(sharing) => Shape::Shared(sharing.widened()),
+            Self::Grafted(ref graft) => Shape::Grafted(graft.children()),
         }
     }
 }
@@ -1719,10 +1719,10 @@ impl CompNode
     fn shape(&self) -> Shape
     {
         match *self {
-            | Self::Opaque(id) => Shape::Opaque(CoreId::Computation(id)),
-            | Self::Bound(bound) => Shape::Bound(bound),
-            | Self::Shared(sharing) => Shape::Shared(sharing.widened()),
-            | Self::Grafted(graft) => Shape::Grafted(graft.children()),
+            Self::Opaque(id) => Shape::Opaque(CoreId::Computation(id)),
+            Self::Bound(bound) => Shape::Bound(bound),
+            Self::Shared(sharing) => Shape::Shared(sharing.widened()),
+            Self::Grafted(graft) => Shape::Grafted(graft.children()),
         }
     }
 }
@@ -1752,10 +1752,10 @@ impl ValueTypeNode
     fn shape(&self) -> Shape
     {
         match *self {
-            | Self::Opaque(id) => Shape::Opaque(CoreId::ValueType(id)),
-            | Self::Bound(bound) => Shape::Bound(bound),
-            | Self::Shared(sharing) => Shape::Shared(sharing.widened()),
-            | Self::Grafted(ref graft) => Shape::Grafted(graft.children()),
+            Self::Opaque(id) => Shape::Opaque(CoreId::ValueType(id)),
+            Self::Bound(bound) => Shape::Bound(bound),
+            Self::Shared(sharing) => Shape::Shared(sharing.widened()),
+            Self::Grafted(ref graft) => Shape::Grafted(graft.children()),
         }
     }
 }
@@ -1785,10 +1785,10 @@ impl CompTypeNode
     fn shape(&self) -> Shape
     {
         match *self {
-            | Self::Opaque(id) => Shape::Opaque(CoreId::CompType(id)),
-            | Self::Bound(bound) => Shape::Bound(bound),
-            | Self::Shared(sharing) => Shape::Shared(sharing.widened()),
-            | Self::Grafted(ref graft) => Shape::Grafted(graft.children()),
+            Self::Opaque(id) => Shape::Opaque(CoreId::CompType(id)),
+            Self::Bound(bound) => Shape::Bound(bound),
+            Self::Shared(sharing) => Shape::Shared(sharing.widened()),
+            Self::Grafted(ref graft) => Shape::Grafted(graft.children()),
         }
     }
 }
@@ -1823,18 +1823,18 @@ impl ValueGraft
     fn children(&self) -> Children
     {
         match *self {
-            | Self::Variable { .. } | Self::Constant(_) | Self::Unit | Self::Literal(_) => {
+            Self::Variable { .. } | Self::Constant(_) | Self::Unit | Self::Literal(_) => {
                 Children::Leaf
             },
-            | Self::Pair(first, second) => {
+            Self::Pair(first, second) => {
                 Children::Two(OverlayId::Value(first), OverlayId::Value(second))
             },
-            | Self::Injection(_, body) | Self::Lift { body, .. } => {
+            Self::Injection(_, body) | Self::Lift { body, .. } => {
                 Children::One(OverlayId::Value(body))
             },
-            | Self::Thunk(body) => Children::One(OverlayId::Computation(body)),
-            | Self::Quote(quoted) => Children::One(OverlayId::ValueType(quoted)),
-            | Self::QuoteComputation(quoted) => Children::One(OverlayId::CompType(quoted)),
+            Self::Thunk(body) => Children::One(OverlayId::Computation(body)),
+            Self::Quote(quoted) => Children::One(OverlayId::ValueType(quoted)),
+            Self::QuoteComputation(quoted) => Children::One(OverlayId::CompType(quoted)),
         }
     }
 }
@@ -1868,15 +1868,15 @@ impl CompGraft
     fn children(self) -> Children
     {
         match self {
-            | Self::Lambda(body) => Children::One(OverlayId::Computation(body)),
-            | Self::Application(head, argument) => {
+            Self::Lambda(body) => Children::One(OverlayId::Computation(body)),
+            Self::Application(head, argument) => {
                 Children::Two(OverlayId::Computation(head), OverlayId::Value(argument))
             },
-            | Self::Return(value) | Self::Force(value) => Children::One(OverlayId::Value(value)),
-            | Self::Bind(bound, body) => {
+            Self::Return(value) | Self::Force(value) => Children::One(OverlayId::Value(value)),
+            Self::Bind(bound, body) => {
                 Children::Two(OverlayId::Computation(bound), OverlayId::Computation(body))
             },
-            | Self::Case {
+            Self::Case {
                 scrutinee,
                 on_left,
                 on_right,
@@ -1918,15 +1918,15 @@ impl ValueTypeGraft
     fn children(&self) -> Children
     {
         match *self {
-            | Self::Base(_) | Self::Unit | Self::Universe { .. } | Self::Abstract(_) => {
+            Self::Base(_) | Self::Unit | Self::Universe { .. } | Self::Abstract(_) => {
                 Children::Leaf
             },
-            | Self::Product(first, second) | Self::Sum(first, second) => {
+            Self::Product(first, second) | Self::Sum(first, second) => {
                 Children::Two(OverlayId::ValueType(first), OverlayId::ValueType(second))
             },
-            | Self::Thunk(body) => Children::One(OverlayId::CompType(body)),
-            | Self::Lift { inner, .. } => Children::One(OverlayId::ValueType(inner)),
-            | Self::Element { code, .. } => Children::One(OverlayId::Value(code)),
+            Self::Thunk(body) => Children::One(OverlayId::CompType(body)),
+            Self::Lift { inner, .. } => Children::One(OverlayId::ValueType(inner)),
+            Self::Element { code, .. } => Children::One(OverlayId::Value(code)),
         }
     }
 }
@@ -1958,11 +1958,11 @@ impl CompTypeGraft
     fn children(&self) -> Children
     {
         match *self {
-            | Self::Returner(result) => Children::One(OverlayId::ValueType(result)),
-            | Self::Arrow { domain, codomain } | Self::Pi { domain, codomain } => {
+            Self::Returner(result) => Children::One(OverlayId::ValueType(result)),
+            Self::Arrow { domain, codomain } | Self::Pi { domain, codomain } => {
                 Children::Two(OverlayId::ValueType(domain), OverlayId::CompType(codomain))
             },
-            | Self::Element { code, .. } => Children::One(OverlayId::Value(code)),
+            Self::Element { code, .. } => Children::One(OverlayId::Value(code)),
         }
     }
 }
@@ -2462,10 +2462,10 @@ fn erase_keeping(
         .validate_with(root, |node, held| {
             if opaque.is_ok() {
                 let present = match held {
-                    | CoreId::Value(id) => core.value(id).is_some(),
-                    | CoreId::Computation(id) => core.computation(id).is_some(),
-                    | CoreId::ValueType(id) => core.value_type(id).is_some(),
-                    | CoreId::CompType(id) => core.comp_type(id).is_some(),
+                    CoreId::Value(id) => core.value(id).is_some(),
+                    CoreId::Computation(id) => core.computation(id).is_some(),
+                    CoreId::ValueType(id) => core.value_type(id).is_some(),
+                    CoreId::CompType(id) => core.comp_type(id).is_some(),
                 };
                 if !present {
                     opaque = Err(EraseFault::UnresolvedOpaque { node });
@@ -2486,11 +2486,11 @@ fn erase_keeping(
     };
     let outcome = erasure.run();
     match outcome {
-        | Ok(root) => Ok(Erased {
+        Ok(root) => Ok(Erased {
             root,
             legs: erasure.kept,
         }),
-        | Err(fault) => {
+        Err(fault) => {
             erasure.core.truncate_to(mark);
             Err(fault)
         },
@@ -2565,10 +2565,10 @@ impl Erasure<'_>
     {
         while let Some(step) = self.steps.pop() {
             match step {
-                | Step::Enter(node) => {
+                Step::Enter(node) => {
                     self.enter(node)?;
                 },
-                | Step::Bind => {
+                Step::Bind => {
                     let Some(leg) = self.results.pop()
                     else {
                         return Err(EraseFault::MachineInvariant);
@@ -2578,12 +2578,12 @@ impl Erasure<'_>
                     }
                     self.legs.push(leg);
                 },
-                | Step::Unbind => {
+                Step::Unbind => {
                     if self.legs.pop().is_none() {
                         return Err(EraseFault::MachineInvariant);
                     }
                 },
-                | Step::Assemble(node) => {
+                Step::Assemble(node) => {
                     let assembled = self.assemble(node)?;
                     self.results.push(assembled);
                 },
@@ -2652,10 +2652,10 @@ impl Erasure<'_>
     {
         let shape = self.overlay.shape(node).map_err(EraseFault::Refused)?;
         match shape {
-            | Shape::Opaque(held) => {
+            Shape::Opaque(held) => {
                 self.results.push(held);
             },
-            | Shape::Bound(bound) => {
+            Shape::Bound(bound) => {
                 let distance = usize::try_from(bound.distance.0).unwrap_or(usize::MAX);
                 let Some(&leg) = self
                     .legs
@@ -2668,13 +2668,13 @@ impl Erasure<'_>
                 };
                 self.results.push(leg);
             },
-            | Shape::Shared(sharing) => {
+            Shape::Shared(sharing) => {
                 self.steps.push(Step::Unbind);
                 self.steps.push(Step::Enter(sharing.body));
                 self.steps.push(Step::Bind);
                 self.steps.push(Step::Enter(sharing.leg));
             },
-            | Shape::Grafted(children) => {
+            Shape::Grafted(children) => {
                 self.steps.push(Step::Assemble(node));
                 children.push_reversed(&mut self.steps, Step::Enter);
             },
@@ -2723,7 +2723,7 @@ impl Erasure<'_>
     {
         let overlay = self.overlay;
         match node {
-            | OverlayId::Value(id) => {
+            OverlayId::Value(id) => {
                 let Some(held) = overlay.value(id)
                 else {
                     return Err(EraseFault::MachineInvariant);
@@ -2735,7 +2735,7 @@ impl Erasure<'_>
                 let value = self.assemble_value(graft)?;
                 Ok(CoreId::Value(value))
             },
-            | OverlayId::Computation(id) => {
+            OverlayId::Computation(id) => {
                 let Some(&CompNode::Grafted(graft)) = overlay.computation(id)
                 else {
                     return Err(EraseFault::MachineInvariant);
@@ -2743,7 +2743,7 @@ impl Erasure<'_>
                 let computation = self.assemble_computation(graft)?;
                 Ok(CoreId::Computation(computation))
             },
-            | OverlayId::ValueType(id) => {
+            OverlayId::ValueType(id) => {
                 let Some(held) = overlay.value_type(id)
                 else {
                     return Err(EraseFault::MachineInvariant);
@@ -2755,7 +2755,7 @@ impl Erasure<'_>
                 let value_type = self.assemble_value_type(graft)?;
                 Ok(CoreId::ValueType(value_type))
             },
-            | OverlayId::CompType(id) => {
+            OverlayId::CompType(id) => {
                 let Some(held) = overlay.comp_type(id)
                 else {
                     return Err(EraseFault::MachineInvariant);
@@ -2817,32 +2817,32 @@ impl Erasure<'_>
     ) -> Result<ValueId, EraseFault>
     {
         match *graft {
-            | ValueGraft::Variable { zone, index } => Ok(self.core.value_variable(zone, index)),
-            | ValueGraft::Constant(index) => Ok(self.core.value_constant(index)),
-            | ValueGraft::Unit => Ok(self.core.value_unit()),
-            | ValueGraft::Literal(ref literal) => Ok(self.core.value_literal(literal.clone())),
-            | ValueGraft::Pair(..) => {
+            ValueGraft::Variable { zone, index } => Ok(self.core.value_variable(zone, index)),
+            ValueGraft::Constant(index) => Ok(self.core.value_constant(index)),
+            ValueGraft::Unit => Ok(self.core.value_unit()),
+            ValueGraft::Literal(ref literal) => Ok(self.core.value_literal(literal.clone())),
+            ValueGraft::Pair(..) => {
                 let second = self.value()?;
                 let first = self.value()?;
                 Ok(self.core.value_tuple(&[first, second]))
             },
-            | ValueGraft::Injection(side, _) => {
+            ValueGraft::Injection(side, _) => {
                 let body = self.value()?;
                 Ok(self.core.value_injection(side.into(), body))
             },
-            | ValueGraft::Thunk(_) => {
+            ValueGraft::Thunk(_) => {
                 let body = self.computation()?;
                 Ok(self.core.value_thunk(body))
             },
-            | ValueGraft::Lift { ref target, .. } => {
+            ValueGraft::Lift { ref target, .. } => {
                 let body = self.value()?;
                 Ok(self.core.value_lift(target.clone(), body))
             },
-            | ValueGraft::Quote(_) => {
+            ValueGraft::Quote(_) => {
                 let quoted = self.value_type()?;
                 Ok(self.core.value_quote(quoted))
             },
-            | ValueGraft::QuoteComputation(_) => {
+            ValueGraft::QuoteComputation(_) => {
                 let quoted = self.comp_type()?;
                 Ok(self.core.value_quote_computation(quoted))
             },
@@ -2893,29 +2893,29 @@ impl Erasure<'_>
     ) -> Result<ComputationId, EraseFault>
     {
         match graft {
-            | CompGraft::Lambda(_) => {
+            CompGraft::Lambda(_) => {
                 let body = self.computation()?;
                 Ok(self.core.computation_lambda(body))
             },
-            | CompGraft::Application(..) => {
+            CompGraft::Application(..) => {
                 let argument = self.value()?;
                 let head = self.computation()?;
                 Ok(self.core.computation_application(head, argument))
             },
-            | CompGraft::Return(_) => {
+            CompGraft::Return(_) => {
                 let value = self.value()?;
                 Ok(self.core.computation_return(value))
             },
-            | CompGraft::Bind(..) => {
+            CompGraft::Bind(..) => {
                 let body = self.computation()?;
                 let bound = self.computation()?;
                 Ok(self.core.computation_bind(bound, body))
             },
-            | CompGraft::Force(_) => {
+            CompGraft::Force(_) => {
                 let value = self.value()?;
                 Ok(self.core.computation_force(value))
             },
-            | CompGraft::Case { .. } => {
+            CompGraft::Case { .. } => {
                 let on_right = self.computation()?;
                 let on_left = self.computation()?;
                 let scrutinee = self.value()?;
@@ -2971,34 +2971,34 @@ impl Erasure<'_>
     ) -> Result<ValueTypeId, EraseFault>
     {
         match *graft {
-            | ValueTypeGraft::Base(base) => Ok(self.core.value_type_base(base)),
-            | ValueTypeGraft::Unit => Ok(self.core.value_type_unit()),
-            | ValueTypeGraft::Product(..) => {
+            ValueTypeGraft::Base(base) => Ok(self.core.value_type_base(base)),
+            ValueTypeGraft::Unit => Ok(self.core.value_type_unit()),
+            ValueTypeGraft::Product(..) => {
                 let second = self.value_type()?;
                 let first = self.value_type()?;
                 Ok(self.core.value_type_product(&[first, second]))
             },
-            | ValueTypeGraft::Sum(..) => {
+            ValueTypeGraft::Sum(..) => {
                 let second = self.value_type()?;
                 let first = self.value_type()?;
                 Ok(self.core.value_type_sum(&[first, second]))
             },
-            | ValueTypeGraft::Thunk(_) => {
+            ValueTypeGraft::Thunk(_) => {
                 let body = self.comp_type()?;
                 Ok(self.core.value_type_thunk(body))
             },
-            | ValueTypeGraft::Universe { sort, ref level } => {
+            ValueTypeGraft::Universe { sort, ref level } => {
                 Ok(self.core.value_type_universe(sort, level.clone()))
             },
-            | ValueTypeGraft::Lift { ref target, .. } => {
+            ValueTypeGraft::Lift { ref target, .. } => {
                 let inner = self.value_type()?;
                 Ok(self.core.value_type_lift(inner, target.clone()))
             },
-            | ValueTypeGraft::Element { ref target, .. } => {
+            ValueTypeGraft::Element { ref target, .. } => {
                 let code = self.value()?;
                 Ok(self.core.value_type_element(code, target.clone()))
             },
-            | ValueTypeGraft::Abstract(atom) => Ok(self.core.value_type_abstract(atom)),
+            ValueTypeGraft::Abstract(atom) => Ok(self.core.value_type_abstract(atom)),
         }
     }
 
@@ -3044,21 +3044,21 @@ impl Erasure<'_>
     ) -> Result<CompTypeId, EraseFault>
     {
         match *graft {
-            | CompTypeGraft::Returner(_) => {
+            CompTypeGraft::Returner(_) => {
                 let result = self.value_type()?;
                 Ok(self.core.comp_type_returner(result))
             },
-            | CompTypeGraft::Arrow { .. } => {
+            CompTypeGraft::Arrow { .. } => {
                 let codomain = self.comp_type()?;
                 let domain = self.value_type()?;
                 Ok(self.core.comp_type_arrow(domain, codomain))
             },
-            | CompTypeGraft::Pi { .. } => {
+            CompTypeGraft::Pi { .. } => {
                 let codomain = self.comp_type()?;
                 let domain = self.value_type()?;
                 Ok(self.core.comp_type_pi(domain, codomain))
             },
-            | CompTypeGraft::Element { ref target, .. } => {
+            CompTypeGraft::Element { ref target, .. } => {
                 let code = self.value()?;
                 Ok(self.core.comp_type_element(code, target.clone()))
             },

@@ -77,8 +77,8 @@ pub fn decide(
 {
     let result = relate(left, right, relation)?;
     Ok(match result {
-        | RelationResult::Related(_) => Decision::Related,
-        | RelationResult::Unrelated => Decision::Unrelated,
+        RelationResult::Related(_) => Decision::Related,
+        RelationResult::Unrelated => Decision::Unrelated,
     })
 }
 
@@ -178,28 +178,28 @@ pub fn relate_states(
             continue;
         }
         match (left_node, right_node) {
-            | (&Node::End, &Node::End) => {},
-            | (&Node::Send(a, next_a), &Node::Send(b, next_b))
+            (&Node::End, &Node::End) => {},
+            (&Node::Send(a, next_a), &Node::Send(b, next_b))
             | (&Node::Receive(a, next_a), &Node::Receive(b, next_b))
                 if a == b =>
             {
                 pending.push((next_a, next_b));
             },
-            | (&Node::Select(ref a), &Node::Select(ref b)) => {
+            (&Node::Select(ref a), &Node::Select(ref b)) => {
                 if branches(a, b, relation, Orientation::Forward, &mut pending)
                     == Decision::Unrelated
                 {
                     return Ok(RelationResult::Unrelated);
                 }
             },
-            | (&Node::Offer(ref a), &Node::Offer(ref b)) => {
+            (&Node::Offer(ref a), &Node::Offer(ref b)) => {
                 if branches(b, a, relation, Orientation::Reverse, &mut pending)
                     == Decision::Unrelated
                 {
                     return Ok(RelationResult::Unrelated);
                 }
             },
-            | _ => return Ok(RelationResult::Unrelated),
+            _ => return Ok(RelationResult::Unrelated),
         }
     }
     Ok(RelationResult::Related(
@@ -302,8 +302,8 @@ fn branches(
             return Decision::Unrelated;
         };
         pending.push(match orientation {
-            | Orientation::Forward => (sub, sup),
-            | Orientation::Reverse => (sup, sub),
+            Orientation::Forward => (sub, sup),
+            Orientation::Reverse => (sup, sub),
         });
     }
     Decision::Related

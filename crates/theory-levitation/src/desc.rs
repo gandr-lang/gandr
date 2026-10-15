@@ -395,25 +395,25 @@ impl<G> CtorDesc<G>
         let mut operands: Vec<Vec<Vec<Name>>> = Vec::new();
         while let Some(frame) = stack.pop() {
             match frame {
-                | MonomialFrame::Walk(node) => match node.view() {
-                    | CodeView::Unit => operands.push(vec![Vec::new()]),
-                    | CodeView::Var(sort) => operands.push(vec![vec![sort.clone()]]),
-                    | CodeView::Field { ty, .. } => operands.push(vec![vec![ty.head_name()]]),
-                    | CodeView::Prod(factors) => {
+                MonomialFrame::Walk(node) => match node.view() {
+                    CodeView::Unit => operands.push(vec![Vec::new()]),
+                    CodeView::Var(sort) => operands.push(vec![vec![sort.clone()]]),
+                    CodeView::Field { ty, .. } => operands.push(vec![vec![ty.head_name()]]),
+                    CodeView::Prod(factors) => {
                         stack.push(MonomialFrame::FinishProd);
                         let factors: Vec<CodeNode<'_, G>> = factors.collect();
                         stack.extend(factors.into_iter().rev().map(MonomialFrame::Walk));
                     },
-                    | CodeView::Sum(summands) => {
+                    CodeView::Sum(summands) => {
                         stack.push(MonomialFrame::FinishSum);
                         let summands: Vec<CodeNode<'_, G>> = summands.collect();
                         stack.extend(summands.into_iter().rev().map(MonomialFrame::Walk));
                     },
-                    | CodeView::Bind { body, .. } => {
+                    CodeView::Bind { body, .. } => {
                         stack.extend(body.map(MonomialFrame::Walk));
                     },
                 },
-                | MonomialFrame::FinishProd => {
+                MonomialFrame::FinishProd => {
                     let rights = operands.pop().unwrap_or_default();
                     let lefts = operands.pop().unwrap_or_default();
                     let combined = lefts
@@ -428,7 +428,7 @@ impl<G> CtorDesc<G>
                         .collect();
                     operands.push(combined);
                 },
-                | MonomialFrame::FinishSum => {
+                MonomialFrame::FinishSum => {
                     let rights = operands.pop().unwrap_or_default();
                     let mut lefts = operands.pop().unwrap_or_default();
                     lefts.extend(rights);

@@ -314,8 +314,8 @@ impl Production
     pub const fn cost(&self) -> FamilyCostReport
     {
         match *self {
-            | Self::Go(ref template) => template.cost,
-            | Self::Plain { cost, .. }
+            Self::Go(ref template) => template.cost,
+            Self::Plain { cost, .. }
             | Self::WorkBoundExceeded { cost, .. }
             | Self::SchemaWorkBound { cost } => cost,
         }
@@ -468,9 +468,9 @@ impl Generalizer
                         self.graph.node(*source)?.head,
                         self.graph.node(*target)?.head,
                     ) {
-                        | (Head::OuterNatural(Natural(n)), Head::OuterNatural(Natural(m)))
+                        (Head::OuterNatural(Natural(n)), Head::OuterNatural(Natural(m)))
                             if n.checked_sub(1) == Some(m) => {},
-                        | _ => {
+                        _ => {
                             related = false;
                             break;
                         },
@@ -1160,18 +1160,18 @@ pub fn analyze(
         arena.term(step.target)?;
     }
     let generalization = match *family {
-        | [_, ref middle @ .., _] if !middle.is_empty() => match probe(arena, family)? {
-            | Probe::Outside(entry) => {
+        [_, ref middle @ .., _] if !middle.is_empty() => match probe(arena, family)? {
+            Probe::Outside(entry) => {
                 return Ok(Analysis::Refused {
                     reason: TemplateRefusal::EntryOutsidePeak { entry },
                     cost,
                 });
             },
-            | Probe::Open { graph, first, last } => {
+            Probe::Open { graph, first, last } => {
                 generalize_rest(graph, arena, family, [first, last])?
             },
         },
-        | _ => generalize_all(arena, family)?,
+        _ => generalize_all(arena, family)?,
     };
     conclude(generalization, first.rule, cost)
 }
@@ -1380,8 +1380,8 @@ impl Candidate
         } = self;
         let [peak, join] = sides;
         let pays = match gate {
-            | PriceGate::Unmemoized => prices.unmemoized.is_ok(),
-            | PriceGate::Memoized => prices.memoized.is_ok(),
+            PriceGate::Unmemoized => prices.unmemoized.is_ok(),
+            PriceGate::Memoized => prices.memoized.is_ok(),
         };
         if !pays {
             return Ok(Production::Plain {
@@ -1433,13 +1433,13 @@ impl Candidate
                 body: graph.address(arm)?,
             };
             let verdict = match cache.lookup(&key) {
-                | Maybe::Present(verdict) => verdict,
-                | Maybe::Absent(inheritance_lookup::Absent::Unchecked) => {
+                Maybe::Present(verdict) => verdict,
+                Maybe::Absent(inheritance_lookup::Absent::Unchecked) => {
                     let bindings = BTreeMap::from([(point, arm)]);
                     let (mut probe, step) = materialize(&graph, sides, rule, &bindings)?;
                     let checked = match gate {
-                        | PriceGate::Unmemoized => replay_equation(&mut probe, step, budget),
-                        | PriceGate::Memoized => {
+                        PriceGate::Unmemoized => replay_equation(&mut probe, step, budget),
+                        PriceGate::Memoized => {
                             let cap = usize::from(prices.check_bound);
                             let available = budget.0.min(cap);
                             let mut limited = Budget(available);
@@ -1458,9 +1458,9 @@ impl Candidate
                         },
                     };
                     let verdict = match checked {
-                        | Ok(()) => InheritanceVerdict::Inherited,
-                        | Err(StageError::Exhausted) => return Err(StageError::Exhausted),
-                        | Err(_) => InheritanceVerdict::MissesTheJoin {
+                        Ok(()) => InheritanceVerdict::Inherited,
+                        Err(StageError::Exhausted) => return Err(StageError::Exhausted),
+                        Err(_) => InheritanceVerdict::MissesTheJoin {
                             leg: TemplateLeg::PathA,
                         },
                     };
@@ -1545,8 +1545,8 @@ pub fn produce(
 ) -> Result<Production, StageError>
 {
     match analyze(arena, family)? {
-        | Analysis::Candidate(candidate) => candidate.produce(gate, cache, budget),
-        | Analysis::Refused { reason, cost } => Ok(Production::Plain { reason, cost }),
+        Analysis::Candidate(candidate) => candidate.produce(gate, cache, budget),
+        Analysis::Refused { reason, cost } => Ok(Production::Plain { reason, cost }),
     }
 }
 
@@ -1610,12 +1610,12 @@ impl Template
                 for arm in entry.arms.keys() {
                     if self.graph.address(*arm)? == address {
                         match self.graph.compare(*arm, &graph, actual) {
-                            | Ok(()) => {
+                            Ok(()) => {
                                 selected = Some(*arm);
                                 break;
                             },
-                            | Err(StageError::InvalidCertificate) => {},
-                            | Err(error) => return Err(error),
+                            Err(StageError::InvalidCertificate) => {},
+                            Err(error) => return Err(error),
                         }
                     }
                 }
@@ -1761,7 +1761,7 @@ pub fn readmit(
                     // A program may have several families under one decision;
                     // a peak outside this family remains ordinary replay's job.
                     match template.peak_substitution(arena, step.source) {
-                        | Ok(substitution) => {
+                        Ok(substitution) => {
                             let (instance, projected) = template.instantiate(&substitution)?;
                             // Full replay below checks this same equation with its
                             // original identities and every congruence premise.
@@ -1772,8 +1772,8 @@ pub fn readmit(
                                 return Err(StageError::InvalidCertificate);
                             }
                         },
-                        | Err(StageError::InvalidCertificate) => {},
-                        | Err(error) => return Err(error),
+                        Err(StageError::InvalidCertificate) => {},
+                        Err(error) => return Err(error),
                     }
                 }
             }

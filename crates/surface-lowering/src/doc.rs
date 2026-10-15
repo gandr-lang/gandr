@@ -274,8 +274,8 @@ pub fn read_doc<'source>(
         into.text.0.push('\n');
     }
     match entry {
-        | Maybe::Present(content) => into.text.0.push_str(&content),
-        | Maybe::Absent(_) => into.text.0.push_str(&lines.join("\n")),
+        Maybe::Present(content) => into.text.0.push_str(&content),
+        Maybe::Absent(_) => into.text.0.push_str(&lines.join("\n")),
     }
     into.links.append(&mut links);
 
@@ -324,11 +324,11 @@ fn scan_links<'source>(
     let mut at = 0_usize;
     while let Some(&byte) = bytes.get(at) {
         match byte {
-            | b'`' => {
+            b'`' => {
                 in_code = !in_code;
                 at = at.saturating_add(1);
             },
-            | b'[' if !in_code => {
+            b'[' if !in_code => {
                 let Some(close) = text
                     .get(at ..)
                     .and_then(|rest| rest.find(']'))
@@ -338,13 +338,12 @@ fn scan_links<'source>(
                 };
                 let inner_start = at.saturating_add(1);
                 let inner = text.get(inner_start .. close).unwrap_or_default();
-                let (name, offset) = match inner
+                let (name, offset) = inner
                     .strip_prefix('`')
                     .and_then(|quoted| quoted.strip_suffix('`'))
-                {
-                    | Some(quoted) => (quoted, inner_start.saturating_add(1)),
-                    | None => (inner, inner_start),
-                };
+                    .map_or((inner, inner_start), |quoted| {
+                        (quoted, inner_start.saturating_add(1))
+                    });
                 let follows = bytes.get(close.saturating_add(1)).copied();
                 if is_name(name) && !matches!(follows, Some(b'(' | b'[' | b':')) {
                     let first = usize::from(start).saturating_add(offset);
@@ -359,7 +358,7 @@ fn scan_links<'source>(
                 }
                 at = close.saturating_add(1);
             },
-            | _ => at = at.saturating_add(1),
+            _ => at = at.saturating_add(1),
         }
     }
 }

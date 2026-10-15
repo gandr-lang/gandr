@@ -92,11 +92,11 @@ impl Branch
     fn label(self) -> FieldLabel
     {
         FieldLabel::from(String::from(match self {
-            | Self::Report => "report",
-            | Self::Handoff => "handoff",
-            | Self::Pause => "pause",
-            | Self::Next => "next",
-            | Self::Retire => "retire",
+            Self::Report => "report",
+            Self::Handoff => "handoff",
+            Self::Pause => "pause",
+            Self::Next => "next",
+            Self::Retire => "retire",
         }))
     }
 }
@@ -125,9 +125,9 @@ impl Word
     ) -> ValueId
     {
         let body = match self {
-            | Self::Task => "task",
-            | Self::Progress => "progress",
-            | Self::Notes => "notes",
+            Self::Task => "task",
+            Self::Progress => "progress",
+            Self::Notes => "notes",
         };
         arena.value_literal(Literal::Text(StringLiteral::new(String::from(body))))
     }
@@ -158,7 +158,7 @@ fn seat(
         next: ProtocolState::from(1_usize),
     };
     let syntax = match seat {
-        | Seat::End => alloc::vec![
+        Seat::End => alloc::vec![
             receive,
             ProtocolSyntax::Mu(ProtocolState::from(2_usize)),
             ProtocolSyntax::Select(choice(&[(Branch::Report, 3), (Branch::Handoff, 7)])),
@@ -169,7 +169,7 @@ fn seat(
             send(2, 8),
             ProtocolSyntax::End,
         ],
-        | Seat::Wide => alloc::vec![
+        Seat::Wide => alloc::vec![
             receive,
             ProtocolSyntax::Mu(ProtocolState::from(2_usize)),
             ProtocolSyntax::Select(choice(&[
@@ -186,7 +186,7 @@ fn seat(
             send(1, 10),
             recur,
         ],
-        | Seat::Twice => alloc::vec![
+        Seat::Twice => alloc::vec![
             receive,
             ProtocolSyntax::Select(choice(&[(Branch::Report, 2), (Branch::Handoff, 13)])),
             send(1, 3),
@@ -203,7 +203,7 @@ fn seat(
             send(2, 14),
             ProtocolSyntax::End,
         ],
-        | Seat::Kept => alloc::vec![
+        Seat::Kept => alloc::vec![
             receive,
             ProtocolSyntax::Mu(ProtocolState::from(2_usize)),
             ProtocolSyntax::Select(choice(&[(Branch::Report, 3), (Branch::Handoff, 6)])),
@@ -239,11 +239,11 @@ fn run(
     let moves: Vec<RecordedMove> = moves
         .iter()
         .map(|movement| match *movement {
-            | RecordedMove::Sent(word) => RecordedMove::Sent(word.text(arena)),
-            | RecordedMove::Received(word) => RecordedMove::Received(word.text(arena)),
-            | RecordedMove::Selected(ref label) => RecordedMove::Selected(label.clone()),
-            | RecordedMove::Offered(ref label) => RecordedMove::Offered(label.clone()),
-            | RecordedMove::Closed => RecordedMove::Closed,
+            RecordedMove::Sent(word) => RecordedMove::Sent(word.text(arena)),
+            RecordedMove::Received(word) => RecordedMove::Received(word.text(arena)),
+            RecordedMove::Selected(ref label) => RecordedMove::Selected(label.clone()),
+            RecordedMove::Offered(ref label) => RecordedMove::Offered(label.clone()),
+            RecordedMove::Closed => RecordedMove::Closed,
         })
         .collect();
     arena.value_recorded(Arc::from(moves))
@@ -392,8 +392,10 @@ fn statements_decide_by_the_engine_and_replay()
         .declarations()
         .iter()
         .filter_map(|marked| match *marked.declaration().content() {
-            | DeclarationContent::Def { body, .. } => artifact.arena().value(body).cloned(),
-            | _ => None,
+            DeclarationContent::Def { body, .. } => artifact.arena().value(body).cloned(),
+            DeclarationContent::Data { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::AbstractType { .. } => None,
         })
         .collect();
     let recorded = |at: ValueId| {

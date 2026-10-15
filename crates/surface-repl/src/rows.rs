@@ -39,9 +39,9 @@ impl From<Lead> for &'static str
     fn from(lead: Lead) -> Self
     {
         match lead {
-            | Lead::Mark(Mark { text, .. }) => text,
-            | Lead::Indent(Mark { indent, .. }) => indent,
-            | Lead::Bare => "",
+            Lead::Mark(Mark { text, .. }) => text,
+            Lead::Indent(Mark { indent, .. }) => indent,
+            Lead::Bare => "",
         }
     }
 }
@@ -97,27 +97,27 @@ pub struct Row<'block>
 const fn mark(kind: OutKind) -> Mark
 {
     match kind {
-        | OutKind::Source => Mark {
+        OutKind::Source => Mark {
             text: "▸ ",
             indent: "  ",
         },
-        | OutKind::Value => Mark {
+        OutKind::Value => Mark {
             text: "= ",
             indent: "  ",
         },
-        | OutKind::Goal => Mark {
+        OutKind::Goal => Mark {
             text: "? ",
             indent: "  ",
         },
-        | OutKind::Stuck | OutKind::Info => Mark {
+        OutKind::Stuck | OutKind::Info => Mark {
             text: "· ",
             indent: "  ",
         },
-        | OutKind::Blame => Mark {
+        OutKind::Blame => Mark {
             text: "! ",
             indent: "  ",
         },
-        | OutKind::Type | OutKind::Diag => Mark {
+        OutKind::Type | OutKind::Diag => Mark {
             text: "",
             indent: "",
         },
@@ -163,9 +163,9 @@ fn line_rows(
                 .strip_suffix('\n')
                 .map_or(piece, |line| line.strip_suffix('\r').unwrap_or(line));
             let lead = match (index, text.is_empty()) {
-                | (0, _) => Lead::Mark(mark),
-                | (_, true) => Lead::Bare,
-                | (_, false) => Lead::Indent(mark),
+                (0, _) => Lead::Mark(mark),
+                (_, true) => Lead::Bare,
+                (_, false) => Lead::Indent(mark),
             };
             Row {
                 kind,

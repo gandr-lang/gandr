@@ -435,10 +435,10 @@ impl fmt::Display for BuildLimitKind
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::DocNodes => "stored document nodes",
-            | Self::TextBytes => "stored text bytes",
-            | Self::VerbatimLines => "stored verbatim fragments",
-            | Self::BuildSteps => "build steps",
+            Self::DocNodes => "stored document nodes",
+            Self::TextBytes => "stored text bytes",
+            Self::VerbatimLines => "stored verbatim fragments",
+            Self::BuildSteps => "build steps",
         })
     }
 }
@@ -474,11 +474,11 @@ impl fmt::Display for BuildAllocationSite
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::NodeArena => "the document node arena",
-            | Self::TextArena => "the text arena",
-            | Self::VerbatimArena => "the verbatim arena",
-            | Self::FlattenImages => "the flattened-image table",
-            | Self::FinalizeStack => "the finalization work stack",
+            Self::NodeArena => "the document node arena",
+            Self::TextArena => "the text arena",
+            Self::VerbatimArena => "the verbatim arena",
+            Self::FlattenImages => "the flattened-image table",
+            Self::FinalizeStack => "the finalization work stack",
         })
     }
 }
@@ -514,12 +514,12 @@ impl fmt::Display for BuildArithmetic
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::NodeCount => "the stored node count",
-            | Self::TextBytes => "the stored text bytes",
-            | Self::VerbatimLines => "the stored verbatim fragments",
-            | Self::BuildSteps => "the build-step count",
-            | Self::IdConversion => "a dense identity narrowing",
-            | Self::ScalarWidth => "a scalar width",
+            Self::NodeCount => "the stored node count",
+            Self::TextBytes => "the stored text bytes",
+            Self::VerbatimLines => "the stored verbatim fragments",
+            Self::BuildSteps => "the build-step count",
+            Self::IdConversion => "a dense identity narrowing",
+            Self::ScalarWidth => "a scalar width",
         })
     }
 }
@@ -555,16 +555,16 @@ impl fmt::Display for RenderLimitKind
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::MemoStates => "memoized states",
-            | Self::FrontierEntries => "frontier entries",
-            | Self::PlanNodesCreated => "plan nodes created",
-            | Self::LivePlanNodes => "live plan nodes",
-            | Self::OutputBytes => "output bytes",
-            | Self::LayoutSteps => "layout steps",
-            | Self::ResolverWorkEntries => "resolver work entries",
-            | Self::ResolverStack => "the resolver stack depth",
-            | Self::VmSteps => "render machine steps",
-            | Self::VmStack => "the render machine stack depth",
+            Self::MemoStates => "memoized states",
+            Self::FrontierEntries => "frontier entries",
+            Self::PlanNodesCreated => "plan nodes created",
+            Self::LivePlanNodes => "live plan nodes",
+            Self::OutputBytes => "output bytes",
+            Self::LayoutSteps => "layout steps",
+            Self::ResolverWorkEntries => "resolver work entries",
+            Self::ResolverStack => "the resolver stack depth",
+            Self::VmSteps => "render machine steps",
+            Self::VmStack => "the render machine stack depth",
         })
     }
 }
@@ -600,11 +600,11 @@ impl fmt::Display for RenderAllocationSite
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Frontier => "a frontier",
-            | Self::PlanArena => "the plan arena",
-            | Self::ResolverStack => "the resolver work stack",
-            | Self::VmStack => "the render machine stack",
-            | Self::Output => "the output buffer",
+            Self::Frontier => "a frontier",
+            Self::PlanArena => "the plan arena",
+            Self::ResolverStack => "the resolver work stack",
+            Self::VmStack => "the render machine stack",
+            Self::Output => "the output buffer",
         })
     }
 }
@@ -640,17 +640,17 @@ impl fmt::Display for RenderArithmetic
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Column => "the current column",
-            | Self::Indentation => "the indentation",
-            | Self::SquaredOverflow => "the squared overflow cost",
-            | Self::LineBreaks => "the line-break count",
-            | Self::OutputBytes => "the output byte count",
-            | Self::StepCounter => "a cumulative render counter",
-            | Self::ResolverWorkCounter => "the resolver work count",
-            | Self::StackDepth => "a work stack depth",
-            | Self::PlanRefcount => "a plan reference count",
-            | Self::PlanGeneration => "a plan slot generation",
-            | Self::PlanSlot => "a plan slot index",
+            Self::Column => "the current column",
+            Self::Indentation => "the indentation",
+            Self::SquaredOverflow => "the squared overflow cost",
+            Self::LineBreaks => "the line-break count",
+            Self::OutputBytes => "the output byte count",
+            Self::StepCounter => "a cumulative render counter",
+            Self::ResolverWorkCounter => "the resolver work count",
+            Self::StackDepth => "a work stack depth",
+            Self::PlanRefcount => "a plan reference count",
+            Self::PlanGeneration => "a plan slot generation",
+            Self::PlanSlot => "a plan slot index",
         })
     }
 }
@@ -686,14 +686,12 @@ impl fmt::Display for RenderInvariant
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::PlanIdentity => "a plan identity was not live",
-            | Self::DocumentIdentity => "a sealed document identity named nothing",
-            | Self::Continuation => "the resolver's work stack lacked a continuation",
-            | Self::MissingMeasure => "a measure set offered no measure",
-            | Self::OutputReconciliation => {
-                "the rendered byte count differed from the measured one"
-            },
-            | Self::VerbatimFragments => "a stored verbatim text carried no fragment record",
+            Self::PlanIdentity => "a plan identity was not live",
+            Self::DocumentIdentity => "a sealed document identity named nothing",
+            Self::Continuation => "the resolver's work stack lacked a continuation",
+            Self::MissingMeasure => "a measure set offered no measure",
+            Self::OutputReconciliation => "the rendered byte count differed from the measured one",
+            Self::VerbatimFragments => "a stored verbatim text carried no fragment record",
         })
     }
 }
@@ -729,28 +727,28 @@ impl fmt::Display for RenderError
     ) -> fmt::Result
     {
         match *self {
-            | Self::UnknownDoc => {
+            Self::UnknownDoc => {
                 f.write_str("the document handle does not belong to this layout arena")
             },
-            | Self::InvalidWidth => {
+            Self::InvalidWidth => {
                 f.write_str("the computation width must be at least the page width")
             },
-            | Self::ArithmeticOverflow { operation } => {
+            Self::ArithmeticOverflow { operation } => {
                 write!(
                     f,
                     "a checked layout render computation overflowed: {operation}"
                 )
             },
-            | Self::AllocationFailed { site } => {
+            Self::AllocationFailed { site } => {
                 write!(
                     f,
                     "a layout render store could not reserve capacity: {site}"
                 )
             },
-            | Self::LimitExceeded { kind, limit } => {
+            Self::LimitExceeded { kind, limit } => {
                 write!(f, "a layout render limit was reached: {kind} at {limit}")
             },
-            | Self::Invariant { invariant } => {
+            Self::Invariant { invariant } => {
                 write!(f, "a layout engine invariant did not hold: {invariant}")
             },
         }
@@ -792,29 +790,29 @@ impl fmt::Display for BuildError
     ) -> fmt::Result
     {
         match *self {
-            | Self::ArenaKeyExhausted => f.write_str("the layout arena key counter is exhausted"),
-            | Self::NodeIdExhausted => {
+            Self::ArenaKeyExhausted => f.write_str("the layout arena key counter is exhausted"),
+            Self::NodeIdExhausted => {
                 f.write_str("the layout document node identity space is exhausted")
             },
-            | Self::UnknownDoc => {
+            Self::UnknownDoc => {
                 f.write_str("the document handle does not belong to this layout arena")
             },
-            | Self::InvalidText => {
+            Self::InvalidText => {
                 f.write_str("layout text must not contain a carriage return, a line feed, or a tab")
             },
-            | Self::InvalidVerbatimLineEnding => {
+            Self::InvalidVerbatimLineEnding => {
                 f.write_str("verbatim text must not contain a bare carriage return")
             },
-            | Self::ArithmeticOverflow { operation } => {
+            Self::ArithmeticOverflow { operation } => {
                 write!(
                     f,
                     "a checked layout build computation overflowed: {operation}"
                 )
             },
-            | Self::AllocationFailed { site } => {
+            Self::AllocationFailed { site } => {
                 write!(f, "a layout build store could not reserve capacity: {site}")
             },
-            | Self::LimitExceeded { kind, limit } => {
+            Self::LimitExceeded { kind, limit } => {
                 write!(f, "a layout build limit was reached: {kind} at {limit}")
             },
         }

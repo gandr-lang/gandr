@@ -143,22 +143,22 @@ fn walk(
     let mut pending: Vec<Pending> = alloc::vec![start];
     while let Some(pair) = pending.pop() {
         let agrees = match pair {
-            | Pending::Values(left, right) => {
+            Pending::Values(left, right) => {
                 let (Some(left), Some(right)) = (left_arena.value(left), right_arena.value(right))
                 else {
                     return Agreement::Differ;
                 };
                 match (left, right) {
-                    | (
+                    (
                         &Value::Variable { zone, index },
                         &Value::Variable {
                             zone: other_zone,
                             index: other_index,
                         },
                     ) => zone == other_zone && index == other_index,
-                    | (&Value::Constant(constant), &Value::Constant(other)) => constant == other,
-                    | (&Value::ListNil, &Value::ListNil) => true,
-                    | (&Value::Tuple(ref components), &Value::Tuple(ref others)) => {
+                    (&Value::Constant(constant), &Value::Constant(other)) => constant == other,
+                    (&Value::ListNil, &Value::ListNil) => true,
+                    (&Value::Tuple(ref components), &Value::Tuple(ref others)) => {
                         pending.extend(
                             components
                                 .iter()
@@ -167,7 +167,7 @@ fn walk(
                         );
                         components.len() == others.len()
                     },
-                    | (&Value::Record(ref fields), &Value::Record(ref others)) => {
+                    (&Value::Record(ref fields), &Value::Record(ref others)) => {
                         pending.extend(
                             fields
                                 .values()
@@ -176,10 +176,8 @@ fn walk(
                         );
                         fields.keys().eq(others.keys())
                     },
-                    | (&Value::Literal(ref literal), &Value::Literal(ref other)) => {
-                        literal == other
-                    },
-                    | (
+                    (&Value::Literal(ref literal), &Value::Literal(ref other)) => literal == other,
+                    (
                         &Value::ListCons(first, second),
                         &Value::ListCons(other_first, other_second),
                     ) => {
@@ -187,18 +185,15 @@ fn walk(
                         pending.push(Pending::Values(second, other_second));
                         true
                     },
-                    | (
-                        &Value::Injection(side, body),
-                        &Value::Injection(other_side, other_body),
-                    ) => {
+                    (&Value::Injection(side, body), &Value::Injection(other_side, other_body)) => {
                         pending.push(Pending::Values(body, other_body));
                         side == other_side
                     },
-                    | (&Value::Thunk(body), &Value::Thunk(other_body)) => {
+                    (&Value::Thunk(body), &Value::Thunk(other_body)) => {
                         pending.push(Pending::Computations(body, other_body));
                         true
                     },
-                    | (
+                    (
                         &Value::Lift { ref target, body },
                         &Value::Lift {
                             target: ref other_target,
@@ -208,7 +203,7 @@ fn walk(
                         pending.push(Pending::Values(body, other_body));
                         target == other_target
                     },
-                    | (
+                    (
                         &Value::Constructor {
                             tag, ref fields, ..
                         },
@@ -226,21 +221,21 @@ fn walk(
                         );
                         tag == other_tag && fields.len() == other_fields.len()
                     },
-                    | _ => false,
+                    _ => false,
                 }
             },
-            | Pending::Computations(left, right) => {
+            Pending::Computations(left, right) => {
                 let (Some(left), Some(right)) =
                     (left_arena.computation(left), right_arena.computation(right))
                 else {
                     return Agreement::Differ;
                 };
                 match (left, right) {
-                    | (&Computation::Lambda(body), &Computation::Lambda(other)) => {
+                    (&Computation::Lambda(body), &Computation::Lambda(other)) => {
                         pending.push(Pending::Computations(body, other));
                         true
                     },
-                    | (
+                    (
                         &Computation::Application(head, argument),
                         &Computation::Application(other_head, other_argument),
                     ) => {
@@ -248,12 +243,12 @@ fn walk(
                         pending.push(Pending::Values(argument, other_argument));
                         true
                     },
-                    | (&Computation::Return(value), &Computation::Return(other))
+                    (&Computation::Return(value), &Computation::Return(other))
                     | (&Computation::Force(value), &Computation::Force(other)) => {
                         pending.push(Pending::Values(value, other));
                         true
                     },
-                    | (
+                    (
                         &Computation::Bind(head, body),
                         &Computation::Bind(other_head, other_body),
                     ) => {
@@ -261,7 +256,7 @@ fn walk(
                         pending.push(Pending::Computations(body, other_body));
                         true
                     },
-                    | (
+                    (
                         &Computation::Case {
                             scrutinee,
                             ref branches,
@@ -283,7 +278,7 @@ fn walk(
                         }
                         true
                     },
-                    | (
+                    (
                         &Computation::DataCase {
                             scrutinee,
                             ref branches,
@@ -304,7 +299,7 @@ fn walk(
                         );
                         branches.len() == other_branches.len()
                     },
-                    | (
+                    (
                         &Computation::Split {
                             scrutinee,
                             arity,
@@ -322,21 +317,21 @@ fn walk(
                         pending.push(Pending::Computations(body, other_body));
                         arity == other_arity
                     },
-                    | (
+                    (
                         &Computation::RecordProjection(record, ref label),
                         &Computation::RecordProjection(other, ref other_label),
                     ) => {
                         pending.push(Pending::Values(record, other));
                         label == other_label
                     },
-                    | (
+                    (
                         &Computation::TupleProjection(tuple, component),
                         &Computation::TupleProjection(other, other_component),
                     ) => {
                         pending.push(Pending::Values(tuple, other));
                         component == other_component
                     },
-                    | (
+                    (
                         &Computation::Fixpoint { body, evidence },
                         &Computation::Fixpoint {
                             body: other_body,
@@ -346,7 +341,7 @@ fn walk(
                         pending.push(Pending::Computations(body, other_body));
                         evidence == other_evidence
                     },
-                    | _ => false,
+                    _ => false,
                 }
             },
         };

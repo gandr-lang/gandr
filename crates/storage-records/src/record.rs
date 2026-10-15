@@ -524,8 +524,8 @@ impl<'key> KeyBound<'key>
     pub const fn key(self) -> Option<RecordKey<'key>>
     {
         match self {
-            | Self::Unbounded => None,
-            | Self::Included(key) | Self::Excluded(key) => Some(key),
+            Self::Unbounded => None,
+            Self::Included(key) | Self::Excluded(key) => Some(key),
         }
     }
 }
@@ -569,9 +569,9 @@ impl OwnedKeyBound
     pub fn from_bound(bound: KeyBound<'_>) -> Self
     {
         match bound {
-            | KeyBound::Unbounded => Self::Unbounded,
-            | KeyBound::Included(key) => Self::Included(OwnedRecordKey::from(key)),
-            | KeyBound::Excluded(key) => Self::Excluded(OwnedRecordKey::from(key)),
+            KeyBound::Unbounded => Self::Unbounded,
+            KeyBound::Included(key) => Self::Included(OwnedRecordKey::from(key)),
+            KeyBound::Excluded(key) => Self::Excluded(OwnedRecordKey::from(key)),
         }
     }
 
@@ -600,9 +600,9 @@ impl OwnedKeyBound
     pub fn as_bound(&self) -> KeyBound<'_>
     {
         match *self {
-            | Self::Unbounded => KeyBound::Unbounded,
-            | Self::Included(ref key) => KeyBound::Included(key.as_borrowed()),
-            | Self::Excluded(ref key) => KeyBound::Excluded(key.as_borrowed()),
+            Self::Unbounded => KeyBound::Unbounded,
+            Self::Included(ref key) => KeyBound::Included(key.as_borrowed()),
+            Self::Excluded(ref key) => KeyBound::Excluded(key.as_borrowed()),
         }
     }
 }
@@ -775,9 +775,9 @@ impl<'key> KeyRange<'key>
     ) -> RangeContainment
     {
         let above_start = match self.start {
-            | KeyBound::Unbounded => true,
-            | KeyBound::Included(start) => key.as_ref() >= start.as_ref(),
-            | KeyBound::Excluded(start) => key.as_ref() > start.as_ref(),
+            KeyBound::Unbounded => true,
+            KeyBound::Included(start) => key.as_ref() >= start.as_ref(),
+            KeyBound::Excluded(start) => key.as_ref() > start.as_ref(),
         };
 
         if !above_start {
@@ -785,9 +785,9 @@ impl<'key> KeyRange<'key>
         }
 
         let below_end = match self.end {
-            | KeyBound::Unbounded => true,
-            | KeyBound::Included(end) => key.as_ref() <= end.as_ref(),
-            | KeyBound::Excluded(end) => key.as_ref() < end.as_ref(),
+            KeyBound::Unbounded => true,
+            KeyBound::Included(end) => key.as_ref() <= end.as_ref(),
+            KeyBound::Excluded(end) => key.as_ref() < end.as_ref(),
         };
 
         if below_end {
@@ -964,14 +964,14 @@ where
     for key in keys {
         if let Some(earlier) = previous {
             match earlier.cmp(&key) {
-                | Ordering::Less => {},
-                | Ordering::Equal => {
+                Ordering::Less => {},
+                Ordering::Equal => {
                     return Err(RecordTreeError::DuplicateKeys {
                         first: previous_index,
                         second: current_index,
                     });
                 },
-                | Ordering::Greater => {
+                Ordering::Greater => {
                     return Err(RecordTreeError::UnsortedInput {
                         previous: previous_index,
                         current: current_index,
@@ -1051,8 +1051,8 @@ pub(crate) fn select_in_range(
 
     for record in records {
         match range.contains(record.key()) {
-            | RangeContainment::Inside => selected.push(record.clone()),
-            | RangeContainment::Outside => {
+            RangeContainment::Inside => selected.push(record.clone()),
+            RangeContainment::Outside => {
                 // The slice is sorted, so a key past the range's upper end
                 // outruns every key after it, and the scan may stop.
                 let past_end = range.end().key().is_some_and(|end| record.key() > end);

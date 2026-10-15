@@ -255,7 +255,7 @@ fn run(ops: &[Op]) -> Trace
         let before = image(&store, &cells);
         let target = |slot: CellSlot| slot.0.checked_rem(cells.len());
         let (subject, outcome) = match op {
-            | Op::Allocate => {
+            Op::Allocate => {
                 let id = store
                     .allocate_cell()
                     .expect("the trace stays far below the ceiling");
@@ -265,73 +265,55 @@ fn run(ops: &[Op]) -> Trace
                 });
                 (None, Outcome::Allocated(id))
             },
-            | Op::Share(slot) => match target(slot) {
-                | Some(index) => {
-                    let id = cells[index].id;
-                    cells[index].handles.push(id);
-                    (Some(index), Outcome::Shared)
-                },
-                | None => (None, Outcome::Skipped),
-            },
-            | Op::Force(slot) => match target(slot) {
-                | Some(index) => {
-                    let handle = *cells[index]
-                        .handles
-                        .last()
-                        .expect("a cell keeps its handle");
-                    let outcome = match store.begin_force(handle) {
-                        | Ok(entry) => Outcome::Forced(entry),
-                        | Err(fault) => Outcome::Refused(fault),
-                    };
-                    (Some(index), outcome)
-                },
-                | None => (None, Outcome::Skipped),
-            },
-            | Op::WriteBack(slot, pick) => match target(slot) {
-                | Some(index) => {
-                    let value = match pick {
-                        | ValuePick::Fresh => {
-                            let fresh = store.allocate(literal(Seed(seed))).expect("room");
-                            last_value = Some(fresh);
-                            fresh
-                        },
-                        | ValuePick::Reused => match last_value {
-                            | Some(value) => value,
-                            | None => {
-                                let fresh = store.allocate(literal(Seed(seed))).expect("room");
-                                last_value = Some(fresh);
-                                fresh
-                            },
-                        },
-                        | ValuePick::Dangling => HeapValueId::from(u32::MAX),
-                    };
-                    let outcome = match store.write_back(cells[index].id, value) {
-                        | Ok(()) => Outcome::WroteBack(value),
-                        | Err(fault) => Outcome::Refused(fault),
-                    };
-                    (Some(index), outcome)
-                },
-                | None => (None, Outcome::Skipped),
-            },
-            | Op::Decline(slot) => match target(slot) {
-                | Some(index) => {
-                    let outcome = match store.decline(cells[index].id) {
-                        | Ok(()) => Outcome::Declined,
-                        | Err(fault) => Outcome::Refused(fault),
-                    };
-                    (Some(index), outcome)
-                },
-                | None => (None, Outcome::Skipped),
-            },
-            | Op::Observe(slot) => match target(slot) {
-                | Some(index) => {
-                    let state = store
-                        .cell(cells[index].id)
-                        .expect("a tracked cell resolves");
-                    (Some(index), Outcome::Observed(state))
-                },
-                | None => (None, Outcome::Skipped),
-            },
+            Op::Share(slot) => target(slot).map_or((None, Outcome::Skipped), |index| {
+                let id = cells[index].id;
+                cells[index].handles.push(id);
+                (Some(index), Outcome::Shared)
+            }),
+            Op::Force(slot) => target(slot).map_or((None, Outcome::Skipped), |index| {
+                let handle = *cells[index]
+                    .handles
+                    .last()
+                    .expect("a cell keeps its handle");
+                let outcome = match store.begin_force(handle) {
+                    Ok(entry) => Outcome::Forced(entry),
+                    Err(fault) => Outcome::Refused(fault),
+                };
+                (Some(index), outcome)
+            }),
+            Op::WriteBack(slot, pick) => target(slot).map_or((None, Outcome::Skipped), |index| {
+                let value = match pick {
+                    ValuePick::Fresh => {
+                        let fresh = store.allocate(literal(Seed(seed))).expect("room");
+                        last_value = Some(fresh);
+                        fresh
+                    },
+                    ValuePick::Reused => last_value.unwrap_or_else(|| {
+                        let fresh = store.allocate(literal(Seed(seed))).expect("room");
+                        last_value = Some(fresh);
+                        fresh
+                    }),
+                    ValuePick::Dangling => HeapValueId::from(u32::MAX),
+                };
+                let outcome = match store.write_back(cells[index].id, value) {
+                    Ok(()) => Outcome::WroteBack(value),
+                    Err(fault) => Outcome::Refused(fault),
+                };
+                (Some(index), outcome)
+            }),
+            Op::Decline(slot) => target(slot).map_or((None, Outcome::Skipped), |index| {
+                let outcome = match store.decline(cells[index].id) {
+                    Ok(()) => Outcome::Declined,
+                    Err(fault) => Outcome::Refused(fault),
+                };
+                (Some(index), outcome)
+            }),
+            Op::Observe(slot) => target(slot).map_or((None, Outcome::Skipped), |index| {
+                let state = store
+                    .cell(cells[index].id)
+                    .expect("a tracked cell resolves");
+                (Some(index), Outcome::Observed(state))
+            }),
         };
         let after = image(&store, &cells);
         steps.push(Step {

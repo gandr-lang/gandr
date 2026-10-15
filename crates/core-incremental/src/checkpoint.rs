@@ -228,8 +228,8 @@ impl Answer
     pub(crate) const fn consultation(&self) -> Consultation
     {
         match *(self) {
-            | Self::Untyped | Self::Typed(_) => Consultation::Value,
-            | Self::Data(_) => Consultation::Data,
+            Self::Untyped | Self::Typed(_) => Consultation::Value,
+            Self::Data(_) => Consultation::Data,
         }
     }
 
@@ -240,9 +240,9 @@ impl Answer
     pub(crate) fn nodes(&self) -> &[crate::content::ContentNode]
     {
         match *(self) {
-            | Self::Untyped | Self::Data(None) => &[],
-            | Self::Typed(ref ty) => ty.nodes(),
-            | Self::Data(Some(ref signature)) => signature.nodes(),
+            Self::Untyped | Self::Data(None) => &[],
+            Self::Typed(ref ty) => ty.nodes(),
+            Self::Data(Some(ref signature)) => signature.nodes(),
         }
     }
 }
@@ -659,7 +659,7 @@ impl fmt::Display for ResumeError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Order(error) => write!(f, "the item order failed: {error}"),
+            Self::Order(error) => write!(f, "the item order failed: {error}"),
         }
     }
 }
@@ -1653,20 +1653,24 @@ where
         for item in encoded {
             bump(&mut census.recalled);
             let candidate = match identity_of(&item.content) {
-                | Maybe::Present(identity) => match memo.recall(&identity) {
-                    | Some(hit) => match base.items.get(usize::from(*hit.outcome())) {
-                        | Some(checkpoint) => Maybe::Present(Candidate {
-                            checkpoint,
-                            seat: {
-                                let (arena, layout) = edited.parts_mut();
-                                seat_of(checkpoint, item, arena, layout, census)
-                            },
-                        }),
-                        | None => Maybe::Absent(recall::Absent::Missed),
-                    },
-                    | None => Maybe::Absent(recall::Absent::Missed),
+                Maybe::Present(identity) => {
+                    memo.recall(&identity)
+                        .map_or(Maybe::Absent(recall::Absent::Missed), |hit| {
+                            base.items.get(usize::from(*hit.outcome())).map_or(
+                                Maybe::Absent(recall::Absent::Missed),
+                                |checkpoint| {
+                                    Maybe::Present(Candidate {
+                                        checkpoint,
+                                        seat: {
+                                            let (arena, layout) = edited.parts_mut();
+                                            seat_of(checkpoint, item, arena, layout, census)
+                                        },
+                                    })
+                                },
+                            )
+                        })
                 },
-                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
             };
             candidates.push(candidate);
         }
@@ -1686,7 +1690,7 @@ where
             break;
         };
         let adopted = match candidates.get(index) {
-            | Some(&Maybe::Present(ref candidate)) => adopt(&mut context, &AdoptionInput {
+            Some(&Maybe::Present(ref candidate)) => adopt(&mut context, &AdoptionInput {
                 candidate,
                 item,
                 footprint: &footprint,
@@ -1696,10 +1700,10 @@ where
                 ordinal,
                 value_changed: &value_changed,
             }),
-            | Some(&Maybe::Absent(_)) | None => Maybe::Absent(recall::Absent::Missed),
+            Some(&Maybe::Absent(_)) | None => Maybe::Absent(recall::Absent::Missed),
         };
         let (outcome, answer) = match adopted {
-            | Maybe::Present((support, typing, answer)) => {
+            Maybe::Present((support, typing, answer)) => {
                 bump(&mut census.adopted);
                 (
                     Outcome {
@@ -1711,11 +1715,11 @@ where
                     answer,
                 )
             },
-            | Maybe::Absent(reason) => {
+            Maybe::Absent(reason) => {
                 match reason {
-                    | recall::Absent::Outdated => bump(&mut census.outdated),
-                    | recall::Absent::ValueRead => bump(&mut census.value_reads),
-                    | recall::Absent::Opaque
+                    recall::Absent::Outdated => bump(&mut census.outdated),
+                    recall::Absent::ValueRead => bump(&mut census.value_reads),
+                    recall::Absent::Opaque
                     | recall::Absent::Missed
                     | recall::Absent::Unseated
                     | recall::Absent::Derived => {},
@@ -1731,15 +1735,15 @@ where
                 let typing = projection.typing(&supported.verdict());
                 let support = answered(supported.support(), arena, layout);
                 let answer = match *(declaration.content()) {
-                    | gandr_core_checker::DeclarationContent::Value { .. } => {
+                    gandr_core_checker::DeclarationContent::Value { .. } => {
                         answer_of(context.signature(declaration.constant()), arena, layout)
                     },
-                    | gandr_core_checker::DeclarationContent::Data(_) => {
+                    gandr_core_checker::DeclarationContent::Data(_) => {
                         Answer::Data(context.data_signatures().get(&declaration.constant()).map(
                             |signature| crate::content::DataContent::of(arena, layout, signature),
                         ))
                     },
-                    | gandr_core_checker::DeclarationContent::Abstract(_) => Answer::Untyped,
+                    gandr_core_checker::DeclarationContent::Abstract(_) => Answer::Untyped,
                 };
                 (
                     Outcome {
@@ -1801,7 +1805,7 @@ fn seat_of(
 ) -> Maybe<ValueTypeId, seating::Absent>
 {
     match (item.content.declaration(), &checkpoint.typing) {
-        | (
+        (
             &crate::content::DeclarationRoots::Value {
                 signature: Maybe::Absent(_),
                 ..
@@ -1811,7 +1815,7 @@ fn seat_of(
             bump(&mut census.minted);
             produced.mint(arena, layout)
         },
-        | _ => Maybe::Absent(seating::Absent::Unseatable),
+        _ => Maybe::Absent(seating::Absent::Unseatable),
     }
 }
 
@@ -1931,13 +1935,13 @@ fn adopt(
         return Maybe::Absent(recall::Absent::ValueRead);
     }
     let (signature, body) = match *(input.declaration.content()) {
-        | gandr_core_checker::DeclarationContent::Value {
+        gandr_core_checker::DeclarationContent::Value {
             ref signature,
             ref body,
         } => (*signature, *body),
-        | gandr_core_checker::DeclarationContent::Data(ref signature) => {
+        gandr_core_checker::DeclarationContent::Data(ref signature) => {
             let answer = match checkpoint.typing {
-                | Typing::Data => {
+                Typing::Data => {
                     if context
                         .adopt_data(
                             input.declaration.constant(),
@@ -1953,7 +1957,7 @@ fn adopt(
                         signature,
                     )))
                 },
-                | Typing::Refused(_) => {
+                Typing::Refused(_) => {
                     if context
                         .adopt(
                             input.declaration.constant(),
@@ -1966,7 +1970,7 @@ fn adopt(
                     }
                     Answer::Data(None)
                 },
-                | Typing::Checked { .. } | Typing::Synthesised { .. } | Typing::Owed => {
+                Typing::Checked { .. } | Typing::Synthesised { .. } | Typing::Owed => {
                     return Maybe::Absent(recall::Absent::Unseated);
                 },
             };
@@ -1976,9 +1980,9 @@ fn adopt(
                 answer,
             ));
         },
-        | gandr_core_checker::DeclarationContent::Abstract(sealed) => {
+        gandr_core_checker::DeclarationContent::Abstract(sealed) => {
             match checkpoint.typing {
-                | Typing::Data => {
+                Typing::Data => {
                     if context
                         .adopt_abstract(input.declaration.constant(), sealed)
                         .is_err()
@@ -1986,7 +1990,7 @@ fn adopt(
                         return Maybe::Absent(recall::Absent::Unseated);
                     }
                 },
-                | Typing::Refused(_) => {
+                Typing::Refused(_) => {
                     if context
                         .adopt(
                             input.declaration.constant(),
@@ -1998,7 +2002,7 @@ fn adopt(
                         return Maybe::Absent(recall::Absent::Unseated);
                     }
                 },
-                | Typing::Checked { .. } | Typing::Synthesised { .. } | Typing::Owed => {
+                Typing::Checked { .. } | Typing::Synthesised { .. } | Typing::Owed => {
                     return Maybe::Absent(recall::Absent::Unseated);
                 },
             }
@@ -2027,20 +2031,21 @@ fn adopt(
     let seat: Maybe<FormedValueType, signature_table::Absent>;
     let answer: Answer;
     match (signature, &checkpoint.typing) {
-        | (Maybe::Present(signature), _) => match form_value_type(context, signature) {
-            | Ok(formed) => {
+        (Maybe::Present(signature), _) => {
+            if let Ok(formed) = form_value_type(context, signature) {
                 seat = Maybe::Present(formed);
-                answer = match input.item.content.signature_type() {
-                    | Some(ty) => Answer::Typed(ty),
-                    | None => Answer::Untyped,
-                };
-            },
-            | Err(_) => {
+                answer = input
+                    .item
+                    .content
+                    .signature_type()
+                    .map_or(Answer::Untyped, Answer::Typed);
+            }
+            else {
                 seat = Maybe::Absent(signature_table::Absent::Untyped);
                 answer = Answer::Untyped;
-            },
+            }
         },
-        | (Maybe::Absent(_), &Typing::Synthesised { ref produced, .. }) => {
+        (Maybe::Absent(_), &Typing::Synthesised { ref produced, .. }) => {
             let Maybe::Present(minted) = input.candidate.seat
             else {
                 return Maybe::Absent(recall::Absent::Unseated);
@@ -2052,7 +2057,7 @@ fn adopt(
             seat = Maybe::Present(formed);
             answer = Answer::Typed(produced.clone());
         },
-        | (
+        (
             Maybe::Absent(_),
             &(Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_)),
         ) => {
@@ -2061,10 +2066,10 @@ fn adopt(
         },
     }
     let unfolds = match (&checkpoint.typing, body) {
-        | (&(Typing::Checked { .. } | Typing::Synthesised { .. }), Maybe::Present(body)) => {
+        (&(Typing::Checked { .. } | Typing::Synthesised { .. }), Maybe::Present(body)) => {
             Maybe::Present(body)
         },
-        | (_, Maybe::Absent(_))
+        (_, Maybe::Absent(_))
         | (&(Typing::Data | Typing::Owed | Typing::Refused(_)), Maybe::Present(_)) => {
             Maybe::Absent(unfolding::Absent::Rigid)
         },
@@ -2128,15 +2133,15 @@ fn support_holds(
 {
     let holds = support.iter().all(|answered| {
         let current = match input.layout.ordinal_of(&answered.reference) {
-            | Maybe::Present(ordinal) if ordinal < input.ordinal => {
+            Maybe::Present(ordinal) if ordinal < input.ordinal => {
                 input.supplied.get(usize::from(ordinal))
             },
-            | Maybe::Present(_) | Maybe::Absent(_) => None,
+            Maybe::Present(_) | Maybe::Absent(_) => None,
         };
         match answered.answer {
-            | Answer::Untyped => !matches!(current, Some(Answer::Typed(_))),
-            | Answer::Data(None) => !matches!(current, Some(Answer::Data(Some(_)))),
-            | Answer::Typed(_) | Answer::Data(Some(_)) => current == Some(&answered.answer),
+            Answer::Untyped => !matches!(current, Some(Answer::Typed(_))),
+            Answer::Data(None) => !matches!(current, Some(Answer::Data(Some(_)))),
+            Answer::Typed(_) | Answer::Data(Some(_)) => current == Some(&answered.answer),
         }
     });
     if holds {
@@ -2189,8 +2194,8 @@ fn touches(
                 .nodes()
                 .iter()
                 .any(|node| match node.reference() {
-                    | Maybe::Present(reference) => changed(reference),
-                    | Maybe::Absent(_) => false,
+                    Maybe::Present(reference) => changed(reference),
+                    Maybe::Absent(_) => false,
                 })
         });
     if touched {
@@ -2326,12 +2331,12 @@ fn answer_of(
 ) -> Answer
 {
     match answer {
-        | Maybe::Present(formed) => Answer::Typed(TypeContent::of(
+        Maybe::Present(formed) => Answer::Typed(TypeContent::of(
             arena,
             layout,
             ArenaNode::ValueType(formed.id()),
         )),
-        | Maybe::Absent(_) => Answer::Untyped,
+        Maybe::Absent(_) => Answer::Untyped,
     }
 }
 

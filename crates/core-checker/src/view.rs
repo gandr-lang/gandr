@@ -106,8 +106,8 @@ impl From<FragmentRefusal> for CheckRefusal
     fn from(refusal: FragmentRefusal) -> Self
     {
         match refusal {
-            | FragmentRefusal::DanglingNode { node } => Self::DanglingNode { node },
-            | FragmentRefusal::OutOfFragment { at, former } => Self::OutOfFragment { at, former },
+            FragmentRefusal::DanglingNode { node } => Self::DanglingNode { node },
+            FragmentRefusal::OutOfFragment { at, former } => Self::OutOfFragment { at, former },
         }
     }
 }
@@ -360,19 +360,17 @@ pub fn value_type_view(
     };
     let unadmitted = |former| FragmentRefusal::OutOfFragment { at, former };
     match *node {
-        | ValueType::Data {
+        ValueType::Data {
             declaration,
             ref arguments,
         } => Ok(ValueTypeView::Data {
             declaration,
             arguments,
         }),
-        | ValueType::Record(ref fields) => Ok(ValueTypeView::Record(fields)),
-        | ValueType::Stack { input, output } => Ok(ValueTypeView::Stack { input, output }),
-        | ValueType::PathUniverse(source, target) => {
-            Ok(ValueTypeView::PathUniverse(source, target))
-        },
-        | ValueType::Path {
+        ValueType::Record(ref fields) => Ok(ValueTypeView::Record(fields)),
+        ValueType::Stack { input, output } => Ok(ValueTypeView::Stack { input, output }),
+        ValueType::PathUniverse(source, target) => Ok(ValueTypeView::PathUniverse(source, target)),
+        ValueType::Path {
             carrier,
             left,
             right,
@@ -381,7 +379,7 @@ pub fn value_type_view(
             left,
             right,
         }),
-        | ValueType::Flow {
+        ValueType::Flow {
             carrier,
             source,
             target,
@@ -390,37 +388,35 @@ pub fn value_type_view(
             source,
             target,
         }),
-        | ValueType::Run(session) => Ok(ValueTypeView::Run(session)),
-        | ValueType::Base(BaseType::Integer) => Ok(ValueTypeView::Integer),
-        | ValueType::Base(BaseType::String) => Ok(ValueTypeView::String),
-        | ValueType::Base(BaseType::Numeric) => Err(unadmitted(UnadmittedFormer::NumericAtom)),
-        | ValueType::Thunk(body) => Ok(ValueTypeView::Thunk(body)),
-        | ValueType::Product(ref parts) if parts.is_empty() => Ok(ValueTypeView::Unit),
-        | ValueType::Product(ref parts) => Ok(ValueTypeView::Product(parts)),
-        | ValueType::Sum(ref parts) => Ok(ValueTypeView::Sum(parts)),
-        | ValueType::List(element) => Ok(ValueTypeView::List(element)),
-        | ValueType::Universe {
+        ValueType::Run(session) => Ok(ValueTypeView::Run(session)),
+        ValueType::Base(BaseType::Integer) => Ok(ValueTypeView::Integer),
+        ValueType::Base(BaseType::String) => Ok(ValueTypeView::String),
+        ValueType::Base(BaseType::Numeric) => Err(unadmitted(UnadmittedFormer::NumericAtom)),
+        ValueType::Thunk(body) => Ok(ValueTypeView::Thunk(body)),
+        ValueType::Product(ref parts) if parts.is_empty() => Ok(ValueTypeView::Unit),
+        ValueType::Product(ref parts) => Ok(ValueTypeView::Product(parts)),
+        ValueType::Sum(ref parts) => Ok(ValueTypeView::Sum(parts)),
+        ValueType::List(element) => Ok(ValueTypeView::List(element)),
+        ValueType::Universe {
             sort: Sort::Ground(sort),
             ref level,
         } => Ok(ValueTypeView::Universe { sort, level }),
-        | ValueType::Universe {
+        ValueType::Universe {
             sort: Sort::Parameter(_),
             ..
         } => Err(unadmitted(UnadmittedFormer::SortParameter)),
-        | ValueType::Lift { inner, ref target } => Ok(ValueTypeView::Lift { inner, target }),
-        | ValueType::Element { code, ref target } => {
-            match value_type_knowledge(arena, value_type) {
-                | Knowledge::Known => Ok(ValueTypeView::Element { code, target }),
-                | Knowledge::Unknown => Ok(ValueTypeView::Unknown),
-            }
+        ValueType::Lift { inner, ref target } => Ok(ValueTypeView::Lift { inner, target }),
+        ValueType::Element { code, ref target } => match value_type_knowledge(arena, value_type) {
+            Knowledge::Known => Ok(ValueTypeView::Element { code, target }),
+            Knowledge::Unknown => Ok(ValueTypeView::Unknown),
         },
-        | ValueType::Abstract(atom) => Ok(ValueTypeView::Abstract(atom)),
-        | ValueType::Session(ref session) => Ok(ValueTypeView::Session(session)),
-        | ValueType::StaticPi { domain, codomain } => {
+        ValueType::Abstract(atom) => Ok(ValueTypeView::Abstract(atom)),
+        ValueType::Session(ref session) => Ok(ValueTypeView::Session(session)),
+        ValueType::StaticPi { domain, codomain } => {
             Ok(ValueTypeView::StaticPi { domain, codomain })
         },
-        | ValueType::Sigma { first, second } => Ok(ValueTypeView::Sigma { first, second }),
-        | ValueType::Capability {
+        ValueType::Sigma { first, second } => Ok(ValueTypeView::Sigma { first, second }),
+        ValueType::Capability {
             ref authority,
             grade,
             region,
@@ -429,7 +425,7 @@ pub fn value_type_view(
             grade,
             region,
         }),
-        | ValueType::Unknown => Ok(ValueTypeView::Unknown),
+        ValueType::Unknown => Ok(ValueTypeView::Unknown),
     }
 }
 
@@ -480,18 +476,18 @@ pub fn comp_type_view(
         return Err(FragmentRefusal::DanglingNode { node: at });
     };
     match *node {
-        | CompType::With(first, second) => Ok(CompTypeView::With(first, second)),
-        | CompType::Returner {
+        CompType::With(first, second) => Ok(CompTypeView::With(first, second)),
+        CompType::Returner {
             result,
             ref effects,
         } => Ok(CompTypeView::Returner { result, effects }),
-        | CompType::Arrow { domain, codomain } => Ok(CompTypeView::Arrow { domain, codomain }),
-        | CompType::Pi { domain, codomain } => Ok(CompTypeView::Pi { domain, codomain }),
-        | CompType::Element { code, ref target } => match comp_type_knowledge(arena, comp_type) {
-            | Knowledge::Known => Ok(CompTypeView::Element { code, target }),
-            | Knowledge::Unknown => Ok(CompTypeView::Unknown),
+        CompType::Arrow { domain, codomain } => Ok(CompTypeView::Arrow { domain, codomain }),
+        CompType::Pi { domain, codomain } => Ok(CompTypeView::Pi { domain, codomain }),
+        CompType::Element { code, ref target } => match comp_type_knowledge(arena, comp_type) {
+            Knowledge::Known => Ok(CompTypeView::Element { code, target }),
+            Knowledge::Unknown => Ok(CompTypeView::Unknown),
         },
-        | CompType::Unknown => Ok(CompTypeView::Unknown),
+        CompType::Unknown => Ok(CompTypeView::Unknown),
     }
 }
 

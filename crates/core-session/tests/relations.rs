@@ -222,26 +222,26 @@ fn compatible(
 ) -> Decision
 {
     let compatible = match (left, right, polarity) {
-        | (&Node::End, &Node::End, _) => true,
-        | (&Node::Send(a, x), &Node::Send(b, y), Polarity::Same)
+        (&Node::End, &Node::End, _) => true,
+        (&Node::Send(a, x), &Node::Send(b, y), Polarity::Same)
         | (&Node::Receive(a, x), &Node::Receive(b, y), Polarity::Same)
         | (&Node::Send(a, x), &Node::Receive(b, y), Polarity::Opposite)
         | (&Node::Receive(a, x), &Node::Send(b, y), Polarity::Opposite) => {
             a == b && candidates.contains(&(x, y))
         },
-        | (&Node::Select(ref a), &Node::Select(ref b), Polarity::Same)
+        (&Node::Select(ref a), &Node::Select(ref b), Polarity::Same)
         | (&Node::Select(ref a), &Node::Offer(ref b), Polarity::Opposite) => {
             a.iter()
                 .all(|(label, x)| b.get(label).is_some_and(|y| candidates.contains(&(*x, *y))))
                 && (relation == Relation::Subtype || b.keys().all(|label| a.contains_key(label)))
         },
-        | (&Node::Offer(ref a), &Node::Offer(ref b), Polarity::Same)
+        (&Node::Offer(ref a), &Node::Offer(ref b), Polarity::Same)
         | (&Node::Offer(ref a), &Node::Select(ref b), Polarity::Opposite) => {
             b.iter()
                 .all(|(label, y)| a.get(label).is_some_and(|x| candidates.contains(&(*x, *y))))
                 && (relation == Relation::Subtype || a.keys().all(|label| b.contains_key(label)))
         },
-        | _ => false,
+        _ => false,
     };
     if compatible {
         Decision::Related
@@ -365,19 +365,19 @@ fn word_sample(
         };
         let syntax_next = NodeId(nodes.len().saturating_add(1));
         let (syntax, model) = match *symbol {
-            | Symbol::SendYield => (
+            Symbol::SendYield => (
                 Node::Send(YIELD, syntax_next),
                 Node::Send(YIELD, model_next),
             ),
-            | Symbol::ReceiveYield => (
+            Symbol::ReceiveYield => (
                 Node::Receive(YIELD, syntax_next),
                 Node::Receive(YIELD, model_next),
             ),
-            | Symbol::SendReport => (
+            Symbol::SendReport => (
                 Node::Send(REPORT, syntax_next),
                 Node::Send(REPORT, model_next),
             ),
-            | Symbol::ReceiveReport => (
+            Symbol::ReceiveReport => (
                 Node::Receive(REPORT, syntax_next),
                 Node::Receive(REPORT, model_next),
             ),
@@ -386,11 +386,11 @@ fn word_sample(
         machine.push(model);
     }
     match tail {
-        | Tail::End => {
+        Tail::End => {
             nodes.push(Node::End);
             machine.push(Node::End);
         },
-        | Tail::Repeat => nodes.push(Node::Var(NodeId(0))),
+        Tail::Repeat => nodes.push(Node::Var(NodeId(0))),
     }
     Sample {
         syntax: session(nodes),
@@ -453,12 +453,12 @@ fn samples() -> Vec<Sample>
                 machine.push(Node::End);
             }
             nodes[1] = match polarity {
-                | Polarity::Same => Node::Select(branches),
-                | Polarity::Opposite => Node::Offer(branches),
+                Polarity::Same => Node::Select(branches),
+                Polarity::Opposite => Node::Offer(branches),
             };
             machine[0] = match polarity {
-                | Polarity::Same => Node::Select(model),
-                | Polarity::Opposite => Node::Offer(model),
+                Polarity::Same => Node::Select(model),
+                Polarity::Opposite => Node::Offer(model),
             };
             samples.push(Sample {
                 syntax: session(nodes),

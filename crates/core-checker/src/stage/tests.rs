@@ -31,15 +31,42 @@ fn value(
 ) -> Natural
 {
     match *arena.value(id).unwrap() {
-        | Value::Variable(index) => *bindings
+        Value::Variable(index) => *bindings
             .iter()
             .rev()
             .nth(usize::try_from(u32::from(index)).unwrap())
             .unwrap(),
-        | Value::Literal(Literal::Integer(ref literal)) => {
+        Value::Literal(Literal::Integer(ref literal)) => {
             Natural(literal.magnitude().as_ref().parse().unwrap())
         },
-        | ref other => panic!("non-first-order operand: {other:?}"),
+        ref other @ (Value::Constructor { .. }
+        | Value::Record(_)
+        | Value::SessionPath { .. }
+        | Value::SessionFlow { .. }
+        | Value::Stay { .. }
+        | Value::ForwardFlow { .. }
+        | Value::FunctionFlow { .. }
+        | Value::Then { .. }
+        | Value::FlowProduct(..)
+        | Value::PathRefl(_)
+        | Value::PathProduct(..)
+        | Value::PathEquiv { .. }
+        | Value::Here { .. }
+        | Value::Returned(_)
+        | Value::Higher { .. }
+        | Value::HigherEvaluation { .. }
+        | Value::QuantifiedEvaluation { .. }
+        | Value::Constant(_)
+        | Value::Literal(_)
+        | Value::Tuple(_)
+        | Value::Injection(..)
+        | Value::ListNil
+        | Value::ListCons(..)
+        | Value::Thunk(_)
+        | Value::Lift { .. }
+        | Value::Quote(_)
+        | Value::QuoteComputation(_)
+        | Value::StaticApplication(..)) => panic!("non-first-order operand: {other:?}"),
     }
 }
 
@@ -76,8 +103,8 @@ fn admitted_result(
     let mut bindings = Vec::from([input]);
     loop {
         match *arena.computation(body).unwrap() {
-            | Computation::Return(result) => return value(arena, result, &bindings),
-            | Computation::Bind(bound, continuation) => {
+            Computation::Return(result) => return value(arena, result, &bindings),
+            Computation::Bind(bound, continuation) => {
                 let Computation::Application(head, right) = *arena.computation(bound).unwrap()
                 else {
                     panic!("binary primitive");
@@ -99,7 +126,24 @@ fn admitted_result(
                 bindings.push(Natural(left.0.checked_mul(right.0).unwrap()));
                 body = continuation;
             },
-            | ref other => panic!("non-first-order computation: {other:?}"),
+            ref other @ (Computation::DataCase { .. }
+            | Computation::RecordProjection(..)
+            | Computation::TupleProjection(..)
+            | Computation::Lambda(_)
+            | Computation::Application(..)
+            | Computation::Force(_)
+            | Computation::Case { .. }
+            | Computation::SigmaSplit { .. }
+            | Computation::ListFold { .. }
+            | Computation::Transport(..)
+            | Computation::PathTransport { .. }
+            | Computation::TelescopeTransport { .. }
+            | Computation::Ride { .. }
+            | Computation::TelescopeRide { .. }
+            | Computation::RelatedApplication { .. }
+            | Computation::With(..)
+            | Computation::Project(..)
+            | Computation::Fixpoint { .. }) => panic!("non-first-order computation: {other:?}"),
         }
     }
 }

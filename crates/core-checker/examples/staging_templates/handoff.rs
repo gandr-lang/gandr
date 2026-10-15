@@ -101,10 +101,10 @@ impl Mode
     fn label(self) -> super::queues::Label
     {
         super::queues::Label(match self {
-            | Self::Plain => "plain",
-            | Self::Lookup => "lookup",
-            | Self::Empty => "empty",
-            | Self::PoisonRule => "poison-rule",
+            Self::Plain => "plain",
+            Self::Lookup => "lookup",
+            Self::Empty => "empty",
+            Self::PoisonRule => "poison-rule",
         })
     }
 }
@@ -128,10 +128,10 @@ impl Grain
     fn label(self) -> super::queues::Label
     {
         super::queues::Label(match self {
-            | Self::Member => "member",
-            | Self::Families(Natural(1)) => "family",
-            | Self::Families(Natural(4)) => "families4",
-            | Self::Families(_) => "families16",
+            Self::Member => "member",
+            Self::Families(Natural(1)) => "family",
+            Self::Families(Natural(4)) => "families4",
+            Self::Families(_) => "families16",
         })
     }
 }
@@ -291,12 +291,12 @@ impl<'schema> Scratch<'schema>
     ) -> Result<Self, Refusal>
     {
         match mode {
-            | Mode::Plain => Ok(Self::Plain(
+            Mode::Plain => Ok(Self::Plain(
                 (0_usize .. 25)
                     .flat_map(|_| workload.iter().map(|family| family.arena.clone()))
                     .collect(),
             )),
-            | Mode::Lookup | Mode::PoisonRule => {
+            Mode::Lookup | Mode::PoisonRule => {
                 let bindings = workload
                     .iter()
                     .map(|family| {
@@ -307,7 +307,7 @@ impl<'schema> Scratch<'schema>
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Self::Lookup(Arc::from(bindings), Row::default()))
             },
-            | Mode::Empty => Ok(Self::Empty),
+            Mode::Empty => Ok(Self::Empty),
         }
     }
 
@@ -369,18 +369,18 @@ impl<'schema> Scratch<'schema>
                     *step
                 };
                 let admission = match *self {
-                    | Self::Plain(ref mut arenas) => {
+                    Self::Plain(ref mut arenas) => {
                         let arena = arenas.get_mut(instance).ok_or(Failure::Coordinate)?;
                         let Work(fuel) = plain(arena, step).map_err(Failure::Plain)?;
                         stats.fuel = stats.fuel.saturating_add(fuel);
                         Admission::default()
                     },
-                    | Self::Lookup(ref consumers, ref mut row) => {
+                    Self::Lookup(ref consumers, ref mut row) => {
                         let consumer = consumers.get(index).ok_or(Failure::Coordinate)?;
                         lookup(&family.schema, consumer, choices, step, row)
                             .map_err(Failure::Admission)?
                     },
-                    | Self::Empty => Admission::default(),
+                    Self::Empty => Admission::default(),
                 };
                 stats.comparisons = stats.comparisons.saturating_add(admission.comparisons.0);
                 stats.choices = stats.choices.saturating_add(admission.choices.0);
@@ -424,13 +424,13 @@ pub(super) fn execute(
 ) -> Receipt
 {
     match command {
-        | Command::Run(task) => match task.census {
-            | Census::Off => Receipt {
+        Command::Run(task) => match task.census {
+            Census::Off => Receipt {
                 id: task.id,
                 result: scratch.execute(task, workload),
                 heap: Heap::Uncounted,
             },
-            | Census::On => {
+            Census::On => {
                 let mut result = Err(Failure::Coordinate);
                 let counted = allocation_counter::measure(|| {
                     result = scratch.execute(task, workload);
@@ -442,8 +442,8 @@ pub(super) fn execute(
                 }
             },
         },
-        | Command::Ping(id) => Receipt::empty(id),
-        | Command::Stop => Receipt {
+        Command::Ping(id) => Receipt::empty(id),
+        Command::Stop => Receipt {
             id: Natural(usize::MAX),
             result: Err(Failure::Coordinate),
             heap: Heap::Uncounted,
@@ -486,7 +486,7 @@ fn tasks(
 {
     let mut tasks = Vec::new();
     match grain {
-        | Grain::Member => {
+        Grain::Member => {
             for instance in instances[0].0 .. instances[1].0 {
                 let count = instance
                     .checked_rem(workload.len())
@@ -503,7 +503,7 @@ fn tasks(
                 }
             }
         },
-        | Grain::Families(count) => {
+        Grain::Families(count) => {
             for start in (instances[0].0 .. instances[1].0).step_by(count.0) {
                 tasks.push(Command::Run(Task {
                     id: Natural(tasks.len()),
@@ -648,8 +648,8 @@ fn measure(
 {
     let count = workload.len().saturating_mul(25);
     let span = match schedule {
-        | Schedule::Stream => count,
-        | Schedule::Latency => 1,
+        Schedule::Stream => count,
+        Schedule::Latency => 1,
     };
     let mut scratch = Scratch::new(workload, mode).map_err(io::Error::other)?;
     let batches: Vec<_> = (0 .. count)
@@ -1279,11 +1279,11 @@ mod tests
             Kind::Steal,
         ] {
             let publications: &[(Publication, Natural)] = match kind {
-                | Kind::Rtrb(_) | Kind::Ringbuf(_) => &[
+                Kind::Rtrb(_) | Kind::Ringbuf(_) => &[
                     (Publication::Each, Natural(1)),
                     (Publication::Batch, Natural(32)),
                 ],
-                | Kind::Channel | Kind::Steal => &[(Publication::Each, Natural(1))],
+                Kind::Channel | Kind::Steal => &[(Publication::Each, Natural(1))],
             };
             for &(publication, drain) in publications {
                 for share in [Share::Spin, Share::Work] {

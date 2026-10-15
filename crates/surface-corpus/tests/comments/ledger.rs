@@ -46,7 +46,7 @@ impl Discrepancy
     pub fn line(&self) -> crate::shape::Line<'_>
     {
         match *self {
-            | Self::Unledgered { ref line, .. } | Self::Stale { ref line } => {
+            Self::Unledgered { ref line, .. } | Self::Stale { ref line } => {
                 crate::shape::Line(line)
             },
         }
@@ -88,13 +88,13 @@ impl core::fmt::Display for Discrepancy
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Unledgered { ref line, .. } => {
+            Self::Unledgered { ref line, .. } => {
                 write!(
                     f,
                     "corpus comments FAILED: uncommented item not in the ledger: {line}"
                 )
             },
-            | Self::Stale { ref line } => {
+            Self::Stale { ref line } => {
                 write!(f, "corpus comments FAILED: stale ledger line: {line}")
             },
         }

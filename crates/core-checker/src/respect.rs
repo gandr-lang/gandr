@@ -205,10 +205,10 @@ pub fn respected(
         .map(|fields| FieldCount::from(fields.len()))
         .collect();
     let (head, datatype) = match reading {
-        | Reading::Fold {
+        Reading::Fold {
             fixpoint, domain, ..
         } => (fixpoint, domain),
-        | Reading::Case { datatype } => (at, datatype),
+        Reading::Case { datatype } => (at, datatype),
     };
     for (index, rule) in signature.presentation().rules().iter().enumerate() {
         let bound = u32::from(rule.variables());
@@ -219,22 +219,22 @@ pub fn respected(
             shift_computation_under_traced(arena, head, Binders::NONE, amount, &mut Vec::new());
         let mut side = |nodes: &[RuleNode]| {
             build_side(nodes, &arities, |node, fields| match node {
-                | RuleNode::Variable(variable) => arena.value_variable(
+                RuleNode::Variable(variable) => arena.value_variable(
                     Zone::Intuitionistic,
                     pattern_binder(rule.variables(), variable),
                 ),
-                | RuleNode::Constructor(tag) => arena.value_constructor(datatype, tag, fields),
+                RuleNode::Constructor(tag) => arena.value_constructor(datatype, tag, fields),
             })
             .map_err(|_fault| CheckRefusal::MachineInvariant)
         };
         let left = side(rule.left())?;
         let right = side(rule.right())?;
         let obligation = match reading {
-            | Reading::Fold { .. } => (
+            Reading::Fold { .. } => (
                 arena.computation_application(head, left),
                 arena.computation_application(head, right),
             ),
-            | Reading::Case { .. } => {
+            Reading::Case { .. } => {
                 let Some(&Computation::DataCase {
                     motive,
                     ref branches,
@@ -259,7 +259,7 @@ pub fn respected(
         }
         let law = context.admitted_laws().get(index).copied();
         let related = match (reading, law) {
-            | (Reading::Fold { arrow, .. }, Some(law)) => {
+            (Reading::Fold { arrow, .. }, Some(law)) => {
                 let obliged = Obliged {
                     sides: obligation,
                     head,
@@ -267,7 +267,7 @@ pub fn respected(
                 };
                 lawful(context, (obliged, arrow), (rule, signature), law)?
             },
-            | (Reading::Fold { .. } | Reading::Case { .. }, _) => Related::Apart,
+            (Reading::Fold { .. } | Reading::Case { .. }, _) => Related::Apart,
         };
         if related == Related::Apart {
             return Err(CheckRefusal::RuleNotRespected {
@@ -413,8 +413,8 @@ fn lawful(
     // A law over no variable may state its path bare; any other states it
     // behind one parameter per variable.
     let statement = match context.arena().value_type(declared) {
-        | Some(&ValueType::Path { .. }) if bound == 0 => declared,
-        | Some(&ValueType::Thunk(stated)) => {
+        Some(&ValueType::Path { .. }) if bound == 0 => declared,
+        Some(&ValueType::Thunk(stated)) => {
             let mut at = stated;
             for (variable, slot) in (0_u32 ..).map(RuleVariable::from).zip(slots) {
                 let arena = context.arena_mut();
@@ -423,22 +423,22 @@ fn lawful(
                     pattern_binder(rule.variables(), variable),
                 );
                 let (instance, classifier) = match slot {
-                    | RuleSlot::Own => {
+                    RuleSlot::Own => {
                         let folded = arena.computation_application(obliged.head, reached);
                         (arena.value_returned(folded), carrier)
                     },
-                    | RuleSlot::Other(field) => (
+                    RuleSlot::Other(field) => (
                         reached,
                         crate::former::instantiate(context, obliged.datatype, field, parameters)?,
                     ),
                 };
                 let arena = context.arena_mut();
                 let (domain, rest) = match arena.comp_type(at) {
-                    | Some(&CompType::Arrow { domain, codomain }) => (domain, codomain),
-                    | Some(&CompType::Pi { domain, codomain }) => {
+                    Some(&CompType::Arrow { domain, codomain }) => (domain, codomain),
+                    Some(&CompType::Pi { domain, codomain }) => {
                         (domain, instantiate_comp_type(arena, codomain, instance))
                     },
-                    | _ => return Ok(Related::Apart),
+                    _ => return Ok(Related::Apart),
                 };
                 if !matches!(
                     crate::conversion::equivalent(context, classifier, domain),
@@ -454,7 +454,7 @@ fn lawful(
             };
             result
         },
-        | _ => return Ok(Related::Apart),
+        _ => return Ok(Related::Apart),
     };
     let Some(&ValueType::Path {
         carrier: stated,
@@ -473,8 +473,8 @@ fn lawful(
     let (from, to) = obliged.sides;
     for (side, endpoint) in [(from, left), (to, right)] {
         let in_place = match context.arena().value(endpoint) {
-            | Some(&Value::Returned(run)) => run,
-            | _ => context.arena_mut().computation_return(endpoint),
+            Some(&Value::Returned(run)) => run,
+            _ => context.arena_mut().computation_return(endpoint),
         };
         if context
             .definitions()
@@ -621,8 +621,8 @@ fn sequenced(
         );
         for &argument in &spine.read {
             let value = match argument {
-                | Argument::Kept(kept) => shift_value(arena, kept, amount),
-                | Argument::Bound(position) => {
+                Argument::Kept(kept) => shift_value(arena, kept, amount),
+                Argument::Bound(position) => {
                     let past = depth.saturating_sub(position).saturating_sub(1);
                     arena.value_variable(
                         Zone::Intuitionistic,
@@ -633,11 +633,11 @@ fn sequenced(
             built = arena.computation_application(built, value);
         }
         match spines.last_mut() {
-            | Some(holder) => {
+            Some(holder) => {
                 holder.read.push(Argument::Bound(depth));
                 bound.push(built);
             },
-            | None => body = built,
+            None => body = built,
         }
     }
     bound

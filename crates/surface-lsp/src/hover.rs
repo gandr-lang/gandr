@@ -184,10 +184,10 @@ pub struct Hovering
 #[must_use]
 pub fn hovering(text: SourceText<'_>) -> Hovering
 {
-    let table = match grammar() {
-        | Ok(grammar) => TypeTable::of(grammar, text).unwrap_or_default(),
-        | Err(_) => TypeTable::default(),
-    };
+    let table = grammar().map_or_else(
+        |_| TypeTable::default(),
+        |grammar| TypeTable::of(grammar, text).unwrap_or_default(),
+    );
     Hovering { table }
 }
 
@@ -317,12 +317,8 @@ pub fn hover<Store, Blocks>(
         if let Some(note) = oriented {
             value.push_str("\n\n");
             value.push_str(match note {
-                | gandr_surface_dispatcher::ChosenDirection::LeftToRight => {
-                    "oriented left to right"
-                },
-                | gandr_surface_dispatcher::ChosenDirection::RightToLeft => {
-                    "oriented right to left"
-                },
+                gandr_surface_dispatcher::ChosenDirection::LeftToRight => "oriented left to right",
+                gandr_surface_dispatcher::ChosenDirection::RightToLeft => "oriented right to left",
             });
         }
         return Maybe::Present(Hover {
@@ -347,12 +343,8 @@ pub fn hover<Store, Blocks>(
         {
             let mut code = Code::new(style.markup);
             code.plain(SourceText::from(match note {
-                | gandr_surface_dispatcher::ChosenDirection::LeftToRight => {
-                    "oriented left to right"
-                },
-                | gandr_surface_dispatcher::ChosenDirection::RightToLeft => {
-                    "oriented right to left"
-                },
+                gandr_surface_dispatcher::ChosenDirection::LeftToRight => "oriented left to right",
+                gandr_surface_dispatcher::ChosenDirection::RightToLeft => "oriented right to left",
             }));
             return Maybe::Present(Hover {
                 contents: MarkupContent {
@@ -370,21 +362,18 @@ pub fn hover<Store, Blocks>(
             && found.symbol.range.start <= position
             && position < found.head.end
     });
-    match enclosing {
-        | Some(enclosing) => {
-            let about = if enclosing.head.start <= position {
-                enclosing.head
+    enclosing.map_or(Maybe::Absent(hovered::Absent::Untyped), |enclosing| {
+        let about = if enclosing.head.start <= position {
+            enclosing.head
+        }
+        else {
+            Range {
+                start: enclosing.symbol.range.start,
+                end: enclosing.head.start,
             }
-            else {
-                Range {
-                    start: enclosing.symbol.range.start,
-                    end: enclosing.head.start,
-                }
-            };
-            declared(session, table, enclosing, about, &quoted, style)
-        },
-        | None => Maybe::Absent(hovered::Absent::Untyped),
-    }
+        };
+        declared(session, table, enclosing, about, &quoted, style)
+    })
 }
 
 /// The document a hover quotes from: its text, its line index and the
@@ -464,17 +453,17 @@ fn declared<Store, Blocks>(
     let symbol = &declaration.symbol;
     let key = declaration.key;
     let held = match key {
-        | Some(key) if symbol.kind != SymbolKind::MODULE => {
+        Some(key) if symbol.kind != SymbolKind::MODULE => {
             match table.declared(key, PageWidth::from(HOVER_WIDTH), style.form) {
-                | Maybe::Present(held) => Some(held),
-                | Maybe::Absent(_) => None,
+                Maybe::Present(held) => Some(held),
+                Maybe::Absent(_) => None,
             }
         },
-        | Some(_) | None => None,
+        Some(_) | None => None,
     };
     let documented = key.and_then(|key| match session.documentation(key) {
-        | Maybe::Present(text) => Some(text),
-        | Maybe::Absent(_) => None,
+        Maybe::Present(text) => Some(text),
+        Maybe::Absent(_) => None,
     });
     if held.is_none() && documented.is_none() {
         return Maybe::Absent(hovered::Absent::Unknown);
@@ -483,15 +472,15 @@ fn declared<Store, Blocks>(
     let start = symbol.selection_range.start.byte(quoted.index);
     quoted.quote(&mut code, SourceText::from(symbol.name.as_str()), start);
     let mut value = match held {
-        | Some(Declared::Typed(spelled)) => {
+        Some(Declared::Typed(spelled)) => {
             code.printed(
                 SourceText::from(format!(" : {}", spelled.as_ref()).as_str()),
                 Host::Signature,
             );
             code.block()
         },
-        | Some(Declared::Refused(refusal)) => format!("{}\n\nrefused: {refusal}", code.block()),
-        | None => code.block(),
+        Some(Declared::Refused(refusal)) => format!("{}\n\nrefused: {refusal}", code.block()),
+        None => code.block(),
     };
     if let Some(text) = documented {
         value.push_str("\n\n");
@@ -564,12 +553,12 @@ fn typed(
         .get(start .. end)
         .filter(|written| !written.contains('\n'))
         .filter(|_| match entry.subject() {
-            | Subject::Binder | Subject::Type => true,
-            | Subject::Term => named(),
+            Subject::Binder | Subject::Type => true,
+            Subject::Term => named(),
         });
     let mut code = Code::new(markup);
     match written {
-        | Some(written) => {
+        Some(written) => {
             quoted.quote(
                 &mut code,
                 SourceText::from(written),
@@ -580,7 +569,7 @@ fn typed(
                 Host::Signature,
             );
         },
-        | None => {
+        None => {
             code.printed(SourceText::from(entry.ty().as_ref()), Host::Type);
         },
     }
@@ -687,8 +676,8 @@ mod tests
             position,
             style,
         ) {
-            | Maybe::Present(shown) => Ok(shown.contents.value),
-            | Maybe::Absent(reason) => Err(reason),
+            Maybe::Present(shown) => Ok(shown.contents.value),
+            Maybe::Absent(reason) => Err(reason),
         }
     }
 

@@ -109,8 +109,8 @@ fn corolla(
 ) -> ShapeIndex
 {
     match stratum.corolla(profile(legs)) {
-        | Maybe::Present(corolla) => corolla.index(),
-        | Maybe::Absent(reason) => panic!("the corolla is within the bound: {reason:?}"),
+        Maybe::Present(corolla) => corolla.index(),
+        Maybe::Absent(reason) => panic!("the corolla is within the bound: {reason:?}"),
     }
 }
 
@@ -124,8 +124,8 @@ fn position(
 ) -> ShapeIndex
 {
     match catalogue.find(shape) {
-        | Maybe::Present(index) => index,
-        | Maybe::Absent(reason) => panic!("the class is within the bound: {reason:?}"),
+        Maybe::Present(index) => index,
+        Maybe::Absent(reason) => panic!("the class is within the bound: {reason:?}"),
     }
 }
 
@@ -241,8 +241,8 @@ fn an_equivalence_commutes_with_the_corolla_automorphisms()
         panic!("a bijection that ignores the attachment's swap is not natural");
     };
     let binary_shape = match catalogue.shape(binary) {
-        | Maybe::Present(shape) => shape.clone(),
-        | Maybe::Absent(reason) => panic!("the corolla is in the catalogue: {reason:?}"),
+        Maybe::Present(shape) => shape.clone(),
+        Maybe::Absent(reason) => panic!("the corolla is in the catalogue: {reason:?}"),
     };
     assert_eq!(
         (corolla, shape, element),

@@ -41,8 +41,8 @@ fn records_of(
     let stored = blocks.load(root).expect("the root is stored");
     let node = decode_node(stored.bytes(), &mut DecodeWork::new()).expect("the root decodes");
     match node {
-        | DecodedNode::Leaf(leaf) => leaf.records().to_vec(),
-        | DecodedNode::Internal(internal) => internal
+        DecodedNode::Leaf(leaf) => leaf.records().to_vec(),
+        DecodedNode::Internal(internal) => internal
             .children()
             .iter()
             .flat_map(|child| {

@@ -96,8 +96,8 @@ impl SourceRoot
     pub const fn corpus_root(self) -> CorpusRoot
     {
         match self {
-            | Self::Strict => CorpusRoot::Strict,
-            | Self::Fixture | Self::Pending => CorpusRoot::Fixture,
+            Self::Strict => CorpusRoot::Strict,
+            Self::Fixture | Self::Pending => CorpusRoot::Fixture,
         }
     }
 }
@@ -115,9 +115,9 @@ impl core::fmt::Display for SourceRoot
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::Strict => STRICT,
-            | Self::Fixture => FIXTURE,
-            | Self::Pending => PENDING,
+            Self::Strict => STRICT,
+            Self::Fixture => FIXTURE,
+            Self::Pending => PENDING,
         })
     }
 }

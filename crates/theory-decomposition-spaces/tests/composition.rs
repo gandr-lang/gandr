@@ -44,8 +44,8 @@ mod tests
         Reason: core::fmt::Debug,
     {
         match value {
-            | Maybe::Present(value) => value,
-            | Maybe::Absent(reason) => panic!("fixture absent: {reason:?}"),
+            Maybe::Present(value) => value,
+            Maybe::Absent(reason) => panic!("fixture absent: {reason:?}"),
         }
     }
 
@@ -439,7 +439,7 @@ mod tests
                     union_declines = union_declines.saturating_add(1);
                 }
                 match compose_directed(left, right, &store) {
-                    | Err(_) => {
+                    Err(_) => {
                         shipped_declines = shipped_declines.saturating_add(1);
                         assert!(
                             union,
@@ -447,7 +447,7 @@ mod tests
                              decline under the superseded reading too"
                         );
                     },
-                    | Ok(_) => {
+                    Ok(_) => {
                         if union {
                             recovered = recovered.saturating_add(1);
                         }
@@ -478,11 +478,11 @@ mod tests
             };
             composable = composable.saturating_add(1);
             match compose_directed(left, &partner, &store) {
-                | Err(_) => assert!(
+                Err(_) => assert!(
                     union_reading(left, &partner, &store).0,
                     "a shipped decline is a decline under the superseded reading too"
                 ),
-                | Ok(composite) => assert!(
+                Ok(composite) => assert!(
                     bool::from(composite.replay(&store)),
                     "a composable pair the gate admits composes into a certificate that replays"
                 ),
@@ -523,11 +523,11 @@ mod tests
             let (store, a, b) =
                 variance_pair(SeamHoleMixed(left_mixed), SeamHoleMixed(right_mixed));
             match compose_directed(&a, &b, &store) {
-                | Err(
+                Err(
                     CompositionObstruction::Graph { .. }
                     | CompositionObstruction::NodeCapacityExceeded,
                 ) => panic!("fixture graph must be representable"),
-                | Err(CompositionObstruction::Cycle { cycle }) => {
+                Err(CompositionObstruction::Cycle { cycle }) => {
                     assert!(
                         declines,
                         "{label}: a loop needs a side that emits and absorbs at each end"
@@ -537,7 +537,7 @@ mod tests
                         "{label}: the decline carries the closed walk, not an empty cycle"
                     );
                 },
-                | Ok(composite) => {
+                Ok(composite) => {
                     assert!(
                         !declines,
                         "{label}: both sides emit and absorb, so the flow closes a loop"

@@ -151,8 +151,8 @@ fn corolla(
 ) -> ShapeIndex
 {
     match stratum.corolla(profile(legs)) {
-        | Maybe::Present(corolla) => corolla.index(),
-        | Maybe::Absent(reason) => panic!("the corolla is within the bound: {reason:?}"),
+        Maybe::Present(corolla) => corolla.index(),
+        Maybe::Absent(reason) => panic!("the corolla is within the bound: {reason:?}"),
     }
 }
 
@@ -1054,8 +1054,8 @@ fn a_written_statement_refuses_each_defect_by_name()
         );
         let (report, _readmission) = judged(arena, &[unsigned]);
         match report.judged().first().map(Judged::verdict) {
-            | Some(Verdict::Refused(refusal)) => refusal,
-            | other => panic!("the statement is refused: {other:?}"),
+            Some(Verdict::Refused(refusal)) => refusal,
+            other => panic!("the statement is refused: {other:?}"),
         }
     };
     let cases = [

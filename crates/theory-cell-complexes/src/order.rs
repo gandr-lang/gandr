@@ -159,10 +159,10 @@ pub fn reduction_cmp(
     let left_holes = hole_counts(lhs);
     let right_holes = hole_counts(rhs);
     match lhs.size().cmp(&rhs.size()) {
-        | Ordering::Greater if dominates(&left_holes, &right_holes).0 => Ordering::Greater,
-        | Ordering::Less if dominates(&right_holes, &left_holes).0 => Ordering::Less,
-        | Ordering::Equal if left_holes == right_holes => path_order_cmp(lhs, rhs),
-        | Ordering::Greater | Ordering::Less | Ordering::Equal => Ordering::Equal,
+        Ordering::Greater if dominates(&left_holes, &right_holes).0 => Ordering::Greater,
+        Ordering::Less if dominates(&right_holes, &left_holes).0 => Ordering::Less,
+        Ordering::Equal if left_holes == right_holes => path_order_cmp(lhs, rhs),
+        Ordering::Greater | Ordering::Less | Ordering::Equal => Ordering::Equal,
     }
 }
 
@@ -415,10 +415,10 @@ impl<'term> FlatTerm<'term>
             children.extend(rets);
             root = self.push(
                 match *head {
-                    | ConsHead::Op { ref op, .. } => Head::Op(op),
-                    | ConsHead::Frame(ref ctor) => Head::Frame(ctor),
-                    | ConsHead::Top => Head::Top,
-                    | ConsHead::Meta(ref var) => Head::Var(var),
+                    ConsHead::Op { ref op, .. } => Head::Op(op),
+                    ConsHead::Frame(ref ctor) => Head::Frame(ctor),
+                    ConsHead::Top => Head::Top,
+                    ConsHead::Meta(ref var) => Head::Var(var),
                 },
                 &children,
             );
@@ -454,8 +454,8 @@ impl<'term> FlatTerm<'term>
         let mut root = FlatIndex(self.nodes.len());
         for entry in prod.entries() {
             let head = match *entry.head() {
-                | ProdHead::Meta(ref var) => Head::Var(var),
-                | ProdHead::Ctor(ref ctor, _) => Head::Ctor(ctor),
+                ProdHead::Meta(ref var) => Head::Var(var),
+                ProdHead::Ctor(ref ctor, _) => Head::Ctor(ctor),
             };
             let first = completed
                 .len()
@@ -553,12 +553,12 @@ impl<'term> FlatTerm<'term>
 fn head_rank(head: Head<'_>) -> Maybe<HeadRank, precedence::Absent>
 {
     Maybe::Present(match head {
-        | Head::Cut(_) => HeadRank(4),
-        | Head::Frame(_) => HeadRank(3),
-        | Head::Op(_) => HeadRank(2),
-        | Head::Ctor(_) => HeadRank(1),
-        | Head::Top => HeadRank(0),
-        | Head::Var(_) => {
+        Head::Cut(_) => HeadRank(4),
+        Head::Frame(_) => HeadRank(3),
+        Head::Op(_) => HeadRank(2),
+        Head::Ctor(_) => HeadRank(1),
+        Head::Top => HeadRank(0),
+        Head::Var(_) => {
             return Maybe::Absent(precedence::Absent::Metavariable);
         },
     })
@@ -583,8 +583,8 @@ quenchant_shape::reason_enum! {
 const fn polarity_rank(polarity: Polarity) -> HeadRank
 {
     match polarity {
-        | Polarity::Positive => HeadRank(0),
-        | Polarity::Negative => HeadRank(1),
+        Polarity::Positive => HeadRank(0),
+        Polarity::Negative => HeadRank(1),
     }
 }
 
@@ -620,13 +620,13 @@ fn precedence_cmp(
         return Maybe::Absent(precedence::Absent::Metavariable);
     };
     let by_payload = match (left, right) {
-        | (Head::Cut(left_polarity), Head::Cut(right_polarity)) => {
+        (Head::Cut(left_polarity), Head::Cut(right_polarity)) => {
             polarity_rank(left_polarity).cmp(&polarity_rank(right_polarity))
         },
-        | (Head::Op(left_sym), Head::Op(right_sym))
+        (Head::Op(left_sym), Head::Op(right_sym))
         | (Head::Frame(left_sym), Head::Frame(right_sym))
         | (Head::Ctor(left_sym), Head::Ctor(right_sym)) => left_sym.cmp(right_sym),
-        | (
+        (
             Head::Cut(_) | Head::Op(_) | Head::Frame(_) | Head::Ctor(_) | Head::Top | Head::Var(_),
             _,
         ) => Ordering::Equal,
@@ -839,11 +839,11 @@ fn exceeds(
         pair.right.child_count,
     );
     match precedence {
-        | Maybe::Present(Ordering::Greater) => PathVerdict(true),
-        | Maybe::Present(Ordering::Equal) => {
+        Maybe::Present(Ordering::Greater) => PathVerdict(true),
+        Maybe::Present(Ordering::Equal) => {
             lexicographically_greater(pair.left_children, pair.right_children, equal, greater)
         },
-        | Maybe::Present(Ordering::Less) | Maybe::Absent(_) => PathVerdict(false),
+        Maybe::Present(Ordering::Less) | Maybe::Absent(_) => PathVerdict(false),
     }
 }
 

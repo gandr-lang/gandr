@@ -261,17 +261,17 @@ mod oracle
         let mut handles: Vec<Pos> = Vec::new();
         for op in ops {
             match *op {
-                | Op::PushBack(value) => {
+                Op::PushBack(value) => {
                     let pos = order.push_back(value)?;
                     model.push(value);
                     handles.push(pos);
                 },
-                | Op::PushFront(value) => {
+                Op::PushFront(value) => {
                     let pos = order.push_front(value)?;
                     model.insert(0, value);
                     handles.insert(0, pos);
                 },
-                | Op::InsertAfter(rank, value) => {
+                Op::InsertAfter(rank, value) => {
                     if model.is_empty() {
                         continue;
                     }
@@ -285,7 +285,7 @@ mod oracle
                     model.insert(after, value);
                     handles.insert(after, pos);
                 },
-                | Op::InsertBefore(rank, value) => {
+                Op::InsertBefore(rank, value) => {
                     if model.is_empty() {
                         continue;
                     }
@@ -298,7 +298,7 @@ mod oracle
                     model.insert(index.0, value);
                     handles.insert(index.0, pos);
                 },
-                | Op::Remove(rank) => {
+                Op::Remove(rank) => {
                     if model.is_empty() {
                         continue;
                     }
@@ -360,11 +360,11 @@ mod oracle
                 .expect("strategy generates an edit")
                 .current();
             let kind = match operation {
-                | Op::PushBack(_) => 0,
-                | Op::PushFront(_) => 1,
-                | Op::InsertAfter(..) => 2,
-                | Op::InsertBefore(..) => 3,
-                | Op::Remove(_) => 4,
+                Op::PushBack(_) => 0,
+                Op::PushFront(_) => 1,
+                Op::InsertAfter(..) => 2,
+                Op::InsertBefore(..) => 3,
+                Op::Remove(_) => 4,
             };
             *seen.get_mut(kind).expect("edit kind has a census slot") = true;
         }

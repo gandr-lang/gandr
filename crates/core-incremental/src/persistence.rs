@@ -240,11 +240,11 @@ impl From<CodecError> for CheckpointStoreError
     fn from(error: CodecError) -> Self
     {
         match error {
-            | CodecError::Corrupt => Self::Corrupt,
-            | CodecError::NonCanonical => Self::NonCanonical,
-            | CodecError::LevelOffsetTooLarge { offset } => Self::LevelOffsetTooLarge { offset },
-            | CodecError::Unsupported(form) => Self::UnsupportedPersistence(form),
-            | CodecError::Unrepresentable => Self::Rejected,
+            CodecError::Corrupt => Self::Corrupt,
+            CodecError::NonCanonical => Self::NonCanonical,
+            CodecError::LevelOffsetTooLarge { offset } => Self::LevelOffsetTooLarge { offset },
+            CodecError::Unsupported(form) => Self::UnsupportedPersistence(form),
+            CodecError::Unrepresentable => Self::Rejected,
         }
     }
 }
@@ -262,18 +262,18 @@ impl fmt::Display for CheckpointStoreError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Rejected => f.write_str("the checkpoint record cannot be represented"),
-            | Self::UnsupportedPersistence(form) => write!(f, "cannot persist: {form}"),
-            | Self::Corrupt => f.write_str("the checkpoint record is corrupt"),
-            | Self::LevelOffsetTooLarge { offset } => {
+            Self::Rejected => f.write_str("the checkpoint record cannot be represented"),
+            Self::UnsupportedPersistence(form) => write!(f, "cannot persist: {form}"),
+            Self::Corrupt => f.write_str("the checkpoint record is corrupt"),
+            Self::LevelOffsetTooLarge { offset } => {
                 write!(
                     f,
                     "a level offset of {} passes the decoder's cap",
                     u64::from(offset)
                 )
             },
-            | Self::NonCanonical => f.write_str("the checkpoint payload is not canonical"),
-            | Self::Io => f.write_str("the checkpoint store's file system failed"),
+            Self::NonCanonical => f.write_str("the checkpoint payload is not canonical"),
+            Self::Io => f.write_str("the checkpoint store's file system failed"),
         }
     }
 }
@@ -690,11 +690,11 @@ impl CheckpointStore for FileCheckpointStore
     ) -> Result<Maybe<Checkpoints, stored::Absent>, CheckpointStoreError>
     {
         let bytes = match std::fs::read(self.record_path(address)) {
-            | Ok(bytes) => bytes,
-            | Err(ref error) if failure_of(error) == Failure::NotFound => {
+            Ok(bytes) => bytes,
+            Err(ref error) if failure_of(error) == Failure::NotFound => {
                 return Ok(Maybe::Absent(stored::Absent::NotStored));
             },
-            | Err(_error) => return Err(CheckpointStoreError::Io),
+            Err(_error) => return Err(CheckpointStoreError::Io),
         };
         let (header, payload) = bytes
             .split_at_checked(FILE_HEADER_LEN)
@@ -930,9 +930,9 @@ impl TemporaryRecord
                 .create_new(true)
                 .open(&candidate);
             let mut file = match created {
-                | Ok(file) => file,
-                | Err(ref error) if failure_of(error) == Failure::AlreadyExists => continue,
-                | Err(_error) => return Err(CheckpointStoreError::Io),
+                Ok(file) => file,
+                Err(ref error) if failure_of(error) == Failure::AlreadyExists => continue,
+                Err(_error) => return Err(CheckpointStoreError::Io),
             };
             // Armed before the first byte, so cleanup also covers partial writes.
             let record = Self {
@@ -1355,12 +1355,12 @@ where
     }
     let loaded = store.load(address, backend)?;
     match loaded {
-        | Maybe::Present(checkpoints) => Ok(Maybe::Present(checkpoints)),
-        | Maybe::Absent(reason) => {
+        Maybe::Present(checkpoints) => Ok(Maybe::Present(checkpoints)),
+        Maybe::Absent(reason) => {
             observer.invalidated(address);
             Ok(Maybe::Absent(match reason {
-                | stored::Absent::NotStored => restored::Absent::NotStored,
-                | stored::Absent::OtherBackend => restored::Absent::OtherBackend,
+                stored::Absent::NotStored => restored::Absent::NotStored,
+                stored::Absent::OtherBackend => restored::Absent::OtherBackend,
             }))
         },
     }
@@ -1748,95 +1748,91 @@ mod tests
     fn kind(typing: &Typing) -> Key
     {
         Key(match *typing {
-            | Typing::Data => "data",
-            | Typing::Refused(Refusal::NotADataType(_)) => "not-a-data-type",
-            | Typing::Refused(Refusal::DataKindNotUniverse(_)) => "data-kind-not-universe",
-            | Typing::Refused(Refusal::DataFieldLevel { .. }) => "data-field-level",
-            | Typing::Refused(Refusal::RuleNotPresentable { .. }) => "rule-not-presentable",
-            | Typing::Refused(Refusal::RuleNotRespected { .. }) => "rule-not-respected",
-            | Typing::Refused(Refusal::NotApart { .. }) => "not-apart",
-            | Typing::Refused(Refusal::LoopNotRespected { .. }) => "loop-not-respected",
-            | Typing::Refused(Refusal::DataArgumentArity(_)) => "data-argument-arity",
-            | Typing::Refused(Refusal::UnknownConstructor { .. }) => "unknown-constructor",
-            | Typing::Refused(Refusal::ConstructorArity(_)) => "constructor-arity",
-            | Typing::Refused(Refusal::NonExhaustiveDataCase(_)) => "non-exhaustive-data-case",
-            | Typing::Refused(Refusal::AbsentRecordField(_)) => "absent-record-field",
-            | Typing::Refused(Refusal::AbsentTupleComponent(_)) => "absent-tuple-component",
-            | Typing::Refused(Refusal::MissingRecordField { .. }) => "missing-record-field",
-            | Typing::Checked { .. } => "checked",
-            | Typing::Synthesised { .. } => "synthesised",
-            | Typing::Owed => "owed",
-            | Typing::Refused(Refusal::PathCode(_)) => "path-code",
-            | Typing::Refused(Refusal::EndpointMismatch { .. }) => "endpoint-mismatch",
-            | Typing::Refused(Refusal::CompoundEndpoint { .. }) => "compound-endpoint",
-            | Typing::Refused(Refusal::FunextUnsupported { .. }) => "funext-unsupported",
-            | Typing::Refused(Refusal::PointwiseDistinct(_)) => "pointwise-distinct",
-            | Typing::Refused(Refusal::EquivUnsupported { .. }) => "equiv-unsupported",
-            | Typing::Refused(Refusal::UncertifiedStratum { .. }) => "uncertified-stratum",
-            | Typing::Refused(Refusal::RoundTripDistinct(_)) => "round-trip-distinct",
-            | Typing::Refused(Refusal::NotOver { .. }) => "not-over",
-            | Typing::Refused(Refusal::UaUncertified { .. }) => "ua-uncertified",
-            | Typing::Refused(Refusal::UaInequivalent { .. }) => "ua-inequivalent",
-            | Typing::Refused(Refusal::SessionNotEquivalent(_)) => "session-not-equivalent",
-            | Typing::Refused(Refusal::SessionNotSubtype(_)) => "session-not-subtype",
-            | Typing::Refused(Refusal::SessionCodeExpected(_)) => "session-code-expected",
-            | Typing::Refused(Refusal::NonCovariantMotive(_)) => "non-covariant-motive",
-            | Typing::Refused(Refusal::RideUnsupported(_)) => "ride-unsupported",
-            | Typing::Refused(Refusal::RunNotAdmitted { .. }) => "run-not-admitted",
-            | Typing::Refused(Refusal::ForwardUnsupported(_)) => "forward-unsupported",
-            | Typing::Refused(Refusal::Boundary(_)) => "boundary",
-            | Typing::Refused(Refusal::EffectSignatureConflict { .. }) => {
-                "effect-signature-conflict"
-            },
-            | Typing::Refused(Refusal::UnknownOperation { .. }) => "unknown-operation",
-            | Typing::Refused(Refusal::HandlerCoverage { .. }) => "handler-coverage",
-            | Typing::Refused(Refusal::ShiftWithoutReset { .. }) => "shift-without-reset",
-            | Typing::Refused(Refusal::DependentStack { .. }) => "dependent-stack",
-            | Typing::Refused(Refusal::TypeMismatch { .. }) => "type-mismatch",
-            | Typing::Refused(Refusal::ShapeMismatch { .. }) => "shape-mismatch",
-            | Typing::Refused(Refusal::NotSynthesisable { .. }) => "not-synthesisable",
-            | Typing::Refused(Refusal::UnknownConstant { .. }) => "unknown-constant",
-            | Typing::Refused(Refusal::OutOfFragment { .. }) => "out-of-fragment",
-            | Typing::Refused(Refusal::UnboundIndex { .. }) => "unbound-index",
-            | Typing::Refused(Refusal::BudgetExceeded { .. }) => "budget-exceeded",
-            | Typing::Refused(Refusal::DanglingNode { .. }) => "dangling-node",
-            | Typing::Refused(Refusal::AdmissionOrder) => "admission-order",
-            | Typing::Refused(Refusal::MachineInvariant) => "machine-invariant",
-            | Typing::Refused(Refusal::SortMismatch { .. }) => "sort-mismatch",
-            | Typing::Refused(Refusal::LevelMismatch { .. }) => "level-mismatch",
-            | Typing::Refused(Refusal::DependentBind { .. }) => "dependent-bind",
-            | Typing::Refused(Refusal::Undecided { .. }) => "undecided",
-            | Typing::Refused(Refusal::FamilyArity { .. }) => "family-arity",
-            | Typing::Refused(Refusal::FamilyArgumentClassifier { .. }) => {
+            Typing::Data => "data",
+            Typing::Refused(Refusal::NotADataType(_)) => "not-a-data-type",
+            Typing::Refused(Refusal::DataKindNotUniverse(_)) => "data-kind-not-universe",
+            Typing::Refused(Refusal::DataFieldLevel { .. }) => "data-field-level",
+            Typing::Refused(Refusal::RuleNotPresentable { .. }) => "rule-not-presentable",
+            Typing::Refused(Refusal::RuleNotRespected { .. }) => "rule-not-respected",
+            Typing::Refused(Refusal::NotApart { .. }) => "not-apart",
+            Typing::Refused(Refusal::LoopNotRespected { .. }) => "loop-not-respected",
+            Typing::Refused(Refusal::DataArgumentArity(_)) => "data-argument-arity",
+            Typing::Refused(Refusal::UnknownConstructor { .. }) => "unknown-constructor",
+            Typing::Refused(Refusal::ConstructorArity(_)) => "constructor-arity",
+            Typing::Refused(Refusal::NonExhaustiveDataCase(_)) => "non-exhaustive-data-case",
+            Typing::Refused(Refusal::AbsentRecordField(_)) => "absent-record-field",
+            Typing::Refused(Refusal::AbsentTupleComponent(_)) => "absent-tuple-component",
+            Typing::Refused(Refusal::MissingRecordField { .. }) => "missing-record-field",
+            Typing::Checked { .. } => "checked",
+            Typing::Synthesised { .. } => "synthesised",
+            Typing::Owed => "owed",
+            Typing::Refused(Refusal::PathCode(_)) => "path-code",
+            Typing::Refused(Refusal::EndpointMismatch { .. }) => "endpoint-mismatch",
+            Typing::Refused(Refusal::CompoundEndpoint { .. }) => "compound-endpoint",
+            Typing::Refused(Refusal::FunextUnsupported { .. }) => "funext-unsupported",
+            Typing::Refused(Refusal::PointwiseDistinct(_)) => "pointwise-distinct",
+            Typing::Refused(Refusal::EquivUnsupported { .. }) => "equiv-unsupported",
+            Typing::Refused(Refusal::UncertifiedStratum { .. }) => "uncertified-stratum",
+            Typing::Refused(Refusal::RoundTripDistinct(_)) => "round-trip-distinct",
+            Typing::Refused(Refusal::NotOver { .. }) => "not-over",
+            Typing::Refused(Refusal::UaUncertified { .. }) => "ua-uncertified",
+            Typing::Refused(Refusal::UaInequivalent { .. }) => "ua-inequivalent",
+            Typing::Refused(Refusal::SessionNotEquivalent(_)) => "session-not-equivalent",
+            Typing::Refused(Refusal::SessionNotSubtype(_)) => "session-not-subtype",
+            Typing::Refused(Refusal::SessionCodeExpected(_)) => "session-code-expected",
+            Typing::Refused(Refusal::NonCovariantMotive(_)) => "non-covariant-motive",
+            Typing::Refused(Refusal::RideUnsupported(_)) => "ride-unsupported",
+            Typing::Refused(Refusal::RunNotAdmitted { .. }) => "run-not-admitted",
+            Typing::Refused(Refusal::ForwardUnsupported(_)) => "forward-unsupported",
+            Typing::Refused(Refusal::Boundary(_)) => "boundary",
+            Typing::Refused(Refusal::EffectSignatureConflict { .. }) => "effect-signature-conflict",
+            Typing::Refused(Refusal::UnknownOperation { .. }) => "unknown-operation",
+            Typing::Refused(Refusal::HandlerCoverage { .. }) => "handler-coverage",
+            Typing::Refused(Refusal::ShiftWithoutReset { .. }) => "shift-without-reset",
+            Typing::Refused(Refusal::DependentStack { .. }) => "dependent-stack",
+            Typing::Refused(Refusal::TypeMismatch { .. }) => "type-mismatch",
+            Typing::Refused(Refusal::ShapeMismatch { .. }) => "shape-mismatch",
+            Typing::Refused(Refusal::NotSynthesisable { .. }) => "not-synthesisable",
+            Typing::Refused(Refusal::UnknownConstant { .. }) => "unknown-constant",
+            Typing::Refused(Refusal::OutOfFragment { .. }) => "out-of-fragment",
+            Typing::Refused(Refusal::UnboundIndex { .. }) => "unbound-index",
+            Typing::Refused(Refusal::BudgetExceeded { .. }) => "budget-exceeded",
+            Typing::Refused(Refusal::DanglingNode { .. }) => "dangling-node",
+            Typing::Refused(Refusal::AdmissionOrder) => "admission-order",
+            Typing::Refused(Refusal::MachineInvariant) => "machine-invariant",
+            Typing::Refused(Refusal::SortMismatch { .. }) => "sort-mismatch",
+            Typing::Refused(Refusal::LevelMismatch { .. }) => "level-mismatch",
+            Typing::Refused(Refusal::DependentBind { .. }) => "dependent-bind",
+            Typing::Refused(Refusal::Undecided { .. }) => "undecided",
+            Typing::Refused(Refusal::FamilyArity { .. }) => "family-arity",
+            Typing::Refused(Refusal::FamilyArgumentClassifier { .. }) => {
                 "family-argument-classifier"
             },
-            | Typing::Refused(Refusal::StaticLambdaArgument { .. }) => "static-lambda-argument",
-            | Typing::Refused(Refusal::StaticClassifierExpected { .. }) => {
+            Typing::Refused(Refusal::StaticLambdaArgument { .. }) => "static-lambda-argument",
+            Typing::Refused(Refusal::StaticClassifierExpected { .. }) => {
                 "static-classifier-expected"
             },
-            | Typing::Refused(Refusal::NegativeOccurrence(_)) => "negative-occurrence",
-            | Typing::Refused(Refusal::NestedOccurrence(_)) => "nested-occurrence",
-            | Typing::Refused(Refusal::IndexOccurrence(_)) => "index-occurrence",
-            | Typing::Refused(Refusal::NonUniformOccurrence(_)) => "non-uniform-occurrence",
-            | Typing::Refused(Refusal::CrossBlockReference { .. }) => "cross-block-reference",
-            | Typing::Refused(Refusal::DescentNotReplayed { .. }) => "descent-not-replayed",
-            | Typing::Refused(Refusal::AbstractKindNotUniverse(_)) => "abstract-kind-not-universe",
-            | Typing::Refused(Refusal::RepresentationAboveKind { .. }) => {
-                "representation-above-kind"
-            },
-            | Typing::Refused(Refusal::NotAnAbstractType(_)) => "not-an-abstract-type",
-            | Typing::Refused(Refusal::SealSiteRepeated(_)) => "seal-site-repeated",
-            | Typing::Refused(Refusal::UnenclosedRun { .. }) => "unenclosed-run",
-            | Typing::Refused(Refusal::SessionMismatch { .. }) => "session-mismatch",
-            | Typing::Refused(Refusal::Linearity { .. }) => "linearity",
-            | Typing::Refused(Refusal::CapabilityForged { .. }) => "capability-forged",
-            | Typing::Refused(Refusal::CapabilityAmplified { .. }) => "capability-amplified",
-            | Typing::Refused(Refusal::CapabilityOutsideAuthority { .. }) => {
+            Typing::Refused(Refusal::NegativeOccurrence(_)) => "negative-occurrence",
+            Typing::Refused(Refusal::NestedOccurrence(_)) => "nested-occurrence",
+            Typing::Refused(Refusal::IndexOccurrence(_)) => "index-occurrence",
+            Typing::Refused(Refusal::NonUniformOccurrence(_)) => "non-uniform-occurrence",
+            Typing::Refused(Refusal::CrossBlockReference { .. }) => "cross-block-reference",
+            Typing::Refused(Refusal::DescentNotReplayed { .. }) => "descent-not-replayed",
+            Typing::Refused(Refusal::AbstractKindNotUniverse(_)) => "abstract-kind-not-universe",
+            Typing::Refused(Refusal::RepresentationAboveKind { .. }) => "representation-above-kind",
+            Typing::Refused(Refusal::NotAnAbstractType(_)) => "not-an-abstract-type",
+            Typing::Refused(Refusal::SealSiteRepeated(_)) => "seal-site-repeated",
+            Typing::Refused(Refusal::UnenclosedRun { .. }) => "unenclosed-run",
+            Typing::Refused(Refusal::SessionMismatch { .. }) => "session-mismatch",
+            Typing::Refused(Refusal::Linearity { .. }) => "linearity",
+            Typing::Refused(Refusal::CapabilityForged { .. }) => "capability-forged",
+            Typing::Refused(Refusal::CapabilityAmplified { .. }) => "capability-amplified",
+            Typing::Refused(Refusal::CapabilityOutsideAuthority { .. }) => {
                 "capability-outside-authority"
             },
-            | Typing::Refused(Refusal::CapabilityEscaped { .. }) => "capability-escaped",
-            | Typing::Refused(Refusal::CapabilityConsumable(_)) => "capability-consumable",
-            | Typing::Refused(Refusal::CapabilityUngranted(_)) => "capability-ungranted",
+            Typing::Refused(Refusal::CapabilityEscaped { .. }) => "capability-escaped",
+            Typing::Refused(Refusal::CapabilityConsumable(_)) => "capability-consumable",
+            Typing::Refused(Refusal::CapabilityUngranted(_)) => "capability-ungranted",
         })
     }
 

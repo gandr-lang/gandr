@@ -252,19 +252,19 @@ impl PrimTy
     pub fn from_label(label: NameRef<'_>) -> Maybe<Self, primitive_label::Absent>
     {
         let prim = match label.as_ref() {
-            | "Integer" => Self::Integer,
-            | "Boolean" => Self::Boolean,
-            | "Unit" => Self::Unit,
-            | "String" => Self::StringTy,
-            | "Char" => Self::Char,
-            | "u32" => Self::U32,
-            | "u64" => Self::U64,
-            | "i32" => Self::I32,
-            | "i64" => Self::I64,
-            | "f32" => Self::F32,
-            | "f64" => Self::F64,
-            | "Unknown" => Self::Unknown,
-            | _ => return Maybe::Absent(primitive_label::Absent::Declared),
+            "Integer" => Self::Integer,
+            "Boolean" => Self::Boolean,
+            "Unit" => Self::Unit,
+            "String" => Self::StringTy,
+            "Char" => Self::Char,
+            "u32" => Self::U32,
+            "u64" => Self::U64,
+            "i32" => Self::I32,
+            "i64" => Self::I64,
+            "f32" => Self::F32,
+            "f64" => Self::F64,
+            "Unknown" => Self::Unknown,
+            _ => return Maybe::Absent(primitive_label::Absent::Declared),
         };
         Maybe::Present(prim)
     }
@@ -299,18 +299,18 @@ impl PrimTy
     pub fn label(self) -> NameRef<'static>
     {
         NameRef::from(match self {
-            | Self::Integer => "Integer",
-            | Self::Boolean => "Boolean",
-            | Self::Unit => "Unit",
-            | Self::StringTy => "String",
-            | Self::Char => "Char",
-            | Self::U32 => "u32",
-            | Self::U64 => "u64",
-            | Self::I32 => "i32",
-            | Self::I64 => "i64",
-            | Self::F32 => "f32",
-            | Self::F64 => "f64",
-            | Self::Unknown => "Unknown",
+            Self::Integer => "Integer",
+            Self::Boolean => "Boolean",
+            Self::Unit => "Unit",
+            Self::StringTy => "String",
+            Self::Char => "Char",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+            Self::Unknown => "Unknown",
         })
     }
 }
@@ -337,8 +337,8 @@ impl Head for TypeHead
     fn arity(&self) -> ArgumentCount
     {
         match *self {
-            | Self::Ctor(_, arity) => arity,
-            | Self::Param(_) | Self::Prim(_) => ArgumentCount::from(0_usize),
+            Self::Ctor(_, arity) => arity,
+            Self::Param(_) | Self::Prim(_) => ArgumentCount::from(0_usize),
         }
     }
 }
@@ -446,8 +446,8 @@ impl ValueTypeRef
     pub fn head_name(&self) -> Name
     {
         match *self.0.to_ref().head() {
-            | TypeHead::Param(ref name) | TypeHead::Ctor(ref name, _) => name.clone(),
-            | TypeHead::Prim(prim) => Name::from(prim.label()),
+            TypeHead::Param(ref name) | TypeHead::Ctor(ref name, _) => name.clone(),
+            TypeHead::Prim(prim) => Name::from(prim.label()),
         }
     }
 }
@@ -468,9 +468,9 @@ impl<'code> ValueTypeNode<'code>
     pub fn view(self) -> ValueTypeView<'code>
     {
         match *self.0.head() {
-            | TypeHead::Param(ref name) => ValueTypeView::Param(name),
-            | TypeHead::Prim(prim) => ValueTypeView::Prim(prim),
-            | TypeHead::Ctor(ref head, _) => ValueTypeView::Ctor {
+            TypeHead::Param(ref name) => ValueTypeView::Param(name),
+            TypeHead::Prim(prim) => ValueTypeView::Prim(prim),
+            TypeHead::Ctor(ref head, _) => ValueTypeView::Ctor {
                 head,
                 args: ValueTypeArgs(self.0.children()),
             },
@@ -721,9 +721,9 @@ impl<G> Head for CodeHead<G>
     fn arity(&self) -> ArgumentCount
     {
         ArgumentCount::from(match *self {
-            | Self::Unit | Self::Var(_) | Self::Field(..) => 0_usize,
-            | Self::Bind(_) => 1_usize,
-            | Self::Prod | Self::Sum => 2_usize,
+            Self::Unit | Self::Var(_) | Self::Field(..) => 0_usize,
+            Self::Bind(_) => 1_usize,
+            Self::Prod | Self::Sum => 2_usize,
         })
     }
 }
@@ -949,8 +949,8 @@ impl<G> Code<G>
     pub fn recursive_sorts(&self) -> impl Iterator<Item = &Name>
     {
         self.0.to_ref().preorder().filter_map(|head| match *head {
-            | CodeHead::Var(ref sort) => Some(sort),
-            | CodeHead::Unit
+            CodeHead::Var(ref sort) => Some(sort),
+            CodeHead::Unit
             | CodeHead::Prod
             | CodeHead::Sum
             | CodeHead::Field(..)
@@ -1015,12 +1015,12 @@ impl<'code, G> CodeNode<'code, G>
     {
         let args = CodeArgs(self.0.children());
         match *self.0.head() {
-            | CodeHead::Unit => CodeView::Unit,
-            | CodeHead::Var(ref sort) => CodeView::Var(sort),
-            | CodeHead::Prod => CodeView::Prod(args),
-            | CodeHead::Sum => CodeView::Sum(args),
-            | CodeHead::Field(ref ty, ref grade, ref attrs) => CodeView::Field { ty, grade, attrs },
-            | CodeHead::Bind(ref sort) => CodeView::Bind { sort, body: args },
+            CodeHead::Unit => CodeView::Unit,
+            CodeHead::Var(ref sort) => CodeView::Var(sort),
+            CodeHead::Prod => CodeView::Prod(args),
+            CodeHead::Sum => CodeView::Sum(args),
+            CodeHead::Field(ref ty, ref grade, ref attrs) => CodeView::Field { ty, grade, attrs },
+            CodeHead::Bind(ref sort) => CodeView::Bind { sort, body: args },
         }
     }
 

@@ -117,24 +117,24 @@ where
         value,
     } = term;
     let head = match arena.value(flow) {
-        | Some(&Value::Stay { .. }) => Head::Stay,
-        | Some(&Value::Then {
+        Some(&Value::Stay { .. }) => Head::Stay,
+        Some(&Value::Then {
             first,
             second,
             seam: Seam::Sequence,
         }) => Head::Then(first, second),
-        | Some(&Value::ForwardFlow { translator, .. }) => Head::Forward(translator),
-        | Some(&Value::FunctionFlow {
+        Some(&Value::ForwardFlow { translator, .. }) => Head::Forward(translator),
+        Some(&Value::FunctionFlow {
             domain, codomain, ..
         }) => Head::Function(domain, codomain),
-        | Some(&Value::FlowProduct(first, second)) => Head::Product(first, second),
-        | Some(_) => Head::Other,
-        | None => return Err(KernelError::ArenaFault),
+        Some(&Value::FlowProduct(first, second)) => Head::Product(first, second),
+        Some(_) => Head::Other,
+        None => return Err(KernelError::ArenaFault),
     };
     let one = BinderDepth::from(1_u32);
     match head {
-        | Head::Stay => return Ok(Reduction::Reduced(arena.computation_return(value))),
-        | Head::Then(first, second) => {
+        Head::Stay => return Ok(Reduction::Reduced(arena.computation_return(value))),
+        Head::Then(first, second) => {
             let step = arena.computation_ride(motive, first, value);
             let lifted = shift_value_type(arena, table, memo, motive, one, one);
             let second = shift_value(arena, table, memo, second, BinderDepth::NONE, one);
@@ -142,7 +142,7 @@ where
             let rest = arena.computation_ride(lifted, second, moved);
             return Ok(Reduction::Reduced(arena.computation_bind(step, rest)));
         },
-        | Head::Forward(_) | Head::Function(..) | Head::Product(..) | Head::Other => {},
+        Head::Forward(_) | Head::Function(..) | Head::Product(..) | Head::Other => {},
     }
     if binder_use(arena, table, memo, Family::Type(motive)) == BinderUse::Ignored {
         return Ok(Reduction::Reduced(arena.computation_return(value)));
@@ -152,13 +152,13 @@ where
         .cloned()
         .ok_or(KernelError::ArenaFault)?;
     match family {
-        | ValueType::Product(parts) => {
+        ValueType::Product(parts) => {
             let components = match arena.value(value) {
-                | Some(&Value::Tuple(ref components)) if components.len() == parts.len() => {
+                Some(&Value::Tuple(ref components)) if components.len() == parts.len() => {
                     components.clone()
                 },
-                | Some(_) => return Ok(Reduction::Stuck),
-                | None => return Err(KernelError::ArenaFault),
+                Some(_) => return Ok(Reduction::Stuck),
+                None => return Err(KernelError::ArenaFault),
             };
             Ok(Reduction::Reduced(componentwise(
                 arena,
@@ -169,11 +169,11 @@ where
                 flow,
             )?))
         },
-        | ValueType::Sum(parts) => {
+        ValueType::Sum(parts) => {
             let (summand, payload) = match arena.value(value) {
-                | Some(&Value::Injection(summand, payload)) => (summand, payload),
-                | Some(_) => return Ok(Reduction::Stuck),
-                | None => return Err(KernelError::ArenaFault),
+                Some(&Value::Injection(summand, payload)) => (summand, payload),
+                Some(_) => return Ok(Reduction::Stuck),
+                None => return Err(KernelError::ArenaFault),
             };
             let Some(&part) = parts.get(usize::from(summand))
             else {
@@ -185,14 +185,14 @@ where
             let returned = arena.computation_return(injected);
             Ok(Reduction::Reduced(arena.computation_bind(step, returned)))
         },
-        | ValueType::List(element) => {
+        ValueType::List(element) => {
             let (head, tail) = match arena.value(value) {
-                | Some(&Value::ListNil) => {
+                Some(&Value::ListNil) => {
                     return Ok(Reduction::Reduced(arena.computation_return(value)));
                 },
-                | Some(&Value::ListCons(head, tail)) => (head, tail),
-                | Some(_) => return Ok(Reduction::Stuck),
-                | None => return Err(KernelError::ArenaFault),
+                Some(&Value::ListCons(head, tail)) => (head, tail),
+                Some(_) => return Ok(Reduction::Stuck),
+                None => return Err(KernelError::ArenaFault),
             };
             Ok(Reduction::Reduced(cell(
                 arena,
@@ -204,18 +204,18 @@ where
                 (head, tail),
             )))
         },
-        | ValueType::Element { code, target } => {
+        ValueType::Element { code, target } => {
             let universe_family = matches!(arena.value(code), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
                 && target == Level::zero();
             if !universe_family {
                 return Ok(Reduction::Stuck);
             }
             Ok(match head {
-                | Head::Forward(translator) => {
+                Head::Forward(translator) => {
                     let force = arena.computation_force(translator);
                     Reduction::Reduced(arena.computation_application(force, value))
                 },
-                | Head::Function(domain, codomain) => Reduction::Reduced(wrapped(
+                Head::Function(domain, codomain) => Reduction::Reduced(wrapped(
                     arena,
                     table,
                     memo,
@@ -223,7 +223,7 @@ where
                     (domain, codomain),
                     value,
                 )),
-                | Head::Product(first, second) => {
+                Head::Product(first, second) => {
                     let Some(&[left, right]) = arena.value(value).and_then(Value::components)
                     else {
                         return Ok(Reduction::Stuck);
@@ -240,10 +240,10 @@ where
                     let rest = arena.computation_bind(rest, returned);
                     Reduction::Reduced(arena.computation_bind(step, rest))
                 },
-                | Head::Stay | Head::Then(..) | Head::Other => Reduction::Stuck,
+                Head::Stay | Head::Then(..) | Head::Other => Reduction::Stuck,
             })
         },
-        | ValueType::Flow {
+        ValueType::Flow {
             domain,
             source,
             target,
@@ -256,7 +256,7 @@ where
             }
             Ok(Reduction::Reduced(composed(arena, value, flow)))
         },
-        | ValueType::FlowUniverse(source, target) => {
+        ValueType::FlowUniverse(source, target) => {
             let singleton = matches!(arena.value(target), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
                 && binder_use(arena, table, memo, Family::Value(source)) == BinderUse::Ignored;
             if !singleton {
@@ -264,7 +264,18 @@ where
             }
             Ok(Reduction::Reduced(composed(arena, value, flow)))
         },
-        | _ => Ok(Reduction::Stuck),
+        ValueType::Data { .. }
+        | ValueType::Record(_)
+        | ValueType::Session { .. }
+        | ValueType::PathUniverse(..)
+        | ValueType::Path { .. }
+        | ValueType::Base(_)
+        | ValueType::Sigma { .. }
+        | ValueType::Thunk(_)
+        | ValueType::Universe { .. }
+        | ValueType::Lift { .. }
+        | ValueType::Abstract(_)
+        | ValueType::StaticPi { .. } => Ok(Reduction::Stuck),
     }
 }
 
@@ -289,8 +300,8 @@ fn composed(
 ) -> gandr_kernel_term::ComputationId
 {
     let result = match arena.value(value) {
-        | Some(&Value::Stay { .. }) => flow,
-        | _ => arena.value_then(value, flow, Seam::Sequence),
+        Some(&Value::Stay { .. }) => flow,
+        _ => arena.value_then(value, flow, Seam::Sequence),
     };
     arena.computation_return(result)
 }
@@ -410,22 +421,22 @@ where
         value,
     } = term;
     let body = match telescope(arena, motive)? {
-        | Maybe::Present(Telescope { body, .. }) => body,
-        | Maybe::Absent(_) => return Ok(Reduction::Stuck),
+        Maybe::Present(Telescope { body, .. }) => body,
+        Maybe::Absent(_) => return Ok(Reduction::Stuck),
     };
     let point = match arena.value(flow) {
-        | Some(&Value::Stay { point, .. }) => point,
-        | Some(_) => return Ok(Reduction::Stuck),
-        | None => return Err(KernelError::ArenaFault),
+        Some(&Value::Stay { point, .. }) => point,
+        Some(_) => return Ok(Reduction::Stuck),
+        None => return Err(KernelError::ArenaFault),
     };
     match arena.value(over) {
-        | Some(&Value::Stay { .. }) => Ok(Reduction::Reduced(arena.computation_return(value))),
-        | Some(_) => {
+        Some(&Value::Stay { .. }) => Ok(Reduction::Reduced(arena.computation_return(value))),
+        Some(_) => {
             let fibre = substitute_outer_value_type(arena, table, memo, body, point);
             Ok(Reduction::Reduced(
                 arena.computation_ride(fibre, over, value),
             ))
         },
-        | None => Err(KernelError::ArenaFault),
+        None => Err(KernelError::ArenaFault),
     }
 }

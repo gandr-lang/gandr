@@ -117,9 +117,9 @@ fn unit_entries(profile: &Path) -> Result<Vec<(PathBuf, UnitHash)>, BuildStateEr
     for directory in UNIT_DIRECTORIES {
         let directory = profile.join(directory);
         let listing = match fs::read_dir(&directory) {
-            | Ok(listing) => listing,
-            | Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            | Err(error) => return Err(io(&directory, &error)),
+            Ok(listing) => listing,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(io(&directory, &error)),
         };
         for entry in listing {
             let entry = entry.map_err(|error| io(&directory, &error))?;

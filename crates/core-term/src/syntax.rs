@@ -578,8 +578,42 @@ impl Value
     pub fn components(&self) -> Option<&[ValueId]>
     {
         match *self {
-            | Self::Tuple(ref components) => Some(components),
-            | _ => None,
+            Self::Tuple(ref components) => Some(components),
+            Self::Primitive { .. }
+            | Self::PathRefl(_)
+            | Self::PathProduct(..)
+            | Self::PathEquiv { .. }
+            | Self::Here(_)
+            | Self::Funext(..)
+            | Self::Equiv(..)
+            | Self::Ua { .. }
+            | Self::SessionRelated { .. }
+            | Self::Stay(_)
+            | Self::Then(..)
+            | Self::FlowProduct(..)
+            | Self::Forward(_)
+            | Self::FunctionFlow(..)
+            | Self::Recorded(_)
+            | Self::Returned(_)
+            | Self::Nested(_)
+            | Self::Run(_)
+            | Self::Variable { .. }
+            | Self::Constant(_)
+            | Self::Literal(_)
+            | Self::Injection(..)
+            | Self::ListNil
+            | Self::ListCons(..)
+            | Self::Thunk(_)
+            | Self::Lift { .. }
+            | Self::Quote(_)
+            | Self::QuoteComputation(_)
+            | Self::StaticLambda(_)
+            | Self::StaticApplication(..)
+            | Self::Constructor { .. }
+            | Self::Record(_)
+            | Self::Hole(_)
+            | Self::Mark { .. }
+            | Self::Reify(_) => None,
         }
     }
 }
@@ -1460,7 +1494,7 @@ fn equal_syntax(
             continue;
         }
         match goal {
-            | V(a, b) => {
+            V(a, b) => {
                 let (Some(a), Some(b)) = (arena.value(a), arena.value(b))
                 else {
                     return CertificateEquality::Different;
@@ -1498,19 +1532,19 @@ fn equal_syntax(
                     {
                         for (left, right) in left.iter().zip(right.iter()) {
                             match (*left, *right) {
-                                | (
+                                (
                                     crate::control::StackFrame::Apply(left),
                                     crate::control::StackFrame::Apply(right),
                                 ) => pending.push(V(left, right)),
-                                | (
+                                (
                                     crate::control::StackFrame::Bind(left),
                                     crate::control::StackFrame::Bind(right),
                                 ) => pending.push(C(left, right)),
-                                | (
+                                (
                                     crate::control::StackFrame::Project(left),
                                     crate::control::StackFrame::Project(right),
                                 ) if left == right => {},
-                                | _ => return CertificateEquality::Different,
+                                _ => return CertificateEquality::Different,
                             }
                         }
                     }
@@ -1588,7 +1622,7 @@ fn equal_syntax(
                     {
                         for (left, right) in left.iter().zip(right.iter()) {
                             match (left, right) {
-                                | (
+                                (
                                     &crate::session::RecordedMove::Sent(a),
                                     &crate::session::RecordedMove::Sent(b),
                                 )
@@ -1596,7 +1630,7 @@ fn equal_syntax(
                                     &crate::session::RecordedMove::Received(a),
                                     &crate::session::RecordedMove::Received(b),
                                 ) => pending.push(V(a, b)),
-                                | (
+                                (
                                     &crate::session::RecordedMove::Selected(ref a),
                                     &crate::session::RecordedMove::Selected(ref b),
                                 )
@@ -1604,11 +1638,11 @@ fn equal_syntax(
                                     &crate::session::RecordedMove::Offered(ref a),
                                     &crate::session::RecordedMove::Offered(ref b),
                                 ) if a == b => {},
-                                | (
+                                (
                                     &crate::session::RecordedMove::Closed,
                                     &crate::session::RecordedMove::Closed,
                                 ) => {},
-                                | _ => return CertificateEquality::Different,
+                                _ => return CertificateEquality::Different,
                             }
                         }
                     }
@@ -1731,13 +1765,13 @@ fn equal_syntax(
                     }
                 }
             },
-            | C(a, b) => {
+            C(a, b) => {
                 let (Some(a), Some(b)) = (arena.computation(a), arena.computation(b))
                 else {
                     return CertificateEquality::Different;
                 };
                 match (a, b) {
-                    | (
+                    (
                         &Computation::DataCase {
                             scrutinee: a,
                             motive: am,
@@ -1752,15 +1786,15 @@ fn equal_syntax(
                         pending.extend([V(a, b), CT(am, bm)]);
                         pending.extend(ab.iter().zip(bb).map(|(a, b)| C(*a, *b)));
                     },
-                    | (
+                    (
                         &Computation::RecordProjection(a, ref al),
                         &Computation::RecordProjection(b, ref bl),
                     ) if al == bl => pending.push(V(a, b)),
-                    | (
+                    (
                         &Computation::TupleProjection(a, ac),
                         &Computation::TupleProjection(b, bc),
                     ) if ac == bc => pending.push(V(a, b)),
-                    | (
+                    (
                         &Computation::Perform {
                             signature: ref left,
                             operation: ref left_op,
@@ -1779,7 +1813,7 @@ fn equal_syntax(
                         }
                         pending.push(V(left_payload, right_payload));
                     },
-                    | (
+                    (
                         &Computation::Handle {
                             signature: ref left,
                             subject: left_subject,
@@ -1807,7 +1841,7 @@ fn equal_syntax(
                             pending.push(C(left.body, right.body));
                         }
                     },
-                    | (
+                    (
                         &Computation::Scope {
                             signature: ref left,
                             subject: left_subject,
@@ -1835,7 +1869,7 @@ fn equal_syntax(
                             pending.push(C(left.body, right.body));
                         }
                     },
-                    | (
+                    (
                         &Computation::Exercise {
                             capability: left_capability,
                             signature: ref left,
@@ -1859,10 +1893,10 @@ fn equal_syntax(
                             V(left_payload, right_payload),
                         ]);
                     },
-                    | (&Computation::Resume(a, b), &Computation::Resume(c, d)) => {
+                    (&Computation::Resume(a, b), &Computation::Resume(c, d)) => {
                         pending.extend([V(a, c), C(b, d)]);
                     },
-                    | (
+                    (
                         &Computation::Split {
                             scrutinee: a,
                             arity: left_arity,
@@ -1876,27 +1910,27 @@ fn equal_syntax(
                             body: d,
                         },
                     ) if left_arity == right_arity => match (left_motive, right_motive) {
-                        | (SplitMotive::Ambient, SplitMotive::Ambient) => {
+                        (SplitMotive::Ambient, SplitMotive::Ambient) => {
                             pending.extend([V(a, c), C(b, d)]);
                         },
-                        | (SplitMotive::Scrutinee(left), SplitMotive::Scrutinee(right)) => {
+                        (SplitMotive::Scrutinee(left), SplitMotive::Scrutinee(right)) => {
                             pending.extend([V(a, c), CT(left, right), C(b, d)]);
                         },
-                        | (SplitMotive::Ambient | SplitMotive::Scrutinee(_), _) => {
+                        (SplitMotive::Ambient | SplitMotive::Scrutinee(_), _) => {
                             return CertificateEquality::Different;
                         },
                     },
-                    | (&Computation::Reset(a), &Computation::Reset(b))
+                    (&Computation::Reset(a), &Computation::Reset(b))
                     | (&Computation::Shift(a), &Computation::Shift(b))
                     | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),
-                    | (&Computation::With(a, b), &Computation::With(c, d))
+                    (&Computation::With(a, b), &Computation::With(c, d))
                     | (&Computation::Bind(a, b), &Computation::Bind(c, d)) => {
                         pending.extend([C(a, c), C(b, d)]);
                     },
-                    | (&Computation::Project(a, b), &Computation::Project(c, d)) if a == c => {
+                    (&Computation::Project(a, b), &Computation::Project(c, d)) if a == c => {
                         pending.push(C(b, d));
                     },
-                    | (
+                    (
                         &Computation::ListFold {
                             element: left_element,
                             result: left_result,
@@ -1918,7 +1952,7 @@ fn equal_syntax(
                         C(left_nil, right_nil),
                         C(left_cons, right_cons),
                     ]),
-                    | (
+                    (
                         &Computation::PathTransport {
                             motive: left_motive,
                             path: left_path,
@@ -1946,7 +1980,7 @@ fn equal_syntax(
                         V(left_path, right_path),
                         V(left_value, right_value),
                     ]),
-                    | (
+                    (
                         &Computation::TelescopeTransport {
                             motive: left_motive,
                             path: left_path,
@@ -1968,7 +2002,7 @@ fn equal_syntax(
                         V(left_over, right_over),
                         V(left_value, right_value),
                     ]),
-                    | (
+                    (
                         &Computation::Primitive {
                             primitive: a,
                             arguments: ref aa,
@@ -1982,7 +2016,7 @@ fn equal_syntax(
                             .zip(right_arguments.iter())
                             .map(|(a, b)| V(*a, *b)),
                     ),
-                    | (
+                    (
                         &Computation::Fixpoint {
                             body: a,
                             evidence: left_evidence,
@@ -1992,15 +2026,15 @@ fn equal_syntax(
                             evidence: right_evidence,
                         },
                     ) if left_evidence == right_evidence => pending.push(C(a, b)),
-                    | (&Computation::Return(a), &Computation::Return(b))
+                    (&Computation::Return(a), &Computation::Return(b))
                     | (&Computation::Force(a), &Computation::Force(b)) => pending.push(V(a, b)),
-                    | (&Computation::Application(a, b), &Computation::Application(c, d)) => {
+                    (&Computation::Application(a, b), &Computation::Application(c, d)) => {
                         pending.extend([C(a, c), V(b, d)]);
                     },
-                    | (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
+                    (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
                         pending.extend([V(a, c), V(b, d)]);
                     },
-                    | (
+                    (
                         &Computation::Case {
                             scrutinee: left_scrutinee,
                             branches: ref left_branches,
@@ -2018,8 +2052,8 @@ fn equal_syntax(
                                 .map(|(a, b)| C(*a, *b)),
                         );
                     },
-                    | (&Computation::Hole(left), &Computation::Hole(right)) if left == right => {},
-                    | (
+                    (&Computation::Hole(left), &Computation::Hole(right)) if left == right => {},
+                    (
                         &Computation::Mark {
                             mark: left_mark,
                             body: left_body,
@@ -2029,7 +2063,7 @@ fn equal_syntax(
                             body: right_body,
                         },
                     ) if left_mark == right_mark => pending.push(C(left_body, right_body)),
-                    | (&Computation::Session(ref left), &Computation::Session(ref right)) => {
+                    (&Computation::Session(ref left), &Computation::Session(ref right)) => {
                         if left.shape() != right.shape() {
                             return CertificateEquality::Different;
                         }
@@ -2045,10 +2079,10 @@ fn equal_syntax(
                                 .map(|(a, b)| C(a, b)),
                         );
                     },
-                    | _ => return CertificateEquality::Different,
+                    _ => return CertificateEquality::Different,
                 }
             },
-            | VT(a, b) => {
+            VT(a, b) => {
                 if matches!(read_as_words(arena, signatures, (a, b)), Maybe::Present(_))
                     || matches!(read_as_words(arena, signatures, (b, a)), Maybe::Present(_))
                 {
@@ -2251,16 +2285,16 @@ fn equal_syntax(
                     }
                 }
             },
-            | CT(a, b) => {
+            CT(a, b) => {
                 let (Some(a), Some(b)) = (arena.comp_type(a), arena.comp_type(b))
                 else {
                     return CertificateEquality::Different;
                 };
                 match (a, b) {
-                    | (&CompType::With(a, b), &CompType::With(c, d)) => {
+                    (&CompType::With(a, b), &CompType::With(c, d)) => {
                         pending.extend([CT(a, c), CT(b, d)]);
                     },
-                    | (
+                    (
                         &CompType::Returner {
                             result: a,
                             effects: ref first,
@@ -2282,7 +2316,7 @@ fn equal_syntax(
                         }
                         pending.push(VT(a, b));
                     },
-                    | (
+                    (
                         &CompType::Arrow {
                             domain: a,
                             codomain: b,
@@ -2302,7 +2336,7 @@ fn equal_syntax(
                             codomain: d,
                         },
                     ) => pending.extend([VT(a, c), CT(b, d)]),
-                    | (
+                    (
                         &CompType::Element {
                             code: a,
                             ref target,
@@ -2312,8 +2346,8 @@ fn equal_syntax(
                             target: ref other,
                         },
                     ) if target == other => pending.push(V(a, b)),
-                    | (&CompType::Unknown, &CompType::Unknown) => {},
-                    | _ => return CertificateEquality::Different,
+                    (&CompType::Unknown, &CompType::Unknown) => {},
+                    _ => return CertificateEquality::Different,
                 }
             },
         }

@@ -103,12 +103,18 @@ fn value_only(
 {
     let mut statements = statements.to_vec();
     match *edit {
-        | Edit::Revalue(rank, value)
+        Edit::Revalue(rank, value)
             if revalue(&mut statements, Rank(rank), Natural(value)) == Revalued::Changed =>
         {
             Reached::Yes
         },
-        | _ => Reached::No,
+        Edit::Replace(..)
+        | Edit::Insert(..)
+        | Edit::Delete(_)
+        | Edit::Rename(..)
+        | Edit::Swap(..)
+        | Edit::Ascribe(..)
+        | Edit::Revalue(..) => Reached::No,
     }
 }
 

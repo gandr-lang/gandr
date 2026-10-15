@@ -194,7 +194,7 @@ impl Presentations
                         .declaration()
                         .content()
                     {
-                        | DeclarationContent::Data {
+                        DeclarationContent::Data {
                             constructors: ref table,
                             ..
                         } => Some(
@@ -203,7 +203,9 @@ impl Presentations
                                 .map(|fields| FieldCount::from(fields.len()))
                                 .collect(),
                         ),
-                        | _ => None,
+                        DeclarationContent::Def { .. }
+                        | DeclarationContent::Axiom { .. }
+                        | DeclarationContent::AbstractType { .. } => None,
                     }
                 });
                 let _previous = presented.insert(ConstantIndex::from(position), PresentedType {
@@ -553,9 +555,9 @@ fn words(
             .iter()
             .enumerate()
             .all(|(tag, fields)| match *fields.as_slice() {
-                | [] => tag == 0,
-                | [ref field] => tag != 0 && own(field),
-                | _ => false,
+                [] => tag == 0,
+                [ref field] => tag != 0 && own(field),
+                _ => false,
             })
         && rules == cells.cancellations().as_slice();
     if !minted {
@@ -599,10 +601,10 @@ pub(crate) fn slot_table(
             fields
                 .iter()
                 .map(|&field| match arena.value_type(field) {
-                    | Some(&ValueType::Data { declaration, .. }) if declaration == position => {
+                    Some(&ValueType::Data { declaration, .. }) if declaration == position => {
                         RuleSlot::Own
                     },
-                    | _ => RuleSlot::Other(field),
+                    _ => RuleSlot::Other(field),
                 })
                 .collect()
         })
@@ -674,17 +676,17 @@ pub(crate) fn normal_form(
         return Ok(value);
     };
     let own = |arena: &TermArena, id: ValueId| match arena.value(id) {
-        | Some(&Value::Constructor { datatype, .. }) => matches!(
+        Some(&Value::Constructor { datatype, .. }) => matches!(
             arena.value_type(datatype),
             Some(&ValueType::Data { declaration: found, .. }) if found == declaration
         ),
-        | _ => false,
+        _ => false,
     };
     let mut term: Vec<RuleTerm<(ValueTypeId, Origin), ValueId>> = Vec::new();
     let mut pending = Vec::from([value]);
     while let Some(id) = pending.pop() {
         match arena.value(id) {
-            | Some(&Value::Constructor {
+            Some(&Value::Constructor {
                 datatype,
                 tag,
                 ref fields,
@@ -696,7 +698,7 @@ pub(crate) fn normal_form(
                 });
                 pending.extend(fields.iter().rev().copied());
             },
-            | _ => term.push(RuleTerm::Leaf(id)),
+            _ => term.push(RuleTerm::Leaf(id)),
         }
     }
     let normalized = presented.presentation.normalize(
@@ -711,8 +713,8 @@ pub(crate) fn normal_form(
     let mut built: Vec<ValueId> = Vec::new();
     while let Some(node) = term.pop() {
         match node {
-            | RuleTerm::Leaf(id) => built.push(id),
-            | RuleTerm::Constructor {
+            RuleTerm::Leaf(id) => built.push(id),
+            RuleTerm::Constructor {
                 tag,
                 arity,
                 payload: (datatype, origin),
@@ -720,14 +722,14 @@ pub(crate) fn normal_form(
                 let mut fields = built.split_off(built.len().saturating_sub(usize::from(arity)));
                 fields.reverse();
                 let kept = match origin {
-                    | Origin::Written(id) => match arena.value(id) {
-                        | Some(&Value::Constructor {
+                    Origin::Written(id) => match arena.value(id) {
+                        Some(&Value::Constructor {
                             fields: ref written,
                             ..
                         }) if *written == fields => Some(id),
-                        | _ => None,
+                        _ => None,
                     },
-                    | Origin::Rewritten => None,
+                    Origin::Rewritten => None,
                 };
                 built.push(kept.unwrap_or_else(|| arena.value_constructor(datatype, tag, fields)));
             },
@@ -811,7 +813,7 @@ fn node(
 ) -> TermReading<ValueId>
 {
     match arena.value(at) {
-        | Some(&Value::Constructor {
+        Some(&Value::Constructor {
             datatype,
             tag,
             fields: ref written,
@@ -823,16 +825,16 @@ fn node(
             fields.extend_from_slice(written);
             TermReading::Constructor(tag)
         },
-        | Some(&Value::Constant(constant)) => {
+        Some(&Value::Constant(constant)) => {
             match entries
                 .get(usize::from(constant))
                 .map(AdmittedDeclaration::content)
             {
-                | Some(&DeclarationContent::Def { body, .. }) => TermReading::Defined(body),
-                | _ => TermReading::Other,
+                Some(&DeclarationContent::Def { body, .. }) => TermReading::Defined(body),
+                _ => TermReading::Other,
             }
         },
-        | _ => TermReading::Other,
+        _ => TermReading::Other,
     }
 }
 
@@ -888,10 +890,10 @@ mod tests
         fn tag(self) -> ConstructorTag
         {
             ConstructorTag::from(match self {
-                | Self::Base => 0_usize,
-                | Self::Loop => 1,
-                | Self::Unloop => 2,
-                | Self::Mark => 3,
+                Self::Base => 0_usize,
+                Self::Loop => 1,
+                Self::Unloop => 2,
+                Self::Mark => 3,
             })
         }
 

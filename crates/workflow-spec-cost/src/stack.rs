@@ -221,14 +221,14 @@ impl<R: BufRead> Stacks<R>
                 let text = text.trim();
                 let text = text.strip_suffix(" (inlined)").unwrap_or(text);
                 frame.location = match text.rsplit_once(':') {
-                    | Some((file, line)) if file != "??" => match line.parse::<usize>() {
-                        | Ok(line) if line > 0 => Maybe::Present(Location {
+                    Some((file, line)) if file != "??" => match line.parse::<usize>() {
+                        Ok(line) if line > 0 => Maybe::Present(Location {
                             file: self.root.join(file),
                             line: Line::from(line),
                         }),
-                        | Ok(_) | Err(_) => Maybe::Absent(position::Absent::Unknown),
+                        Ok(_) | Err(_) => Maybe::Absent(position::Absent::Unknown),
                     },
-                    | Some(_) | None => Maybe::Absent(position::Absent::Unknown),
+                    Some(_) | None => Maybe::Absent(position::Absent::Unknown),
                 };
             }
         }

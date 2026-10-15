@@ -170,7 +170,7 @@ mod differential
             match heads {
                 // Both sides head the same defined constant, so the comparison
                 // closes on it without unrolling either side.
-                | (Some(left_head), Some(right_head)) if left_head == right_head => {
+                (Some(left_head), Some(right_head)) if left_head == right_head => {
                     record(sink, ConversionDecision::ConstShortcut {
                         constant: left_head,
                     });
@@ -178,14 +178,14 @@ mod differential
                     let _popped = right_layers.pop();
                 },
                 // Otherwise unfold the left side if it has anything to unfold.
-                | (Some(left_head), _) => {
+                (Some(left_head), _) => {
                     record(sink, ConversionDecision::Unfold {
                         constant: left_head,
                     });
                     record(sink, ConversionDecision::ReduceLeft { redex: left_head });
                     let _popped = left_layers.pop();
                 },
-                | (None, Some(right_head)) => {
+                (None, Some(right_head)) => {
                     record(sink, ConversionDecision::Unfold {
                         constant: right_head,
                     });
@@ -193,7 +193,7 @@ mod differential
                     let _popped = right_layers.pop();
                 },
                 // Both sides are down to their atoms: the comparison closes.
-                | (None, None) => {
+                (None, None) => {
                     record(sink, ConversionDecision::ComparedShared {
                         left: left.atom,
                         right: right.atom,
@@ -307,7 +307,7 @@ mod differential
                 return Err(ReplayError::DecisionAfterClose);
             }
             match *decision {
-                | ConversionDecision::ConstShortcut { constant } => {
+                ConversionDecision::ConstShortcut { constant } => {
                     if pending.is_some() {
                         return Err(ReplayError::UnpairedUnfold);
                     }
@@ -319,13 +319,13 @@ mod differential
                     let _popped = left_layers.pop();
                     let _popped = right_layers.pop();
                 },
-                | ConversionDecision::Unfold { constant } => {
+                ConversionDecision::Unfold { constant } => {
                     if pending.is_some() {
                         return Err(ReplayError::UnpairedUnfold);
                     }
                     pending = Some(constant);
                 },
-                | ConversionDecision::ReduceLeft { redex } => {
+                ConversionDecision::ReduceLeft { redex } => {
                     if pending != Some(redex) {
                         return Err(ReplayError::UnpairedUnfold);
                     }
@@ -335,7 +335,7 @@ mod differential
                     let _popped = left_layers.pop();
                     pending = None;
                 },
-                | ConversionDecision::ReduceRight { redex } => {
+                ConversionDecision::ReduceRight { redex } => {
                     if pending != Some(redex) {
                         return Err(ReplayError::UnpairedUnfold);
                     }
@@ -345,7 +345,7 @@ mod differential
                     let _popped = right_layers.pop();
                     pending = None;
                 },
-                | ConversionDecision::ComparedShared {
+                ConversionDecision::ComparedShared {
                     left: left_head,
                     right: right_head,
                 } => {
@@ -367,7 +367,16 @@ mod differential
                         Verdict::NotConvertible
                     });
                 },
-                | _ => return Err(ReplayError::UnexpectedDecision),
+                ConversionDecision::Postpone { .. }
+                | ConversionDecision::Freeze { .. }
+                | ConversionDecision::EtaExpand { .. }
+                | ConversionDecision::ReturnEta { .. }
+                | ConversionDecision::Reassociate { .. }
+                | ConversionDecision::Force { .. }
+                | ConversionDecision::Decompose
+                | ConversionDecision::NegativeSubgoal { .. } => {
+                    return Err(ReplayError::UnexpectedDecision);
+                },
             }
         }
         verdict.ok_or(ReplayError::NeverClosed)
@@ -564,10 +573,21 @@ mod differential
         let corrupted: Vec<ConversionDecision<NodeName>> = on
             .decisions()
             .map(|decision| match *decision {
-                | ConversionDecision::ReduceLeft { redex } => {
+                ConversionDecision::ReduceLeft { redex } => {
                     ConversionDecision::ReduceRight { redex }
                 },
-                | other => other,
+                other @ (ConversionDecision::ReduceRight { .. }
+                | ConversionDecision::ConstShortcut { .. }
+                | ConversionDecision::Unfold { .. }
+                | ConversionDecision::Postpone { .. }
+                | ConversionDecision::Freeze { .. }
+                | ConversionDecision::EtaExpand { .. }
+                | ConversionDecision::ReturnEta { .. }
+                | ConversionDecision::Reassociate { .. }
+                | ConversionDecision::Force { .. }
+                | ConversionDecision::ComparedShared { .. }
+                | ConversionDecision::Decompose
+                | ConversionDecision::NegativeSubgoal { .. }) => other,
             })
             .collect();
         assert_eq!(

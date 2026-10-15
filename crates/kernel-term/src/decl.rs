@@ -854,8 +854,8 @@ impl Declaration
     ) -> Self
     {
         match self.content {
-            | DeclarationContent::Def { .. } => Self { related, ..self },
-            | DeclarationContent::Data { .. }
+            DeclarationContent::Def { .. } => Self { related, ..self },
+            DeclarationContent::Data { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
@@ -900,8 +900,8 @@ impl Declaration
     ) -> Self
     {
         match self.content {
-            | DeclarationContent::Def { .. } => Self { laws, ..self },
-            | DeclarationContent::Data { .. }
+            DeclarationContent::Def { .. } => Self { laws, ..self },
+            DeclarationContent::Data { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
@@ -940,11 +940,11 @@ impl Declaration
     ) -> Self
     {
         match self.content {
-            | DeclarationContent::Data { .. } => Self {
+            DeclarationContent::Data { .. } => Self {
                 presentation,
                 ..self
             },
-            | DeclarationContent::Def { .. }
+            DeclarationContent::Def { .. }
             | DeclarationContent::Axiom { .. }
             | DeclarationContent::AbstractType { .. } => self,
         }
@@ -991,7 +991,7 @@ impl Declaration
     ) -> Self
     {
         match self.content {
-            | DeclarationContent::AbstractType {
+            DeclarationContent::AbstractType {
                 kind,
                 representation,
                 ..
@@ -1003,7 +1003,7 @@ impl Declaration
                 },
                 ..self
             },
-            | DeclarationContent::Data { .. }
+            DeclarationContent::Data { .. }
             | DeclarationContent::Def { .. }
             | DeclarationContent::Axiom { .. } => self,
         }
@@ -1744,10 +1744,10 @@ mod tests
                 let returned = builder.arena().computation_return(unit_value);
                 let thunk = builder.arena().value_thunk(returned);
                 let declared = match shape {
-                    | 0 => thunk_type,
-                    | 1 => builder.arena().value_type_product(&[unit_type, thunk_type]),
-                    | 2 => builder.arena().value_type_sum(&[unit_type, thunk_type]),
-                    | _ => builder.arena().value_type_universe(
+                    0 => thunk_type,
+                    1 => builder.arena().value_type_product(&[unit_type, thunk_type]),
+                    2 => builder.arena().value_type_sum(&[unit_type, thunk_type]),
+                    _ => builder.arena().value_type_universe(
                         crate::types::GroundSort::Value,
                         gandr_kernel_strata::Level::zero(),
                     ),
@@ -1760,21 +1760,19 @@ mod tests
                 };
                 let staged = builder.arena().clone();
                 let expected_content = match shape {
-                    | 0 | 1 => super::DeclarationContent::Def { declared, body },
-                    | 2 => super::DeclarationContent::Axiom { declared },
-                    | _ => super::DeclarationContent::AbstractType {
+                    0 | 1 => super::DeclarationContent::Def { declared, body },
+                    2 => super::DeclarationContent::Axiom { declared },
+                    _ => super::DeclarationContent::AbstractType {
                         kind: declared,
                         representation: unit_type,
                         scope: super::SealScope::Open,
                     },
                 };
                 let declaration = match shape {
-                    | 0 => builder.def(levels, declared, body),
-                    | 1 => builder.sealed_def(levels, declared, body, provenance.clone()),
-                    | 2 => builder.axiom(levels, declared),
-                    | _ => {
-                        builder.abstract_type(levels, declared, unit_type, super::SealScope::Open)
-                    },
+                    0 => builder.def(levels, declared, body),
+                    1 => builder.sealed_def(levels, declared, body, provenance.clone()),
+                    2 => builder.axiom(levels, declared),
+                    _ => builder.abstract_type(levels, declared, unit_type, super::SealScope::Open),
                 };
                 assert_eq!(arena, staged, "a finisher must not run rollback");
                 assert_eq!(declaration.content(), &expected_content);

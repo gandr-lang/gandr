@@ -305,9 +305,9 @@ pub fn path_greater(
     let below = flatten(right);
     let mut table = Table::new(&above, &below);
     let precedes = |above: Symbol<'_>, below: Symbol<'_>| match (above, below) {
-        | (Symbol::Op(_), Symbol::Ctor(_) | Symbol::Results) => true,
-        | (Symbol::Op(left), Symbol::Op(right)) => precedence.rank(left) > precedence.rank(right),
-        | _ => false,
+        (Symbol::Op(_), Symbol::Ctor(_) | Symbol::Results) => true,
+        (Symbol::Op(left), Symbol::Op(right)) => precedence.rank(left) > precedence.rank(right),
+        _ => false,
     };
     // The first argument pair that differs, left to right, decides two
     // applications of one symbol.
@@ -397,10 +397,10 @@ fn flatten(term: &FreeTerm) -> Vec<Node<'_>>
     while let Some(&current) = visit.get(next) {
         let first = visit.len();
         let (symbol, arguments) = match current.view() {
-            | TermView::Var(name) => (Symbol::Var(name), None),
-            | TermView::Ctor { name, args } => (Symbol::Ctor(name), Some(args)),
-            | TermView::Op { name, args } => (Symbol::Op(name), Some(args)),
-            | TermView::Results { args } => (Symbol::Results, Some(args)),
+            TermView::Var(name) => (Symbol::Var(name), None),
+            TermView::Ctor { name, args } => (Symbol::Ctor(name), Some(args)),
+            TermView::Op { name, args } => (Symbol::Op(name), Some(args)),
+            TermView::Results { args } => (Symbol::Results, Some(args)),
         };
         let arity = arguments.map_or(0, |arguments| {
             let count = arguments.len();

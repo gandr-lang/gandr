@@ -225,8 +225,8 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
     let mut queue = VecDeque::new();
     queue.extend(content.declaration().iter().map(|(root, sort)| {
         (root, match sort {
-            | Sort::ValueType | Sort::CompType => Position::Type,
-            | Sort::Value | Sort::Computation => Position::Term,
+            Sort::ValueType | Sort::CompType => Position::Type,
+            Sort::Value | Sort::Computation => Position::Term,
         })
     }));
     while let Some((index, position)) = queue.pop_front() {
@@ -238,16 +238,16 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
             continue;
         };
         let position = match node.sort() {
-            | Sort::ValueType | Sort::CompType => Position::Type,
-            | Sort::Value | Sort::Computation => position,
+            Sort::ValueType | Sort::CompType => Position::Type,
+            Sort::Value | Sort::Computation => position,
         };
         let mark = match position {
-            | Position::Term => marks.first_mut(),
-            | Position::Type => marks.last_mut(),
+            Position::Term => marks.first_mut(),
+            Position::Type => marks.last_mut(),
         };
         match mark {
-            | Some(&mut true) | None => continue,
-            | Some(mark) => *mark = true,
+            Some(&mut true) | None => continue,
+            Some(mark) => *mark = true,
         }
         if let Maybe::Present(reference) = node.reference() {
             let _fresh = reads.insert(reference.clone());
@@ -262,11 +262,11 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
         type_reads,
         opacity: content.opacity(),
         hole: match *(content.declaration()) {
-            | crate::content::DeclarationRoots::Value {
+            crate::content::DeclarationRoots::Value {
                 body: Maybe::Absent(body::Absent::Hole),
                 ..
             } => HoleMark::Hole,
-            | crate::content::DeclarationRoots::Value {
+            crate::content::DeclarationRoots::Value {
                 body: Maybe::Present(_),
                 ..
             }

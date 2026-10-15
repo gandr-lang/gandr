@@ -121,9 +121,9 @@ fn integer_chain(assocs: &[Assoc]) -> Result<(PrecDag, Vec<Prec>), Box<dyn Error
 fn expect_cycle(spec: &PrecSpec) -> PrecCycle
 {
     match PrecDag::build(spec) {
-        | Err(PrecDagError::Cycle(cycle)) => cycle,
-        | Err(other) => panic!("expected a cycle, got {other}"),
-        | Ok(_) => panic!("a cyclic relation must be refused"),
+        Err(PrecDagError::Cycle(cycle)) => cycle,
+        Err(other) => panic!("expected a cycle, got {other}"),
+        Ok(_) => panic!("a cyclic relation must be refused"),
     }
 }
 

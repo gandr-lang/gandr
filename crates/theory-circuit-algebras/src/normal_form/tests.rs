@@ -1206,8 +1206,8 @@ fn the_canon_agrees_with_the_cospan_isomorphism_oracle()
     for (left_index, left) in fixtures.iter().enumerate() {
         for (right_index, right) in fixtures.iter().enumerate() {
             let decided = match same_diagram(left, right) {
-                | DiagramEquality::Same(_) => CospanVerdict::Isomorphic,
-                | DiagramEquality::Distinct(_) => CospanVerdict::Distinct,
+                DiagramEquality::Same(_) => CospanVerdict::Isomorphic,
+                DiagramEquality::Distinct(_) => CospanVerdict::Distinct,
             };
             assert_eq!(
                 cospan_verdict(left, right),

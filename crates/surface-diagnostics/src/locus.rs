@@ -162,25 +162,25 @@ impl fmt::Display for Label
     ) -> fmt::Result
     {
         match *self {
-            | Self::Culprit(culprit) => fmt::Display::fmt(&culprit, f),
-            | Self::Unsettled(unsettlement) => fmt::Display::fmt(&unsettlement, f),
-            | Self::Surviving(surviving) => write!(f, "surviving obligations: {surviving}"),
-            | Self::First => f.write_str("first written here"),
-            | Self::Declared => f.write_str("declared here"),
-            | Self::Expected => f.write_str("the type it is checked against"),
-            | Self::Synthesised => f.write_str("the type it synthesises"),
-            | Self::Met(wanted) => write!(f, "the type met, where {} is required", Shape(wanted)),
-            | Self::Endpoint => f.write_str("an endpoint the point does not convert to"),
-            | Self::Shadows => f.write_str("shadows a builtin"),
-            | Self::Inferred(exit) => write!(f, "exits by an inferred `{exit}`"),
-            | Self::Ran(Purity::Pure) => f.write_str("runs by an inferred `run`"),
-            | Self::Ran(Purity::Effectful) => {
+            Self::Culprit(culprit) => fmt::Display::fmt(&culprit, f),
+            Self::Unsettled(unsettlement) => fmt::Display::fmt(&unsettlement, f),
+            Self::Surviving(surviving) => write!(f, "surviving obligations: {surviving}"),
+            Self::First => f.write_str("first written here"),
+            Self::Declared => f.write_str("declared here"),
+            Self::Expected => f.write_str("the type it is checked against"),
+            Self::Synthesised => f.write_str("the type it synthesises"),
+            Self::Met(wanted) => write!(f, "the type met, where {} is required", Shape(wanted)),
+            Self::Endpoint => f.write_str("an endpoint the point does not convert to"),
+            Self::Shadows => f.write_str("shadows a builtin"),
+            Self::Inferred(exit) => write!(f, "exits by an inferred `{exit}`"),
+            Self::Ran(Purity::Pure) => f.write_str("runs by an inferred `run`"),
+            Self::Ran(Purity::Effectful) => {
                 f.write_str("runs by an inferred `run`, performing an effect")
             },
-            | Self::Reported => f.write_str("reported here"),
-            | Self::Forked => f.write_str("the endpoint was opened by this fork"),
-            | Self::FirstArm => f.write_str("the arm it disagrees with"),
-            | Self::Overlaps => f.write_str("the rule it overlaps"),
+            Self::Reported => f.write_str("reported here"),
+            Self::Forked => f.write_str("the endpoint was opened by this fork"),
+            Self::FirstArm => f.write_str("the arm it disagrees with"),
+            Self::Overlaps => f.write_str("the rule it overlaps"),
         }
     }
 }
@@ -241,8 +241,8 @@ impl<'step> Comparison<'step>
         };
         let compared = checked.compared();
         let side = |node: Maybe<TypeNode, compared::Absent>| match node {
-            | Maybe::Present(node) => spellings.get(node).map(AsRef::as_ref),
-            | Maybe::Absent(_) => Maybe::Absent(spelling::Absent::Unspelled),
+            Maybe::Present(node) => spellings.get(node).map(AsRef::as_ref),
+            Maybe::Absent(_) => Maybe::Absent(spelling::Absent::Unspelled),
         };
         Self {
             expected: side(compared.expected),
@@ -288,12 +288,12 @@ impl fmt::Display for Comparison<'_>
     ) -> fmt::Result
     {
         match (self.expected, self.found) {
-            | (Maybe::Present(expected), Maybe::Present(found)) => {
+            (Maybe::Present(expected), Maybe::Present(found)) => {
                 write!(f, "expected `{expected}`, found `{found}`")
             },
-            | (Maybe::Present(expected), Maybe::Absent(_)) => write!(f, "expected `{expected}`"),
-            | (Maybe::Absent(_), Maybe::Present(found)) => write!(f, "found `{found}`"),
-            | (Maybe::Absent(_), Maybe::Absent(_)) => Ok(()),
+            (Maybe::Present(expected), Maybe::Absent(_)) => write!(f, "expected `{expected}`"),
+            (Maybe::Absent(_), Maybe::Present(found)) => write!(f, "found `{found}`"),
+            (Maybe::Absent(_), Maybe::Absent(_)) => Ok(()),
         }
     }
 }
@@ -426,7 +426,7 @@ impl Annotations
     {
         let label = Label::Unsettled(Unsettlement::Malformed);
         match *stated {
-            | Stated::Malformed(ExpectationFault::ConflictingExpectations { first, second }) => {
+            Stated::Malformed(ExpectationFault::ConflictingExpectations { first, second }) => {
                 Self {
                     primary: Maybe::Present(Annotation {
                         span: second,
@@ -441,13 +441,13 @@ impl Annotations
                     ],
                 }
             },
-            | Stated::Malformed(
+            Stated::Malformed(
                 ExpectationFault::UnknownRefusal { span }
                 | ExpectationFault::NegativeObligations { span }
                 | ExpectationFault::ObligationsBeyondRange { span }
                 | ExpectationFault::UnwrittenNormalForm { span },
             ) => Self::at(span, label),
-            | Stated::Verdict(_) => Self::at(declaration, label),
+            Stated::Verdict(_) => Self::at(declaration, label),
         }
     }
 
@@ -499,32 +499,32 @@ impl Annotations
     pub fn lowering(refusal: LoweringRefusal<'_>) -> Self
     {
         let primary = match refusal.span() {
-            | Maybe::Present(span) => Maybe::Present(Annotation {
+            Maybe::Present(span) => Maybe::Present(Annotation {
                 span,
                 label: Label::Culprit(Culprit::of(Refusal::Lowering(refusal))),
             }),
-            | Maybe::Absent(_) => Maybe::Absent(report_span::Absent::Run),
+            Maybe::Absent(_) => Maybe::Absent(report_span::Absent::Run),
         };
         let context = match refusal {
-            | LoweringRefusal::DuplicateSignature { first, .. }
+            LoweringRefusal::DuplicateSignature { first, .. }
             | LoweringRefusal::DuplicateDefinition { first, .. }
             | LoweringRefusal::DuplicateImportAlias { first, .. }
             | LoweringRefusal::DuplicateAttribute { first, .. } => Maybe::Present(Annotation {
                 span: first,
                 label: Label::First,
             }),
-            | LoweringRefusal::ForwardMemberReference { declared, .. } => {
+            LoweringRefusal::ForwardMemberReference { declared, .. } => {
                 Maybe::Present(Annotation {
                     span: declared,
                     label: Label::Declared,
                 })
             },
-            | LoweringRefusal::RulesDiverge { first, .. }
+            LoweringRefusal::RulesDiverge { first, .. }
             | LoweringRefusal::RulesUndecided { first, .. } => Maybe::Present(Annotation {
                 span: first,
                 label: Label::Overlaps,
             }),
-            | LoweringRefusal::UnresolvedName { .. }
+            LoweringRefusal::UnresolvedName { .. }
             | LoweringRefusal::UnresolvedDocLink { .. }
             | LoweringRefusal::UnresolvedTypeHead { .. }
             | LoweringRefusal::ShadowedBuiltin { .. }
@@ -613,11 +613,11 @@ impl Annotations
     ) -> Self
     {
         match refusal {
-            | Refusal::Lowering(lowering) => Self::lowering(lowering),
-            | Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { span, .. }) => {
+            Refusal::Lowering(lowering) => Self::lowering(lowering),
+            Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { span, .. }) => {
                 Self::at(span, Label::Culprit(Culprit::of(refusal)))
             },
-            | Refusal::Checking(checking) => checked(checking, declaration, origins),
+            Refusal::Checking(checking) => checked(checking, declaration, origins),
         }
     }
 }
@@ -696,14 +696,14 @@ fn checked(
 {
     let label = Label::Culprit(Culprit::of(Refusal::Checking(refusal)));
     let (primary, context) = match refusal {
-        | CheckRefusal::DataKindNotUniverse(at)
+        CheckRefusal::DataKindNotUniverse(at)
         | CheckRefusal::DataArgumentArity(at)
         | CheckRefusal::AbstractKindNotUniverse(at)
         | CheckRefusal::CapabilityConsumable(at)
         | CheckRefusal::RuleNotPresentable { kind: at, .. } => {
             (spanned(origins.value_type(at)), UNNAMED)
         },
-        | CheckRefusal::DataFieldLevel { field: at, kind }
+        CheckRefusal::DataFieldLevel { field: at, kind }
         | CheckRefusal::RepresentationAboveKind {
             representation: at,
             kind,
@@ -711,24 +711,24 @@ fn checked(
             annotated(spanned(origins.value_type(kind)), Label::Expected),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
-        | CheckRefusal::UnknownConstructor { at, .. } | CheckRefusal::ConstructorArity(at) => {
+        CheckRefusal::UnknownConstructor { at, .. } | CheckRefusal::ConstructorArity(at) => {
             (spanned(origins.value(at)), UNNAMED)
         },
-        | CheckRefusal::MissingRecordField { at, expected }
+        CheckRefusal::MissingRecordField { at, expected }
         | CheckRefusal::CapabilityForged { at, expected } => (spanned(origins.value(at)), [
             annotated(spanned(origins.value_type(expected)), Label::Expected),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
-        | CheckRefusal::DependentStack { at, synthesised }
+        CheckRefusal::DependentStack { at, synthesised }
         | CheckRefusal::CompoundEndpoint { at, synthesised } => (spanned(origins.value(at)), [
             annotated(spanned(origins.comp_type(synthesised)), Label::Synthesised),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
-        | CheckRefusal::EndpointMismatch { at, left, right } => (spanned(origins.value(at)), [
+        CheckRefusal::EndpointMismatch { at, left, right } => (spanned(origins.value(at)), [
             annotated(spanned(origins.value(left)), Label::Endpoint),
             annotated(spanned(origins.value(right)), Label::Endpoint),
         ]),
-        | CheckRefusal::FunextUnsupported { at, classifier }
+        CheckRefusal::FunextUnsupported { at, classifier }
         | CheckRefusal::EquivUnsupported { at, classifier }
         | CheckRefusal::UncertifiedStratum {
             at,
@@ -737,10 +737,10 @@ fn checked(
             annotated(spanned(origins.value_type(classifier)), Label::Synthesised),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
-        | CheckRefusal::EffectSignatureConflict { at, .. } => {
+        CheckRefusal::EffectSignatureConflict { at, .. } => {
             (spanned(origins.computation(at)), UNNAMED)
         },
-        | CheckRefusal::TypeMismatch(Mismatch::Value {
+        CheckRefusal::TypeMismatch(Mismatch::Value {
             at,
             synthesised,
             expected,
@@ -774,7 +774,7 @@ fn checked(
             annotated(spanned(origins.value_type(expected)), Label::Expected),
             annotated(spanned(origins.value_type(synthesised)), Label::Synthesised),
         ]),
-        | CheckRefusal::TypeMismatch(Mismatch::Computation {
+        CheckRefusal::TypeMismatch(Mismatch::Computation {
             at,
             synthesised,
             expected,
@@ -787,17 +787,15 @@ fn checked(
             annotated(spanned(origins.comp_type(expected)), Label::Expected),
             annotated(spanned(origins.comp_type(synthesised)), Label::Synthesised),
         ]),
-        | CheckRefusal::DependentBind { at, synthesised } => (spanned(origins.computation(at)), [
+        CheckRefusal::DependentBind { at, synthesised } => (spanned(origins.computation(at)), [
             annotated(spanned(origins.comp_type(synthesised)), Label::Synthesised),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
-        | CheckRefusal::ShapeMismatch { at, wanted, found } => {
-            (node(origins, CoreNode::Term(at)), [
-                annotated(node(origins, CoreNode::Type(found)), Label::Met(wanted)),
-                Maybe::Absent(report_context::Absent::Unnamed),
-            ])
-        },
-        | CheckRefusal::NotSynthesisable {
+        CheckRefusal::ShapeMismatch { at, wanted, found } => (node(origins, CoreNode::Term(at)), [
+            annotated(node(origins, CoreNode::Type(found)), Label::Met(wanted)),
+            Maybe::Absent(report_context::Absent::Unnamed),
+        ]),
+        CheckRefusal::NotSynthesisable {
             form:
                 CheckingForm::Reify(at)
                 | CheckingForm::List(at)
@@ -824,14 +822,14 @@ fn checked(
         | CheckRefusal::RunNotAdmitted { at, .. }
         | CheckRefusal::ForwardUnsupported { at }
         | CheckRefusal::Boundary { at } => (spanned(origins.value(at)), UNNAMED),
-        | CheckRefusal::StaticClassifierExpected { found, .. } => {
+        CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
         },
-        | CheckRefusal::CapabilityEscaped { at, found } => (node(origins, CoreNode::Term(at)), [
+        CheckRefusal::CapabilityEscaped { at, found } => (node(origins, CoreNode::Term(at)), [
             annotated(node(origins, CoreNode::Type(found)), Label::Synthesised),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
-        | CheckRefusal::UnknownOperation { at }
+        CheckRefusal::UnknownOperation { at }
         | CheckRefusal::HandlerCoverage { at }
         | CheckRefusal::ShiftWithoutReset { at }
         | CheckRefusal::NotSynthesisable {
@@ -858,9 +856,9 @@ fn checked(
         | CheckRefusal::AbsentTupleComponent(at)
         | CheckRefusal::NonCovariantMotive { at }
         | CheckRefusal::RideUnsupported { at } => (spanned(origins.computation(at)), UNNAMED),
-        | CheckRefusal::OutOfFragment { at: core, .. }
+        CheckRefusal::OutOfFragment { at: core, .. }
         | CheckRefusal::DanglingNode { node: core } => (node(origins, core), UNNAMED),
-        | CheckRefusal::NotADataType(_)
+        CheckRefusal::NotADataType(_)
         | CheckRefusal::NotAnAbstractType(_)
         | CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::NegativeOccurrence(_)
@@ -875,13 +873,11 @@ fn checked(
         | CheckRefusal::AdmissionOrder { .. }
         | CheckRefusal::MachineInvariant
         | CheckRefusal::CapabilityUngranted { .. } => return Annotations::at(declaration, label),
-        | CheckRefusal::SessionMismatch { at, endpoint, .. } => {
-            (spanned(origins.computation(at)), [
-                annotated(spanned(origins.computation(endpoint.fork)), Label::Forked),
-                Maybe::Absent(report_context::Absent::Unnamed),
-            ])
-        },
-        | CheckRefusal::Linearity {
+        CheckRefusal::SessionMismatch { at, endpoint, .. } => (spanned(origins.computation(at)), [
+            annotated(spanned(origins.computation(endpoint.fork)), Label::Forked),
+            Maybe::Absent(report_context::Absent::Unnamed),
+        ]),
+        CheckRefusal::Linearity {
             at,
             defect:
                 LinearityDefect::ArmsDisagree {
@@ -891,7 +887,7 @@ fn checked(
             annotated(spanned(origins.computation(endpoint.fork)), Label::Forked),
             annotated(spanned(origins.computation(first)), Label::FirstArm),
         ]),
-        | CheckRefusal::Linearity {
+        CheckRefusal::Linearity {
             at,
             defect:
                 LinearityDefect::Residue { endpoint, .. }
@@ -903,7 +899,7 @@ fn checked(
             annotated(spanned(origins.computation(endpoint.fork)), Label::Forked),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
-        | CheckRefusal::Linearity {
+        CheckRefusal::Linearity {
             at,
             defect:
                 LinearityDefect::Delegated
@@ -912,8 +908,8 @@ fn checked(
         } => (node(origins, at), UNNAMED),
     };
     let primary = match primary {
-        | Maybe::Present(span) => Maybe::Present(Annotation { span, label }),
-        | Maybe::Absent(node_span::Absent::Unrecorded) => {
+        Maybe::Present(span) => Maybe::Present(Annotation { span, label }),
+        Maybe::Absent(node_span::Absent::Unrecorded) => {
             Maybe::Absent(report_span::Absent::Unrecorded)
         },
     };
@@ -960,8 +956,8 @@ where
     Reason: Copy,
 {
     match origin {
-        | Maybe::Present(origin) => Maybe::Present(origin.span()),
-        | Maybe::Absent(_) => Maybe::Absent(node_span::Absent::Unrecorded),
+        Maybe::Present(origin) => Maybe::Present(origin.span()),
+        Maybe::Absent(_) => Maybe::Absent(node_span::Absent::Unrecorded),
     }
 }
 
@@ -1001,10 +997,10 @@ pub fn node(
 ) -> Maybe<ByteSpan, node_span::Absent>
 {
     match core {
-        | CoreNode::Term(TermNode::Value(at)) => spanned(origins.value(at)),
-        | CoreNode::Term(TermNode::Computation(at)) => spanned(origins.computation(at)),
-        | CoreNode::Type(TypeNode::Value(at)) => spanned(origins.value_type(at)),
-        | CoreNode::Type(TypeNode::Computation(at)) => spanned(origins.comp_type(at)),
+        CoreNode::Term(TermNode::Value(at)) => spanned(origins.value(at)),
+        CoreNode::Term(TermNode::Computation(at)) => spanned(origins.computation(at)),
+        CoreNode::Type(TypeNode::Value(at)) => spanned(origins.value_type(at)),
+        CoreNode::Type(TypeNode::Computation(at)) => spanned(origins.comp_type(at)),
     }
 }
 
@@ -1037,8 +1033,8 @@ fn annotated(
 ) -> Maybe<Annotation, report_context::Absent>
 {
     match span {
-        | Maybe::Present(span) => Maybe::Present(Annotation { span, label }),
-        | Maybe::Absent(node_span::Absent::Unrecorded) => {
+        Maybe::Present(span) => Maybe::Present(Annotation { span, label }),
+        Maybe::Absent(node_span::Absent::Unrecorded) => {
             Maybe::Absent(report_context::Absent::Unrecorded)
         },
     }
@@ -1443,27 +1439,27 @@ impl fmt::Display for Shape
     ) -> fmt::Result
     {
         f.write_str(match self.0 {
-            | ExpectedShape::Data => "a nominal datatype",
-            | ExpectedShape::Record => "a record type",
-            | ExpectedShape::Stack => "a stack type from input to output computation",
-            | ExpectedShape::With => "a lazy pair of computation types",
-            | ExpectedShape::PathUniverse => "a universe-path classifier `Path_U a b`",
-            | ExpectedShape::Sum => "a sum type `A + B`",
-            | ExpectedShape::List => "a List type `List(A)`",
-            | ExpectedShape::Thunk => "a thunk type `+U C`",
-            | ExpectedShape::Returner => "a returner `-F A`",
-            | ExpectedShape::Arrow => "an arrow `A → C`",
-            | ExpectedShape::Product => "an eager product `A * B`",
-            | ExpectedShape::Sigma => "a dependent record `#{x : A, y : B(x)}`",
-            | ExpectedShape::StaticPi => "a type operator's classifier `K -> J`",
-            | ExpectedShape::Path => "an element path type `Path(A, a, b)`",
-            | ExpectedShape::Telescope => "a telescope motive `Π (y : A). Π (z : B). F C`",
-            | ExpectedShape::Session => {
+            ExpectedShape::Data => "a nominal datatype",
+            ExpectedShape::Record => "a record type",
+            ExpectedShape::Stack => "a stack type from input to output computation",
+            ExpectedShape::With => "a lazy pair of computation types",
+            ExpectedShape::PathUniverse => "a universe-path classifier `Path_U a b`",
+            ExpectedShape::Sum => "a sum type `A + B`",
+            ExpectedShape::List => "a List type `List(A)`",
+            ExpectedShape::Thunk => "a thunk type `+U C`",
+            ExpectedShape::Returner => "a returner `-F A`",
+            ExpectedShape::Arrow => "an arrow `A → C`",
+            ExpectedShape::Product => "an eager product `A * B`",
+            ExpectedShape::Sigma => "a dependent record `#{x : A, y : B(x)}`",
+            ExpectedShape::StaticPi => "a type operator's classifier `K -> J`",
+            ExpectedShape::Path => "an element path type `Path(A, a, b)`",
+            ExpectedShape::Telescope => "a telescope motive `Π (y : A). Π (z : B). F C`",
+            ExpectedShape::Session => {
                 "a session type `!A. S`, `?A. S`, `+{l : S}`, `&{l : S}` or `end`"
             },
-            | ExpectedShape::Capability => "a capability `Cap {op, …}`",
-            | ExpectedShape::Flow => "a flow type `Flow(A, a, b)`",
-            | ExpectedShape::Run => "a run type `Run(s)`",
+            ExpectedShape::Capability => "a capability `Cap {op, …}`",
+            ExpectedShape::Flow => "a flow type `Flow(A, a, b)`",
+            ExpectedShape::Run => "a run type `Run(s)`",
         })
     }
 }
@@ -1498,11 +1494,11 @@ impl fmt::Display for Action
     ) -> fmt::Result
     {
         f.write_str(match self.0 {
-            | ActionKind::Send => "a send",
-            | ActionKind::Receive => "a receive",
-            | ActionKind::Select => "a selection",
-            | ActionKind::Offer => "an offer",
-            | ActionKind::Close => "a close",
+            ActionKind::Send => "a send",
+            ActionKind::Receive => "a receive",
+            ActionKind::Select => "a selection",
+            ActionKind::Offer => "an offer",
+            ActionKind::Close => "a close",
         })
     }
 }
@@ -1536,11 +1532,11 @@ impl fmt::Display for Captor
     ) -> fmt::Result
     {
         f.write_str(match self.0 {
-            | Capture::Thunk => "a thunk",
-            | Capture::Recursion => "a fixpoint",
-            | Capture::Branch => "a branch of a case, a lazy pair or a fold",
-            | Capture::Stack => "a first-class stack",
-            | Capture::Continuation => "a continuation a handler or a shift may resume",
+            Capture::Thunk => "a thunk",
+            Capture::Recursion => "a fixpoint",
+            Capture::Branch => "a branch of a case, a lazy pair or a fold",
+            Capture::Stack => "a first-class stack",
+            Capture::Continuation => "a continuation a handler or a shift may resume",
         })
     }
 }
@@ -1635,10 +1631,10 @@ impl fmt::Display for Site
     ) -> fmt::Result
     {
         match self.0 {
-            | OccurrenceSite::Parameter(position) => {
+            OccurrenceSite::Parameter(position) => {
                 write!(f, "parameter {}", usize::from(position))
             },
-            | OccurrenceSite::Field { tag, field } => write!(
+            OccurrenceSite::Field { tag, field } => write!(
                 f,
                 "field {} of constructor {}",
                 usize::from(field),
@@ -1676,17 +1672,17 @@ impl fmt::Display for Descent
     ) -> fmt::Result
     {
         f.write_str(match self.0 {
-            | DescentRefusal::NotOverData => "its type is not a function out of a datatype",
-            | DescentRefusal::NotCaseOnArgument => {
+            DescentRefusal::NotOverData => "its type is not a function out of a datatype",
+            DescentRefusal::NotCaseOnArgument => {
                 "its body is not a case on its argument with one branch per constructor"
             },
-            | DescentRefusal::BranchNotOverFields => {
+            DescentRefusal::BranchNotOverFields => {
                 "a branch does not bind exactly its constructor's fields"
             },
-            | DescentRefusal::UnguardedSelfReference => {
+            DescentRefusal::UnguardedSelfReference => {
                 "the recursive name stands other than at the head of a call"
             },
-            | DescentRefusal::NonDescendingCall => {
+            DescentRefusal::NonDescendingCall => {
                 "a recursive call's argument is neither a field of the scrutinised constructor \
                  nor a function field's result"
             },

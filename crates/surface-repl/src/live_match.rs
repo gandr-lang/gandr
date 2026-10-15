@@ -30,32 +30,32 @@ pub fn encode_match(analysis: &MatchAnalysis) -> TranscriptBlock
     let mut lines = Vec::with_capacity(analysis.branches().len().saturating_add(2));
     for (arm, status) in analysis.branches().iter().enumerate() {
         let word = match *status {
-            | BranchStatus::Satisfied => "yes",
-            | BranchStatus::Refuted => "no",
-            | BranchStatus::Possibly => "possibly",
+            BranchStatus::Satisfied => "yes",
+            BranchStatus::Refuted => "no",
+            BranchStatus::Possibly => "possibly",
         };
         lines.push((OutKind::Info, format!("arm {arm}: {word}")));
     }
     let selected = match *analysis.selection() {
-        | Selection::Taken { arm, .. } => {
+        Selection::Taken { arm, .. } => {
             (OutKind::Info, format!("selected arm {}", usize::from(arm)))
         },
-        | Selection::Indeterminate { arm } => {
+        Selection::Indeterminate { arm } => {
             (OutKind::Stuck, format!("held at arm {}", usize::from(arm)))
         },
-        | Selection::Exhausted => (OutKind::Stuck, String::from("no arm selected")),
+        Selection::Exhausted => (OutKind::Stuck, String::from("no arm selected")),
     };
     lines.push(selected);
     lines.push(match *analysis.coverage() {
-        | Ok(ref coverage) => {
+        Ok(ref coverage) => {
             let word = match coverage.exhaustiveness() {
-                | Exhaustiveness::Exhaustive => "yes",
-                | Exhaustiveness::Inexhaustive => "no",
-                | Exhaustiveness::Possibly => "possibly",
+                Exhaustiveness::Exhaustive => "yes",
+                Exhaustiveness::Inexhaustive => "no",
+                Exhaustiveness::Possibly => "possibly",
             };
             (OutKind::Info, format!("exhaustive: {word}"))
         },
-        | Err(ref fault) => (OutKind::Diag, format!("coverage unavailable: {fault:?}")),
+        Err(ref fault) => (OutKind::Diag, format!("coverage unavailable: {fault:?}")),
     });
     TranscriptBlock {
         lines,

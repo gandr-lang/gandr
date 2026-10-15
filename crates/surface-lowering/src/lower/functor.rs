@@ -163,10 +163,8 @@ impl<'source> Lowerer<'_, 'source>
         {
             if let Stratum::Functor(functor) | Stratum::Parameter(functor) = structure.stratum {
                 return match self.collected.functors.get(usize::from(functor)) {
-                    | Some(found) if found.parameter_name == head => {
-                        Maybe::Present(found.parameter)
-                    },
-                    | Some(_) | None => Maybe::Absent(parameter_path::Absent::Outside),
+                    Some(found) if found.parameter_name == head => Maybe::Present(found.parameter),
+                    Some(_) | None => Maybe::Absent(parameter_path::Absent::Outside),
                 };
             }
             container = structure.container;
@@ -232,7 +230,7 @@ impl<'source> Lowerer<'_, 'source>
             .get(usize::from(parameter))
             .and_then(|structure| {
                 structure.exports.iter().find_map(|&export| match export {
-                    | Member::Slot(slot)
+                    Member::Slot(slot)
                         if self
                             .collected
                             .slots
@@ -241,7 +239,7 @@ impl<'source> Lowerer<'_, 'source>
                     {
                         Some(slot)
                     },
-                    | Member::Slot(_) | Member::Module(_) => None,
+                    Member::Slot(_) | Member::Module(_) => None,
                 })
             });
         let Some(slot) = found
@@ -417,7 +415,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         for &matched in &instance.matched {
             match matched {
-                | Matched::Value {
+                Matched::Value {
                     parameter, witness, ..
                 } => {
                     if let (Some(stand_in), Some(checked)) = (
@@ -427,7 +425,7 @@ impl<'source> Lowerer<'_, 'source>
                         renaming.constant(stand_in.constant, checked.constant);
                     }
                 },
-                | Matched::Abstract {
+                Matched::Abstract {
                     parameter,
                     argument,
                     ..
@@ -437,7 +435,7 @@ impl<'source> Lowerer<'_, 'source>
                         renaming.atom(stand_in.constant, read);
                     }
                 },
-                | Matched::Manifest { .. } => {},
+                Matched::Manifest { .. } => {},
             }
         }
 
@@ -483,8 +481,8 @@ impl<'source> Lowerer<'_, 'source>
                         arity: crate::resolve::HeadArity::Nullary,
                     },
                     |held| match held.refusal {
-                        | Maybe::Present((_, refusal)) => refusal,
-                        | Maybe::Absent(_) => LoweringRefusal::UnresolvedTypeHead {
+                        Maybe::Present((_, refusal)) => refusal,
+                        Maybe::Absent(_) => LoweringRefusal::UnresolvedTypeHead {
                             span: held.named.span,
                             name: argument.name,
                             arity: crate::resolve::HeadArity::Nullary,
@@ -493,11 +491,11 @@ impl<'source> Lowerer<'_, 'source>
                 )
         };
         match argument.meaning {
-            | TypeMeaning::Manifest(defined) => match self.value_type_at(defined.node) {
-                | Maybe::Present(id) => Ok(id),
-                | Maybe::Absent(_) => Err(unlowered()),
+            TypeMeaning::Manifest(defined) => match self.value_type_at(defined.node) {
+                Maybe::Present(id) => Ok(id),
+                Maybe::Absent(_) => Err(unlowered()),
             },
-            | TypeMeaning::Sealed => {
+            TypeMeaning::Sealed => {
                 let Some(atom) = self.collected.slots.get(usize::from(argument.held))
                 else {
                     return Err(unlowered());
@@ -509,12 +507,12 @@ impl<'source> Lowerer<'_, 'source>
                 sink.origins.record_value_type(id, origin);
                 Ok(id)
             },
-            | TypeMeaning::Instantiated { defined, instance } => self
+            TypeMeaning::Instantiated { defined, instance } => self
                 .instance_types
                 .get(&(instance, defined.node))
                 .copied()
                 .ok_or_else(unlowered),
-            | TypeMeaning::Family(_) => Err(unlowered()),
+            TypeMeaning::Family(_) => Err(unlowered()),
         }
     }
 
@@ -643,7 +641,7 @@ impl<'source> Lowerer<'_, 'source>
                 let checked =
                     self.witness_outcome(component.form, matched, &renaming, sink, origin);
                 let witness = match matched {
-                    | Matched::Value { witness, .. }
+                    Matched::Value { witness, .. }
                     | Matched::Abstract { witness, .. }
                     | Matched::Manifest { witness, .. } => witness,
                 };
@@ -664,23 +662,23 @@ impl<'source> Lowerer<'_, 'source>
                     continue;
                 };
                 let renamed = match own {
-                    | DeclarationOutcome::Refused(_) | DeclarationOutcome::Data(_) => continue,
-                    | DeclarationOutcome::Completed {
+                    DeclarationOutcome::Refused(_) | DeclarationOutcome::Data(_) => continue,
+                    DeclarationOutcome::Completed {
                         declared_type,
                         body,
                     } => DeclarationOutcome::Completed {
                         declared_type: rename_type(sink, &renaming, declared_type, origin),
                         body: rename_value(sink, &renaming, body, origin),
                     },
-                    | DeclarationOutcome::Uncompleted { declared_type } => {
+                    DeclarationOutcome::Uncompleted { declared_type } => {
                         DeclarationOutcome::Uncompleted {
                             declared_type: rename_type(sink, &renaming, declared_type, origin),
                         }
                     },
-                    | DeclarationOutcome::Bodied { body } => DeclarationOutcome::Bodied {
+                    DeclarationOutcome::Bodied { body } => DeclarationOutcome::Bodied {
                         body: rename_value(sink, &renaming, body, origin),
                     },
-                    | DeclarationOutcome::Abstract(sealing) => {
+                    DeclarationOutcome::Abstract(sealing) => {
                         DeclarationOutcome::Abstract(Sealing {
                             kind: rename_type(sink, &renaming, sealing.kind, origin),
                             representation: rename_type(
@@ -732,7 +730,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
     {
         match (form, matched) {
-            | (ParameterForm::Value(typed), Matched::Value { member, .. }) => {
+            (ParameterForm::Value(typed), Matched::Value { member, .. }) => {
                 let (Maybe::Present(stated), Some(read)) = (
                     self.value_type_at(typed.node),
                     self.collected.slots.get(usize::from(member)),
@@ -748,17 +746,17 @@ impl<'source> Lowerer<'_, 'source>
                     body,
                 })
             },
-            | (ParameterForm::Abstract(kind), Matched::Abstract { argument, .. }) => {
+            (ParameterForm::Abstract(kind), Matched::Abstract { argument, .. }) => {
                 let Ok(read) = self.argument_type(argument, sink, origin)
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
                 let declared_type = match kind {
-                    | Maybe::Present(written) => match self.value_type_at(written.node) {
-                        | Maybe::Present(stated) => rename_type(sink, renaming, stated, origin),
-                        | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    Maybe::Present(written) => match self.value_type_at(written.node) {
+                        Maybe::Present(stated) => rename_type(sink, renaming, stated, origin),
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
                     },
-                    | Maybe::Absent(_) => {
+                    Maybe::Absent(_) => {
                         let id = sink.arena.value_type_universe(
                             Sort::Ground(Universe::FUSS_FREE.sort),
                             Level::constant(Universe::FUSS_FREE.level),
@@ -774,7 +772,7 @@ impl<'source> Lowerer<'_, 'source>
                     body,
                 })
             },
-            | (ParameterForm::Manifest(defined), Matched::Manifest { argument, .. }) => {
+            (ParameterForm::Manifest(defined), Matched::Manifest { argument, .. }) => {
                 let (Ok(read), Maybe::Present(stated)) = (
                     self.argument_type(argument, sink, origin),
                     self.value_type_at(defined.node),
@@ -804,7 +802,7 @@ impl<'source> Lowerer<'_, 'source>
                     body,
                 })
             },
-            | (
+            (
                 ParameterForm::Value(_) | ParameterForm::Abstract(_) | ParameterForm::Manifest(_),
                 Matched::Value { .. } | Matched::Abstract { .. } | Matched::Manifest { .. },
             ) => Maybe::Absent(lowered::Absent::Unminted),

@@ -139,14 +139,14 @@ pub fn build(
 ) -> Result<ValueId, FocusRefusal>
 {
     match combinator {
-        | Combinator::Identity => {
+        Combinator::Identity => {
             let bound = variable(scratch, DeBruijnIndex::from(0_u32));
             let body = scratch.computation_return(bound);
             let lambda = scratch.computation_lambda(body);
             Ok(scratch.value_thunk(lambda))
         },
-        | Combinator::Compose => Ok(compose(scratch)),
-        | Combinator::Wrap => {
+        Combinator::Compose => Ok(compose(scratch)),
+        Combinator::Wrap => {
             // Under λd. λc. λg. λa': a' = 0, g = 1, c = 2, d = 3.
             let domain = variable(scratch, DeBruijnIndex::from(3_u32));
             let argument = variable(scratch, DeBruijnIndex::from(0_u32));
@@ -173,7 +173,7 @@ pub fn build(
             }
             Ok(scratch.value_thunk(outer))
         },
-        | Combinator::Pair => {
+        Combinator::Pair => {
             // Under λp. λq. λx: x = 0, q = 1, p = 2.
             let whole = variable(scratch, DeBruijnIndex::from(0_u32));
             let left = scratch
@@ -204,7 +204,7 @@ pub fn build(
             }
             Ok(scratch.value_thunk(body))
         },
-        | Combinator::Act(motive) => act(core, motive, scratch),
+        Combinator::Act(motive) => act(core, motive, scratch),
     }
 }
 
@@ -282,12 +282,12 @@ fn act(
         }
         pending.push((node, true));
         match core.value_type(node) {
-            | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
+            Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
                 pending.extend(parts.iter().map(|&part| (part, false)));
             },
-            | Some(&ValueType::List(element)) => pending.push((element, false)),
-            | Some(_) => {},
-            | None => return Err(FocusRefusal::TranslationInvariant),
+            Some(&ValueType::List(element)) => pending.push((element, false)),
+            Some(_) => {},
+            None => return Err(FocusRefusal::TranslationInvariant),
         }
     }
     let mut built: BTreeMap<ValueTypeId, ValueId> = BTreeMap::new();
@@ -344,14 +344,14 @@ fn action_body(
     let translator = DeBruijnIndex::from(1_u32);
     let ridden = DeBruijnIndex::from(0_u32);
     match core.value_type(node) {
-        | Some(&ValueType::Element { code, .. }) if matches!(core.value(code), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index == DeBruijnIndex::from(0_u32)) =>
+        Some(&ValueType::Element { code, .. }) if matches!(core.value(code), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index == DeBruijnIndex::from(0_u32)) =>
         {
             let translator = variable(scratch, translator);
             let ridden = variable(scratch, ridden);
             let forced = scratch.computation_force(translator);
             Ok(scratch.computation_application(forced, ridden))
         },
-        | Some(&ValueType::Product(ref parts)) if !parts.is_empty() => {
+        Some(&ValueType::Product(ref parts)) if !parts.is_empty() => {
             // Binders from the outermost: t, v, then x_i and y_i for each
             // component in order.
             let count = parts.len();
@@ -401,7 +401,7 @@ fn action_body(
             }
             Ok(body)
         },
-        | Some(&ValueType::Sum(ref parts)) => {
+        Some(&ValueType::Sum(ref parts)) => {
             // Each branch binds its payload: z = 0, v = 1, t = 2.
             let mut branches = Vec::with_capacity(parts.len());
             for (position, &part) in parts.iter().enumerate() {
@@ -418,7 +418,7 @@ fn action_body(
             let scrutinee = variable(scratch, ridden);
             Ok(scratch.computation_case(scrutinee, &branches))
         },
-        | Some(&ValueType::List(element)) => {
+        Some(&ValueType::List(element)) => {
             let action = part_action(element)?;
             let (element, result) = {
                 let mut importer = gandr_core_term::TypeImporter::new(core, scratch);
@@ -445,7 +445,7 @@ fn action_body(
             let list = variable(scratch, ridden);
             Ok(scratch.computation_list_fold(element, result, list, on_nil, on_cons))
         },
-        | Some(&ValueType::Flow { target, .. }) if matches!(core.value(target), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index == DeBruijnIndex::from(0_u32)) =>
+        Some(&ValueType::Flow { target, .. }) if matches!(core.value(target), Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index == DeBruijnIndex::from(0_u32)) =>
         {
             let composer = compose(scratch);
             let ridden = variable(scratch, ridden);
@@ -454,10 +454,10 @@ fn action_body(
             let suspended = scratch.value_thunk(composite);
             Ok(scratch.computation_return(suspended))
         },
-        | Some(_) => {
+        Some(_) => {
             let ridden = variable(scratch, ridden);
             Ok(scratch.computation_return(ridden))
         },
-        | None => Err(FocusRefusal::TranslationInvariant),
+        None => Err(FocusRefusal::TranslationInvariant),
     }
 }

@@ -266,8 +266,8 @@ impl TypedSpan
     pub const fn expected(&self) -> Maybe<&Presentation, checked_against::Absent>
     {
         match self.expected {
-            | Maybe::Present(ref expected) => Maybe::Present(expected),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(ref expected) => Maybe::Present(expected),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 }
@@ -465,18 +465,18 @@ impl Naming
             .iter()
             .filter_map(|declaration| {
                 let roots = match declaration.outcome() {
-                    | DeclarationOutcome::Completed {
+                    DeclarationOutcome::Completed {
                         declared_type,
                         body,
                     } => [
                         Some(CoreNode::ValueType(declared_type)),
                         Some(CoreNode::Value(body)),
                     ],
-                    | DeclarationOutcome::Uncompleted { declared_type } => {
+                    DeclarationOutcome::Uncompleted { declared_type } => {
                         [Some(CoreNode::ValueType(declared_type)), None]
                     },
-                    | DeclarationOutcome::Bodied { body } => [Some(CoreNode::Value(body)), None],
-                    | DeclarationOutcome::Data(_)
+                    DeclarationOutcome::Bodied { body } => [Some(CoreNode::Value(body)), None],
+                    DeclarationOutcome::Data(_)
                     | DeclarationOutcome::Abstract(_)
                     | DeclarationOutcome::Refused(_) => return None,
                 };
@@ -656,13 +656,13 @@ fn scopes(
         .binders()
         .map(|(_, binder)| {
             let name = match binder.opener() {
-                | CoreNode::Computation(opener) => naming
+                CoreNode::Computation(opener) => naming
                     .openers
                     .binary_search_by_key(&opener, |&(held, _)| held)
                     .ok()
                     .and_then(|at| naming.openers.get(at))
                     .and_then(|&(_, span)| naming.written(span)),
-                | CoreNode::Value(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => None,
+                CoreNode::Value(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => None,
             };
             Bound {
                 around: intuitionistic(&scopes, binder.parent()),
@@ -708,8 +708,8 @@ fn scopes(
 const fn root(node: TypeNode) -> CoreNode
 {
     match node {
-        | TypeNode::Value(id) => CoreNode::ValueType(id),
-        | TypeNode::Computation(id) => CoreNode::CompType(id),
+        TypeNode::Value(id) => CoreNode::ValueType(id),
+        TypeNode::Computation(id) => CoreNode::CompType(id),
     }
 }
 
@@ -787,10 +787,10 @@ impl TypeTable
             .map(|&(id, origin)| (TypeNode::Computation(id), origin, GroundSort::Computation));
         let motives = origins.motives().iter().filter_map(|&(transport, origin)| {
             match arena.computation(transport) {
-                | Some(
+                Some(
                     &(Computation::PathTransport { motive, .. } | Computation::Ride { motive, .. }),
                 ) => Some((TypeNode::Value(motive), origin, GroundSort::Value)),
-                | _ => None,
+                _ => None,
             }
         });
         let written: Vec<(TypeNode, Origin, GroundSort)> = value_types
@@ -813,13 +813,13 @@ impl TypeTable
         let mut universes = Vec::new();
         for (node, origin, sort) in written {
             let level = match formed.binary_search_by_key(&node, |formation| formation.ty) {
-                | Ok(at) => match formed.get(at) {
-                    | Some(formation) => formation.level.clone(),
-                    | None => continue,
+                Ok(at) => match formed.get(at) {
+                    Some(formation) => formation.level.clone(),
+                    None => continue,
                 },
-                | Err(_) => match level_of(&context, node) {
-                    | Ok(level) => level,
-                    | Err(_) => continue,
+                Err(_) => match level_of(&context, node) {
+                    Ok(level) => level,
+                    Err(_) => continue,
                 },
             };
             universes.push((origin, sort, level));
@@ -853,11 +853,11 @@ impl TypeTable
         let mut kept: Vec<(TermNode, TypeNode, TypeNode, usize, ConstantIndex)> = Vec::new();
         for (term, finished, ty, constant) in judged {
             match kept.last_mut() {
-                | Some(&mut (held, _, ref mut last, ref mut at, _)) if held == term => {
+                Some(&mut (held, _, ref mut last, ref mut at, _)) if held == term => {
                     *last = ty;
                     *at = finished;
                 },
-                | Some(_) | None => kept.push((term, ty, ty, finished, constant)),
+                Some(_) | None => kept.push((term, ty, ty, finished, constant)),
             }
         }
         let first_of = |term: TermNode| {
@@ -887,8 +887,8 @@ impl TypeTable
         let mut entries = Vec::with_capacity(order.len());
         for &(term, first, last, _, constant) in order {
             let (origin, node) = match term {
-                | TermNode::Value(id) => (origins.value(id), CoreNode::Value(id)),
-                | TermNode::Computation(id) => (origins.computation(id), CoreNode::Computation(id)),
+                TermNode::Value(id) => (origins.value(id), CoreNode::Value(id)),
+                TermNode::Computation(id) => (origins.computation(id), CoreNode::Computation(id)),
             };
             if let Maybe::Present(origin) = origin {
                 entries.push(Entry {
@@ -927,14 +927,14 @@ impl TypeTable
         // scrutinee's node. A binder some use already answers is not answered
         // twice.
         let typed_at = |value: ValueId| match first_of(TermNode::Value(value)) {
-            | Some((TypeNode::Value(ty), constant)) => Some(Scrutinised {
+            Some((TypeNode::Value(ty), constant)) => Some(Scrutinised {
                 ty,
                 within: Within {
                     constant,
                     node: CoreNode::Value(value),
                 },
             }),
-            | Some((TypeNode::Computation(_), _)) | None => None,
+            Some((TypeNode::Computation(_), _)) | None => None,
         };
         let mut scrutinised: BTreeMap<NodeIndex, Scrutinised> = BTreeMap::new();
         for (_, case) in origins.cases() {
@@ -990,17 +990,17 @@ impl TypeTable
                 continue;
             }
             let (ty, standing) = match label.labelled {
-                | Labelled::ValueType { ty, ref context } => {
+                Labelled::ValueType { ty, ref context } => {
                     let named = NamedContext(contexts.len());
                     contexts.push(context.clone());
                     (TypeNode::Value(ty), Standing::Named(named))
                 },
-                | Labelled::CompType { ty, ref context } => {
+                Labelled::CompType { ty, ref context } => {
                     let named = NamedContext(contexts.len());
                     contexts.push(context.clone());
                     (TypeNode::Computation(ty), Standing::Named(named))
                 },
-                | Labelled::Value(value) => {
+                Labelled::Value(value) => {
                     let Some((first, constant)) = first_of(TermNode::Value(value))
                     else {
                         continue;
@@ -1013,7 +1013,7 @@ impl TypeTable
                         }),
                     )
                 },
-                | Labelled::Endpoint(action) => {
+                Labelled::Endpoint(action) => {
                     let Some(&(_, ty, constant)) = endpoints
                         .binary_search_by_key(&TermNode::Computation(action), |&(term, ..)| term)
                         .ok()
@@ -1077,9 +1077,9 @@ impl TypeTable
             entries.push(Entry {
                 span: entry.span,
                 subject: match entry.role {
-                    | DescribedRole::Name => Subject::Binder,
-                    | DescribedRole::Term => Subject::Term,
-                    | DescribedRole::Type => Subject::Type,
+                    DescribedRole::Name => Subject::Binder,
+                    DescribedRole::Term => Subject::Term,
+                    DescribedRole::Type => Subject::Type,
                 },
                 provenance: Provenance::Written,
                 ty,
@@ -1096,22 +1096,20 @@ impl TypeTable
                 continue;
             }
             let held = match declaration.outcome() {
-                | DeclarationOutcome::Completed { declared_type, .. }
+                DeclarationOutcome::Completed { declared_type, .. }
                 | DeclarationOutcome::Uncompleted { declared_type } => {
                     Held::Typed(TypeNode::Value(declared_type))
                 },
-                | DeclarationOutcome::Bodied { body } => match first_type(TermNode::Value(body)) {
-                    | Some(first) => Held::Typed(first),
-                    | None => continue,
+                DeclarationOutcome::Bodied { body } => match first_type(TermNode::Value(body)) {
+                    Some(first) => Held::Typed(first),
+                    None => continue,
                 },
-                | DeclarationOutcome::Data(index) => match module.data(index) {
-                    | Maybe::Present(signature) => Held::Typed(TypeNode::Value(signature.kind())),
-                    | Maybe::Absent(_) => continue,
+                DeclarationOutcome::Data(index) => match module.data(index) {
+                    Maybe::Present(signature) => Held::Typed(TypeNode::Value(signature.kind())),
+                    Maybe::Absent(_) => continue,
                 },
-                | DeclarationOutcome::Abstract(sealing) => {
-                    Held::Typed(TypeNode::Value(sealing.kind))
-                },
-                | DeclarationOutcome::Refused(refusal) => Held::Refused(refusal.to_string()),
+                DeclarationOutcome::Abstract(sealing) => Held::Typed(TypeNode::Value(sealing.kind)),
+                DeclarationOutcome::Refused(refusal) => Held::Refused(refusal.to_string()),
             };
             for key in [
                 declaration.signature(),
@@ -1127,10 +1125,10 @@ impl TypeTable
         for cells in &module.cells().declarations {
             for (&span, direction) in cells.rule_spans.iter().zip(&cells.directions) {
                 let note = match *direction {
-                    | gandr_surface_lowering::description::written::RuleDirection::LeftToRight => {
+                    gandr_surface_lowering::description::written::RuleDirection::LeftToRight => {
                         ChosenDirection::LeftToRight
                     },
-                    | gandr_surface_lowering::description::written::RuleDirection::RightToLeft => {
+                    gandr_surface_lowering::description::written::RuleDirection::RightToLeft => {
                         ChosenDirection::RightToLeft
                     },
                 };
@@ -1208,10 +1206,10 @@ impl TypeTable
         form: Form,
     ) -> Maybe<TypedSpan, typing::Absent>
     {
-        match self.chosen(offset) {
-            | Some(entry) => self.answer(entry, page, form),
-            | None => Maybe::Absent(typing::Absent::Untyped),
-        }
+        self.chosen(offset)
+            .map_or(Maybe::Absent(typing::Absent::Untyped), |entry| {
+                self.answer(entry, page, form)
+            })
     }
 
     /// The span of the entry [`Self::at`] answers `offset` with, unspelled.
@@ -1339,12 +1337,8 @@ impl TypeTable
             return Maybe::Absent(typing::Absent::Unspelled);
         };
         let expected = match self.spell(entry.last, &binders, page, form) {
-            | Maybe::Present(other) if entry.last != entry.ty && other != ty => {
-                Maybe::Present(other)
-            },
-            | Maybe::Present(_) | Maybe::Absent(_) => {
-                Maybe::Absent(checked_against::Absent::Agreed)
-            },
+            Maybe::Present(other) if entry.last != entry.ty && other != ty => Maybe::Present(other),
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(checked_against::Absent::Agreed),
         };
         Maybe::Present(TypedSpan {
             span: entry.span,
@@ -1387,14 +1381,12 @@ impl TypeTable
     ) -> Maybe<Declared, typing::Absent>
     {
         match self.declared.get(&key) {
-            | Some(&Held::Typed(node)) => match self.spell(node, &[], page, form) {
-                | Maybe::Present(spelled) => Maybe::Present(Declared::Typed(spelled)),
-                | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Some(&Held::Typed(node)) => match self.spell(node, &[], page, form) {
+                Maybe::Present(spelled) => Maybe::Present(Declared::Typed(spelled)),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
             },
-            | Some(&Held::Refused(ref refusal)) => {
-                Maybe::Present(Declared::Refused(refusal.clone()))
-            },
-            | None => Maybe::Absent(typing::Absent::Untyped),
+            Some(&Held::Refused(ref refusal)) => Maybe::Present(Declared::Refused(refusal.clone())),
+            None => Maybe::Absent(typing::Absent::Untyped),
         }
     }
 
@@ -1454,10 +1446,8 @@ impl TypeTable
         let printer = CoreSource::new(&self.arena, &names)
             .naming(&constructors)
             .within(&binders);
-        match present_type(&printer, root(node), page, form) {
-            | Ok(spelled) => Maybe::Present(spelled),
-            | Err(_) => Maybe::Absent(typing::Absent::Unspelled),
-        }
+        present_type(&printer, root(node), page, form)
+            .map_or(Maybe::Absent(typing::Absent::Unspelled), Maybe::Present)
     }
 
     /// The names of the intuitionistic binders an entry standing at
@@ -1489,15 +1479,15 @@ impl TypeTable
     ) -> Vec<Option<String>>
     {
         let Within { constant, node } = match standing {
-            | Standing::Closed => return Vec::new(),
-            | Standing::Named(context) => {
+            Standing::Closed => return Vec::new(),
+            Standing::Named(context) => {
                 return self
                     .contexts
                     .get(context.0)
                     .map(|names| names.iter().cloned().map(Some).collect())
                     .unwrap_or_default();
             },
-            | Standing::Judged(within) => within,
+            Standing::Judged(within) => within,
         };
         let Some(&(_, roots)) = self
             .naming
@@ -1586,7 +1576,7 @@ impl TypeTable
             }
             for (site, node, spelled) in sides {
                 printed.push(match spelled {
-                    | Maybe::Present(spelled) => {
+                    Maybe::Present(spelled) => {
                         let closed = self.spell(node, &[], page, form);
                         let settled = if !spelled.unspelled().is_empty() {
                             Some(RoundTrip::Unknown)
@@ -1600,7 +1590,7 @@ impl TypeTable
                         };
                         (site, node, spelled.to_string(), settled)
                     },
-                    | Maybe::Absent(_) => (site, node, String::new(), Some(RoundTrip::Unspelled)),
+                    Maybe::Absent(_) => (site, node, String::new(), Some(RoundTrip::Unspelled)),
                 });
             }
         }
@@ -1608,20 +1598,20 @@ impl TypeTable
             if let Held::Typed(node) = *held {
                 let site = ReadSite::Declared(key);
                 printed.push(match self.spell(node, &[], page, form) {
-                    | Maybe::Present(spelled) => {
+                    Maybe::Present(spelled) => {
                         let settled =
                             (!spelled.unspelled().is_empty()).then_some(RoundTrip::Unknown);
                         (site, node, spelled.to_string(), settled)
                     },
-                    | Maybe::Absent(_) => (site, node, String::new(), Some(RoundTrip::Unspelled)),
+                    Maybe::Absent(_) => (site, node, String::new(), Some(RoundTrip::Unspelled)),
                 });
             }
         }
         // Each distinct signature that parses whole, appended once under a
         // fresh name.
         let signature = |node: TypeNode, spelled: &str| match node {
-            | TypeNode::Value(_) => String::from(spelled),
-            | TypeNode::Computation(_) => format!("+U ({spelled})"),
+            TypeNode::Value(_) => String::from(spelled),
+            TypeNode::Computation(_) => format!("+U ({spelled})"),
         };
         let mut appended: BTreeMap<String, String> = BTreeMap::new();
         let mut augmented = self.naming.text.clone();
@@ -1650,8 +1640,8 @@ impl TypeTable
         let held: Vec<ValueTypeId> = printed
             .iter()
             .map(|&(_, node, ..)| match node {
-                | TypeNode::Value(id) => id,
-                | TypeNode::Computation(id) => arena.value_type_thunk(id),
+                TypeNode::Value(id) => id,
+                TypeNode::Computation(id) => arena.value_type_thunk(id),
             })
             .collect();
         let mut lowered: BTreeMap<String, Result<ValueTypeId, String>> = BTreeMap::new();
@@ -1662,7 +1652,7 @@ impl TypeTable
         )
         .map(Lowering::into_lowered)
         {
-            | Ok(Lowered::Module {
+            Ok(Lowered::Module {
                 module,
                 arena: read,
             }) => {
@@ -1673,21 +1663,24 @@ impl TypeTable
                         continue;
                     }
                     let outcome = match declaration.outcome() {
-                        | DeclarationOutcome::Uncompleted { declared_type } => importer
+                        DeclarationOutcome::Uncompleted { declared_type } => importer
                             .value_type(declared_type)
                             .map_err(|fault| format!("{fault:?}")),
-                        | DeclarationOutcome::Refused(refusal) => Err(refusal.to_string()),
-                        | other => Err(format!("{other:?}")),
+                        DeclarationOutcome::Refused(refusal) => Err(refusal.to_string()),
+                        other @ (DeclarationOutcome::Completed { .. }
+                        | DeclarationOutcome::Bodied { .. }
+                        | DeclarationOutcome::Data(_)
+                        | DeclarationOutcome::Abstract(_)) => Err(format!("{other:?}")),
                     };
                     let _first = lowered.insert(String::from(name.as_ref()), outcome);
                 }
             },
-            | Ok(Lowered::Refused(refusal)) => {
+            Ok(Lowered::Refused(refusal)) => {
                 for name in appended.values() {
                     let _first = lowered.insert(name.clone(), Err(refusal.to_string()));
                 }
             },
-            | Err(fault) => {
+            Err(fault) => {
                 for name in appended.values() {
                     let _first = lowered.insert(name.clone(), Err(fault.to_string()));
                 }
@@ -1702,11 +1695,11 @@ impl TypeTable
                         .get(&signature(node, &spelled))
                         .and_then(|name| lowered.get(name))
                     {
-                        | None => RoundTrip::Unparsed,
-                        | Some(&Err(ref refusal)) => RoundTrip::Refused(refusal.clone()),
-                        | Some(&Ok(read)) => match equal_type_syntax(&arena, held, read) {
-                            | CertificateEquality::Equal => RoundTrip::Equal,
-                            | CertificateEquality::Different => RoundTrip::Different,
+                        None => RoundTrip::Unparsed,
+                        Some(&Err(ref refusal)) => RoundTrip::Refused(refusal.clone()),
+                        Some(&Ok(read)) => match equal_type_syntax(&arena, held, read) {
+                            CertificateEquality::Equal => RoundTrip::Equal,
+                            CertificateEquality::Different => RoundTrip::Different,
                         },
                     }
                 });
@@ -1814,15 +1807,15 @@ fn matched(
                 continue;
             };
             let answered = match written.reading {
-                | PatternReading::Matched => ty,
-                | PatternReading::Constructor => {
+                PatternReading::Matched => ty,
+                PatternReading::Constructor => {
                     let Some(shape) = case.patterns.pattern(written.pattern)
                     else {
                         continue;
                     };
                     match constructor(arena, &signatures, shape, ty) {
-                        | Maybe::Present(constructor) => constructor,
-                        | Maybe::Absent(named::Absent::Undeclared) => continue,
+                        Maybe::Present(constructor) => constructor,
+                        Maybe::Absent(named::Absent::Undeclared) => continue,
                     }
                 },
             };
@@ -1869,49 +1862,49 @@ fn parts(
         }
     };
     match *pattern {
-        | Pattern::Constructor { tag, ref fields } => {
+        Pattern::Constructor { tag, ref fields } => {
             match arena.value_type(ty) {
-                | Some(&ValueType::Path { .. }) => {
+                Some(&ValueType::Path { .. }) => {
                     return fields.iter().map(|&field| (field, ty)).collect();
                 },
-                | Some(&ValueType::Product(ref components)) if usize::from(tag) == 0_usize => {
+                Some(&ValueType::Product(ref components)) if usize::from(tag) == 0_usize => {
                     return at(components, fields);
                 },
-                | Some(&ValueType::Sum(ref summands)) => {
+                Some(&ValueType::Sum(ref summands)) => {
                     return match summands.get(usize::from(tag)) {
-                        | Some(&summand) => at(&[summand], fields),
-                        | None => Vec::new(),
+                        Some(&summand) => at(&[summand], fields),
+                        None => Vec::new(),
                     };
                 },
-                | Some(&ValueType::Data { .. }) => {},
-                | Some(_) | None => return Vec::new(),
+                Some(&ValueType::Data { .. }) => {},
+                Some(_) | None => return Vec::new(),
             }
             match declared(arena, signatures, tag, ty) {
-                | Maybe::Present(declared) => at(&declared, fields),
-                | Maybe::Absent(named::Absent::Undeclared) => Vec::new(),
+                Maybe::Present(declared) => at(&declared, fields),
+                Maybe::Absent(named::Absent::Undeclared) => Vec::new(),
             }
         },
-        | Pattern::Pair(first, second) => match arena.value_type(ty) {
-            | Some(&ValueType::Product(ref components)) => at(components, &[first, second]),
-            | Some(&ValueType::Sigma {
+        Pattern::Pair(first, second) => match arena.value_type(ty) {
+            Some(&ValueType::Product(ref components)) => at(components, &[first, second]),
+            Some(&ValueType::Sigma {
                 first: component, ..
             }) => Vec::from([(first, component)]),
-            | Some(_) | None => Vec::new(),
+            Some(_) | None => Vec::new(),
         },
-        | Pattern::Injection(side, body) => match arena.value_type(ty) {
-            | Some(&ValueType::Sum(ref summands)) if summands.len() == 2_usize => {
+        Pattern::Injection(side, body) => match arena.value_type(ty) {
+            Some(&ValueType::Sum(ref summands)) if summands.len() == 2_usize => {
                 let summand = match side {
-                    | Side::Left => summands.first(),
-                    | Side::Right => summands.get(1_usize),
+                    Side::Left => summands.first(),
+                    Side::Right => summands.get(1_usize),
                 };
                 summand
                     .map(|&summand| (body, summand))
                     .into_iter()
                     .collect()
             },
-            | Some(_) | None => Vec::new(),
+            Some(_) | None => Vec::new(),
         },
-        | Pattern::Wildcard
+        Pattern::Wildcard
         | Pattern::Binder
         | Pattern::Unit
         | Pattern::Literal(_)
@@ -2080,15 +2073,15 @@ mod tests
             PageWidth::from(80_u32),
             Form::Explicit,
         ) {
-            | Maybe::Present(entry) => Maybe::Present(Answer {
+            Maybe::Present(entry) => Maybe::Present(Answer {
                 subject: entry.subject(),
                 ty: String::from(entry.ty().as_ref()),
                 expected: match entry.expected() {
-                    | Maybe::Present(expected) => Maybe::Present(String::from(expected.as_ref())),
-                    | Maybe::Absent(reason) => Maybe::Absent(reason),
+                    Maybe::Present(expected) => Maybe::Present(String::from(expected.as_ref())),
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
                 },
             }),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 
@@ -2246,7 +2239,7 @@ mod tests
                 PageWidth::from(80_u32),
                 Form::Sugared,
             ) {
-                | Maybe::Present(entry) => (
+                Maybe::Present(entry) => (
                     String::from(
                         text.get(
                             usize::from(entry.span().start()) .. usize::from(entry.span().end()),
@@ -2256,7 +2249,7 @@ mod tests
                     entry.subject(),
                     String::from(entry.ty().as_ref()),
                 ),
-                | Maybe::Absent(reason) => panic!("`{needle}` answers nothing: {reason:?}"),
+                Maybe::Absent(reason) => panic!("`{needle}` answers nothing: {reason:?}"),
             }
         };
         let path = "Path(Circle, Base, Base)";
@@ -2354,10 +2347,10 @@ mod tests
             .filter_map(|position| tree.key(position))
             .filter_map(
                 |key| match table.declared(key, PageWidth::from(80_u32), Form::Explicit) {
-                    | Maybe::Present(Declared::Typed(spelled)) => {
+                    Maybe::Present(Declared::Typed(spelled)) => {
                         Some(String::from(spelled.as_ref()))
                     },
-                    | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
+                    Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
                 },
             )
             .collect();
@@ -2390,10 +2383,10 @@ mod tests
             .filter_map(|position| tree.key(position))
             .filter_map(
                 |key| match table.declared(key, PageWidth::from(80_u32), Form::Explicit) {
-                    | Maybe::Present(Declared::Typed(spelled)) => {
+                    Maybe::Present(Declared::Typed(spelled)) => {
                         Some(String::from(spelled.as_ref()))
                     },
-                    | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
+                    Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
                 },
             )
             .collect();
@@ -2448,10 +2441,10 @@ mod tests
             .filter_map(|position| tree.key(position))
             .filter_map(
                 |key| match table.declared(key, PageWidth::from(80_u32), Form::Explicit) {
-                    | Maybe::Present(Declared::Typed(spelled)) => {
+                    Maybe::Present(Declared::Typed(spelled)) => {
                         Some(String::from(spelled.as_ref()))
                     },
-                    | Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
+                    Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => None,
                 },
             )
             .collect();

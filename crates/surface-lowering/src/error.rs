@@ -189,14 +189,14 @@ impl fmt::Display for FragmentSort
     ) -> fmt::Result
     {
         match *self {
-            | Self::Module => f.write_str("a module"),
-            | Self::Declaration => f.write_str("a declaration"),
-            | Self::ValueType => f.write_str("a value type"),
-            | Self::CompType => f.write_str("a computation type"),
-            | Self::Value => f.write_str("a value"),
-            | Self::Computation => f.write_str("a computation"),
-            | Self::Pattern => f.write_str("a pattern"),
-            | Self::Continuation => f.write_str("a session continuation"),
+            Self::Module => f.write_str("a module"),
+            Self::Declaration => f.write_str("a declaration"),
+            Self::ValueType => f.write_str("a value type"),
+            Self::CompType => f.write_str("a computation type"),
+            Self::Value => f.write_str("a value"),
+            Self::Computation => f.write_str("a computation"),
+            Self::Pattern => f.write_str("a pattern"),
+            Self::Continuation => f.write_str("a session continuation"),
         }
     }
 }
@@ -298,38 +298,38 @@ impl fmt::Display for FragmentBoundary
     ) -> fmt::Result
     {
         match *self {
-            | Self::Reserved => f.write_str("is reserved and declined"),
-            | Self::Unadmitted => f.write_str("is not admitted by the fragment"),
-            | Self::WrongSort => f.write_str("is not a former of this sort"),
-            | Self::Arity(operands) => write!(f, "does not take {operands} operands"),
-            | Self::Indexed => {
+            Self::Reserved => f.write_str("is reserved and declined"),
+            Self::Unadmitted => f.write_str("is not admitted by the fragment"),
+            Self::WrongSort => f.write_str("is not a former of this sort"),
+            Self::Arity(operands) => write!(f, "does not take {operands} operands"),
+            Self::Indexed => {
                 f.write_str("applies its family to an index, which the fragment does not read")
             },
-            | Self::Unannotated => f.write_str("needs a type the source does not state"),
-            | Self::NotAFunction => {
+            Self::Unannotated => f.write_str("needs a type the source does not state"),
+            Self::NotAFunction => {
                 f.write_str("maps a path by a constructor, which is not a function")
             },
-            | Self::NonUniform => f.write_str(
+            Self::NonUniform => f.write_str(
                 "passes something other than the parameter itself where an earlier parameter \
                  stands; only the last parameter descends",
             ),
-            | Self::NotInTail => f.write_str(
+            Self::NotInTail => f.write_str(
                 "stands where no path through a function, a lambda, a thunk or a copattern \
                  clause body passes; an exit leaves, and a loop runs, only on such a path",
             ),
-            | Self::JoinsBlock => f.write_str(
+            Self::JoinsBlock => f.write_str(
                 "has arms that continue the block after it, which answer what the block \
                  answers, so a written answer is not read",
             ),
-            | Self::EmptyList => f.write_str(
+            Self::EmptyList => f.write_str(
                 "is spelled `()`, an empty list and never the unit: the unit value is `unit` and \
                  its type `Unit`",
             ),
-            | Self::Endpoint => f.write_str(
+            Self::Endpoint => f.write_str(
                 "is no endpoint: a session action acts on a name a fork binds as one of its \
                  ends",
             ),
-            | Self::NonContractive => f.write_str(
+            Self::NonContractive => f.write_str(
                 "recurses before any action: a `mu` body that is a `mu` or a variable unfolds \
                  to itself",
             ),
@@ -385,10 +385,10 @@ impl fmt::Display for FormFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::Repaired(repair) => write!(f, "holds {repair}"),
-            | Self::MissingOperand => f.write_str("leaves an operand unwritten"),
-            | Self::ExtraOperand => f.write_str("has an operand where it takes none"),
-            | Self::MisplacedTile => f.write_str("has a tile out of place"),
+            Self::Repaired(repair) => write!(f, "holds {repair}"),
+            Self::MissingOperand => f.write_str("leaves an operand unwritten"),
+            Self::ExtraOperand => f.write_str("has an operand where it takes none"),
+            Self::MisplacedTile => f.write_str("has a tile out of place"),
         }
     }
 }
@@ -437,8 +437,8 @@ impl fmt::Display for AscriptionForm
     ) -> fmt::Result
     {
         match *self {
-            | Self::Kinded => f.write_str("is a kinded type component, a type family"),
-            | Self::Parameterized => f.write_str("is a type component that binds parameters"),
+            Self::Kinded => f.write_str("is a kinded type component, a type family"),
+            Self::Parameterized => f.write_str("is a type component that binds parameters"),
         }
     }
 }
@@ -479,8 +479,8 @@ impl fmt::Display for LoopExit
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Break => "`break`",
-            | Self::Continue => "`continue`",
+            Self::Break => "`break`",
+            Self::Continue => "`continue`",
         })
     }
 }
@@ -524,9 +524,9 @@ impl fmt::Display for CrossedExit
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Become => "`become`",
-            | Self::Break => "`break`",
-            | Self::Continue => "`continue`",
+            Self::Become => "`become`",
+            Self::Break => "`break`",
+            Self::Continue => "`continue`",
         })
     }
 }
@@ -579,13 +579,13 @@ impl fmt::Display for TelescopeFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::Arity { stated, written } => write!(
+            Self::Arity { stated, written } => write!(
                 f,
                 "binds {} parameters where its component states {} indices",
                 usize::from(written),
                 usize::from(stated)
             ),
-            | Self::Index(place) => write!(
+            Self::Index(place) => write!(
                 f,
                 "binds parameter {} at a type its component's index does not state",
                 usize::from(place)
@@ -1052,165 +1052,165 @@ impl fmt::Display for LoweringRefusal<'_>
     ) -> fmt::Result
     {
         match *self {
-            | Self::UnresolvedName { name, .. } => {
+            Self::UnresolvedName { name, .. } => {
                 write!(f, "no declaration or binder answers `{name}`")
             },
-            | Self::UnresolvedDocLink { name, .. } => {
+            Self::UnresolvedDocLink { name, .. } => {
                 write!(
                     f,
                     "the documentation links to `{name}`, which nothing declares"
                 )
             },
-            | Self::UnresolvedTypeHead { name, arity, .. } => {
+            Self::UnresolvedTypeHead { name, arity, .. } => {
                 write!(f, "no type head answers `{name}` {arity}")
             },
-            | Self::DuplicateSignature { name, .. } => {
+            Self::DuplicateSignature { name, .. } => {
                 write!(f, "`{name}` already has a signature")
             },
-            | Self::DuplicateDefinition { name, .. } => {
+            Self::DuplicateDefinition { name, .. } => {
                 write!(f, "`{name}` already has a definition")
             },
-            | Self::DuplicateImportAlias { alias, .. } => write!(
+            Self::DuplicateImportAlias { alias, .. } => write!(
                 f,
                 "the import alias `{alias}` is already bound by an earlier import: {ONE_SOURCE}"
             ),
-            | Self::ShadowedBuiltin { name, .. } => write!(
+            Self::ShadowedBuiltin { name, .. } => write!(
                 f,
                 "`{name}` shadows a builtin name, which the active policy forbids"
             ),
-            | Self::OutOfFragment {
+            Self::OutOfFragment {
                 form,
                 sort,
                 boundary,
                 ..
             } => write!(f, "{form}, read as {sort}, {boundary}"),
-            | Self::GradedBridge { grade, .. } => write!(
+            Self::GradedBridge { grade, .. } => write!(
                 f,
                 "the bridge's grade `{grade}` is not the default `ω`, the only grade the \
                  fragment admits"
             ),
-            | Self::MalformedLiteral { form, .. } => {
+            Self::MalformedLiteral { form, .. } => {
                 write!(f, "the text is not the lexeme of {form}")
             },
-            | Self::MalformedForm { form, fault, .. } => write!(f, "{form} {fault}"),
-            | Self::UnknownAttribute {
+            Self::MalformedForm { form, fault, .. } => write!(f, "{form} {fault}"),
+            Self::UnknownAttribute {
                 name, suggestion, ..
             } => match suggestion {
-                | Maybe::Present(nearest) => write!(
+                Maybe::Present(nearest) => write!(
                     f,
                     "no attribute is registered as `{name}`; the nearest is `{nearest}`"
                 ),
-                | Maybe::Absent(_) => write!(f, "no attribute is registered as `{name}`"),
+                Maybe::Absent(_) => write!(f, "no attribute is registered as `{name}`"),
             },
-            | Self::DuplicateAttribute { name, .. } => {
+            Self::DuplicateAttribute { name, .. } => {
                 write!(f, "the attribute `{name}` is already written")
             },
-            | Self::MissingPayload { name, expected, .. } => {
+            Self::MissingPayload { name, expected, .. } => {
                 write!(f, "`{name}` takes {expected} and was given none")
             },
-            | Self::NonValuePayload { name, form, .. } => {
+            Self::NonValuePayload { name, form, .. } => {
                 write!(f, "the payload of `{name}` is {form}, not a value")
             },
-            | Self::IllTypedPayload {
+            Self::IllTypedPayload {
                 name,
                 expected,
                 written,
                 ..
             } => write!(f, "`{name}` takes {expected} and was given {written}"),
-            | Self::ForwardMemberReference { name, .. } => write!(
+            Self::ForwardMemberReference { name, .. } => write!(
                 f,
                 "the member `{name}` is declared at or after the member naming it; a member \
                  names only the members before it"
             ),
-            | Self::UnknownMember { module, member, .. } => {
+            Self::UnknownMember { module, member, .. } => {
                 write!(f, "the module `{module}` exports no member `{member}`")
             },
-            | Self::NotAFunctor { name, .. } => write!(
+            Self::NotAFunctor { name, .. } => write!(
                 f,
                 "`{name}` is applied as a functor, and no functor `{name}` is declared before \
                  the binding"
             ),
-            | Self::ProjectionFromApplication { functor, .. } => write!(
+            Self::ProjectionFromApplication { functor, .. } => write!(
                 f,
                 "a path is read off an application of `{functor}`; bind the application first, \
                  `module A = {functor}(…) ;`, and read the path off `A`"
             ),
-            | Self::UnreadAscription { name, form, .. } => {
+            Self::UnreadAscription { name, form, .. } => {
                 write!(f, "`{name}` {form}; the fragment does not read it yet")
             },
-            | Self::UnstatedComponent { name, fault, .. } => write!(
+            Self::UnstatedComponent { name, fault, .. } => write!(
                 f,
                 "the model signature cannot state `{name}`, which {fault}"
             ),
-            | Self::FamilyTelescope { name, fault, .. } => {
+            Self::FamilyTelescope { name, fault, .. } => {
                 write!(f, "the type family `{name}` {fault}")
             },
-            | Self::LowercaseModuleName { name, .. } => write!(
+            Self::LowercaseModuleName { name, .. } => write!(
                 f,
                 "the module `{name}` is named with a lowercase initial; a top-level module's \
                  name starts with an uppercase letter"
             ),
-            | Self::NonExhaustiveMatch { .. } => {
+            Self::NonExhaustiveMatch { .. } => {
                 f.write_str("the match leaves a value of its scrutinee that no arm matches")
             },
-            | Self::UnmarkedSelfReference { name, .. } => write!(
+            Self::UnmarkedSelfReference { name, .. } => write!(
                 f,
                 "`{name}` names its own recursive definition without a claim; write \
                  `{name}[<](…)` to recurse on a field of the last parameter"
             ),
-            | Self::Unreachable { .. } => f.write_str(
+            Self::Unreachable { .. } => f.write_str(
                 "no path reaches this code: every path through the statement before it exits",
             ),
-            | Self::OutsideLoop { exit, .. } => write!(
+            Self::OutsideLoop { exit, .. } => write!(
                 f,
                 "{exit} stands on no path through a loop's body; a function, a lambda, a \
                  thunk or a copattern clause inside a loop has a body of its own"
             ),
-            | Self::AcrossHandler { exit, .. } => write!(
+            Self::AcrossHandler { exit, .. } => write!(
                 f,
                 "{exit} would run in place of a live handler's frame; a handled subject \
                  leaves its body only by `return`, past every frame around it"
             ),
-            | Self::ForNeedsListCase { .. } => f.write_str(
+            Self::ForNeedsListCase { .. } => f.write_str(
                 "a `for` loop steps through a native list, which has a fold and no case \
                  former in the kernel or the core; loop over it by recursion instead",
             ),
-            | Self::WithoutK { .. } => f.write_str(
+            Self::WithoutK { .. } => f.write_str(
                 "a path is matched against `here`, which is axiom K; a path is used by \
                  transport, and `back`, `then` and `cong` derive what a match would",
             ),
-            | Self::DirectedCell { .. } => f.write_str(
+            Self::DirectedCell { .. } => f.write_str(
                 "a directed cell `-->` between two terms builds no word of a path type; a cell \
                  between terms is the invertible `<->`",
             ),
-            | Self::CellNotALoop { .. } => f.write_str(
+            Self::CellNotALoop { .. } => f.write_str(
                 "this cell joins two distinct terms; a cell `<->` is a loop at one point, \
                  written with the same term on both sides",
             ),
-            | Self::RulesUnoriented { .. } => f.write_str(
+            Self::RulesUnoriented { .. } => f.write_str(
                 "this rule's right-hand side is not below its left-hand side in the path order, \
                  so the block's rules may never end",
             ),
-            | Self::RulesDiverge { .. } => f.write_str(
+            Self::RulesDiverge { .. } => f.write_str(
                 "this rule and an earlier one rewrite one term to different normal forms, so the \
                  rule written first decides what runs and the equations do not",
             ),
-            | Self::RulesUndecided { .. } => write!(
+            Self::RulesUndecided { .. } => write!(
                 f,
                 "this rule and an earlier one rewrite one term whose rewrites reach no normal \
                  form within {} steps, so whether they agree is not decided",
                 crate::coincide::JOIN_STEPS
             ),
-            | Self::BudgetExceeded { budget } => {
+            Self::BudgetExceeded { budget } => {
                 write!(f, "the lowering outran its allowance of {budget} steps")
             },
-            | Self::GrammarMismatch { tree, grammar } => write!(
+            Self::GrammarMismatch { tree, grammar } => write!(
                 f,
                 "the tree was molded under grammar {:#018x}, not the grammar {:#018x} it was lowered with",
                 u64::from(tree),
                 u64::from(grammar)
             ),
-            | Self::UnknownMold { mold, .. } => write!(
+            Self::UnknownMold { mold, .. } => write!(
                 f,
                 "the mold {} is not in the grammar's table",
                 u32::from(mold)
@@ -1257,7 +1257,7 @@ impl LoweringRefusal<'_>
     pub const fn span(&self) -> Maybe<ByteSpan, refusal_span::Absent>
     {
         match *self {
-            | Self::UnresolvedName { span, .. }
+            Self::UnresolvedName { span, .. }
             | Self::UnresolvedDocLink { span, .. }
             | Self::UnresolvedTypeHead { span, .. }
             | Self::DuplicateSignature { span, .. }
@@ -1294,7 +1294,7 @@ impl LoweringRefusal<'_>
             | Self::RulesDiverge { span, .. }
             | Self::RulesUndecided { span, .. }
             | Self::UnknownMold { span, .. } => Maybe::Present(span),
-            | Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
+            Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
                 Maybe::Absent(refusal_span::Absent::Run)
             },
         }

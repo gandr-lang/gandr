@@ -106,10 +106,10 @@ impl fmt::Display for StepIdError
     ) -> fmt::Result
     {
         match *self {
-            | Self::ImageLength { found, expected } => {
+            Self::ImageLength { found, expected } => {
                 write!(f, "step identity length {found}, expected {expected}")
             },
-            | Self::WidthOverflow { found } => write!(f, "step field count {found} exceeds u64"),
+            Self::WidthOverflow { found } => write!(f, "step field count {found} exceeds u64"),
         }
     }
 }
@@ -494,12 +494,12 @@ pub fn transport_step_id(
     let mut encoder = StepIdEncoder::begin();
     for field in step_fields(cell, at) {
         match field {
-            | CertificateField::Tag(tag) => encoder.put_u64(CanonicalU64::from(tag)),
-            | CertificateField::Count(count) => {
+            CertificateField::Tag(tag) => encoder.put_u64(CanonicalU64::from(tag)),
+            CertificateField::Count(count) => {
                 let count = CanonicalU64::try_from(count)?;
                 encoder.put_u64(count);
             },
-            | CertificateField::Bytes(bytes) => {
+            CertificateField::Bytes(bytes) => {
                 let bytes = CanonicalBytes::try_from(bytes)?;
                 encoder.put_bytes(bytes);
             },
@@ -547,11 +547,11 @@ impl fmt::Display for TransportStepObstruction
     ) -> fmt::Result
     {
         match *self {
-            | Self::UnknownCell { cell } => {
+            Self::UnknownCell { cell } => {
                 write!(f, "unknown certificate cell {}", usize::from(cell))
             },
-            | Self::Encoding(ref error) => fmt::Display::fmt(error, f),
-            | Self::ContentAddressCollision { address, .. } => {
+            Self::Encoding(ref error) => fmt::Display::fmt(error, f),
+            Self::ContentAddressCollision { address, .. } => {
                 write!(f, "distinct certificate factors at {address}")
             },
         }
@@ -627,11 +627,11 @@ impl TransportStepIndex
     ) -> Result<(), TransportStepObstruction>
     {
         match self.entries.entry(address) {
-            | Entry::Vacant(slot) => {
+            Entry::Vacant(slot) => {
                 slot.insert((cert, multiplicity));
                 Ok(())
             },
-            | Entry::Occupied(mut slot) => {
+            Entry::Occupied(mut slot) => {
                 let graded = slot.get_mut();
                 if graded.0 != cert {
                     return Err(TransportStepObstruction::ContentAddressCollision {

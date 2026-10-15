@@ -160,7 +160,7 @@ mod run
             "the script's status is preserved"
         );
         match actual {
-            | ScriptRun::Source {
+            ScriptRun::Source {
                 step:
                     Step::Source {
                         path: observed_path,
@@ -180,7 +180,9 @@ mod run
                 );
                 assert_eq!(ran, *expected, "the file face runs as its text does");
             },
-            | other => panic!("the script composes: {other:?}"),
+            other @ (ScriptRun::Fault { .. } | ScriptRun::Source { .. }) => {
+                panic!("the script composes: {other:?}")
+            },
         }
     }
 

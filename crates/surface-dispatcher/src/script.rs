@@ -80,8 +80,8 @@ impl Ran<'_>
     pub const fn status(&self) -> RunStatus
     {
         match *self {
-            | Self::Refused | Self::NoProgram => RunStatus::Unreached,
-            | Self::Evaluated { ref evaluation, .. } => evaluation.status(),
+            Self::Refused | Self::NoProgram => RunStatus::Unreached,
+            Self::Evaluated { ref evaluation, .. } => evaluation.status(),
         }
     }
 }
@@ -155,11 +155,11 @@ pub fn execute<'source>(composed: &mut Composed<'source>) -> Ran<'source>
         return Ran::NoProgram;
     };
     match program.name(target) {
-        | Maybe::Present(name) => Ran::Evaluated {
+        Maybe::Present(name) => Ran::Evaluated {
             target: name,
             evaluation: program.evaluate(target),
         },
-        | Maybe::Absent(declaration_name::Absent::Undeclared) => Ran::NoProgram,
+        Maybe::Absent(declaration_name::Absent::Undeclared) => Ran::NoProgram,
     }
 }
 
@@ -260,8 +260,8 @@ impl ScriptRun<'_>
     pub const fn status(&self) -> RunStatus
     {
         match *self {
-            | Self::Fault { .. } => RunStatus::Unreached,
-            | Self::Source { ref ran, .. } => ran.status(),
+            Self::Fault { .. } => RunStatus::Unreached,
+            Self::Source { ref ran, .. } => ran.status(),
         }
     }
 }
@@ -335,8 +335,8 @@ impl Script
     pub fn run(&mut self) -> ScriptRun<'_>
     {
         let root = match read_source(&self.path, &mut self.text) {
-            | Ok(root) => root,
-            | Err(error) => {
+            Ok(root) => root,
+            Err(error) => {
                 return ScriptRun::Fault {
                     path: &self.path,
                     fault: SourceFault::Unreadable(error),
@@ -344,8 +344,8 @@ impl Script
             },
         };
         let grammar = match self.grammar {
-            | Ok(ref grammar) => grammar,
-            | Err(ref error) => {
+            Ok(ref grammar) => grammar,
+            Err(ref error) => {
                 return ScriptRun::Fault {
                     path: &self.path,
                     fault: SourceFault::Grammar(error),
@@ -354,7 +354,7 @@ impl Script
         };
         let source = SourceText::from(self.text.as_str());
         match compose(grammar, root.corpus_root(), source, &mut self.lowerings) {
-            | Ok(mut composed) => {
+            Ok(mut composed) => {
                 let ran = execute(&mut composed);
                 let standing = Standing::of(root, &composed);
                 ScriptRun::Source {
@@ -368,7 +368,7 @@ impl Script
                     ran,
                 }
             },
-            | Err(fault) => ScriptRun::Fault {
+            Err(fault) => ScriptRun::Fault {
                 path: &self.path,
                 fault: SourceFault::Compose(fault),
             },

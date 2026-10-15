@@ -586,14 +586,14 @@ impl core::fmt::Display for ModelFault
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::UnknownHead => "names a sort or an operation the sign does not declare",
-            | Self::Arity => "applies a sort or an operation to the wrong number of arguments",
-            | Self::IllSorted => "relates a term at a sort its position does not read",
-            | Self::Unsorted => "binds a variable no occurrence gives a sort",
-            | Self::ManyOut => "relates the results of a many-out operation",
-            | Self::Circuit => "is a circuit rule, whose sphere a model does not read yet",
-            | Self::Constructor => "applies a constructor, which a sign does not declare",
-            | Self::Inherited => "names a component the model cannot state",
+            Self::UnknownHead => "names a sort or an operation the sign does not declare",
+            Self::Arity => "applies a sort or an operation to the wrong number of arguments",
+            Self::IllSorted => "relates a term at a sort its position does not read",
+            Self::Unsorted => "binds a variable no occurrence gives a sort",
+            Self::ManyOut => "relates the results of a many-out operation",
+            Self::Circuit => "is a circuit rule, whose sphere a model does not read yet",
+            Self::Constructor => "applies a constructor, which a sign does not declare",
+            Self::Inherited => "names a component the model cannot state",
         })
     }
 }
@@ -792,12 +792,12 @@ pub(crate) fn dependence(
 {
     let mut named: Vec<&Name> = Vec::new();
     match tail {
-        | Tail::Results(results) => {
+        Tail::Results(results) => {
             for result in results {
                 sort_vars(result, &mut named);
             }
         },
-        | Tail::Path(carrier, left, right) => {
+        Tail::Path(carrier, left, right) => {
             sort_vars(carrier, &mut named);
             named.extend(left.to_node().vars());
             named.extend(right.to_node().vars());

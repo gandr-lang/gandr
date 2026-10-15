@@ -203,15 +203,15 @@ mod tests
     {
         ledger.consultations = ledger.consultations.saturating_add(1);
         match directed_cut(left, right, store) {
-            | CutOutcome::Coherent(composite) => {
+            CutOutcome::Coherent(composite) => {
                 ledger.coherent = ledger.coherent.saturating_add(1);
                 Consultation::Admitted(Box::new(composite))
             },
-            | CutOutcome::Directed(composite) => {
+            CutOutcome::Directed(composite) => {
                 ledger.gated = ledger.gated.saturating_add(1);
                 Consultation::Admitted(Box::new(composite))
             },
-            | CutOutcome::Declined(obstruction) => {
+            CutOutcome::Declined(obstruction) => {
                 ledger.gated = ledger.gated.saturating_add(1);
                 ledger.declines = ledger.declines.saturating_add(1);
                 if acyclicity_class(&obstruction, left, right, store).0 {
@@ -287,8 +287,8 @@ mod tests
         let mut accumulator = first.clone();
         for member in rest {
             match consult(ledger, &accumulator, member, store) {
-                | Consultation::Declined => return FactoringVerdict::Refuses,
-                | Consultation::Admitted(composite) => {
+                Consultation::Declined => return FactoringVerdict::Refuses,
+                Consultation::Admitted(composite) => {
                     assert!(
                         bool::from(composite.replay(store)),
                         "an admitted intermediate graft is a real certificate — it replays, so a \
@@ -610,18 +610,18 @@ mod tests
         let producer = format!("p{}", index.0);
         let consumer = format!("c{}", index.0);
         match kind {
-            | MemberKind::Mixed => mixed_step(
+            MemberKind::Mixed => mixed_step(
                 FixtureHoleName("s"),
                 OperationName(&in_op),
                 OperationName(&out_op),
             ),
-            | MemberKind::Split => split_step(
+            MemberKind::Split => split_step(
                 FixtureHoleName(&producer),
                 FixtureHoleName(&consumer),
                 OperationName(&in_op),
                 OperationName(&out_op),
             ),
-            | MemberKind::Drop => drop_step(
+            MemberKind::Drop => drop_step(
                 FixtureHoleName(&producer),
                 FixtureHoleName(&consumer),
                 OperationName(&in_op),
@@ -1043,8 +1043,8 @@ mod tests
                     .saturating_add(pairs)
                     .saturating_add(pairs);
                 let folds = match run.composite {
-                    | FactoringVerdict::Admits => members.saturating_sub(1),
-                    | FactoringVerdict::Refuses => {
+                    FactoringVerdict::Admits => members.saturating_sub(1),
+                    FactoringVerdict::Refuses => {
                         run.ledger.consultations.saturating_sub(conjunctions)
                     },
                 };
@@ -1062,22 +1062,22 @@ mod tests
                     composite_refusals = composite_refusals.saturating_add(1);
                 }
                 match (run.composite, run.adjacent) {
-                    | (FactoringVerdict::Refuses, FactoringVerdict::Admits) => {
+                    (FactoringVerdict::Refuses, FactoringVerdict::Admits) => {
                         adjacent_misses = adjacent_misses.saturating_add(1);
                     },
-                    | (FactoringVerdict::Admits, FactoringVerdict::Refuses) => {
+                    (FactoringVerdict::Admits, FactoringVerdict::Refuses) => {
                         adjacent_false_alarms = adjacent_false_alarms.saturating_add(1);
                     },
-                    | _ => {},
+                    _ => {},
                 }
                 match (run.composite, run.own_join) {
-                    | (FactoringVerdict::Refuses, FactoringVerdict::Admits) => {
+                    (FactoringVerdict::Refuses, FactoringVerdict::Admits) => {
                         own_join_misses = own_join_misses.saturating_add(1);
                     },
-                    | (FactoringVerdict::Admits, FactoringVerdict::Refuses) => {
+                    (FactoringVerdict::Admits, FactoringVerdict::Refuses) => {
                         own_join_false_alarms = own_join_false_alarms.saturating_add(1);
                     },
-                    | _ => {},
+                    _ => {},
                 }
                 if run.composite != run.fold_seam {
                     fold_seam_disagreements = fold_seam_disagreements.saturating_add(1);

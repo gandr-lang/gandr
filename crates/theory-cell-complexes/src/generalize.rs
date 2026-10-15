@@ -182,8 +182,8 @@ impl<'term> Points<'term>
         }
         let name = self.fresh();
         let var = match disagreement {
-            | Disagreement::Prod(_) => MetaVar::producer(name),
-            | Disagreement::Cons(_) => MetaVar::consumer(name),
+            Disagreement::Prod(_) => MetaVar::producer(name),
+            Disagreement::Cons(_) => MetaVar::consumer(name),
         };
         self.stood.push((var.clone(), disagreement));
         var
@@ -245,7 +245,7 @@ impl<'term> Points<'term>
             .into_iter()
             .map(|(var, disagreement)| {
                 let arms = match disagreement {
-                    | Disagreement::Prod(column) => column
+                    Disagreement::Prod(column) => column
                         .iter()
                         .map(|subterm| GeneralizationArm {
                             binding: substitution_from(
@@ -255,7 +255,7 @@ impl<'term> Points<'term>
                             size: subterm.size(),
                         })
                         .collect(),
-                    | Disagreement::Cons(column) => column
+                    Disagreement::Cons(column) => column
                         .iter()
                         .map(|subterm| GeneralizationArm {
                             binding: substitution_from(
@@ -371,8 +371,8 @@ fn prod_shape<'term>(column: &Column<ProdRef<'term>>) -> ProdShape<'term>
         return ProdShape::Differ;
     }
     match column.first.view() {
-        | ProdView::Meta(var) => ProdShape::Meta(var),
-        | ProdView::Ctor { ctor, args } => ProdShape::Ctor(
+        ProdView::Meta(var) => ProdShape::Meta(var),
+        ProdView::Ctor { ctor, args } => ProdShape::Ctor(
             ctor,
             child_columns(
                 args,
@@ -411,7 +411,7 @@ fn prod_shape<'term>(column: &Column<ProdRef<'term>>) -> ProdShape<'term>
 fn cons_shape<'term>(column: &Column<ConsRef<'term>>) -> ConsShape<'term>
 {
     match column.first.view() {
-        | ConsView::Top => {
+        ConsView::Top => {
             if column
                 .rest
                 .iter()
@@ -423,7 +423,7 @@ fn cons_shape<'term>(column: &Column<ConsRef<'term>>) -> ConsShape<'term>
                 ConsShape::Differ
             }
         },
-        | ConsView::Meta(var) => {
+        ConsView::Meta(var) => {
             if column
                 .rest
                 .iter()
@@ -435,15 +435,15 @@ fn cons_shape<'term>(column: &Column<ConsRef<'term>>) -> ConsShape<'term>
                 ConsShape::Differ
             }
         },
-        | ConsView::Frame { ctor, ret } => {
+        ConsView::Frame { ctor, ret } => {
             let mut rets = Vec::with_capacity(column.rest.len());
             for member in &column.rest {
                 match member.view() {
-                    | ConsView::Frame {
+                    ConsView::Frame {
                         ctor: other,
                         ret: theirs,
                     } if other == ctor => rets.push(theirs),
-                    | ConsView::Frame { .. }
+                    ConsView::Frame { .. }
                     | ConsView::Op { .. }
                     | ConsView::Meta(_)
                     | ConsView::Top => {
@@ -459,14 +459,14 @@ fn cons_shape<'term>(column: &Column<ConsRef<'term>>) -> ConsShape<'term>
                 },
             }
         },
-        | ConsView::Op { op, args, rets } => {
+        ConsView::Op { op, args, rets } => {
             let arity = args.len();
             let count = rets.len();
             let mut rest_args = Vec::with_capacity(column.rest.len());
             let mut rest_rets = Vec::with_capacity(column.rest.len());
             for member in &column.rest {
                 match member.view() {
-                    | ConsView::Op {
+                    ConsView::Op {
                         op: other,
                         args: theirs,
                         rets: their_rets,
@@ -474,7 +474,7 @@ fn cons_shape<'term>(column: &Column<ConsRef<'term>>) -> ConsShape<'term>
                         rest_args.push(theirs);
                         rest_rets.push(their_rets);
                     },
-                    | ConsView::Op { .. }
+                    ConsView::Op { .. }
                     | ConsView::Frame { .. }
                     | ConsView::Meta(_)
                     | ConsView::Top => {
@@ -528,28 +528,28 @@ fn generalize_prod<'term>(
 ) -> ProdPat
 {
     let (ctor, children) = match prod_shape(&column) {
-        | ProdShape::Meta(var) => return ProdPat::meta(var.hole().clone()),
-        | ProdShape::Differ => {
+        ProdShape::Meta(var) => return ProdPat::meta(var.hole().clone()),
+        ProdShape::Differ => {
             return ProdPat::meta(points.stand(Disagreement::Prod(column)).hole().clone());
         },
-        | ProdShape::Ctor(ctor, children) => (ctor, children),
+        ProdShape::Ctor(ctor, children) => (ctor, children),
     };
     let mut built: Vec<ProdPat> = Vec::with_capacity(children.len());
     let mut tasks: Vec<ProdTask<'term>> = children.into_iter().rev().map(ProdTask::Visit).collect();
     while let Some(task) = tasks.pop() {
         match task {
-            | ProdTask::Visit(column) => match prod_shape(&column) {
-                | ProdShape::Meta(var) => built.push(ProdPat::meta(var.hole().clone())),
-                | ProdShape::Differ => {
+            ProdTask::Visit(column) => match prod_shape(&column) {
+                ProdShape::Meta(var) => built.push(ProdPat::meta(var.hole().clone())),
+                ProdShape::Differ => {
                     let var = points.stand(Disagreement::Prod(column));
                     built.push(ProdPat::meta(var.hole().clone()));
                 },
-                | ProdShape::Ctor(ctor, children) => {
+                ProdShape::Ctor(ctor, children) => {
                     tasks.push(ProdTask::Build(ctor, ArgumentCount::from(children.len())));
                     tasks.extend(children.into_iter().rev().map(ProdTask::Visit));
                 },
             },
-            | ProdTask::Build(ctor, arity) => {
+            ProdTask::Build(ctor, arity) => {
                 let first = built.len().saturating_sub(usize::from(arity));
                 let args = built.split_off(first);
                 built.push(ProdPat::ctor(ctor.clone(), args));
@@ -605,18 +605,18 @@ fn generalize_cons<'term>(
     let mut tasks: Vec<ConsTask<'term>> = alloc::vec![ConsTask::Visit(column)];
     while let Some(task) = tasks.pop() {
         match task {
-            | ConsTask::Visit(column) => match cons_shape(&column) {
-                | ConsShape::Top => built.push(ConsPat::top()),
-                | ConsShape::Meta(var) => built.push(ConsPat::meta(var.hole().clone())),
-                | ConsShape::Differ => {
+            ConsTask::Visit(column) => match cons_shape(&column) {
+                ConsShape::Top => built.push(ConsPat::top()),
+                ConsShape::Meta(var) => built.push(ConsPat::meta(var.hole().clone())),
+                ConsShape::Differ => {
                     let var = points.stand(Disagreement::Cons(column));
                     built.push(ConsPat::meta(var.hole().clone()));
                 },
-                | ConsShape::Frame { ctor, ret } => {
+                ConsShape::Frame { ctor, ret } => {
                     tasks.push(ConsTask::Frame(ctor));
                     tasks.push(ConsTask::Visit(ret));
                 },
-                | ConsShape::Op { op, args, rets } => {
+                ConsShape::Op { op, args, rets } => {
                     let args = args
                         .into_iter()
                         .map(|arg| generalize_prod(arg, points))
@@ -625,11 +625,11 @@ fn generalize_cons<'term>(
                     tasks.extend(rets.into_iter().rev().map(ConsTask::Visit));
                 },
             },
-            | ConsTask::Frame(ctor) => {
+            ConsTask::Frame(ctor) => {
                 let ret = built.pop().unwrap_or_else(ConsPat::top);
                 built.push(ConsPat::frame(ctor.clone(), ret));
             },
-            | ConsTask::Op(op, args, count) => {
+            ConsTask::Op(op, args, count) => {
                 let first = built.len().saturating_sub(usize::from(count));
                 let rets = built.split_off(first);
                 built.push(ConsPat::operation(op.clone(), args, rets));

@@ -124,8 +124,8 @@ fn boolean(
 ) -> ValueId
 {
     let summand = match truth {
-        | Truth::True => 0_usize,
-        | Truth::False => 1_usize,
+        Truth::True => 0_usize,
+        Truth::False => 1_usize,
     };
     let unit = arena.value_unit();
     arena.value_injection(summand.into(), unit)
@@ -213,8 +213,8 @@ fn kinds(
         .steps()
         .iter()
         .map(|step| match *step {
-            | Step::Return { .. } => Kind::Return,
-            | Step::Apply { fibre, .. } => Kind::Apply(fibre),
+            Step::Return { .. } => Kind::Return,
+            Step::Apply { fibre, .. } => Kind::Apply(fibre),
         })
         .collect()
 }
@@ -242,11 +242,11 @@ fn pointwise_equal_functions_relate_by_computation()
         .steps()
         .iter()
         .filter_map(|step| match *step {
-            | Step::Return {
+            Step::Return {
                 ref left,
                 ref right,
             } => Some((left.returned(), right.returned())),
-            | Step::Apply { .. } => None,
+            Step::Apply { .. } => None,
         })
         .collect();
     assert_eq!(
@@ -374,8 +374,8 @@ fn a_higher_order_argument_is_decided_under_the_quantifier()
         .steps()
         .iter()
         .filter_map(|step| match *step {
-            | Step::Return { ref left, .. } => Some(left.returned()),
-            | Step::Apply { .. } => None,
+            Step::Return { ref left, .. } => Some(left.returned()),
+            Step::Apply { .. } => None,
         })
         .collect();
     assert!(

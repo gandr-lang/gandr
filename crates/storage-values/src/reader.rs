@@ -695,8 +695,8 @@ impl<'stream> TokenReader<'stream>
         let position = self.current.position;
 
         match fault {
-            | RecordFault::Truncated => ValueError::TruncatedStream { position },
-            | RecordFault::UnknownKind => ValueError::UnknownTokenKind { position },
+            RecordFault::Truncated => ValueError::TruncatedStream { position },
+            RecordFault::UnknownKind => ValueError::UnknownTokenKind { position },
         }
     }
 }
@@ -737,8 +737,8 @@ pub(crate) fn charge(
     let sum = u64::from(spent).checked_add(u64::from(work));
 
     match sum {
-        | Some(total) if total <= u64::from(ceiling) => Ok(DecodeWork::from(total)),
-        | Some(_) | None => Err(ValueError::DecodeBudgetExceeded {
+        Some(total) if total <= u64::from(ceiling) => Ok(DecodeWork::from(total)),
+        Some(_) | None => Err(ValueError::DecodeBudgetExceeded {
             spent: DecodeWork::from(u64::from(spent).saturating_add(u64::from(work))),
             ceiling,
         }),

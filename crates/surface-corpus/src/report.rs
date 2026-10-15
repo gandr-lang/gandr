@@ -115,8 +115,8 @@ impl fmt::Display for Seal
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Sealed => "sealed",
-            | Self::Unsealed => "unsealed",
+            Self::Sealed => "sealed",
+            Self::Unsealed => "unsealed",
         })
     }
 }
@@ -205,8 +205,8 @@ impl SettleCounts
     )
     {
         match settlement {
-            | Settlement::Settled => self.settled = one_more(self.settled),
-            | Settlement::Unsettled => self.unsettled = one_more(self.unsettled),
+            Settlement::Settled => self.settled = one_more(self.settled),
+            Settlement::Unsettled => self.unsettled = one_more(self.unsettled),
         }
     }
 
@@ -366,10 +366,10 @@ impl ClassCounts
     ) -> DeclarationCount
     {
         match class {
-            | FailureClass::UserAbsence => self.user_absence,
-            | FailureClass::Unrepresentable => self.unrepresentable,
-            | FailureClass::MalformedSource => self.malformed_source,
-            | FailureClass::EngineFault => self.engine_fault,
+            FailureClass::UserAbsence => self.user_absence,
+            FailureClass::Unrepresentable => self.unrepresentable,
+            FailureClass::MalformedSource => self.malformed_source,
+            FailureClass::EngineFault => self.engine_fault,
         }
     }
 
@@ -406,10 +406,10 @@ impl ClassCounts
     ) -> &mut DeclarationCount
     {
         match class {
-            | FailureClass::UserAbsence => &mut self.user_absence,
-            | FailureClass::Unrepresentable => &mut self.unrepresentable,
-            | FailureClass::MalformedSource => &mut self.malformed_source,
-            | FailureClass::EngineFault => &mut self.engine_fault,
+            FailureClass::UserAbsence => &mut self.user_absence,
+            FailureClass::Unrepresentable => &mut self.unrepresentable,
+            FailureClass::MalformedSource => &mut self.malformed_source,
+            FailureClass::EngineFault => &mut self.engine_fault,
         }
     }
 
@@ -712,8 +712,8 @@ impl Tally
     pub fn seal(&self) -> Seal
     {
         match self.settlement() {
-            | Settlement::Settled if usize::from(self.ledger) == 0_usize => Seal::Sealed,
-            | Settlement::Settled | Settlement::Unsettled => Seal::Unsealed,
+            Settlement::Settled if usize::from(self.ledger) == 0_usize => Seal::Sealed,
+            Settlement::Settled | Settlement::Unsettled => Seal::Unsealed,
         }
     }
 
@@ -796,11 +796,11 @@ impl Tally
             obligations_sum(self.surviving.unproduced(), surviving.unproduced()),
         );
         match declaration.produced().refusal() {
-            | Maybe::Present(refusal) => {
+            Maybe::Present(refusal) => {
                 let slot = self.refusals.slot(refusal.classify());
                 *slot = one_more(*slot);
             },
-            | Maybe::Absent(produced_refusal::Absent::Unrefused) => {},
+            Maybe::Absent(produced_refusal::Absent::Unrefused) => {},
         }
     }
 }

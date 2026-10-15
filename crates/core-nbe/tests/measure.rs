@@ -304,11 +304,11 @@ mod measure
         let mut completed: Vec<(usize, u64)> = Vec::new();
         for (index, &token) in sketch.iter().enumerate().rev() {
             let subtree = match token {
-                | Token::Unit | Token::Opaque | Token::Occurrence(_) => {
+                Token::Unit | Token::Opaque | Token::Occurrence(_) => {
                     (index.saturating_add(1), 0_u64)
                 },
-                | Token::Injection => completed.pop().expect("an injection has its child"),
-                | Token::Pair | Token::Share => {
+                Token::Injection => completed.pop().expect("an injection has its child"),
+                Token::Pair | Token::Share => {
                     let (_leg_end, left_depth) = completed.pop().expect("a left child");
                     let (end, right_depth) = completed.pop().expect("a right child");
                     let own = u64::from(token == Token::Share);
@@ -344,9 +344,9 @@ mod measure
             };
             counted.nodes = counted.nodes.saturating_add(1);
             placed.push(match token {
-                | Token::Unit => Placed::Unit,
-                | Token::Opaque => Placed::Opaque,
-                | Token::Occurrence(distance) => {
+                Token::Unit => Placed::Unit,
+                Token::Opaque => Placed::Opaque,
+                Token::Occurrence(distance) => {
                     counted.occurrences = counted.occurrences.saturating_add(1);
                     let out = usize::try_from(u32::from(distance)).expect("a distance fits");
                     let named = scopes
@@ -359,9 +359,9 @@ mod measure
                     scope.taken = scope.taken.saturating_add(1);
                     Placed::Occurrence(Bound { distance, position })
                 },
-                | Token::Injection => Placed::Injection,
-                | Token::Pair => Placed::Pair,
-                | Token::Share => {
+                Token::Injection => Placed::Injection,
+                Token::Pair => Placed::Pair,
+                Token::Share => {
                     counted.shares = counted.shares.saturating_add(1);
                     waiting.push(Scope {
                         share: index,
@@ -440,19 +440,19 @@ mod measure
         let mut built: Vec<OverlayValueId> = Vec::new();
         for &node in placed.iter().rev() {
             let value = match node {
-                | Placed::Unit => ValueNode::Grafted(ValueGraft::Unit),
-                | Placed::Opaque => ValueNode::Opaque(opaque),
-                | Placed::Occurrence(bound) => ValueNode::Bound(bound),
-                | Placed::Injection => {
+                Placed::Unit => ValueNode::Grafted(ValueGraft::Unit),
+                Placed::Opaque => ValueNode::Opaque(opaque),
+                Placed::Occurrence(bound) => ValueNode::Bound(bound),
+                Placed::Injection => {
                     let injected = built.pop().expect("an injection has its child");
                     ValueNode::Grafted(ValueGraft::Injection(Side::Left, injected))
                 },
-                | Placed::Pair => {
+                Placed::Pair => {
                     let first = built.pop().expect("a pair has its first component");
                     let second = built.pop().expect("a pair has its second component");
                     ValueNode::Grafted(ValueGraft::Pair(first, second))
                 },
-                | Placed::Share(arity) => {
+                Placed::Share(arity) => {
                     let leg = built.pop().expect("a share has its leg");
                     let body = built.pop().expect("a share has its body");
                     ValueNode::Shared(Sharing {
@@ -553,38 +553,35 @@ mod measure
             let (placed, counted) = placed(&sketch);
             let root = minted(&mut overlay, &placed, opaque);
             let measured = SharingMeasure::of(&overlay, OverlayId::Value(root));
-            match overlay.validate(OverlayId::Value(root)) {
-                | Err(refusal) => {
-                    assert!(
-                        matches!(refusal, OverlayRefusal::ZeroArity { .. }),
-                        "closed, correctly placed sketches can refuse only unused shares"
-                    );
-                    assert_eq!(
-                        Err(MeasureFault::Refused(refusal)),
-                        measured,
-                        "a refused root is refused by the measure in validation's words"
-                    );
-                },
-                | Ok(()) => {
-                    let measured =
-                        measured.expect("an accepted root of the class fits the counter");
-                    let erased =
-                        erase_value(&overlay, root, &mut core).expect("an accepted root erases");
-                    let Unfolded(expansion) = unfolded(&core, CoreNode::Value(erased), &before);
-                    assert_eq!(
-                        Quantities {
-                            shares: counted.shares,
-                            occurrences: counted.occurrences,
-                            depth: counted.depth,
-                            nodes: counted.nodes,
-                            expansion,
-                        },
-                        Quantities::from(measured),
-                        "the counts are the sketch's and the expansion is the erased term's \
-                         size walked as a tree"
-                    );
-                    core.truncate_to(mark);
-                },
+            if let Err(refusal) = overlay.validate(OverlayId::Value(root)) {
+                assert!(
+                    matches!(refusal, OverlayRefusal::ZeroArity { .. }),
+                    "closed, correctly placed sketches can refuse only unused shares"
+                );
+                assert_eq!(
+                    Err(MeasureFault::Refused(refusal)),
+                    measured,
+                    "a refused root is refused by the measure in validation's words"
+                );
+            }
+            else {
+                let measured = measured.expect("an accepted root of the class fits the counter");
+                let erased =
+                    erase_value(&overlay, root, &mut core).expect("an accepted root erases");
+                let Unfolded(expansion) = unfolded(&core, CoreNode::Value(erased), &before);
+                assert_eq!(
+                    Quantities {
+                        shares: counted.shares,
+                        occurrences: counted.occurrences,
+                        depth: counted.depth,
+                        nodes: counted.nodes,
+                        expansion,
+                    },
+                    Quantities::from(measured),
+                    "the counts are the sketch's and the expansion is the erased term's \
+                     size walked as a tree"
+                );
+                core.truncate_to(mark);
             }
         }
     }

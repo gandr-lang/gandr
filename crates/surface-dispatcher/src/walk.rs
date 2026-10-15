@@ -185,8 +185,8 @@ impl Standing
     ) -> Self
     {
         match (root, composed) {
-            | (SourceRoot::Pending, &Composed::Refused(_)) => Self::Pending,
-            | (SourceRoot::Pending, &Composed::Settled { ref unstatable, .. }) => {
+            (SourceRoot::Pending, &Composed::Refused(_)) => Self::Pending,
+            (SourceRoot::Pending, &Composed::Settled { ref unstatable, .. }) => {
                 if unstatable.is_empty() {
                     Self::Lowered
                 }
@@ -194,11 +194,11 @@ impl Standing
                     Self::Pending
                 }
             },
-            | (SourceRoot::Strict | SourceRoot::Fixture, &Composed::Refused(_)) => Self::Refused,
-            | (SourceRoot::Strict | SourceRoot::Fixture, &Composed::Settled { ref report, .. }) => {
+            (SourceRoot::Strict | SourceRoot::Fixture, &Composed::Refused(_)) => Self::Refused,
+            (SourceRoot::Strict | SourceRoot::Fixture, &Composed::Settled { ref report, .. }) => {
                 match report.tally().settlement() {
-                    | Settlement::Settled => Self::Settled,
-                    | Settlement::Unsettled => Self::Unsettled,
+                    Settlement::Settled => Self::Settled,
+                    Settlement::Unsettled => Self::Unsettled,
                 }
             },
         }
@@ -245,10 +245,10 @@ impl core::fmt::Display for SourceFault<'_>
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Unreadable(ref error) => write!(f, "unreadable: {error}"),
-            | Self::NoSource => f.write_str("names no `.gandr` source"),
-            | Self::Grammar(error) => write!(f, "the built-in grammar did not build: {error}"),
-            | Self::Compose(ref fault) => fault.fmt(f),
+            Self::Unreadable(ref error) => write!(f, "unreadable: {error}"),
+            Self::NoSource => f.write_str("names no `.gandr` source"),
+            Self::Grammar(error) => write!(f, "the built-in grammar did not build: {error}"),
+            Self::Compose(ref fault) => fault.fmt(f),
         }
     }
 }
@@ -510,10 +510,10 @@ impl Walk
     pub fn step(&mut self) -> Maybe<Step<'_>, walk_step::Absent>
     {
         match self.traversal.reach() {
-            | Maybe::Absent(absent) => Maybe::Absent(absent),
-            | Maybe::Present(Reached::Source) => Maybe::Present(self.source()),
-            | Maybe::Present(Reached::Unreadable(error)) => Maybe::Present(self.unreadable(error)),
-            | Maybe::Present(Reached::NoSource) => {
+            Maybe::Absent(absent) => Maybe::Absent(absent),
+            Maybe::Present(Reached::Source) => Maybe::Present(self.source()),
+            Maybe::Present(Reached::Unreadable(error)) => Maybe::Present(self.unreadable(error)),
+            Maybe::Present(Reached::NoSource) => {
                 self.report.faulted();
                 Maybe::Present(Step::Fault {
                     path: &self.traversal.path,
@@ -582,8 +582,8 @@ impl Walk
         Visitor: FnMut(Step<'_>) -> ControlFlow<Stop>,
     {
         let grammar = match self.grammar {
-            | Ok(ref grammar) if width != Width::SERIAL => grammar,
-            | Ok(_) | Err(_) => {
+            Ok(ref grammar) if width != Width::SERIAL => grammar,
+            Ok(_) | Err(_) => {
                 while let Maybe::Present(step) = self.step() {
                     visitor(step)?;
                 }
@@ -612,8 +612,8 @@ impl Walk
             .collect();
         order.sort_unstable();
         let threads = match order.len() {
-            | 0 | 1 => 1,
-            | sources => usize::from(core::num::NonZeroUsize::from(width.threads())).min(sources),
+            0 | 1 => 1,
+            sources => usize::from(core::num::NonZeroUsize::from(width.threads())).min(sources),
         };
         let cursor = AtomicUsize::new(0);
         // The largest source no thread has taken, lowered.
@@ -644,21 +644,21 @@ impl Walk
             let walked = paths.iter().zip(found).zip(&texts).enumerate();
             for (position, ((path, reached), text)) in walked {
                 let step = match reached {
-                    | Reached::NoSource => {
+                    Reached::NoSource => {
                         self.report.faulted();
                         Step::Fault {
                             path,
                             fault: SourceFault::NoSource,
                         }
                     },
-                    | Reached::Unreadable(error) => {
+                    Reached::Unreadable(error) => {
                         self.report.faulted();
                         Step::Fault {
                             path,
                             fault: SourceFault::Unreadable(error),
                         }
                     },
-                    | Reached::Source => {
+                    Reached::Source => {
                         let forked = loop {
                             if pool == 0 {
                                 break fork(grammar, path, text);
@@ -678,23 +678,23 @@ impl Walk
                                 continue;
                             }
                             match receiver.recv() {
-                                | Ok((arrived, forked)) => {
+                                Ok((arrived, forked)) => {
                                     early.insert(arrived, forked);
                                 },
                                 // Every pool thread has stopped without it:
                                 // one panicked, and the scope will say so.
-                                | Err(_) => break fork(grammar, path, text),
+                                Err(_) => break fork(grammar, path, text),
                             }
                         };
                         match forked {
-                            | Forked::Unreadable(error) => {
+                            Forked::Unreadable(error) => {
                                 self.report.faulted();
                                 Step::Fault {
                                     path,
                                     fault: SourceFault::Unreadable(error),
                                 }
                             },
-                            | Forked::Lowered {
+                            Forked::Lowered {
                                 root,
                                 text,
                                 lowering,
@@ -811,33 +811,33 @@ impl Traversal
                 continue;
             };
             match entry {
-                | Entry::Argument => {
+                Entry::Argument => {
                     self.path.clone_from(&self.argument);
                     match std::fs::metadata(&self.path) {
-                        | Ok(metadata) if metadata.is_dir() => {
+                        Ok(metadata) if metadata.is_dir() => {
                             if let Err(error) = self.list() {
                                 self.answered = Answered::Yes;
                                 return Maybe::Present(Reached::Unreadable(error));
                             }
                         },
-                        | Ok(_) => {
+                        Ok(_) => {
                             self.answered = Answered::Yes;
                             return Maybe::Present(Reached::Source);
                         },
-                        | Err(error) => {
+                        Err(error) => {
                             self.answered = Answered::Yes;
                             return Maybe::Present(Reached::Unreadable(error));
                         },
                     }
                 },
-                | Entry::Directory(directory) => {
+                Entry::Directory(directory) => {
                     self.path = directory;
                     if let Err(error) = self.list() {
                         self.answered = Answered::Yes;
                         return Maybe::Present(Reached::Unreadable(error));
                     }
                 },
-                | Entry::Source(source) => {
+                Entry::Source(source) => {
                     self.path = source;
                     self.answered = Answered::Yes;
                     return Maybe::Present(Reached::Source);
@@ -982,12 +982,12 @@ impl Walk
     fn source(&mut self) -> Step<'_>
     {
         let root = match read_source(&self.traversal.path, &mut self.text) {
-            | Ok(root) => root,
-            | Err(error) => return self.unreadable(error),
+            Ok(root) => root,
+            Err(error) => return self.unreadable(error),
         };
         let grammar = match self.grammar {
-            | Ok(ref grammar) => grammar,
-            | Err(ref error) => {
+            Ok(ref grammar) => grammar,
+            Err(ref error) => {
                 self.report.faulted();
                 return Step::Fault {
                     path: &self.traversal.path,
@@ -1043,7 +1043,7 @@ fn settled<'step>(
 ) -> Step<'step>
 {
     match composed {
-        | Ok(composed) => {
+        Ok(composed) => {
             let standing = Standing::of(root, &composed);
             report.read(root, &composed, standing);
             Step::Source {
@@ -1054,7 +1054,7 @@ fn settled<'step>(
                 standing,
             }
         },
-        | Err(fault) => {
+        Err(fault) => {
             report.faulted();
             Step::Fault {
                 path,
@@ -1096,8 +1096,8 @@ fn fork<'text>(
 {
     let mut read = String::new();
     match read_source(path, &mut read) {
-        | Err(error) => Forked::Unreadable(error),
-        | Ok(root) => {
+        Err(error) => Forked::Unreadable(error),
+        Ok(root) => {
             let text = SourceText::from(text.get_or_init(|| read).as_str());
             let mut lowerings = LoweringCount::default();
             let lowering = lower_source(grammar, text, &mut lowerings);
@@ -1172,8 +1172,8 @@ pub fn read_source(
 fn entry_path(entry: &Entry) -> &Path
 {
     match *entry {
-        | Entry::Directory(ref path) | Entry::Source(ref path) => path,
-        | Entry::Argument => Path::new(""),
+        Entry::Directory(ref path) | Entry::Source(ref path) => path,
+        Entry::Argument => Path::new(""),
     }
 }
 
@@ -1355,12 +1355,12 @@ pub mod tests
         fn from(step: &Step<'_>) -> Self
         {
             match *step {
-                | Step::Source { standing, .. } => Self::Source(standing),
-                | Step::Fault { ref fault, .. } => match *fault {
-                    | SourceFault::Unreadable(_) => Self::Unreadable,
-                    | SourceFault::NoSource => Self::NoSource,
-                    | SourceFault::Grammar(_) => Self::Grammar,
-                    | SourceFault::Compose(_) => Self::Compose,
+                Step::Source { standing, .. } => Self::Source(standing),
+                Step::Fault { ref fault, .. } => match *fault {
+                    SourceFault::Unreadable(_) => Self::Unreadable,
+                    SourceFault::NoSource => Self::NoSource,
+                    SourceFault::Grammar(_) => Self::Grammar,
+                    SourceFault::Compose(_) => Self::Compose,
                 },
             }
         }
@@ -1402,7 +1402,7 @@ pub mod tests
         while let Maybe::Present(step) = walk.step() {
             let kind = Seen::from(&step);
             let path = match step {
-                | Step::Source { path, .. } | Step::Fault { path, .. } => path,
+                Step::Source { path, .. } | Step::Fault { path, .. } => path,
             };
             seen.push((path.strip_prefix(base).unwrap_or(path).to_path_buf(), kind));
         }
@@ -1455,7 +1455,7 @@ pub mod tests
             Walk::new(paths).visit(width, |step| -> ControlFlow<Infallible> {
                 let kind = Seen::from(&step);
                 let path = match step {
-                    | Step::Source { path, .. } | Step::Fault { path, .. } => path,
+                    Step::Source { path, .. } | Step::Fault { path, .. } => path,
                 };
                 seen.push((path.strip_prefix(base).unwrap_or(path).to_path_buf(), kind));
                 ControlFlow::Continue(())
@@ -1722,7 +1722,7 @@ pub mod tests
                     .visit(width, |step| -> ControlFlow<Infallible> {
                         let kind = Seen::from(&step);
                         let path = match step {
-                            | Step::Source { path, .. } | Step::Fault { path, .. } => path,
+                            Step::Source { path, .. } | Step::Fault { path, .. } => path,
                         };
                         seen.push((
                             path.strip_prefix(&scratch.0).unwrap_or(path).to_path_buf(),
@@ -1757,7 +1757,7 @@ pub mod tests
             let mut handed = Vec::new();
             let stopped = Walk::new(vec![scratch.0.clone()]).visit(width, |step| {
                 let path = match step {
-                    | Step::Source { path, .. } | Step::Fault { path, .. } => path,
+                    Step::Source { path, .. } | Step::Fault { path, .. } => path,
                 };
                 handed.push(path.strip_prefix(&scratch.0).unwrap_or(path).to_path_buf());
                 if handed.len() == 2 {

@@ -37,8 +37,8 @@ impl fmt::Display for Cone
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Deep => "deep",
-            | Self::Surface => "surface",
+            Self::Deep => "deep",
+            Self::Surface => "surface",
         })
     }
 }

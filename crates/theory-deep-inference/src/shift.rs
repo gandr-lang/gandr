@@ -526,8 +526,8 @@ where
         return Err(ShiftObstruction::UnknownCell { cell: step.cell });
     };
     match rewrite_at(cell, term, &step.at) {
-        | Maybe::Present(result) => Ok(result),
-        | Maybe::Absent(_) => Err(ShiftObstruction::StepDoesNotFire {
+        Maybe::Present(result) => Ok(result),
+        Maybe::Absent(_) => Err(ShiftObstruction::StepDoesNotFire {
             step: Box::new(step.clone()),
         }),
     }

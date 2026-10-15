@@ -209,8 +209,8 @@ pub fn laws(
 {
     let unnamed = Maybe::Absent(laws::Absent::Unnamed);
     match arena.value(payload) {
-        | Some(&Value::Constant(law)) => Maybe::Present(Vec::from([law])),
-        | Some(&Value::Tuple(ref items)) if !items.is_empty() => {
+        Some(&Value::Constant(law)) => Maybe::Present(Vec::from([law])),
+        Some(&Value::Tuple(ref items)) if !items.is_empty() => {
             let mut named = Vec::with_capacity(items.len());
             for &item in items {
                 let Some(&Value::Constant(law)) = arena.value(item)
@@ -221,7 +221,7 @@ pub fn laws(
             }
             Maybe::Present(named)
         },
-        | _ => unnamed,
+        _ => unnamed,
     }
 }
 
@@ -357,11 +357,11 @@ impl fmt::Display for AttributeSchema
     ) -> fmt::Result
     {
         match *self {
-            | Self::Marker => f.write_str("no payload"),
-            | Self::Integer => f.write_str("an integer payload"),
-            | Self::Text => f.write_str("a text payload"),
-            | Self::MarkerOr(option) => write!(f, "no payload or the text \"{option}\""),
-            | Self::Laws => f.write_str("a declared name or a tuple of declared names"),
+            Self::Marker => f.write_str("no payload"),
+            Self::Integer => f.write_str("an integer payload"),
+            Self::Text => f.write_str("a text payload"),
+            Self::MarkerOr(option) => write!(f, "no payload or the text \"{option}\""),
+            Self::Laws => f.write_str("a declared name or a tuple of declared names"),
         }
     }
 }
@@ -396,11 +396,11 @@ impl fmt::Display for PayloadForm
     ) -> fmt::Result
     {
         match *self {
-            | Self::Absent => f.write_str("no payload"),
-            | Self::Integer => f.write_str("an integer payload"),
-            | Self::Text => f.write_str("a text payload"),
-            | Self::OtherText => f.write_str("another text"),
-            | Self::OtherValue => f.write_str("a non-literal payload"),
+            Self::Absent => f.write_str("no payload"),
+            Self::Integer => f.write_str("an integer payload"),
+            Self::Text => f.write_str("a text payload"),
+            Self::OtherText => f.write_str("another text"),
+            Self::OtherValue => f.write_str("a non-literal payload"),
         }
     }
 }
@@ -613,8 +613,8 @@ impl AttributeRegistry
                 continue;
             }
             let improves = match best {
-                | Maybe::Present((incumbent, _held)) => distance < incumbent,
-                | Maybe::Absent(_) => true,
+                Maybe::Present((incumbent, _held)) => distance < incumbent,
+                Maybe::Absent(_) => true,
             };
             if improves {
                 best = Maybe::Present((distance, candidate));
@@ -671,16 +671,16 @@ pub const fn payload_verdict(
 ) -> PayloadVerdict
 {
     match (schema, form) {
-        | (AttributeSchema::Marker | AttributeSchema::MarkerOr(_), PayloadForm::Absent)
+        (AttributeSchema::Marker | AttributeSchema::MarkerOr(_), PayloadForm::Absent)
         | (AttributeSchema::Integer, PayloadForm::Integer)
         | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
         | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
         | (AttributeSchema::Laws, PayloadForm::OtherValue) => PayloadVerdict::Admitted,
-        | (
+        (
             AttributeSchema::Integer | AttributeSchema::Text | AttributeSchema::Laws,
             PayloadForm::Absent,
         ) => PayloadVerdict::Missing,
-        | (
+        (
             AttributeSchema::Marker,
             PayloadForm::Integer
             | PayloadForm::Text
@@ -733,9 +733,9 @@ pub const fn payload_verdict(
 pub const fn payload_form(former: Former) -> PayloadForm
 {
     match former {
-        | Former::Number => PayloadForm::Integer,
-        | Former::Text => PayloadForm::Text,
-        | Former::Name
+        Former::Number => PayloadForm::Integer,
+        Former::Text => PayloadForm::Text,
+        Former::Name
         | Former::Hole
         | Former::Binary
         | Former::Unary

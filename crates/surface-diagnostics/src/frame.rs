@@ -124,130 +124,128 @@ impl AsRef<str> for Sentence
 pub fn sentence(role: FrameRole) -> Sentence
 {
     Sentence(match role {
-        | FrameRole::NativeNext => "checking the next premise of this",
-        | FrameRole::NativeYield => "finishing the type of this",
-        | FrameRole::NativeCollect => "collecting the field types of this",
-        | FrameRole::NativeDiscard => "typing a field of this its expected type does not name",
-        | FrameRole::NativeTuple => "synthesising the components of this tuple",
-        | FrameRole::NativeRecord => "synthesising the fields of this record",
-        | FrameRole::NativeCase => "reading the type of this case's scrutinee",
-        | FrameRole::NativeMotive => "forming the motive of this case",
-        | FrameRole::NativeRespect => "showing this case respects its datatype's rules",
-        | FrameRole::NativeLoops => "showing this case respects its sort's loops",
-        | FrameRole::SigmaSplitScrutinee => "reading the dependent record this match splits",
-        | FrameRole::SigmaSplitMotive => "forming the motive of this dependent match",
-        | FrameRole::NativeProjection => "reading the type this projection selects from",
-        | FrameRole::PerformPayload => "checking the payload of this operation",
-        | FrameRole::Resume => "reading the stack this resumption resumes",
-        | FrameRole::Project => "reading the lazy pair this projection selects from",
-        | FrameRole::Reset => "checking the body of this reset",
-        | FrameRole::HandlerForm => "forming the interface this handler handles",
-        | FrameRole::HandlerSubject => "synthesising the type of this handler's subject",
-        | FrameRole::HandlerReturn => "checking the return clause of this handler",
-        | FrameRole::HandlerClause => "checking an operation clause of this handler",
-        | FrameRole::ExerciseCapability => "synthesising the capability this exercise goes through",
-        | FrameRole::ScopeForm => "forming the type the subject of this scope is checked at",
-        | FrameRole::ScopeSubject => "checking the subject of this scope under its capability",
-        | FrameRole::StackNext => "checking the remaining frames of this stack",
-        | FrameRole::StackBind => "checking a bind frame of this stack",
-        | FrameRole::ListFold(FoldPremise::Element) => "forming the element type of this fold",
-        | FrameRole::ListFold(FoldPremise::Result) => "forming the result type of this fold",
-        | FrameRole::ListFold(FoldPremise::Input) => "checking the list this fold folds",
-        | FrameRole::ListFold(FoldPremise::Nil) => "checking the empty-list branch of this fold",
-        | FrameRole::ListFold(FoldPremise::Cons) => "checking the cell branch of this fold",
-        | FrameRole::PathProductFirst => "synthesising the first path of this product",
-        | FrameRole::PathProductSecond => "synthesising the second path of this product",
-        | FrameRole::PathBackward => "checking the forward map of this path",
-        | FrameRole::PathChecked => "checking the backward map of this path",
-        | FrameRole::TransportPath => "synthesising the path this transport follows",
-        | FrameRole::ElementTransportPath => "synthesising the path this element transport follows",
-        | FrameRole::TransportOperand => "checking the operand of this transport",
-        | FrameRole::ElementTransportMotive => "forming the motive of this transport",
-        | FrameRole::TelescopePath => "synthesising the path this dependent transport follows",
-        | FrameRole::TelescopeMotive => "forming the telescope motive of this transport",
-        | FrameRole::TelescopeStart => {
+        FrameRole::NativeNext => "checking the next premise of this",
+        FrameRole::NativeYield => "finishing the type of this",
+        FrameRole::NativeCollect => "collecting the field types of this",
+        FrameRole::NativeDiscard => "typing a field of this its expected type does not name",
+        FrameRole::NativeTuple => "synthesising the components of this tuple",
+        FrameRole::NativeRecord => "synthesising the fields of this record",
+        FrameRole::NativeCase => "reading the type of this case's scrutinee",
+        FrameRole::NativeMotive => "forming the motive of this case",
+        FrameRole::NativeRespect => "showing this case respects its datatype's rules",
+        FrameRole::NativeLoops => "showing this case respects its sort's loops",
+        FrameRole::SigmaSplitScrutinee => "reading the dependent record this match splits",
+        FrameRole::SigmaSplitMotive => "forming the motive of this dependent match",
+        FrameRole::NativeProjection => "reading the type this projection selects from",
+        FrameRole::PerformPayload => "checking the payload of this operation",
+        FrameRole::Resume => "reading the stack this resumption resumes",
+        FrameRole::Project => "reading the lazy pair this projection selects from",
+        FrameRole::Reset => "checking the body of this reset",
+        FrameRole::HandlerForm => "forming the interface this handler handles",
+        FrameRole::HandlerSubject => "synthesising the type of this handler's subject",
+        FrameRole::HandlerReturn => "checking the return clause of this handler",
+        FrameRole::HandlerClause => "checking an operation clause of this handler",
+        FrameRole::ExerciseCapability => "synthesising the capability this exercise goes through",
+        FrameRole::ScopeForm => "forming the type the subject of this scope is checked at",
+        FrameRole::ScopeSubject => "checking the subject of this scope under its capability",
+        FrameRole::StackNext => "checking the remaining frames of this stack",
+        FrameRole::StackBind => "checking a bind frame of this stack",
+        FrameRole::ListFold(FoldPremise::Element) => "forming the element type of this fold",
+        FrameRole::ListFold(FoldPremise::Result) => "forming the result type of this fold",
+        FrameRole::ListFold(FoldPremise::Input) => "checking the list this fold folds",
+        FrameRole::ListFold(FoldPremise::Nil) => "checking the empty-list branch of this fold",
+        FrameRole::ListFold(FoldPremise::Cons) => "checking the cell branch of this fold",
+        FrameRole::PathProductFirst => "synthesising the first path of this product",
+        FrameRole::PathProductSecond => "synthesising the second path of this product",
+        FrameRole::PathBackward => "checking the forward map of this path",
+        FrameRole::PathChecked => "checking the backward map of this path",
+        FrameRole::TransportPath => "synthesising the path this transport follows",
+        FrameRole::ElementTransportPath => "synthesising the path this element transport follows",
+        FrameRole::TransportOperand => "checking the operand of this transport",
+        FrameRole::ElementTransportMotive => "forming the motive of this transport",
+        FrameRole::TelescopePath => "synthesising the path this dependent transport follows",
+        FrameRole::TelescopeMotive => "forming the telescope motive of this transport",
+        FrameRole::TelescopeStart => {
             "checking the start of this transport against the family at the path's source"
         },
-        | FrameRole::TelescopeOver => {
+        FrameRole::TelescopeOver => {
             "synthesising the identity over the path this transport follows"
         },
-        | FrameRole::HereSynthesised => "synthesising the point of this reflexivity",
-        | FrameRole::HereEndpoints => {
-            "checking the point of this reflexivity against its endpoints"
-        },
-        | FrameRole::FunextLeft => "synthesising the first function of this extensionality",
-        | FrameRole::FunextRight => {
+        FrameRole::HereSynthesised => "synthesising the point of this reflexivity",
+        FrameRole::HereEndpoints => "checking the point of this reflexivity against its endpoints",
+        FrameRole::FunextLeft => "synthesising the first function of this extensionality",
+        FrameRole::FunextRight => {
             "checking the second function of this extensionality against the first"
         },
-        | FrameRole::EquivForward => "synthesising the forward map of this equivalence",
-        | FrameRole::EquivBackward => {
+        FrameRole::EquivForward => "synthesising the forward map of this equivalence",
+        FrameRole::EquivBackward => {
             "checking the backward map of this equivalence against the forward one"
         },
-        | FrameRole::UaTranslators => {
+        FrameRole::UaTranslators => {
             "checking the translators of this univalence against their corollas"
         },
-        | FrameRole::SessionStatement => "relating the two protocols of this session statement",
-        | FrameRole::StaySynthesised => "synthesising the point of this stay",
-        | FrameRole::ThenFirst => "synthesising the first flow of this composite",
-        | FrameRole::ThenSecond => {
+        FrameRole::SessionStatement => "relating the two protocols of this session statement",
+        FrameRole::StaySynthesised => "synthesising the point of this stay",
+        FrameRole::ThenFirst => "synthesising the first flow of this composite",
+        FrameRole::ThenSecond => {
             "checking the second flow of this composite against the first one's target"
         },
-        | FrameRole::FlowProductFirst => "synthesising the first flow of this product",
-        | FrameRole::FlowProductSecond => "synthesising the second flow of this product",
-        | FrameRole::RideFlow => "synthesising the flow this ride follows",
-        | FrameRole::RideMotive => "forming the motive of this ride",
-        | FrameRole::RideValue => "checking the value this ride moves against the flow's source",
-        | FrameRole::ForwardTranslator => {
+        FrameRole::FlowProductFirst => "synthesising the first flow of this product",
+        FrameRole::FlowProductSecond => "synthesising the second flow of this product",
+        FrameRole::RideFlow => "synthesising the flow this ride follows",
+        FrameRole::RideMotive => "forming the motive of this ride",
+        FrameRole::RideValue => "checking the value this ride moves against the flow's source",
+        FrameRole::ForwardTranslator => {
             "deciding this forward flow at every input of its translator"
         },
-        | FrameRole::ArrowDomain => "synthesising the domain flow of this arrow",
-        | FrameRole::ArrowCodomain => "synthesising the codomain flow of this arrow",
-        | FrameRole::ArrowAgainst => {
+        FrameRole::ArrowDomain => "synthesising the domain flow of this arrow",
+        FrameRole::ArrowCodomain => "synthesising the codomain flow of this arrow",
+        FrameRole::ArrowAgainst => {
             "checking this arrow's boundaries against the function codes it relates"
         },
-        | FrameRole::StayEndpoints => {
+        FrameRole::StayEndpoints => {
             "meeting the point of this stay with both endpoints of its flow"
         },
-        | FrameRole::ReturnedEndpoint => "synthesising the computation of this endpoint",
-        | FrameRole::Ran => "synthesising the computation this runs where a value is read",
-        | FrameRole::PrimitiveSecond => "checking the first argument of this operation",
-        | FrameRole::PrimitiveResult => "checking the arguments of this operation",
-        | FrameRole::CaseScrutinee => "synthesising the type of this case's scrutinee",
-        | FrameRole::SplitScrutinee => "synthesising the type of this split's scrutinee",
-        | FrameRole::SplitBody => "checking the body of this split",
-        | FrameRole::CaseBranch => "checking the branches of this case",
-        | FrameRole::Next => "checking the remaining parts of this",
-        | FrameRole::Force => "forcing this",
-        | FrameRole::ApplicationHead => "synthesising the function this applies",
-        | FrameRole::ApplicationArgument => "checking the argument of this application",
-        | FrameRole::LambdaBody => "checking the body of this function",
-        | FrameRole::BindBound => "synthesising the computation this binds",
-        | FrameRole::BindBody => "checking the body under this binding",
-        | FrameRole::ValueBridge | FrameRole::CompBridge => {
+        FrameRole::ReturnedEndpoint => "synthesising the computation of this endpoint",
+        FrameRole::Ran => "synthesising the computation this runs where a value is read",
+        FrameRole::PrimitiveSecond => "checking the first argument of this operation",
+        FrameRole::PrimitiveResult => "checking the arguments of this operation",
+        FrameRole::CaseScrutinee => "synthesising the type of this case's scrutinee",
+        FrameRole::SplitScrutinee => "synthesising the type of this split's scrutinee",
+        FrameRole::SplitBody => "checking the body of this split",
+        FrameRole::CaseBranch => "checking the branches of this case",
+        FrameRole::Next => "checking the remaining parts of this",
+        FrameRole::Force => "forcing this",
+        FrameRole::ApplicationHead => "synthesising the function this applies",
+        FrameRole::ApplicationArgument => "checking the argument of this application",
+        FrameRole::LambdaBody => "checking the body of this function",
+        FrameRole::BindBound => "synthesising the computation this binds",
+        FrameRole::BindBody => "checking the body under this binding",
+        FrameRole::ValueBridge | FrameRole::CompBridge => {
             "comparing the type this synthesises with the one it is checked against"
         },
-        | FrameRole::PairSecond => "checking the first part of this list cell or dependent record",
-        | FrameRole::Unknowing => "checking this against the unknown type",
-        | FrameRole::ThunkBody => "checking the body of this thunk",
-        | FrameRole::ReturnValue => "checking the value this returns",
-        | FrameRole::InjectionPayload => "checking the payload of this injection",
-        | FrameRole::Quote => "forming the type this quotes",
-        | FrameRole::FormNext => "forming the parts of this type",
-        | FrameRole::FormPi => "forming the domain of this function type",
-        | FrameRole::FormSigma => "forming the first entry of this dependent record",
-        | FrameRole::FormBinder => "forming this type under its binder",
-        | FrameRole::FormLift => "forming the type this lift raises",
-        | FrameRole::FormElement => "synthesising the code this type decodes",
-        | FrameRole::FormStaticPi => "forming the classifiers of this type operator",
-        | FrameRole::StaticSpine => "synthesising the head of this type operator application",
-        | FrameRole::StaticArgument => "synthesising an argument of this type operator application",
-        | FrameRole::StaticOperand => "checking an operator argument of this application",
-        | FrameRole::FormSession => "forming the payload types of this session type",
-        | FrameRole::SessionSend => "checking the payload this sends",
-        | FrameRole::OfferArm => "checking an arm of this offer",
-        | FrameRole::ForkProtocol => "forming the session type this fork opens",
-        | FrameRole::ForkChild => "checking the child this forks",
-        | FrameRole::ForkParent => "checking the rest of this fork's parent",
+        FrameRole::PairSecond => "checking the first part of this list cell or dependent record",
+        FrameRole::Unknowing => "checking this against the unknown type",
+        FrameRole::ThunkBody => "checking the body of this thunk",
+        FrameRole::ReturnValue => "checking the value this returns",
+        FrameRole::InjectionPayload => "checking the payload of this injection",
+        FrameRole::Quote => "forming the type this quotes",
+        FrameRole::FormNext => "forming the parts of this type",
+        FrameRole::FormPi => "forming the domain of this function type",
+        FrameRole::FormSigma => "forming the first entry of this dependent record",
+        FrameRole::FormBinder => "forming this type under its binder",
+        FrameRole::FormLift => "forming the type this lift raises",
+        FrameRole::FormElement => "synthesising the code this type decodes",
+        FrameRole::FormStaticPi => "forming the classifiers of this type operator",
+        FrameRole::StaticSpine => "synthesising the head of this type operator application",
+        FrameRole::StaticArgument => "synthesising an argument of this type operator application",
+        FrameRole::StaticOperand => "checking an operator argument of this application",
+        FrameRole::FormSession => "forming the payload types of this session type",
+        FrameRole::SessionSend => "checking the payload this sends",
+        FrameRole::OfferArm => "checking an arm of this offer",
+        FrameRole::ForkProtocol => "forming the session type this fork opens",
+        FrameRole::ForkChild => "checking the child this forks",
+        FrameRole::ForkParent => "checking the rest of this fork's parent",
     })
 }
 
@@ -296,14 +294,14 @@ where
     let mut named: Vec<Binding> = Vec::with_capacity(failure.hypotheses().len());
     for obligation in failure.obligations() {
         let binders: Vec<Binding> = match obligation.at() {
-            | CoreNode::Term(TermNode::Computation(opener)) if !obligation.binders().is_empty() => {
+            CoreNode::Term(TermNode::Computation(opener)) if !obligation.binders().is_empty() => {
                 let name = match origins.binder(opener) {
-                    | Maybe::Present(origin) => text
+                    Maybe::Present(origin) => text
                         .fragment(origin.span())
                         .map_or(Maybe::Absent(binding::Absent::Unnamed), |fragment| {
                             Maybe::Present(String::from(fragment.as_ref()))
                         }),
-                    | Maybe::Absent(_) => Maybe::Absent(binding::Absent::Unnamed),
+                    Maybe::Absent(_) => Maybe::Absent(binding::Absent::Unnamed),
                 };
                 obligation
                     .binders()
@@ -320,7 +318,7 @@ where
                     })
                     .collect()
             },
-            | _ => obligation
+            CoreNode::Term(_) | CoreNode::Type(_) => obligation
                 .binders()
                 .iter()
                 .map(|&ty| Binding {
@@ -331,22 +329,20 @@ where
         };
         named.extend(binders.iter().cloned());
         let judged = match obligation.expected() {
-            | Maybe::Present(expected) => Judged::Checked(match spellings.get(expected) {
-                | Maybe::Present(presentation) => {
-                    Maybe::Present(String::from(presentation.as_ref()))
-                },
-                | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(expected) => Judged::Checked(match spellings.get(expected) {
+                Maybe::Present(presentation) => Maybe::Present(String::from(presentation.as_ref())),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
             }),
-            | Maybe::Absent(judged::Absent::Synthesised) => Judged::Synthesised,
-            | Maybe::Absent(judged::Absent::Formed) => Judged::Formed,
+            Maybe::Absent(judged::Absent::Synthesised) => Judged::Synthesised,
+            Maybe::Absent(judged::Absent::Formed) => Judged::Formed,
         };
         let role = obligation.role();
         let locus = match node(origins, obligation.at()) {
-            | Maybe::Present(span) => match Locus::of(text, span) {
-                | Maybe::Present(locus) => Maybe::Present(locus),
-                | Maybe::Absent(_) => Maybe::Absent(context_locus::Absent::OutsideText),
+            Maybe::Present(span) => match Locus::of(text, span) {
+                Maybe::Present(locus) => Maybe::Present(locus),
+                Maybe::Absent(_) => Maybe::Absent(context_locus::Absent::OutsideText),
             },
-            | Maybe::Absent(_) => Maybe::Absent(context_locus::Absent::Unrecorded),
+            Maybe::Absent(_) => Maybe::Absent(context_locus::Absent::Unrecorded),
         };
         if let Maybe::Present(locus) = locus {
             if let Maybe::Present(span) = primary
@@ -404,8 +400,8 @@ fn spelled(
 ) -> Maybe<String, crate::spelled::spelling::Absent>
 {
     match spellings.get(TypeNode::Value(ty)) {
-        | Maybe::Present(presentation) => Maybe::Present(String::from(presentation.as_ref())),
-        | Maybe::Absent(reason) => Maybe::Absent(reason),
+        Maybe::Present(presentation) => Maybe::Present(String::from(presentation.as_ref())),
+        Maybe::Absent(reason) => Maybe::Absent(reason),
     }
 }
 

@@ -140,8 +140,8 @@ pub fn draw(
     draw_transcript(frame, transcript, app.transcript());
     draw_input(frame, input, app);
     let help = match app.prompt() {
-        | Prompt::Fresh => FRESH,
-        | Prompt::Continuing => CONTINUING,
+        Prompt::Fresh => FRESH,
+        Prompt::Continuing => CONTINUING,
     };
     frame.render_widget(Paragraph::new(help).style(STATUS), status);
 }
@@ -283,13 +283,13 @@ fn paint<'block>(
     let kind = style_of_kind(row.kind);
     let lead = Span::styled(<&'static str>::from(row.lead), kind);
     match row.kind {
-        | OutKind::Source => {
+        OutKind::Source => {
             let mut spans = Vec::with_capacity(block.source_hl.len().saturating_add(2));
             spans.push(lead);
             paint_echo(&block.source_hl, row, &mut spans);
             Line::from(spans)
         },
-        | OutKind::Type
+        OutKind::Type
         | OutKind::Value
         | OutKind::Blame
         | OutKind::Stuck

@@ -350,14 +350,14 @@ pub fn plan_operation(
             .iter()
             .position(|column| matches!(column.map(TermNode::view), Some(TermView::Ctor { .. })));
         let node = match tested {
-            | None => {
+            None => {
                 let Some(face) = faces.get(first.rule)
                 else {
                     return Err(RouteFault::Uncovered);
                 };
                 leaf(first, &next.levels, next.depth, face, operation, table)?
             },
-            | Some(column) => switch(&next, ColumnAt(column), table, &mut nodes, &mut work)?,
+            Some(column) => switch(&next, ColumnAt(column), table, &mut nodes, &mut work)?,
         };
         if let Some(entry) = nodes.get_mut(next.at.0) {
             *entry = Some(node);
@@ -473,12 +473,12 @@ fn switch<'face>(
                 .flatten()
                 .map(TermNode::view)
             {
-                | None => columns.extend(core::iter::repeat_n(None, fields.0)),
-                | Some(TermView::Var(variable)) => {
+                None => columns.extend(core::iter::repeat_n(None, fields.0)),
+                Some(TermView::Var(variable)) => {
                     bindings.push((variable, level));
                     columns.extend(core::iter::repeat_n(None, fields.0));
                 },
-                | Some(TermView::Ctor { name: other, args }) => {
+                Some(TermView::Ctor { name: other, args }) => {
                     let matched = constructor(table, other)?;
                     if matched.family != family {
                         return Err(RouteFault::Constructor(other.clone()));
@@ -491,7 +491,7 @@ fn switch<'face>(
                     }
                     columns.extend(args.map(Some));
                 },
-                | Some(TermView::Op { .. } | TermView::Results { .. }) => {
+                Some(TermView::Op { .. } | TermView::Results { .. }) => {
                     return Err(RouteFault::Pattern);
                 },
             }
@@ -586,9 +586,9 @@ fn leaf(
     let mut bindings = row.bindings.clone();
     for (column, &level) in row.columns.iter().zip(levels) {
         match column.map(TermNode::view) {
-            | None => {},
-            | Some(TermView::Var(variable)) => bindings.push((variable, level)),
-            | Some(TermView::Ctor { .. } | TermView::Op { .. } | TermView::Results { .. }) => {
+            None => {},
+            Some(TermView::Var(variable)) => bindings.push((variable, level)),
+            Some(TermView::Ctor { .. } | TermView::Op { .. } | TermView::Results { .. }) => {
                 return Err(RouteFault::Pattern);
             },
         }
@@ -651,11 +651,11 @@ fn steps(
     let mut stack = vec![Visit::Enter(rhs, Rooted::Root)];
     while let Some(visit) = stack.pop() {
         match visit {
-            | Visit::Enter(node, rooted) => {
+            Visit::Enter(node, rooted) => {
                 stack.push(Visit::Exit(node, rooted));
                 let arguments: Vec<TermNode<'_>> = match node.view() {
-                    | TermView::Var(_) => Vec::new(),
-                    | TermView::Ctor { args, .. }
+                    TermView::Var(_) => Vec::new(),
+                    TermView::Ctor { args, .. }
                     | TermView::Op { args, .. }
                     | TermView::Results { args } => args.collect(),
                 };
@@ -666,8 +666,8 @@ fn steps(
                         .map(|argument| Visit::Enter(argument, Rooted::Inner)),
                 );
             },
-            | Visit::Exit(node, rooted) => match node.view() {
-                | TermView::Var(variable) => {
+            Visit::Exit(node, rooted) => match node.view() {
+                TermView::Var(variable) => {
                     let Some(&(_, level)) =
                         bindings.iter().rev().find(|&&(bound, _)| bound == variable)
                     else {
@@ -678,7 +678,7 @@ fn steps(
                         planned.push(Step::Return);
                     }
                 },
-                | TermView::Ctor { name, args } => {
+                TermView::Ctor { name, args } => {
                     let built = constructor(table, name)?;
                     if args.len() != built.fields.0 {
                         return Err(RouteFault::Pattern);
@@ -692,7 +692,7 @@ fn steps(
                         planned.push(Step::Return);
                     }
                 },
-                | TermView::Op { name, args } => {
+                TermView::Op { name, args } => {
                     let callee = if *name == operation.name {
                         Callee::Itself
                     }
@@ -706,11 +706,11 @@ fn steps(
                     };
                     let arguments = Width(args.len());
                     planned.push(match rooted {
-                        | Rooted::Root => Step::Tail { callee, arguments },
-                        | Rooted::Inner => Step::Call { callee, arguments },
+                        Rooted::Root => Step::Tail { callee, arguments },
+                        Rooted::Inner => Step::Call { callee, arguments },
                     });
                 },
-                | TermView::Results { args } => {
+                TermView::Results { args } => {
                     if rooted == Rooted::Inner {
                         return Err(RouteFault::Results);
                     }
@@ -855,8 +855,8 @@ pub fn mint_operation(
         .map(|&family| mint.family(family))
         .collect();
     let result = match *outputs.as_slice() {
-        | [single] => single,
-        | ref several => {
+        [single] => single,
+        ref several => {
             let minted = mint.arena.value_type_product(several);
             mint.value_type(minted)
         },
@@ -875,8 +875,8 @@ pub fn mint_operation(
     let mut minted: Vec<Option<ComputationId>> = vec![None; plan.nodes.len()];
     for (position, node) in plan.nodes.iter().enumerate().rev() {
         let computation = match *node {
-            | PlanNode::Leaf { depth, ref steps } => leaf_body(&mut mint, depth, steps),
-            | PlanNode::Switch {
+            PlanNode::Leaf { depth, ref steps } => leaf_body(&mut mint, depth, steps),
+            PlanNode::Switch {
                 level,
                 depth,
                 ref branches,
@@ -981,11 +981,11 @@ fn leaf_body(
     let mut ending = Ending::Deliver(Vec::new());
     for &step in steps {
         match step {
-            | Step::Variable(level) => {
+            Step::Variable(level) => {
                 stack.push(BuiltAt(built.len()));
                 built.push(Built::Bound(level));
             },
-            | Step::Construct {
+            Step::Construct {
                 family,
                 tag,
                 fields,
@@ -998,33 +998,33 @@ fn leaf_body(
                     fields,
                 });
             },
-            | Step::Call { callee, arguments } => {
+            Step::Call { callee, arguments } => {
                 let arguments = stack.split_off(stack.len().saturating_sub(arguments.0));
                 let level = Level(depth.0.saturating_add(calls.len()));
                 calls.push((callee, arguments));
                 stack.push(BuiltAt(built.len()));
                 built.push(Built::Bound(level));
             },
-            | Step::Tail { callee, arguments } => {
+            Step::Tail { callee, arguments } => {
                 let arguments = stack.split_off(stack.len().saturating_sub(arguments.0));
                 ending = Ending::Tail(callee, arguments);
             },
-            | Step::Return => {
+            Step::Return => {
                 ending = Ending::Return(stack.pop().unwrap_or(BuiltAt(usize::MAX)));
             },
-            | Step::Deliver(width) => {
+            Step::Deliver(width) => {
                 ending = Ending::Deliver(stack.split_off(stack.len().saturating_sub(width.0)));
             },
         }
     }
     let at = Depth(depth.0.saturating_add(calls.len()));
     let mut chain = match ending {
-        | Ending::Return(position) => {
+        Ending::Return(position) => {
             let value = built_value(mint, &built, position, at);
             let returned = mint.arena.computation_return(value);
             mint.computation(returned)
         },
-        | Ending::Deliver(positions) => {
+        Ending::Deliver(positions) => {
             let components: Vec<ValueId> = positions
                 .iter()
                 .map(|&position| built_value(mint, &built, position, at))
@@ -1034,7 +1034,7 @@ fn leaf_body(
             let returned = mint.arena.computation_return(tuple);
             mint.computation(returned)
         },
-        | Ending::Tail(callee, arguments) => call(mint, &built, callee, &arguments, at),
+        Ending::Tail(callee, arguments) => call(mint, &built, callee, &arguments, at),
     };
     for (bound, &(callee, ref arguments)) in calls.iter().enumerate().rev() {
         let around = Depth(depth.0.saturating_add(bound));
@@ -1068,8 +1068,8 @@ fn call(
 ) -> ComputationId
 {
     let function = match callee {
-        | Callee::Itself => mint.variable(Level(0), depth),
-        | Callee::Earlier(constant) => {
+        Callee::Itself => mint.variable(Level(0), depth),
+        Callee::Earlier(constant) => {
             let minted = mint.arena.value_constant(constant);
             mint.value(minted)
         },
@@ -1110,12 +1110,12 @@ fn built_value(
     let mut stack = vec![(root, false)];
     while let Some((position, expanded)) = stack.pop() {
         let value = match built.get(position.0) {
-            | None => {
+            None => {
                 let empty = mint.arena.value_tuple(&[]);
                 mint.value(empty)
             },
-            | Some(&Built::Bound(level)) => mint.variable(level, depth),
-            | Some(&Built::Constructed {
+            Some(&Built::Bound(level)) => mint.variable(level, depth),
+            Some(&Built::Constructed {
                 family,
                 tag,
                 ref fields,

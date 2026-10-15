@@ -193,12 +193,12 @@ impl fmt::Display for UnsupportedPersistence
     ) -> fmt::Result
     {
         match *self {
-            | Self::Dangling(sort) => {
+            Self::Dangling(sort) => {
                 let sort = match sort {
-                    | Sort::Value => "value",
-                    | Sort::Computation => "computation",
-                    | Sort::ValueType => "value type",
-                    | Sort::CompType => "computation type",
+                    Sort::Value => "value",
+                    Sort::Computation => "computation",
+                    Sort::ValueType => "value type",
+                    Sort::CompType => "computation type",
                 };
                 write!(f, "an unresolved {sort} id is process-local")
             },
@@ -568,8 +568,8 @@ impl<'data> Reader<'data>
     {
         let taken = self.take(Count(1))?;
         match *taken.0 {
-            | [tag] => Ok(Tag(tag)),
-            | _ => Err(CodecError::Corrupt),
+            [tag] => Ok(Tag(tag)),
+            _ => Err(CodecError::Corrupt),
         }
     }
 
@@ -817,8 +817,8 @@ where
     Out: Sink,
 {
     match *reference {
-        | Reference::Unoccupied => writer.tag(Tag(0)),
-        | Reference::Item {
+        Reference::Unoccupied => writer.tag(Tag(0)),
+        Reference::Item {
             ref key,
             occurrence,
         } => {
@@ -921,8 +921,8 @@ fn read_reference(reader: &mut Reader<'_>) -> Result<Reference, CodecError>
 {
     let tag = reader.tag()?;
     match tag.0 {
-        | 0 => Ok(Reference::Unoccupied),
-        | 1 => {
+        0 => Ok(Reference::Unoccupied),
+        1 => {
             let key = reader.bytes()?;
             let occurrence = reader.count()?;
             Ok(Reference::Item {
@@ -930,7 +930,7 @@ fn read_reference(reader: &mut Reader<'_>) -> Result<Reference, CodecError>
                 occurrence: Occurrence::from(occurrence.0),
             })
         },
-        | _ => Err(CodecError::Corrupt),
+        _ => Err(CodecError::Corrupt),
     }
 }
 
@@ -1049,8 +1049,8 @@ fn read_level(reader: &mut Reader<'_>) -> Result<Level, CodecError>
 const fn sign_tag(sign: Sign) -> Tag
 {
     match sign {
-        | Sign::Negative => Tag(0),
-        | Sign::NonNegative => Tag(1),
+        Sign::Negative => Tag(0),
+        Sign::NonNegative => Tag(1),
     }
 }
 
@@ -1085,9 +1085,9 @@ fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
 {
     let tag = reader.tag()?;
     match tag.0 {
-        | 0 => Ok(Sign::Negative),
-        | 1 => Ok(Sign::NonNegative),
-        | _ => Err(CodecError::Corrupt),
+        0 => Ok(Sign::Negative),
+        1 => Ok(Sign::NonNegative),
+        _ => Err(CodecError::Corrupt),
     }
 }
 
@@ -1130,16 +1130,16 @@ where
     Out: Sink,
 {
     match *literal {
-        | Literal::Integer(ref integer) => {
+        Literal::Integer(ref integer) => {
             writer.tag(Tag(0));
             writer.tag(sign_tag(integer.sign()));
             writer.bytes(Bytes(integer.magnitude().as_ref().as_bytes()))?;
         },
-        | Literal::Text(ref string) => {
+        Literal::Text(ref string) => {
             writer.tag(Tag(1));
             writer.bytes(Bytes(string.as_ref().as_bytes()))?;
         },
-        | Literal::Numeric(ref numeric) => {
+        Literal::Numeric(ref numeric) => {
             writer.tag(Tag(2));
             writer.tag(sign_tag(numeric.sign()));
             writer.bytes(Bytes(numeric.integer_part().as_ref().as_bytes()))?;
@@ -1181,17 +1181,17 @@ fn read_literal(reader: &mut Reader<'_>) -> Result<Literal, CodecError>
 {
     let tag = reader.tag()?;
     match tag.0 {
-        | 0 => {
+        0 => {
             let sign = read_sign(reader)?;
             let digits = reader.text()?;
             let magnitude = Magnitude::from_decimal_text(digits).ok_or(CodecError::Corrupt)?;
             Ok(Literal::Integer(IntegerLiteral::new(sign, magnitude)))
         },
-        | 1 => {
+        1 => {
             let text = reader.text()?;
             Ok(Literal::Text(StringLiteral::new(text)))
         },
-        | 2 => {
+        2 => {
             let sign = read_sign(reader)?;
             let digits = reader.text()?;
             let integer_part = Magnitude::from_decimal_text(digits).ok_or(CodecError::Corrupt)?;
@@ -1203,7 +1203,7 @@ fn read_literal(reader: &mut Reader<'_>) -> Result<Literal, CodecError>
                 fraction,
             )))
         },
-        | _ => Err(CodecError::Corrupt),
+        _ => Err(CodecError::Corrupt),
     }
 }
 
@@ -1262,7 +1262,7 @@ where
     Out: Sink,
 {
     match *node {
-        | ContentNode::Data {
+        ContentNode::Data {
             ref declaration,
             ref arguments,
         } => {
@@ -1270,11 +1270,11 @@ where
             write_reference(writer, declaration)?;
             write_indices(writer, arguments)?;
         },
-        | ContentNode::RecordType(ref fields) => {
+        ContentNode::RecordType(ref fields) => {
             writer.tag(Tag(0x51));
             write_fields(writer, fields)?;
         },
-        | ContentNode::Constructor {
+        ContentNode::Constructor {
             datatype,
             tag,
             ref fields,
@@ -1284,11 +1284,11 @@ where
             writer.count(Count(usize::from(tag)))?;
             write_indices(writer, fields)?;
         },
-        | ContentNode::Record(ref fields) => {
+        ContentNode::Record(ref fields) => {
             writer.tag(Tag(0x53));
             write_fields(writer, fields)?;
         },
-        | ContentNode::DataCase {
+        ContentNode::DataCase {
             scrutinee,
             motive,
             ref branches,
@@ -1298,23 +1298,23 @@ where
             write_index(writer, motive)?;
             write_indices(writer, branches)?;
         },
-        | ContentNode::RecordProjection(record, ref label) => {
+        ContentNode::RecordProjection(record, ref label) => {
             writer.tag(Tag(0x55));
             write_index(writer, record)?;
             writer.bytes(Bytes(label.as_ref().as_bytes()))?;
         },
-        | ContentNode::TupleProjection(tuple, component) => {
+        ContentNode::TupleProjection(tuple, component) => {
             writer.tag(Tag(0x5A));
             write_index(writer, tuple)?;
             writer.count(Count(usize::from(component)))?;
         },
-        | ContentNode::Split(scrutinee, arity, body) => {
+        ContentNode::Split(scrutinee, arity, body) => {
             writer.tag(Tag(0x5B));
             write_index(writer, scrutinee)?;
             writer.count(Count(usize::from(arity)))?;
             write_index(writer, body)?;
         },
-        | ContentNode::DependentSplit {
+        ContentNode::DependentSplit {
             scrutinee,
             arity,
             motive,
@@ -1326,109 +1326,109 @@ where
             write_index(writer, motive)?;
             write_index(writer, body)?;
         },
-        | ContentNode::Reify(ref frames) => {
+        ContentNode::Reify(ref frames) => {
             writer.tag(Tag(0x71));
             writer.count(Count(frames.len()))?;
             for frame in frames.iter() {
                 match *frame {
-                    | gandr_core_term::control::StackFrame::Apply(value) => {
+                    gandr_core_term::control::StackFrame::Apply(value) => {
                         writer.tag(Tag(0));
                         write_index(writer, value)?;
                     },
-                    | gandr_core_term::control::StackFrame::Bind(body) => {
+                    gandr_core_term::control::StackFrame::Bind(body) => {
                         writer.tag(Tag(1));
                         write_index(writer, body)?;
                     },
-                    | gandr_core_term::control::StackFrame::Project(side) => {
+                    gandr_core_term::control::StackFrame::Project(side) => {
                         writer.tag(Tag(2));
                         writer.tag(match side {
-                            | Side::Left => Tag(0),
-                            | Side::Right => Tag(1),
+                            Side::Left => Tag(0),
+                            Side::Right => Tag(1),
                         });
                     },
                 }
             }
         },
-        | ContentNode::Stack { input, output } => {
+        ContentNode::Stack { input, output } => {
             writer.tag(Tag(0x72));
             write_index(writer, input)?;
             write_index(writer, output)?;
         },
-        | ContentNode::WithType(first, second) => {
+        ContentNode::WithType(first, second) => {
             writer.tag(Tag(0x73));
             write_index(writer, first)?;
             write_index(writer, second)?;
         },
-        | ContentNode::SessionType(ref session) => {
+        ContentNode::SessionType(ref session) => {
             writer.tag(Tag(0x60));
             write_session_type(writer, session)?;
         },
-        | ContentNode::Session(ref action) => {
+        ContentNode::Session(ref action) => {
             writer.tag(Tag(0x61));
             write_session_action(writer, action)?;
         },
-        | ContentNode::SessionRelated {
+        ContentNode::SessionRelated {
             relation,
             source,
             target,
         } => {
             writer.tag(Tag(0x62));
             writer.tag(Tag(match relation {
-                | SessionRelation::Equivalence => 0,
-                | SessionRelation::Subtyping => 1,
+                SessionRelation::Equivalence => 0,
+                SessionRelation::Subtyping => 1,
             }));
             write_index(writer, source)?;
             write_index(writer, target)?;
         },
-        | ContentNode::Stay(point) => {
+        ContentNode::Stay(point) => {
             writer.tag(Tag(0x63));
             write_index(writer, point)?;
         },
-        | ContentNode::Then(first, second) => {
+        ContentNode::Then(first, second) => {
             writer.tag(Tag(0x64));
             write_index(writer, first)?;
             write_index(writer, second)?;
         },
-        | ContentNode::Forward(translator) => {
+        ContentNode::Forward(translator) => {
             writer.tag(Tag(0x69));
             write_index(writer, translator)?;
         },
-        | ContentNode::FunctionFlow(domain, codomain) => {
+        ContentNode::FunctionFlow(domain, codomain) => {
             writer.tag(Tag(0x6A));
             write_index(writer, domain)?;
             write_index(writer, codomain)?;
         },
-        | ContentNode::FlowProduct(first, second) => {
+        ContentNode::FlowProduct(first, second) => {
             writer.tag(Tag(0x6B));
             write_index(writer, first)?;
             write_index(writer, second)?;
         },
-        | ContentNode::Recorded(ref moves) => {
+        ContentNode::Recorded(ref moves) => {
             writer.tag(Tag(0x65));
             writer.count(Count(moves.len()))?;
             for step in moves.iter() {
                 match *step {
-                    | RecordedMove::Sent(payload) => {
+                    RecordedMove::Sent(payload) => {
                         writer.tag(Tag(0));
                         write_index(writer, payload)?;
                     },
-                    | RecordedMove::Received(payload) => {
+                    RecordedMove::Received(payload) => {
                         writer.tag(Tag(1));
                         write_index(writer, payload)?;
                     },
-                    | RecordedMove::Selected(ref label) => {
+                    RecordedMove::Selected(ref label) => {
                         writer.tag(Tag(2));
                         writer.bytes(Bytes(label.as_ref().as_bytes()))?;
                     },
-                    | RecordedMove::Offered(ref label) => {
+                    RecordedMove::Offered(ref label) => {
                         writer.tag(Tag(3));
                         writer.bytes(Bytes(label.as_ref().as_bytes()))?;
                     },
-                    | RecordedMove::Closed => writer.tag(Tag(4)),
+                    RecordedMove::Closed => writer.tag(Tag(4)),
                 }
             }
         },
-        | ContentNode::Ride {
+        ContentNode::Ride {
             motive,
             flow,
             value,
@@ -1438,7 +1438,7 @@ where
             write_index(writer, flow)?;
             write_index(writer, value)?;
         },
-        | ContentNode::FlowType {
+        ContentNode::FlowType {
             carrier,
             source,
             target,
@@ -1448,11 +1448,11 @@ where
             write_index(writer, source)?;
             write_index(writer, target)?;
         },
-        | ContentNode::RunType(code) => {
+        ContentNode::RunType(code) => {
             writer.tag(Tag(0x68));
             write_index(writer, code)?;
         },
-        | ContentNode::Perform {
+        ContentNode::Perform {
             ref signature,
             ref operation,
             payload,
@@ -1462,7 +1462,7 @@ where
             write_effect_signature(writer, signature)?;
             writer.bytes(Bytes(operation.as_ref().as_bytes()))?;
         },
-        | ContentNode::Handle {
+        ContentNode::Handle {
             ref signature,
             subject,
             on_return,
@@ -1478,7 +1478,7 @@ where
                 write_index(writer, clause.body)?;
             }
         },
-        | ContentNode::Exercise {
+        ContentNode::Exercise {
             capability,
             ref signature,
             ref operation,
@@ -1490,7 +1490,7 @@ where
             write_effect_signature(writer, signature)?;
             writer.bytes(Bytes(operation.as_ref().as_bytes()))?;
         },
-        | ContentNode::Scope {
+        ContentNode::Scope {
             ref signature,
             subject,
             on_return,
@@ -1506,7 +1506,7 @@ where
                 write_index(writer, clause.body)?;
             }
         },
-        | ContentNode::Capability {
+        ContentNode::Capability {
             ref authority,
             grade,
             region,
@@ -1514,68 +1514,68 @@ where
             writer.tag(Tag(0x7D));
             write_effect_row(writer, authority)?;
             writer.tag(match grade {
-                | gandr_core_term::effect::capability::CapabilityGrade::Durable => Tag(0),
-                | gandr_core_term::effect::capability::CapabilityGrade::Consumable => Tag(1),
+                gandr_core_term::effect::capability::CapabilityGrade::Durable => Tag(0),
+                gandr_core_term::effect::capability::CapabilityGrade::Consumable => Tag(1),
             });
             match region {
-                | gandr_core_term::effect::capability::Region::Held => writer.tag(Tag(0)),
-                | gandr_core_term::effect::capability::Region::Scoped(depth) => {
+                gandr_core_term::effect::capability::Region::Held => writer.tag(Tag(0)),
+                gandr_core_term::effect::capability::Region::Scoped(depth) => {
                     writer.tag(Tag(1));
                     writer.word(Word(u64::from(u32::from(depth))));
                 },
             }
         },
-        | ContentNode::Resume(stack, body) => {
+        ContentNode::Resume(stack, body) => {
             writer.tag(Tag(0x76));
             write_index(writer, stack)?;
             write_index(writer, body)?;
         },
-        | ContentNode::Reset(body) => {
+        ContentNode::Reset(body) => {
             writer.tag(Tag(0x77));
             write_index(writer, body)?;
         },
-        | ContentNode::Shift(body) => {
+        ContentNode::Shift(body) => {
             writer.tag(Tag(0x78));
             write_index(writer, body)?;
         },
-        | ContentNode::With(first, second) => {
+        ContentNode::With(first, second) => {
             writer.tag(Tag(0x79));
             write_index(writer, first)?;
             write_index(writer, second)?;
         },
-        | ContentNode::Project(side, body) => {
+        ContentNode::Project(side, body) => {
             writer.tag(Tag(0x7A));
             writer.tag(match side {
-                | Side::Left => Tag(0),
-                | Side::Right => Tag(1),
+                Side::Left => Tag(0),
+                Side::Right => Tag(1),
             });
             write_index(writer, body)?;
         },
-        | ContentNode::PrimitiveValue(primitive) => {
+        ContentNode::PrimitiveValue(primitive) => {
             writer.tag(Tag(0x0D));
             writer.bytes(Bytes(primitive.name().as_ref().as_bytes()))?;
         },
-        | ContentNode::Primitive(primitive, arguments) => {
+        ContentNode::Primitive(primitive, arguments) => {
             writer.tag(Tag(0x16));
             writer.bytes(Bytes(primitive.name().as_ref().as_bytes()))?;
             writer.tag(match arguments {
-                | gandr_core_term::primitive::Arguments::Unary(_) => Tag(1),
-                | gandr_core_term::primitive::Arguments::Binary(_) => Tag(2),
+                gandr_core_term::primitive::Arguments::Unary(_) => Tag(1),
+                gandr_core_term::primitive::Arguments::Binary(_) => Tag(2),
             });
             for &argument in arguments.iter() {
                 write_index(writer, argument)?;
             }
         },
-        | ContentNode::PathUniverse(source, target) => {
+        ContentNode::PathUniverse(source, target) => {
             writer.tag(Tag(0x40));
             write_index(writer, source)?;
             write_index(writer, target)?;
         },
-        | ContentNode::PathRefl(code) => {
+        ContentNode::PathRefl(code) => {
             writer.tag(Tag(0x41));
             write_index(writer, code)?;
         },
-        | ContentNode::PathEquiv {
+        ContentNode::PathEquiv {
             path_type,
             forward,
             backward,
@@ -1589,22 +1589,22 @@ where
                 writer.word(Word(word.0));
             }
         },
-        | ContentNode::PathProduct(first, second) => {
+        ContentNode::PathProduct(first, second) => {
             writer.tag(Tag(0x43));
             write_index(writer, first)?;
             write_index(writer, second)?;
         },
-        | ContentNode::Funext(left, right) => {
+        ContentNode::Funext(left, right) => {
             writer.tag(Tag(0x49));
             write_index(writer, left)?;
             write_index(writer, right)?;
         },
-        | ContentNode::Equiv(forward, backward) => {
+        ContentNode::Equiv(forward, backward) => {
             writer.tag(Tag(0x4A));
             write_index(writer, forward)?;
             write_index(writer, backward)?;
         },
-        | ContentNode::Ua {
+        ContentNode::Ua {
             stratum,
             ref sides,
             forward,
@@ -1618,12 +1618,12 @@ where
             write_index(writer, forward)?;
             write_index(writer, backward)?;
         },
-        | ContentNode::Transport(path, value) => {
+        ContentNode::Transport(path, value) => {
             writer.tag(Tag(0x44));
             write_index(writer, path)?;
             write_index(writer, value)?;
         },
-        | ContentNode::PathType {
+        ContentNode::PathType {
             carrier,
             left,
             right,
@@ -1633,11 +1633,11 @@ where
             write_index(writer, left)?;
             write_index(writer, right)?;
         },
-        | ContentNode::Here(point) => {
+        ContentNode::Here(point) => {
             writer.tag(Tag(0x46));
             write_index(writer, point)?;
         },
-        | ContentNode::ElementTransport {
+        ContentNode::ElementTransport {
             motive,
             path,
             value,
@@ -1647,7 +1647,7 @@ where
             write_index(writer, path)?;
             write_index(writer, value)?;
         },
-        | ContentNode::TelescopeTransport {
+        ContentNode::TelescopeTransport {
             motive,
             path,
             start,
@@ -1659,101 +1659,101 @@ where
                 write_index(writer, child)?;
             }
         },
-        | ContentNode::Returned(computation) => {
+        ContentNode::Returned(computation) => {
             writer.tag(Tag(0x48));
             write_index(writer, computation)?;
         },
-        | ContentNode::Nested(computation) => {
+        ContentNode::Nested(computation) => {
             writer.tag(Tag(0x4D));
             write_index(writer, computation)?;
         },
-        | ContentNode::Run(computation) => {
+        ContentNode::Run(computation) => {
             writer.tag(Tag(0x4E));
             write_index(writer, computation)?;
         },
-        | ContentNode::Variable { zone, index } => {
+        ContentNode::Variable { zone, index } => {
             writer.tag(Tag(0x01));
             writer.tag(match zone {
-                | Zone::Intuitionistic => Tag(0),
-                | Zone::Linear => Tag(1),
+                Zone::Intuitionistic => Tag(0),
+                Zone::Linear => Tag(1),
             });
             writer.word(Word(u64::from(u32::from(index))));
         },
-        | ContentNode::Constant(ref reference) => {
+        ContentNode::Constant(ref reference) => {
             writer.tag(Tag(0x02));
             write_reference(writer, reference)?;
         },
-        | ContentNode::Literal(ref literal) => {
+        ContentNode::Literal(ref literal) => {
             writer.tag(Tag(0x04));
             write_literal(writer, literal)?;
         },
-        | ContentNode::Tuple(ref components) => {
+        ContentNode::Tuple(ref components) => {
             writer.tag(Tag(0x05));
             write_indices(writer, components)?;
         },
-        | ContentNode::Injection(summand, body) => {
+        ContentNode::Injection(summand, body) => {
             writer.tag(Tag(0x06));
             writer.count(Count(usize::from(summand)))?;
             write_index(writer, body)?;
         },
-        | ContentNode::Thunk(body) => {
+        ContentNode::Thunk(body) => {
             writer.tag(Tag(0x07));
             write_index(writer, body)?;
         },
-        | ContentNode::ValueLift { ref target, body } => {
+        ContentNode::ValueLift { ref target, body } => {
             writer.tag(Tag(0x08));
             write_level(writer, target)?;
             write_index(writer, body)?;
         },
-        | ContentNode::Quote(quoted) => {
+        ContentNode::Quote(quoted) => {
             writer.tag(Tag(0x09));
             write_index(writer, quoted)?;
         },
-        | ContentNode::QuoteComputation(quoted) => {
+        ContentNode::QuoteComputation(quoted) => {
             writer.tag(Tag(0x0A));
             write_index(writer, quoted)?;
         },
-        | ContentNode::StaticLambda(body) => {
+        ContentNode::StaticLambda(body) => {
             writer.tag(Tag(0x0B));
             write_index(writer, body)?;
         },
-        | ContentNode::StaticApplication(head, argument) => {
+        ContentNode::StaticApplication(head, argument) => {
             writer.tag(Tag(0x0C));
             write_index(writer, head)?;
             write_index(writer, argument)?;
         },
-        | ContentNode::Hole(hole) => {
+        ContentNode::Hole(hole) => {
             writer.tag(Tag(0x0E));
             writer.word(Word(u64::from(u32::from(hole))));
         },
-        | ContentNode::ValueMark { mark, body } => {
+        ContentNode::ValueMark { mark, body } => {
             writer.tag(Tag(0x0F));
             writer.word(Word(u64::from(u32::from(mark))));
             write_index(writer, body)?;
         },
-        | ContentNode::Lambda(body) => {
+        ContentNode::Lambda(body) => {
             writer.tag(Tag(0x10));
             write_index(writer, body)?;
         },
-        | ContentNode::Application(head, argument) => {
+        ContentNode::Application(head, argument) => {
             writer.tag(Tag(0x11));
             write_index(writer, head)?;
             write_index(writer, argument)?;
         },
-        | ContentNode::Return(value) => {
+        ContentNode::Return(value) => {
             writer.tag(Tag(0x12));
             write_index(writer, value)?;
         },
-        | ContentNode::Bind(bound, rest) => {
+        ContentNode::Bind(bound, rest) => {
             writer.tag(Tag(0x13));
             write_index(writer, bound)?;
             write_index(writer, rest)?;
         },
-        | ContentNode::Force(value) => {
+        ContentNode::Force(value) => {
             writer.tag(Tag(0x14));
             write_index(writer, value)?;
         },
-        | ContentNode::Case {
+        ContentNode::Case {
             scrutinee,
             ref branches,
         } => {
@@ -1761,47 +1761,47 @@ where
             write_index(writer, scrutinee)?;
             write_indices(writer, branches)?;
         },
-        | ContentNode::ComputationHole(hole) => {
+        ContentNode::ComputationHole(hole) => {
             writer.tag(Tag(0x17));
             writer.word(Word(u64::from(u32::from(hole))));
         },
-        | ContentNode::ComputationMark { mark, body } => {
+        ContentNode::ComputationMark { mark, body } => {
             writer.tag(Tag(0x18));
             writer.word(Word(u64::from(u32::from(mark))));
             write_index(writer, body)?;
         },
-        | ContentNode::Fixpoint { body, evidence } => {
+        ContentNode::Fixpoint { body, evidence } => {
             writer.tag(Tag(0x19));
             write_listed(writer, &EVIDENCES, &evidence)?;
             write_index(writer, body)?;
         },
-        | ContentNode::Base(base) => {
+        ContentNode::Base(base) => {
             writer.tag(Tag(0x20));
             writer.tag(match base {
-                | BaseType::Integer => Tag(0),
-                | BaseType::String => Tag(1),
-                | BaseType::Numeric => Tag(2),
+                BaseType::Integer => Tag(0),
+                BaseType::String => Tag(1),
+                BaseType::Numeric => Tag(2),
             });
         },
-        | ContentNode::Product(ref parts) => {
+        ContentNode::Product(ref parts) => {
             writer.tag(Tag(0x22));
             write_indices(writer, parts)?;
         },
-        | ContentNode::Sum(ref parts) => {
+        ContentNode::Sum(ref parts) => {
             writer.tag(Tag(0x23));
             write_indices(writer, parts)?;
         },
-        | ContentNode::List(element) => {
+        ContentNode::List(element) => {
             writer.tag(Tag(0x56));
             write_index(writer, element)?;
         },
-        | ContentNode::ListNil => writer.tag(Tag(0x57)),
-        | ContentNode::ListCons(head, tail) => {
+        ContentNode::ListNil => writer.tag(Tag(0x57)),
+        ContentNode::ListCons(head, tail) => {
             writer.tag(Tag(0x58));
             write_index(writer, head)?;
             write_index(writer, tail)?;
         },
-        | ContentNode::ListFold {
+        ContentNode::ListFold {
             element,
             result,
             list,
@@ -1813,28 +1813,28 @@ where
                 write_index(writer, child)?;
             }
         },
-        | ContentNode::ThunkType(body) => {
+        ContentNode::ThunkType(body) => {
             writer.tag(Tag(0x24));
             write_index(writer, body)?;
         },
         // The value universe keeps the tag it had before the sorts were
         // spelled, and the other two sorts take fresh tags, so a table
         // written before the families reads the same after them.
-        | ContentNode::Universe {
+        ContentNode::Universe {
             sort: TypeSort::Ground(GroundSort::Value),
             ref level,
         } => {
             writer.tag(Tag(0x25));
             write_level(writer, level)?;
         },
-        | ContentNode::Universe {
+        ContentNode::Universe {
             sort: TypeSort::Ground(GroundSort::Computation),
             ref level,
         } => {
             writer.tag(Tag(0x29));
             write_level(writer, level)?;
         },
-        | ContentNode::Universe {
+        ContentNode::Universe {
             sort: TypeSort::Parameter(parameter),
             ref level,
         } => {
@@ -1842,32 +1842,32 @@ where
             writer.word(Word(u64::from(u32::from(parameter))));
             write_level(writer, level)?;
         },
-        | ContentNode::TypeLift { inner, ref target } => {
+        ContentNode::TypeLift { inner, ref target } => {
             writer.tag(Tag(0x26));
             write_index(writer, inner)?;
             write_level(writer, target)?;
         },
-        | ContentNode::Element { code, ref target } => {
+        ContentNode::Element { code, ref target } => {
             writer.tag(Tag(0x27));
             write_index(writer, code)?;
             write_level(writer, target)?;
         },
-        | ContentNode::Abstract(ref reference) => {
+        ContentNode::Abstract(ref reference) => {
             writer.tag(Tag(0x28));
             write_reference(writer, reference)?;
         },
-        | ContentNode::StaticPi { domain, codomain } => {
+        ContentNode::StaticPi { domain, codomain } => {
             writer.tag(Tag(0x2B));
             write_index(writer, domain)?;
             write_index(writer, codomain)?;
         },
-        | ContentNode::Sigma { first, second } => {
+        ContentNode::Sigma { first, second } => {
             writer.tag(Tag(0x2D));
             write_index(writer, first)?;
             write_index(writer, second)?;
         },
-        | ContentNode::UnknownType => writer.tag(Tag(0x2C)),
-        | ContentNode::Returner {
+        ContentNode::UnknownType => writer.tag(Tag(0x2C)),
+        ContentNode::Returner {
             result,
             ref effects,
         } => {
@@ -1881,23 +1881,23 @@ where
                 write_effect_row(writer, effects)?;
             }
         },
-        | ContentNode::Arrow { domain, codomain } => {
+        ContentNode::Arrow { domain, codomain } => {
             writer.tag(Tag(0x31));
             write_index(writer, domain)?;
             write_index(writer, codomain)?;
         },
-        | ContentNode::Pi { domain, codomain } => {
+        ContentNode::Pi { domain, codomain } => {
             writer.tag(Tag(0x32));
             write_index(writer, domain)?;
             write_index(writer, codomain)?;
         },
-        | ContentNode::ComputationElement { code, ref target } => {
+        ContentNode::ComputationElement { code, ref target } => {
             writer.tag(Tag(0x33));
             write_index(writer, code)?;
             write_level(writer, target)?;
         },
-        | ContentNode::UnknownComputationType => writer.tag(Tag(0x34)),
-        | ContentNode::Unresolved(sort) => {
+        ContentNode::UnknownComputationType => writer.tag(Tag(0x34)),
+        ContentNode::Unresolved(sort) => {
             return Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(
                 sort,
             )));
@@ -2112,30 +2112,30 @@ where
     writer.count(Count(written.len()))?;
     for node in &written {
         match *node {
-            | ProtocolSyntax::Send { payload, next } => {
+            ProtocolSyntax::Send { payload, next } => {
                 writer.tag(Tag(0));
                 writer.count(Count(usize::from(payload)))?;
                 writer.count(Count(usize::from(next)))?;
             },
-            | ProtocolSyntax::Receive { payload, next } => {
+            ProtocolSyntax::Receive { payload, next } => {
                 writer.tag(Tag(1));
                 writer.count(Count(usize::from(payload)))?;
                 writer.count(Count(usize::from(next)))?;
             },
-            | ProtocolSyntax::Select(ref branches) => {
+            ProtocolSyntax::Select(ref branches) => {
                 writer.tag(Tag(2));
                 write_branches(writer, branches)?;
             },
-            | ProtocolSyntax::Offer(ref branches) => {
+            ProtocolSyntax::Offer(ref branches) => {
                 writer.tag(Tag(3));
                 write_branches(writer, branches)?;
             },
-            | ProtocolSyntax::End => writer.tag(Tag(4)),
-            | ProtocolSyntax::Mu(body) => {
+            ProtocolSyntax::End => writer.tag(Tag(4)),
+            ProtocolSyntax::Mu(body) => {
                 writer.tag(Tag(5));
                 writer.count(Count(usize::from(body)))?;
             },
-            | ProtocolSyntax::Recur(outward) => {
+            ProtocolSyntax::Recur(outward) => {
                 writer.tag(Tag(6));
                 writer.count(Count(usize::from(outward)))?;
             },
@@ -2167,20 +2167,20 @@ fn read_session_type(reader: &mut Reader<'_>) -> Result<SessionType<NodeIndex>, 
     let mut written = Vec::new();
     for _ in 0 .. count.0 {
         written.push(match reader.tag()?.0 {
-            | 0 => ProtocolSyntax::Send {
+            0 => ProtocolSyntax::Send {
                 payload: PayloadSlot::from(reader.count()?.0),
                 next: ProtocolState::from(reader.count()?.0),
             },
-            | 1 => ProtocolSyntax::Receive {
+            1 => ProtocolSyntax::Receive {
                 payload: PayloadSlot::from(reader.count()?.0),
                 next: ProtocolState::from(reader.count()?.0),
             },
-            | 2 => ProtocolSyntax::Select(read_branches(reader)?),
-            | 3 => ProtocolSyntax::Offer(read_branches(reader)?),
-            | 4 => ProtocolSyntax::End,
-            | 5 => ProtocolSyntax::Mu(ProtocolState::from(reader.count()?.0)),
-            | 6 => ProtocolSyntax::Recur(RecursionIndex::from(reader.count()?.0)),
-            | _ => return Err(CodecError::Corrupt),
+            2 => ProtocolSyntax::Select(read_branches(reader)?),
+            3 => ProtocolSyntax::Offer(read_branches(reader)?),
+            4 => ProtocolSyntax::End,
+            5 => ProtocolSyntax::Mu(ProtocolState::from(reader.count()?.0)),
+            6 => ProtocolSyntax::Recur(RecursionIndex::from(reader.count()?.0)),
+            _ => return Err(CodecError::Corrupt),
         });
     }
     let root = ProtocolState::from(reader.count()?.0);
@@ -2217,7 +2217,7 @@ where
         writer.word(Word(u64::from(u32::from(index))));
     };
     match *action {
-        | SessionAction::Send {
+        SessionAction::Send {
             endpoint: subject,
             payload,
         } => {
@@ -2225,11 +2225,11 @@ where
             endpoint(writer, subject);
             write_index(writer, payload)?;
         },
-        | SessionAction::Receive { endpoint: subject } => {
+        SessionAction::Receive { endpoint: subject } => {
             writer.tag(Tag(1));
             endpoint(writer, subject);
         },
-        | SessionAction::Select {
+        SessionAction::Select {
             endpoint: subject,
             ref label,
         } => {
@@ -2237,7 +2237,7 @@ where
             endpoint(writer, subject);
             writer.bytes(Bytes(label.as_ref().as_bytes()))?;
         },
-        | SessionAction::Offer {
+        SessionAction::Offer {
             endpoint: subject,
             ref arms,
         } => {
@@ -2245,11 +2245,11 @@ where
             endpoint(writer, subject);
             write_fields(writer, arms)?;
         },
-        | SessionAction::Close { endpoint: subject } => {
+        SessionAction::Close { endpoint: subject } => {
             writer.tag(Tag(4));
             endpoint(writer, subject);
         },
-        | SessionAction::Fork {
+        SessionAction::Fork {
             protocol,
             child,
             parent,
@@ -2288,30 +2288,30 @@ fn read_session_action(
             .map_err(|_overflow| CodecError::Corrupt)
     };
     Ok(match reader.tag()?.0 {
-        | 0 => SessionAction::Send {
+        0 => SessionAction::Send {
             endpoint: endpoint(reader)?,
             payload: read_index(reader)?,
         },
-        | 1 => SessionAction::Receive {
+        1 => SessionAction::Receive {
             endpoint: endpoint(reader)?,
         },
-        | 2 => SessionAction::Select {
+        2 => SessionAction::Select {
             endpoint: endpoint(reader)?,
             label: read_field_label(reader)?,
         },
-        | 3 => SessionAction::Offer {
+        3 => SessionAction::Offer {
             endpoint: endpoint(reader)?,
             arms: read_fields(reader)?,
         },
-        | 4 => SessionAction::Close {
+        4 => SessionAction::Close {
             endpoint: endpoint(reader)?,
         },
-        | 5 => SessionAction::Fork {
+        5 => SessionAction::Fork {
             protocol: read_index(reader)?,
             child: read_index(reader)?,
             parent: read_index(reader)?,
         },
-        | _ => return Err(CodecError::Corrupt),
+        _ => return Err(CodecError::Corrupt),
     })
 }
 
@@ -2399,15 +2399,15 @@ where
     Out: Sink,
 {
     match defect {
-        | gandr_core_checker::ua::StratumDefect::Degree { degree } => {
+        gandr_core_checker::ua::StratumDefect::Degree { degree } => {
             writer.tag(Tag(0));
             writer.count(Count(usize::from(degree)))
         },
-        | gandr_core_checker::ua::StratumDefect::Condition { degree } => {
+        gandr_core_checker::ua::StratumDefect::Condition { degree } => {
             writer.tag(Tag(1));
             writer.count(Count(usize::from(degree)))
         },
-        | gandr_core_checker::ua::StratumDefect::Allowance { bound } => {
+        gandr_core_checker::ua::StratumDefect::Allowance { bound } => {
             writer.tag(Tag(2));
             writer.count(Count(usize::from(bound)))
         },
@@ -2431,16 +2431,16 @@ fn read_stratum_defect(
 ) -> Result<gandr_core_checker::ua::StratumDefect, CodecError>
 {
     match reader.tag()?.0 {
-        | 0 => Ok(gandr_core_checker::ua::StratumDefect::Degree {
+        0 => Ok(gandr_core_checker::ua::StratumDefect::Degree {
             degree: gandr_theory_sites::Degree::from(reader.count()?.0),
         }),
-        | 1 => Ok(gandr_core_checker::ua::StratumDefect::Condition {
+        1 => Ok(gandr_core_checker::ua::StratumDefect::Condition {
             degree: gandr_theory_sites::Degree::from(reader.count()?.0),
         }),
-        | 2 => Ok(gandr_core_checker::ua::StratumDefect::Allowance {
+        2 => Ok(gandr_core_checker::ua::StratumDefect::Allowance {
             bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
         }),
-        | _ => Err(CodecError::Corrupt),
+        _ => Err(CodecError::Corrupt),
     }
 }
 
@@ -2466,23 +2466,21 @@ where
     use gandr_core_checker::ua::UaDefect;
     use gandr_core_checker::ua::Way;
     let (tag, counts): (u8, &[usize]) = match defect {
-        | UaDefect::UnknownGenerator { way: Way::Forward } => (0, &[0]),
-        | UaDefect::UnknownGenerator { way: Way::Backward } => (0, &[1]),
-        | UaDefect::PastTheBound { profile } => (1, &[
+        UaDefect::UnknownGenerator { way: Way::Forward } => (0, &[0]),
+        UaDefect::UnknownGenerator { way: Way::Backward } => (0, &[1]),
+        UaDefect::PastTheBound { profile } => (1, &[
             usize::from(profile.inputs),
             usize::from(profile.outputs),
         ]),
-        | UaDefect::Cardinality { corolla } => (2, &[usize::from(corolla)]),
-        | UaDefect::Tables { corolla } => (3, &[usize::from(corolla)]),
-        | UaDefect::NotInverse { corolla, element } => {
+        UaDefect::Cardinality { corolla } => (2, &[usize::from(corolla)]),
+        UaDefect::Tables { corolla } => (3, &[usize::from(corolla)]),
+        UaDefect::NotInverse { corolla, element } => {
             (4, &[usize::from(corolla), usize::from(element)])
         },
-        | UaDefect::NotNatural { corolla, element } => {
+        UaDefect::NotNatural { corolla, element } => {
             (5, &[usize::from(corolla), usize::from(element)])
         },
-        | UaDefect::Stuck { corolla, element } => {
-            (6, &[usize::from(corolla), usize::from(element)])
-        },
+        UaDefect::Stuck { corolla, element } => (6, &[usize::from(corolla), usize::from(element)]),
     };
     writer.tag(Tag(tag));
     for &count in counts {
@@ -2512,38 +2510,38 @@ fn read_ua_defect(reader: &mut Reader<'_>) -> Result<gandr_core_checker::ua::UaD
     let tag = reader.tag()?.0;
     let mut count = || reader.count().map(|count| count.0);
     Ok(match tag {
-        | 0 => UaDefect::UnknownGenerator {
+        0 => UaDefect::UnknownGenerator {
             way: match count()? {
-                | 0 => Way::Forward,
-                | 1 => Way::Backward,
-                | _ => return Err(CodecError::Corrupt),
+                0 => Way::Forward,
+                1 => Way::Backward,
+                _ => return Err(CodecError::Corrupt),
             },
         },
-        | 1 => UaDefect::PastTheBound {
+        1 => UaDefect::PastTheBound {
             profile: gandr_theory_sites::Profile {
                 inputs: gandr_theory_sites::PortCount::from(count()?),
                 outputs: gandr_theory_sites::PortCount::from(count()?),
             },
         },
-        | 2 => UaDefect::Cardinality {
+        2 => UaDefect::Cardinality {
             corolla: ShapeIndex::from(count()?),
         },
-        | 3 => UaDefect::Tables {
+        3 => UaDefect::Tables {
             corolla: ShapeIndex::from(count()?),
         },
-        | 4 => UaDefect::NotInverse {
-            corolla: ShapeIndex::from(count()?),
-            element: ElementIndex::from(count()?),
-        },
-        | 5 => UaDefect::NotNatural {
+        4 => UaDefect::NotInverse {
             corolla: ShapeIndex::from(count()?),
             element: ElementIndex::from(count()?),
         },
-        | 6 => UaDefect::Stuck {
+        5 => UaDefect::NotNatural {
             corolla: ShapeIndex::from(count()?),
             element: ElementIndex::from(count()?),
         },
-        | _ => return Err(CodecError::Corrupt),
+        6 => UaDefect::Stuck {
+            corolla: ShapeIndex::from(count()?),
+            element: ElementIndex::from(count()?),
+        },
+        _ => return Err(CodecError::Corrupt),
     })
 }
 
@@ -2608,7 +2606,7 @@ where
     Out: Sink,
 {
     match *defect {
-        | Linearity::Residue {
+        Linearity::Residue {
             endpoint,
             ref state,
         } => {
@@ -2616,25 +2614,25 @@ where
             write_endpoint(writer, endpoint)?;
             write_type(writer, state)?;
         },
-        | Linearity::Closed { endpoint } => {
+        Linearity::Closed { endpoint } => {
             writer.tag(Tag(1));
             write_endpoint(writer, endpoint)?;
         },
-        | Linearity::UsedTwice { endpoint } => {
+        Linearity::UsedTwice { endpoint } => {
             writer.tag(Tag(2));
             write_endpoint(writer, endpoint)?;
         },
-        | Linearity::Captured { endpoint, by } => {
+        Linearity::Captured { endpoint, by } => {
             writer.tag(Tag(3));
             write_endpoint(writer, endpoint)?;
             write_listed(writer, &CAPTURES, &by)?;
         },
-        | Linearity::Delegated => writer.tag(Tag(4)),
-        | Linearity::AsValue { endpoint } => {
+        Linearity::Delegated => writer.tag(Tag(4)),
+        Linearity::AsValue { endpoint } => {
             writer.tag(Tag(5));
             write_endpoint(writer, endpoint)?;
         },
-        | Linearity::ArmsDisagree {
+        Linearity::ArmsDisagree {
             endpoint,
             first,
             other,
@@ -2644,8 +2642,8 @@ where
             write_site(writer, first)?;
             write_site(writer, other)?;
         },
-        | Linearity::Unrestricted => writer.tag(Tag(7)),
-        | Linearity::Unbound { index } => {
+        Linearity::Unrestricted => writer.tag(Tag(7)),
+        Linearity::Unbound { index } => {
             writer.tag(Tag(8));
             writer.word(Word(u64::from(u32::from(index))));
         },
@@ -2668,31 +2666,31 @@ where
 fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
 {
     Ok(match reader.tag()?.0 {
-        | 0 => Linearity::Residue {
+        0 => Linearity::Residue {
             endpoint: read_endpoint(reader)?,
             state: read_type(reader)?,
         },
-        | 1 => Linearity::Closed {
+        1 => Linearity::Closed {
             endpoint: read_endpoint(reader)?,
         },
-        | 2 => Linearity::UsedTwice {
+        2 => Linearity::UsedTwice {
             endpoint: read_endpoint(reader)?,
         },
-        | 3 => Linearity::Captured {
+        3 => Linearity::Captured {
             endpoint: read_endpoint(reader)?,
             by: read_listed(reader, &CAPTURES)?,
         },
-        | 4 => Linearity::Delegated,
-        | 5 => Linearity::AsValue {
+        4 => Linearity::Delegated,
+        5 => Linearity::AsValue {
             endpoint: read_endpoint(reader)?,
         },
-        | 6 => Linearity::ArmsDisagree {
+        6 => Linearity::ArmsDisagree {
             endpoint: read_endpoint(reader)?,
             first: read_site(reader)?,
             other: read_site(reader)?,
         },
-        | 7 => Linearity::Unrestricted,
-        | 8 => {
+        7 => Linearity::Unrestricted,
+        8 => {
             let word = reader.word()?;
             Linearity::Unbound {
                 index: u32::try_from(word.0)
@@ -2700,7 +2698,7 @@ fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
                     .map_err(|_overflow| CodecError::Corrupt)?,
             }
         },
-        | _ => return Err(CodecError::Corrupt),
+        _ => return Err(CodecError::Corrupt),
     })
 }
 
@@ -2741,8 +2739,8 @@ where
         write_rule_side(writer, rule.right())?;
     }
     match roots.presentation.cells() {
-        | None => writer.tag(Tag(0)),
-        | Some(cells) => {
+        None => writer.tag(Tag(0)),
+        Some(cells) => {
             writer.tag(Tag(1));
             writer.count(Count(usize::from(cells.sort())))?;
             writer.count(Count(cells.cells().len()))?;
@@ -2777,11 +2775,11 @@ where
     writer.count(Count(side.len()))?;
     for &node in side {
         match node {
-            | gandr_core_term::RuleNode::Constructor(tag) => {
+            gandr_core_term::RuleNode::Constructor(tag) => {
                 writer.tag(Tag(0));
                 writer.count(Count(usize::from(tag)))?;
             },
-            | gandr_core_term::RuleNode::Variable(variable) => {
+            gandr_core_term::RuleNode::Variable(variable) => {
                 writer.tag(Tag(1));
                 writer.word(Word(u64::from(u32::from(variable))));
             },
@@ -2824,8 +2822,8 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
     }
     let presentation = gandr_core_term::Presentation::new(rules);
     let presentation = match reader.tag()?.0 {
-        | 0 => presentation,
-        | 1 => {
+        0 => presentation,
+        1 => {
             let sort = gandr_kernel_term::ConstantIndex::from(reader.count()?.0);
             let count = reader.count()?;
             let mut cells = Vec::new();
@@ -2836,7 +2834,7 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
             }
             presentation.carrying(gandr_kernel_term::FreeCells::new(sort, cells))
         },
-        | _ => return Err(CodecError::Corrupt),
+        _ => return Err(CodecError::Corrupt),
     };
     Ok(crate::content::DataRoots {
         parameters,
@@ -2866,15 +2864,15 @@ fn read_rule_side(
     let mut side = Vec::new();
     for _ in 0 .. count.0 {
         let node = match reader.tag()?.0 {
-            | 0 => gandr_core_term::RuleNode::Constructor(gandr_core_term::ConstructorTag::from(
+            0 => gandr_core_term::RuleNode::Constructor(gandr_core_term::ConstructorTag::from(
                 reader.count()?.0,
             )),
-            | 1 => {
+            1 => {
                 let word = reader.word()?;
                 let ordinal = u32::try_from(word.0).map_err(|_overflow| CodecError::Corrupt)?;
                 gandr_core_term::RuleNode::Variable(gandr_core_term::RuleVariable::from(ordinal))
             },
-            | _ => return Err(CodecError::Corrupt),
+            _ => return Err(CodecError::Corrupt),
         };
         side.push(node);
     }
@@ -3202,33 +3200,33 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
 {
     let tag = reader.tag()?;
     let node = match tag.0 {
-        | 0x50 => ContentNode::Data {
+        0x50 => ContentNode::Data {
             declaration: read_reference(reader)?,
             arguments: read_indices(reader)?,
         },
-        | 0x51 => ContentNode::RecordType(read_fields(reader)?),
-        | 0x52 => ContentNode::Constructor {
+        0x51 => ContentNode::RecordType(read_fields(reader)?),
+        0x52 => ContentNode::Constructor {
             datatype: read_index(reader)?,
             tag: gandr_core_term::ConstructorTag::from(reader.count()?.0),
             fields: read_indices(reader)?,
         },
-        | 0x53 => ContentNode::Record(read_fields(reader)?),
-        | 0x54 => ContentNode::DataCase {
+        0x53 => ContentNode::Record(read_fields(reader)?),
+        0x54 => ContentNode::DataCase {
             scrutinee: read_index(reader)?,
             motive: read_index(reader)?,
             branches: read_indices(reader)?,
         },
-        | 0x55 => ContentNode::RecordProjection(read_index(reader)?, read_field_label(reader)?),
-        | 0x5A => ContentNode::TupleProjection(
+        0x55 => ContentNode::RecordProjection(read_index(reader)?, read_field_label(reader)?),
+        0x5A => ContentNode::TupleProjection(
             read_index(reader)?,
             gandr_core_term::Component::from(reader.count()?.0),
         ),
-        | 0x5B => {
+        0x5B => {
             let scrutinee = read_index(reader)?;
             let arity = gandr_core_term::ComponentCount::from(reader.count()?.0);
             ContentNode::Split(scrutinee, arity, read_index(reader)?)
         },
-        | 0x5C => {
+        0x5C => {
             let scrutinee = read_index(reader)?;
             let arity = gandr_core_term::ComponentCount::from(reader.count()?.0);
             let motive = read_index(reader)?;
@@ -3239,71 +3237,71 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 body: read_index(reader)?,
             }
         },
-        | 0x71 => {
+        0x71 => {
             let count = reader.count()?;
             let mut frames = Vec::new();
             for _ in 0 .. count.0 {
                 frames.push(match reader.tag()?.0 {
-                    | 0 => gandr_core_term::control::StackFrame::Apply(read_index(reader)?),
-                    | 1 => gandr_core_term::control::StackFrame::Bind(read_index(reader)?),
-                    | 2 => gandr_core_term::control::StackFrame::Project(match reader.tag()?.0 {
-                        | 0 => Side::Left,
-                        | 1 => Side::Right,
-                        | _ => return Err(CodecError::Corrupt),
+                    0 => gandr_core_term::control::StackFrame::Apply(read_index(reader)?),
+                    1 => gandr_core_term::control::StackFrame::Bind(read_index(reader)?),
+                    2 => gandr_core_term::control::StackFrame::Project(match reader.tag()?.0 {
+                        0 => Side::Left,
+                        1 => Side::Right,
+                        _ => return Err(CodecError::Corrupt),
                     }),
-                    | _ => return Err(CodecError::Corrupt),
+                    _ => return Err(CodecError::Corrupt),
                 });
             }
             ContentNode::Reify(frames.into())
         },
-        | 0x72 => ContentNode::Stack {
+        0x72 => ContentNode::Stack {
             input: read_index(reader)?,
             output: read_index(reader)?,
         },
-        | 0x73 => ContentNode::WithType(read_index(reader)?, read_index(reader)?),
-        | 0x60 => ContentNode::SessionType(read_session_type(reader)?),
-        | 0x61 => ContentNode::Session(read_session_action(reader)?),
-        | 0x62 => ContentNode::SessionRelated {
+        0x73 => ContentNode::WithType(read_index(reader)?, read_index(reader)?),
+        0x60 => ContentNode::SessionType(read_session_type(reader)?),
+        0x61 => ContentNode::Session(read_session_action(reader)?),
+        0x62 => ContentNode::SessionRelated {
             relation: match reader.tag()?.0 {
-                | 0 => SessionRelation::Equivalence,
-                | 1 => SessionRelation::Subtyping,
-                | _ => return Err(CodecError::Corrupt),
+                0 => SessionRelation::Equivalence,
+                1 => SessionRelation::Subtyping,
+                _ => return Err(CodecError::Corrupt),
             },
             source: read_index(reader)?,
             target: read_index(reader)?,
         },
-        | 0x63 => ContentNode::Stay(read_index(reader)?),
-        | 0x64 => ContentNode::Then(read_index(reader)?, read_index(reader)?),
-        | 0x69 => ContentNode::Forward(read_index(reader)?),
-        | 0x6A => ContentNode::FunctionFlow(read_index(reader)?, read_index(reader)?),
-        | 0x6B => ContentNode::FlowProduct(read_index(reader)?, read_index(reader)?),
-        | 0x65 => {
+        0x63 => ContentNode::Stay(read_index(reader)?),
+        0x64 => ContentNode::Then(read_index(reader)?, read_index(reader)?),
+        0x69 => ContentNode::Forward(read_index(reader)?),
+        0x6A => ContentNode::FunctionFlow(read_index(reader)?, read_index(reader)?),
+        0x6B => ContentNode::FlowProduct(read_index(reader)?, read_index(reader)?),
+        0x65 => {
             let count = reader.count()?;
             let mut moves = Vec::new();
             for _ in 0 .. count.0 {
                 moves.push(match reader.tag()?.0 {
-                    | 0 => RecordedMove::Sent(read_index(reader)?),
-                    | 1 => RecordedMove::Received(read_index(reader)?),
-                    | 2 => RecordedMove::Selected(read_field_label(reader)?),
-                    | 3 => RecordedMove::Offered(read_field_label(reader)?),
-                    | 4 => RecordedMove::Closed,
-                    | _ => return Err(CodecError::Corrupt),
+                    0 => RecordedMove::Sent(read_index(reader)?),
+                    1 => RecordedMove::Received(read_index(reader)?),
+                    2 => RecordedMove::Selected(read_field_label(reader)?),
+                    3 => RecordedMove::Offered(read_field_label(reader)?),
+                    4 => RecordedMove::Closed,
+                    _ => return Err(CodecError::Corrupt),
                 });
             }
             ContentNode::Recorded(moves.into())
         },
-        | 0x66 => ContentNode::Ride {
+        0x66 => ContentNode::Ride {
             motive: read_index(reader)?,
             flow: read_index(reader)?,
             value: read_index(reader)?,
         },
-        | 0x67 => ContentNode::FlowType {
+        0x67 => ContentNode::FlowType {
             carrier: read_index(reader)?,
             source: read_index(reader)?,
             target: read_index(reader)?,
         },
-        | 0x68 => ContentNode::RunType(read_index(reader)?),
-        | 0x74 => {
+        0x68 => ContentNode::RunType(read_index(reader)?),
+        0x74 => {
             let payload = read_index(reader)?;
             let signature = read_effect_signature(reader)?;
             let operation = gandr_core_term::effect::OperationName::from(
@@ -3316,7 +3314,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 payload,
             }
         },
-        | 0x75 | 0x7C => {
+        0x75 | 0x7C => {
             let subject = read_index(reader)?;
             let on_return = read_index(reader)?;
             let signature = read_effect_signature(reader)?;
@@ -3349,7 +3347,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 }
             }
         },
-        | 0x7B => {
+        0x7B => {
             let capability = read_index(reader)?;
             let payload = read_index(reader)?;
             let signature = read_effect_signature(reader)?;
@@ -3364,24 +3362,24 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 payload,
             }
         },
-        | 0x7D => {
+        0x7D => {
             use gandr_core_term::effect::capability::CapabilityGrade;
             use gandr_core_term::effect::capability::Region;
             use gandr_core_term::effect::capability::RegionDepth;
             let authority = read_effect_row(reader)?;
             let grade = match reader.tag()?.0 {
-                | 0 => CapabilityGrade::Durable,
-                | 1 => CapabilityGrade::Consumable,
-                | _ => return Err(CodecError::Corrupt),
+                0 => CapabilityGrade::Durable,
+                1 => CapabilityGrade::Consumable,
+                _ => return Err(CodecError::Corrupt),
             };
             let region = match reader.tag()?.0 {
-                | 0 => Region::Held,
-                | 1 => {
+                0 => Region::Held,
+                1 => {
                     let depth =
                         u32::try_from(reader.word()?.0).map_err(|_overflow| CodecError::Corrupt)?;
                     Region::Scoped(RegionDepth::from(depth))
                 },
-                | _ => return Err(CodecError::Corrupt),
+                _ => return Err(CodecError::Corrupt),
             };
             ContentNode::Capability {
                 authority,
@@ -3389,19 +3387,19 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 region,
             }
         },
-        | 0x76 => ContentNode::Resume(read_index(reader)?, read_index(reader)?),
-        | 0x77 => ContentNode::Reset(read_index(reader)?),
-        | 0x78 => ContentNode::Shift(read_index(reader)?),
-        | 0x79 => ContentNode::With(read_index(reader)?, read_index(reader)?),
-        | 0x7A => {
+        0x76 => ContentNode::Resume(read_index(reader)?, read_index(reader)?),
+        0x77 => ContentNode::Reset(read_index(reader)?),
+        0x78 => ContentNode::Shift(read_index(reader)?),
+        0x79 => ContentNode::With(read_index(reader)?, read_index(reader)?),
+        0x7A => {
             let side = match reader.tag()?.0 {
-                | 0 => Side::Left,
-                | 1 => Side::Right,
-                | _ => return Err(CodecError::Corrupt),
+                0 => Side::Left,
+                1 => Side::Right,
+                _ => return Err(CodecError::Corrupt),
             };
             ContentNode::Project(side, read_index(reader)?)
         },
-        | 0x0D | 0x16 => {
+        0x0D | 0x16 => {
             use gandr_core_term::primitive::Arguments;
             use gandr_core_term::primitive::PRELUDE;
             let name = reader.bytes()?;
@@ -3415,19 +3413,19 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             }
             else {
                 let arguments = match reader.tag()?.0 {
-                    | 1 => Arguments::Unary(read_index(reader)?),
-                    | 2 => Arguments::Binary([read_index(reader)?, read_index(reader)?]),
-                    | _ => return Err(CodecError::Corrupt),
+                    1 => Arguments::Unary(read_index(reader)?),
+                    2 => Arguments::Binary([read_index(reader)?, read_index(reader)?]),
+                    _ => return Err(CodecError::Corrupt),
                 };
                 ContentNode::Primitive(primitive, arguments)
             }
         },
-        | 0x01 => {
+        0x01 => {
             let zone = reader.tag()?;
             let zone = match zone.0 {
-                | 0 => Zone::Intuitionistic,
-                | 1 => Zone::Linear,
-                | _ => return Err(CodecError::Corrupt),
+                0 => Zone::Intuitionistic,
+                1 => Zone::Linear,
+                _ => return Err(CodecError::Corrupt),
             };
             let index = reader.word()?;
             let index = u32::try_from(index.0).map_err(|_overflow| CodecError::Corrupt)?;
@@ -3436,136 +3434,136 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 index: DeBruijnIndex::from(index),
             }
         },
-        | 0x02 => {
+        0x02 => {
             let reference = read_reference(reader)?;
             ContentNode::Constant(reference)
         },
-        | 0x04 => {
+        0x04 => {
             let literal = read_literal(reader)?;
             ContentNode::Literal(literal)
         },
-        | 0x05 => ContentNode::Tuple(read_indices(reader)?),
-        | 0x06 => {
+        0x05 => ContentNode::Tuple(read_indices(reader)?),
+        0x06 => {
             let summand = Summand::from(reader.count()?.0);
             let body = read_index(reader)?;
             ContentNode::Injection(summand, body)
         },
-        | 0x07 => {
+        0x07 => {
             let body = read_index(reader)?;
             ContentNode::Thunk(body)
         },
-        | 0x08 => {
+        0x08 => {
             let target = read_level(reader)?;
             let body = read_index(reader)?;
             ContentNode::ValueLift { target, body }
         },
-        | 0x09 => {
+        0x09 => {
             let quoted = read_index(reader)?;
             ContentNode::Quote(quoted)
         },
-        | 0x0A => {
+        0x0A => {
             let quoted = read_index(reader)?;
             ContentNode::QuoteComputation(quoted)
         },
-        | 0x0B => {
+        0x0B => {
             let body = read_index(reader)?;
             ContentNode::StaticLambda(body)
         },
-        | 0x0C => {
+        0x0C => {
             let head = read_index(reader)?;
             let argument = read_index(reader)?;
             ContentNode::StaticApplication(head, argument)
         },
-        | 0x0E => ContentNode::Hole(read_hole(reader)?),
-        | 0x0F => {
+        0x0E => ContentNode::Hole(read_hole(reader)?),
+        0x0F => {
             let mark = read_mark(reader)?;
             let body = read_index(reader)?;
             ContentNode::ValueMark { mark, body }
         },
-        | 0x10 => {
+        0x10 => {
             let body = read_index(reader)?;
             ContentNode::Lambda(body)
         },
-        | 0x11 => {
+        0x11 => {
             let head = read_index(reader)?;
             let argument = read_index(reader)?;
             ContentNode::Application(head, argument)
         },
-        | 0x12 => {
+        0x12 => {
             let value = read_index(reader)?;
             ContentNode::Return(value)
         },
-        | 0x13 => {
+        0x13 => {
             let bound = read_index(reader)?;
             let rest = read_index(reader)?;
             ContentNode::Bind(bound, rest)
         },
-        | 0x14 => {
+        0x14 => {
             let value = read_index(reader)?;
             ContentNode::Force(value)
         },
-        | 0x15 => {
+        0x15 => {
             let scrutinee = read_index(reader)?;
             ContentNode::Case {
                 scrutinee,
                 branches: read_indices(reader)?,
             }
         },
-        | 0x17 => ContentNode::ComputationHole(read_hole(reader)?),
-        | 0x18 => {
+        0x17 => ContentNode::ComputationHole(read_hole(reader)?),
+        0x18 => {
             let mark = read_mark(reader)?;
             let body = read_index(reader)?;
             ContentNode::ComputationMark { mark, body }
         },
-        | 0x19 => {
+        0x19 => {
             let evidence = read_listed(reader, &EVIDENCES)?;
             let body = read_index(reader)?;
             ContentNode::Fixpoint { body, evidence }
         },
-        | 0x20 => {
+        0x20 => {
             let base = reader.tag()?;
             ContentNode::Base(match base.0 {
-                | 0 => BaseType::Integer,
-                | 1 => BaseType::String,
-                | 2 => BaseType::Numeric,
-                | _ => return Err(CodecError::Corrupt),
+                0 => BaseType::Integer,
+                1 => BaseType::String,
+                2 => BaseType::Numeric,
+                _ => return Err(CodecError::Corrupt),
             })
         },
-        | 0x22 => ContentNode::Product(read_indices(reader)?),
-        | 0x23 => ContentNode::Sum(read_indices(reader)?),
-        | 0x24 => {
+        0x22 => ContentNode::Product(read_indices(reader)?),
+        0x23 => ContentNode::Sum(read_indices(reader)?),
+        0x24 => {
             let body = read_index(reader)?;
             ContentNode::ThunkType(body)
         },
-        | 0x25 => {
+        0x25 => {
             let level = read_level(reader)?;
             ContentNode::Universe {
                 sort: TypeSort::Ground(GroundSort::Value),
                 level,
             }
         },
-        | 0x26 => {
+        0x26 => {
             let inner = read_index(reader)?;
             let target = read_level(reader)?;
             ContentNode::TypeLift { inner, target }
         },
-        | 0x27 => {
+        0x27 => {
             let code = read_index(reader)?;
             let target = read_level(reader)?;
             ContentNode::Element { code, target }
         },
-        | 0x28 => {
+        0x28 => {
             let reference = read_reference(reader)?;
             ContentNode::Abstract(reference)
         },
-        | 0x29 => {
+        0x29 => {
             let level = read_level(reader)?;
             ContentNode::Universe {
                 sort: TypeSort::Ground(GroundSort::Computation),
                 level,
             }
         },
-        | 0x2A => {
+        0x2A => {
             let parameter = reader.word()?;
             let parameter = u32::try_from(parameter.0).map_err(|_overflow| CodecError::Corrupt)?;
             let level = read_level(reader)?;
@@ -3574,35 +3572,35 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 level,
             }
         },
-        | 0x2B => {
+        0x2B => {
             let domain = read_index(reader)?;
             let codomain = read_index(reader)?;
             ContentNode::StaticPi { domain, codomain }
         },
-        | 0x2D => {
+        0x2D => {
             let first = read_index(reader)?;
             let second = read_index(reader)?;
             ContentNode::Sigma { first, second }
         },
-        | 0x2C => ContentNode::UnknownType,
-        | 0x56 => ContentNode::List(read_index(reader)?),
-        | 0x57 => ContentNode::ListNil,
-        | 0x58 => ContentNode::ListCons(read_index(reader)?, read_index(reader)?),
-        | 0x59 => ContentNode::ListFold {
+        0x2C => ContentNode::UnknownType,
+        0x56 => ContentNode::List(read_index(reader)?),
+        0x57 => ContentNode::ListNil,
+        0x58 => ContentNode::ListCons(read_index(reader)?, read_index(reader)?),
+        0x59 => ContentNode::ListFold {
             element: read_index(reader)?,
             result: read_index(reader)?,
             list: read_index(reader)?,
             on_nil: read_index(reader)?,
             on_cons: read_index(reader)?,
         },
-        | 0x30 => {
+        0x30 => {
             let result = read_index(reader)?;
             ContentNode::Returner {
                 result,
                 effects: gandr_core_term::effect::EffectRow::EMPTY,
             }
         },
-        | 0x70 => {
+        0x70 => {
             let result = read_index(reader)?;
             let effects = read_effect_row(reader)?;
             if effects.purity() == gandr_core_term::effect::Purity::Pure {
@@ -3610,25 +3608,25 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             }
             ContentNode::Returner { result, effects }
         },
-        | 0x31 => {
+        0x31 => {
             let domain = read_index(reader)?;
             let codomain = read_index(reader)?;
             ContentNode::Arrow { domain, codomain }
         },
-        | 0x32 => {
+        0x32 => {
             let domain = read_index(reader)?;
             let codomain = read_index(reader)?;
             ContentNode::Pi { domain, codomain }
         },
-        | 0x33 => {
+        0x33 => {
             let code = read_index(reader)?;
             let target = read_level(reader)?;
             ContentNode::ComputationElement { code, target }
         },
-        | 0x34 => ContentNode::UnknownComputationType,
-        | 0x40 => ContentNode::PathUniverse(read_index(reader)?, read_index(reader)?),
-        | 0x41 => ContentNode::PathRefl(read_index(reader)?),
-        | 0x42 => {
+        0x34 => ContentNode::UnknownComputationType,
+        0x40 => ContentNode::PathUniverse(read_index(reader)?, read_index(reader)?),
+        0x41 => ContentNode::PathRefl(read_index(reader)?),
+        0x42 => {
             let path_type = read_index(reader)?;
             let forward = read_index(reader)?;
             let backward = read_index(reader)?;
@@ -3655,32 +3653,32 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 evidence: alloc::sync::Arc::new(evidence),
             }
         },
-        | 0x43 => ContentNode::PathProduct(read_index(reader)?, read_index(reader)?),
-        | 0x44 => ContentNode::Transport(read_index(reader)?, read_index(reader)?),
-        | 0x45 => ContentNode::PathType {
+        0x43 => ContentNode::PathProduct(read_index(reader)?, read_index(reader)?),
+        0x44 => ContentNode::Transport(read_index(reader)?, read_index(reader)?),
+        0x45 => ContentNode::PathType {
             carrier: read_index(reader)?,
             left: read_index(reader)?,
             right: read_index(reader)?,
         },
-        | 0x46 => ContentNode::Here(read_index(reader)?),
-        | 0x47 => ContentNode::ElementTransport {
+        0x46 => ContentNode::Here(read_index(reader)?),
+        0x47 => ContentNode::ElementTransport {
             motive: read_index(reader)?,
             path: read_index(reader)?,
             value: read_index(reader)?,
         },
-        | 0x48 => ContentNode::Returned(read_index(reader)?),
-        | 0x4D => ContentNode::Nested(read_index(reader)?),
-        | 0x4E => ContentNode::Run(read_index(reader)?),
-        | 0x49 => ContentNode::Funext(read_index(reader)?, read_index(reader)?),
-        | 0x4A => ContentNode::Equiv(read_index(reader)?, read_index(reader)?),
-        | 0x4B => ContentNode::TelescopeTransport {
+        0x48 => ContentNode::Returned(read_index(reader)?),
+        0x4D => ContentNode::Nested(read_index(reader)?),
+        0x4E => ContentNode::Run(read_index(reader)?),
+        0x49 => ContentNode::Funext(read_index(reader)?, read_index(reader)?),
+        0x4A => ContentNode::Equiv(read_index(reader)?, read_index(reader)?),
+        0x4B => ContentNode::TelescopeTransport {
             motive: read_index(reader)?,
             path: read_index(reader)?,
             start: read_index(reader)?,
             over: read_index(reader)?,
             value: read_index(reader)?,
         },
-        | 0x4C => {
+        0x4C => {
             let stratum = gandr_core_term::ua::Stratum {
                 degree: gandr_theory_sites::Degree::from(reader.count()?.0),
                 bound: gandr_theory_sites::ShapeSize::from(reader.count()?.0),
@@ -3694,7 +3692,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 backward: read_index(reader)?,
             }
         },
-        | _ => return Err(CodecError::Corrupt),
+        _ => return Err(CodecError::Corrupt),
     };
     Ok(node)
 }
@@ -3845,8 +3843,8 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
     for node in &nodes {
         for (child, sort) in node.children().iter() {
             match nodes.get(usize::from(child)) {
-                | Some(found) if found.sort() == sort => {},
-                | Some(_) | None => return Err(CodecError::Corrupt),
+                Some(found) if found.sort() == sort => {},
+                Some(_) | None => return Err(CodecError::Corrupt),
             }
         }
     }
@@ -4006,7 +4004,7 @@ where
 {
     write_reference(writer, content.reference())?;
     match *(content.declaration()) {
-        | crate::content::DeclarationRoots::Value {
+        crate::content::DeclarationRoots::Value {
             ref signature,
             ref body,
             ref laws,
@@ -4015,18 +4013,18 @@ where
             // takes its own, with the laws after the body.
             writer.tag(Tag(if laws.is_empty() { 0 } else { 3 }));
             match *signature {
-                | Maybe::Present(root) => {
+                Maybe::Present(root) => {
                     writer.tag(Tag(1));
                     write_index(writer, root)?;
                 },
-                | Maybe::Absent(signature::Absent::Unsigned) => writer.tag(Tag(0)),
+                Maybe::Absent(signature::Absent::Unsigned) => writer.tag(Tag(0)),
             }
             match *body {
-                | Maybe::Present(root) => {
+                Maybe::Present(root) => {
                     writer.tag(Tag(1));
                     write_index(writer, root)?;
                 },
-                | Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
+                Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
             }
             if !laws.is_empty() {
                 writer.count(Count(laws.len()))?;
@@ -4035,11 +4033,11 @@ where
                 }
             }
         },
-        | crate::content::DeclarationRoots::Data(ref roots) => {
+        crate::content::DeclarationRoots::Data(ref roots) => {
             writer.tag(Tag(1));
             write_data_roots(writer, roots)?;
         },
-        | crate::content::DeclarationRoots::Abstract(roots) => {
+        crate::content::DeclarationRoots::Abstract(roots) => {
             writer.tag(Tag(2));
             write_index(writer, roots.kind)?;
             write_index(writer, roots.representation)?;
@@ -4125,16 +4123,16 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
 {
     let reference = read_reference(reader)?;
     let declaration = match reader.tag()?.0 {
-        | tag @ (0 | 3) => {
+        tag @ (0 | 3) => {
             let signature = match reader.tag()?.0 {
-                | 0 => Maybe::Absent(signature::Absent::Unsigned),
-                | 1 => Maybe::Present(read_index(reader)?),
-                | _ => return Err(CodecError::Corrupt),
+                0 => Maybe::Absent(signature::Absent::Unsigned),
+                1 => Maybe::Present(read_index(reader)?),
+                _ => return Err(CodecError::Corrupt),
             };
             let body = match reader.tag()?.0 {
-                | 0 => Maybe::Absent(body::Absent::Hole),
-                | 1 => Maybe::Present(read_index(reader)?),
-                | _ => return Err(CodecError::Corrupt),
+                0 => Maybe::Absent(body::Absent::Hole),
+                1 => Maybe::Present(read_index(reader)?),
+                _ => return Err(CodecError::Corrupt),
             };
             let mut laws = Vec::new();
             if tag == 3 {
@@ -4152,8 +4150,8 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 laws,
             }
         },
-        | 1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),
-        | 2 => {
+        1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),
+        2 => {
             let kind = read_index(reader)?;
             let representation = read_index(reader)?;
             let extent = gandr_kernel_term::SealExtent::from(reader.count()?.0);
@@ -4166,7 +4164,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 site: gandr_core_checker::SealSite::new(sealing, component),
             })
         },
-        | _ => return Err(CodecError::Corrupt),
+        _ => return Err(CodecError::Corrupt),
     };
     let nodes = read_nodes(reader)?;
     for (root, sort) in declaration.iter() {
@@ -4206,8 +4204,8 @@ fn root_of_sort(
 ) -> Result<(), CodecError>
 {
     match nodes.get(usize::from(root)) {
-        | Some(node) if node.sort() == sort => Ok(()),
-        | Some(_) | None => Err(CodecError::Corrupt),
+        Some(node) if node.sort() == sort => Ok(()),
+        Some(_) | None => Err(CodecError::Corrupt),
     }
 }
 
@@ -4295,8 +4293,8 @@ fn read_type(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
 {
     let nodes = read_nodes(reader)?;
     match nodes.first().map(ContentNode::sort) {
-        | Some(Sort::ValueType | Sort::CompType) => {},
-        | Some(Sort::Value | Sort::Computation) | None => return Err(CodecError::Corrupt),
+        Some(Sort::ValueType | Sort::CompType) => {},
+        Some(Sort::Value | Sort::Computation) | None => return Err(CodecError::Corrupt),
     }
     check_discovery(&nodes, core::iter::once(NodeIndex::from(0_usize)))?;
     Ok(TypeContent::from_nodes(nodes))
@@ -4435,12 +4433,12 @@ where
     write_references(writer, footprint.reads())?;
     write_references(writer, footprint.type_reads())?;
     writer.tag(match footprint.opacity() {
-        | Opacity::Transparent => Tag(0),
-        | Opacity::Opaque => Tag(1),
+        Opacity::Transparent => Tag(0),
+        Opacity::Opaque => Tag(1),
     });
     writer.tag(match footprint.hole() {
-        | HoleMark::Filled => Tag(0),
-        | HoleMark::Hole => Tag(1),
+        HoleMark::Filled => Tag(0),
+        HoleMark::Hole => Tag(1),
     });
     Ok(())
 }
@@ -4488,15 +4486,15 @@ fn read_footprint(reader: &mut Reader<'_>) -> Result<Footprint, CodecError>
     let type_reads = read_references(reader)?;
     let opacity = reader.tag()?;
     let opacity = match opacity.0 {
-        | 0 => Opacity::Transparent,
-        | 1 => Opacity::Opaque,
-        | _ => return Err(CodecError::Corrupt),
+        0 => Opacity::Transparent,
+        1 => Opacity::Opaque,
+        _ => return Err(CodecError::Corrupt),
     };
     let hole = reader.tag()?;
     let hole = match hole.0 {
-        | 0 => HoleMark::Filled,
-        | 1 => HoleMark::Hole,
-        | _ => return Err(CodecError::Corrupt),
+        0 => HoleMark::Filled,
+        1 => HoleMark::Hole,
+        _ => return Err(CodecError::Corrupt),
     };
     Ok(Footprint::from_parts(reads, type_reads, opacity, hole))
 }
@@ -4531,11 +4529,11 @@ where
     Out: Sink,
 {
     match site {
-        | Site::Node(index) => {
+        Site::Node(index) => {
             writer.tag(Tag(0));
             write_index(writer, index)?;
         },
-        | Site::Unreached => writer.tag(Tag(1)),
+        Site::Unreached => writer.tag(Tag(1)),
     }
     Ok(())
 }
@@ -4575,12 +4573,12 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 {
     let tag = reader.tag()?;
     match tag.0 {
-        | 0 => {
+        0 => {
             let index = read_index(reader)?;
             Ok(Site::Node(index))
         },
-        | 1 => Ok(Site::Unreached),
-        | _ => Err(CodecError::Corrupt),
+        1 => Ok(Site::Unreached),
+        _ => Err(CodecError::Corrupt),
     }
 }
 
@@ -4703,11 +4701,11 @@ where
     Out: Sink,
 {
     match site {
-        | OccurrenceSite::Parameter(position) => {
+        OccurrenceSite::Parameter(position) => {
             writer.tag(Tag(0));
             writer.count(Count(usize::from(position)))?;
         },
-        | OccurrenceSite::Field { tag, field } => {
+        OccurrenceSite::Field { tag, field } => {
             writer.tag(Tag(1));
             writer.count(Count(usize::from(tag)))?;
             writer.count(Count(usize::from(field)))?;
@@ -4736,10 +4734,10 @@ fn read_occurrence_site(reader: &mut Reader<'_>) -> Result<OccurrenceSite, Codec
 {
     let tag = reader.tag()?;
     match tag.0 {
-        | 0 => Ok(OccurrenceSite::Parameter(ParameterPosition::from(
+        0 => Ok(OccurrenceSite::Parameter(ParameterPosition::from(
             reader.count()?.0,
         ))),
-        | 1 => {
+        1 => {
             let constructor = ConstructorTag::from(reader.count()?.0);
             let field = FieldPosition::from(reader.count()?.0);
             Ok(OccurrenceSite::Field {
@@ -4747,7 +4745,7 @@ fn read_occurrence_site(reader: &mut Reader<'_>) -> Result<OccurrenceSite, Codec
                 field,
             })
         },
-        | _ => Err(CodecError::Corrupt),
+        _ => Err(CodecError::Corrupt),
     }
 }
 
@@ -4775,16 +4773,16 @@ where
     Out: Sink,
 {
     match reason {
-        | gandr_kernel_term::Apartness::Apart => writer.tag(Tag(0)),
-        | gandr_kernel_term::Apartness::Agree => writer.tag(Tag(1)),
-        | gandr_kernel_term::Apartness::Open => writer.tag(Tag(2)),
-        | gandr_kernel_term::Apartness::Leaf => writer.tag(Tag(3)),
-        | gandr_kernel_term::Apartness::Diverges { outer, inner } => {
+        gandr_kernel_term::Apartness::Apart => writer.tag(Tag(0)),
+        gandr_kernel_term::Apartness::Agree => writer.tag(Tag(1)),
+        gandr_kernel_term::Apartness::Open => writer.tag(Tag(2)),
+        gandr_kernel_term::Apartness::Leaf => writer.tag(Tag(3)),
+        gandr_kernel_term::Apartness::Diverges { outer, inner } => {
             writer.tag(Tag(4));
             writer.count(Count(usize::from(outer)))?;
             writer.count(Count(usize::from(inner)))?;
         },
-        | gandr_kernel_term::Apartness::Undecided => writer.tag(Tag(5)),
+        gandr_kernel_term::Apartness::Undecided => writer.tag(Tag(5)),
     }
     Ok(())
 }
@@ -4808,17 +4806,17 @@ fn read_apartness(reader: &mut Reader<'_>) -> Result<gandr_kernel_term::Apartnes
 {
     let tag = reader.tag()?;
     match tag.0 {
-        | 0 => Ok(gandr_kernel_term::Apartness::Apart),
-        | 1 => Ok(gandr_kernel_term::Apartness::Agree),
-        | 2 => Ok(gandr_kernel_term::Apartness::Open),
-        | 3 => Ok(gandr_kernel_term::Apartness::Leaf),
-        | 4 => {
+        0 => Ok(gandr_kernel_term::Apartness::Apart),
+        1 => Ok(gandr_kernel_term::Apartness::Agree),
+        2 => Ok(gandr_kernel_term::Apartness::Open),
+        3 => Ok(gandr_kernel_term::Apartness::Leaf),
+        4 => {
             let outer = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
             let inner = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
             Ok(gandr_kernel_term::Apartness::Diverges { outer, inner })
         },
-        | 5 => Ok(gandr_kernel_term::Apartness::Undecided),
-        | _ => Err(CodecError::Corrupt),
+        5 => Ok(gandr_kernel_term::Apartness::Undecided),
+        _ => Err(CodecError::Corrupt),
     }
 }
 
@@ -4972,45 +4970,45 @@ where
     Out: Sink,
 {
     match *refusal {
-        | Refusal::NotADataType(ref reference) => {
+        Refusal::NotADataType(ref reference) => {
             writer.tag(Tag(19));
             write_reference(writer, reference)?;
         },
-        | Refusal::DataKindNotUniverse(at) => {
+        Refusal::DataKindNotUniverse(at) => {
             writer.tag(Tag(20));
             write_site(writer, at)?;
         },
-        | Refusal::DataFieldLevel { field, ref kind } => {
+        Refusal::DataFieldLevel { field, ref kind } => {
             writer.tag(Tag(21));
             write_site(writer, field)?;
             write_type(writer, kind)?;
         },
-        | Refusal::RuleNotPresentable { kind, refusal } => {
+        Refusal::RuleNotPresentable { kind, refusal } => {
             writer.tag(Tag(72));
             write_site(writer, kind)?;
             writer.count(Count(usize::from(refusal.rule)))?;
             write_listed(writer, &RULE_FAULTS, &refusal.fault)?;
         },
-        | Refusal::RuleNotRespected { at, rule } => {
+        Refusal::RuleNotRespected { at, rule } => {
             writer.tag(Tag(73));
             write_site(writer, at)?;
             writer.count(Count(usize::from(rule)))?;
         },
-        | Refusal::NotApart { at, reason } => {
+        Refusal::NotApart { at, reason } => {
             writer.tag(Tag(74));
             write_site(writer, at)?;
             write_apartness(writer, reason)?;
         },
-        | Refusal::LoopNotRespected { at, cell } => {
+        Refusal::LoopNotRespected { at, cell } => {
             writer.tag(Tag(75));
             write_site(writer, at)?;
             writer.count(Count(usize::from(cell)))?;
         },
-        | Refusal::AbstractKindNotUniverse(at) => {
+        Refusal::AbstractKindNotUniverse(at) => {
             writer.tag(Tag(48));
             write_site(writer, at)?;
         },
-        | Refusal::RepresentationAboveKind {
+        Refusal::RepresentationAboveKind {
             representation,
             ref kind,
         } => {
@@ -5018,46 +5016,46 @@ where
             write_site(writer, representation)?;
             write_type(writer, kind)?;
         },
-        | Refusal::NotAnAbstractType(ref reference) => {
+        Refusal::NotAnAbstractType(ref reference) => {
             writer.tag(Tag(50));
             write_reference(writer, reference)?;
         },
-        | Refusal::SealSiteRepeated(site) => {
+        Refusal::SealSiteRepeated(site) => {
             writer.tag(Tag(51));
             writer.count(Count(usize::from(site.sealing())))?;
             writer.count(Count(usize::from(site.component())))?;
         },
-        | Refusal::DataArgumentArity(at) => {
+        Refusal::DataArgumentArity(at) => {
             writer.tag(Tag(22));
             write_site(writer, at)?;
         },
-        | Refusal::UnknownConstructor { at, tag } => {
+        Refusal::UnknownConstructor { at, tag } => {
             writer.tag(Tag(23));
             write_site(writer, at)?;
             writer.count(Count(usize::from(tag)))?;
         },
-        | Refusal::ConstructorArity(at) => {
+        Refusal::ConstructorArity(at) => {
             writer.tag(Tag(24));
             write_site(writer, at)?;
         },
-        | Refusal::NonExhaustiveDataCase(at) => {
+        Refusal::NonExhaustiveDataCase(at) => {
             writer.tag(Tag(25));
             write_site(writer, at)?;
         },
-        | Refusal::AbsentRecordField(at) => {
+        Refusal::AbsentRecordField(at) => {
             writer.tag(Tag(26));
             write_site(writer, at)?;
         },
-        | Refusal::AbsentTupleComponent(at) => {
+        Refusal::AbsentTupleComponent(at) => {
             writer.tag(Tag(39));
             write_site(writer, at)?;
         },
-        | Refusal::MissingRecordField { at, ref expected } => {
+        Refusal::MissingRecordField { at, ref expected } => {
             writer.tag(Tag(27));
             write_site(writer, at)?;
             write_type(writer, expected)?;
         },
-        | Refusal::EffectSignatureConflict {
+        Refusal::EffectSignatureConflict {
             at,
             ref first,
             ref second,
@@ -5067,19 +5065,19 @@ where
             write_type(writer, first)?;
             write_type(writer, second)?;
         },
-        | Refusal::UnknownOperation { at } => {
+        Refusal::UnknownOperation { at } => {
             writer.tag(Tag(35));
             write_site(writer, at)?;
         },
-        | Refusal::HandlerCoverage { at } => {
+        Refusal::HandlerCoverage { at } => {
             writer.tag(Tag(36));
             write_site(writer, at)?;
         },
-        | Refusal::ShiftWithoutReset { at } => {
+        Refusal::ShiftWithoutReset { at } => {
             writer.tag(Tag(37));
             write_site(writer, at)?;
         },
-        | Refusal::DependentStack {
+        Refusal::DependentStack {
             at,
             ref synthesised,
         } => {
@@ -5087,17 +5085,17 @@ where
             write_site(writer, at)?;
             write_type(writer, synthesised)?;
         },
-        | Refusal::PathCode(site) => {
+        Refusal::PathCode(site) => {
             writer.tag(Tag(18));
             write_site(writer, site)?;
         },
-        | Refusal::EndpointMismatch { at, left, right } => {
+        Refusal::EndpointMismatch { at, left, right } => {
             writer.tag(Tag(40));
             write_site(writer, at)?;
             write_site(writer, left)?;
             write_site(writer, right)?;
         },
-        | Refusal::CompoundEndpoint {
+        Refusal::CompoundEndpoint {
             at,
             ref synthesised,
         } => {
@@ -5105,30 +5103,30 @@ where
             write_site(writer, at)?;
             write_type(writer, synthesised)?;
         },
-        | Refusal::FunextUnsupported { at, ref classifier } => {
+        Refusal::FunextUnsupported { at, ref classifier } => {
             writer.tag(Tag(43));
             write_site(writer, at)?;
             write_type(writer, classifier)?;
         },
-        | Refusal::PointwiseDistinct(site) => {
+        Refusal::PointwiseDistinct(site) => {
             writer.tag(Tag(44));
             write_site(writer, site)?;
         },
-        | Refusal::EquivUnsupported { at, ref classifier } => {
+        Refusal::EquivUnsupported { at, ref classifier } => {
             writer.tag(Tag(45));
             write_site(writer, at)?;
             write_type(writer, classifier)?;
         },
-        | Refusal::UncertifiedStratum { at, ref code } => {
+        Refusal::UncertifiedStratum { at, ref code } => {
             writer.tag(Tag(46));
             write_site(writer, at)?;
             write_type(writer, code)?;
         },
-        | Refusal::RoundTripDistinct(site) => {
+        Refusal::RoundTripDistinct(site) => {
             writer.tag(Tag(47));
             write_site(writer, site)?;
         },
-        | Refusal::NotOver {
+        Refusal::NotOver {
             at,
             ref synthesised,
             ref expected,
@@ -5138,21 +5136,21 @@ where
             write_type(writer, synthesised)?;
             write_type(writer, expected)?;
         },
-        | Refusal::UaUncertified { at, stratum } => {
+        Refusal::UaUncertified { at, stratum } => {
             writer.tag(Tag(53));
             write_site(writer, at)?;
             write_stratum_defect(writer, stratum)?;
         },
-        | Refusal::UaInequivalent { at, defect } => {
+        Refusal::UaInequivalent { at, defect } => {
             writer.tag(Tag(54));
             write_site(writer, at)?;
             write_ua_defect(writer, defect)?;
         },
-        | Refusal::UnenclosedRun { at } => {
+        Refusal::UnenclosedRun { at } => {
             writer.tag(Tag(55));
             write_site(writer, at)?;
         },
-        | Refusal::TypeMismatch {
+        Refusal::TypeMismatch {
             at,
             ref synthesised,
             ref expected,
@@ -5162,7 +5160,7 @@ where
             write_type(writer, synthesised)?;
             write_type(writer, expected)?;
         },
-        | Refusal::ShapeMismatch {
+        Refusal::ShapeMismatch {
             at,
             wanted,
             ref found,
@@ -5172,95 +5170,95 @@ where
             write_listed(writer, &SHAPES, &wanted)?;
             write_type(writer, found)?;
         },
-        | Refusal::NotSynthesisable { form } => {
+        Refusal::NotSynthesisable { form } => {
             writer.tag(Tag(2));
             match form {
-                | Form::Reify(site) => {
+                Form::Reify(site) => {
                     writer.tag(Tag(9));
                     write_site(writer, site)?;
                 },
-                | Form::Handle(site) => {
+                Form::Handle(site) => {
                     writer.tag(Tag(10));
                     write_site(writer, site)?;
                 },
-                | Form::Reset(site) => {
+                Form::Reset(site) => {
                     writer.tag(Tag(11));
                     write_site(writer, site)?;
                 },
-                | Form::Shift(site) => {
+                Form::Shift(site) => {
                     writer.tag(Tag(12));
                     write_site(writer, site)?;
                 },
-                | Form::With(site) => {
+                Form::With(site) => {
                     writer.tag(Tag(13));
                     write_site(writer, site)?;
                 },
-                | Form::List(site) => {
+                Form::List(site) => {
                     writer.tag(Tag(8));
                     write_site(writer, site)?;
                 },
-                | Form::Injection(site) => {
+                Form::Injection(site) => {
                     writer.tag(Tag(5));
                     write_site(writer, site)?;
                 },
-                | Form::Case(site) => {
+                Form::Case(site) => {
                     writer.tag(Tag(6));
                     write_site(writer, site)?;
                 },
-                | Form::Split(site) => {
+                Form::Split(site) => {
                     writer.tag(Tag(14));
                     write_site(writer, site)?;
                 },
-                | Form::Nested(site) => {
+                Form::Nested(site) => {
                     writer.tag(Tag(15));
                     write_site(writer, site)?;
                 },
-                | Form::Thunk(site) => {
+                Form::Thunk(site) => {
                     writer.tag(Tag(0));
                     write_site(writer, site)?;
                 },
-                | Form::Lambda(site) => {
+                Form::Lambda(site) => {
                     writer.tag(Tag(1));
                     write_site(writer, site)?;
                 },
-                | Form::Return(site) => {
+                Form::Return(site) => {
                     writer.tag(Tag(2));
                     write_site(writer, site)?;
                 },
-                | Form::Hole => writer.tag(Tag(3)),
-                | Form::StaticLambda(site) => {
+                Form::Hole => writer.tag(Tag(3)),
+                Form::StaticLambda(site) => {
                     writer.tag(Tag(4));
                     write_site(writer, site)?;
                 },
-                | Form::Fixpoint(site) => {
+                Form::Fixpoint(site) => {
                     writer.tag(Tag(7));
                     write_site(writer, site)?;
                 },
-                | Form::Offer(site) => {
+                Form::Offer(site) => {
                     writer.tag(Tag(16));
                     write_site(writer, site)?;
                 },
-                | Form::Scope(site) => {
+                Form::Scope(site) => {
                     writer.tag(Tag(17));
                     write_site(writer, site)?;
                 },
-                | Form::Run(site) => {
+                Form::Run(site) => {
                     writer.tag(Tag(18));
                     write_site(writer, site)?;
                 },
             }
         },
-        | Refusal::UnknownConstant { at, ref constant } => {
+        Refusal::UnknownConstant { at, ref constant } => {
             writer.tag(Tag(3));
             write_site(writer, at)?;
             write_reference(writer, constant)?;
         },
-        | Refusal::OutOfFragment { at, former } => {
+        Refusal::OutOfFragment { at, former } => {
             writer.tag(Tag(4));
             write_site(writer, at)?;
             write_listed(writer, &FORMERS, &former)?;
         },
-        | Refusal::UnboundIndex {
+        Refusal::UnboundIndex {
             at,
             zone,
             index,
@@ -5269,25 +5267,25 @@ where
             writer.tag(Tag(5));
             write_site(writer, at)?;
             writer.tag(match zone {
-                | Zone::Intuitionistic => Tag(0),
-                | Zone::Linear => Tag(1),
+                Zone::Intuitionistic => Tag(0),
+                Zone::Linear => Tag(1),
             });
             writer.word(Word(u64::from(u32::from(index))));
             let depth = word_of(Count(usize::from(depth)))?;
             writer.word(depth);
         },
-        | Refusal::BudgetExceeded { budget } => {
+        Refusal::BudgetExceeded { budget } => {
             writer.tag(Tag(6));
             let budget = word_of(Count(usize::from(budget)))?;
             writer.word(budget);
         },
-        | Refusal::DanglingNode { at } => {
+        Refusal::DanglingNode { at } => {
             writer.tag(Tag(7));
             write_site(writer, at)?;
         },
-        | Refusal::AdmissionOrder => writer.tag(Tag(8)),
-        | Refusal::MachineInvariant => writer.tag(Tag(9)),
-        | Refusal::SortMismatch {
+        Refusal::AdmissionOrder => writer.tag(Tag(8)),
+        Refusal::MachineInvariant => writer.tag(Tag(9)),
+        Refusal::SortMismatch {
             at,
             ref synthesised,
             ref expected,
@@ -5297,7 +5295,7 @@ where
             write_type(writer, synthesised)?;
             write_type(writer, expected)?;
         },
-        | Refusal::LevelMismatch {
+        Refusal::LevelMismatch {
             at,
             ref synthesised,
             ref expected,
@@ -5307,7 +5305,7 @@ where
             write_type(writer, synthesised)?;
             write_type(writer, expected)?;
         },
-        | Refusal::DependentBind {
+        Refusal::DependentBind {
             at,
             ref synthesised,
         } => {
@@ -5315,11 +5313,11 @@ where
             write_site(writer, at)?;
             write_type(writer, synthesised)?;
         },
-        | Refusal::Undecided { at } => {
+        Refusal::Undecided { at } => {
             writer.tag(Tag(13));
             write_site(writer, at)?;
         },
-        | Refusal::FamilyArity {
+        Refusal::FamilyArity {
             at,
             expected,
             actual,
@@ -5329,7 +5327,7 @@ where
             writer.word(Word(u64::from(u32::from(expected))));
             writer.word(Word(u64::from(u32::from(actual))));
         },
-        | Refusal::FamilyArgumentClassifier {
+        Refusal::FamilyArgumentClassifier {
             at,
             position,
             ref synthesised,
@@ -5341,42 +5339,42 @@ where
             write_type(writer, synthesised)?;
             write_type(writer, expected)?;
         },
-        | Refusal::StaticLambdaArgument { at } => {
+        Refusal::StaticLambdaArgument { at } => {
             writer.tag(Tag(16));
             write_site(writer, at)?;
         },
-        | Refusal::StaticClassifierExpected { at, ref found } => {
+        Refusal::StaticClassifierExpected { at, ref found } => {
             writer.tag(Tag(17));
             write_site(writer, at)?;
             write_type(writer, found)?;
         },
-        | Refusal::NegativeOccurrence(site) => {
+        Refusal::NegativeOccurrence(site) => {
             writer.tag(Tag(28));
             write_occurrence_site(writer, site)?;
         },
-        | Refusal::NestedOccurrence(site) => {
+        Refusal::NestedOccurrence(site) => {
             writer.tag(Tag(29));
             write_occurrence_site(writer, site)?;
         },
-        | Refusal::IndexOccurrence(site) => {
+        Refusal::IndexOccurrence(site) => {
             writer.tag(Tag(30));
             write_occurrence_site(writer, site)?;
         },
-        | Refusal::NonUniformOccurrence(site) => {
+        Refusal::NonUniformOccurrence(site) => {
             writer.tag(Tag(31));
             write_occurrence_site(writer, site)?;
         },
-        | Refusal::CrossBlockReference { site, ref index } => {
+        Refusal::CrossBlockReference { site, ref index } => {
             writer.tag(Tag(32));
             write_occurrence_site(writer, site)?;
             write_reference(writer, index)?;
         },
-        | Refusal::DescentNotReplayed { at, reason } => {
+        Refusal::DescentNotReplayed { at, reason } => {
             writer.tag(Tag(33));
             write_site(writer, at)?;
             write_listed(writer, &DESCENT_REFUSALS, &reason)?;
         },
-        | Refusal::SessionMismatch {
+        Refusal::SessionMismatch {
             at,
             endpoint,
             ref state,
@@ -5387,26 +5385,26 @@ where
             write_endpoint(writer, endpoint)?;
             write_type(writer, state)?;
             match defect {
-                | ProtocolDefect::Action { expected, observed } => {
+                ProtocolDefect::Action { expected, observed } => {
                     writer.tag(Tag(0));
                     write_listed(writer, &ACTIONS, &expected)?;
                     write_listed(writer, &ACTIONS, &observed)?;
                 },
-                | ProtocolDefect::Label => writer.tag(Tag(1)),
-                | ProtocolDefect::Arms => writer.tag(Tag(2)),
+                ProtocolDefect::Label => writer.tag(Tag(1)),
+                ProtocolDefect::Arms => writer.tag(Tag(2)),
             }
         },
-        | Refusal::Linearity { at, ref defect } => {
+        Refusal::Linearity { at, ref defect } => {
             writer.tag(Tag(57));
             write_site(writer, at)?;
             write_linearity(writer, defect)?;
         },
-        | Refusal::CapabilityForged { at, ref expected } => {
+        Refusal::CapabilityForged { at, ref expected } => {
             writer.tag(Tag(58));
             write_site(writer, at)?;
             write_type(writer, expected)?;
         },
-        | Refusal::CapabilityAmplified {
+        Refusal::CapabilityAmplified {
             at,
             ref synthesised,
             ref expected,
@@ -5416,62 +5414,62 @@ where
             write_type(writer, synthesised)?;
             write_type(writer, expected)?;
         },
-        | Refusal::CapabilityOutsideAuthority { at, ref capability } => {
+        Refusal::CapabilityOutsideAuthority { at, ref capability } => {
             writer.tag(Tag(60));
             write_site(writer, at)?;
             write_type(writer, capability)?;
         },
-        | Refusal::CapabilityEscaped { at, ref found } => {
+        Refusal::CapabilityEscaped { at, ref found } => {
             writer.tag(Tag(61));
             write_site(writer, at)?;
             write_type(writer, found)?;
         },
-        | Refusal::CapabilityConsumable(at) => {
+        Refusal::CapabilityConsumable(at) => {
             writer.tag(Tag(62));
             write_site(writer, at)?;
         },
-        | Refusal::CapabilityUngranted(declared) => {
+        Refusal::CapabilityUngranted(declared) => {
             writer.tag(Tag(63));
             write_site(writer, declared)?;
         },
-        | Refusal::SessionNotEquivalent(at) => {
+        Refusal::SessionNotEquivalent(at) => {
             writer.tag(Tag(64));
             write_site(writer, at)?;
         },
-        | Refusal::SessionNotSubtype(at) => {
+        Refusal::SessionNotSubtype(at) => {
             writer.tag(Tag(65));
             write_site(writer, at)?;
         },
-        | Refusal::SessionCodeExpected(at) => {
+        Refusal::SessionCodeExpected(at) => {
             writer.tag(Tag(66));
             write_site(writer, at)?;
         },
-        | Refusal::NonCovariantMotive(at) => {
+        Refusal::NonCovariantMotive(at) => {
             writer.tag(Tag(67));
             write_site(writer, at)?;
         },
-        | Refusal::RideUnsupported(at) => {
+        Refusal::RideUnsupported(at) => {
             writer.tag(Tag(68));
             write_site(writer, at)?;
         },
-        | Refusal::RunNotAdmitted { at, fault } => {
+        Refusal::RunNotAdmitted { at, fault } => {
             writer.tag(Tag(69));
             write_site(writer, at)?;
             let (kind, step) = match fault {
-                | RunFault::WrongDirection(step) => (0, step),
-                | RunFault::WrongLabel(step) => (1, step),
-                | RunFault::ResumeAfterEnd(step) => (2, step),
-                | RunFault::Incomplete(step) => (3, step),
-                | RunFault::OfferNarrowed => (4, RunStep::from(0_u32)),
+                RunFault::WrongDirection(step) => (0, step),
+                RunFault::WrongLabel(step) => (1, step),
+                RunFault::ResumeAfterEnd(step) => (2, step),
+                RunFault::Incomplete(step) => (3, step),
+                RunFault::OfferNarrowed => (4, RunStep::from(0_u32)),
             };
             writer.tag(Tag(kind));
             writer.word(Word(u64::from(u32::from(step))));
         },
-        | Refusal::ForwardUnsupported(at) => {
+        Refusal::ForwardUnsupported(at) => {
             writer.tag(Tag(70));
             write_site(writer, at)?;
         },
-        | Refusal::Boundary(at) => {
+        Refusal::Boundary(at) => {
             writer.tag(Tag(71));
             write_site(writer, at)?;
         },
@@ -5635,13 +5633,13 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
 {
     let tag = reader.tag()?;
     let refusal = match tag.0 {
-        | 19 => Refusal::NotADataType(read_reference(reader)?),
-        | 20 => Refusal::DataKindNotUniverse(read_site(reader)?),
-        | 21 => Refusal::DataFieldLevel {
+        19 => Refusal::NotADataType(read_reference(reader)?),
+        20 => Refusal::DataKindNotUniverse(read_site(reader)?),
+        21 => Refusal::DataFieldLevel {
             field: read_site(reader)?,
             kind: read_type(reader)?,
         },
-        | 72 => {
+        72 => {
             let kind = read_site(reader)?;
             let rule = gandr_kernel_term::RuleIndex::from(reader.count()?.0);
             let fault = read_listed(reader, &RULE_FAULTS)?;
@@ -5650,43 +5648,43 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 refusal: gandr_kernel_term::RuleRefusal { rule, fault },
             }
         },
-        | 73 => Refusal::RuleNotRespected {
+        73 => Refusal::RuleNotRespected {
             at: read_site(reader)?,
             rule: gandr_kernel_term::RuleIndex::from(reader.count()?.0),
         },
-        | 74 => Refusal::NotApart {
+        74 => Refusal::NotApart {
             at: read_site(reader)?,
             reason: read_apartness(reader)?,
         },
-        | 75 => Refusal::LoopNotRespected {
+        75 => Refusal::LoopNotRespected {
             at: read_site(reader)?,
             cell: gandr_kernel_term::CellIndex::from(reader.count()?.0),
         },
-        | 22 => Refusal::DataArgumentArity(read_site(reader)?),
-        | 23 => Refusal::UnknownConstructor {
+        22 => Refusal::DataArgumentArity(read_site(reader)?),
+        23 => Refusal::UnknownConstructor {
             at: read_site(reader)?,
             tag: gandr_core_term::ConstructorTag::from(reader.count()?.0),
         },
-        | 24 => Refusal::ConstructorArity(read_site(reader)?),
-        | 25 => Refusal::NonExhaustiveDataCase(read_site(reader)?),
-        | 26 => Refusal::AbsentRecordField(read_site(reader)?),
-        | 39 => Refusal::AbsentTupleComponent(read_site(reader)?),
-        | 27 => Refusal::MissingRecordField {
+        24 => Refusal::ConstructorArity(read_site(reader)?),
+        25 => Refusal::NonExhaustiveDataCase(read_site(reader)?),
+        26 => Refusal::AbsentRecordField(read_site(reader)?),
+        39 => Refusal::AbsentTupleComponent(read_site(reader)?),
+        27 => Refusal::MissingRecordField {
             at: read_site(reader)?,
             expected: read_type(reader)?,
         },
-        | 48 => Refusal::AbstractKindNotUniverse(read_site(reader)?),
-        | 49 => Refusal::RepresentationAboveKind {
+        48 => Refusal::AbstractKindNotUniverse(read_site(reader)?),
+        49 => Refusal::RepresentationAboveKind {
             representation: read_site(reader)?,
             kind: read_type(reader)?,
         },
-        | 50 => Refusal::NotAnAbstractType(read_reference(reader)?),
-        | 51 => {
+        50 => Refusal::NotAnAbstractType(read_reference(reader)?),
+        51 => {
             let sealing = gandr_core_checker::SealingSite::from(reader.count()?.0);
             let component = gandr_core_checker::ComponentOrdinal::from(reader.count()?.0);
             Refusal::SealSiteRepeated(gandr_core_checker::SealSite::new(sealing, component))
         },
-        | 0 => {
+        0 => {
             let at = read_site(reader)?;
             let synthesised = read_type(reader)?;
             let expected = read_type(reader)?;
@@ -5696,67 +5694,67 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 expected,
             }
         },
-        | 1 => {
+        1 => {
             let at = read_site(reader)?;
             let wanted = read_listed(reader, &SHAPES)?;
             let found = read_type(reader)?;
             Refusal::ShapeMismatch { at, wanted, found }
         },
-        | 2 => {
+        2 => {
             let form = reader.tag()?;
             let form = match form.0 {
-                | 0 => {
+                0 => {
                     let site = read_site(reader)?;
                     Form::Thunk(site)
                 },
-                | 1 => {
+                1 => {
                     let site = read_site(reader)?;
                     Form::Lambda(site)
                 },
-                | 2 => {
+                2 => {
                     let site = read_site(reader)?;
                     Form::Return(site)
                 },
-                | 3 => Form::Hole,
-                | 4 => {
+                3 => Form::Hole,
+                4 => {
                     let site = read_site(reader)?;
                     Form::StaticLambda(site)
                 },
-                | 5 => Form::Injection(read_site(reader)?),
-                | 6 => Form::Case(read_site(reader)?),
-                | 7 => Form::Fixpoint(read_site(reader)?),
-                | 8 => Form::List(read_site(reader)?),
-                | 9 => Form::Reify(read_site(reader)?),
-                | 10 => Form::Handle(read_site(reader)?),
-                | 11 => Form::Reset(read_site(reader)?),
-                | 12 => Form::Shift(read_site(reader)?),
-                | 13 => Form::With(read_site(reader)?),
-                | 14 => Form::Split(read_site(reader)?),
-                | 15 => Form::Nested(read_site(reader)?),
-                | 16 => Form::Offer(read_site(reader)?),
-                | 17 => Form::Scope(read_site(reader)?),
-                | 18 => Form::Run(read_site(reader)?),
-                | _ => return Err(CodecError::Corrupt),
+                5 => Form::Injection(read_site(reader)?),
+                6 => Form::Case(read_site(reader)?),
+                7 => Form::Fixpoint(read_site(reader)?),
+                8 => Form::List(read_site(reader)?),
+                9 => Form::Reify(read_site(reader)?),
+                10 => Form::Handle(read_site(reader)?),
+                11 => Form::Reset(read_site(reader)?),
+                12 => Form::Shift(read_site(reader)?),
+                13 => Form::With(read_site(reader)?),
+                14 => Form::Split(read_site(reader)?),
+                15 => Form::Nested(read_site(reader)?),
+                16 => Form::Offer(read_site(reader)?),
+                17 => Form::Scope(read_site(reader)?),
+                18 => Form::Run(read_site(reader)?),
+                _ => return Err(CodecError::Corrupt),
             };
             Refusal::NotSynthesisable { form }
         },
-        | 3 => {
+        3 => {
             let at = read_site(reader)?;
             let constant = read_reference(reader)?;
             Refusal::UnknownConstant { at, constant }
         },
-        | 4 => {
+        4 => {
             let at = read_site(reader)?;
             let former = read_listed(reader, &FORMERS)?;
             Refusal::OutOfFragment { at, former }
         },
-        | 5 => {
+        5 => {
             let at = read_site(reader)?;
             let zone = reader.tag()?;
             let zone = match zone.0 {
-                | 0 => Zone::Intuitionistic,
-                | 1 => Zone::Linear,
-                | _ => return Err(CodecError::Corrupt),
+                0 => Zone::Intuitionistic,
+                1 => Zone::Linear,
+                _ => return Err(CodecError::Corrupt),
             };
             let index = reader.word()?;
             let index = u32::try_from(index.0).map_err(|_overflow| CodecError::Corrupt)?;
@@ -5768,19 +5766,19 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 depth: BinderDepth::from(depth.0),
             }
         },
-        | 6 => {
+        6 => {
             let budget = reader.count()?;
             Refusal::BudgetExceeded {
                 budget: CheckBudget::from(budget.0),
             }
         },
-        | 7 => {
+        7 => {
             let at = read_site(reader)?;
             Refusal::DanglingNode { at }
         },
-        | 8 => Refusal::AdmissionOrder,
-        | 9 => Refusal::MachineInvariant,
-        | 10 => {
+        8 => Refusal::AdmissionOrder,
+        9 => Refusal::MachineInvariant,
+        10 => {
             let at = read_site(reader)?;
             let synthesised = read_type(reader)?;
             let expected = read_type(reader)?;
@@ -5790,7 +5788,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 expected,
             }
         },
-        | 11 => {
+        11 => {
             let at = read_site(reader)?;
             let synthesised = read_type(reader)?;
             let expected = read_type(reader)?;
@@ -5800,16 +5798,16 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 expected,
             }
         },
-        | 12 => {
+        12 => {
             let at = read_site(reader)?;
             let synthesised = read_type(reader)?;
             Refusal::DependentBind { at, synthesised }
         },
-        | 13 => {
+        13 => {
             let at = read_site(reader)?;
             Refusal::Undecided { at }
         },
-        | 14 => {
+        14 => {
             let at = read_site(reader)?;
             let expected: StaticArity = read_narrow(reader)?;
             let actual: StaticArity = read_narrow(reader)?;
@@ -5819,7 +5817,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 actual,
             }
         },
-        | 15 => {
+        15 => {
             let at = read_site(reader)?;
             let position: ArgumentPosition = read_narrow(reader)?;
             let synthesised = read_type(reader)?;
@@ -5831,67 +5829,67 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 expected,
             }
         },
-        | 16 => {
+        16 => {
             let at = read_site(reader)?;
             Refusal::StaticLambdaArgument { at }
         },
-        | 17 => {
+        17 => {
             let at = read_site(reader)?;
             let found = read_type(reader)?;
             Refusal::StaticClassifierExpected { at, found }
         },
-        | 18 => Refusal::PathCode(read_site(reader)?),
-        | 40 => Refusal::EndpointMismatch {
+        18 => Refusal::PathCode(read_site(reader)?),
+        40 => Refusal::EndpointMismatch {
             at: read_site(reader)?,
             left: read_site(reader)?,
             right: read_site(reader)?,
         },
-        | 42 => Refusal::CompoundEndpoint {
+        42 => Refusal::CompoundEndpoint {
             at: read_site(reader)?,
             synthesised: read_type(reader)?,
         },
-        | 43 => Refusal::FunextUnsupported {
+        43 => Refusal::FunextUnsupported {
             at: read_site(reader)?,
             classifier: read_type(reader)?,
         },
-        | 44 => Refusal::PointwiseDistinct(read_site(reader)?),
-        | 45 => Refusal::EquivUnsupported {
+        44 => Refusal::PointwiseDistinct(read_site(reader)?),
+        45 => Refusal::EquivUnsupported {
             at: read_site(reader)?,
             classifier: read_type(reader)?,
         },
-        | 46 => Refusal::UncertifiedStratum {
+        46 => Refusal::UncertifiedStratum {
             at: read_site(reader)?,
             code: read_type(reader)?,
         },
-        | 47 => Refusal::RoundTripDistinct(read_site(reader)?),
-        | 52 => Refusal::NotOver {
+        47 => Refusal::RoundTripDistinct(read_site(reader)?),
+        52 => Refusal::NotOver {
             at: read_site(reader)?,
             synthesised: read_type(reader)?,
             expected: read_type(reader)?,
         },
-        | 53 => Refusal::UaUncertified {
+        53 => Refusal::UaUncertified {
             at: read_site(reader)?,
             stratum: read_stratum_defect(reader)?,
         },
-        | 54 => Refusal::UaInequivalent {
+        54 => Refusal::UaInequivalent {
             at: read_site(reader)?,
             defect: read_ua_defect(reader)?,
         },
-        | 55 => Refusal::UnenclosedRun {
+        55 => Refusal::UnenclosedRun {
             at: read_site(reader)?,
         },
-        | 56 => {
+        56 => {
             let at = read_site(reader)?;
             let endpoint = read_endpoint(reader)?;
             let state = read_type(reader)?;
             let defect = match reader.tag()?.0 {
-                | 0 => ProtocolDefect::Action {
+                0 => ProtocolDefect::Action {
                     expected: read_listed(reader, &ACTIONS)?,
                     observed: read_listed(reader, &ACTIONS)?,
                 },
-                | 1 => ProtocolDefect::Label,
-                | 2 => ProtocolDefect::Arms,
-                | _ => return Err(CodecError::Corrupt),
+                1 => ProtocolDefect::Label,
+                2 => ProtocolDefect::Arms,
+                _ => return Err(CodecError::Corrupt),
             };
             Refusal::SessionMismatch {
                 at,
@@ -5900,85 +5898,85 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 defect,
             }
         },
-        | 57 => Refusal::Linearity {
+        57 => Refusal::Linearity {
             at: read_site(reader)?,
             defect: read_linearity(reader)?,
         },
-        | 58 => Refusal::CapabilityForged {
+        58 => Refusal::CapabilityForged {
             at: read_site(reader)?,
             expected: read_type(reader)?,
         },
-        | 59 => Refusal::CapabilityAmplified {
+        59 => Refusal::CapabilityAmplified {
             at: read_site(reader)?,
             synthesised: read_type(reader)?,
             expected: read_type(reader)?,
         },
-        | 60 => Refusal::CapabilityOutsideAuthority {
+        60 => Refusal::CapabilityOutsideAuthority {
             at: read_site(reader)?,
             capability: read_type(reader)?,
         },
-        | 61 => Refusal::CapabilityEscaped {
+        61 => Refusal::CapabilityEscaped {
             at: read_site(reader)?,
             found: read_type(reader)?,
         },
-        | 62 => Refusal::CapabilityConsumable(read_site(reader)?),
-        | 63 => Refusal::CapabilityUngranted(read_site(reader)?),
-        | 64 => Refusal::SessionNotEquivalent(read_site(reader)?),
-        | 65 => Refusal::SessionNotSubtype(read_site(reader)?),
-        | 66 => Refusal::SessionCodeExpected(read_site(reader)?),
-        | 67 => Refusal::NonCovariantMotive(read_site(reader)?),
-        | 68 => Refusal::RideUnsupported(read_site(reader)?),
-        | 70 => Refusal::ForwardUnsupported(read_site(reader)?),
-        | 71 => Refusal::Boundary(read_site(reader)?),
-        | 69 => {
+        62 => Refusal::CapabilityConsumable(read_site(reader)?),
+        63 => Refusal::CapabilityUngranted(read_site(reader)?),
+        64 => Refusal::SessionNotEquivalent(read_site(reader)?),
+        65 => Refusal::SessionNotSubtype(read_site(reader)?),
+        66 => Refusal::SessionCodeExpected(read_site(reader)?),
+        67 => Refusal::NonCovariantMotive(read_site(reader)?),
+        68 => Refusal::RideUnsupported(read_site(reader)?),
+        70 => Refusal::ForwardUnsupported(read_site(reader)?),
+        71 => Refusal::Boundary(read_site(reader)?),
+        69 => {
             let at = read_site(reader)?;
             let kind = reader.tag()?.0;
             let step = RunStep::from(
                 u32::try_from(reader.word()?.0).map_err(|_cause| CodecError::Corrupt)?,
             );
             let fault = match kind {
-                | 0 => RunFault::WrongDirection(step),
-                | 1 => RunFault::WrongLabel(step),
-                | 2 => RunFault::ResumeAfterEnd(step),
-                | 3 => RunFault::Incomplete(step),
-                | 4 if u32::from(step) == 0 => RunFault::OfferNarrowed,
-                | _ => return Err(CodecError::NonCanonical),
+                0 => RunFault::WrongDirection(step),
+                1 => RunFault::WrongLabel(step),
+                2 => RunFault::ResumeAfterEnd(step),
+                3 => RunFault::Incomplete(step),
+                4 if u32::from(step) == 0 => RunFault::OfferNarrowed,
+                _ => return Err(CodecError::NonCanonical),
             };
             Refusal::RunNotAdmitted { at, fault }
         },
-        | 28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
-        | 29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
-        | 30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),
-        | 31 => Refusal::NonUniformOccurrence(read_occurrence_site(reader)?),
-        | 32 => {
+        28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
+        29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
+        30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),
+        31 => Refusal::NonUniformOccurrence(read_occurrence_site(reader)?),
+        32 => {
             let site = read_occurrence_site(reader)?;
             let index = read_reference(reader)?;
             Refusal::CrossBlockReference { site, index }
         },
-        | 33 => {
+        33 => {
             let at = read_site(reader)?;
             let reason = read_listed(reader, &DESCENT_REFUSALS)?;
             Refusal::DescentNotReplayed { at, reason }
         },
-        | 34 => Refusal::EffectSignatureConflict {
+        34 => Refusal::EffectSignatureConflict {
             at: read_site(reader)?,
             first: read_type(reader)?,
             second: read_type(reader)?,
         },
-        | 35 => Refusal::UnknownOperation {
+        35 => Refusal::UnknownOperation {
             at: read_site(reader)?,
         },
-        | 36 => Refusal::HandlerCoverage {
+        36 => Refusal::HandlerCoverage {
             at: read_site(reader)?,
         },
-        | 37 => Refusal::ShiftWithoutReset {
+        37 => Refusal::ShiftWithoutReset {
             at: read_site(reader)?,
         },
-        | 38 => Refusal::DependentStack {
+        38 => Refusal::DependentStack {
             at: read_site(reader)?,
             synthesised: read_type(reader)?,
         },
-        | _ => return Err(CodecError::Corrupt),
+        _ => return Err(CodecError::Corrupt),
     };
     Ok(refusal)
 }
@@ -6074,12 +6072,12 @@ where
     Out: Sink,
 {
     match *typing {
-        | Typing::Data => writer.tag(Tag(4)),
-        | Typing::Checked { conversions } => {
+        Typing::Data => writer.tag(Tag(4)),
+        Typing::Checked { conversions } => {
             writer.tag(Tag(0));
             writer.count(Count(usize::from(conversions)))?;
         },
-        | Typing::Synthesised {
+        Typing::Synthesised {
             ref produced,
             conversions,
         } => {
@@ -6087,8 +6085,8 @@ where
             write_type(writer, produced)?;
             writer.count(Count(usize::from(conversions)))?;
         },
-        | Typing::Owed => writer.tag(Tag(2)),
-        | Typing::Refused(ref refusal) => {
+        Typing::Owed => writer.tag(Tag(2)),
+        Typing::Refused(ref refusal) => {
             writer.tag(Tag(3));
             write_refusal(writer, refusal)?;
         },
@@ -6134,14 +6132,14 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
 {
     let tag = reader.tag()?;
     match tag.0 {
-        | 4 => Ok(Typing::Data),
-        | 0 => {
+        4 => Ok(Typing::Data),
+        0 => {
             let conversions = reader.count()?;
             Ok(Typing::Checked {
                 conversions: ConversionCount::from(conversions.0),
             })
         },
-        | 1 => {
+        1 => {
             let produced = read_type(reader)?;
             let conversions = reader.count()?;
             Ok(Typing::Synthesised {
@@ -6149,12 +6147,12 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
                 conversions: ConversionCount::from(conversions.0),
             })
         },
-        | 2 => Ok(Typing::Owed),
-        | 3 => {
+        2 => Ok(Typing::Owed),
+        3 => {
             let refusal = read_refusal(reader)?;
             Ok(Typing::Refused(refusal))
         },
-        | _ => Err(CodecError::Corrupt),
+        _ => Err(CodecError::Corrupt),
     }
 }
 
@@ -6188,13 +6186,13 @@ where
     Out: Sink,
 {
     match *answer {
-        | Answer::Data(None) => writer.tag(Tag(2)),
-        | Answer::Data(Some(ref signature)) => {
+        Answer::Data(None) => writer.tag(Tag(2)),
+        Answer::Data(Some(ref signature)) => {
             writer.tag(Tag(3));
             write_data_content(writer, signature)?;
         },
-        | Answer::Untyped => writer.tag(Tag(0)),
-        | Answer::Typed(ref ty) => {
+        Answer::Untyped => writer.tag(Tag(0)),
+        Answer::Typed(ref ty) => {
             writer.tag(Tag(1));
             write_type(writer, ty)?;
         },
@@ -6239,14 +6237,14 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
 {
     let tag = reader.tag()?;
     match tag.0 {
-        | 2 => Ok(Answer::Data(None)),
-        | 3 => Ok(Answer::Data(Some(read_data_content(reader)?))),
-        | 0 => Ok(Answer::Untyped),
-        | 1 => {
+        2 => Ok(Answer::Data(None)),
+        3 => Ok(Answer::Data(Some(read_data_content(reader)?))),
+        0 => Ok(Answer::Untyped),
+        1 => {
             let ty = read_type(reader)?;
             Ok(Answer::Typed(ty))
         },
-        | _ => Err(CodecError::Corrupt),
+        _ => Err(CodecError::Corrupt),
     }
 }
 
@@ -6451,9 +6449,9 @@ fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError
 fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError>
 {
     let types = match *checkpoint.typing() {
-        | Typing::Synthesised { ref produced, .. } => [Some(produced), None],
-        | Typing::Refused(ref refusal) => match *refusal {
-            | Refusal::TypeMismatch {
+        Typing::Synthesised { ref produced, .. } => [Some(produced), None],
+        Typing::Refused(ref refusal) => match *refusal {
+            Refusal::TypeMismatch {
                 ref synthesised,
                 ref expected,
                 ..
@@ -6473,7 +6471,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
                 ref expected,
                 ..
             } => [Some(synthesised), Some(expected)],
-            | Refusal::DataFieldLevel {
+            Refusal::DataFieldLevel {
                 kind: ref found, ..
             }
             | Refusal::RepresentationAboveKind {
@@ -6495,12 +6493,75 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
                 ..
             }
             | Refusal::StaticClassifierExpected { ref found, .. } => [Some(found), None],
-            | Refusal::DependentBind {
+            Refusal::DependentBind {
                 ref synthesised, ..
             } => [Some(synthesised), None],
-            | _ => [None, None],
+            Refusal::NotADataType(_)
+            | Refusal::DataKindNotUniverse(_)
+            | Refusal::RuleNotPresentable { .. }
+            | Refusal::RuleNotRespected { .. }
+            | Refusal::NotApart { .. }
+            | Refusal::LoopNotRespected { .. }
+            | Refusal::DataArgumentArity(_)
+            | Refusal::UnknownConstructor { .. }
+            | Refusal::ConstructorArity(_)
+            | Refusal::NonExhaustiveDataCase(_)
+            | Refusal::AbsentRecordField(_)
+            | Refusal::AbsentTupleComponent(_)
+            | Refusal::UnknownOperation { .. }
+            | Refusal::HandlerCoverage { .. }
+            | Refusal::ShiftWithoutReset { .. }
+            | Refusal::DependentStack { .. }
+            | Refusal::PathCode(_)
+            | Refusal::EndpointMismatch { .. }
+            | Refusal::CompoundEndpoint { .. }
+            | Refusal::FunextUnsupported { .. }
+            | Refusal::PointwiseDistinct(_)
+            | Refusal::EquivUnsupported { .. }
+            | Refusal::UncertifiedStratum { .. }
+            | Refusal::RoundTripDistinct(_)
+            | Refusal::NotOver { .. }
+            | Refusal::UaUncertified { .. }
+            | Refusal::UaInequivalent { .. }
+            | Refusal::NotSynthesisable { .. }
+            | Refusal::UnknownConstant { .. }
+            | Refusal::OutOfFragment { .. }
+            | Refusal::UnboundIndex { .. }
+            | Refusal::BudgetExceeded { .. }
+            | Refusal::DanglingNode { .. }
+            | Refusal::AdmissionOrder
+            | Refusal::MachineInvariant
+            | Refusal::Undecided { .. }
+            | Refusal::FamilyArity { .. }
+            | Refusal::StaticLambdaArgument { .. }
+            | Refusal::NegativeOccurrence(_)
+            | Refusal::NestedOccurrence(_)
+            | Refusal::IndexOccurrence(_)
+            | Refusal::NonUniformOccurrence(_)
+            | Refusal::CrossBlockReference { .. }
+            | Refusal::DescentNotReplayed { .. }
+            | Refusal::EffectSignatureConflict { .. }
+            | Refusal::AbstractKindNotUniverse(_)
+            | Refusal::NotAnAbstractType(_)
+            | Refusal::SealSiteRepeated(_)
+            | Refusal::UnenclosedRun { .. }
+            | Refusal::Linearity { .. }
+            | Refusal::CapabilityForged { .. }
+            | Refusal::CapabilityAmplified { .. }
+            | Refusal::CapabilityOutsideAuthority { .. }
+            | Refusal::CapabilityEscaped { .. }
+            | Refusal::CapabilityConsumable(_)
+            | Refusal::CapabilityUngranted(_)
+            | Refusal::SessionNotEquivalent(_)
+            | Refusal::SessionNotSubtype(_)
+            | Refusal::SessionCodeExpected(_)
+            | Refusal::NonCovariantMotive(_)
+            | Refusal::RideUnsupported(_)
+            | Refusal::RunNotAdmitted { .. }
+            | Refusal::ForwardUnsupported(_)
+            | Refusal::Boundary(_) => [None, None],
         },
-        | Typing::Data | Typing::Checked { .. } | Typing::Owed => [None, None],
+        Typing::Data | Typing::Checked { .. } | Typing::Owed => [None, None],
     };
     let support = checkpoint
         .support()

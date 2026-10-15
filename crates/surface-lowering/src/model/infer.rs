@@ -400,8 +400,8 @@ impl Engine
                 return current;
             };
             match self.solved.get(meta.0) {
-                | Some(&Maybe::Present(solution)) => current = solution,
-                | Some(&Maybe::Absent(_)) | None => return current,
+                Some(&Maybe::Present(solution)) => current = solution,
+                Some(&Maybe::Absent(_)) | None => return current,
             }
         }
         current
@@ -418,8 +418,8 @@ impl Engine
     {
         let resolved = self.resolve(node);
         let known = match self.nodes.get(resolved.0) {
-            | Some(&Node::Meta(meta)) => self.metas.get(meta.0).cloned(),
-            | Some(&Node::Variable(variable)) => {
+            Some(&Node::Meta(meta)) => self.metas.get(meta.0).cloned(),
+            Some(&Node::Variable(variable)) => {
                 return self
                     .variables
                     .get(variable.0)
@@ -427,8 +427,8 @@ impl Engine
                         known.sort.clone()
                     });
             },
-            | Some(&Node::Apply(..)) => self.applied.get(&resolved).cloned(),
-            | None => None,
+            Some(&Node::Apply(..)) => self.applied.get(&resolved).cloned(),
+            None => None,
         };
         known.map_or(Maybe::Absent(unsorted::Absent::Unoccurred), Maybe::Present)
     }
@@ -545,13 +545,13 @@ impl Engine
     {
         while let Some(task) = pending.pop() {
             match task {
-                | Task::Read(node, mode) => self.read(node, mode, &mut pending, built)?,
-                | Task::Apply(name, kind, count, mode) => {
+                Task::Read(node, mode) => self.read(node, mode, &mut pending, built)?,
+                Task::Apply(name, kind, count, mode) => {
                     let arguments = built.take(count)?;
                     let head = head_of(heads, kind, name)?;
                     Self::apply(name, head, arguments, mode, &mut pending, built)?;
                 },
-                | Task::Sort(sort, env) => {
+                Task::Sort(sort, env) => {
                     pending.push(Task::Gather(
                         &sort.sort,
                         OperandCount::from(sort.indices.len()),
@@ -563,18 +563,18 @@ impl Engine
                             .map(|index| Task::Read(index.to_node(), Mode::Instance(env))),
                     );
                 },
-                | Task::Gather(name, count) => {
+                Task::Gather(name, count) => {
                     let indices = built.take(count)?;
                     built.sorts.push(Sorted {
                         sort: name.clone(),
                         indices,
                     });
                 },
-                | Task::Binder(instantiation) => Self::next(instantiation, &mut pending, built)?,
-                | Task::Bound(instantiation) => {
+                Task::Binder(instantiation) => Self::next(instantiation, &mut pending, built)?,
+                Task::Bound(instantiation) => {
                     self.bind(instantiation, &mut pending, built)?;
                 },
-                | Task::Applied(name, arguments) => {
+                Task::Applied(name, arguments) => {
                     let sort = built.sorts.pop().ok_or(ModelFault::Unsorted)?;
                     let applied = self.node(Node::Apply(name.clone(), arguments));
                     let _first = self.applied.insert(applied, sort);
@@ -614,28 +614,30 @@ impl Engine
     ) -> Result<(), ModelFault>
     {
         match node.view() {
-            | TermView::Var(name) => {
+            TermView::Var(name) => {
                 let bound = match mode {
-                    | Mode::Instance(env) => *built
+                    Mode::Instance(env) => *built
                         .envs
                         .get(env.0)
                         .and_then(|bindings| bindings.get(name))
                         .ok_or(ModelFault::UnknownHead)?,
-                    | Mode::Written => match self.scope.get(name) {
-                        | Some(&bound) => bound,
-                        | None => {
+                    Mode::Written => {
+                        if let Some(&bound) = self.scope.get(name) {
+                            bound
+                        }
+                        else {
                             let fresh = self.variable(
                                 name.clone(),
                                 Maybe::Absent(unsorted::Absent::Unoccurred),
                             );
                             let _first = self.scope.insert(name.clone(), fresh);
                             fresh
-                        },
+                        }
                     },
                 };
                 built.nodes.push(bound);
             },
-            | TermView::Op { name, args } => {
+            TermView::Op { name, args } => {
                 let arguments: Vec<TermNode<'input>> = args.collect();
                 pending.push(Task::Apply(
                     name,
@@ -650,8 +652,8 @@ impl Engine
                         .map(|argument| Task::Read(argument, mode)),
                 );
             },
-            | TermView::Ctor { .. } => return Err(ModelFault::Constructor),
-            | TermView::Results { .. } => return Err(ModelFault::ManyOut),
+            TermView::Ctor { .. } => return Err(ModelFault::Constructor),
+            TermView::Results { .. } => return Err(ModelFault::ManyOut),
         }
         Ok(())
     }
@@ -688,7 +690,7 @@ impl Engine
     ) -> Result<(), ModelFault>
     {
         match mode {
-            | Mode::Instance(_) => {
+            Mode::Instance(_) => {
                 if arguments.len() != head.binders.len() {
                     return Err(ModelFault::Arity);
                 }
@@ -701,7 +703,7 @@ impl Engine
                 let env = built.open(bindings);
                 Self::finish(name, head, arguments, env, pending)
             },
-            | Mode::Written => {
+            Mode::Written => {
                 if arguments.len() != head.explicit {
                     return Err(ModelFault::Arity);
                 }
@@ -749,14 +751,14 @@ impl Engine
             return Ok(());
         }
         match head.kind {
-            | HeadKind::Sort => {
+            HeadKind::Sort => {
                 built.sorts.push(Sorted {
                     sort: instantiation.name.clone(),
                     indices: instantiation.arguments,
                 });
                 Ok(())
             },
-            | HeadKind::Operation => Self::finish(
+            HeadKind::Operation => Self::finish(
                 instantiation.name,
                 head,
                 instantiation.arguments,
@@ -799,7 +801,7 @@ impl Engine
         let binder = head.binders.get(position).ok_or(ModelFault::Arity)?;
         let implicit = head.binders.len().saturating_sub(head.explicit);
         let argument = match position.checked_sub(implicit) {
-            | Some(written) => {
+            Some(written) => {
                 let argument = *instantiation
                     .written
                     .get(written)
@@ -807,7 +809,7 @@ impl Engine
                 self.expect(argument, expected)?;
                 argument
             },
-            | None => self.meta(expected),
+            None => self.meta(expected),
         };
         if let Some(bindings) = built.envs.get_mut(instantiation.env.0) {
             let _first = bindings.insert(binder.name.clone(), argument);
@@ -953,14 +955,14 @@ impl Engine
                 return Err(ModelFault::IllSorted);
             };
             match (left_node, right_node) {
-                | (Node::Meta(meta), _) => self.solve(meta, right, &mut work)?,
-                | (_, Node::Meta(meta)) => self.solve(meta, left, &mut work)?,
-                | (Node::Apply(first, first_arguments), Node::Apply(second, second_arguments))
+                (Node::Meta(meta), _) => self.solve(meta, right, &mut work)?,
+                (_, Node::Meta(meta)) => self.solve(meta, left, &mut work)?,
+                (Node::Apply(first, first_arguments), Node::Apply(second, second_arguments))
                     if first == second && first_arguments.len() == second_arguments.len() =>
                 {
                     work.extend(first_arguments.into_iter().zip(second_arguments));
                 },
-                | (Node::Variable(_) | Node::Apply(..), Node::Variable(_) | Node::Apply(..)) => {
+                (Node::Variable(_) | Node::Apply(..), Node::Variable(_) | Node::Apply(..)) => {
                     return Err(ModelFault::IllSorted);
                 },
             }
@@ -1044,9 +1046,9 @@ impl Engine
                 continue;
             }
             match self.nodes.get(resolved.0) {
-                | Some(&Node::Meta(found)) if found == meta => return Occurrence::Contains,
-                | Some(&Node::Apply(_, ref arguments)) => pending.extend(arguments.iter().copied()),
-                | Some(&(Node::Meta(_) | Node::Variable(_))) | None => {},
+                Some(&Node::Meta(found)) if found == meta => return Occurrence::Contains,
+                Some(&Node::Apply(_, ref arguments)) => pending.extend(arguments.iter().copied()),
+                Some(&(Node::Meta(_) | Node::Variable(_))) | None => {},
             }
         }
         Occurrence::Free
@@ -1071,12 +1073,12 @@ impl Engine
         let mut found = Vec::new();
         while let Some(current) = pending.pop() {
             match self.nodes.get(self.resolve(current).0) {
-                | Some(&Node::Meta(meta)) => found.push(Item::Meta(meta)),
-                | Some(&Node::Variable(variable)) => found.push(Item::Variable(variable)),
-                | Some(&Node::Apply(_, ref arguments)) => {
+                Some(&Node::Meta(meta)) => found.push(Item::Meta(meta)),
+                Some(&Node::Variable(variable)) => found.push(Item::Variable(variable)),
+                Some(&Node::Apply(_, ref arguments)) => {
                     pending.extend(arguments.iter().rev().copied());
                 },
-                | None => {},
+                None => {},
             }
         }
         found
@@ -1092,7 +1094,7 @@ impl Engine
     ) -> Maybe<Sorted, unsorted::Absent>
     {
         let known = match item {
-            | Item::Variable(variable) => {
+            Item::Variable(variable) => {
                 return self
                     .variables
                     .get(variable.0)
@@ -1100,7 +1102,7 @@ impl Engine
                         known.sort.clone()
                     });
             },
-            | Item::Meta(meta) => self.metas.get(meta.0).cloned(),
+            Item::Meta(meta) => self.metas.get(meta.0).cloned(),
         };
         known.map_or(Maybe::Absent(unsorted::Absent::Unoccurred), Maybe::Present)
     }
@@ -1115,12 +1117,12 @@ impl Engine
     ) -> Vec<Item>
     {
         match self.item_sort(item) {
-            | Maybe::Present(sort) => sort
+            Maybe::Present(sort) => sort
                 .indices
                 .iter()
                 .flat_map(|&index| self.leaves(index))
                 .collect(),
-            | Maybe::Absent(_) => Vec::new(),
+            Maybe::Absent(_) => Vec::new(),
         }
     }
 
@@ -1160,12 +1162,12 @@ impl Engine
         let mut pending: Vec<Step> = roots.iter().rev().map(|&item| Step::Expand(item)).collect();
         while let Some(step) = pending.pop() {
             match step {
-                | Step::Finish(item) => {
+                Step::Finish(item) => {
                     if admit(item) == Admission::Bound && !order.contains(&item) {
                         order.push(item);
                     }
                 },
-                | Step::Expand(item) => {
+                Step::Expand(item) => {
                     if !expanded.insert(item) {
                         continue;
                     }
@@ -1206,22 +1208,22 @@ impl Engine
         let mut built: Vec<FreeTerm> = Vec::new();
         while let Some(step) = pending.pop() {
             match step {
-                | Back::Read(current) => {
+                Back::Read(current) => {
                     let item = match self.nodes.get(self.resolve(current).0) {
-                        | Some(&Node::Meta(meta)) => Item::Meta(meta),
-                        | Some(&Node::Variable(variable)) => Item::Variable(variable),
-                        | Some(&Node::Apply(ref name, ref arguments)) => {
+                        Some(&Node::Meta(meta)) => Item::Meta(meta),
+                        Some(&Node::Variable(variable)) => Item::Variable(variable),
+                        Some(&Node::Apply(ref name, ref arguments)) => {
                             pending.push(Back::Apply(name, arguments.len()));
                             pending.extend(
                                 arguments.iter().rev().map(|&argument| Back::Read(argument)),
                             );
                             continue;
                         },
-                        | None => return Err(ModelFault::Unsorted),
+                        None => return Err(ModelFault::Unsorted),
                     };
                     built.push(FreeTerm::var(names.get(&item).ok_or(ModelFault::Unsorted)?));
                 },
-                | Back::Apply(name, count) => {
+                Back::Apply(name, count) => {
                     let start = built.len().checked_sub(count).ok_or(ModelFault::Unsorted)?;
                     let arguments: Vec<FreeTerm> = built.drain(start ..).collect();
                     built.push(FreeTerm::op(name, arguments));
@@ -1292,12 +1294,12 @@ impl Engine
             };
             let bound = self.read_back_sort(&sort, &names)?;
             let name = match item {
-                | Item::Variable(variable) => self
+                Item::Variable(variable) => self
                     .variables
                     .get(variable.0)
                     .map(|known| known.name.clone())
                     .ok_or(ModelFault::Unsorted)?,
-                | Item::Meta(_) => fresh(&taken),
+                Item::Meta(_) => fresh(&taken),
             };
             let _fresh = taken.insert(name.clone());
             let _first = names.insert(item, name.clone());
@@ -1317,9 +1319,9 @@ impl Engine
     ) -> Maybe<Item, unsorted::Absent>
     {
         match self.nodes.get(self.resolve(node).0) {
-            | Some(&Node::Variable(variable)) => Maybe::Present(Item::Variable(variable)),
-            | Some(&Node::Meta(meta)) => Maybe::Present(Item::Meta(meta)),
-            | Some(&Node::Apply(..)) | None => Maybe::Absent(unsorted::Absent::Unoccurred),
+            Some(&Node::Variable(variable)) => Maybe::Present(Item::Variable(variable)),
+            Some(&Node::Meta(meta)) => Maybe::Present(Item::Meta(meta)),
+            Some(&Node::Apply(..)) | None => Maybe::Absent(unsorted::Absent::Unoccurred),
         }
     }
 }
@@ -1377,9 +1379,9 @@ fn head_of<'heads>(
 ) -> Result<&'heads Head, ModelFault>
 {
     match heads.get(name) {
-        | Some(&Ok(ref head)) if head.kind == kind => Ok(head),
-        | Some(&Err(_)) => Err(ModelFault::Inherited),
-        | Some(&Ok(_)) | None => Err(ModelFault::UnknownHead),
+        Some(&Ok(ref head)) if head.kind == kind => Ok(head),
+        Some(&Err(_)) => Err(ModelFault::Inherited),
+        Some(&Ok(_)) | None => Err(ModelFault::UnknownHead),
     }
 }
 
@@ -1484,19 +1486,19 @@ pub(super) fn derive_law(
     let left = engine.term(heads, &law.left)?;
     let right = engine.term(heads, &law.right)?;
     let carrier = match (engine.sort_of(left), engine.sort_of(right)) {
-        | (Maybe::Present(first), Maybe::Present(second)) => {
+        (Maybe::Present(first), Maybe::Present(second)) => {
             engine.unify_sorts(&first, &second)?;
             first
         },
-        | (Maybe::Present(known), Maybe::Absent(_)) => {
+        (Maybe::Present(known), Maybe::Absent(_)) => {
             engine.expect(right, known.clone())?;
             known
         },
-        | (Maybe::Absent(_), Maybe::Present(known)) => {
+        (Maybe::Absent(_), Maybe::Present(known)) => {
             engine.expect(left, known.clone())?;
             known
         },
-        | (Maybe::Absent(_), Maybe::Absent(_)) => return Err(ModelFault::Unsorted),
+        (Maybe::Absent(_), Maybe::Absent(_)) => return Err(ModelFault::Unsorted),
     };
     let mut written: Vec<Item> = Vec::new();
     for name in law.left.to_node().vars().chain(law.right.to_node().vars()) {
@@ -1528,8 +1530,8 @@ pub(super) fn derive_law(
     engine.emit(
         &implicit,
         &|item| match item {
-            | Item::Meta(_) => Admission::Bound,
-            | Item::Variable(_) => Admission::Deferred,
+            Item::Meta(_) => Admission::Bound,
+            Item::Variable(_) => Admission::Deferred,
         },
         &mut order,
     );

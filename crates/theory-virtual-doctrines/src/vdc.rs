@@ -354,8 +354,8 @@ impl Head for DerivationKind
     fn arity(&self) -> ArgumentCount
     {
         match *self {
-            | Self::Id(_) | Self::Cert { .. } => 0_usize.into(),
-            | Self::Graft(count) => count,
+            Self::Id(_) | Self::Cert { .. } => 0_usize.into(),
+            Self::Graft(count) => count,
         }
     }
 }
@@ -474,9 +474,9 @@ impl Derivation
                 }
                 let cell = pending.pop()?;
                 match *cell.head() {
-                    | DerivationKind::Id(ref relation) => return Some(relation),
-                    | DerivationKind::Cert { ref dom, .. } => current = dom,
-                    | DerivationKind::Graft(_) => {
+                    DerivationKind::Id(ref relation) => return Some(relation),
+                    DerivationKind::Cert { ref dom, .. } => current = dom,
+                    DerivationKind::Graft(_) => {
                         let start = pending.len();
                         pending.extend(cell.children().skip(1));
                         if let Some(children) = pending.get_mut(start ..) {
@@ -507,9 +507,9 @@ impl Derivation
         let mut current = self.0.to_ref();
         loop {
             match *current.head() {
-                | DerivationKind::Id(ref relation) => return Ok(relation),
-                | DerivationKind::Cert { ref cod, .. } => return Ok(cod),
-                | DerivationKind::Graft(_) => {
+                DerivationKind::Id(ref relation) => return Ok(relation),
+                DerivationKind::Cert { ref cod, .. } => return Ok(cod),
+                DerivationKind::Graft(_) => {
                     current = current
                         .children()
                         .next()
@@ -540,12 +540,12 @@ impl Derivation
         let mut values = Vec::new();
         while let Some(frame) = frames.pop() {
             match frame {
-                | ElaborateFrame::Enter(cell) => match *cell.head() {
-                    | DerivationKind::Id(_) => values.push(Elaborated::Trivial),
-                    | DerivationKind::Cert { ref cert, .. } => {
+                ElaborateFrame::Enter(cell) => match *cell.head() {
+                    DerivationKind::Id(_) => values.push(Elaborated::Trivial),
+                    DerivationKind::Cert { ref cert, .. } => {
                         values.push(Elaborated::Cert(Cow::Borrowed(cert)));
                     },
-                    | DerivationKind::Graft(_) => {
+                    DerivationKind::Graft(_) => {
                         let mut children = cell.children();
                         let Some(outer) = children.next()
                         else {
@@ -559,17 +559,17 @@ impl Derivation
                         }
                         else {
                             match (children.next(), children.next()) {
-                                | (Some(inner), None) => {
+                                (Some(inner), None) => {
                                     frames.push(ElaborateFrame::FinishSequential);
                                     frames.push(ElaborateFrame::Enter(outer));
                                     frames.push(ElaborateFrame::Enter(inner));
                                 },
-                                | _ => values.push(Elaborated::Stuck),
+                                _ => values.push(Elaborated::Stuck),
                             }
                         }
                     },
                 },
-                | ElaborateFrame::FinishSequential => {
+                ElaborateFrame::FinishSequential => {
                     let outer = values.pop().unwrap_or(Elaborated::Stuck);
                     let inner = values.pop().unwrap_or(Elaborated::Stuck);
                     values.push(graft_sequential(inner, outer));
@@ -598,9 +598,9 @@ impl Derivation
     ) -> DerivationReplay
     {
         DerivationReplay::from(match self.elaborate() {
-            | Elaborated::Trivial => true,
-            | Elaborated::Cert(cert) => bool::from(cert.replay(store)),
-            | Elaborated::Stuck => false,
+            Elaborated::Trivial => true,
+            Elaborated::Cert(cert) => bool::from(cert.replay(store)),
+            Elaborated::Stuck => false,
         })
     }
 }
@@ -641,8 +641,8 @@ fn graft_sequential<'derivation>(
 ) -> Elaborated<'derivation>
 {
     match (inner, outer) {
-        | (Elaborated::Trivial, other) | (other, Elaborated::Trivial) => other,
-        | (Elaborated::Cert(i), Elaborated::Cert(o)) => {
+        (Elaborated::Trivial, other) | (other, Elaborated::Trivial) => other,
+        (Elaborated::Cert(i), Elaborated::Cert(o)) => {
             if i.joins_at == o.overlap.peak {
                 Elaborated::Cert(Cow::Owned(Box::new(compose_invertible(&i, &o))))
             }
@@ -650,7 +650,7 @@ fn graft_sequential<'derivation>(
                 Elaborated::Stuck
             }
         },
-        | (Elaborated::Stuck, _) | (_, Elaborated::Stuck) => Elaborated::Stuck,
+        (Elaborated::Stuck, _) | (_, Elaborated::Stuck) => Elaborated::Stuck,
     }
 }
 
@@ -677,15 +677,15 @@ fn elaborations_replay_equivalent(
 ) -> VdcCellEquality
 {
     let equal = match (a, b) {
-        | (&Elaborated::Trivial, &Elaborated::Trivial) => true,
-        | (&Elaborated::Cert(ref ca), &Elaborated::Cert(ref cb)) => {
+        (&Elaborated::Trivial, &Elaborated::Trivial) => true,
+        (&Elaborated::Cert(ref ca), &Elaborated::Cert(ref cb)) => {
             bool::from(replay_equivalent(ca, cb, store))
         },
-        | (&Elaborated::Trivial, &Elaborated::Cert(ref c))
+        (&Elaborated::Trivial, &Elaborated::Cert(ref c))
         | (&Elaborated::Cert(ref c), &Elaborated::Trivial) => {
             c.overlap.peak == c.joins_at && bool::from(c.replay(store))
         },
-        | (&Elaborated::Stuck, _) | (_, &Elaborated::Stuck) => false,
+        (&Elaborated::Stuck, _) | (_, &Elaborated::Stuck) => false,
     };
     VdcCellEquality::from(equal)
 }
@@ -777,10 +777,10 @@ impl<G> DescTable<G>
         id: &NominalId,
     ) -> Maybe<&SignDesc<G>, description_lookup::Absent>
     {
-        match self.descs.iter().find(|desc| desc.id == *id) {
-            | Some(desc) => Maybe::Present(desc),
-            | None => Maybe::Absent(description_lookup::Absent::Unregistered),
-        }
+        self.descs.iter().find(|desc| desc.id == *id).map_or(
+            Maybe::Absent(description_lookup::Absent::Unregistered),
+            Maybe::Present,
+        )
     }
 
     /// The number of registered descriptions.

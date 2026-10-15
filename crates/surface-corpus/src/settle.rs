@@ -182,8 +182,8 @@ impl fmt::Display for Settlement
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Settled => "settled",
-            | Self::Unsettled => "unsettled",
+            Self::Settled => "settled",
+            Self::Unsettled => "unsettled",
         })
     }
 }
@@ -258,15 +258,15 @@ impl<'source> Produced<'source>
     pub const fn refusal(&self) -> Maybe<Refusal<'source>, produced_refusal::Absent>
     {
         match *self {
-            | Self::Judged(Verdict::Refused(refusal)) => Maybe::Present(Refusal::Checking(refusal)),
-            | Self::Judged(
+            Self::Judged(Verdict::Refused(refusal)) => Maybe::Present(Refusal::Checking(refusal)),
+            Self::Judged(
                 Verdict::Data
                 | Verdict::Checked { .. }
                 | Verdict::Synthesised { .. }
                 | Verdict::Owed(_),
             ) => Maybe::Absent(produced_refusal::Absent::Unrefused),
-            | Self::Unlowered(refusal) => Maybe::Present(Refusal::Lowering(refusal)),
-            | Self::Guarded(refusal) => Maybe::Present(Refusal::Corpus(refusal)),
+            Self::Unlowered(refusal) => Maybe::Present(Refusal::Lowering(refusal)),
+            Self::Guarded(refusal) => Maybe::Present(Refusal::Corpus(refusal)),
         }
     }
 }
@@ -545,16 +545,17 @@ impl<'source> DeclarationReport<'source>
     pub fn outcome(&self) -> Outcome
     {
         match (self.produced.refusal(), &self.ran) {
-            | (Maybe::Present(refusal), _) => Outcome::Refuses(refusal.name()),
-            | (
-                Maybe::Absent(produced_refusal::Absent::Unrefused),
-                &Maybe::Present(ref spelled),
-            ) => match self.stated {
-                | Stated::Verdict(Outcome::Normalizes(_)) => Outcome::Normalizes(spelled.clone()),
-                | Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_))
-                | Stated::Malformed(_) => Outcome::Runs(spelled.clone()),
+            (Maybe::Present(refusal), _) => Outcome::Refuses(refusal.name()),
+            (Maybe::Absent(produced_refusal::Absent::Unrefused), &Maybe::Present(ref spelled)) => {
+                match self.stated {
+                    Stated::Verdict(Outcome::Normalizes(_)) => Outcome::Normalizes(spelled.clone()),
+                    Stated::Verdict(
+                        Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_),
+                    )
+                    | Stated::Malformed(_) => Outcome::Runs(spelled.clone()),
+                }
             },
-            | (Maybe::Absent(produced_refusal::Absent::Unrefused), &Maybe::Absent(_)) => {
+            (Maybe::Absent(produced_refusal::Absent::Unrefused), &Maybe::Absent(_)) => {
                 Outcome::Checks(self.owed)
             },
         }
@@ -609,17 +610,17 @@ impl<'source> DeclarationReport<'source>
     pub fn settlement(&self) -> Settlement
     {
         let agrees = match self.stated {
-            | Stated::Malformed(_) => false,
-            | Stated::Verdict(Outcome::Refuses(name)) => matches!(
+            Stated::Malformed(_) => false,
+            Stated::Verdict(Outcome::Refuses(name)) => matches!(
                 self.produced.refusal(),
                 Maybe::Present(refusal) if refusal.name() == name
             ),
-            | Stated::Verdict(Outcome::Checks(count)) => {
+            Stated::Verdict(Outcome::Checks(count)) => {
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Absent(_))
                     && count == self.owed
             },
-            | Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected)) => {
+            Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected)) => {
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
             },
@@ -670,8 +671,8 @@ impl<'source> DeclarationReport<'source>
     pub fn surviving(&self) -> Surviving
     {
         let declared = match self.stated {
-            | Stated::Verdict(Outcome::Checks(declared)) => usize::from(declared),
-            | Stated::Verdict(Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_))
+            Stated::Verdict(Outcome::Checks(declared)) => usize::from(declared),
+            Stated::Verdict(Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_))
             | Stated::Malformed(_) => 0_usize,
         };
         let owed = usize::from(self.owed);
@@ -818,23 +819,23 @@ impl fmt::Display for SettleFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::MissingVerdict { constant } => write!(
+            Self::MissingVerdict { constant } => write!(
                 f,
                 "no verdict answers the declaration at admission position {}",
                 usize::from(constant)
             ),
-            | Self::MisalignedVerdict { declared, judged } => write!(
+            Self::MisalignedVerdict { declared, judged } => write!(
                 f,
                 "the verdict for admission position {} stands where position {} is due",
                 usize::from(judged),
                 usize::from(declared)
             ),
-            | Self::SurplusVerdict { constant } => write!(
+            Self::SurplusVerdict { constant } => write!(
                 f,
                 "the verdict for admission position {} answers no declaration of the module",
                 usize::from(constant)
             ),
-            | Self::UnreadablePayload { span } => write!(
+            Self::UnreadablePayload { span } => write!(
                 f,
                 "the payload of the attribute at {span} is not its schema's literal in the arena given"
             ),
@@ -1044,10 +1045,10 @@ pub fn settle<'source>(
         let expectations =
             expectation::read(root, attributes(module.attributes(), lowered), arena)?;
         let (produced, owed) = match lowered.outcome() {
-            | DeclarationOutcome::Refused(refusal) => {
+            DeclarationOutcome::Refused(refusal) => {
                 (Produced::Unlowered(refusal), ObligationCount::from(0_usize))
             },
-            | DeclarationOutcome::Completed { .. }
+            DeclarationOutcome::Completed { .. }
             | DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
@@ -1068,21 +1069,21 @@ pub fn settle<'source>(
             },
         };
         let produced = match expectations.guard {
-            | Maybe::Present(refusal) => Produced::Guarded(refusal),
-            | Maybe::Absent(expectation::guard::Absent::Admitted) => produced,
+            Maybe::Present(refusal) => Produced::Guarded(refusal),
+            Maybe::Absent(expectation::guard::Absent::Admitted) => produced,
         };
         let ran = match (&expectations.stated, produced) {
-            | (
+            (
                 &Stated::Verdict(Outcome::Runs(_)),
                 Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
             ) => Maybe::Present(runner.run(lowered.constant())),
-            | (
+            (
                 &Stated::Verdict(Outcome::Normalizes(ref line)),
                 Produced::Judged(
                     Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. },
                 ),
             ) => Maybe::Present(normalized(module, lowered, line)),
-            | (
+            (
                 &Stated::Verdict(Outcome::Runs(_)),
                 Produced::Judged(Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_))
                 | Produced::Unlowered(_)
@@ -1094,7 +1095,7 @@ pub fn settle<'source>(
                 | Produced::Unlowered(_)
                 | Produced::Guarded(_),
             ) => Maybe::Absent(ran::Absent::Unaccepted),
-            | (
+            (
                 &Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_)) | &Stated::Malformed(_),
                 _,
             ) => Maybe::Absent(ran::Absent::Unstated),
@@ -1159,8 +1160,8 @@ fn owed_by(
 ) -> ObligationCount
 {
     let owed = match answer.verdict() {
-        | Verdict::Owed(_) => 1_usize,
-        | Verdict::Checked { .. } | Verdict::Synthesised { .. } => {
+        Verdict::Owed(_) => 1_usize,
+        Verdict::Checked { .. } | Verdict::Synthesised { .. } => {
             let judged = verdicts.judged();
             verdicts
                 .laws()
@@ -1177,7 +1178,7 @@ fn owed_by(
                         .count()
                 })
         },
-        | Verdict::Data | Verdict::Refused(_) => 0_usize,
+        Verdict::Data | Verdict::Refused(_) => 0_usize,
     };
     ObligationCount::from(owed)
 }
@@ -1209,12 +1210,12 @@ fn normalized(
 ) -> RunSpelling
 {
     let call = match expectation::normalized_call(line) {
-        | Maybe::Present(call) => call,
-        | Maybe::Absent(expectation::normalized_call::Absent::Unwritten) => CallText::from(""),
+        Maybe::Present(call) => call,
+        Maybe::Absent(expectation::normalized_call::Absent::Unwritten) => CallText::from(""),
     };
     let reached = match module.normal_form(lowered, call) {
-        | Ok(normal) => normal.spelling(),
-        | Err(fault) => fault.to_string(),
+        Ok(normal) => normal.spelling(),
+        Err(fault) => fault.to_string(),
     };
     RunSpelling::from(format!(
         "{call} {arrow} {reached}",
@@ -1273,16 +1274,16 @@ fn attributes<'table>(
     let signature = lowered.signature();
     let definition = lowered.definition();
     let first = match signature {
-        | Maybe::Present(digest) => table.entries(digest),
-        | Maybe::Absent(_) => &[],
+        Maybe::Present(digest) => table.entries(digest),
+        Maybe::Absent(_) => &[],
     };
     let second = if signature == definition {
         &[][..]
     }
     else {
         match definition {
-            | Maybe::Present(digest) => table.entries(digest),
-            | Maybe::Absent(_) => &[],
+            Maybe::Present(digest) => table.entries(digest),
+            Maybe::Absent(_) => &[],
         }
     };
     first.iter().chain(second.iter())

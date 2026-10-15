@@ -171,22 +171,22 @@ pub fn form(
         if !ready {
             pending.push((id, true));
             match ty {
-                | Type::Arrow(a, b) => {
+                Type::Arrow(a, b) => {
                     pending.push((b, false));
                     pending.push((a, false));
                 },
-                | Type::Lift(inner) => pending.push((inner, false)),
-                | _ => {},
+                Type::Lift(inner) => pending.push((inner, false)),
+                Type::In(_) | Type::Universe(_) | Type::Nat(_) => {},
             }
             continue;
         }
         let stage = match ty {
-            | Type::In(_) | Type::Nat(Stage::Outer) => Stage::Outer,
-            | Type::Universe(model) | Type::Nat(Stage::Inner(model)) => {
+            Type::In(_) | Type::Nat(Stage::Outer) => Stage::Outer,
+            Type::Universe(model) | Type::Nat(Stage::Inner(model)) => {
                 permission(arena, context, model)?;
                 Stage::Inner(model)
             },
-            | Type::Arrow(a, b) => {
+            Type::Arrow(a, b) => {
                 let a = *stages.get(&a).ok_or(StageError::Unbalanced)?;
                 let b = *stages.get(&b).ok_or(StageError::Unbalanced)?;
                 if a != b {
@@ -194,7 +194,7 @@ pub fn form(
                 }
                 a
             },
-            | Type::Lift(inner) => {
+            Type::Lift(inner) => {
                 if !matches!(stages.get(&inner), Some(Stage::Inner(_))) {
                     return Err(StageError::StageMismatch);
                 }
@@ -237,12 +237,14 @@ fn form_code(
             continue;
         }
         match arena.ty(id)? {
-            | Type::Nat(Stage::Inner(_)) => {},
-            | Type::Arrow(domain, codomain) => {
+            Type::Nat(Stage::Inner(_)) => {},
+            Type::Arrow(domain, codomain) => {
                 pending.push(domain);
                 pending.push(codomain);
             },
-            | _ => return Err(StageError::TypeMismatch),
+            Type::In(_) | Type::Universe(_) | Type::Nat(_) | Type::Lift(_) => {
+                return Err(StageError::TypeMismatch);
+            },
         }
     }
     Ok(())
@@ -304,22 +306,22 @@ pub fn infer(
     while let Some(task) = tasks.pop() {
         budget.spend()?;
         match task {
-            | Task::Visit(id) => {
+            Task::Visit(id) => {
                 let term = arena.term(id)?;
                 match term {
-                    | Term::Variable(index) => {
+                    Term::Variable(index) => {
                         let slot = context
                             .len()
                             .checked_sub(index.0.saturating_add(1))
                             .ok_or(StageError::Unbound(index))?;
                         answers.push(*context.get(slot).ok_or(StageError::Unbound(index))?);
                     },
-                    | Term::Natural(stage, _) => {
+                    Term::Natural(stage, _) => {
                         let ty = arena.alloc_type(Type::Nat(stage))?;
                         form(arena, &context, ty, budget)?;
                         answers.push(ty);
                     },
-                    | Term::Code(ty) => {
+                    Term::Code(ty) => {
                         let Stage::Inner(model) = form(arena, &context, ty, budget)?
                         else {
                             return Err(StageError::StageMismatch);
@@ -328,26 +330,31 @@ pub fn infer(
                         let ty = arena.alloc_type(Type::Universe(model))?;
                         answers.push(ty);
                     },
-                    | Term::Lambda(domain, body) => {
+                    Term::Lambda(domain, body) => {
                         form(arena, &context, domain, budget)?;
                         context.push(domain);
                         tasks.push(Task::Finish(term));
                         tasks.push(Task::Visit(body));
                     },
-                    | _ => {
+                    Term::Apply(..)
+                    | Term::Multiply(..)
+                    | Term::Quote(_)
+                    | Term::Splice(_)
+                    | Term::Iterate(..)
+                    | Term::Eliminate(..) => {
                         tasks.push(Task::Finish(term));
                         tasks.extend(term.children().into_iter().flatten().rev().map(Task::Visit));
                     },
                 }
             },
-            | Task::Finish(term) => {
+            Task::Finish(term) => {
                 let last = answers.pop().ok_or(StageError::Unbalanced)?;
                 let ty = match term {
-                    | Term::Lambda(domain, _) => {
+                    Term::Lambda(domain, _) => {
                         context.pop().ok_or(StageError::Unbalanced)?;
                         arena.alloc_type(Type::Arrow(domain, last))?
                     },
-                    | Term::Apply(..) => {
+                    Term::Apply(..) => {
                         let head = answers.pop().ok_or(StageError::Unbalanced)?;
                         let Type::Arrow(domain, codomain) = arena.ty(head)?
                         else {
@@ -358,27 +365,27 @@ pub fn infer(
                         }
                         codomain
                     },
-                    | Term::Multiply(..) => {
+                    Term::Multiply(..) => {
                         let first = answers.pop().ok_or(StageError::Unbalanced)?;
                         if first != last || !matches!(arena.ty(last)?, Type::Nat(Stage::Inner(_))) {
                             return Err(StageError::TypeMismatch);
                         }
                         last
                     },
-                    | Term::Quote(_) => {
+                    Term::Quote(_) => {
                         if !matches!(form(arena, &context, last, budget)?, Stage::Inner(_)) {
                             return Err(StageError::StageMismatch);
                         }
                         arena.alloc_type(Type::Lift(last))?
                     },
-                    | Term::Splice(_) => {
+                    Term::Splice(_) => {
                         let Type::Lift(inner) = arena.ty(last)?
                         else {
                             return Err(StageError::TypeMismatch);
                         };
                         inner
                     },
-                    | Term::Iterate(..) => {
+                    Term::Iterate(..) => {
                         let initial = answers.pop().ok_or(StageError::Unbalanced)?;
                         let count = answers.pop().ok_or(StageError::Unbalanced)?;
                         let Type::Nat(count_stage) = arena.ty(count)?
@@ -397,7 +404,7 @@ pub fn infer(
                         }
                         initial
                     },
-                    | Term::Eliminate(_, target) => {
+                    Term::Eliminate(_, target) => {
                         let source_stage = form(arena, &context, last, budget)?;
                         let target_stage = form(arena, &context, target, budget)?;
                         if matches!(
@@ -411,7 +418,9 @@ pub fn infer(
                         }
                         target
                     },
-                    | _ => return Err(StageError::Unbalanced),
+                    Term::Variable(_) | Term::Natural(..) | Term::Code(_) => {
+                        return Err(StageError::Unbalanced);
+                    },
                 };
                 form(arena, &context, ty, budget)?;
                 answers.push(ty);
@@ -512,34 +521,34 @@ fn reduct(
 ) -> Result<TermId, StageError>
 {
     match (rule, arena.term(source)?) {
-        | (Rule::SpliceQuote, Term::Splice(quoted)) => {
+        (Rule::SpliceQuote, Term::Splice(quoted)) => {
             let Term::Quote(body) = arena.term(quoted)?
             else {
                 return Err(StageError::InvalidCertificate);
             };
             Ok(body)
         },
-        | (Rule::QuoteSplice, Term::Quote(spliced)) => {
+        (Rule::QuoteSplice, Term::Quote(spliced)) => {
             let Term::Splice(body) = arena.term(spliced)?
             else {
                 return Err(StageError::InvalidCertificate);
             };
             Ok(body)
         },
-        | (Rule::Beta, Term::Apply(head, argument)) => {
+        (Rule::Beta, Term::Apply(head, argument)) => {
             let Term::Lambda(_, body) = arena.term(head)?
             else {
                 return Err(StageError::InvalidCertificate);
             };
             instantiate(arena, body, argument, budget)
         },
-        | (Rule::IterateZero, Term::Iterate(count, initial, _)) => {
+        (Rule::IterateZero, Term::Iterate(count, initial, _)) => {
             if !matches!(arena.term(count)?, Term::Natural(_, Natural(0))) {
                 return Err(StageError::InvalidCertificate);
             }
             Ok(initial)
         },
-        | (Rule::IterateSuccessor, Term::Iterate(count, initial, step)) => {
+        (Rule::IterateSuccessor, Term::Iterate(count, initial, step)) => {
             let Term::Natural(stage, Natural(count)) = arena.term(count)?
             else {
                 return Err(StageError::InvalidCertificate);
@@ -549,8 +558,8 @@ fn reduct(
             let recursive = arena.alloc(Term::Iterate(predecessor, initial, step))?;
             arena.alloc(Term::Apply(step, recursive))
         },
-        | (Rule::Eliminate, Term::Eliminate(body, _)) => Ok(body),
-        | _ => Err(StageError::InvalidCertificate),
+        (Rule::Eliminate, Term::Eliminate(body, _)) => Ok(body),
+        _ => Err(StageError::InvalidCertificate),
     }
 }
 

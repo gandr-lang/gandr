@@ -248,16 +248,16 @@ impl core::fmt::Display for RefusalStage
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::Unknown(status) => write!(f, "unknown host status {}", status.0),
-            | Self::MalformedImage => f.write_str("image decoder"),
-            | Self::VerifierRejected => f.write_str("module verifier"),
-            | Self::LoweringFailed => f.write_str("operation lowering"),
-            | Self::ConversionFailed => f.write_str("LLVM conversion"),
-            | Self::ExecutionFailed => f.write_str("execution engine"),
-            | Self::ResultUnreadable => f.write_str("value renderer"),
-            | Self::LimitExceeded => f.write_str("resource limit"),
-            | Self::FixtureUnreadable => f.write_str("fixture reader"),
-            | Self::BadCall => f.write_str("C boundary"),
+            Self::Unknown(status) => write!(f, "unknown host status {}", status.0),
+            Self::MalformedImage => f.write_str("image decoder"),
+            Self::VerifierRejected => f.write_str("module verifier"),
+            Self::LoweringFailed => f.write_str("operation lowering"),
+            Self::ConversionFailed => f.write_str("LLVM conversion"),
+            Self::ExecutionFailed => f.write_str("execution engine"),
+            Self::ResultUnreadable => f.write_str("value renderer"),
+            Self::LimitExceeded => f.write_str("resource limit"),
+            Self::FixtureUnreadable => f.write_str("fixture reader"),
+            Self::BadCall => f.write_str("C boundary"),
         }
     }
 }
@@ -288,17 +288,17 @@ impl From<BoundaryStatus> for BoundaryResult
     fn from(status: BoundaryStatus) -> Self
     {
         let stage = match status.0 {
-            | 0_i32 => return Self::Success,
-            | 1_i32 => RefusalStage::MalformedImage,
-            | 2_i32 => RefusalStage::VerifierRejected,
-            | 3_i32 => RefusalStage::LoweringFailed,
-            | 4_i32 => RefusalStage::ConversionFailed,
-            | 5_i32 => RefusalStage::ExecutionFailed,
-            | 6_i32 => RefusalStage::ResultUnreadable,
-            | 7_i32 => RefusalStage::LimitExceeded,
-            | 8_i32 => RefusalStage::FixtureUnreadable,
-            | 100_i32 => RefusalStage::BadCall,
-            | _ => RefusalStage::Unknown(status),
+            0_i32 => return Self::Success,
+            1_i32 => RefusalStage::MalformedImage,
+            2_i32 => RefusalStage::VerifierRejected,
+            3_i32 => RefusalStage::LoweringFailed,
+            4_i32 => RefusalStage::ConversionFailed,
+            5_i32 => RefusalStage::ExecutionFailed,
+            6_i32 => RefusalStage::ResultUnreadable,
+            7_i32 => RefusalStage::LimitExceeded,
+            8_i32 => RefusalStage::FixtureUnreadable,
+            100_i32 => RefusalStage::BadCall,
+            _ => RefusalStage::Unknown(status),
         };
         Self::Refused(stage)
     }
@@ -341,10 +341,10 @@ impl core::fmt::Display for HostError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::VersionMismatch { found, expected } => {
+            Self::VersionMismatch { found, expected } => {
                 write!(f, "host ABI version {}, expected {}", found.0, expected.0)
             },
-            | Self::Refused { stage, ref detail } => write!(f, "{stage}: {}", detail.0),
+            Self::Refused { stage, ref detail } => write!(f, "{stage}: {}", detail.0),
         }
     }
 }

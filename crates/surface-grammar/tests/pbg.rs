@@ -72,8 +72,8 @@ fn exact_error(rules: Vec<Rule>) -> Result<PbgError, Box<dyn Error>>
 {
     let (dag, _base) = one_node_dag()?;
     match Pbg::build(dag, rules) {
-        | Ok(_pbg) => panic!("the build must refuse"),
-        | Err(error) => Ok(error),
+        Ok(_pbg) => panic!("the build must refuse"),
+        Err(error) => Ok(error),
     }
 }
 

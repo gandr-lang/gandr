@@ -588,10 +588,10 @@ impl From<Level> for Verbosity
     fn from(level: Level) -> Self
     {
         match level {
-            | Level::User => Self::User,
-            | Level::Detailed => Self::Detailed,
-            | Level::Debug => Self::Debug,
-            | Level::Json => Self::Json,
+            Level::User => Self::User,
+            Level::Detailed => Self::Detailed,
+            Level::Debug => Self::Debug,
+            Level::Json => Self::Json,
         }
     }
 }
@@ -624,9 +624,9 @@ enum LintName
 fn enabled(names: &[LintName]) -> Lints
 {
     let lints = Lints::enabling(names.iter().filter_map(|name| match *name {
-        | LintName::Exits => Some(Lint::ExplicitExits),
-        | LintName::Runs => Some(Lint::ExplicitRuns),
-        | LintName::EffectfulRuns => None,
+        LintName::Exits => Some(Lint::ExplicitExits),
+        LintName::Runs => Some(Lint::ExplicitRuns),
+        LintName::EffectfulRuns => None,
     }));
     if names.contains(&LintName::EffectfulRuns) {
         lints.asking_effects()
@@ -704,8 +704,8 @@ enum Screen
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
-        | Ok(cli) => cli,
-        | Err(error) => return usage(&error),
+        Ok(cli) => cli,
+        Err(error) => return usage(&error),
     };
     #[cfg(feature = "tracing")]
     let _subscriber = tracing::subscriber::set_default(
@@ -717,8 +717,8 @@ fn main() -> ExitCode
     #[cfg(feature = "tracing")]
     let _span = tracing::info_span!("driver").entered();
     let (invocation, verbosity) = match cli.command {
-        | None => (Invocation::Status, Verbosity::User),
-        | Some(Command::Check {
+        None => (Invocation::Status, Verbosity::User),
+        Some(Command::Check {
             goals,
             lint,
             grant,
@@ -727,10 +727,10 @@ fn main() -> ExitCode
             paths,
         }) => {
             let grant = match grant {
-                | None => HostGrant::UNBOUNDED,
-                | Some(operations) => match HostGrant::within(&operations) {
-                    | Ok(grant) => grant,
-                    | Err(refused) => return ungranted(&refused),
+                None => HostGrant::UNBOUNDED,
+                Some(operations) => match HostGrant::within(&operations) {
+                    Ok(grant) => grant,
+                    Err(refused) => return ungranted(&refused),
                 },
             };
             (
@@ -744,7 +744,7 @@ fn main() -> ExitCode
                 Verbosity::from(verbosity),
             )
         },
-        | Some(Command::Test {
+        Some(Command::Test {
             verbosity,
             jobs,
             paths,
@@ -755,15 +755,15 @@ fn main() -> ExitCode
             },
             Verbosity::from(verbosity),
         ),
-        | Some(Command::Run { path }) => (Invocation::Run { path }, Verbosity::User),
-        | Some(Command::Stage { jobs, programs }) => (
+        Some(Command::Run { path }) => (Invocation::Run { path }, Verbosity::User),
+        Some(Command::Stage { jobs, programs }) => (
             Invocation::Stage {
                 programs,
                 width: Width::from(jobs),
             },
             Verbosity::User,
         ),
-        | Some(Command::Fmt {
+        Some(Command::Fmt {
             check,
             width,
             jobs,
@@ -784,11 +784,11 @@ fn main() -> ExitCode
             },
             Verbosity::User,
         ),
-        | Some(Command::Lsp {
+        Some(Command::Lsp {
             capabilities: true, ..
         }) => return capabilities(),
         #[cfg(unix)]
-        | Some(Command::Lsp {
+        Some(Command::Lsp {
             standalone: false,
             socket,
             linger_ms,
@@ -799,32 +799,32 @@ fn main() -> ExitCode
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
             );
         },
-        | Some(Command::Lsp { .. }) => return lsp(),
+        Some(Command::Lsp { .. }) => return lsp(),
         #[cfg(unix)]
-        | Some(Command::Serve { socket, linger_ms }) => {
+        Some(Command::Serve { socket, linger_ms }) => {
             return hub(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
             );
         },
         #[cfg(unix)]
-        | Some(Command::Mcp { socket, linger_ms }) => {
+        Some(Command::Mcp { socket, linger_ms }) => {
             return mcp(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
             );
         },
-        | Some(Command::Repl { batch }) => {
+        Some(Command::Repl { batch }) => {
             return repl(if batch { Face::Batch } else { Face::ByInput });
         },
         #[cfg(unix)]
-        | Some(Command::View { socket, linger_ms }) => {
+        Some(Command::View { socket, linger_ms }) => {
             return view(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
             );
         },
-        | Some(Command::Tui { smoke }) => {
+        Some(Command::Tui { smoke }) => {
             return tui(if smoke {
                 Screen::Smoke
             }
@@ -843,15 +843,15 @@ fn main() -> ExitCode
     );
     let flushed = rendered.and_then(|exit| stdout.flush().map(|()| exit));
     match flushed {
-        | Ok(exit) => {
+        Ok(exit) => {
             #[cfg(feature = "tracing")]
             tracing::info!("output flushed");
             exit
         },
-        | Err(error) => match writeln!(stderr, "gandr: cannot write the output: {error}") {
+        Err(error) => match writeln!(stderr, "gandr: cannot write the output: {error}") {
             // When standard error is unwritable too, the exit code is the one
             // channel left.
-            | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+            Ok(()) | Err(_) => ExitCode::from(FAULTED),
         },
     }
 }
@@ -903,16 +903,16 @@ fn lsp() -> ExitCode
 fn ended(served: Result<Served, gandr_surface_lsp::TransportFault>) -> ExitCode
 {
     match served {
-        | Ok(Served::Clean) => ExitCode::SUCCESS,
-        | Ok(Served::Abrupt) => ExitCode::from(ABRUPT),
-        | Err(fault) => {
+        Ok(Served::Clean) => ExitCode::SUCCESS,
+        Ok(Served::Abrupt) => ExitCode::from(ABRUPT),
+        Err(fault) => {
             match writeln!(
                 std::io::stderr(),
                 "gandr: the language server stopped: {fault}"
             ) {
                 // When standard error is unwritable too, the exit code is the
                 // one channel left.
-                | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                Ok(()) | Err(_) => ExitCode::from(FAULTED),
             }
         },
     }
@@ -927,8 +927,8 @@ fn ended(served: Result<Served, gandr_surface_lsp::TransportFault>) -> ExitCode
 fn hub_socket(socket: Option<PathBuf>) -> std::io::Result<PathBuf>
 {
     match socket {
-        | Some(socket) => Ok(socket),
-        | None => gandr_surface_lsp::socket_for(&std::env::current_dir()?),
+        Some(socket) => Ok(socket),
+        None => gandr_surface_lsp::socket_for(&std::env::current_dir()?),
     }
 }
 
@@ -943,7 +943,7 @@ fn hub_fault(error: &std::io::Error) -> ExitCode
     match writeln!(std::io::stderr(), "gandr: the engine hub: {error}") {
         // When standard error is unwritable too, the exit code is the one
         // channel left.
-        | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        Ok(()) | Err(_) => ExitCode::from(FAULTED),
     }
 }
 
@@ -972,12 +972,12 @@ fn relayed(
 ) -> ExitCode
 {
     match reach_hub(socket, linger) {
-        | Ok(stream) => ended(gandr_surface_lsp::relay(
+        Ok(stream) => ended(gandr_surface_lsp::relay(
             std::io::stdin(),
             &mut std::io::stdout().lock(),
             stream,
         )),
-        | Err(error) => hub_fault(&error),
+        Err(error) => hub_fault(&error),
     }
 }
 
@@ -1010,8 +1010,8 @@ fn mcp(
         gandr_surface_mcp::relay(std::io::stdin(), &mut std::io::stdout().lock(), stream)
     });
     match carried {
-        | Ok(()) => ExitCode::SUCCESS,
-        | Err(error) => hub_fault(&error),
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => hub_fault(&error),
     }
 }
 
@@ -1047,8 +1047,8 @@ fn view(
         Ok((stream, reading))
     });
     let (mut writing, reading) = match attached {
-        | Ok(ends) => ends,
-        | Err(error) => return hub_fault(&error),
+        Ok(ends) => ends,
+        Err(error) => return hub_fault(&error),
     };
     let terminal = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
     let followed = if terminal {
@@ -1058,14 +1058,14 @@ fn view(
         gandr_surface_tui::follow_plain(reading, &mut std::io::stdout().lock())
     };
     let noted = match followed {
-        | Ok(Ended::Completed) => return ExitCode::SUCCESS,
-        | Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: the view: {fault}"),
-        | Err(error) => writeln!(std::io::stderr(), "gandr: the view: {error}"),
+        Ok(Ended::Completed) => return ExitCode::SUCCESS,
+        Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: the view: {fault}"),
+        Err(error) => writeln!(std::io::stderr(), "gandr: the view: {error}"),
     };
     match noted {
         // When standard error is unwritable too, the exit code is the one
         // channel left.
-        | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        Ok(()) | Err(_) => ExitCode::from(FAULTED),
     }
 }
 
@@ -1122,9 +1122,9 @@ fn reach_hub(
     loop {
         std::thread::sleep(Duration::from_millis(20));
         match UnixStream::connect(&socket) {
-            | Ok(stream) => return Ok(stream),
-            | Err(error) if started.elapsed() >= Duration::from_secs(5) => return Err(error),
-            | Err(_) => {},
+            Ok(stream) => return Ok(stream),
+            Err(error) if started.elapsed() >= Duration::from_secs(5) => return Err(error),
+            Err(_) => {},
         }
     }
 }
@@ -1155,11 +1155,11 @@ fn hub(
 ) -> ExitCode
 {
     let socket = match hub_socket(socket) {
-        | Ok(socket) => socket,
-        | Err(error) => return hub_fault(&error),
+        Ok(socket) => socket,
+        Err(error) => return hub_fault(&error),
     };
     match gandr_surface_lsp::bind(&socket) {
-        | Ok(Maybe::Present(listener)) => {
+        Ok(Maybe::Present(listener)) => {
             match gandr_surface_lsp::run_hub(
                 &listener,
                 &socket,
@@ -1167,20 +1167,20 @@ fn hub(
                 std::io::stderr(),
                 Some(gandr_surface_mcp::serve),
             ) {
-                | Ok(()) => ExitCode::SUCCESS,
-                | Err(error) => hub_fault(&error),
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => hub_fault(&error),
             }
         },
-        | Ok(Maybe::Absent(gandr_surface_lsp::bind::Absent::Served)) => {
+        Ok(Maybe::Absent(gandr_surface_lsp::bind::Absent::Served)) => {
             match writeln!(
                 std::io::stderr(),
                 "gandr: a hub already serves {}",
                 socket.display()
             ) {
-                | Ok(()) | Err(_) => ExitCode::SUCCESS,
+                Ok(()) | Err(_) => ExitCode::SUCCESS,
             }
         },
-        | Err(error) => hub_fault(&error),
+        Err(error) => hub_fault(&error),
     }
 }
 
@@ -1213,23 +1213,23 @@ fn repl(face: Face) -> ExitCode
     let input = std::io::stdin();
     let mut output = std::io::stdout().lock();
     let ended = match (face, input.is_terminal()) {
-        | (Face::Batch, _) | (Face::ByInput, false) => {
+        (Face::Batch, _) | (Face::ByInput, false) => {
             gandr_surface_repl::run_batch(input.lock(), &mut output, RenderStyle::Plain)
         },
-        | (Face::ByInput, true) => {
+        (Face::ByInput, true) => {
             let style = RenderStyle::for_terminal(TerminalCapability::from(output.is_terminal()));
             gandr_surface_repl::run_interactive(&mut output, style)
         },
     };
     let noted = match ended {
-        | Ok(Ended::Completed) => return ExitCode::SUCCESS,
-        | Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
-        | Err(error) => writeln!(std::io::stderr(), "gandr: cannot write the output: {error}"),
+        Ok(Ended::Completed) => return ExitCode::SUCCESS,
+        Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
+        Err(error) => writeln!(std::io::stderr(), "gandr: cannot write the output: {error}"),
     };
     match noted {
         // When standard error is unwritable too, the exit code is the one
         // channel left.
-        | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        Ok(()) | Err(_) => ExitCode::from(FAULTED),
     }
 }
 
@@ -1263,25 +1263,25 @@ fn tui(screen: Screen) -> ExitCode
 {
     let attached = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
     let noted = match (screen, attached) {
-        | (Screen::Smoke, _) => match gandr_surface_tui::run_smoke(&mut std::io::stdout().lock()) {
-            | Ok(Ended::Completed) => return ExitCode::SUCCESS,
-            | Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
-            | Err(error) => writeln!(std::io::stderr(), "gandr: cannot write the output: {error}"),
+        (Screen::Smoke, _) => match gandr_surface_tui::run_smoke(&mut std::io::stdout().lock()) {
+            Ok(Ended::Completed) => return ExitCode::SUCCESS,
+            Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
+            Err(error) => writeln!(std::io::stderr(), "gandr: cannot write the output: {error}"),
         },
-        | (Screen::Terminal, false) => writeln!(
+        (Screen::Terminal, false) => writeln!(
             std::io::stderr(),
             "gandr: the terminal face needs a terminal on standard input and output; `gandr repl` reads a pipe"
         ),
-        | (Screen::Terminal, true) => match gandr_surface_tui::run() {
-            | Ok(Ended::Completed) => return ExitCode::SUCCESS,
-            | Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
-            | Err(error) => writeln!(std::io::stderr(), "gandr: the terminal failed: {error}"),
+        (Screen::Terminal, true) => match gandr_surface_tui::run() {
+            Ok(Ended::Completed) => return ExitCode::SUCCESS,
+            Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
+            Err(error) => writeln!(std::io::stderr(), "gandr: the terminal failed: {error}"),
         },
     };
     match noted {
         // When standard error is unwritable too, the exit code is the one
         // channel left.
-        | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        Ok(()) | Err(_) => ExitCode::from(FAULTED),
     }
 }
 
@@ -1309,10 +1309,10 @@ fn capabilities() -> ExitCode
     let mut stdout = std::io::stdout().lock();
     let written = writeln!(stdout, "{Capabilities}").and_then(|()| stdout.flush());
     match written {
-        | Ok(()) => ExitCode::SUCCESS,
-        | Err(error) => {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
             match writeln!(std::io::stderr(), "gandr: cannot write the output: {error}") {
-                | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                Ok(()) | Err(_) => ExitCode::from(FAULTED),
             }
         },
     }
@@ -1343,8 +1343,8 @@ fn capabilities() -> ExitCode
 fn usage(error: &clap::Error) -> ExitCode
 {
     match (error.print(), error.use_stderr()) {
-        | (Ok(()), false) => ExitCode::SUCCESS,
-        | (Ok(()), true) | (Err(_), _) => ExitCode::from(FAULTED),
+        (Ok(()), false) => ExitCode::SUCCESS,
+        (Ok(()), true) | (Err(_), _) => ExitCode::from(FAULTED),
     }
 }
 
@@ -1369,12 +1369,12 @@ fn ungranted(refused: &AuthorityError) -> ExitCode
 {
     let mut stderr = std::io::stderr().lock();
     let _written = match *refused {
-        | AuthorityError::Undeclared(ref operation) => writeln!(
+        AuthorityError::Undeclared(ref operation) => writeln!(
             stderr,
             "gandr: --grant: no host interface offers `{}`",
             operation.as_ref()
         ),
-        | AuthorityError::Restriction(_) | AuthorityError::Conflict(_) => {
+        AuthorityError::Restriction(_) | AuthorityError::Conflict(_) => {
             writeln!(stderr, "gandr: --grant: the host's interfaces conflict")
         },
     };
@@ -1430,19 +1430,19 @@ fn render(
 ) -> std::io::Result<ExitCode>
 {
     match outcome {
-        | Outcome::Status(report) => {
+        Outcome::Status(report) => {
             writeln!(stdout, "gandr {} — {report}", env!("CARGO_PKG_VERSION"))?;
             Ok(ExitCode::SUCCESS)
         },
-        | Outcome::Run {
+        Outcome::Run {
             verb,
             lints,
             walk,
             width,
         } => run(verb, lints, walk, width, verbosity, stdout, stderr),
-        | Outcome::Script(mut runnable) => script(&mut runnable, stdout, stderr),
-        | Outcome::Stage(staging) => stage(staging, stdout, stderr),
-        | Outcome::Format(formatting) => fmt(formatting, stdout, stderr),
+        Outcome::Script(mut runnable) => script(&mut runnable, stdout, stderr),
+        Outcome::Stage(staging) => stage(staging, stdout, stderr),
+        Outcome::Format(formatting) => fmt(formatting, stdout, stderr),
     }
 }
 
@@ -1491,28 +1491,28 @@ fn fmt(
     let (mut changed, mut faulted) = (false, false);
     let visited = formatting.visit(|step| {
         let written = match step {
-            | FormatStep::Unchanged { .. } => Ok(()),
-            | FormatStep::Changed { path } => {
+            FormatStep::Unchanged { .. } => Ok(()),
+            FormatStep::Changed { path } => {
                 changed = true;
                 writeln!(stdout, "{}", path.display())
             },
-            | FormatStep::Fault { path, fault } => {
+            FormatStep::Fault { path, fault } => {
                 faulted = true;
                 writeln!(stderr, "gandr: {}: {fault}", path.display())
             },
         };
         match written {
-            | Ok(()) => ControlFlow::Continue(()),
-            | Err(error) => ControlFlow::Break(error),
+            Ok(()) => ControlFlow::Continue(()),
+            Err(error) => ControlFlow::Break(error),
         }
     });
     if let ControlFlow::Break(error) = visited {
         return Err(error);
     }
     Ok(match (faulted, changed, rewrite) {
-        | (true, ..) => ExitCode::from(FAULTED),
-        | (false, true, Rewrite::Check) => ExitCode::from(UNFORMATTED),
-        | (false, false, _) | (false, true, Rewrite::InPlace) => ExitCode::SUCCESS,
+        (true, ..) => ExitCode::from(FAULTED),
+        (false, true, Rewrite::Check) => ExitCode::from(UNFORMATTED),
+        (false, false, _) | (false, true, Rewrite::InPlace) => ExitCode::SUCCESS,
     })
 }
 
@@ -1553,8 +1553,8 @@ fn stage(
 ) -> std::io::Result<ExitCode>
 {
     let run = match staging.run() {
-        | Ok(run) => run,
-        | Err(fault) => {
+        Ok(run) => run,
+        Err(fault) => {
             writeln!(stderr, "gandr: {fault}")?;
             return Ok(ExitCode::from(FAULTED));
         },
@@ -1566,9 +1566,9 @@ fn stage(
     writeln!(stdout, "digest: {}", run.digest())?;
     writeln!(stdout, "verdict: {verdict}")?;
     Ok(match verdict {
-        | StageVerdict::Readmitted => ExitCode::SUCCESS,
-        | StageVerdict::Refused => ExitCode::from(REFUSED),
-        | StageVerdict::Faulted => ExitCode::from(FAULTED),
+        StageVerdict::Readmitted => ExitCode::SUCCESS,
+        StageVerdict::Refused => ExitCode::from(REFUSED),
+        StageVerdict::Faulted => ExitCode::from(FAULTED),
     })
 }
 
@@ -1624,14 +1624,14 @@ fn run(
 {
     let visited = walk.visit(width, |step| {
         match step {
-            | Step::Source { .. } => {
+            Step::Source { .. } => {
                 for diagnostic in entries(&step, verb).linting(lints) {
                     let separator = match (diagnostic.severity, verbosity) {
-                        | (
+                        (
                             Severity::Error | Severity::Warning | Severity::Goal | Severity::Note,
                             Verbosity::User | Verbosity::Detailed | Verbosity::Debug,
                         ) => "\n",
-                        | (
+                        (
                             Severity::Error | Severity::Warning | Severity::Goal | Severity::Note,
                             Verbosity::Json,
                         )
@@ -1651,7 +1651,7 @@ fn run(
                     }
                 }
             },
-            | Step::Fault { path, fault } => {
+            Step::Fault { path, fault } => {
                 if let Err(error) = writeln!(stderr, "gandr: {}: {fault}", path.display()) {
                     return ControlFlow::Break(error);
                 }
@@ -1660,8 +1660,8 @@ fn run(
         ControlFlow::Continue(())
     });
     let report = match visited {
-        | ControlFlow::Continue(report) => report,
-        | ControlFlow::Break(error) => return Err(error),
+        ControlFlow::Continue(report) => report,
+        ControlFlow::Break(error) => return Err(error),
     };
     let verdict = report.verdict(verb);
     if verbosity == Verbosity::Json {
@@ -1677,9 +1677,9 @@ fn run(
         writeln!(stdout, "verdict: {verdict}")?;
     }
     Ok(match verdict {
-        | RunVerdict::Settled => ExitCode::SUCCESS,
-        | RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
-        | RunVerdict::Faulted => ExitCode::from(FAULTED),
+        RunVerdict::Settled => ExitCode::SUCCESS,
+        RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
+        RunVerdict::Faulted => ExitCode::from(FAULTED),
     })
 }
 
@@ -1732,10 +1732,10 @@ fn script(
     let ran = runnable.run();
     let status = ran.status();
     match ran {
-        | ScriptRun::Fault { path, fault } => {
+        ScriptRun::Fault { path, fault } => {
             writeln!(stderr, "gandr: {}: {fault}", path.display())?;
         },
-        | ScriptRun::Source { step, ran } => {
+        ScriptRun::Source { step, ran } => {
             for diagnostic in entries(&step, Verb::Check(Goals::Reported)) {
                 let rendered = gandr_surface_render_terminal::render(
                     &diagnostic,
@@ -1743,31 +1743,31 @@ fn script(
                     Verbosity::User,
                 );
                 match diagnostic.severity {
-                    | Severity::Error | Severity::Warning | Severity::Goal | Severity::Note => {
+                    Severity::Error | Severity::Warning | Severity::Goal | Severity::Note => {
                         writeln!(stderr, "{rendered}\n")?;
                     },
-                    | Severity::Ledger => writeln!(stderr, "{rendered}")?,
+                    Severity::Ledger => writeln!(stderr, "{rendered}")?,
                 }
             }
             let path = match step {
-                | Step::Source { path, .. } | Step::Fault { path, .. } => path.display(),
+                Step::Source { path, .. } | Step::Fault { path, .. } => path.display(),
             };
             match ran {
-                | Ran::Evaluated {
+                Ran::Evaluated {
                     evaluation: Evaluation::Value(value),
                     ..
                 } => writeln!(stdout, "{value}")?,
-                | Ran::Evaluated { target, evaluation } => {
+                Ran::Evaluated { target, evaluation } => {
                     writeln!(stderr, "gandr: {path}: `{target}` {evaluation}")?;
                 },
-                | Ran::Refused => writeln!(stderr, "gandr: {path}: refused; nothing ran")?,
-                | Ran::NoProgram => writeln!(stderr, "gandr: {path}: declares no name to run")?,
+                Ran::Refused => writeln!(stderr, "gandr: {path}: refused; nothing ran")?,
+                Ran::NoProgram => writeln!(stderr, "gandr: {path}: declares no name to run")?,
             }
         },
     }
     Ok(match status {
-        | RunStatus::Value => ExitCode::SUCCESS,
-        | RunStatus::Failed => ExitCode::from(STOPPED),
-        | RunStatus::Unreached => ExitCode::from(UNREACHED),
+        RunStatus::Value => ExitCode::SUCCESS,
+        RunStatus::Failed => ExitCode::from(STOPPED),
+        RunStatus::Unreached => ExitCode::from(UNREACHED),
     })
 }

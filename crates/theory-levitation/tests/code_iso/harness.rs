@@ -353,8 +353,8 @@ impl RoundTripReport
         self.failures
             .iter()
             .map(|failure| match failure.direction {
-                | Direction::BackAfterForward => "back ∘ fwd",
-                | Direction::ForwardAfterBackward => "fwd ∘ back",
+                Direction::BackAfterForward => "back ∘ fwd",
+                Direction::ForwardAfterBackward => "fwd ∘ back",
             })
             .collect::<Vec<_>>()
             .join(", ")
@@ -547,9 +547,9 @@ mod tests
         let swap: Translate = Arc::new(|value| {
             DescValue::new(
                 ConstructorTag::from(match usize::from(value.ctor) {
-                    | 0 => 1_usize,
-                    | 1 => 0,
-                    | _ => 2,
+                    0 => 1_usize,
+                    1 => 0,
+                    _ => 2,
                 }),
                 value.payload.clone(),
             )

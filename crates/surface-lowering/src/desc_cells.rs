@@ -121,14 +121,12 @@ impl CellDiagnostic
     pub(crate) const fn lowering_refusal(&self) -> crate::LoweringRefusal<'static>
     {
         match self.fault {
-            | CellFault::Coherence(ref fault) => fault.lowering_refusal(self.span),
-            | CellFault::Operation(_) | CellFault::Rule(_) => {
-                crate::LoweringRefusal::OutOfFragment {
-                    span: self.span,
-                    form: crate::FormName::DECLARATION,
-                    sort: crate::FragmentSort::Declaration,
-                    boundary: crate::FragmentBoundary::Unadmitted,
-                }
+            CellFault::Coherence(ref fault) => fault.lowering_refusal(self.span),
+            CellFault::Operation(_) | CellFault::Rule(_) => crate::LoweringRefusal::OutOfFragment {
+                span: self.span,
+                form: crate::FormName::DECLARATION,
+                sort: crate::FragmentSort::Declaration,
+                boundary: crate::FragmentBoundary::Unadmitted,
             },
         }
     }
@@ -256,10 +254,9 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             .map(|face| face.orientation)
             .collect();
         let oriented = orient_block(&declaration.description, &orientations).ok();
-        let reading = match oriented.as_ref() {
-            | Some(block) => &block.description,
-            | None => &declaration.description,
-        };
+        let reading = oriented
+            .as_ref()
+            .map_or(&declaration.description, |block| &block.description);
         let DescElaboration {
             store,
             opers,
@@ -270,8 +267,8 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             circuits,
             eta,
         } = match declaration.presentation {
-            | Maybe::Present(_) => elaborate_sign_desc(reading),
-            | Maybe::Absent(_) => elaborate_data_desc(reading),
+            Maybe::Present(_) => elaborate_sign_desc(reading),
+            Maybe::Absent(_) => elaborate_data_desc(reading),
         };
         let examined = declined_opers.is_empty()
             && declined_faces.is_empty()
@@ -307,10 +304,10 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
         let mut outcomes = Vec::with_capacity(circuits.len());
         for (index, circuit) in circuits.into_iter().enumerate() {
             let outcome = match circuit {
-                | CircuitElaboration::Admitted { cell, composite } => {
+                CircuitElaboration::Admitted { cell, composite } => {
                     CircuitCell::Admitted { cell, composite }
                 },
-                | CircuitElaboration::Declined(error) => {
+                CircuitElaboration::Declined(error) => {
                     let span = declaration
                         .description
                         .circuits
@@ -343,8 +340,8 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
                 &presented,
                 &outcomes,
             ) {
-                | Ok(coincidence) => coincidence,
-                | Err((span, fault)) => {
+                Ok(coincidence) => coincidence,
+                Err((span, fault)) => {
                     let diagnostic = CellDiagnosticIndex(report.diagnostics.len());
                     report.diagnostics.push(CellDiagnostic {
                         span,
@@ -355,8 +352,8 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             }
         };
         let (oriented_rules, directions) = match oriented {
-            | Some(block) => (block.description.rules.to_vec(), block.directions),
-            | None => (Vec::new(), Vec::new()),
+            Some(block) => (block.description.rules.to_vec(), block.directions),
+            None => (Vec::new(), Vec::new()),
         };
         let rule_spans = if directions.is_empty() {
             Vec::new()

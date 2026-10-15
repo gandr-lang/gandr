@@ -197,12 +197,12 @@ fn site(
     let layout = |object| {
         let name = schema.object_name(object).cloned();
         move |fault| match name {
-            | Ok(object) => StoreError::Layout { object, fault },
-            | Err(ref refusal) => StoreError::Refused(Refusal::Schema(refusal.clone())),
+            Ok(object) => StoreError::Layout { object, fault },
+            Err(ref refusal) => StoreError::Refused(Refusal::Schema(refusal.clone())),
         }
     };
     match *question {
-        | Question::Part { object, part } => {
+        Question::Part { object, part } => {
             schema.object_name(object).map_err(Refusal::Schema)?;
             Ok(Site {
                 object,
@@ -210,7 +210,7 @@ fn site(
                 end: Run::Single,
             })
         },
-        | Question::Arrow { arrow, part } => {
+        Question::Arrow { arrow, part } => {
             let object = schema.arrow_at(arrow).map_err(Refusal::Schema)?.source();
             let key = KeyWriter::family(ARROW)
                 .column(Ordinal(usize::from(arrow)))
@@ -223,7 +223,7 @@ fn site(
                 end: Run::Single,
             })
         },
-        | Question::Value { attribute, part } => {
+        Question::Value { attribute, part } => {
             let object = schema
                 .attribute_at(attribute)
                 .map_err(Refusal::Schema)?
@@ -239,7 +239,7 @@ fn site(
                 end: Run::Single,
             })
         },
-        | Question::Preimage { arrow, target } => {
+        Question::Preimage { arrow, target } => {
             let spec = schema.arrow_at(arrow).map_err(Refusal::Schema)?;
             if spec.indexing() != Indexing::Indexed {
                 return Err(StoreError::Refused(Refusal::NotIndexed {
@@ -254,7 +254,7 @@ fn site(
                 .key();
             Ok(run(object, prefix))
         },
-        | Question::ValuePreimage {
+        Question::ValuePreimage {
             attribute,
             ref value,
         } => {
@@ -384,15 +384,15 @@ impl Store
             .get(usize::from(site.object))
             .ok_or(StoreError::TableCount)?;
         let evidence = match *question {
-            | Question::Part { .. } => evidence_of(tree, site.key.as_borrowed())?,
-            | Question::Arrow { part, .. } | Question::Value { part, .. } => {
+            Question::Part { .. } => evidence_of(tree, site.key.as_borrowed())?,
+            Question::Arrow { part, .. } | Question::Value { part, .. } => {
                 if tree.lookup(site.key.as_borrowed()).is_none() {
                     let object = self.object_name(site.object)?;
                     return Err(StoreError::Refused(Refusal::NotLive { object, part }));
                 }
                 Evidence::Present(tree.prove_membership(site.key.as_borrowed())?)
             },
-            | Question::Preimage { .. } | Question::ValuePreimage { .. } => {
+            Question::Preimage { .. } | Question::ValuePreimage { .. } => {
                 let range = site.range()?;
                 Evidence::Run(tree.prove_range(range)?)
             },
@@ -510,34 +510,34 @@ impl Proof
         let site = site(schema, question)?;
         let tree_root = self.manifest.tree_root(site.object, params)?;
         let malformed = || match schema.object_name(site.object) {
-            | Ok(object) => StoreError::Layout {
+            Ok(object) => StoreError::Layout {
                 object: object.clone(),
                 fault: crate::error::LayoutFault::Width,
             },
-            | Err(refusal) => StoreError::Refused(Refusal::Schema(refusal)),
+            Err(refusal) => StoreError::Refused(Refusal::Schema(refusal)),
         };
 
         match (question, &self.evidence) {
-            | (&Question::Part { .. }, &Evidence::Present(ref proof)) => {
+            (&Question::Part { .. }, &Evidence::Present(ref proof)) => {
                 proof.verify(&tree_root, site.key.as_borrowed(), RecordValue::from(&[]))?;
                 Ok(Answer::Liveness(Liveness::Live))
             },
-            | (&Question::Part { .. }, &Evidence::Absent(ref proof)) => {
+            (&Question::Part { .. }, &Evidence::Absent(ref proof)) => {
                 proof.verify(&tree_root, site.key.as_borrowed())?;
                 Ok(Answer::Liveness(Liveness::Dead))
             },
-            | (&Question::Arrow { .. }, &Evidence::Present(ref proof)) => {
+            (&Question::Arrow { .. }, &Evidence::Present(ref proof)) => {
                 proof.verify(&tree_root, site.key.as_borrowed(), proof.value())?;
                 let value: &[u8] = proof.value().into();
                 let target: [u8; 8] = value.try_into().map_err(|_width| malformed())?;
                 Ok(Answer::Target(PartKey::from(u64::from_le_bytes(target))))
             },
-            | (&Question::Value { .. }, &Evidence::Present(ref proof)) => {
+            (&Question::Value { .. }, &Evidence::Present(ref proof)) => {
                 proof.verify(&tree_root, site.key.as_borrowed(), proof.value())?;
                 let value: &[u8] = proof.value().into();
                 Ok(Answer::Value(AttributeValue::from(value)))
             },
-            | (
+            (
                 &Question::Preimage { .. } | &Question::ValuePreimage { .. },
                 &Evidence::Run(ref proof),
             ) => {
@@ -553,7 +553,7 @@ impl Proof
                 }
                 Ok(Answer::Preimage(parts.into_boxed_slice()))
             },
-            | _ => Err(StoreError::WrongQuestion),
+            _ => Err(StoreError::WrongQuestion),
         }
     }
 }

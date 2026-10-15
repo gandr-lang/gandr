@@ -110,22 +110,22 @@ impl fmt::Display for SyntaxError
     ) -> fmt::Result
     {
         match *self {
-            | Self::InvertedSpan { start, end } => {
+            Self::InvertedSpan { start, end } => {
                 write!(f, "span end {end} lies before its start {start}")
             },
-            | Self::SpanOutsideSource { span, source_end } => {
+            Self::SpanOutsideSource { span, source_end } => {
                 write!(f, "span {span} reaches past the source end {source_end}")
             },
-            | Self::SpanSplitsCharacter { offset } => {
+            Self::SpanSplitsCharacter { offset } => {
                 write!(f, "offset {offset} is not a character boundary")
             },
-            | Self::UnknownStagedNode { node } => {
+            Self::UnknownStagedNode { node } => {
                 write!(f, "staged node {node} was never minted by this builder")
             },
-            | Self::BuilderIdExhausted => {
+            Self::BuilderIdExhausted => {
                 f.write_str("no distinct builder identity remains to be issued")
             },
-            | Self::ChildAlreadyAttached { node } => {
+            Self::ChildAlreadyAttached { node } => {
                 write!(f, "staged node {node} already has a parent")
             },
         }

@@ -177,10 +177,10 @@ impl Catalogue
         index: ShapeIndex,
     ) -> Maybe<&Shape, shape_lookup::Absent>
     {
-        match self.shapes.get(index.0) {
-            | Some(shape) => Maybe::Present(shape),
-            | None => Maybe::Absent(shape_lookup::Absent::OutOfRange),
-        }
+        self.shapes.get(index.0).map_or(
+            Maybe::Absent(shape_lookup::Absent::OutOfRange),
+            Maybe::Present,
+        )
     }
 
     /// The index of `shape`'s class.
@@ -207,10 +207,11 @@ impl Catalogue
         shape: &Shape,
     ) -> Maybe<ShapeIndex, shape_class::Absent>
     {
-        match self.classes.get(&shape.key()) {
-            | Some(index) => Maybe::Present(*index),
-            | None => Maybe::Absent(shape_class::Absent::PastTheBound),
-        }
+        self.classes
+            .get(&shape.key())
+            .map_or(Maybe::Absent(shape_class::Absent::PastTheBound), |index| {
+                Maybe::Present(*index)
+            })
     }
 
     /// The maps from the shape at `source` to the shape at `target`.
@@ -229,9 +230,10 @@ impl Catalogue
             return Maybe::Absent(hom_lookup::Absent::OutOfRange);
         }
         let position = source.0.saturating_mul(count).saturating_add(target.0);
-        match self.homs.get(position) {
-            | Some(set) => Maybe::Present(set),
-            | None => Maybe::Absent(hom_lookup::Absent::OutOfRange),
-        }
+        self.homs
+            .get(position)
+            .map_or(Maybe::Absent(hom_lookup::Absent::OutOfRange), |set| {
+                Maybe::Present(set)
+            })
     }
 }

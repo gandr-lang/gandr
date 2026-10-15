@@ -164,8 +164,12 @@ fn a_statement_the_syntax_cannot_read_is_refused()
     let refused = |written: &str| {
         let mut arena = CoreArena::new();
         match statement(Spelled(written), &mut arena) {
-            | DeclarationOutcome::Refused(refusal) => refusal,
-            | other => panic!("`{written}` is refused: {other:?}"),
+            DeclarationOutcome::Refused(refusal) => refusal,
+            other @ (DeclarationOutcome::Completed { .. }
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Abstract(_)) => panic!("`{written}` is refused: {other:?}"),
         }
     };
     let records = "#{mul = exchange, one = keep}";

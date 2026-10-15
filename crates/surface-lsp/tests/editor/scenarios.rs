@@ -545,7 +545,7 @@ fn owners(
     for position in tree.positions() {
         let node = tree.node(position).expect("a position names a node");
         let (owner, form, kind) = match node.label() {
-            | NodeLabel::Meld(form) => {
+            NodeLabel::Meld(form) => {
                 if grammar.named_kind(form).expect("a tree's mold is known").0 == "attribute_block"
                 {
                     attributes.push(range(node));
@@ -567,26 +567,26 @@ fn owners(
                             grammar.mold(tile).expect("a tree's mold is known").label,
                             open,
                         ) {
-                            | ("@[", None) => open = Some(range(child).0),
-                            | ("]", Some(start)) => {
+                            ("@[", None) => open = Some(range(child).0),
+                            ("]", Some(start)) => {
                                 attributes.push((start, range(child).1));
                                 open = None;
                             },
-                            | ("def" | "type", None) => break,
-                            | _ => {},
+                            ("def" | "type", None) => break,
+                            _ => {},
                         }
                     }
                 }
                 continue;
             },
-            | NodeLabel::Tile(mold) => {
+            NodeLabel::Tile(mold) => {
                 let parent = parents
                     .get(usize::from(position))
                     .copied()
                     .flatten()
                     .and_then(|parent| tree.node(parent));
                 match parent.map(|parent| (parent, parent.label())) {
-                    | Some((parent, NodeLabel::Meld(form))) if rule(form) == rule(mold) => {
+                    Some((parent, NodeLabel::Meld(form))) if rule(form) == rule(mold) => {
                         if NAMES
                             .contains(&grammar.mold(mold).expect("a tree's mold is known").label)
                         {
@@ -596,13 +596,13 @@ fn owners(
                             (range(parent), range(parent), kind(form))
                         }
                     },
-                    | Some(_) | None => (range(node), range(node), kind(mold)),
+                    Some(_) | None => (range(node), range(node), kind(mold)),
                 }
             },
-            | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
                 (range(node), range(node), String::from("grout"))
             },
-            | NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => continue,
+            NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => continue,
         };
         owners.push(Owner {
             leaf: range(node),
@@ -725,8 +725,8 @@ impl Sweep
     fn scripts(self) -> ProptestConfig
     {
         ProptestConfig::with_cases(match self {
-            | Self::Whole => CASES,
-            | Self::Sampled => SAMPLED_CASES,
+            Self::Whole => CASES,
+            Self::Sampled => SAMPLED_CASES,
         })
     }
 }
@@ -874,13 +874,13 @@ fn apply(
 )
 {
     match edit {
-        | Edit::Type(token) => token
+        Edit::Type(token) => token
             .chars()
             .for_each(|typed| session.type_char(Key(typed))),
-        | Edit::Enter => session.enter(),
-        | Edit::Backspace => session.backspace(),
-        | Edit::Delete => session.delete(),
-        | Edit::Move(thousandths) => {
+        Edit::Enter => session.enter(),
+        Edit::Backspace => session.backspace(),
+        Edit::Delete => session.delete(),
+        Edit::Move(thousandths) => {
             let text = session.buffer().text().0;
             let at = text
                 .len()
@@ -890,7 +890,7 @@ fn apply(
             let at = text.floor_char_boundary(at);
             session.move_to(Offset(at));
         },
-        | Edit::DeleteLine => {
+        Edit::DeleteLine => {
             let text = session.buffer().text().0;
             let cursor = session.buffer().cursor().0;
             let start = text
@@ -905,11 +905,11 @@ fn apply(
                 });
             session.replace(Offset(start), Offset(end), Text(""));
         },
-        | Edit::Paste(snippet) => {
+        Edit::Paste(snippet) => {
             let cursor = session.buffer().cursor();
             session.replace(cursor, cursor, Text(snippet));
         },
-        | Edit::Undo => session.undo(),
+        Edit::Undo => session.undo(),
     }
 }
 
@@ -1142,9 +1142,9 @@ fn hovering_every_position_of_each_corpus_source_answers_without_fault()
                     row.unknown = 1_usize;
                 }
                 match shaped {
-                    | shapes::Judged::Shaped => row.shaped = 1_usize,
-                    | shapes::Judged::Unshaped => row.unshaped = 1_usize,
-                    | shapes::Judged::Unheld => {},
+                    shapes::Judged::Shaped => row.shaped = 1_usize,
+                    shapes::Judged::Unshaped => row.unshaped = 1_usize,
+                    shapes::Judged::Unheld => {},
                 }
             }
             rows.entry(owner.kind.clone()).or_default().add(row);

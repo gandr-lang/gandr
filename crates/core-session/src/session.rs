@@ -113,11 +113,11 @@ impl core::fmt::Display for TypeError
     ) -> core::fmt::Result
     {
         match *self {
-            | Self::MissingNode(NodeId(id)) => write!(f, "missing session node {id}"),
-            | Self::RepeatedNode(NodeId(id)) => write!(f, "repeated structural node {id}"),
-            | Self::UnboundVariable(NodeId(id)) => write!(f, "unbound session variable {id}"),
-            | Self::NonContractive(NodeId(id)) => write!(f, "non-contractive recursion {id}"),
-            | Self::UnreachableNode(NodeId(id)) => write!(f, "unreachable session node {id}"),
+            Self::MissingNode(NodeId(id)) => write!(f, "missing session node {id}"),
+            Self::RepeatedNode(NodeId(id)) => write!(f, "repeated structural node {id}"),
+            Self::UnboundVariable(NodeId(id)) => write!(f, "unbound session variable {id}"),
+            Self::NonContractive(NodeId(id)) => write!(f, "non-contractive recursion {id}"),
+            Self::UnreachableNode(NodeId(id)) => write!(f, "unreachable session node {id}"),
         }
     }
 }
@@ -224,24 +224,24 @@ impl Session
         let mut pending = alloc::vec![Visit::Enter(root)];
         while let Some(visit) = pending.pop() {
             let id = match visit {
-                | Visit::Leave(id) => {
+                Visit::Leave(id) => {
                     binders.remove(&id);
                     continue;
                 },
-                | Visit::Enter(id) => id,
+                Visit::Enter(id) => id,
             };
             let node = session.node(id)?;
             if !seen.insert(id) {
                 return Err(TypeError::RepeatedNode(id));
             }
             match node {
-                | &Node::Send(_, next) | &Node::Receive(_, next) => {
+                &Node::Send(_, next) | &Node::Receive(_, next) => {
                     pending.push(Visit::Enter(next));
                 },
-                | &Node::Select(ref branches) | &Node::Offer(ref branches) => {
+                &Node::Select(ref branches) | &Node::Offer(ref branches) => {
                     pending.extend(branches.values().copied().map(Visit::Enter));
                 },
-                | &Node::Mu(body) => {
+                &Node::Mu(body) => {
                     let body_node = session.node(body)?;
                     if matches!(*body_node, Node::Mu(_) | Node::Var(_)) {
                         return Err(TypeError::NonContractive(id));
@@ -250,12 +250,12 @@ impl Session
                     pending.push(Visit::Leave(id));
                     pending.push(Visit::Enter(body));
                 },
-                | &Node::Var(binder) => {
+                &Node::Var(binder) => {
                     if !binders.contains(&binder) {
                         return Err(TypeError::UnboundVariable(id));
                     }
                 },
-                | &Node::End => {},
+                &Node::End => {},
             }
         }
         for (index, _) in session.nodes.iter().enumerate() {
@@ -305,14 +305,14 @@ impl Session
         let nodes = self
             .nodes
             .iter()
-            .map(|node| match node {
-                | &Node::Send(payload, next) => Node::Receive(payload, next),
-                | &Node::Receive(payload, next) => Node::Send(payload, next),
-                | &Node::Select(ref branches) => Node::Offer(branches.clone()),
-                | &Node::Offer(ref branches) => Node::Select(branches.clone()),
-                | &Node::End => Node::End,
-                | &Node::Mu(body) => Node::Mu(body),
-                | &Node::Var(binder) => Node::Var(binder),
+            .map(|node| match *node {
+                Node::Send(payload, next) => Node::Receive(payload, next),
+                Node::Receive(payload, next) => Node::Send(payload, next),
+                Node::Select(ref branches) => Node::Offer(branches.clone()),
+                Node::Offer(ref branches) => Node::Select(branches.clone()),
+                Node::End => Node::End,
+                Node::Mu(body) => Node::Mu(body),
+                Node::Var(binder) => Node::Var(binder),
             })
             .collect();
         Self {
@@ -394,8 +394,12 @@ impl Session
         for _step in 0 .. 3_u8 {
             let node = self.node(id)?;
             match node {
-                | &Node::Mu(body) | &Node::Var(body) => id = body,
-                | node => return Ok((id, node)),
+                &Node::Mu(body) | &Node::Var(body) => id = body,
+                node @ (&Node::Send(..)
+                | &Node::Receive(..)
+                | &Node::Select(_)
+                | &Node::Offer(_)
+                | &Node::End) => return Ok((id, node)),
             }
         }
         Err(TypeError::NonContractive(id))
@@ -433,12 +437,12 @@ impl Node
     ) -> Result<Action, TypeError>
     {
         match *self {
-            | Self::Send(payload, _) => Ok(Action::Send(payload)),
-            | Self::Receive(payload, _) => Ok(Action::Receive(payload)),
-            | Self::Select(_) => Ok(Action::Select),
-            | Self::Offer(_) => Ok(Action::Offer),
-            | Self::End => Ok(Action::End),
-            | Self::Mu(_) | Self::Var(_) => Err(TypeError::NonContractive(id)),
+            Self::Send(payload, _) => Ok(Action::Send(payload)),
+            Self::Receive(payload, _) => Ok(Action::Receive(payload)),
+            Self::Select(_) => Ok(Action::Select),
+            Self::Offer(_) => Ok(Action::Offer),
+            Self::End => Ok(Action::End),
+            Self::Mu(_) | Self::Var(_) => Err(TypeError::NonContractive(id)),
         }
     }
 }

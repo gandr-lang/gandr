@@ -191,13 +191,11 @@ impl NodeLabel
     ) -> crate::ConstEquality
     {
         if match (self, other) {
-            | (Self::Wald, Self::Wald) | (Self::Space, Self::Space) | (Self::Doc, Self::Doc) => {
-                true
-            },
-            | (Self::Meld(a), Self::Meld(b)) | (Self::Tile(a), Self::Tile(b)) => {
+            (Self::Wald, Self::Wald) | (Self::Space, Self::Space) | (Self::Doc, Self::Doc) => true,
+            (Self::Meld(a), Self::Meld(b)) | (Self::Tile(a), Self::Tile(b)) => {
                 matches!(a.const_eq(b), crate::ConstEquality::Equal)
             },
-            | (Self::Grout { sort: a, shape: sa }, Self::Grout { sort: b, shape: sb }) => {
+            (Self::Grout { sort: a, shape: sa }, Self::Grout { sort: b, shape: sb }) => {
                 matches!(a.const_eq(b), crate::ConstEquality::Equal)
                     && matches!(
                         (sa, sb),
@@ -207,10 +205,7 @@ impl NodeLabel
                             | (GroutShape::Infix, GroutShape::Infix)
                     )
             },
-            | (
-                Self::GhostClose { sort: a, class: ca },
-                Self::GhostClose { sort: b, class: cb },
-            ) => {
+            (Self::GhostClose { sort: a, class: ca }, Self::GhostClose { sort: b, class: cb }) => {
                 matches!(a.const_eq(b), crate::ConstEquality::Equal)
                     && matches!(
                         (ca, cb),
@@ -219,7 +214,7 @@ impl NodeLabel
                             | (ClosingClass::Brace, ClosingClass::Brace)
                     )
             },
-            | _ => false,
+            _ => false,
         } {
             crate::ConstEquality::Equal
         }
@@ -257,13 +252,13 @@ impl NodeLabel
     pub const fn tag(self) -> LabelTag
     {
         LabelTag(match self {
-            | Self::Wald => 0x01_u8,
-            | Self::Meld(_) => 0x02_u8,
-            | Self::Tile(_) => 0x03_u8,
-            | Self::Grout { .. } => 0x04_u8,
-            | Self::GhostClose { .. } => 0x05_u8,
-            | Self::Space => 0x06_u8,
-            | Self::Doc => 0x07_u8,
+            Self::Wald => 0x01_u8,
+            Self::Meld(_) => 0x02_u8,
+            Self::Tile(_) => 0x03_u8,
+            Self::Grout { .. } => 0x04_u8,
+            Self::GhostClose { .. } => 0x05_u8,
+            Self::Space => 0x06_u8,
+            Self::Doc => 0x07_u8,
         })
     }
 

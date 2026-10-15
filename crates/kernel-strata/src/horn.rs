@@ -758,8 +758,8 @@ impl ModelValue
     pub const fn as_finite(self) -> Option<HornOffset>
     {
         match self {
-            | Self::Finite(value) => Some(value),
-            | Self::Infinite => None,
+            Self::Finite(value) => Some(value),
+            Self::Infinite => None,
         }
     }
 
@@ -793,8 +793,8 @@ impl ModelValue
     ) -> AtomCoverage
     {
         AtomCoverage(match self {
-            | Self::Finite(value) => offset <= value,
-            | Self::Infinite => true,
+            Self::Finite(value) => offset <= value,
+            Self::Infinite => true,
         })
     }
 }
@@ -1223,9 +1223,9 @@ pub fn saturate(
                 firing.value
             };
             let improved = match (current, candidate) {
-                | (Some(ModelValue::Infinite), _) => false,
-                | (None, _) | (Some(ModelValue::Finite(_)), ModelValue::Infinite) => true,
-                | (Some(ModelValue::Finite(existing)), ModelValue::Finite(update)) => {
+                (Some(ModelValue::Infinite), _) => false,
+                (None, _) | (Some(ModelValue::Finite(_)), ModelValue::Infinite) => true,
+                (Some(ModelValue::Finite(existing)), ModelValue::Finite(update)) => {
                     update > existing
                 },
             };
@@ -1323,9 +1323,9 @@ pub fn derive_targets(
             let head_var = head.variable();
             let current = values.get(&head_var).copied();
             let improved = match (current, firing.value) {
-                | (Some(ModelValue::Infinite), _) => false,
-                | (None, _) | (Some(ModelValue::Finite(_)), ModelValue::Infinite) => true,
-                | (Some(ModelValue::Finite(existing)), ModelValue::Finite(update)) => {
+                (Some(ModelValue::Infinite), _) => false,
+                (None, _) | (Some(ModelValue::Finite(_)), ModelValue::Infinite) => true,
+                (Some(ModelValue::Finite(existing)), ModelValue::Finite(update)) => {
                     update > existing
                 },
             };
@@ -1445,9 +1445,9 @@ pub fn fire(
     let mut all_infinite = true;
     for &atom in clause.body() {
         match model.get(&atom.variable()) {
-            | None => return Ok(None),
-            | Some(&ModelValue::Infinite) => {},
-            | Some(&ModelValue::Finite(maximum)) => {
+            None => return Ok(None),
+            Some(&ModelValue::Infinite) => {},
+            Some(&ModelValue::Finite(maximum)) => {
                 all_infinite = false;
                 let headroom = u128::from(maximum).checked_sub(u128::from(atom.offset()));
                 let Some(cap) = headroom

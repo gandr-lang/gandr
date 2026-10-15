@@ -53,8 +53,8 @@ impl Head for TermHead
     fn arity(&self) -> ArgumentCount
     {
         match *self {
-            | Self::Var(_) => ArgumentCount::from(0_usize),
-            | Self::Ctor(_, arity) | Self::Op(_, arity) | Self::Results(arity) => arity,
+            Self::Var(_) => ArgumentCount::from(0_usize),
+            Self::Ctor(_, arity) | Self::Op(_, arity) | Self::Results(arity) => arity,
         }
     }
 }
@@ -218,8 +218,8 @@ impl FreeTerm
     pub(crate) fn applied_symbols(&self) -> impl Iterator<Item = &Name>
     {
         self.0.to_ref().preorder().filter_map(|head| match *head {
-            | TermHead::Var(_) | TermHead::Results(_) => None,
-            | TermHead::Ctor(ref name, _) | TermHead::Op(ref name, _) => Some(name),
+            TermHead::Var(_) | TermHead::Results(_) => None,
+            TermHead::Ctor(ref name, _) | TermHead::Op(ref name, _) => Some(name),
         })
     }
 
@@ -243,8 +243,8 @@ impl FreeTerm
     pub(crate) fn results_widths(&self) -> impl Iterator<Item = ArgumentCount>
     {
         self.0.to_ref().preorder().filter_map(|head| match *head {
-            | TermHead::Results(width) => Some(width),
-            | TermHead::Var(_) | TermHead::Ctor(..) | TermHead::Op(..) => None,
+            TermHead::Results(width) => Some(width),
+            TermHead::Var(_) | TermHead::Ctor(..) | TermHead::Op(..) => None,
         })
     }
 
@@ -275,8 +275,8 @@ impl FreeTerm
         I: FnMut(&Name) -> Maybe<TermNode<'image>, leaf_image::Absent>,
     {
         Self(self.0.to_ref().replace_leaves(|head| match *head {
-            | TermHead::Var(ref name) => image(name).map(|replacement| replacement.0),
-            | TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) => {
+            TermHead::Var(ref name) => image(name).map(|replacement| replacement.0),
+            TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) => {
                 Maybe::Absent(leaf_image::Absent::Kept)
             },
         }))
@@ -320,11 +320,11 @@ impl fmt::Display for FreeTerm
         let mut rendered: Vec<String> = Vec::new();
         for head in self.0.heads() {
             let (name, arity) = match *head {
-                | TermHead::Var(ref name) => (Some(name), 0_usize),
-                | TermHead::Ctor(ref name, arity) | TermHead::Op(ref name, arity) => {
+                TermHead::Var(ref name) => (Some(name), 0_usize),
+                TermHead::Ctor(ref name, arity) | TermHead::Op(ref name, arity) => {
                     (Some(name), usize::from(arity))
                 },
-                | TermHead::Results(arity) => (None, usize::from(arity)),
+                TermHead::Results(arity) => (None, usize::from(arity)),
             };
             if let (Some(name), 0) = (name, arity) {
                 rendered.push(name.to_string());
@@ -357,16 +357,16 @@ impl<'term> TermNode<'term>
     pub fn view(self) -> TermView<'term>
     {
         match *self.0.head() {
-            | TermHead::Var(ref name) => TermView::Var(name),
-            | TermHead::Ctor(ref name, _) => TermView::Ctor {
+            TermHead::Var(ref name) => TermView::Var(name),
+            TermHead::Ctor(ref name, _) => TermView::Ctor {
                 name,
                 args: TermArgs(self.0.children()),
             },
-            | TermHead::Op(ref name, _) => TermView::Op {
+            TermHead::Op(ref name, _) => TermView::Op {
                 name,
                 args: TermArgs(self.0.children()),
             },
-            | TermHead::Results(_) => TermView::Results {
+            TermHead::Results(_) => TermView::Results {
                 args: TermArgs(self.0.children()),
             },
         }
@@ -390,8 +390,8 @@ impl<'term> TermNode<'term>
     pub fn vars(self) -> impl Iterator<Item = &'term Name>
     {
         self.0.preorder().filter_map(|head| match *head {
-            | TermHead::Var(ref name) => Some(name),
-            | TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) => None,
+            TermHead::Var(ref name) => Some(name),
+            TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) => None,
         })
     }
 

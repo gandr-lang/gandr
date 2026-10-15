@@ -570,8 +570,8 @@ impl ValueProfile
         ];
 
         match fields.into_iter().find(|&(agrees, _field)| !agrees) {
-            | Some((_agrees, field)) => Err(ValueError::IncompatibleProfile { field }),
-            | None => Ok(()),
+            Some((_agrees, field)) => Err(ValueError::IncompatibleProfile { field }),
+            None => Ok(()),
         }
     }
 }
@@ -743,16 +743,16 @@ impl ValueManifest
         image.extend_from_slice(commitment_length.to_le_bytes().as_slice());
         image.extend_from_slice(commitment);
         image.push(match self.profile.digest_family {
-            | DigestFamily::Blake3 => DIGEST_FAMILY_BLAKE3,
+            DigestFamily::Blake3 => DIGEST_FAMILY_BLAKE3,
         });
         image.extend_from_slice(u16::from(codec.codec()).to_le_bytes().as_slice());
         image.extend_from_slice(u16::from(codec.version()).to_le_bytes().as_slice());
         image.push(match self.profile.index_base {
-            | ChildIndexBase::Absolute => INDEX_BASE_ABSOLUTE,
-            | ChildIndexBase::ChunkLocal => INDEX_BASE_CHUNK_LOCAL,
+            ChildIndexBase::Absolute => INDEX_BASE_ABSOLUTE,
+            ChildIndexBase::ChunkLocal => INDEX_BASE_CHUNK_LOCAL,
         });
         image.push(match self.profile.boundary_classification {
-            | BoundaryClassification::EveryConstructor => BOUNDARY_EVERY_CONSTRUCTOR,
+            BoundaryClassification::EveryConstructor => BOUNDARY_EVERY_CONSTRUCTOR,
         });
         image.extend_from_slice(
             u16::from(self.profile.chunk_frame_version)
@@ -1225,8 +1225,8 @@ impl ManifestCursor<'_>
         let FieldBytes([tag]) = self.take::<1>(ManifestField::DigestFamily)?;
 
         match tag {
-            | DIGEST_FAMILY_BLAKE3 => Ok(DigestFamily::Blake3),
-            | _ => Err(ValueError::MalformedManifest {
+            DIGEST_FAMILY_BLAKE3 => Ok(DigestFamily::Blake3),
+            _ => Err(ValueError::MalformedManifest {
                 field: ManifestField::DigestFamily,
             }),
         }
@@ -1303,9 +1303,9 @@ impl ManifestCursor<'_>
         let FieldBytes([tag]) = self.take::<1>(ManifestField::ChildIndexBase)?;
 
         match tag {
-            | INDEX_BASE_ABSOLUTE => Ok(ChildIndexBase::Absolute),
-            | INDEX_BASE_CHUNK_LOCAL => Ok(ChildIndexBase::ChunkLocal),
-            | _ => Err(ValueError::MalformedManifest {
+            INDEX_BASE_ABSOLUTE => Ok(ChildIndexBase::Absolute),
+            INDEX_BASE_CHUNK_LOCAL => Ok(ChildIndexBase::ChunkLocal),
+            _ => Err(ValueError::MalformedManifest {
                 field: ManifestField::ChildIndexBase,
             }),
         }
@@ -1339,8 +1339,8 @@ impl ManifestCursor<'_>
         let FieldBytes([tag]) = self.take::<1>(ManifestField::BoundaryClassification)?;
 
         match tag {
-            | BOUNDARY_EVERY_CONSTRUCTOR => Ok(BoundaryClassification::EveryConstructor),
-            | _ => Err(ValueError::MalformedManifest {
+            BOUNDARY_EVERY_CONSTRUCTOR => Ok(BoundaryClassification::EveryConstructor),
+            _ => Err(ValueError::MalformedManifest {
                 field: ManifestField::BoundaryClassification,
             }),
         }

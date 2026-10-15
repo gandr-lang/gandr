@@ -479,8 +479,8 @@ fn decide(
             .values
             .iter()
             .filter_map(|(&variable, &value)| match variable {
-                | HVar::Var(level_var) => Some((level_var, value)),
-                | HVar::Bottom => None,
+                HVar::Var(level_var) => Some((level_var, value)),
+                HVar::Bottom => None,
             })
             .collect();
         return Ok(Entailment::Refuted(EntailmentCountermodel {
@@ -874,11 +874,9 @@ pub fn validate_entailment_countermodel(
         };
         let head_var = clause.head().variable();
         let satisfied = match (model.get(&head_var), firing.value) {
-            | (Some(&ModelValue::Infinite), _) => true,
-            | (Some(&ModelValue::Finite(existing)), ModelValue::Finite(forced)) => {
-                forced <= existing
-            },
-            | (Some(&ModelValue::Finite(_)), ModelValue::Infinite) | (None, _) => false,
+            (Some(&ModelValue::Infinite), _) => true,
+            (Some(&ModelValue::Finite(existing)), ModelValue::Finite(forced)) => forced <= existing,
+            (Some(&ModelValue::Finite(_)), ModelValue::Infinite) | (None, _) => false,
         };
         if !satisfied {
             return Err(PosetEvidenceError::ClauseUnsatisfied {
@@ -1678,8 +1676,8 @@ mod tests
     fn admitted(constraints: Vec<LandmarkConstraint>) -> LandmarkPoset
     {
         match LandmarkPoset::admit(constraints).expect("admission does not overflow") {
-            | AdmissionOutcome::Admitted(poset) => poset,
-            | AdmissionOutcome::Loop(_witness) => panic!("expected admission"),
+            AdmissionOutcome::Admitted(poset) => poset,
+            AdmissionOutcome::Loop(_witness) => panic!("expected admission"),
         }
     }
 
@@ -1782,7 +1780,7 @@ mod tests
             .entails_leq_with_evidence(left, right)
             .expect("the query decides")
         {
-            | Entailment::Holds(witness) => {
+            Entailment::Holds(witness) => {
                 assert_eq!(
                     Ok(()),
                     validate_entailment_witness(poset, left, right, &witness),
@@ -1790,7 +1788,7 @@ mod tests
                 );
                 witness
             },
-            | Entailment::Refuted(_countermodel) => panic!("expected entailment"),
+            Entailment::Refuted(_countermodel) => panic!("expected entailment"),
         }
     }
 
@@ -1826,7 +1824,7 @@ mod tests
             .entails_leq_with_evidence(left, right)
             .expect("the query decides")
         {
-            | Entailment::Refuted(countermodel) => {
+            Entailment::Refuted(countermodel) => {
                 assert_eq!(
                     Ok(()),
                     validate_entailment_countermodel(poset, left, right, &countermodel),
@@ -1834,7 +1832,7 @@ mod tests
                 );
                 countermodel
             },
-            | Entailment::Holds(_witness) => panic!("expected refusal"),
+            Entailment::Holds(_witness) => panic!("expected refusal"),
         }
     }
 }

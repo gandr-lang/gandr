@@ -418,8 +418,8 @@ impl Held
     ) -> &Document
     {
         match self.own(peer) {
-            | Maybe::Present(document) => document,
-            | Maybe::Absent(_) => &self.document,
+            Maybe::Present(document) => document,
+            Maybe::Absent(_) => &self.document,
         }
     }
 
@@ -512,12 +512,12 @@ impl Held
             return Maybe::Present(self);
         }
         match self.others.pop_first() {
-            | Some((latest, document)) => Maybe::Present(Self {
+            Some((latest, document)) => Maybe::Present(Self {
                 latest,
                 document,
                 others: self.others,
             }),
-            | None => Maybe::Absent(unheld::Absent::Forgotten),
+            None => Maybe::Absent(unheld::Absent::Forgotten),
         }
     }
 }
@@ -988,11 +988,11 @@ impl Workspace
             style: STYLE,
         };
         let answer = match classify(request) {
-            | Err(malformed) => malformed.response(),
-            | Ok(Incoming::Request { id, method, params }) => {
+            Err(malformed) => malformed.response(),
+            Ok(Incoming::Request { id, method, params }) => {
                 reader.request(self, id, &method, params)
             },
-            | Ok(Incoming::Notification { .. } | Incoming::Response) => return Value::Null,
+            Ok(Incoming::Notification { .. } | Incoming::Response) => return Value::Null,
         };
         serde_json::to_value(answer).unwrap_or(Value::Null)
     }
@@ -1279,12 +1279,12 @@ impl Server
     ) -> Outcome
     {
         match classify(body) {
-            | Err(malformed) => Outcome::say(malformed.response()),
-            | Ok(Incoming::Response) => Outcome::quiet(),
-            | Ok(Incoming::Request { id, method, params }) => {
+            Err(malformed) => Outcome::say(malformed.response()),
+            Ok(Incoming::Response) => Outcome::quiet(),
+            Ok(Incoming::Request { id, method, params }) => {
                 Outcome::say(self.request(workspace, id, &method, params))
             },
-            | Ok(Incoming::Notification { method, params }) => {
+            Ok(Incoming::Notification { method, params }) => {
                 self.notification(workspace, &method, params)
             },
         }
@@ -1311,8 +1311,8 @@ impl Server
     pub const fn closed(&self) -> Served
     {
         match self.phase {
-            | Phase::ShuttingDown => Served::Clean,
-            | Phase::Waiting | Phase::Running => Served::Abrupt,
+            Phase::ShuttingDown => Served::Clean,
+            Phase::Waiting | Phase::Running => Served::Abrupt,
         }
     }
 
@@ -1487,7 +1487,7 @@ impl Server
     {
         let name = method.as_ref();
         match (self.phase, name) {
-            | (Phase::Waiting, "initialize") => {
+            (Phase::Waiting, "initialize") => {
                 self.phase = Phase::Running;
                 let settings = initial_settings(&params);
                 self.verbosity = settings.verbosity().unwrap_or_default();
@@ -1501,32 +1501,32 @@ impl Server
                     Answer::Initialize(Box::new(InitializeResult::advertised())),
                 )
             },
-            | (Phase::Waiting, _) => failure(
+            (Phase::Waiting, _) => failure(
                 id,
                 ErrorCode::SERVER_NOT_INITIALIZED,
                 format!("`{name}` arrived before `initialize`"),
             ),
-            | (Phase::Running, "initialize") => failure(
+            (Phase::Running, "initialize") => failure(
                 id,
                 ErrorCode::INVALID_REQUEST,
                 "`initialize` was already answered".to_owned(),
             ),
-            | (Phase::Running, "shutdown") => {
+            (Phase::Running, "shutdown") => {
                 self.phase = Phase::ShuttingDown;
                 success(id, Answer::Nothing)
             },
-            | (Phase::Running, "textDocument/semanticTokens/full") => {
+            (Phase::Running, "textDocument/semanticTokens/full") => {
                 match serde_json::from_value::<DocumentParams>(params) {
-                    | Ok(params) => success(
+                    Ok(params) => success(
                         id,
                         workspace.tokens(&params.text_document.uri, self.peer, Window::Whole),
                     ),
-                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            | (Phase::Running, "textDocument/semanticTokens/range") => {
+            (Phase::Running, "textDocument/semanticTokens/range") => {
                 match serde_json::from_value::<RangeParams>(params) {
-                    | Ok(params) => success(
+                    Ok(params) => success(
                         id,
                         workspace.tokens(
                             &params.text_document.uri,
@@ -1534,43 +1534,43 @@ impl Server
                             Window::Within(params.range),
                         ),
                     ),
-                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            | (Phase::Running, "textDocument/inlineCompletion") => {
+            (Phase::Running, "textDocument/inlineCompletion") => {
                 match serde_json::from_value::<PositionParams>(params) {
-                    | Ok(params) => success(
+                    Ok(params) => success(
                         id,
                         workspace.inline(&params.text_document.uri, self.peer, params.position),
                     ),
-                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            | (Phase::Running, "textDocument/documentSymbol") => {
+            (Phase::Running, "textDocument/documentSymbol") => {
                 match serde_json::from_value::<DocumentParams>(params) {
-                    | Ok(params) => success(
+                    Ok(params) => success(
                         id,
                         workspace.outline(&params.text_document.uri, self.peer, |reading, _| {
                             Answer::Symbols(reading.symbols())
                         }),
                     ),
-                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            | (Phase::Running, "textDocument/foldingRange") => {
+            (Phase::Running, "textDocument/foldingRange") => {
                 match serde_json::from_value::<DocumentParams>(params) {
-                    | Ok(params) => success(
+                    Ok(params) => success(
                         id,
                         workspace.outline(&params.text_document.uri, self.peer, |reading, _| {
                             Answer::Folds(reading.folds().to_vec())
                         }),
                     ),
-                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            | (Phase::Running, "textDocument/selectionRange") => {
+            (Phase::Running, "textDocument/selectionRange") => {
                 match serde_json::from_value::<SelectionRangeParams>(params) {
-                    | Ok(params) => success(
+                    Ok(params) => success(
                         id,
                         workspace.outline(&params.text_document.uri, self.peer, |reading, text| {
                             Answer::Selections(reading.selections(
@@ -1579,12 +1579,12 @@ impl Server
                             ))
                         }),
                     ),
-                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            | (Phase::Running, "textDocument/hover") => {
+            (Phase::Running, "textDocument/hover") => {
                 match serde_json::from_value::<PositionParams>(params) {
-                    | Ok(params) => success(
+                    Ok(params) => success(
                         id,
                         workspace.hover(
                             &params.text_document.uri,
@@ -1593,64 +1593,62 @@ impl Server
                             self.style,
                         ),
                     ),
-                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            | (Phase::Running, "textDocument/codeLens") => {
+            (Phase::Running, "textDocument/codeLens") => {
                 match serde_json::from_value::<DocumentParams>(params) {
-                    | Ok(params) => success(
+                    Ok(params) => success(
                         id,
                         match workspace.view(&params.text_document.uri, self.peer) {
-                            | Maybe::Present(document) => {
-                                Answer::Lenses(lenses(&document.proposals))
-                            },
-                            | Maybe::Absent(_) => Answer::Nothing,
+                            Maybe::Present(document) => Answer::Lenses(lenses(&document.proposals)),
+                            Maybe::Absent(_) => Answer::Nothing,
                         },
                     ),
-                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            | (Phase::Running, "textDocument/codeAction") => {
+            (Phase::Running, "textDocument/codeAction") => {
                 match serde_json::from_value::<RangeParams>(params) {
-                    | Ok(params) => success(
+                    Ok(params) => success(
                         id,
                         match workspace.view(&params.text_document.uri, self.peer) {
-                            | Maybe::Present(document) => Answer::Actions(actions(
+                            Maybe::Present(document) => Answer::Actions(actions(
                                 &params.text_document.uri,
                                 &document.proposals,
                                 params.range,
                             )),
-                            | Maybe::Absent(_) => Answer::Nothing,
+                            Maybe::Absent(_) => Answer::Nothing,
                         },
                     ),
-                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            | (Phase::Running, "textDocument/formatting") => {
+            (Phase::Running, "textDocument/formatting") => {
                 match serde_json::from_value::<DocumentParams>(params) {
-                    | Ok(params) => {
+                    Ok(params) => {
                         workspace.format(id, &params.text_document.uri, self.peer, Window::Whole)
                     },
-                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            | (Phase::Running, "textDocument/rangeFormatting") => {
+            (Phase::Running, "textDocument/rangeFormatting") => {
                 match serde_json::from_value::<RangeParams>(params) {
-                    | Ok(params) => workspace.format(
+                    Ok(params) => workspace.format(
                         id,
                         &params.text_document.uri,
                         self.peer,
                         Window::Within(params.range),
                     ),
-                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
-            | (Phase::Running, _) => failure(
+            (Phase::Running, _) => failure(
                 id,
                 ErrorCode::METHOD_NOT_FOUND,
                 format!("`{name}` is not served"),
             ),
-            | (Phase::ShuttingDown, _) => failure(
+            (Phase::ShuttingDown, _) => failure(
                 id,
                 ErrorCode::INVALID_REQUEST,
                 format!("`{name}` arrived after `shutdown`"),
@@ -1735,12 +1733,12 @@ impl Server
     ) -> Outcome
     {
         match (self.phase, method.as_ref()) {
-            | (_, "exit") => Outcome {
+            (_, "exit") => Outcome {
                 messages: Vec::new(),
                 log: Vec::new(),
                 flow: Flow::Exit(self.closed()),
             },
-            | (Phase::Running, "textDocument/didOpen") => {
+            (Phase::Running, "textDocument/didOpen") => {
                 let Ok(DidOpenParams { text_document }) = serde_json::from_value(params)
                 else {
                     return Outcome::quiet();
@@ -1766,7 +1764,7 @@ impl Server
                 }
                 outcome
             },
-            | (Phase::Running, "textDocument/didChange") => {
+            (Phase::Running, "textDocument/didChange") => {
                 let Ok(DidChangeParams {
                     text_document,
                     content_changes,
@@ -1795,7 +1793,7 @@ impl Server
                 }
                 outcome
             },
-            | (Phase::Running, "textDocument/didClose") => {
+            (Phase::Running, "textDocument/didClose") => {
                 let Ok(DocumentParams { text_document }) = serde_json::from_value(params)
                 else {
                     return Outcome::quiet();
@@ -1809,7 +1807,7 @@ impl Server
                     diagnostics: Vec::new(),
                 }))
             },
-            | (Phase::Running, "workspace/didChangeConfiguration") => {
+            (Phase::Running, "workspace/didChangeConfiguration") => {
                 let Some(settings) = serde_json::from_value::<ConfigurationParams>(params)
                     .ok()
                     .and_then(|params| params.settings)
@@ -1852,7 +1850,7 @@ impl Server
                 }
                 outcome
             },
-            | (Phase::Waiting | Phase::Running | Phase::ShuttingDown, _) => Outcome::quiet(),
+            (Phase::Waiting | Phase::Running | Phase::ShuttingDown, _) => Outcome::quiet(),
         }
     }
 }
@@ -1920,8 +1918,8 @@ impl Workspace
         let index = LineIndex::new(<&str>::from(document.text.source()).into());
         let spans = document.text.reading().spans();
         let spans = match window {
-            | Window::Whole => spans.to_vec(),
-            | Window::Within(range) => {
+            Window::Whole => spans.to_vec(),
+            Window::Within(range) => {
                 overlapping(spans, range.start.byte(&index), range.end.byte(&index))
             },
         };
@@ -2017,8 +2015,8 @@ impl Workspace
     ) -> Answer
     {
         match self.view(uri, peer) {
-            | Maybe::Present(document) => read(document.text.reading(), document.text.source()),
-            | Maybe::Absent(_) => Answer::Nothing,
+            Maybe::Present(document) => read(document.text.reading(), document.text.source()),
+            Maybe::Absent(_) => Answer::Nothing,
         }
     }
 
@@ -2058,32 +2056,34 @@ impl Workspace
         else {
             return Answer::Nothing;
         };
-        let shown = match document.session {
-            | Ok(ref session) => hover(
-                document.text.source(),
-                session,
-                document.text.reading(),
-                document.text.hovering(),
-                position,
-                style,
-            ),
-            | Err(_) => Maybe::Absent(crate::hover::hovered::Absent::Unparsed),
-        };
+        let shown = document.session.as_ref().map_or(
+            Maybe::Absent(crate::hover::hovered::Absent::Unparsed),
+            |session| {
+                hover(
+                    document.text.source(),
+                    session,
+                    document.text.reading(),
+                    document.text.hovering(),
+                    position,
+                    style,
+                )
+            },
+        );
         match (shown, notes(&document.proposals, position, style.markup)) {
-            | (Maybe::Present(mut shown), Some((_range, notes))) => {
+            (Maybe::Present(mut shown), Some((_range, notes))) => {
                 shown.contents.value.push_str("\n\n---\n\n");
                 shown.contents.value.push_str(&notes);
                 Answer::Hover(shown)
             },
-            | (Maybe::Present(shown), None) => Answer::Hover(shown),
-            | (Maybe::Absent(_), Some((range, notes))) => Answer::Hover(Hover {
+            (Maybe::Present(shown), None) => Answer::Hover(shown),
+            (Maybe::Absent(_), Some((range, notes))) => Answer::Hover(Hover {
                 contents: MarkupContent {
                     kind: "markdown",
                     value: notes,
                 },
                 range,
             }),
-            | (Maybe::Absent(_), None) => Answer::Nothing,
+            (Maybe::Absent(_), None) => Answer::Nothing,
         }
     }
 
@@ -2123,8 +2123,8 @@ impl Workspace
             return success(id, Answer::Nothing);
         };
         match edits(document.text.source(), window) {
-            | Ok(edits) => success(id, Answer::Edits(edits)),
-            | Err(unformatted) => failure(id, ErrorCode::REQUEST_FAILED, unformatted.to_string()),
+            Ok(edits) => success(id, Answer::Edits(edits)),
+            Err(unformatted) => failure(id, ErrorCode::REQUEST_FAILED, unformatted.to_string()),
         }
     }
 }
@@ -2207,8 +2207,8 @@ fn caret_range(
 ) -> Maybe<Range, formless::Absent>
 {
     let span = match form {
-        | Maybe::Present(span) => span,
-        | Maybe::Absent(reason) => return Maybe::Absent(reason),
+        Maybe::Present(span) => span,
+        Maybe::Absent(reason) => return Maybe::Absent(reason),
     };
     let index = LineIndex::new(document.text.text.as_str().into());
     Range::of_bytes(
@@ -2260,8 +2260,8 @@ fn synchronised(
 ) -> Outcome
 {
     let caret = match document.caret {
-        | Maybe::Present(caret) if !quiet.is_zero() => Maybe::Present(caret),
-        | Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(formless::Absent::Uncareted),
+        Maybe::Present(caret) if !quiet.is_zero() => Maybe::Present(caret),
+        Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(formless::Absent::Uncareted),
     };
     let rechecked = recheck(
         uri,
@@ -2344,14 +2344,14 @@ where
     let mut server = Server::default();
     paced(input, |met, deadlines| {
         let body = match met {
-            | Met::Closed => return Ok(ControlFlow::Break(server.closed())),
-            | Met::Quiet(uri) => {
+            Met::Closed => return Ok(ControlFlow::Break(server.closed())),
+            Met::Quiet(uri) => {
                 for message in &server.release(&mut workspace, &uri) {
                     written(output, message)?;
                 }
                 return Ok(ControlFlow::Continue(()));
             },
-            | Met::Frame(body) => body,
+            Met::Frame(body) => body,
         };
         let mut outcome = server.handle(&mut workspace, &body);
         for message in &outcome.messages {
@@ -2365,8 +2365,8 @@ where
             let _unlogged = writeln!(log, "{line}");
         }
         Ok(match outcome.flow {
-            | Flow::Exit(served) => ControlFlow::Break(served),
-            | Flow::Continue => ControlFlow::Continue(()),
+            Flow::Exit(served) => ControlFlow::Break(served),
+            Flow::Continue => ControlFlow::Continue(()),
         })
     })
 }

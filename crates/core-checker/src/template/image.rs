@@ -48,13 +48,13 @@ impl Serialize for RuleImage
         S: serde::Serializer,
     {
         let name = match self.0 {
-            | Rule::Congruence => "congruence",
-            | Rule::Beta => "beta",
-            | Rule::SpliceQuote => "splice-quote",
-            | Rule::QuoteSplice => "quote-splice",
-            | Rule::IterateZero => "iterate-zero",
-            | Rule::IterateSuccessor => "iterate-successor",
-            | Rule::Eliminate => "eliminate",
+            Rule::Congruence => "congruence",
+            Rule::Beta => "beta",
+            Rule::SpliceQuote => "splice-quote",
+            Rule::QuoteSplice => "quote-splice",
+            Rule::IterateZero => "iterate-zero",
+            Rule::IterateSuccessor => "iterate-successor",
+            Rule::Eliminate => "eliminate",
         };
         name.serialize(serializer)
     }

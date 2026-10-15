@@ -424,9 +424,7 @@ impl fmt::Display for LevelError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Overflow => {
-                f.write_str("level arithmetic stepped past the representable range")
-            },
+            Self::Overflow => f.write_str("level arithmetic stepped past the representable range"),
         }
     }
 }

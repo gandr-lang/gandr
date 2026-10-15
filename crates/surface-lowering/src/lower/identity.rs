@@ -849,7 +849,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let produced = match operation {
-            | Operation::Here
+            Operation::Here
             | Operation::Funext
             | Operation::Equiv
             | Operation::PathProduct
@@ -861,7 +861,7 @@ impl<'source> Lowerer<'_, 'source>
             | Operation::Forward
             | Operation::Arrow
             | Operation::Recorded => Produced::Value,
-            | Operation::Back | Operation::Cong | Operation::Transport | Operation::Ride => {
+            Operation::Back | Operation::Cong | Operation::Transport | Operation::Ride => {
                 Produced::Computation
             },
         };
@@ -877,8 +877,8 @@ impl<'source> Lowerer<'_, 'source>
             .get(start ..)
             .and_then(|written| <[NodeIndex; 5]>::try_from(written).ok());
         let moves = match operation {
-            | Operation::Recorded => self.operands.get(start ..).map(<[NodeIndex]>::to_vec),
-            | Operation::Here
+            Operation::Recorded => self.operands.get(start ..).map(<[NodeIndex]>::to_vec),
+            Operation::Here
             | Operation::Funext
             | Operation::Equiv
             | Operation::PathProduct
@@ -897,7 +897,7 @@ impl<'source> Lowerer<'_, 'source>
         self.operands.truncate(start);
         read?;
         match (operation, count, first, second, third) {
-            | (Operation::Here | Operation::Stay, 1_usize, Some(point), ..) => {
+            (Operation::Here | Operation::Stay, 1_usize, Some(point), ..) => {
                 if operation == Operation::Here
                     && let Some(node) = self.tree.node(point)
                     && let Maybe::Present(empty) = self.looped_point(Placed::of(point, node))?
@@ -911,13 +911,27 @@ impl<'source> Lowerer<'_, 'source>
                 self.read(point, Reading::Value(frame));
                 let _marked = self.at_endpoint.insert(point);
                 let plan = match operation {
-                    | Operation::Stay => Plan::Stay(point),
-                    | _ => Plan::Here(point),
+                    Operation::Stay => Plan::Stay(point),
+                    Operation::Here
+                    | Operation::Funext
+                    | Operation::Equiv
+                    | Operation::PathProduct
+                    | Operation::Transport
+                    | Operation::Back
+                    | Operation::Cong
+                    | Operation::Cons
+                    | Operation::Bisim
+                    | Operation::Sim
+                    | Operation::Forward
+                    | Operation::Arrow
+                    | Operation::FlowProduct
+                    | Operation::Ride
+                    | Operation::Recorded => Plan::Here(point),
                 };
                 self.plan(site, plan);
                 Ok(())
             },
-            | (
+            (
                 Operation::Funext
                 | Operation::Equiv
                 | Operation::PathProduct
@@ -934,23 +948,29 @@ impl<'source> Lowerer<'_, 'source>
                 self.read(left, Reading::Value(frame));
                 self.read(right, Reading::Value(frame));
                 let plan = match operation {
-                    | Operation::Equiv => Plan::Equiv(left, right),
-                    | Operation::PathProduct => Plan::PathProduct(left, right),
-                    | Operation::FlowProduct => Plan::FlowProduct(left, right),
-                    | Operation::Cons => Plan::ListCons(left, right),
-                    | Operation::Bisim => {
+                    Operation::Equiv => Plan::Equiv(left, right),
+                    Operation::PathProduct => Plan::PathProduct(left, right),
+                    Operation::FlowProduct => Plan::FlowProduct(left, right),
+                    Operation::Cons => Plan::ListCons(left, right),
+                    Operation::Bisim => {
                         Plan::SessionRelated(SessionRelation::Equivalence, left, right)
                     },
-                    | Operation::Sim => {
-                        Plan::SessionRelated(SessionRelation::Subtyping, left, right)
-                    },
-                    | Operation::Arrow => Plan::FunctionFlow(left, right),
-                    | _ => Plan::Funext(left, right),
+                    Operation::Sim => Plan::SessionRelated(SessionRelation::Subtyping, left, right),
+                    Operation::Arrow => Plan::FunctionFlow(left, right),
+                    Operation::Here
+                    | Operation::Funext
+                    | Operation::Transport
+                    | Operation::Back
+                    | Operation::Cong
+                    | Operation::Stay
+                    | Operation::Forward
+                    | Operation::Ride
+                    | Operation::Recorded => Plan::Funext(left, right),
                 };
                 self.plan(site, plan);
                 Ok(())
             },
-            | (
+            (
                 Operation::Transport | Operation::Ride,
                 3_usize,
                 Some(motive),
@@ -962,13 +982,27 @@ impl<'source> Lowerer<'_, 'source>
                     self.read(operand, Reading::Value(frame));
                 }
                 let plan = match operation {
-                    | Operation::Ride => Plan::Ride(motive, path, value),
-                    | _ => Plan::Transport(motive, path, value),
+                    Operation::Ride => Plan::Ride(motive, path, value),
+                    Operation::Here
+                    | Operation::Funext
+                    | Operation::Equiv
+                    | Operation::PathProduct
+                    | Operation::Transport
+                    | Operation::Back
+                    | Operation::Cong
+                    | Operation::Cons
+                    | Operation::Bisim
+                    | Operation::Sim
+                    | Operation::Stay
+                    | Operation::Forward
+                    | Operation::Arrow
+                    | Operation::FlowProduct
+                    | Operation::Recorded => Plan::Transport(motive, path, value),
                 };
                 self.plan(site, plan);
                 Ok(())
             },
-            | (Operation::Recorded, ..) => {
+            (Operation::Recorded, ..) => {
                 let written = moves.unwrap_or_default();
                 let mut planned = Vec::with_capacity(written.len());
                 for movement in written {
@@ -977,8 +1011,8 @@ impl<'source> Lowerer<'_, 'source>
                 self.plan(site, Plan::Recorded(Arc::from(planned)));
                 Ok(())
             },
-            | (Operation::Transport, 5_usize, ..) => match written {
-                | Some([motive, path, departure, over, value]) => {
+            (Operation::Transport, 5_usize, ..) => match written {
+                Some([motive, path, departure, over, value]) => {
                     self.read(motive, Reading::ValueType(frame));
                     for operand in [path, departure, over, value] {
                         self.read(operand, Reading::Value(frame));
@@ -996,20 +1030,20 @@ impl<'source> Lowerer<'_, 'source>
                     );
                     Ok(())
                 },
-                | None => Err(site.out(FragmentBoundary::Arity(OperandCount::from(count)))),
+                None => Err(site.out(FragmentBoundary::Arity(OperandCount::from(count)))),
             },
-            | (Operation::Back, 1_usize, Some(path), ..) => {
+            (Operation::Back, 1_usize, Some(path), ..) => {
                 self.derive(site, frame, Derivation::Back { path })
             },
-            | (Operation::Forward, 1_usize, Some(translator), ..) => {
+            (Operation::Forward, 1_usize, Some(translator), ..) => {
                 self.read(translator, Reading::Value(frame));
                 self.plan(site, Plan::Forward(translator));
                 Ok(())
             },
-            | (Operation::Cong, 2_usize, Some(function), Some(path), _) => {
+            (Operation::Cong, 2_usize, Some(function), Some(path), _) => {
                 self.derive(site, frame, Derivation::Cong { function, path })
             },
-            | _ => Err(site.out(FragmentBoundary::Arity(OperandCount::from(count)))),
+            _ => Err(site.out(FragmentBoundary::Arity(OperandCount::from(count)))),
         }
     }
 
@@ -1049,11 +1083,11 @@ impl<'source> Lowerer<'_, 'source>
             return Err(unannotated);
         };
         match shape_of(self.pbg, node)? {
-            | Shape::Form {
+            Shape::Form {
                 former: Former::StaticAbstraction,
                 ..
             } => Ok(()),
-            | _ => Err(unannotated),
+            Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => Err(unannotated),
         }
     }
 
@@ -1107,8 +1141,8 @@ impl<'source> Lowerer<'_, 'source>
         };
         let written = Placed::of(movement, node);
         let former = match shape_of(self.pbg, node)? {
-            | Shape::Form { former, .. } => former,
-            | Shape::Root | Shape::Repair(_) | Shape::Layout => return Err(unadmitted),
+            Shape::Form { former, .. } => former,
+            Shape::Root | Shape::Repair(_) | Shape::Layout => return Err(unadmitted),
         };
         if matches!(former, Former::Name) {
             return if self.name_at(written).as_ref() == CLOSED {
@@ -1136,8 +1170,8 @@ impl<'source> Lowerer<'_, 'source>
         self.scratch = scratch;
         let count = self.operands.len().saturating_sub(start);
         let argument = match self.operands.get(start ..) {
-            | Some(&[argument]) => Some(argument),
-            | Some(_) | None => None,
+            Some(&[argument]) => Some(argument),
+            Some(_) | None => None,
         };
         self.operands.truncate(start);
         let head = read?;
@@ -1147,7 +1181,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let spelled = self.name_at(head);
         match spelled.as_ref() {
-            | "sent" | "received" => {
+            "sent" | "received" => {
                 self.read(argument, Reading::Value(frame));
                 Ok(if spelled.as_ref() == "sent" {
                     RecordedMove::Sent(argument)
@@ -1156,16 +1190,16 @@ impl<'source> Lowerer<'_, 'source>
                     RecordedMove::Received(argument)
                 })
             },
-            | "selected" | "offered" => {
+            "selected" | "offered" => {
                 let label = self
                     .tree
                     .node(argument)
                     .and_then(|labelled| match shape_of(self.pbg, labelled) {
-                        | Ok(Shape::Form {
+                        Ok(Shape::Form {
                             former: Former::Name,
                             ..
                         }) => Some(Placed::of(argument, labelled)),
-                        | Ok(_) | Err(_) => None,
+                        Ok(_) | Err(_) => None,
                     })
                     .map(|named| FieldLabel::from(String::from(self.name_at(named).as_ref())))
                     .ok_or(unadmitted)?;
@@ -1176,7 +1210,7 @@ impl<'source> Lowerer<'_, 'source>
                     RecordedMove::Offered(label)
                 })
             },
-            | _ => Err(unadmitted),
+            _ => Err(unadmitted),
         }
     }
 
@@ -1241,37 +1275,37 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::NotAFunction));
         }
         let stance = match self.answers.get(&site.at.node) {
-            | Some(&answer) => Stance::Answered(answer),
-            | None => Stance::Synthesised(match derivation {
-                | Derivation::Cong { function, .. } => self.mapped(site, frame, function)?,
-                | Derivation::Back { .. } | Derivation::Then { .. } => Synthesis::Paths,
+            Some(&answer) => Stance::Answered(answer),
+            None => Stance::Synthesised(match derivation {
+                Derivation::Cong { function, .. } => self.mapped(site, frame, function)?,
+                Derivation::Back { .. } | Derivation::Then { .. } => Synthesis::Paths,
             }),
         };
         if let Stance::Answered(answer) = stance {
             // A loop arm answers the path over its loop, whatever its case
             // answers.
             let answered = match answer.over {
-                | super::native::Over::Written => self.answers_path(site, answer.node)?,
-                | super::native::Over::Loop { .. } => Answered::Path,
+                super::native::Over::Written => self.answers_path(site, answer.node)?,
+                super::native::Over::Loop { .. } => Answered::Path,
             };
             if answered == Answered::Flow {
                 match derivation {
-                    | Derivation::Then { first, second } => {
+                    Derivation::Then { first, second } => {
                         self.read(first, Reading::Value(frame));
                         self.read(second, Reading::Value(frame));
                         self.plan(site, Plan::FlowThen(first, second));
                         return Ok(());
                     },
-                    | Derivation::Cong { .. } => {
+                    Derivation::Cong { .. } => {
                         return Err(site.out(FragmentBoundary::Unannotated));
                     },
-                    | Derivation::Back { .. } => {},
+                    Derivation::Back { .. } => {},
                 }
             }
         }
         match derivation {
-            | Derivation::Back { path } => self.read(path, Reading::Value(frame)),
-            | Derivation::Then { first, second }
+            Derivation::Back { path } => self.read(path, Reading::Value(frame)),
+            Derivation::Then { first, second }
             | Derivation::Cong {
                 function: first,
                 path: second,
@@ -1361,28 +1395,28 @@ impl<'source> Lowerer<'_, 'source>
                 [slot.signature, slot.definition]
                     .into_iter()
                     .find_map(|half| match half {
-                        | Maybe::Present(Half {
+                        Maybe::Present(Half {
                             declaration,
                             operand: Operand::Function,
                         }) => Some(declaration.node),
-                        | Maybe::Present(_) | Maybe::Absent(_) => None,
+                        Maybe::Present(_) | Maybe::Absent(_) => None,
                     })
             });
         let result = tail.and_then(
             |declaration| match self.plans.get(usize::from(declaration)) {
-                | Some(&Plan::Function(Function {
+                Some(&Plan::Function(Function {
                     result: Maybe::Present(result),
                     ..
                 })) => Some(result),
-                | _ => None,
+                _ => None,
             },
         );
         match result.map(|result| (result, self.reading(result))) {
-            | Some((codomain, Reading::Result(read))) => Ok(Synthesis::Mapped {
+            Some((codomain, Reading::Result(read))) => Ok(Synthesis::Mapped {
                 codomain,
                 frame: read,
             }),
-            | _ => Err(unannotated),
+            _ => Err(unannotated),
         }
     }
 
@@ -1443,12 +1477,12 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             };
             let (path, rest) = match derivation {
-                | Derivation::Back { path } | Derivation::Cong { path, .. } => (path, None),
-                | Derivation::Then { first, second } => (first, Some(second)),
+                Derivation::Back { path } | Derivation::Cong { path, .. } => (path, None),
+                Derivation::Then { first, second } => (first, Some(second)),
             };
             let closed = match synthesis {
-                | Synthesis::Paths => true,
-                | Synthesis::Mapped { codomain, frame } => {
+                Synthesis::Paths => true,
+                Synthesis::Mapped { codomain, frame } => {
                     !self.collected.refused(codomain).0
                         && self.scope.telescope_binders(frame).all(|binds| !binds)
                 },
@@ -1460,8 +1494,8 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             }
             let whole = match rest {
-                | Some(second) => self.reads_path(second, &read)?,
-                | None => transported,
+                Some(second) => self.reads_path(second, &read)?,
+                None => transported,
             };
             if let Maybe::Present(_) = whole {
                 let _first = read.insert(at);
@@ -1491,11 +1525,11 @@ impl<'source> Lowerer<'_, 'source>
         self.synthesised
             .iter()
             .filter_map(|site| match self.plans.get(usize::from(site.at.node)) {
-                | Some(&Plan::Derived(Derived {
+                Some(&Plan::Derived(Derived {
                     stance: Stance::Synthesised(Synthesis::Mapped { codomain, .. }),
                     ..
                 })) => Some(codomain),
-                | _ => None,
+                _ => None,
             })
             .collect()
     }
@@ -1534,22 +1568,22 @@ impl<'source> Lowerer<'_, 'source>
         loop {
             self.fuel.spend()?;
             let worded = match self.plans.get(usize::from(at)) {
-                | Some(&Plan::Transparent(inner)) => {
+                Some(&Plan::Transparent(inner)) => {
                     at = inner;
                     continue;
                 },
-                | Some(&Plan::Constant(constant)) => {
+                Some(&Plan::Constant(constant)) => {
                     matches!(self.words_at(constant), Maybe::Present(_))
                 },
-                | Some(&Plan::Constructor(constructed)) => {
+                Some(&Plan::Constructor(constructed)) => {
                     matches!(self.words_at(constructed.family), Maybe::Present(_))
                 },
-                | Some(&Plan::Derived(Derived {
+                Some(&Plan::Derived(Derived {
                     stance: Stance::Answered(_),
                     ..
                 })) => true,
-                | Some(&Plan::Derived(_)) => read.contains(&at),
-                | _ => false,
+                Some(&Plan::Derived(_)) => read.contains(&at),
+                _ => false,
             };
             return Ok(if worded {
                 Maybe::Present(at)
@@ -1610,14 +1644,68 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(unannotated);
             };
             let (wrapped, applied) = match former {
-                | Former::PathType => return Ok(Answered::Path),
-                | Former::ReturnerType if !returned => {
+                Former::PathType => return Ok(Answered::Path),
+                Former::ReturnerType if !returned => {
                     returned = true;
                     (true, false)
                 },
-                | Former::ParenthesizedType => (false, false),
-                | Former::TypeApplication => (false, true),
-                | _ => return Err(unannotated),
+                Former::ParenthesizedType => (false, false),
+                Former::TypeApplication => (false, true),
+                Former::Name
+                | Former::Constructor
+                | Former::Hole
+                | Former::Number
+                | Former::Text
+                | Former::Parenthesized
+                | Former::Unit
+                | Former::Thunk
+                | Former::Lambda
+                | Former::Block
+                | Former::Return
+                | Former::Exit
+                | Former::Become
+                | Former::Loop
+                | Former::While
+                | Former::For
+                | Former::Break
+                | Former::Continue
+                | Former::Force
+                | Former::Run
+                | Former::Call
+                | Former::Case
+                | Former::Telescope
+                | Former::Injection
+                | Former::LazyRecord
+                | Former::Binary
+                | Former::Unary
+                | Former::Projection
+                | Former::TypeHead
+                | Former::TypePath
+                | Former::Universe
+                | Former::ThunkType
+                | Former::ReturnerType
+                | Former::ArrowType
+                | Former::ProductType
+                | Former::SumType
+                | Former::LazyProductType
+                | Former::TelescopeType
+                | Former::LabelledSumType
+                | Former::LazyRecordType
+                | Former::ValueFunctionType
+                | Former::StaticAbstraction
+                | Former::CapabilityType
+                | Former::Scope
+                | Former::Declaration
+                | Former::AttributeBlock
+                | Former::Import
+                | Former::Module
+                | Former::Data
+                | Former::Instantiation
+                | Former::SessionType
+                | Former::Action
+                | Former::Offer
+                | Former::Reserved
+                | Former::Unadmitted => return Err(unannotated),
             };
             let mut scratch = core::mem::take(&mut self.scratch);
             let read = read_pieces(self.pbg, self.tree, position, &mut scratch);
@@ -1627,16 +1715,16 @@ impl<'source> Lowerer<'_, 'source>
                 .filter(|piece| matches!(**piece, Piece::Operand(_)))
                 .count();
             let mut operands = scratch.pieces.iter().filter_map(|piece| match *piece {
-                | Piece::Operand(operand) => Some(operand.node),
-                | Piece::Tile { .. } => None,
+                Piece::Operand(operand) => Some(operand.node),
+                Piece::Tile { .. } => None,
             });
             let inner = match (operands.next(), operands.next()) {
-                | (Some(inner), None) => Some(inner),
-                | _ => None,
+                (Some(inner), None) => Some(inner),
+                _ => None,
             };
             let keyword = scratch.pieces.iter().find_map(|piece| match *piece {
-                | Piece::Tile { at, .. } => Some(at),
-                | Piece::Operand(_) => None,
+                Piece::Tile { at, .. } => Some(at),
+                Piece::Operand(_) => None,
             });
             self.scratch = scratch;
             read?;
@@ -1655,8 +1743,8 @@ impl<'source> Lowerer<'_, 'source>
                     type_former(self.name_at(at)) == Maybe::Present(TypeFormer::Returner)
                 });
             match inner {
-                | Some(inner) if returner => position = inner,
-                | _ => return Err(unannotated),
+                Some(inner) if returner => position = inner,
+                _ => return Err(unannotated),
             }
         }
     }
@@ -1703,17 +1791,17 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let (first, second) = match derived.derivation {
-            | Derivation::Back { path } => match self.value_at(path) {
-                | Maybe::Present(path) => (path, path),
-                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Derivation::Back { path } => match self.value_at(path) {
+                Maybe::Present(path) => (path, path),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
-            | Derivation::Then { first, second }
+            Derivation::Then { first, second }
             | Derivation::Cong {
                 function: first,
                 path: second,
             } => match (self.value_at(first), self.value_at(second)) {
-                | (Maybe::Present(first), Maybe::Present(second)) => (first, second),
-                | (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+                (Maybe::Present(first), Maybe::Present(second)) => (first, second),
+                (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
                     return Maybe::Absent(reason);
                 },
             },
@@ -1721,8 +1809,8 @@ impl<'source> Lowerer<'_, 'source>
         let mark = sink.arena.watermark();
         let inserted = origin.inserted(Insertion::Identity);
         let stood = match derived.stance {
-            | Stance::Answered(answer) => self.answered_at(answer, derived.frame, sink),
-            | Stance::Synthesised(synthesis) => {
+            Stance::Answered(answer) => self.answered_at(answer, derived.frame, sink),
+            Stance::Synthesised(synthesis) => {
                 self.synthesised_at(derived.derivation, synthesis, first, sink)
             },
         };
@@ -1732,8 +1820,8 @@ impl<'source> Lowerer<'_, 'source>
             left,
             right,
         } = match stood {
-            | Maybe::Present(stood) => stood,
-            | Maybe::Absent(reason) => {
+            Maybe::Present(stood) => stood,
+            Maybe::Absent(reason) => {
                 record_since(
                     sink,
                     mark,
@@ -1744,19 +1832,19 @@ impl<'source> Lowerer<'_, 'source>
             },
         };
         let root = match (answered, derived.derivation, right) {
-            | (Answered::Path, Derivation::Back { .. }, Maybe::Present(right)) => {
+            (Answered::Path, Derivation::Back { .. }, Maybe::Present(right)) => {
                 gandr_core_term::identity::back(sink.arena, carrier, right, first)
             },
-            | (Answered::Flow, Derivation::Back { .. }, Maybe::Present(right)) => {
+            (Answered::Flow, Derivation::Back { .. }, Maybe::Present(right)) => {
                 gandr_core_term::identity::back_flow(sink.arena, carrier, right, first)
             },
-            | (Answered::Path, Derivation::Then { .. }, _) => {
+            (Answered::Path, Derivation::Then { .. }, _) => {
                 gandr_core_term::identity::then(sink.arena, carrier, left, first, second)
             },
-            | (Answered::Path, Derivation::Cong { .. }, _) => {
+            (Answered::Path, Derivation::Cong { .. }, _) => {
                 gandr_core_term::identity::cong(sink.arena, carrier, first, left, second)
             },
-            | (Answered::Path | Answered::Flow, Derivation::Back { .. }, Maybe::Absent(_))
+            (Answered::Path | Answered::Flow, Derivation::Back { .. }, Maybe::Absent(_))
             | (Answered::Flow, Derivation::Then { .. } | Derivation::Cong { .. }, _) => {
                 record_since(
                     sink,
@@ -1810,8 +1898,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Stood, lowered::Absent>
     {
         let written = match self.comp_type_at(answer.node) {
-            | Maybe::Present(written) => written,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(written) => written,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let gap = self
             .scope
@@ -1825,7 +1913,7 @@ impl<'source> Lowerer<'_, 'source>
             return Maybe::Absent(lowered::Absent::OtherSort);
         };
         let (answered, carrier, left, right) = match (answer.over, sink.arena.value_type(result)) {
-            | (super::native::Over::Loop { arm }, Some(_)) => {
+            (super::native::Over::Loop { arm }, Some(_)) => {
                 let gap = self
                     .scope
                     .telescope_binders(frame)
@@ -1838,7 +1926,7 @@ impl<'source> Lowerer<'_, 'source>
                 );
                 (Answered::Path, result, point, point)
             },
-            | (
+            (
                 super::native::Over::Written,
                 Some(&ValueType::Path {
                     carrier,
@@ -1846,7 +1934,7 @@ impl<'source> Lowerer<'_, 'source>
                     right,
                 }),
             ) => (Answered::Path, carrier, left, right),
-            | (
+            (
                 super::native::Over::Written,
                 Some(&ValueType::Flow {
                     carrier,
@@ -1854,7 +1942,7 @@ impl<'source> Lowerer<'_, 'source>
                     target,
                 }),
             ) => (Answered::Flow, carrier, source, target),
-            | (..) => return Maybe::Absent(lowered::Absent::OtherSort),
+            (..) => return Maybe::Absent(lowered::Absent::OtherSort),
         };
 
         Maybe::Present(Stood {
@@ -1896,30 +1984,30 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Stood, lowered::Absent>
     {
         let transported = match derivation {
-            | Derivation::Back { path } | Derivation::Cong { path, .. } => path,
-            | Derivation::Then { first, .. } => first,
+            Derivation::Back { path } | Derivation::Cong { path, .. } => path,
+            Derivation::Then { first, .. } => first,
         };
         let Maybe::Present(read) = self.identity_of(transported, sink)
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
         let stood = match (derivation, synthesis) {
-            | (Derivation::Back { .. }, _) => Stood {
+            (Derivation::Back { .. }, _) => Stood {
                 answered: Answered::Path,
                 carrier: read.carrier,
                 left: read.right,
                 right: Maybe::Present(read.left),
             },
-            | (Derivation::Then { second, .. }, _) => Stood {
+            (Derivation::Then { second, .. }, _) => Stood {
                 answered: Answered::Path,
                 carrier: read.carrier,
                 left: read.left,
                 right: self.identity_of(second, sink).map(|onward| onward.right),
             },
-            | (Derivation::Cong { .. }, Synthesis::Mapped { codomain, .. }) => {
+            (Derivation::Cong { .. }, Synthesis::Mapped { codomain, .. }) => {
                 let written = match self.comp_type_at(codomain) {
-                    | Maybe::Present(written) => written,
-                    | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    Maybe::Present(written) => written,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
                 };
                 let Some(&CompType::Returner { result, .. }) = sink.arena.comp_type(written)
                 else {
@@ -1939,7 +2027,7 @@ impl<'source> Lowerer<'_, 'source>
                     right: Maybe::Present(right),
                 }
             },
-            | (Derivation::Cong { .. }, Synthesis::Paths) => {
+            (Derivation::Cong { .. }, Synthesis::Paths) => {
                 return Maybe::Absent(lowered::Absent::Unminted);
             },
         };
@@ -1979,31 +2067,31 @@ impl<'source> Lowerer<'_, 'source>
             return unread;
         };
         let worded = match sink.arena.value(value) {
-            | Some(&Value::Returned(transport)) => {
+            Some(&Value::Returned(transport)) => {
                 return sink
                     .identities
                     .get(&transport)
                     .copied()
                     .map_or(unread, Maybe::Present);
             },
-            | Some(&Value::Constant(constant)) => self.words_at(constant),
-            | Some(&Value::Constructor { datatype, .. }) => match sink.arena.value_type(datatype) {
-                | Some(&ValueType::Data { declaration, .. }) => self.words_at(declaration),
-                | _ => return unread,
+            Some(&Value::Constant(constant)) => self.words_at(constant),
+            Some(&Value::Constructor { datatype, .. }) => match sink.arena.value_type(datatype) {
+                Some(&ValueType::Data { declaration, .. }) => self.words_at(declaration),
+                _ => return unread,
             },
-            | _ => return unread,
+            _ => return unread,
         };
         let Maybe::Present(words) = worded
         else {
             return unread;
         };
         match self.words_point(sink.arena, words) {
-            | Maybe::Present((carrier, point)) => Maybe::Present(Identity {
+            Maybe::Present((carrier, point)) => Maybe::Present(Identity {
                 carrier,
                 left: point,
                 right: point,
             }),
-            | Maybe::Absent(_) => unread,
+            Maybe::Absent(_) => unread,
         }
     }
 
@@ -2047,10 +2135,10 @@ impl<'source> Lowerer<'_, 'source>
             self.value_at(path),
             self.value_at(value),
         ) {
-            | (Maybe::Present(motive), Maybe::Present(path), Maybe::Present(value)) => {
+            (Maybe::Present(motive), Maybe::Present(path), Maybe::Present(value)) => {
                 (motive, path, value)
             },
-            | (Maybe::Absent(reason), ..)
+            (Maybe::Absent(reason), ..)
             | (_, Maybe::Absent(reason), _)
             | (_, _, Maybe::Absent(reason)) => return Maybe::Absent(reason),
         };
@@ -2109,10 +2197,10 @@ impl<'source> Lowerer<'_, 'source>
             self.value_at(flow),
             self.value_at(value),
         ) {
-            | (Maybe::Present(motive), Maybe::Present(flow), Maybe::Present(value)) => {
+            (Maybe::Present(motive), Maybe::Present(flow), Maybe::Present(value)) => {
                 (motive, flow, value)
             },
-            | (Maybe::Absent(reason), ..)
+            (Maybe::Absent(reason), ..)
             | (_, Maybe::Absent(reason), _)
             | (_, _, Maybe::Absent(reason)) => return Maybe::Absent(reason),
         };
@@ -2164,8 +2252,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let (first, second) = match (self.value_at(first), self.value_at(second)) {
-            | (Maybe::Present(first), Maybe::Present(second)) => (first, second),
-            | (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+            (Maybe::Present(first), Maybe::Present(second)) => (first, second),
+            (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
                 return Maybe::Absent(reason);
             },
         };
@@ -2218,11 +2306,11 @@ impl<'source> Lowerer<'_, 'source>
         let mut minted = Vec::with_capacity(moves.len());
         for planned in moves {
             match planned.try_map(|payload| match self.value_at(payload) {
-                | Maybe::Present(value) => Ok(value),
-                | Maybe::Absent(reason) => Err(reason),
+                Maybe::Present(value) => Ok(value),
+                Maybe::Absent(reason) => Err(reason),
             }) {
-                | Ok(made) => minted.push(made),
-                | Err(reason) => return Maybe::Absent(reason),
+                Ok(made) => minted.push(made),
+                Err(reason) => return Maybe::Absent(reason),
             }
         }
         let id = sink.arena.value_recorded(Arc::from(minted));
@@ -2262,8 +2350,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let motive = match self.value_type_at(transported.motive) {
-            | Maybe::Present(motive) => motive,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present(motive) => motive,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let (path, start, over, value) = match (
             self.value_at(transported.path),
@@ -2271,21 +2359,21 @@ impl<'source> Lowerer<'_, 'source>
             self.value_at(transported.over),
             self.value_at(transported.value),
         ) {
-            | (
+            (
                 Maybe::Present(path),
                 Maybe::Present(start),
                 Maybe::Present(over),
                 Maybe::Present(value),
             ) => (path, start, over, value),
-            | (Maybe::Absent(reason), ..)
+            (Maybe::Absent(reason), ..)
             | (_, Maybe::Absent(reason), ..)
             | (_, _, Maybe::Absent(reason), _)
             | (.., Maybe::Absent(reason)) => return Maybe::Absent(reason),
         };
         let mark = sink.arena.watermark();
         let written = match sink.arena.value_type(motive) {
-            | Some(&ValueType::Thunk(computation)) => computation,
-            | _ => sink.arena.comp_type_returner(motive),
+            Some(&ValueType::Thunk(computation)) => computation,
+            _ => sink.arena.comp_type_returner(motive),
         };
         let inserted = origin.inserted(Insertion::Identity);
         let mut copies = Vec::new();
@@ -2335,9 +2423,9 @@ fn telescope(
 ) -> CompTypeId
 {
     let (outer, rest, outer_arrow) = match arena.comp_type(written) {
-        | Some(&CompType::Pi { domain, codomain }) => (domain, codomain, false),
-        | Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, true),
-        | _ => return written,
+        Some(&CompType::Pi { domain, codomain }) => (domain, codomain, false),
+        Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, true),
+        _ => return written,
     };
     let rest = if outer_arrow {
         gandr_core_term::shift_comp_type_under_traced(
@@ -2352,9 +2440,9 @@ fn telescope(
         rest
     };
     let (inner, body, inner_arrow) = match arena.comp_type(rest) {
-        | Some(&CompType::Pi { domain, codomain }) => (domain, codomain, false),
-        | Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, true),
-        | _ => return written,
+        Some(&CompType::Pi { domain, codomain }) => (domain, codomain, false),
+        Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, true),
+        _ => return written,
     };
     if !outer_arrow && !inner_arrow {
         return written;

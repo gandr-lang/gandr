@@ -1591,41 +1591,79 @@ mod tests
         for (row, node) in NODE_TAG_TABLE.iter().zip(nodes.iter()) {
             let children = arena.children_of(*node);
             let inline_count = match *node {
-                | AnyNode::Value(id) => match arena.value(id) {
-                    | Some(matched_native_node) => match *matched_native_node {
-                        | crate::Value::Constructor { ref fields, .. } => fields.len(),
-                        | crate::Value::Record(ref fields) => fields.len(),
-                        | crate::Value::Tuple(ref components) => components.len(),
-                        | crate::Value::Higher { ref evidence, .. } => evidence.len(),
-                        | crate::Value::HigherEvaluation { ref components, .. } => {
-                            components.len().saturating_mul(3)
-                        },
-                        | crate::Value::QuantifiedEvaluation { ref children, .. } => children.len(),
-                        | crate::Value::ForwardFlow { ref outputs, .. } => outputs.len(),
-                        | _ => 0,
-                    },
-                    | None => 0,
+                AnyNode::Value(id) => {
+                    arena
+                        .value(id)
+                        .map_or(0, |matched_native_node| match *matched_native_node {
+                            crate::Value::Constructor { ref fields, .. } => fields.len(),
+                            crate::Value::Record(ref fields) => fields.len(),
+                            crate::Value::Tuple(ref components) => components.len(),
+                            crate::Value::Higher { ref evidence, .. } => evidence.len(),
+                            crate::Value::HigherEvaluation { ref components, .. } => {
+                                components.len().saturating_mul(3)
+                            },
+                            crate::Value::QuantifiedEvaluation { ref children, .. } => {
+                                children.len()
+                            },
+                            crate::Value::ForwardFlow { ref outputs, .. } => outputs.len(),
+                            crate::Value::SessionPath { .. }
+                            | crate::Value::SessionFlow { .. }
+                            | crate::Value::Stay { .. }
+                            | crate::Value::FunctionFlow { .. }
+                            | crate::Value::Then { .. }
+                            | crate::Value::FlowProduct(..)
+                            | crate::Value::PathRefl(_)
+                            | crate::Value::PathProduct(..)
+                            | crate::Value::PathEquiv { .. }
+                            | crate::Value::Here { .. }
+                            | crate::Value::Returned(_)
+                            | crate::Value::Variable(_)
+                            | crate::Value::Constant(_)
+                            | crate::Value::Literal(_)
+                            | crate::Value::Injection(..)
+                            | crate::Value::ListNil
+                            | crate::Value::ListCons(..)
+                            | crate::Value::Thunk(_)
+                            | crate::Value::Lift { .. }
+                            | crate::Value::Quote(_)
+                            | crate::Value::QuoteComputation(_)
+                            | crate::Value::StaticApplication(..) => 0,
+                        })
                 },
-                | AnyNode::ValueType(id) => match arena.value_type(id) {
-                    | Some(matched_native_node) => match *matched_native_node {
-                        | crate::ValueType::Data { ref arguments, .. } => arguments.len(),
-                        | crate::ValueType::Record(ref fields) => fields.len(),
-                        | crate::ValueType::Product(ref parts)
-                        | crate::ValueType::Sum(ref parts) => parts.len(),
-                        | _ => 0,
-                    },
-                    | None => 0,
+                AnyNode::ValueType(id) => {
+                    arena
+                        .value_type(id)
+                        .map_or(0, |matched_native_node| match *matched_native_node {
+                            crate::ValueType::Data { ref arguments, .. } => arguments.len(),
+                            crate::ValueType::Record(ref fields) => fields.len(),
+                            crate::ValueType::Product(ref parts)
+                            | crate::ValueType::Sum(ref parts) => parts.len(),
+                            crate::ValueType::Session { .. }
+                            | crate::ValueType::PathUniverse(..)
+                            | crate::ValueType::FlowUniverse(..)
+                            | crate::ValueType::Path { .. }
+                            | crate::ValueType::Flow { .. }
+                            | crate::ValueType::Base(_)
+                            | crate::ValueType::Sigma { .. }
+                            | crate::ValueType::List(_)
+                            | crate::ValueType::Thunk(_)
+                            | crate::ValueType::Universe { .. }
+                            | crate::ValueType::Lift { .. }
+                            | crate::ValueType::Element { .. }
+                            | crate::ValueType::Abstract(_)
+                            | crate::ValueType::StaticPi { .. } => 0,
+                        })
                 },
-                | AnyNode::Computation(id) => match arena.computation(id) {
-                    | Some(&crate::Computation::DataCase { ref branches, .. }) => branches.len(),
-                    | Some(&crate::Computation::Case { ref branches, .. }) => branches.len(),
-                    | _ => 0,
+                AnyNode::Computation(id) => match arena.computation(id) {
+                    Some(&crate::Computation::DataCase { ref branches, .. }) => branches.len(),
+                    Some(&crate::Computation::Case { ref branches, .. }) => branches.len(),
+                    _ => 0,
                 },
-                | AnyNode::CompType(_) => 0,
+                AnyNode::CompType(_) => 0,
             };
             let expected = match row.child_arity {
-                | super::ChildArity::Fixed(count) => usize::from(count),
-                | super::ChildArity::Counted(prefix) => usize::from(prefix) + inline_count,
+                super::ChildArity::Fixed(count) => usize::from(count),
+                super::ChildArity::Counted(prefix) => usize::from(prefix) + inline_count,
             };
             assert_eq!(expected, children.len(), "tag {} child arity", row.tag);
         }

@@ -103,7 +103,7 @@ pub(super) fn signature(
         .get(usize::from(index))
         .map(AdmittedDeclaration::content)
     {
-        | Some(&DeclarationContent::Data {
+        Some(&DeclarationContent::Data {
             ref parameters,
             ref constructors,
             ref kind,
@@ -112,7 +112,7 @@ pub(super) fn signature(
             constructors,
             kind: *kind,
         }),
-        | _ => Err(KernelError::NotADataType { index }),
+        _ => Err(KernelError::NotADataType { index }),
     }
 }
 
@@ -145,13 +145,11 @@ pub(super) fn resolve<'session>(
 ) -> Result<Signature<'session>, KernelError>
 {
     match judgement.block {
-        | super::Block::Inside {
+        super::Block::Inside {
             position,
             signature: own,
         } if position == index => Ok(own),
-        | super::Block::Inside { .. } | super::Block::Outside => {
-            signature(judgement.entries, index)
-        },
+        super::Block::Inside { .. } | super::Block::Outside => signature(judgement.entries, index),
     }
 }
 
@@ -177,11 +175,28 @@ pub(super) fn level(
 ) -> Result<Level, KernelError>
 {
     match arena.value_type(kind).ok_or(KernelError::ArenaFault)? {
-        | &ValueType::Universe {
+        &ValueType::Universe {
             sort: GroundSort::Value,
             ref level,
         } => Ok(level.clone()),
-        | _ => Err(KernelError::DataKindNotUniverse),
+        &ValueType::Data { .. }
+        | &ValueType::Record(_)
+        | &ValueType::Session { .. }
+        | &ValueType::PathUniverse(..)
+        | &ValueType::FlowUniverse(..)
+        | &ValueType::Path { .. }
+        | &ValueType::Flow { .. }
+        | &ValueType::Base(_)
+        | &ValueType::Product(_)
+        | &ValueType::Sigma { .. }
+        | &ValueType::Sum(_)
+        | &ValueType::List(_)
+        | &ValueType::Thunk(_)
+        | &ValueType::Universe { .. }
+        | &ValueType::Lift { .. }
+        | &ValueType::Element { .. }
+        | &ValueType::Abstract(_)
+        | &ValueType::StaticPi { .. } => Err(KernelError::DataKindNotUniverse),
     }
 }
 
@@ -216,11 +231,11 @@ pub(super) fn instantiate(
     let mut result = subject;
     for index in (0 .. prefix.0).rev() {
         let argument = match arena.value_type(datatype) {
-            | Some(&ValueType::Data { ref arguments, .. }) => arguments
+            Some(&ValueType::Data { ref arguments, .. }) => arguments
                 .get(index)
                 .copied()
                 .ok_or(KernelError::DataArgumentArity)?,
-            | _ => return Err(KernelError::ArenaFault),
+            _ => return Err(KernelError::ArenaFault),
         };
         let depth = BinderDepth::from(
             u32::try_from(index).map_err(|_cause| KernelError::DataArgumentArity)?,
@@ -259,20 +274,63 @@ pub(super) fn constructor(
 ) -> Result<(ValueTypeId, Vec<Goal>), KernelError>
 {
     let (datatype, tag, count) = match arena.value(value).ok_or(KernelError::ArenaFault)? {
-        | &Value::Constructor {
+        &Value::Constructor {
             ref datatype,
             ref tag,
             ref fields,
         } => (*datatype, *tag, fields.len()),
-        | _ => return Err(KernelError::ArenaFault),
+        &Value::Record(_)
+        | &Value::SessionPath { .. }
+        | &Value::SessionFlow { .. }
+        | &Value::Stay { .. }
+        | &Value::ForwardFlow { .. }
+        | &Value::FunctionFlow { .. }
+        | &Value::Then { .. }
+        | &Value::FlowProduct(..)
+        | &Value::PathRefl(_)
+        | &Value::PathProduct(..)
+        | &Value::PathEquiv { .. }
+        | &Value::Here { .. }
+        | &Value::Returned(_)
+        | &Value::Higher { .. }
+        | &Value::HigherEvaluation { .. }
+        | &Value::QuantifiedEvaluation { .. }
+        | &Value::Variable(_)
+        | &Value::Constant(_)
+        | &Value::Literal(_)
+        | &Value::Tuple(_)
+        | &Value::Injection(..)
+        | &Value::ListNil
+        | &Value::ListCons(..)
+        | &Value::Thunk(_)
+        | &Value::Lift { .. }
+        | &Value::Quote(_)
+        | &Value::QuoteComputation(_)
+        | &Value::StaticApplication(..) => return Err(KernelError::ArenaFault),
     };
     let (declaration, argument_count) =
         match arena.value_type(datatype).ok_or(KernelError::ArenaFault)? {
-            | &ValueType::Data {
+            &ValueType::Data {
                 ref declaration,
                 ref arguments,
             } => (*declaration, arguments.len()),
-            | _ => {
+            &ValueType::Record(_)
+            | &ValueType::Session { .. }
+            | &ValueType::PathUniverse(..)
+            | &ValueType::FlowUniverse(..)
+            | &ValueType::Path { .. }
+            | &ValueType::Flow { .. }
+            | &ValueType::Base(_)
+            | &ValueType::Product(_)
+            | &ValueType::Sigma { .. }
+            | &ValueType::Sum(_)
+            | &ValueType::List(_)
+            | &ValueType::Thunk(_)
+            | &ValueType::Universe { .. }
+            | &ValueType::Lift { .. }
+            | &ValueType::Element { .. }
+            | &ValueType::Abstract(_)
+            | &ValueType::StaticPi { .. } => {
                 return Err(super::value_shape_mismatch(
                     arena,
                     ExpectedValueShape::Data,
@@ -301,10 +359,10 @@ pub(super) fn constructor(
             ParameterPrefix(argument_count),
         )?;
         let field = match arena.value(value) {
-            | Some(&Value::Constructor { ref fields, .. }) => {
+            Some(&Value::Constructor { ref fields, .. }) => {
                 fields.get(index).copied().ok_or(KernelError::ArenaFault)?
             },
-            | _ => return Err(KernelError::ArenaFault),
+            _ => return Err(KernelError::ArenaFault),
         };
         goals.push(Goal::CheckValue(field, ty));
     }
@@ -344,8 +402,8 @@ pub(super) fn branch_type(
 {
     let count = u32::try_from(fields.len()).map_err(|_cause| KernelError::ConstructorArity)?;
     let parameters = match arena.value_type(datatype) {
-        | Some(&ValueType::Data { ref arguments, .. }) => arguments.len(),
-        | _ => return Err(KernelError::ArenaFault),
+        Some(&ValueType::Data { ref arguments, .. }) => arguments.len(),
+        _ => return Err(KernelError::ArenaFault),
     };
     let (table, memo) = session.rewrite_parts();
     let shifted_datatype = rewrite::shift_value_type(
@@ -428,20 +486,54 @@ pub(super) fn case(
 ) -> Result<(CompTypeId, Vec<Goal>, Looped), KernelError>
 {
     let (scrutinee, motive, count) = match arena.computation(case).ok_or(KernelError::ArenaFault)? {
-        | &Computation::DataCase {
+        &Computation::DataCase {
             ref scrutinee,
             ref motive,
             ref branches,
         } => (*scrutinee, *motive, branches.len()),
-        | _ => return Err(KernelError::ArenaFault),
+        &Computation::RecordProjection(..)
+        | &Computation::TupleProjection(..)
+        | &Computation::Lambda(_)
+        | &Computation::Application(..)
+        | &Computation::Return(_)
+        | &Computation::Bind(..)
+        | &Computation::Force(_)
+        | &Computation::Case { .. }
+        | &Computation::SigmaSplit { .. }
+        | &Computation::ListFold { .. }
+        | &Computation::Transport(..)
+        | &Computation::PathTransport { .. }
+        | &Computation::TelescopeTransport { .. }
+        | &Computation::Ride { .. }
+        | &Computation::TelescopeRide { .. }
+        | &Computation::RelatedApplication { .. }
+        | &Computation::With(..)
+        | &Computation::Project(..)
+        | &Computation::Fixpoint { .. } => return Err(KernelError::ArenaFault),
     };
     let (declaration, argument_count) =
         match arena.value_type(datatype).ok_or(KernelError::ArenaFault)? {
-            | &ValueType::Data {
+            &ValueType::Data {
                 ref declaration,
                 ref arguments,
             } => (*declaration, arguments.len()),
-            | _ => {
+            &ValueType::Record(_)
+            | &ValueType::Session { .. }
+            | &ValueType::PathUniverse(..)
+            | &ValueType::FlowUniverse(..)
+            | &ValueType::Path { .. }
+            | &ValueType::Flow { .. }
+            | &ValueType::Base(_)
+            | &ValueType::Product(_)
+            | &ValueType::Sigma { .. }
+            | &ValueType::Sum(_)
+            | &ValueType::List(_)
+            | &ValueType::Thunk(_)
+            | &ValueType::Universe { .. }
+            | &ValueType::Lift { .. }
+            | &ValueType::Element { .. }
+            | &ValueType::Abstract(_)
+            | &ValueType::StaticPi { .. } => {
                 return Err(super::value_shape_mismatch(
                     arena,
                     ExpectedValueShape::Data,
@@ -480,11 +572,11 @@ pub(super) fn case(
             motive,
         )?;
         let branch = match arena.computation(case) {
-            | Some(&Computation::DataCase { ref branches, .. }) => branches
+            Some(&Computation::DataCase { ref branches, .. }) => branches
                 .get(index)
                 .copied()
                 .ok_or(KernelError::ArenaFault)?,
-            | _ => return Err(KernelError::ArenaFault),
+            _ => return Err(KernelError::ArenaFault),
         };
         goals.push(Goal::CheckComp(branch, expected));
     }
@@ -493,12 +585,12 @@ pub(super) fn case(
             let expected =
                 super::loops::arm_type(arena, presentations, (case, datatype, motive), owed_loop)?;
             let arm = match arena.computation(case) {
-                | Some(&Computation::DataCase { ref branches, .. }) => constructors
+                Some(&Computation::DataCase { ref branches, .. }) => constructors
                     .checked_add(position)
                     .and_then(|index| branches.get(index))
                     .copied()
                     .ok_or(KernelError::ArenaFault)?,
-                | _ => return Err(KernelError::ArenaFault),
+                _ => return Err(KernelError::ArenaFault),
             };
             goals.push(Goal::CheckComp(arm, expected));
         }
@@ -560,7 +652,7 @@ pub(super) fn absurd(
 ) -> Result<Maybe<CompTypeId, absurd::Absent>, KernelError>
 {
     let (scrutinee, motive) = match arena.computation(case).ok_or(KernelError::ArenaFault)? {
-        | &Computation::DataCase {
+        &Computation::DataCase {
             scrutinee,
             motive,
             ref branches,
@@ -570,7 +662,25 @@ pub(super) fn absurd(
             }
             (scrutinee, motive)
         },
-        | _ => return Err(KernelError::ArenaFault),
+        &Computation::RecordProjection(..)
+        | &Computation::TupleProjection(..)
+        | &Computation::Lambda(_)
+        | &Computation::Application(..)
+        | &Computation::Return(_)
+        | &Computation::Bind(..)
+        | &Computation::Force(_)
+        | &Computation::Case { .. }
+        | &Computation::SigmaSplit { .. }
+        | &Computation::ListFold { .. }
+        | &Computation::Transport(..)
+        | &Computation::PathTransport { .. }
+        | &Computation::TelescopeTransport { .. }
+        | &Computation::Ride { .. }
+        | &Computation::TelescopeRide { .. }
+        | &Computation::RelatedApplication { .. }
+        | &Computation::With(..)
+        | &Computation::Project(..)
+        | &Computation::Fixpoint { .. } => return Err(KernelError::ArenaFault),
     };
     let Some(&ValueType::Path {
         domain,
@@ -586,8 +696,8 @@ pub(super) fn absurd(
         return Ok(Maybe::Absent(absurd::Absent::NotAPath));
     };
     match presented::apart(arena, entries, declaration, (left, right))? {
-        | Apartness::Apart => {},
-        | reason @ (Apartness::Agree
+        Apartness::Apart => {},
+        reason @ (Apartness::Agree
         | Apartness::Open
         | Apartness::Leaf
         | Apartness::Diverges { .. }

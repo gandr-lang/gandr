@@ -632,11 +632,11 @@ impl Imports
         match self.scope.resolve(path) {
             // The scope and the rows are the same module's, so every position
             // the scope binds has its row.
-            | Maybe::Present(binding) => match self.rows.get(usize::from(binding.data)) {
-                | Some(row) => Maybe::Present(row),
-                | None => Maybe::Absent(import::Absent::Unbound),
-            },
-            | Maybe::Absent(_) => Maybe::Absent(import::Absent::Unbound),
+            Maybe::Present(binding) => self
+                .rows
+                .get(usize::from(binding.data))
+                .map_or(Maybe::Absent(import::Absent::Unbound), Maybe::Present),
+            Maybe::Absent(_) => Maybe::Absent(import::Absent::Unbound),
         }
     }
 }
@@ -907,8 +907,8 @@ impl<'text> Submission<'text>
     pub const fn edits(&self) -> Maybe<&EditScript, resumed::Absent>
     {
         match self.edits {
-            | Maybe::Present(ref edits) => Maybe::Present(edits),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(ref edits) => Maybe::Present(edits),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 
@@ -921,8 +921,8 @@ impl<'text> Submission<'text>
     pub const fn kernel(&self) -> Maybe<&KernelCheckpoint, admitted::Absent>
     {
         match self.kernel {
-            | Maybe::Present(ref kernel) => Maybe::Present(kernel),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            Maybe::Present(ref kernel) => Maybe::Present(kernel),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 
@@ -1084,14 +1084,14 @@ impl<'text> Submission<'text>
         else {
             return Maybe::Absent(evaluation::Absent::Unaccepted);
         };
-        match report
+        report
             .declarations()
             .iter()
             .find(|declaration| declaration.constant() == constant)
-        {
-            | Some(declaration) => evaluate(declaration, program),
-            | None => Maybe::Absent(evaluation::Absent::Unaccepted),
-        }
+            .map_or(
+                Maybe::Absent(evaluation::Absent::Unaccepted),
+                |declaration| evaluate(declaration, program),
+            )
     }
 }
 
@@ -1143,11 +1143,11 @@ pub fn evaluate<'text>(
 ) -> Maybe<Evaluation<'text>, evaluation::Absent>
 {
     match declaration.produced() {
-        | Produced::Judged(
-            Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. },
-        ) => Maybe::Present(program.evaluate(declaration.constant())),
-        | Produced::Judged(Verdict::Owed(_)) => Maybe::Absent(evaluation::Absent::Holed),
-        | Produced::Judged(Verdict::Refused(_)) | Produced::Unlowered(_) | Produced::Guarded(_) => {
+        Produced::Judged(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
+            Maybe::Present(program.evaluate(declaration.constant()))
+        },
+        Produced::Judged(Verdict::Owed(_)) => Maybe::Absent(evaluation::Absent::Holed),
+        Produced::Judged(Verdict::Refused(_)) | Produced::Unlowered(_) | Produced::Guarded(_) => {
             Maybe::Absent(evaluation::Absent::Unaccepted)
         },
     }
@@ -1305,10 +1305,10 @@ impl fmt::Display for SessionFault<'_>
     ) -> fmt::Result
     {
         match *self {
-            | Self::Compose(ref fault) => fault.fmt(f),
-            | Self::Unordered(ref error) => error.fmt(f),
-            | Self::Resume(ref error) => write!(f, "resume failed: {error}"),
-            | Self::Store(ref error) => write!(f, "the checkpoint store failed: {error}"),
+            Self::Compose(ref fault) => fault.fmt(f),
+            Self::Unordered(ref error) => error.fmt(f),
+            Self::Resume(ref error) => write!(f, "resume failed: {error}"),
+            Self::Store(ref error) => write!(f, "the checkpoint store failed: {error}"),
         }
     }
 }
@@ -1635,25 +1635,25 @@ impl<Store, Blocks> Session<Store, Blocks>
         let lowering =
             lower_parsed(&grammar, parsed, &mut lowerings).map_err(SessionFault::Compose)?;
         let (imports, snapshot, documentation, restored) = match lowering.into_lowered() {
-            | Lowered::Refused(_) => (
+            Lowered::Refused(_) => (
                 Imports::empty(),
                 Snapshot::default(),
                 BTreeMap::new(),
                 Maybe::Absent(reopened::Absent::RefusedWhole),
             ),
-            | Lowered::Module { module, arena } => {
+            Lowered::Module { module, arena } => {
                 let program = program(&module, arena).map_err(SessionFault::Unordered)?;
                 let address = address_of(&program).map_err(SessionFault::Store)?;
                 let restored = match restore(&mut store, &program, address, backend, &mut Quiet)
                     .map_err(SessionFault::Store)?
                 {
-                    | Maybe::Present(checkpoints) => {
+                    Maybe::Present(checkpoints) => {
                         let count = ItemCount::from(checkpoints.items().len());
                         let resume =
                             Resume::from_checkpoints(checkpoints).map_err(SessionFault::Resume)?;
                         Maybe::Present((resume, count))
                     },
-                    | Maybe::Absent(reason) => Maybe::Absent(unrestored(reason)),
+                    Maybe::Absent(reason) => Maybe::Absent(unrestored(reason)),
                 };
                 (
                     Imports::of(&module),
@@ -1664,11 +1664,11 @@ impl<Store, Blocks> Session<Store, Blocks>
             },
         };
         let (incremental, restored) = match restored {
-            | Maybe::Present((resume, count)) => (
+            Maybe::Present((resume, count)) => (
                 IncrementalSession::reopen(store, backend, resume),
                 Maybe::Present(count),
             ),
-            | Maybe::Absent(reason) => (
+            Maybe::Absent(reason) => (
                 IncrementalSession::new(store, backend, CheckBudget::DEFAULT),
                 Maybe::Absent(reason),
             ),
@@ -1943,8 +1943,8 @@ impl<Store, Blocks> Session<Store, Blocks>
         let mut obligations = lowering.obligations().to_vec();
         obligations.sort_by_key(|obligation| obligation.span);
         let (module, arena) = match lowering.into_lowered() {
-            | Lowered::Module { module, arena } => (module, arena),
-            | Lowered::Refused(refusal) => {
+            Lowered::Module { module, arena } => (module, arena),
+            Lowered::Refused(refusal) => {
                 let composed = Composed::Refused(refusal);
                 return Ok(Submission {
                     root: self.root,
@@ -1974,25 +1974,25 @@ impl<Store, Blocks> Session<Store, Blocks>
         )
         .into_parts();
         let composed = match settled {
-            | Ok(composed) => composed,
+            Ok(composed) => composed,
             // The readmission ran before the settle comparison once; a kernel
             // disagreement still takes precedence over a settle fault.
-            | Err(fault) => {
+            Err(fault) => {
                 return Err(SessionFault::Compose(match admission.admit() {
-                    | Ok(_) => ComposeFault::Settle(fault),
-                    | Err(disagreement) => ComposeFault::Readmission(disagreement),
+                    Ok(_) => ComposeFault::Settle(fault),
+                    Err(disagreement) => ComposeFault::Readmission(disagreement),
                 }));
             },
         };
         let (census, persistence) = match self.incremental.submit(&mut items, &mut Quiet) {
-            | Ok(census) => (census, Persistence::Stored),
-            | Err(SessionError::Resume(error)) => return Err(SessionFault::Resume(error)),
+            Ok(census) => (census, Persistence::Stored),
+            Err(SessionError::Resume(error)) => return Err(SessionFault::Resume(error)),
             // The incremental session keeps the new resume when persisting
             // fails; were it to hold none, there is no census to report, so
             // the store's failure fails the submission instead.
-            | Err(SessionError::Store(error)) => match self.incremental.last() {
-                | Maybe::Present(resume) => (resume.census(), Persistence::Failed(error)),
-                | Maybe::Absent(_) => return Err(SessionFault::Store(error)),
+            Err(SessionError::Store(error)) => match self.incremental.last() {
+                Maybe::Present(resume) => (resume.census(), Persistence::Failed(error)),
+                Maybe::Absent(_) => return Err(SessionFault::Store(error)),
             },
         };
         let edits = diff(&self.snapshot, &snapshot);
@@ -2435,8 +2435,8 @@ where
     let committed = ArtifactRecordSet::from_artifact(kernel.as_image())
         .and_then(|records| build(&records, TreeParams::current(), blocks));
     match committed {
-        | Ok(manifest) => KernelCheckpoint::Stored(manifest),
-        | Err(refusal) => KernelCheckpoint::Failed(refusal),
+        Ok(manifest) => KernelCheckpoint::Stored(manifest),
+        Err(refusal) => KernelCheckpoint::Failed(refusal),
     }
 }
 
@@ -2485,17 +2485,17 @@ fn try_candidate<'text>(
     let mut obligations = lowering.obligations().to_vec();
     obligations.sort_by_key(|obligation| obligation.span);
     let (composed, kernel) = match lowering.into_lowered() {
-        | Lowered::Refused(refusal) => (
+        Lowered::Refused(refusal) => (
             Composed::Refused(refusal),
             Maybe::Absent(admitted::Absent::RefusedWhole),
         ),
-        | Lowered::Module { module, arena } => {
+        Lowered::Module { module, arena } => {
             let (settled, admission) =
                 judge(root.corpus_root(), module, arena, &HostGrant::UNBOUNDED).into_parts();
             let composed = settled.map_err(|fault| {
                 SessionFault::Compose(match admission.admit() {
-                    | Ok(_) => ComposeFault::Settle(fault),
-                    | Err(disagreement) => ComposeFault::Readmission(disagreement),
+                    Ok(_) => ComposeFault::Settle(fault),
+                    Err(disagreement) => ComposeFault::Readmission(disagreement),
                 })
             })?;
             (composed, Maybe::Absent(admitted::Absent::Pending))
@@ -2550,23 +2550,25 @@ enum Reached
 /// trivial.
 fn trial_rank(trial: &Trial<'_>) -> TrialRank
 {
-    let (reached, refused, unsettled, owed, repairs) = match trial.outcome {
-        | Err(_) => (
-            Reached::Faulted,
-            0_usize,
-            DeclarationCount::default(),
-            ObligationCount::default(),
-            0_usize,
-        ),
-        | Ok(ref submission) => match submission.composed {
-            | Composed::Refused(_) => (
+    let (reached, refused, unsettled, owed, repairs) = trial.outcome.as_ref().map_or_else(
+        |_| {
+            (
+                Reached::Faulted,
+                0_usize,
+                DeclarationCount::default(),
+                ObligationCount::default(),
+                0_usize,
+            )
+        },
+        |submission| match submission.composed {
+            Composed::Refused(_) => (
                 Reached::RefusedWhole,
                 0_usize,
                 DeclarationCount::default(),
                 ObligationCount::default(),
                 submission.obligations.len(),
             ),
-            | Composed::Settled { ref report, .. } => {
+            Composed::Settled { ref report, .. } => {
                 let tally = report.tally();
                 (
                     Reached::Judged,
@@ -2579,7 +2581,7 @@ fn trial_rank(trial: &Trial<'_>) -> TrialRank
                 )
             },
         },
-    };
+    );
     TrialRank {
         reached,
         refused: DeclarationCount::from(refused),
@@ -2624,9 +2626,9 @@ const FAILURE_CLASSES: [FailureClass; 4] = [
 const fn unrestored(reason: restored::Absent) -> reopened::Absent
 {
     match reason {
-        | restored::Absent::AddressMismatch => reopened::Absent::AddressMismatch,
-        | restored::Absent::NotStored => reopened::Absent::NotStored,
-        | restored::Absent::OtherBackend => reopened::Absent::OtherBackend,
+        restored::Absent::AddressMismatch => reopened::Absent::AddressMismatch,
+        restored::Absent::NotStored => reopened::Absent::NotStored,
+        restored::Absent::OtherBackend => reopened::Absent::OtherBackend,
     }
 }
 

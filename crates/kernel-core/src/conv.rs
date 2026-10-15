@@ -376,8 +376,8 @@ pub(crate) fn convert_values(
         crate::replay::ReplaySides::Values(left, right),
         crate::replay::ReplayBudget::DEFAULT,
     ) {
-        | crate::replay::KernelVerdict::Convertible => Convertibility::Convertible,
-        | crate::replay::KernelVerdict::NotConvertible
+        crate::replay::KernelVerdict::Convertible => Convertibility::Convertible,
+        crate::replay::KernelVerdict::NotConvertible
         | crate::replay::KernelVerdict::Declined(_) => Convertibility::Distinct,
     }
 }
@@ -501,8 +501,8 @@ pub fn convert_value_type(
 ) -> Result<(), KernelError>
 {
     match convertible_value_types(arena, expected, actual) {
-        | Convertibility::Convertible => Ok(()),
-        | Convertibility::Distinct => Err(KernelError::ValueTypeMismatch(ValueTypeMismatch::new(
+        Convertibility::Convertible => Ok(()),
+        Convertibility::Distinct => Err(KernelError::ValueTypeMismatch(ValueTypeMismatch::new(
             value_type_witness(arena, expected),
             value_type_witness(arena, actual),
         ))),
@@ -547,8 +547,8 @@ pub fn convert_comp_type(
 ) -> Result<(), KernelError>
 {
     match convertible_comp_types(arena, expected, actual) {
-        | Convertibility::Convertible => Ok(()),
-        | Convertibility::Distinct => {
+        Convertibility::Convertible => Ok(()),
+        Convertibility::Distinct => {
             Err(KernelError::ComputationTypeMismatch(CompTypeMismatch::new(
                 comp_type_witness(arena, expected),
                 comp_type_witness(arena, actual),
@@ -684,7 +684,7 @@ fn converge(
             continue;
         }
         match goal {
-            | ConversionGoal::ValueType(left, right) => {
+            ConversionGoal::ValueType(left, right) => {
                 // Equal readable ids discharge one node. Unequal ids still
                 // require structural comparison.
                 if left == right {
@@ -698,7 +698,7 @@ fn converge(
                     return Convertibility::Distinct;
                 };
                 match (left, right) {
-                    | (
+                    (
                         &ValueType::Data {
                             declaration: one,
                             arguments: ref a,
@@ -717,7 +717,7 @@ fn converge(
                     // those words, once presented types are read: both
                     // endpoints spell the point, or one does and the other
                     // converts with it.
-                    | (
+                    (
                         &ValueType::Data {
                             declaration,
                             ref arguments,
@@ -740,9 +740,9 @@ fn converge(
                         },
                     ) => {
                         let presentations = match endpoints {
-                            | Endpoints::Deferred { presentations, .. }
+                            Endpoints::Deferred { presentations, .. }
                             | Endpoints::Related { presentations, .. } => presentations,
-                            | Endpoints::Structural => return Convertibility::Distinct,
+                            Endpoints::Structural => return Convertibility::Distinct,
                         };
                         let at =
                             |sides| presentations.words(arena, domain, sides) == Some(declaration);
@@ -762,7 +762,7 @@ fn converge(
                             return Convertibility::Distinct;
                         }
                     },
-                    | (&ValueType::Record(ref a), &ValueType::Record(ref b)) => {
+                    (&ValueType::Record(ref a), &ValueType::Record(ref b)) => {
                         if a.len() != b.len() || !a.keys().eq(b.keys()) {
                             return Convertibility::Distinct;
                         }
@@ -772,14 +772,14 @@ fn converge(
                                 .map(|(a, b)| ConversionGoal::ValueType(*a, *b)),
                         );
                     },
-                    | (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d))
+                    (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d))
                     | (&ValueType::FlowUniverse(a, b), &ValueType::FlowUniverse(c, d)) => {
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
                     },
                     // Path and Flow never convert to each other: each pair
                     // below names one family on both sides.
-                    | (
+                    (
                         &ValueType::Path {
                             domain: one_domain,
                             left: one_left,
@@ -816,14 +816,14 @@ fn converge(
                             stack.push(ConversionGoal::Value(one_right, other_right));
                         }
                     },
-                    | (&ValueType::Base(one), &ValueType::Base(other)) => {
+                    (&ValueType::Base(one), &ValueType::Base(other)) => {
                         if one != other {
                             return Convertibility::Distinct;
                         }
                     },
                     // Two products, or two sums, convert part by part; a
                     // different arity separates them.
-                    | (&ValueType::Product(ref one), &ValueType::Product(ref other))
+                    (&ValueType::Product(ref one), &ValueType::Product(ref other))
                     | (&ValueType::Sum(ref one), &ValueType::Sum(ref other)) => {
                         if one.len() != other.len() {
                             return Convertibility::Distinct;
@@ -837,7 +837,7 @@ fn converge(
                     // Two static Pis, and two dependent pairs, convert factor
                     // by factor; a Σ's second factors stand under the same
                     // binder on both sides.
-                    | (
+                    (
                         &ValueType::StaticPi {
                             domain: one_first,
                             codomain: one_second,
@@ -860,10 +860,10 @@ fn converge(
                         stack.push(ConversionGoal::ValueType(one_first, other_first));
                         stack.push(ConversionGoal::ValueType(one_second, other_second));
                     },
-                    | (&ValueType::Thunk(one_body), &ValueType::Thunk(other_body)) => {
+                    (&ValueType::Thunk(one_body), &ValueType::Thunk(other_body)) => {
                         stack.push(ConversionGoal::CompType(one_body, other_body));
                     },
-                    | (
+                    (
                         &ValueType::Session {
                             graph: ref one,
                             payloads: a,
@@ -879,7 +879,7 @@ fn converge(
                         }
                         stack.push(ConversionGoal::ValueType(a, b));
                     },
-                    | (&ValueType::List(one), &ValueType::List(other)) => {
+                    (&ValueType::List(one), &ValueType::List(other)) => {
                         stack.push(ConversionGoal::ValueType(one, other));
                     },
                     // Both sides are pinned to the universe former by the
@@ -887,12 +887,12 @@ fn converge(
                     // child, so the node comparison delegated to here *is* the
                     // sort comparison and the canonical level comparison — no
                     // other child is reachable through this arm.
-                    | (one @ &ValueType::Universe { .. }, other @ &ValueType::Universe { .. }) => {
+                    (one @ &ValueType::Universe { .. }, other @ &ValueType::Universe { .. }) => {
                         if one != other {
                             return Convertibility::Distinct;
                         }
                     },
-                    | (&ValueType::Abstract(one), &ValueType::Abstract(other)) => {
+                    (&ValueType::Abstract(one), &ValueType::Abstract(other)) => {
                         if one != other {
                             return Convertibility::Distinct;
                         }
@@ -903,7 +903,7 @@ fn converge(
                     // well-formed pair — a code has one type — and it is kept
                     // because conversion is asked about types the checker has
                     // not necessarily formed.
-                    | (
+                    (
                         &ValueType::Element {
                             code: one_code,
                             target: ref one_target,
@@ -918,7 +918,7 @@ fn converge(
                         }
                         stack.push(ConversionGoal::Value(one_code, other_code));
                     },
-                    | (
+                    (
                         &ValueType::Lift {
                             inner: one_inner,
                             target: ref one_target,
@@ -933,7 +933,7 @@ fn converge(
                         }
                         stack.push(ConversionGoal::ValueType(one_inner, other_inner));
                     },
-                    | (
+                    (
                         &ValueType::Data { .. }
                         | &ValueType::Record(_)
                         | &ValueType::PathUniverse(..)
@@ -956,7 +956,7 @@ fn converge(
                     ) => return Convertibility::Distinct,
                 }
             },
-            | ConversionGoal::CompType(left, right) => {
+            ConversionGoal::CompType(left, right) => {
                 if left == right {
                     if arena.comp_type(left).is_none() {
                         return Convertibility::Distinct;
@@ -968,7 +968,7 @@ fn converge(
                     return Convertibility::Distinct;
                 };
                 match (left, right) {
-                    | (&CompType::Returner(one), &CompType::Returner(other)) => {
+                    (&CompType::Returner(one), &CompType::Returner(other)) => {
                         stack.push(ConversionGoal::ValueType(one, other));
                     },
                     // The two arrows compare alike child for child and never
@@ -978,7 +978,7 @@ fn converge(
                     // different contexts. Refusing that pair is what makes the
                     // structural walk's reading of a de Bruijn index the same on
                     // both sides.
-                    | (
+                    (
                         &CompType::Arrow {
                             domain: one_domain,
                             codomain: one_codomain,
@@ -1001,7 +1001,7 @@ fn converge(
                         stack.push(ConversionGoal::ValueType(one_domain, other_domain));
                         stack.push(ConversionGoal::CompType(one_codomain, other_codomain));
                     },
-                    | (
+                    (
                         &CompType::Element {
                             code: one_code,
                             target: ref one_target,
@@ -1016,14 +1016,14 @@ fn converge(
                         }
                         stack.push(ConversionGoal::Value(one_code, other_code));
                     },
-                    | (
+                    (
                         &CompType::With(one_left, one_right),
                         &CompType::With(other_left, other_right),
                     ) => {
                         stack.push(ConversionGoal::CompType(one_left, other_left));
                         stack.push(ConversionGoal::CompType(one_right, other_right));
                     },
-                    | (
+                    (
                         &CompType::Returner(_)
                         | &CompType::Arrow { .. }
                         | &CompType::Pi { .. }
@@ -1035,7 +1035,7 @@ fn converge(
                     },
                 }
             },
-            | ConversionGoal::Value(left, right) => {
+            ConversionGoal::Value(left, right) => {
                 if left == right {
                     if arena.value(left).is_none() {
                         return Convertibility::Distinct;
@@ -1048,16 +1048,43 @@ fn converge(
                     return Convertibility::Distinct;
                 };
                 let presented = |value: &Value| match *value {
-                    | Value::Constructor { datatype, .. } => match endpoints {
-                        | Endpoints::Deferred { presentations, .. }
+                    Value::Constructor { datatype, .. } => match endpoints {
+                        Endpoints::Deferred { presentations, .. }
                         | Endpoints::Related { presentations, .. } => matches!(
                             arena.value_type(datatype),
                             Some(&ValueType::Data { declaration, .. })
                                 if presentations.presented(declaration).is_some()
                         ),
-                        | Endpoints::Structural => false,
+                        Endpoints::Structural => false,
                     },
-                    | _ => false,
+                    Value::Record(_)
+                    | Value::SessionPath { .. }
+                    | Value::SessionFlow { .. }
+                    | Value::Stay { .. }
+                    | Value::ForwardFlow { .. }
+                    | Value::FunctionFlow { .. }
+                    | Value::Then { .. }
+                    | Value::FlowProduct(..)
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Here { .. }
+                    | Value::Returned(_)
+                    | Value::Higher { .. }
+                    | Value::HigherEvaluation { .. }
+                    | Value::QuantifiedEvaluation { .. }
+                    | Value::Variable(_)
+                    | Value::Constant(_)
+                    | Value::Literal(_)
+                    | Value::Tuple(_)
+                    | Value::Injection(..)
+                    | Value::ListNil
+                    | Value::ListCons(..)
+                    | Value::Thunk(_)
+                    | Value::Lift { .. }
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_)
+                    | Value::StaticApplication(..) => false,
                 };
                 let set_aside = matches!(*left, Value::Returned(_))
                     || matches!(*right, Value::Returned(_))
@@ -1272,7 +1299,7 @@ fn converge(
                     ) => return Convertibility::Distinct,
                 }
             },
-            | ConversionGoal::Computation(left, right) => {
+            ConversionGoal::Computation(left, right) => {
                 if left == right {
                     if arena.computation(left).is_none() {
                         return Convertibility::Distinct;
@@ -1284,7 +1311,7 @@ fn converge(
                     return Convertibility::Distinct;
                 };
                 match (left, right) {
-                    | (
+                    (
                         &Computation::DataCase {
                             scrutinee: a,
                             motive: c,
@@ -1307,7 +1334,7 @@ fn converge(
                                 .map(|(a, b)| ConversionGoal::Computation(*a, *b)),
                         );
                     },
-                    | (
+                    (
                         &Computation::SigmaSplit {
                             scrutinee: one_scrutinee,
                             motive: one_motive,
@@ -1323,7 +1350,7 @@ fn converge(
                         stack.push(ConversionGoal::CompType(one_motive, other_motive));
                         stack.push(ConversionGoal::Computation(one_body, other_body));
                     },
-                    | (
+                    (
                         &Computation::RecordProjection(a, ref one),
                         &Computation::RecordProjection(b, ref other),
                     ) => {
@@ -1332,7 +1359,7 @@ fn converge(
                         }
                         stack.push(ConversionGoal::Value(a, b));
                     },
-                    | (
+                    (
                         &Computation::TupleProjection(a, one),
                         &Computation::TupleProjection(b, other),
                     ) => {
@@ -1341,7 +1368,7 @@ fn converge(
                         }
                         stack.push(ConversionGoal::Value(a, b));
                     },
-                    | (
+                    (
                         &Computation::ListFold {
                             element: left_element,
                             result: left_result,
@@ -1365,11 +1392,11 @@ fn converge(
                             ConversionGoal::Computation(left_cons, right_cons),
                         ]);
                     },
-                    | (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
+                    (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
                     },
-                    | (
+                    (
                         &Computation::PathTransport {
                             motive: one_motive,
                             path: one_path,
@@ -1397,7 +1424,7 @@ fn converge(
                         stack.push(ConversionGoal::Value(one_path, other_path));
                         stack.push(ConversionGoal::Value(one_value, other_value));
                     },
-                    | (
+                    (
                         &Computation::TelescopeTransport {
                             motive: one_motive,
                             path: one_path,
@@ -1437,7 +1464,7 @@ fn converge(
                             ConversionGoal::Value(one_value, other_value),
                         ]);
                     },
-                    | (
+                    (
                         &Computation::RelatedApplication {
                             path: one_path,
                             left: one_left,
@@ -1461,25 +1488,25 @@ fn converge(
                             ConversionGoal::Computation(one_body, other_body),
                         ]);
                     },
-                    | (&Computation::Lambda(one), &Computation::Lambda(other))
+                    (&Computation::Lambda(one), &Computation::Lambda(other))
                     | (
                         &Computation::Fixpoint { body: one, .. },
                         &Computation::Fixpoint { body: other, .. },
                     ) => {
                         stack.push(ConversionGoal::Computation(one, other));
                     },
-                    | (
+                    (
                         &Computation::Application(one_head, one_argument),
                         &Computation::Application(other_head, other_argument),
                     ) => {
                         stack.push(ConversionGoal::Computation(one_head, other_head));
                         stack.push(ConversionGoal::Value(one_argument, other_argument));
                     },
-                    | (&Computation::Return(one), &Computation::Return(other))
+                    (&Computation::Return(one), &Computation::Return(other))
                     | (&Computation::Force(one), &Computation::Force(other)) => {
                         stack.push(ConversionGoal::Value(one, other));
                     },
-                    | (
+                    (
                         &Computation::Bind(one_bound, one_body),
                         &Computation::Bind(other_bound, other_body),
                     )
@@ -1490,7 +1517,7 @@ fn converge(
                         stack.push(ConversionGoal::Computation(one_bound, other_bound));
                         stack.push(ConversionGoal::Computation(one_body, other_body));
                     },
-                    | (
+                    (
                         &Computation::Project(one_side, one),
                         &Computation::Project(other_side, other),
                     ) => {
@@ -1499,7 +1526,7 @@ fn converge(
                         }
                         stack.push(ConversionGoal::Computation(one, other));
                     },
-                    | (
+                    (
                         &Computation::Case {
                             scrutinee: one_scrutinee,
                             branches: ref one_branches,
@@ -1520,7 +1547,7 @@ fn converge(
                                 .map(|(&one, &other)| ConversionGoal::Computation(one, other)),
                         );
                     },
-                    | (
+                    (
                         &Computation::DataCase { .. }
                         | &Computation::SigmaSplit { .. }
                         | &Computation::RecordProjection(..)

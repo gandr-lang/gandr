@@ -122,23 +122,23 @@ impl fmt::Display for UnfocusRefusal
     ) -> fmt::Result
     {
         match *self {
-            | Self::DanglingCommand(id) => write!(f, "command {id} is not in the arena"),
-            | Self::DanglingProducer(id) => write!(f, "producer {id} is not in the arena"),
-            | Self::DanglingConsumer(id) => write!(f, "consumer {id} is not in the arena"),
-            | Self::CommandOutsideTheImage(id) => write!(f, "command {id} is not in focused form"),
-            | Self::ProducerOutsideTheImage(id) => {
+            Self::DanglingCommand(id) => write!(f, "command {id} is not in the arena"),
+            Self::DanglingProducer(id) => write!(f, "producer {id} is not in the arena"),
+            Self::DanglingConsumer(id) => write!(f, "consumer {id} is not in the arena"),
+            Self::CommandOutsideTheImage(id) => write!(f, "command {id} is not in focused form"),
+            Self::ProducerOutsideTheImage(id) => {
                 write!(f, "producer {id} is not in focused form")
             },
-            | Self::ConsumerOutsideTheImage(id) => {
+            Self::ConsumerOutsideTheImage(id) => {
                 write!(f, "consumer {id} is not in focused form")
             },
-            | Self::EscapingContinuation(id) => {
+            Self::EscapingContinuation(id) => {
                 write!(
                     f,
                     "consumer {id} jumps out of the computation being decoded"
                 )
             },
-            | Self::DecodeInvariant => f.write_str("the decoding lost a result it pushed"),
+            Self::DecodeInvariant => f.write_str("the decoding lost a result it pushed"),
         }
     }
 }
@@ -188,8 +188,8 @@ pub fn unfocus_command(
 {
     let decoded = decode(arena, Root::Command(command), core, &[])?;
     match decoded {
-        | Decoded::Computation(computation) => Ok(computation),
-        | Decoded::Value(_) => Err(UnfocusRefusal::DecodeInvariant),
+        Decoded::Computation(computation) => Ok(computation),
+        Decoded::Value(_) => Err(UnfocusRefusal::DecodeInvariant),
     }
 }
 
@@ -228,8 +228,8 @@ pub fn unfocus_value(
 {
     let decoded = decode(arena, Root::Value(producer), core, &[])?;
     match decoded {
-        | Decoded::Value(value) => Ok(value),
-        | Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant),
+        Decoded::Value(value) => Ok(value),
+        Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant),
     }
 }
 
@@ -529,14 +529,14 @@ impl Unfocusing<'_>
     ) -> Result<Decoded, UnfocusRefusal>
     {
         match root {
-            | Root::Command(command) => self.tasks.push(Task::Command(command, Depth::ROOT)),
-            | Root::Value(producer) => self.tasks.push(Task::Value(producer, Depth::ROOT)),
-            | Root::ThunkBody(body) => {
+            Root::Command(command) => self.tasks.push(Task::Command(command, Depth::ROOT)),
+            Root::Value(producer) => self.tasks.push(Task::Value(producer, Depth::ROOT)),
+            Root::ThunkBody(body) => {
                 self.tasks.push(Task::Thunk);
                 self.tasks
                     .push(Task::Command(body, Depth::ROOT.under_covariable()));
             },
-            | Root::FixpointBody(body, evidence) => {
+            Root::FixpointBody(body, evidence) => {
                 self.tasks.push(Task::Thunk);
                 self.tasks.push(Task::Fixpoint(evidence));
                 self.tasks.push(Task::Command(
@@ -544,8 +544,8 @@ impl Unfocusing<'_>
                     Depth::ROOT.under_producer().under_covariable(),
                 ));
             },
-            | Root::Copattern(producer) => self.copattern_head(producer, Depth::ROOT)?,
-            | Root::BindBody(body) => self
+            Root::Copattern(producer) => self.copattern_head(producer, Depth::ROOT)?,
+            Root::BindBody(body) => self
                 .tasks
                 .push(Task::Command(body, Depth::ROOT.under_function_arm())),
         }
@@ -553,9 +553,9 @@ impl Unfocusing<'_>
             self.step(task)?;
         }
         match (self.values.as_slice(), self.computations.as_slice()) {
-            | (&[value], &[]) => Ok(Decoded::Value(value)),
-            | (&[], &[computation]) => Ok(Decoded::Computation(computation)),
-            | _ => Err(UnfocusRefusal::DecodeInvariant),
+            (&[value], &[]) => Ok(Decoded::Value(value)),
+            (&[], &[computation]) => Ok(Decoded::Computation(computation)),
+            _ => Err(UnfocusRefusal::DecodeInvariant),
         }
     }
 
@@ -617,22 +617,22 @@ impl Unfocusing<'_>
     ) -> Result<(), UnfocusRefusal>
     {
         match task {
-            | Task::Reify(source) => self.complete_reify(source),
-            | Task::Control(source, depth) => self.complete_control(source, depth),
-            | Task::With => {
+            Task::Reify(source) => self.complete_reify(source),
+            Task::Control(source, depth) => self.complete_control(source, depth),
+            Task::With => {
                 let right = self.pop_computation()?;
                 let left = self.pop_computation()?;
                 self.computations
                     .push(self.core.computation_with(left, right));
                 Ok(())
             },
-            | Task::Project(side) => {
+            Task::Project(side) => {
                 let subject = self.pop_computation()?;
                 self.computations
                     .push(self.core.computation_project(side, subject));
                 Ok(())
             },
-            | Task::ListFold(element, result) => {
+            Task::ListFold(element, result) => {
                 let list = self.pop_value()?;
                 let on_cons = self.pop_computation()?;
                 let on_nil = self.pop_computation()?;
@@ -642,11 +642,11 @@ impl Unfocusing<'_>
                 self.computations.push(folded);
                 Ok(())
             },
-            | Task::Primitive(primitive, arguments) => {
+            Task::Primitive(primitive, arguments) => {
                 use gandr_core_term::primitive::Arguments;
                 let arguments = match arguments {
-                    | Arguments::Unary(_) => Arguments::Unary(self.pop_value()?),
-                    | Arguments::Binary(_) => {
+                    Arguments::Unary(_) => Arguments::Unary(self.pop_value()?),
+                    Arguments::Binary(_) => {
                         let second = self.pop_value()?;
                         Arguments::Binary([self.pop_value()?, second])
                     },
@@ -655,10 +655,10 @@ impl Unfocusing<'_>
                 self.computations.push(computation);
                 Ok(())
             },
-            | Task::Value(producer, depth) => self.value(producer, depth),
-            | Task::Command(command, depth) => self.command(command, depth),
-            | Task::Spine(consumer, depth) => self.spine(consumer, depth),
-            | Task::Tuple(arity) => {
+            Task::Value(producer, depth) => self.value(producer, depth),
+            Task::Command(command, depth) => self.command(command, depth),
+            Task::Spine(consumer, depth) => self.spine(consumer, depth),
+            Task::Tuple(arity) => {
                 let start = self
                     .values
                     .len()
@@ -669,7 +669,7 @@ impl Unfocusing<'_>
                 self.values.push(tuple);
                 Ok(())
             },
-            | Task::Record(labels) => {
+            Task::Record(labels) => {
                 let start = self
                     .values
                     .len()
@@ -684,7 +684,7 @@ impl Unfocusing<'_>
                 self.values.push(record);
                 Ok(())
             },
-            | Task::Recorded(shape) => {
+            Task::Recorded(shape) => {
                 use gandr_core_term::session::RecordedMove;
                 let arity =
                     ConstructorTag::Recorded(alloc::sync::Arc::clone(&shape)).producer_arity();
@@ -697,13 +697,11 @@ impl Unfocusing<'_>
                 let mut moves = Vec::with_capacity(shape.len());
                 for movement in shape.iter() {
                     moves.push(match *movement {
-                        | RecordedMove::Sent(()) | RecordedMove::Received(()) => movement
+                        RecordedMove::Sent(()) | RecordedMove::Received(()) => movement
                             .carrying(payloads.next().ok_or(UnfocusRefusal::DecodeInvariant)?),
-                        | RecordedMove::Selected(ref label) => {
-                            RecordedMove::Selected(label.clone())
-                        },
-                        | RecordedMove::Offered(ref label) => RecordedMove::Offered(label.clone()),
-                        | RecordedMove::Closed => RecordedMove::Closed,
+                        RecordedMove::Selected(ref label) => RecordedMove::Selected(label.clone()),
+                        RecordedMove::Offered(ref label) => RecordedMove::Offered(label.clone()),
+                        RecordedMove::Closed => RecordedMove::Closed,
                     });
                 }
                 drop(payloads);
@@ -711,38 +709,38 @@ impl Unfocusing<'_>
                 self.values.push(run);
                 Ok(())
             },
-            | Task::Select(selector) => {
+            Task::Select(selector) => {
                 let subject = self.pop_value()?;
                 let projected = match selector {
-                    | Selector::Component(component) => {
+                    Selector::Component(component) => {
                         self.core.computation_tuple_projection(subject, component)
                     },
-                    | Selector::Label(label) => {
+                    Selector::Label(label) => {
                         self.core.computation_record_projection(subject, label)
                     },
                 };
                 self.computations.push(projected);
                 Ok(())
             },
-            | Task::ListCons => {
+            Task::ListCons => {
                 let tail = self.pop_value()?;
                 let head = self.pop_value()?;
                 self.values.push(self.core.value_list_cons(head, tail));
                 Ok(())
             },
-            | Task::Injection(summand) => {
+            Task::Injection(summand) => {
                 let body = self.pop_value()?;
                 let injection = self.core.value_injection(summand, body);
                 self.values.push(injection);
                 Ok(())
             },
-            | Task::Lift(level) => {
+            Task::Lift(level) => {
                 let body = self.pop_value()?;
                 let lift = self.core.value_lift(level, body);
                 self.values.push(lift);
                 Ok(())
             },
-            | Task::Native { tag, arity, family } => {
+            Task::Native { tag, arity, family } => {
                 let start = self
                     .values
                     .len()
@@ -750,58 +748,58 @@ impl Unfocusing<'_>
                     .ok_or(UnfocusRefusal::DecodeInvariant)?;
                 let fields: Vec<ValueId> = self.values.drain(start ..).collect();
                 let datatype = match family {
-                    | Some(declaration) => self.core.value_type_data(declaration, Vec::new()),
-                    | None => self.core.value_type_unknown(),
+                    Some(declaration) => self.core.value_type_data(declaration, Vec::new()),
+                    None => self.core.value_type_unknown(),
                 };
                 let constructed = self.core.value_constructor(datatype, tag, fields);
                 self.values.push(constructed);
                 Ok(())
             },
-            | Task::Thunk => {
+            Task::Thunk => {
                 let body = self.pop_computation()?;
                 let thunk = self.core.value_thunk(body);
                 self.values.push(thunk);
                 Ok(())
             },
-            | Task::Fixpoint(evidence) => {
+            Task::Fixpoint(evidence) => {
                 let body = self.pop_computation()?;
                 let fixpoint = self.core.computation_fixpoint(body, evidence);
                 self.computations.push(fixpoint);
                 Ok(())
             },
-            | Task::Return => {
+            Task::Return => {
                 let value = self.pop_value()?;
                 let returned = self.core.computation_return(value);
                 self.computations.push(returned);
                 Ok(())
             },
-            | Task::Force => {
+            Task::Force => {
                 let value = self.pop_value()?;
                 let forced = self.core.computation_force(value);
                 self.computations.push(forced);
                 Ok(())
             },
-            | Task::Lambda => {
+            Task::Lambda => {
                 let body = self.pop_computation()?;
                 let lambda = self.core.computation_lambda(body);
                 self.computations.push(lambda);
                 Ok(())
             },
-            | Task::Application => {
+            Task::Application => {
                 let argument = self.pop_value()?;
                 let head = self.pop_computation()?;
                 let applied = self.core.computation_application(head, argument);
                 self.computations.push(applied);
                 Ok(())
             },
-            | Task::Bind => {
+            Task::Bind => {
                 let body = self.pop_computation()?;
                 let head = self.pop_computation()?;
                 let bound = self.core.computation_bind(head, body);
                 self.computations.push(bound);
                 Ok(())
             },
-            | Task::Case(count) => {
+            Task::Case(count) => {
                 let start = self
                     .computations
                     .len()
@@ -813,14 +811,14 @@ impl Unfocusing<'_>
                 self.computations.push(cased);
                 Ok(())
             },
-            | Task::Split(arity) => {
+            Task::Split(arity) => {
                 let body = self.pop_computation()?;
                 let scrutinee = self.pop_value()?;
                 let split = self.core.computation_split(scrutinee, arity, body);
                 self.computations.push(split);
                 Ok(())
             },
-            | Task::DataCase(count) => {
+            Task::DataCase(count) => {
                 let start = self
                     .computations
                     .len()
@@ -865,13 +863,13 @@ impl Unfocusing<'_>
         let mut frames = Vec::with_capacity(source.len());
         for frame in source.iter().rev() {
             frames.push(match *frame {
-                | gandr_core_term::control::StackFrame::Apply(_) => {
+                gandr_core_term::control::StackFrame::Apply(_) => {
                     gandr_core_term::control::StackFrame::Apply(self.pop_value()?)
                 },
-                | gandr_core_term::control::StackFrame::Bind(_) => {
+                gandr_core_term::control::StackFrame::Bind(_) => {
                     gandr_core_term::control::StackFrame::Bind(self.pop_computation()?)
                 },
-                | gandr_core_term::control::StackFrame::Project(side) => {
+                gandr_core_term::control::StackFrame::Project(side) => {
                     gandr_core_term::control::StackFrame::Project(side)
                 },
             });
@@ -953,7 +951,7 @@ impl Unfocusing<'_>
             .command(source)
             .ok_or(UnfocusRefusal::DanglingCommand(source))?;
         let computation = match *node {
-            | CommandNode::Perform {
+            CommandNode::Perform {
                 ref signature,
                 ref operation,
                 route,
@@ -962,11 +960,11 @@ impl Unfocusing<'_>
                 let signature = self.signature(source, signature, depth)?;
                 let payload = self.pop_value()?;
                 match route {
-                    | Route::Nearest => {
+                    Route::Nearest => {
                         self.core
                             .computation_perform(signature, operation.clone(), payload)
                     },
-                    | Route::Capability(_) => {
+                    Route::Capability(_) => {
                         let capability = self.pop_value()?;
                         self.core.computation_exercise(
                             capability,
@@ -977,7 +975,7 @@ impl Unfocusing<'_>
                     },
                 }
             },
-            | CommandNode::Handle {
+            CommandNode::Handle {
                 ref signature,
                 introduces,
                 ref clauses,
@@ -995,13 +993,13 @@ impl Unfocusing<'_>
                 let on_return = self.pop_computation()?;
                 let subject = self.pop_computation()?;
                 match introduces {
-                    | Introduces::Nothing => self.core.computation_handle(
+                    Introduces::Nothing => self.core.computation_handle(
                         signature,
                         subject,
                         on_return,
                         translated.into(),
                     ),
-                    | Introduces::Capability => self.core.computation_scope(
+                    Introduces::Capability => self.core.computation_scope(
                         signature,
                         subject,
                         on_return,
@@ -1009,20 +1007,20 @@ impl Unfocusing<'_>
                     ),
                 }
             },
-            | CommandNode::Resume { .. } => {
+            CommandNode::Resume { .. } => {
                 let body = self.pop_computation()?;
                 let stack = self.pop_value()?;
                 self.core.computation_resume(stack, body)
             },
-            | CommandNode::Reset { .. } => {
+            CommandNode::Reset { .. } => {
                 let body = self.pop_computation()?;
                 self.core.computation_reset(body)
             },
-            | CommandNode::Shift { .. } => {
+            CommandNode::Shift { .. } => {
                 let body = self.pop_computation()?;
                 self.core.computation_shift(body)
             },
-            | CommandNode::Cut { .. } => {
+            CommandNode::Cut { .. } => {
                 return Err(UnfocusRefusal::CommandOutsideTheImage(source));
             },
         };
@@ -1054,8 +1052,8 @@ impl Unfocusing<'_>
             .command(source)
             .ok_or(UnfocusRefusal::DanglingCommand(source))?;
         match *node {
-            | CommandNode::Cut { .. } => self.tasks.push(Task::Command(source, depth)),
-            | CommandNode::Perform {
+            CommandNode::Cut { .. } => self.tasks.push(Task::Command(source, depth)),
+            CommandNode::Perform {
                 route,
                 payload,
                 continuation,
@@ -1068,7 +1066,7 @@ impl Unfocusing<'_>
                     self.tasks.push(Task::Value(capability, depth));
                 }
             },
-            | CommandNode::Handle {
+            CommandNode::Handle {
                 introduces,
                 subject,
                 on_return,
@@ -1087,12 +1085,12 @@ impl Unfocusing<'_>
                 self.tasks
                     .push(Task::Command(on_return, depth.under_function_arm()));
                 let under = match introduces {
-                    | Introduces::Nothing => depth.under_covariable(),
-                    | Introduces::Capability => depth.under_function_arm(),
+                    Introduces::Nothing => depth.under_covariable(),
+                    Introduces::Capability => depth.under_function_arm(),
                 };
                 self.tasks.push(Task::Command(subject, under));
             },
-            | CommandNode::Resume {
+            CommandNode::Resume {
                 stack,
                 body,
                 continuation,
@@ -1103,13 +1101,13 @@ impl Unfocusing<'_>
                     .push(Task::Command(body, depth.under_covariable()));
                 self.tasks.push(Task::Value(stack, depth));
             },
-            | CommandNode::Reset { body, continuation } => {
+            CommandNode::Reset { body, continuation } => {
                 self.tasks.push(Task::Spine(continuation, depth));
                 self.tasks.push(Task::Control(source, depth));
                 self.tasks
                     .push(Task::Command(body, depth.under_covariable()));
             },
-            | CommandNode::Shift { body, continuation } => {
+            CommandNode::Shift { body, continuation } => {
                 self.tasks.push(Task::Spine(continuation, depth));
                 self.tasks.push(Task::Control(source, depth));
                 self.tasks
@@ -1159,28 +1157,28 @@ impl Unfocusing<'_>
             .producer(id)
             .ok_or(UnfocusRefusal::DanglingProducer(id))?;
         let leaf = match *node {
-            | ProducerNode::Reify(ref frames) => {
+            ProducerNode::Reify(ref frames) => {
                 self.tasks.push(Task::Reify(id));
                 for frame in frames.iter().rev() {
                     match *frame {
-                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
                             self.tasks.push(Task::Value(value, depth));
                         },
-                        | gandr_core_term::control::StackFrame::Bind(body) => self
+                        gandr_core_term::control::StackFrame::Bind(body) => self
                             .tasks
                             .push(Task::Command(body, depth.under_function_arm())),
-                        | gandr_core_term::control::StackFrame::Project(_) => {},
+                        gandr_core_term::control::StackFrame::Project(_) => {},
                     }
                 }
                 return Ok(());
             },
-            | ProducerNode::Variable { zone, index } => {
+            ProducerNode::Variable { zone, index } => {
                 self.variable(zone, index, depth);
                 return Ok(());
             },
-            | ProducerNode::Constant(constant) => self.core.value_constant(constant),
-            | ProducerNode::Literal(ref literal) => self.core.value_literal(literal.clone()),
-            | ProducerNode::Constructor {
+            ProducerNode::Constant(constant) => self.core.value_constant(constant),
+            ProducerNode::Literal(ref literal) => self.core.value_literal(literal.clone()),
+            ProducerNode::Constructor {
                 ref tag,
                 ref producers,
                 ref consumers,
@@ -1189,15 +1187,15 @@ impl Unfocusing<'_>
                     return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
                 }
                 match (tag, producers.as_ref()) {
-                    | (&ConstructorTag::Tuple(ProducerArity::ZERO), &[]) => self.core.value_unit(),
-                    | (&ConstructorTag::ListNil, &[]) => self.core.value_list_nil(),
-                    | (&ConstructorTag::ListCons, &[head, tail]) => {
+                    (&ConstructorTag::Tuple(ProducerArity::ZERO), &[]) => self.core.value_unit(),
+                    (&ConstructorTag::ListNil, &[]) => self.core.value_list_nil(),
+                    (&ConstructorTag::ListCons, &[head, tail]) => {
                         self.tasks.push(Task::ListCons);
                         self.tasks.push(Task::Value(tail, depth));
                         self.tasks.push(Task::Value(head, depth));
                         return Ok(());
                     },
-                    | (&ConstructorTag::Tuple(arity), components)
+                    (&ConstructorTag::Tuple(arity), components)
                         if usize::from(arity) == components.len() =>
                     {
                         self.tasks.push(Task::Tuple(arity));
@@ -1206,7 +1204,7 @@ impl Unfocusing<'_>
                         }
                         return Ok(());
                     },
-                    | (&ConstructorTag::Record(ref labels), fields)
+                    (&ConstructorTag::Record(ref labels), fields)
                         if fields.len() == labels.len()
                             && labels
                                 .iter()
@@ -1220,24 +1218,24 @@ impl Unfocusing<'_>
                         }
                         return Ok(());
                     },
-                    | (&ConstructorTag::Injection(summand), &[body]) => {
+                    (&ConstructorTag::Injection(summand), &[body]) => {
                         self.tasks.push(Task::Injection(summand));
                         self.tasks.push(Task::Value(body, depth));
                         return Ok(());
                     },
-                    | (&ConstructorTag::Lift(ref level), &[body]) => {
+                    (&ConstructorTag::Lift(ref level), &[body]) => {
                         self.tasks.push(Task::Lift(level.clone()));
                         self.tasks.push(Task::Value(body, depth));
                         return Ok(());
                     },
-                    | (&ConstructorTag::Data { tag, arity, family }, fields) => {
+                    (&ConstructorTag::Data { tag, arity, family }, fields) => {
                         self.tasks.push(Task::Native { tag, arity, family });
                         for &field in fields.iter().rev() {
                             self.tasks.push(Task::Value(field, depth));
                         }
                         return Ok(());
                     },
-                    | (&ConstructorTag::Recorded(ref shape), payloads) => {
+                    (&ConstructorTag::Recorded(ref shape), payloads) => {
                         self.tasks
                             .push(Task::Recorded(alloc::sync::Arc::clone(shape)));
                         for &payload in payloads.iter().rev() {
@@ -1245,16 +1243,16 @@ impl Unfocusing<'_>
                         }
                         return Ok(());
                     },
-                    | _ => return Err(UnfocusRefusal::ProducerOutsideTheImage(id)),
+                    _ => return Err(UnfocusRefusal::ProducerOutsideTheImage(id)),
                 }
             },
-            | ProducerNode::Thunk { body } => {
+            ProducerNode::Thunk { body } => {
                 self.tasks.push(Task::Thunk);
                 self.tasks
                     .push(Task::Command(body, depth.under_covariable()));
                 return Ok(());
             },
-            | ProducerNode::Primitive { .. }
+            ProducerNode::Primitive { .. }
             | ProducerNode::Fixpoint { .. }
             | ProducerNode::Cocase { .. }
             | ProducerNode::Mu { .. } => {
@@ -1305,21 +1303,21 @@ impl Unfocusing<'_>
     )
     {
         let past = match zone {
-            | Zone::Intuitionistic => u32::from(index).checked_sub(depth.producers),
-            | Zone::Linear => None,
+            Zone::Intuitionistic => u32::from(index).checked_sub(depth.producers),
+            Zone::Linear => None,
         };
         let closed = past
             .and_then(|past| usize::try_from(past).ok())
             .and_then(|past| self.closing.get(past))
             .copied();
         let value = match (closed, past) {
-            | (Some(closed), _) => closed,
-            | (None, Some(_)) => {
+            (Some(closed), _) => closed,
+            (None, Some(_)) => {
                 let substituted = u32::try_from(self.closing.len()).unwrap_or(u32::MAX);
                 let shifted = u32::from(index).saturating_sub(substituted);
                 self.core.value_variable(zone, DeBruijnIndex::from(shifted))
             },
-            | (None, None) => self.core.value_variable(zone, index),
+            (None, None) => self.core.value_variable(zone, index),
         };
         self.values.push(value);
     }
@@ -1372,7 +1370,7 @@ impl Unfocusing<'_>
             .producer(producer)
             .ok_or(UnfocusRefusal::DanglingProducer(producer))?;
         match *head {
-            | ProducerNode::Primitive {
+            ProducerNode::Primitive {
                 primitive,
                 arguments,
             } => {
@@ -1383,17 +1381,17 @@ impl Unfocusing<'_>
                 }
                 return Ok(());
             },
-            | ProducerNode::Mu { body } => {
+            ProducerNode::Mu { body } => {
                 self.tasks.push(Task::Spine(consumer, depth));
                 self.tasks
                     .push(Task::Command(body, depth.under_covariable()));
                 return Ok(());
             },
-            | ProducerNode::Cocase { .. } => {
+            ProducerNode::Cocase { .. } => {
                 self.tasks.push(Task::Spine(consumer, depth));
                 return self.copattern_head(producer, depth);
             },
-            | ProducerNode::Fixpoint { body, evidence } => {
+            ProducerNode::Fixpoint { body, evidence } => {
                 let observer = self
                     .arena
                     .consumer(consumer)
@@ -1418,7 +1416,7 @@ impl Unfocusing<'_>
                 ));
                 return Ok(());
             },
-            | ProducerNode::Reify(_)
+            ProducerNode::Reify(_)
             | ProducerNode::Variable { .. }
             | ProducerNode::Constant(_)
             | ProducerNode::Literal(_)
@@ -1430,7 +1428,7 @@ impl Unfocusing<'_>
             .consumer(consumer)
             .ok_or(UnfocusRefusal::DanglingConsumer(consumer))?;
         match *observer {
-            | ConsumerNode::ListFold {
+            ConsumerNode::ListFold {
                 element,
                 result,
                 on_nil,
@@ -1473,7 +1471,7 @@ impl Unfocusing<'_>
                     .push(Task::Command(on_nil, depth.under_covariable()));
                 return Ok(());
             },
-            | ConsumerNode::Destructor {
+            ConsumerNode::Destructor {
                 tag: DestructorTag::Force,
                 ref producers,
                 ref consumers,
@@ -1485,7 +1483,7 @@ impl Unfocusing<'_>
                 self.tasks.push(Task::Spine(then, depth));
                 self.tasks.push(Task::Force);
             },
-            | ConsumerNode::Case { ref arms }
+            ConsumerNode::Case { ref arms }
                 if matches!(**arms, [crate::il::PatternArm {
                     constructor: ConstructorTag::Tuple(_),
                     ..
@@ -1510,7 +1508,7 @@ impl Unfocusing<'_>
                     )));
                 self.tasks.push(Task::Command(body, under));
             },
-            | ConsumerNode::Case { ref arms } => {
+            ConsumerNode::Case { ref arms } => {
                 let in_order = arms.iter().enumerate().all(|(summand, arm)| {
                     arm.constructor == ConstructorTag::Injection(Summand::from(summand))
                 });
@@ -1523,7 +1521,7 @@ impl Unfocusing<'_>
                         .push(Task::Command(arm.body, depth.under_producer()));
                 }
             },
-            | ConsumerNode::DataCase { ref branches, then } => {
+            ConsumerNode::DataCase { ref branches, then } => {
                 self.tasks.push(Task::Spine(then, depth));
                 self.tasks
                     .push(Task::DataCase(NodeCount::from(branches.len())));
@@ -1540,11 +1538,11 @@ impl Unfocusing<'_>
                         .push(Task::Command(body, depth.under_covariable()));
                 }
             },
-            | ConsumerNode::Select { ref selector, then } => {
+            ConsumerNode::Select { ref selector, then } => {
                 self.tasks.push(Task::Spine(then, depth));
                 self.tasks.push(Task::Select(selector.clone()));
             },
-            | ConsumerNode::Covariable(_)
+            ConsumerNode::Covariable(_)
             | ConsumerNode::Top
             | ConsumerNode::MuTilde { .. }
             | ConsumerNode::Destructor { .. } => {
@@ -1597,8 +1595,8 @@ impl Unfocusing<'_>
         else {
             return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
         };
-        match arms.as_ref() {
-            | &[
+        match *arms.as_ref() {
+            [
                 crate::il::CopatternArm {
                     destructor: DestructorTag::Apply,
                     body,
@@ -1608,7 +1606,7 @@ impl Unfocusing<'_>
                 self.tasks
                     .push(Task::Command(body, depth.under_function_arm()));
             },
-            | &[
+            [
                 crate::il::CopatternArm {
                     destructor: DestructorTag::Project(Side::Left),
                     body: left,
@@ -1624,7 +1622,7 @@ impl Unfocusing<'_>
                 self.tasks
                     .push(Task::Command(left, depth.under_covariable()));
             },
-            | _ => return Err(UnfocusRefusal::ProducerOutsideTheImage(id)),
+            _ => return Err(UnfocusRefusal::ProducerOutsideTheImage(id)),
         }
         Ok(())
     }
@@ -1684,7 +1682,7 @@ impl Unfocusing<'_>
             .consumer(id)
             .ok_or(UnfocusRefusal::DanglingConsumer(id))?;
         match *node {
-            | ConsumerNode::Covariable(index) => {
+            ConsumerNode::Covariable(index) => {
                 if u32::from(index) == 0 && depth.covariables > 0 {
                     Ok(())
                 }
@@ -1692,7 +1690,7 @@ impl Unfocusing<'_>
                     Err(UnfocusRefusal::EscapingContinuation(id))
                 }
             },
-            | ConsumerNode::Top => {
+            ConsumerNode::Top => {
                 if depth.covariables == 0 {
                     Ok(())
                 }
@@ -1700,12 +1698,12 @@ impl Unfocusing<'_>
                     Err(UnfocusRefusal::EscapingContinuation(id))
                 }
             },
-            | ConsumerNode::MuTilde { body } => {
+            ConsumerNode::MuTilde { body } => {
                 self.tasks.push(Task::Bind);
                 self.tasks.push(Task::Command(body, depth.under_producer()));
                 Ok(())
             },
-            | ConsumerNode::Destructor {
+            ConsumerNode::Destructor {
                 tag: DestructorTag::Project(side),
                 ref producers,
                 ref consumers,
@@ -1718,7 +1716,7 @@ impl Unfocusing<'_>
                 self.tasks.push(Task::Project(side));
                 Ok(())
             },
-            | ConsumerNode::Destructor {
+            ConsumerNode::Destructor {
                 tag: DestructorTag::Apply,
                 ref producers,
                 ref consumers,
@@ -1732,7 +1730,7 @@ impl Unfocusing<'_>
                 self.tasks.push(Task::Value(argument, depth));
                 Ok(())
             },
-            | ConsumerNode::Destructor {
+            ConsumerNode::Destructor {
                 tag: DestructorTag::Force,
                 ..
             }
@@ -2020,9 +2018,42 @@ mod tests
             let value = walk.pop_value().expect("one variable reading");
             assert_eq!(Some(&expected), walk.core.value(value));
             match expected {
-                | Value::Tuple(_) => assert_eq!(first, value),
-                | Value::Constant(_) => assert_eq!(second, value),
-                | _ => {},
+                Value::Tuple(_) => assert_eq!(first, value),
+                Value::Constant(_) => assert_eq!(second, value),
+                Value::Primitive { .. }
+                | Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Here(_)
+                | Value::Funext(..)
+                | Value::Equiv(..)
+                | Value::Ua { .. }
+                | Value::SessionRelated { .. }
+                | Value::Stay(_)
+                | Value::Then(..)
+                | Value::FlowProduct(..)
+                | Value::Forward(_)
+                | Value::FunctionFlow(..)
+                | Value::Recorded(_)
+                | Value::Returned(_)
+                | Value::Nested(_)
+                | Value::Run(_)
+                | Value::Variable { .. }
+                | Value::Literal(_)
+                | Value::Injection(..)
+                | Value::ListNil
+                | Value::ListCons(..)
+                | Value::Thunk(_)
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticLambda(_)
+                | Value::StaticApplication(..)
+                | Value::Constructor { .. }
+                | Value::Record(_)
+                | Value::Hole(_)
+                | Value::Mark { .. }
+                | Value::Reify(_) => {},
             }
         }
     }

@@ -113,9 +113,9 @@ impl fmt::Display for ProposalRefusal
     ) -> fmt::Result
     {
         match *self {
-            | Self::NotHeld => f.write_str("the document is not open in the hub"),
-            | Self::Stale { held } => write!(f, "the document is at version {held}"),
-            | Self::Unchecked { ref diagnostics } => write!(
+            Self::NotHeld => f.write_str("the document is not open in the hub"),
+            Self::Stale { held } => write!(f, "the document is at version {held}"),
+            Self::Unchecked { ref diagnostics } => write!(
                 f,
                 "the fill does not check: {} error(s)",
                 errors(diagnostics)

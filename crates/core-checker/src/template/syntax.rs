@@ -118,17 +118,17 @@ impl Head
     fn of(term: Term) -> Self
     {
         match term {
-            | Term::Variable(index) => Self::Variable(index),
-            | Term::Natural(Stage::Outer, value) => Self::OuterNatural(value),
-            | Term::Natural(Stage::Inner(model), value) => Self::InnerNatural(model, value),
-            | Term::Code(ty) => Self::Code(ty),
-            | Term::Lambda(ty, _) => Self::Lambda(ty),
-            | Term::Apply(..) => Self::Apply,
-            | Term::Multiply(..) => Self::Multiply,
-            | Term::Quote(_) => Self::Quote,
-            | Term::Splice(_) => Self::Splice,
-            | Term::Iterate(..) => Self::Iterate,
-            | Term::Eliminate(_, ty) => Self::Eliminate(ty),
+            Term::Variable(index) => Self::Variable(index),
+            Term::Natural(Stage::Outer, value) => Self::OuterNatural(value),
+            Term::Natural(Stage::Inner(model), value) => Self::InnerNatural(model, value),
+            Term::Code(ty) => Self::Code(ty),
+            Term::Lambda(ty, _) => Self::Lambda(ty),
+            Term::Apply(..) => Self::Apply,
+            Term::Multiply(..) => Self::Multiply,
+            Term::Quote(_) => Self::Quote,
+            Term::Splice(_) => Self::Splice,
+            Term::Iterate(..) => Self::Iterate,
+            Term::Eliminate(_, ty) => Self::Eliminate(ty),
         }
     }
 }
@@ -156,18 +156,18 @@ impl Graph
         for (id, ty) in &self.types {
             let tag = core::mem::discriminant(ty);
             address = match *ty {
-                | Type::In(model) | Type::Universe(model) => {
+                Type::In(model) | Type::Universe(model) => {
                     ArmAddress::of(&(address, id, tag, model))
                 },
-                | Type::Nat(stage) => {
+                Type::Nat(stage) => {
                     let model = match stage {
-                        | Stage::Outer => Model(0),
-                        | Stage::Inner(model) => model,
+                        Stage::Outer => Model(0),
+                        Stage::Inner(model) => model,
                     };
                     ArmAddress::of(&(address, id, tag, core::mem::discriminant(&stage), model))
                 },
-                | Type::Arrow(a, b) => ArmAddress::of(&(address, id, tag, a, b)),
-                | Type::Lift(inner) => ArmAddress::of(&(address, id, tag, inner)),
+                Type::Arrow(a, b) => ArmAddress::of(&(address, id, tag, a, b)),
+                Type::Lift(inner) => ArmAddress::of(&(address, id, tag, inner)),
             };
         }
         address
@@ -218,10 +218,10 @@ impl Graph
         let mut occupied = BTreeSet::new();
         for ty in self.types.values() {
             match *ty {
-                | Type::In(model) | Type::Universe(model) | Type::Nat(Stage::Inner(model)) => {
+                Type::In(model) | Type::Universe(model) | Type::Nat(Stage::Inner(model)) => {
                     occupied.insert(model);
                 },
-                | Type::Nat(Stage::Outer) | Type::Arrow(..) | Type::Lift(_) => {},
+                Type::Nat(Stage::Outer) | Type::Arrow(..) | Type::Lift(_) => {},
             }
         }
         for node in &self.nodes {
@@ -522,23 +522,23 @@ impl Graph
             if !ready {
                 pending.push((id, true));
                 match ty {
-                    | Type::Arrow(a, b) => pending.extend([(a, false), (b, false)]),
-                    | Type::Lift(inner) => pending.push((inner, false)),
-                    | Type::In(_) | Type::Universe(_) | Type::Nat(_) => {},
+                    Type::Arrow(a, b) => pending.extend([(a, false), (b, false)]),
+                    Type::Lift(inner) => pending.push((inner, false)),
+                    Type::In(_) | Type::Universe(_) | Type::Nat(_) => {},
                 }
                 continue;
             }
             let ty = match ty {
-                | Type::Arrow(a, b) => {
+                Type::Arrow(a, b) => {
                     let a = *known.get(&a).ok_or(StageError::Unbalanced)?;
                     let b = *known.get(&b).ok_or(StageError::Unbalanced)?;
                     Type::Arrow(a, b)
                 },
-                | Type::Lift(inner) => {
+                Type::Lift(inner) => {
                     let inner = *known.get(&inner).ok_or(StageError::Unbalanced)?;
                     Type::Lift(inner)
                 },
-                | leaf @ (Type::In(_) | Type::Universe(_) | Type::Nat(_)) => leaf,
+                leaf @ (Type::In(_) | Type::Universe(_) | Type::Nat(_)) => leaf,
             };
             let target = if let Some(id) = self.type_ids.get(&ty) {
                 *id
@@ -597,19 +597,28 @@ impl Graph
                 continue;
             }
             let head = match Head::of(term) {
-                | Head::Code(ty) => {
+                Head::Code(ty) => {
                     let ty = self.import_type(arena, ty)?;
                     Head::Code(ty)
                 },
-                | Head::Lambda(ty) => {
+                Head::Lambda(ty) => {
                     let ty = self.import_type(arena, ty)?;
                     Head::Lambda(ty)
                 },
-                | Head::Eliminate(ty) => {
+                Head::Eliminate(ty) => {
                     let ty = self.import_type(arena, ty)?;
                     Head::Eliminate(ty)
                 },
-                | head => head,
+                head @ (Head::Variable(_)
+                | Head::OuterNatural(_)
+                | Head::InnerNatural(..)
+                | Head::Apply
+                | Head::Multiply
+                | Head::Quote
+                | Head::Splice
+                | Head::Iterate
+                | Head::Point(_)
+                | Head::Predecessor) => head,
             };
             let mut children = Children([None; 3]);
             for (source, target) in term.children().into_iter().zip(&mut children.0) {
@@ -659,14 +668,12 @@ impl Graph
         let mut known = BTreeMap::new();
         for (id, ty) in &self.types {
             let ty = match *ty {
-                | Type::Arrow(a, b) => Type::Arrow(
+                Type::Arrow(a, b) => Type::Arrow(
                     *known.get(&a).ok_or(StageError::Unbalanced)?,
                     *known.get(&b).ok_or(StageError::Unbalanced)?,
                 ),
-                | Type::Lift(inner) => {
-                    Type::Lift(*known.get(&inner).ok_or(StageError::Unbalanced)?)
-                },
-                | leaf @ (Type::In(_) | Type::Universe(_) | Type::Nat(_)) => leaf,
+                Type::Lift(inner) => Type::Lift(*known.get(&inner).ok_or(StageError::Unbalanced)?),
+                leaf @ (Type::In(_) | Type::Universe(_) | Type::Nat(_)) => leaf,
             };
             known.insert(*id, arena.alloc_type(ty)?);
         }
@@ -776,22 +783,22 @@ impl Graph
             }
             let dummy = TermId(0);
             let term = match node.head {
-                | Head::Variable(index) => Term::Variable(index),
-                | Head::OuterNatural(value) => Term::Natural(Stage::Outer, value),
-                | Head::InnerNatural(model, value) => Term::Natural(Stage::Inner(model), value),
-                | Head::Code(ty) => Term::Code(*types.get(&ty).ok_or(StageError::Unbalanced)?),
-                | Head::Lambda(ty) => {
+                Head::Variable(index) => Term::Variable(index),
+                Head::OuterNatural(value) => Term::Natural(Stage::Outer, value),
+                Head::InnerNatural(model, value) => Term::Natural(Stage::Inner(model), value),
+                Head::Code(ty) => Term::Code(*types.get(&ty).ok_or(StageError::Unbalanced)?),
+                Head::Lambda(ty) => {
                     Term::Lambda(*types.get(&ty).ok_or(StageError::Unbalanced)?, dummy)
                 },
-                | Head::Apply => Term::Apply(dummy, dummy),
-                | Head::Multiply => Term::Multiply(dummy, dummy),
-                | Head::Quote => Term::Quote(dummy),
-                | Head::Splice => Term::Splice(dummy),
-                | Head::Iterate => Term::Iterate(dummy, dummy, dummy),
-                | Head::Eliminate(ty) => {
+                Head::Apply => Term::Apply(dummy, dummy),
+                Head::Multiply => Term::Multiply(dummy, dummy),
+                Head::Quote => Term::Quote(dummy),
+                Head::Splice => Term::Splice(dummy),
+                Head::Iterate => Term::Iterate(dummy, dummy, dummy),
+                Head::Eliminate(ty) => {
                     Term::Eliminate(dummy, *types.get(&ty).ok_or(StageError::Unbalanced)?)
                 },
-                | Head::Point(_) | Head::Predecessor => return Err(StageError::Unbalanced),
+                Head::Point(_) | Head::Predecessor => return Err(StageError::Unbalanced),
             };
             let term = term.rebuild(children)?;
             known.insert(id, arena.alloc(term)?);

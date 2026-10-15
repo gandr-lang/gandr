@@ -145,17 +145,17 @@ impl Tag
     fn constructor(self) -> ConstructorTag
     {
         ConstructorTag::from(match self {
-            | Self::Presents => 0_usize,
-            | Self::End => 1,
-            | Self::Sort => 2,
-            | Self::Oper => 3,
-            | Self::Port => 4,
-            | Self::Rule => 5,
-            | Self::Var => 6,
-            | Self::App => 7,
-            | Self::Con => 8,
-            | Self::Tuple => 9,
-            | Self::Arg => 10,
+            Self::Presents => 0_usize,
+            Self::End => 1,
+            Self::Sort => 2,
+            Self::Oper => 3,
+            Self::Port => 4,
+            Self::Rule => 5,
+            Self::Var => 6,
+            Self::App => 7,
+            Self::Con => 8,
+            Self::Tuple => 9,
+            Self::Arg => 10,
         })
     }
 }
@@ -665,15 +665,15 @@ fn term(root: TermNode<'_>) -> DescValue
     let mut built: Vec<DescValue> = Vec::new();
     while let Some(step) = pending.pop() {
         match step {
-            | Build::Visit(node) => {
+            Build::Visit(node) => {
                 let (tag, head, args) = match node.view() {
-                    | TermView::Var(name) => {
+                    TermView::Var(name) => {
                         built.push(value(Tag::Var, vec![leaf(name)]));
                         continue;
                     },
-                    | TermView::Op { name, args } => (Tag::App, Maybe::Present(name), args),
-                    | TermView::Ctor { name, args } => (Tag::Con, Maybe::Present(name), args),
-                    | TermView::Results { args } => {
+                    TermView::Op { name, args } => (Tag::App, Maybe::Present(name), args),
+                    TermView::Ctor { name, args } => (Tag::Con, Maybe::Present(name), args),
+                    TermView::Results { args } => {
                         (Tag::Tuple, Maybe::Absent(applied::Absent::Tuple), args)
                     },
                 };
@@ -684,12 +684,12 @@ fn term(root: TermNode<'_>) -> DescValue
                     children.reverse();
                 }
             },
-            | Build::Apply(tag, head, count) => {
+            Build::Apply(tag, head, count) => {
                 let start = built.len().saturating_sub(count);
                 let chain = arguments(built.split_off(start));
                 built.push(match head {
-                    | Maybe::Present(name) => value(tag, vec![leaf(name), rec(chain)]),
-                    | Maybe::Absent(_) => value(tag, vec![rec(chain)]),
+                    Maybe::Present(name) => value(tag, vec![leaf(name), rec(chain)]),
+                    Maybe::Absent(_) => value(tag, vec![rec(chain)]),
                 });
             },
         }
@@ -990,7 +990,7 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, SigFault>
     let mut read: Vec<FreeTerm> = Vec::new();
     while let Some(step) = pending.pop() {
         match step {
-            | Read::Visit(node) => {
+            Read::Visit(node) => {
                 let (applied, chain) = if node.ctor == Tag::Var.constructor() {
                     let [name] = expect::<1>(node, Tag::Var)?;
                     let name = text(name)?;
@@ -1019,13 +1019,13 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, SigFault>
                 pending.push(Read::Apply(applied, arguments.len()));
                 pending.extend(arguments.into_iter().rev().map(Read::Visit));
             },
-            | Read::Apply(applied, count) => {
+            Read::Apply(applied, count) => {
                 let start = read.len().saturating_sub(count);
                 let arguments = read.split_off(start);
                 read.push(match applied {
-                    | Applied::Operation(head) => FreeTerm::op(head, arguments),
-                    | Applied::Constructor(head) => FreeTerm::ctor(head, arguments),
-                    | Applied::Tuple => FreeTerm::results(arguments),
+                    Applied::Operation(head) => FreeTerm::op(head, arguments),
+                    Applied::Constructor(head) => FreeTerm::ctor(head, arguments),
+                    Applied::Tuple => FreeTerm::results(arguments),
                 });
             },
         }

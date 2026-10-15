@@ -204,10 +204,10 @@ impl DanglingFamily
     fn tag(self) -> WireTag
     {
         match self {
-            | Self::Value => WireTag::from(0x00_u8),
-            | Self::Computation => WireTag::from(0x01_u8),
-            | Self::ValueType => WireTag::from(0x02_u8),
-            | Self::CompType => WireTag::from(0x03_u8),
+            Self::Value => WireTag::from(0x00_u8),
+            Self::Computation => WireTag::from(0x01_u8),
+            Self::ValueType => WireTag::from(0x02_u8),
+            Self::CompType => WireTag::from(0x03_u8),
         }
     }
 }
@@ -664,14 +664,14 @@ impl ContentTable
         tasks.push(EncodeTask::Open(node));
         while let Some(task) = tasks.pop() {
             match task {
-                | EncodeTask::Open(open) => {
+                EncodeTask::Open(open) => {
                     if self.placed.contains_key(&open) {
                         continue;
                     }
                     tasks.push(EncodeTask::Close(open));
                     push_children(arena, open, &mut tasks);
                 },
-                | EncodeTask::Close(close) => {
+                EncodeTask::Close(close) => {
                     if self.placed.contains_key(&close) {
                         continue;
                     }
@@ -815,21 +815,21 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     {
         let mut record = ContentEncoding::new();
         match node {
-            | AnyNode::Value(id) => match arena.value(id) {
-                | None => put_dangling(&mut record, DanglingFamily::Value),
-                | Some(value) => self.put_value(&mut record, value),
+            AnyNode::Value(id) => match arena.value(id) {
+                None => put_dangling(&mut record, DanglingFamily::Value),
+                Some(value) => self.put_value(&mut record, value),
             },
-            | AnyNode::Computation(id) => match arena.computation(id) {
-                | None => put_dangling(&mut record, DanglingFamily::Computation),
-                | Some(computation) => self.put_computation(&mut record, computation),
+            AnyNode::Computation(id) => match arena.computation(id) {
+                None => put_dangling(&mut record, DanglingFamily::Computation),
+                Some(computation) => self.put_computation(&mut record, computation),
             },
-            | AnyNode::ValueType(id) => match arena.value_type(id) {
-                | None => put_dangling(&mut record, DanglingFamily::ValueType),
-                | Some(value_type) => self.put_value_type(&mut record, value_type),
+            AnyNode::ValueType(id) => match arena.value_type(id) {
+                None => put_dangling(&mut record, DanglingFamily::ValueType),
+                Some(value_type) => self.put_value_type(&mut record, value_type),
             },
-            | AnyNode::CompType(id) => match arena.comp_type(id) {
-                | None => put_dangling(&mut record, DanglingFamily::CompType),
-                | Some(comp_type) => self.put_comp_type(&mut record, comp_type),
+            AnyNode::CompType(id) => match arena.comp_type(id) {
+                None => put_dangling(&mut record, DanglingFamily::CompType),
+                Some(comp_type) => self.put_comp_type(&mut record, comp_type),
             },
         }
         record
@@ -918,7 +918,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     )
     {
         match *value {
-            | Value::Constructor {
+            Value::Constructor {
                 datatype,
                 tag,
                 ref fields,
@@ -931,7 +931,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(AnyNode::Value(*field)));
                 }
             },
-            | Value::Record(ref fields) => {
+            Value::Record(ref fields) => {
                 record.put_tag(gandr_kernel_term::NODE_V_RECORD);
                 record.put_count(ComponentCount(fields.len()));
                 for (label, value) in fields {
@@ -939,13 +939,13 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(AnyNode::Value(*value)));
                 }
             },
-            | Value::ListNil => record.put_tag(gandr_kernel_term::NODE_V_LIST_NIL),
-            | Value::ListCons(head, tail) => {
+            Value::ListNil => record.put_tag(gandr_kernel_term::NODE_V_LIST_NIL),
+            Value::ListCons(head, tail) => {
                 record.put_tag(gandr_kernel_term::NODE_V_LIST_CONS);
                 record.put_content(self.content_of(AnyNode::Value(head)));
                 record.put_content(self.content_of(AnyNode::Value(tail)));
             },
-            | Value::SessionPath {
+            Value::SessionPath {
                 path_type,
                 payload_paths,
                 ref evidence,
@@ -955,7 +955,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::ValueType(path_type)));
                 record.put_content(self.content_of(AnyNode::Value(payload_paths)));
             },
-            | Value::SessionFlow {
+            Value::SessionFlow {
                 flow_type,
                 payload_paths,
                 ref evidence,
@@ -965,16 +965,16 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::ValueType(flow_type)));
                 record.put_content(self.content_of(AnyNode::Value(payload_paths)));
             },
-            | Value::PathRefl(code) => {
+            Value::PathRefl(code) => {
                 record.put_tag(gandr_kernel_term::NODE_V_PATH_REFL);
                 record.put_content(self.content_of(AnyNode::Value(code)));
             },
-            | Value::PathProduct(first, second) => {
+            Value::PathProduct(first, second) => {
                 record.put_tag(gandr_kernel_term::NODE_V_PATH_PRODUCT);
                 record.put_content(self.content_of(AnyNode::Value(first)));
                 record.put_content(self.content_of(AnyNode::Value(second)));
             },
-            | Value::PathEquiv {
+            Value::PathEquiv {
                 path_type,
                 forward,
                 backward,
@@ -988,7 +988,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::Value(forward)));
                 record.put_content(self.content_of(AnyNode::Value(backward)));
             },
-            | Value::Here {
+            Value::Here {
                 point,
                 ref dialogues,
             } => {
@@ -998,7 +998,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 }
                 record.put_content(self.content_of(AnyNode::Value(point)));
             },
-            | Value::Stay {
+            Value::Stay {
                 point,
                 ref dialogues,
             } => {
@@ -1008,7 +1008,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 }
                 record.put_content(self.content_of(AnyNode::Value(point)));
             },
-            | Value::ForwardFlow {
+            Value::ForwardFlow {
                 flow_type,
                 translator,
                 ref outputs,
@@ -1024,7 +1024,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(AnyNode::Value(*output)));
                 }
             },
-            | Value::FunctionFlow {
+            Value::FunctionFlow {
                 flow_type,
                 domain,
                 codomain,
@@ -1034,29 +1034,29 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::Value(domain)));
                 record.put_content(self.content_of(AnyNode::Value(codomain)));
             },
-            | Value::Then {
+            Value::Then {
                 first,
                 second,
                 seam,
             } => {
                 record.put_tag(gandr_kernel_term::NODE_V_THEN);
                 record.put_tag(match seam {
-                    | gandr_kernel_term::Seam::Sequence => gandr_kernel_term::SEAM_SEQUENCE,
-                    | gandr_kernel_term::Seam::Feedback => gandr_kernel_term::SEAM_FEEDBACK,
+                    gandr_kernel_term::Seam::Sequence => gandr_kernel_term::SEAM_SEQUENCE,
+                    gandr_kernel_term::Seam::Feedback => gandr_kernel_term::SEAM_FEEDBACK,
                 });
                 record.put_content(self.content_of(AnyNode::Value(first)));
                 record.put_content(self.content_of(AnyNode::Value(second)));
             },
-            | Value::FlowProduct(first, second) => {
+            Value::FlowProduct(first, second) => {
                 record.put_tag(gandr_kernel_term::NODE_V_FLOW_PRODUCT);
                 record.put_content(self.content_of(AnyNode::Value(first)));
                 record.put_content(self.content_of(AnyNode::Value(second)));
             },
-            | Value::Returned(computation) => {
+            Value::Returned(computation) => {
                 record.put_tag(gandr_kernel_term::NODE_V_RETURNED);
                 record.put_content(self.content_of(AnyNode::Computation(computation)));
             },
-            | Value::Higher {
+            Value::Higher {
                 ref program,
                 ref evidence,
             } => {
@@ -1068,7 +1068,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(AnyNode::Value(*layer)));
                 }
             },
-            | Value::HigherEvaluation {
+            Value::HigherEvaluation {
                 ref dialogues,
                 ref components,
             } => {
@@ -1082,7 +1082,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     }
                 }
             },
-            | Value::QuantifiedEvaluation {
+            Value::QuantifiedEvaluation {
                 ref steps,
                 ref children,
             } => {
@@ -1094,48 +1094,48 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(AnyNode::Value(*child)));
                 }
             },
-            | Value::Variable(index) => {
+            Value::Variable(index) => {
                 record.put_tag(gandr_kernel_term::NODE_V_VARIABLE);
                 record.put_word(EncodedWord(u64::from(u32::from(index))));
             },
-            | Value::Constant(index) => {
+            Value::Constant(index) => {
                 record.put_tag(gandr_kernel_term::NODE_V_CONSTANT);
                 record.put_count(ComponentCount(usize::from(index)));
             },
-            | Value::Literal(ref literal) => {
+            Value::Literal(ref literal) => {
                 record.put_tag(gandr_kernel_term::NODE_V_LITERAL);
                 put_literal(record, literal);
             },
-            | Value::Tuple(ref components) => {
+            Value::Tuple(ref components) => {
                 record.put_tag(gandr_kernel_term::NODE_V_TUPLE);
                 record.put_count(ComponentCount(components.len()));
                 for component in components {
                     record.put_content(self.content_of(AnyNode::Value(*component)));
                 }
             },
-            | Value::Injection(summand, body) => {
+            Value::Injection(summand, body) => {
                 record.put_tag(gandr_kernel_term::NODE_V_INJECTION);
                 record.put_count(ComponentCount(usize::from(summand)));
                 record.put_content(self.content_of(AnyNode::Value(body)));
             },
-            | Value::Thunk(body) => {
+            Value::Thunk(body) => {
                 record.put_tag(gandr_kernel_term::NODE_V_THUNK);
                 record.put_content(self.content_of(AnyNode::Computation(body)));
             },
-            | Value::Lift { ref target, body } => {
+            Value::Lift { ref target, body } => {
                 record.put_tag(gandr_kernel_term::NODE_V_LIFT);
                 put_level(record, target);
                 record.put_content(self.content_of(AnyNode::Value(body)));
             },
-            | Value::Quote(quoted) => {
+            Value::Quote(quoted) => {
                 record.put_tag(gandr_kernel_term::NODE_V_QUOTE);
                 record.put_content(self.content_of(AnyNode::ValueType(quoted)));
             },
-            | Value::QuoteComputation(quoted) => {
+            Value::QuoteComputation(quoted) => {
                 record.put_tag(gandr_kernel_term::NODE_V_QUOTE_COMPUTATION);
                 record.put_content(self.content_of(AnyNode::CompType(quoted)));
             },
-            | Value::StaticApplication(head, argument) => {
+            Value::StaticApplication(head, argument) => {
                 record.put_tag(gandr_kernel_term::NODE_V_STATIC_APPLICATION);
                 record.put_content(self.content_of(AnyNode::Value(head)));
                 record.put_content(self.content_of(AnyNode::Value(argument)));
@@ -1210,7 +1210,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     )
     {
         match *computation {
-            | Computation::DataCase {
+            Computation::DataCase {
                 scrutinee,
                 motive,
                 ref branches,
@@ -1223,7 +1223,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(AnyNode::Computation(*branch)));
                 }
             },
-            | Computation::SigmaSplit {
+            Computation::SigmaSplit {
                 scrutinee,
                 motive,
                 body,
@@ -1237,17 +1237,17 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(child));
                 }
             },
-            | Computation::RecordProjection(value, ref label) => {
+            Computation::RecordProjection(value, ref label) => {
                 record.put_tag(gandr_kernel_term::NODE_C_RECORD_PROJECTION);
                 record.put_text(EncodedText(label.as_ref()));
                 record.put_content(self.content_of(AnyNode::Value(value)));
             },
-            | Computation::TupleProjection(value, component) => {
+            Computation::TupleProjection(value, component) => {
                 record.put_tag(gandr_kernel_term::NODE_C_TUPLE_PROJECTION);
                 record.put_count(ComponentCount(usize::from(component)));
                 record.put_content(self.content_of(AnyNode::Value(value)));
             },
-            | Computation::ListFold {
+            Computation::ListFold {
                 element,
                 result,
                 list,
@@ -1265,12 +1265,12 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(child));
                 }
             },
-            | Computation::Transport(path, value) => {
+            Computation::Transport(path, value) => {
                 record.put_tag(gandr_kernel_term::NODE_C_TRANSPORT);
                 record.put_content(self.content_of(AnyNode::Value(path)));
                 record.put_content(self.content_of(AnyNode::Value(value)));
             },
-            | Computation::PathTransport {
+            Computation::PathTransport {
                 motive,
                 path,
                 value,
@@ -1280,7 +1280,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::Value(path)));
                 record.put_content(self.content_of(AnyNode::Value(value)));
             },
-            | Computation::TelescopeTransport {
+            Computation::TelescopeTransport {
                 motive,
                 path,
                 start,
@@ -1298,7 +1298,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(child));
                 }
             },
-            | Computation::Ride {
+            Computation::Ride {
                 motive,
                 flow,
                 value,
@@ -1308,7 +1308,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::Value(flow)));
                 record.put_content(self.content_of(AnyNode::Value(value)));
             },
-            | Computation::TelescopeRide {
+            Computation::TelescopeRide {
                 motive,
                 flow,
                 start,
@@ -1326,7 +1326,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(child));
                 }
             },
-            | Computation::RelatedApplication {
+            Computation::RelatedApplication {
                 path,
                 left,
                 right,
@@ -1344,41 +1344,41 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(child));
                 }
             },
-            | Computation::Lambda(body) => {
+            Computation::Lambda(body) => {
                 record.put_tag(gandr_kernel_term::NODE_C_LAMBDA);
                 record.put_content(self.content_of(AnyNode::Computation(body)));
             },
-            | Computation::Fixpoint { body, evidence } => {
+            Computation::Fixpoint { body, evidence } => {
                 record.put_tag(gandr_kernel_term::NODE_C_FIXPOINT);
                 record.put_tag(match evidence {
-                    | gandr_kernel_term::FixpointEvidence::Partial => {
+                    gandr_kernel_term::FixpointEvidence::Partial => {
                         gandr_kernel_term::FIXPOINT_PARTIAL
                     },
-                    | gandr_kernel_term::FixpointEvidence::StructuralDescent => {
+                    gandr_kernel_term::FixpointEvidence::StructuralDescent => {
                         gandr_kernel_term::FIXPOINT_STRUCTURAL_DESCENT
                     },
                 });
                 record.put_content(self.content_of(AnyNode::Computation(body)));
             },
-            | Computation::Application(head, argument) => {
+            Computation::Application(head, argument) => {
                 record.put_tag(gandr_kernel_term::NODE_C_APPLICATION);
                 record.put_content(self.content_of(AnyNode::Computation(head)));
                 record.put_content(self.content_of(AnyNode::Value(argument)));
             },
-            | Computation::Return(value) => {
+            Computation::Return(value) => {
                 record.put_tag(gandr_kernel_term::NODE_C_RETURN);
                 record.put_content(self.content_of(AnyNode::Value(value)));
             },
-            | Computation::Bind(bound, body) => {
+            Computation::Bind(bound, body) => {
                 record.put_tag(gandr_kernel_term::NODE_C_BIND);
                 record.put_content(self.content_of(AnyNode::Computation(bound)));
                 record.put_content(self.content_of(AnyNode::Computation(body)));
             },
-            | Computation::Force(value) => {
+            Computation::Force(value) => {
                 record.put_tag(gandr_kernel_term::NODE_C_FORCE);
                 record.put_content(self.content_of(AnyNode::Value(value)));
             },
-            | Computation::Case {
+            Computation::Case {
                 scrutinee,
                 ref branches,
             } => {
@@ -1389,16 +1389,16 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(AnyNode::Computation(*branch)));
                 }
             },
-            | Computation::With(left, right) => {
+            Computation::With(left, right) => {
                 record.put_tag(gandr_kernel_term::NODE_C_WITH);
                 record.put_content(self.content_of(AnyNode::Computation(left)));
                 record.put_content(self.content_of(AnyNode::Computation(right)));
             },
-            | Computation::Project(side, pair) => {
+            Computation::Project(side, pair) => {
                 record.put_tag(gandr_kernel_term::NODE_C_PROJECT);
                 record.put_tag(match side {
-                    | gandr_kernel_term::Side::Left => gandr_kernel_term::SIDE_LEFT,
-                    | gandr_kernel_term::Side::Right => gandr_kernel_term::SIDE_RIGHT,
+                    gandr_kernel_term::Side::Left => gandr_kernel_term::SIDE_LEFT,
+                    gandr_kernel_term::Side::Right => gandr_kernel_term::SIDE_RIGHT,
                 });
                 record.put_content(self.content_of(AnyNode::Computation(pair)));
             },
@@ -1469,7 +1469,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     )
     {
         match *value_type {
-            | ValueType::Data {
+            ValueType::Data {
                 declaration,
                 ref arguments,
             } => {
@@ -1480,7 +1480,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(AnyNode::Value(*argument)));
                 }
             },
-            | ValueType::Record(ref fields) => {
+            ValueType::Record(ref fields) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_RECORD);
                 record.put_count(ComponentCount(fields.len()));
                 for (label, ty) in fields {
@@ -1488,17 +1488,17 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(AnyNode::ValueType(*ty)));
                 }
             },
-            | ValueType::PathUniverse(source, target) => {
+            ValueType::PathUniverse(source, target) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_PATH_UNIVERSE);
                 record.put_content(self.content_of(AnyNode::Value(source)));
                 record.put_content(self.content_of(AnyNode::Value(target)));
             },
-            | ValueType::FlowUniverse(source, target) => {
+            ValueType::FlowUniverse(source, target) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_FLOW_UNIVERSE);
                 record.put_content(self.content_of(AnyNode::Value(source)));
                 record.put_content(self.content_of(AnyNode::Value(target)));
             },
-            | ValueType::Path {
+            ValueType::Path {
                 domain,
                 left,
                 right,
@@ -1508,7 +1508,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::Value(left)));
                 record.put_content(self.content_of(AnyNode::Value(right)));
             },
-            | ValueType::Flow {
+            ValueType::Flow {
                 domain,
                 source,
                 target,
@@ -1518,39 +1518,55 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::Value(source)));
                 record.put_content(self.content_of(AnyNode::Value(target)));
             },
-            | ValueType::Base(base) => {
+            ValueType::Base(base) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_BASE);
                 record.put_tag(base_tag(base));
             },
-            | ValueType::Universe {
+            ValueType::Universe {
                 sort: GroundSort::Value,
                 ref level,
             } => {
                 record.put_tag(gandr_kernel_term::NODE_VT_UNIVERSE);
                 put_level(record, level);
             },
-            | ValueType::Universe {
+            ValueType::Universe {
                 sort: GroundSort::Computation,
                 ref level,
             } => {
                 record.put_tag(gandr_kernel_term::NODE_VT_COMPUTATION_UNIVERSE);
                 put_level(record, level);
             },
-            | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+            ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                 record.put_tag(match *value_type {
-                    | ValueType::Product(_) => gandr_kernel_term::NODE_VT_PRODUCT,
-                    | _ => gandr_kernel_term::NODE_VT_SUM,
+                    ValueType::Product(_) => gandr_kernel_term::NODE_VT_PRODUCT,
+                    ValueType::Data { .. }
+                    | ValueType::Record(_)
+                    | ValueType::Session { .. }
+                    | ValueType::PathUniverse(..)
+                    | ValueType::FlowUniverse(..)
+                    | ValueType::Path { .. }
+                    | ValueType::Flow { .. }
+                    | ValueType::Base(_)
+                    | ValueType::Sigma { .. }
+                    | ValueType::Sum(_)
+                    | ValueType::List(_)
+                    | ValueType::Thunk(_)
+                    | ValueType::Universe { .. }
+                    | ValueType::Lift { .. }
+                    | ValueType::Element { .. }
+                    | ValueType::Abstract(_)
+                    | ValueType::StaticPi { .. } => gandr_kernel_term::NODE_VT_SUM,
                 });
                 record.put_count(ComponentCount(parts.len()));
                 for part in parts {
                     record.put_content(self.content_of(AnyNode::ValueType(*part)));
                 }
             },
-            | ValueType::Thunk(body) => {
+            ValueType::Thunk(body) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_THUNK);
                 record.put_content(self.content_of(AnyNode::CompType(body)));
             },
-            | ValueType::Session {
+            ValueType::Session {
                 ref graph,
                 payloads,
             } => {
@@ -1558,30 +1574,30 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 graph.write(|word| record.put_word(EncodedWord(word.0)));
                 record.put_content(self.content_of(AnyNode::ValueType(payloads)));
             },
-            | ValueType::List(element) => {
+            ValueType::List(element) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_LIST);
                 record.put_content(self.content_of(AnyNode::ValueType(element)));
             },
-            | ValueType::Lift { inner, ref target } => {
+            ValueType::Lift { inner, ref target } => {
                 record.put_tag(gandr_kernel_term::NODE_VT_LIFT);
                 record.put_content(self.content_of(AnyNode::ValueType(inner)));
                 put_level(record, target);
             },
-            | ValueType::Element { code, ref target } => {
+            ValueType::Element { code, ref target } => {
                 record.put_tag(gandr_kernel_term::NODE_VT_ELEMENT);
                 put_level(record, target);
                 record.put_content(self.content_of(AnyNode::Value(code)));
             },
-            | ValueType::Abstract(atom) => {
+            ValueType::Abstract(atom) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_ABSTRACT);
                 record.put_count(ComponentCount(usize::from(atom)));
             },
-            | ValueType::StaticPi { domain, codomain } => {
+            ValueType::StaticPi { domain, codomain } => {
                 record.put_tag(gandr_kernel_term::NODE_VT_STATIC_PI);
                 record.put_content(self.content_of(AnyNode::ValueType(domain)));
                 record.put_content(self.content_of(AnyNode::ValueType(codomain)));
             },
-            | ValueType::Sigma { first, second } => {
+            ValueType::Sigma { first, second } => {
                 record.put_tag(gandr_kernel_term::NODE_VT_SIGMA);
                 record.put_content(self.content_of(AnyNode::ValueType(first)));
                 record.put_content(self.content_of(AnyNode::ValueType(second)));
@@ -1633,11 +1649,11 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     )
     {
         match *comp_type {
-            | CompType::Returner(result) => {
+            CompType::Returner(result) => {
                 record.put_tag(gandr_kernel_term::NODE_CT_RETURNER);
                 record.put_content(self.content_of(AnyNode::ValueType(result)));
             },
-            | CompType::Arrow { domain, codomain } => {
+            CompType::Arrow { domain, codomain } => {
                 record.put_tag(gandr_kernel_term::NODE_CT_ARROW);
                 record.put_content(self.content_of(AnyNode::ValueType(domain)));
                 record.put_content(self.content_of(AnyNode::CompType(codomain)));
@@ -1647,17 +1663,17 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             // children are the same two nodes and the scoping is what
             // distinguishes them, so a shared tag would collapse two types onto
             // one content id.
-            | CompType::Pi { domain, codomain } => {
+            CompType::Pi { domain, codomain } => {
                 record.put_tag(gandr_kernel_term::NODE_CT_PI);
                 record.put_content(self.content_of(AnyNode::ValueType(domain)));
                 record.put_content(self.content_of(AnyNode::CompType(codomain)));
             },
-            | CompType::Element { code, ref target } => {
+            CompType::Element { code, ref target } => {
                 record.put_tag(gandr_kernel_term::NODE_CT_ELEMENT);
                 put_level(record, target);
                 record.put_content(self.content_of(AnyNode::Value(code)));
             },
-            | CompType::With(left, right) => {
+            CompType::With(left, right) => {
                 record.put_tag(gandr_kernel_term::NODE_CT_WITH);
                 record.put_content(self.content_of(AnyNode::CompType(left)));
                 record.put_content(self.content_of(AnyNode::CompType(right)));
@@ -1757,8 +1773,8 @@ fn push_children(
 )
 {
     match node {
-        | AnyNode::Value(id) => match arena.value(id) {
-            | Some(&Value::Constructor {
+        AnyNode::Value(id) => match arena.value(id) {
+            Some(&Value::Constructor {
                 datatype,
                 ref fields,
                 ..
@@ -1767,14 +1783,14 @@ fn push_children(
                     .chain(fields.iter().copied().map(AnyNode::Value)))
                 .map(EncodeTask::Open),
             ),
-            | Some(&Value::Record(ref fields)) => {
+            Some(&Value::Record(ref fields)) => {
                 tasks.extend((fields.values().copied().map(AnyNode::Value)).map(EncodeTask::Open));
             },
-            | None
+            None
             | Some(
                 &Value::ListNil | &Value::Variable(_) | &Value::Constant(_) | &Value::Literal(_),
             ) => {},
-            | Some(&Value::Tuple(ref components)) => {
+            Some(&Value::Tuple(ref components)) => {
                 tasks.extend(
                     components
                         .iter()
@@ -1783,7 +1799,7 @@ fn push_children(
                         .map(EncodeTask::Open),
                 );
             },
-            | Some(&Value::PathEquiv {
+            Some(&Value::PathEquiv {
                 path_type,
                 forward,
                 backward,
@@ -1793,7 +1809,7 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Value(forward)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(backward)));
             },
-            | Some(
+            Some(
                 &Value::SessionPath {
                     path_type,
                     payload_paths,
@@ -1808,14 +1824,14 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(path_type)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(payload_paths)));
             },
-            | Some(
+            Some(
                 &Value::PathRefl(code)
                 | &Value::Here { point: code, .. }
                 | &Value::Stay { point: code, .. },
             ) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(code)));
             },
-            | Some(
+            Some(
                 &Value::Higher {
                     evidence: ref values,
                     ..
@@ -1833,14 +1849,14 @@ fn push_children(
                         .map(EncodeTask::Open),
                 );
             },
-            | Some(&Value::HigherEvaluation { ref components, .. }) => tasks.extend(
+            Some(&Value::HigherEvaluation { ref components, .. }) => tasks.extend(
                 components
                     .iter()
                     .flat_map(|component| [component.left, component.right, component.evidence])
                     .map(AnyNode::Value)
                     .map(EncodeTask::Open),
             ),
-            | Some(&Value::ForwardFlow {
+            Some(&Value::ForwardFlow {
                 flow_type,
                 translator,
                 ref outputs,
@@ -1856,7 +1872,7 @@ fn push_children(
                         .map(EncodeTask::Open),
                 );
             },
-            | Some(&Value::FunctionFlow {
+            Some(&Value::FunctionFlow {
                 flow_type,
                 domain,
                 codomain,
@@ -1865,7 +1881,7 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Value(domain)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(codomain)));
             },
-            | Some(
+            Some(
                 &Value::PathProduct(first, second)
                 | &Value::FlowProduct(first, second)
                 | &Value::ListCons(first, second)
@@ -1875,21 +1891,21 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Value(first)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(second)));
             },
-            | Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
+            Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(body)));
             },
-            | Some(&(Value::Thunk(body) | Value::Returned(body))) => {
+            Some(&(Value::Thunk(body) | Value::Returned(body))) => {
                 tasks.push(EncodeTask::Open(AnyNode::Computation(body)));
             },
-            | Some(&Value::Quote(quoted)) => {
+            Some(&Value::Quote(quoted)) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(quoted)));
             },
-            | Some(&Value::QuoteComputation(quoted)) => {
+            Some(&Value::QuoteComputation(quoted)) => {
                 tasks.push(EncodeTask::Open(AnyNode::CompType(quoted)));
             },
         },
-        | AnyNode::Computation(id) => match arena.computation(id) {
-            | Some(&Computation::DataCase {
+        AnyNode::Computation(id) => match arena.computation(id) {
+            Some(&Computation::DataCase {
                 scrutinee,
                 motive,
                 ref branches,
@@ -1899,7 +1915,7 @@ fn push_children(
                     .chain(branches.iter().copied().map(AnyNode::Computation)))
                 .map(EncodeTask::Open),
             ),
-            | Some(&Computation::SigmaSplit {
+            Some(&Computation::SigmaSplit {
                 scrutinee,
                 motive,
                 body,
@@ -1911,14 +1927,14 @@ fn push_children(
                 ]
                 .map(EncodeTask::Open),
             ),
-            | Some(
+            Some(
                 &(Computation::RecordProjection(record, _)
                 | Computation::TupleProjection(record, _)),
             ) => {
                 tasks.extend((core::iter::once(AnyNode::Value(record))).map(EncodeTask::Open));
             },
-            | None => {},
-            | Some(&Computation::ListFold {
+            None => {},
+            Some(&Computation::ListFold {
                 element,
                 result,
                 list,
@@ -1935,11 +1951,11 @@ fn push_children(
                     tasks.push(EncodeTask::Open(child));
                 }
             },
-            | Some(&Computation::Transport(path, value)) => {
+            Some(&Computation::Transport(path, value)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(path)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(value)));
             },
-            | Some(
+            Some(
                 &Computation::PathTransport {
                     motive,
                     path,
@@ -1955,7 +1971,7 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Value(path)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(value)));
             },
-            | Some(
+            Some(
                 &Computation::TelescopeTransport {
                     motive,
                     path,
@@ -1981,7 +1997,7 @@ fn push_children(
                     tasks.push(EncodeTask::Open(child));
                 }
             },
-            | Some(&Computation::RelatedApplication {
+            Some(&Computation::RelatedApplication {
                 path,
                 left,
                 right,
@@ -1998,24 +2014,24 @@ fn push_children(
                     tasks.push(EncodeTask::Open(child));
                 }
             },
-            | Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
+            Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
                 tasks.push(EncodeTask::Open(AnyNode::Computation(body)));
             },
-            | Some(&Computation::Application(head, argument)) => {
+            Some(&Computation::Application(head, argument)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Computation(head)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(argument)));
             },
-            | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+            Some(&Computation::Return(value) | &Computation::Force(value)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(value)));
             },
-            | Some(&(Computation::Bind(bound, body) | Computation::With(bound, body))) => {
+            Some(&(Computation::Bind(bound, body) | Computation::With(bound, body))) => {
                 tasks.push(EncodeTask::Open(AnyNode::Computation(bound)));
                 tasks.push(EncodeTask::Open(AnyNode::Computation(body)));
             },
-            | Some(&Computation::Project(_, pair)) => {
+            Some(&Computation::Project(_, pair)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Computation(pair)));
             },
-            | Some(&Computation::Case {
+            Some(&Computation::Case {
                 scrutinee,
                 ref branches,
             }) => {
@@ -2029,16 +2045,16 @@ fn push_children(
                 );
             },
         },
-        | AnyNode::ValueType(id) => match arena.value_type(id) {
-            | Some(&ValueType::Data { ref arguments, .. }) => {
+        AnyNode::ValueType(id) => match arena.value_type(id) {
+            Some(&ValueType::Data { ref arguments, .. }) => {
                 tasks.extend((arguments.iter().copied().map(AnyNode::Value)).map(EncodeTask::Open));
             },
-            | Some(&ValueType::Record(ref fields)) => tasks
+            Some(&ValueType::Record(ref fields)) => tasks
                 .extend((fields.values().copied().map(AnyNode::ValueType)).map(EncodeTask::Open)),
-            | None
+            None
             | Some(&ValueType::Base(_) | &ValueType::Universe { .. } | &ValueType::Abstract(_)) => {
             },
-            | Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
+            Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
                 tasks.extend(
                     parts
                         .iter()
@@ -2047,7 +2063,7 @@ fn push_children(
                         .map(EncodeTask::Open),
                 );
             },
-            | Some(
+            Some(
                 &ValueType::StaticPi {
                     domain: first,
                     codomain: second,
@@ -2057,13 +2073,13 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(first)));
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(second)));
             },
-            | Some(
+            Some(
                 &ValueType::PathUniverse(source, target) | &ValueType::FlowUniverse(source, target),
             ) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(source)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(target)));
             },
-            | Some(
+            Some(
                 &ValueType::Path {
                     domain,
                     left,
@@ -2079,10 +2095,10 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Value(left)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(right)));
             },
-            | Some(&ValueType::Thunk(body)) => {
+            Some(&ValueType::Thunk(body)) => {
                 tasks.push(EncodeTask::Open(AnyNode::CompType(body)));
             },
-            | Some(
+            Some(
                 &ValueType::Session {
                     payloads: inner, ..
                 }
@@ -2091,23 +2107,23 @@ fn push_children(
             ) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(inner)));
             },
-            | Some(&ValueType::Element { code, .. }) => {
+            Some(&ValueType::Element { code, .. }) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(code)));
             },
         },
-        | AnyNode::CompType(id) => match arena.comp_type(id) {
-            | None => {},
-            | Some(&CompType::Returner(result)) => {
+        AnyNode::CompType(id) => match arena.comp_type(id) {
+            None => {},
+            Some(&CompType::Returner(result)) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(result)));
             },
-            | Some(&CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain }) => {
+            Some(&CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain }) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(domain)));
                 tasks.push(EncodeTask::Open(AnyNode::CompType(codomain)));
             },
-            | Some(&CompType::Element { code, .. }) => {
+            Some(&CompType::Element { code, .. }) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(code)));
             },
-            | Some(&CompType::With(left, right)) => {
+            Some(&CompType::With(left, right)) => {
                 tasks.push(EncodeTask::Open(AnyNode::CompType(left)));
                 tasks.push(EncodeTask::Open(AnyNode::CompType(right)));
             },
@@ -2137,9 +2153,9 @@ fn put_dangling(
 const fn base_tag(base: BaseType) -> WireTag
 {
     match base {
-        | BaseType::Integer => gandr_kernel_term::BASE_INTEGER,
-        | BaseType::String => gandr_kernel_term::BASE_STRING,
-        | BaseType::Numeric => gandr_kernel_term::BASE_NUMERIC,
+        BaseType::Integer => gandr_kernel_term::BASE_INTEGER,
+        BaseType::String => gandr_kernel_term::BASE_STRING,
+        BaseType::Numeric => gandr_kernel_term::BASE_NUMERIC,
     }
 }
 
@@ -2156,8 +2172,8 @@ const fn base_tag(base: BaseType) -> WireTag
 const fn sign_tag(sign: Sign) -> WireTag
 {
     match sign {
-        | Sign::NonNegative => gandr_kernel_term::SIGN_NON_NEGATIVE,
-        | Sign::Negative => gandr_kernel_term::SIGN_NEGATIVE,
+        Sign::NonNegative => gandr_kernel_term::SIGN_NON_NEGATIVE,
+        Sign::Negative => gandr_kernel_term::SIGN_NEGATIVE,
     }
 }
 
@@ -2199,16 +2215,16 @@ fn put_literal(
 )
 {
     match *literal {
-        | Literal::Integer(ref integer) => {
+        Literal::Integer(ref integer) => {
             record.put_tag(gandr_kernel_term::LITERAL_INTEGER);
             record.put_tag(sign_tag(integer.sign()));
             record.put_text(EncodedText(integer.magnitude().as_ref()));
         },
-        | Literal::Text(ref text) => {
+        Literal::Text(ref text) => {
             record.put_tag(gandr_kernel_term::LITERAL_TEXT);
             record.put_text(EncodedText(text.as_ref()));
         },
-        | Literal::Numeric(ref numeric) => {
+        Literal::Numeric(ref numeric) => {
             record.put_tag(gandr_kernel_term::LITERAL_NUMERIC);
             record.put_tag(sign_tag(numeric.sign()));
             record.put_text(EncodedText(numeric.integer_part().as_ref()));
@@ -2338,12 +2354,12 @@ impl SupportGoal
     fn direction(self) -> WireTag
     {
         match self {
-            | Self::SynthValue(_) => WireTag::from(0x00_u8),
-            | Self::CheckValue(..) => WireTag::from(0x01_u8),
-            | Self::SynthComp(_) => WireTag::from(0x02_u8),
-            | Self::CheckComp(..) => WireTag::from(0x03_u8),
-            | Self::ValueTypeLevel(_) => WireTag::from(0x04_u8),
-            | Self::CompTypeLevel(_) => WireTag::from(0x05_u8),
+            Self::SynthValue(_) => WireTag::from(0x00_u8),
+            Self::CheckValue(..) => WireTag::from(0x01_u8),
+            Self::SynthComp(_) => WireTag::from(0x02_u8),
+            Self::CheckComp(..) => WireTag::from(0x03_u8),
+            Self::ValueTypeLevel(_) => WireTag::from(0x04_u8),
+            Self::CompTypeLevel(_) => WireTag::from(0x05_u8),
         }
     }
 
@@ -2355,10 +2371,10 @@ impl SupportGoal
     const fn subject(self) -> AnyNode
     {
         match self {
-            | Self::SynthValue(id) | Self::CheckValue(id, _) => AnyNode::Value(id),
-            | Self::SynthComp(id) | Self::CheckComp(id, _) => AnyNode::Computation(id),
-            | Self::ValueTypeLevel(id) => AnyNode::ValueType(id),
-            | Self::CompTypeLevel(id) => AnyNode::CompType(id),
+            Self::SynthValue(id) | Self::CheckValue(id, _) => AnyNode::Value(id),
+            Self::SynthComp(id) | Self::CheckComp(id, _) => AnyNode::Computation(id),
+            Self::ValueTypeLevel(id) => AnyNode::ValueType(id),
+            Self::CompTypeLevel(id) => AnyNode::CompType(id),
         }
     }
 
@@ -2391,12 +2407,12 @@ impl SupportGoal
     const fn expected(self) -> Maybe<AnyNode, expected_type::Absent>
     {
         match self {
-            | Self::CheckValue(_, expected) => Maybe::Present(AnyNode::ValueType(expected)),
-            | Self::CheckComp(_, expected) => Maybe::Present(AnyNode::CompType(expected)),
-            | Self::SynthValue(_) | Self::SynthComp(_) => {
+            Self::CheckValue(_, expected) => Maybe::Present(AnyNode::ValueType(expected)),
+            Self::CheckComp(_, expected) => Maybe::Present(AnyNode::CompType(expected)),
+            Self::SynthValue(_) | Self::SynthComp(_) => {
                 Maybe::Absent(expected_type::Absent::Synthesis)
             },
-            | Self::ValueTypeLevel(_) | Self::CompTypeLevel(_) => {
+            Self::ValueTypeLevel(_) | Self::CompTypeLevel(_) => {
                 Maybe::Absent(expected_type::Absent::Formation)
             },
         }
@@ -2464,11 +2480,11 @@ pub fn encode_support(
     encoding.put_tag(goal.direction());
     encoding.put_content(subject);
     match expected {
-        | Maybe::Present(id) => {
+        Maybe::Present(id) => {
             encoding.put_tag(component_present());
             encoding.put_content(id);
         },
-        | Maybe::Absent(expected_type::Absent::Synthesis | expected_type::Absent::Formation) => {
+        Maybe::Absent(expected_type::Absent::Synthesis | expected_type::Absent::Formation) => {
             encoding.put_tag(component_absent());
         },
     }
@@ -2531,8 +2547,8 @@ impl RewriteGoal
     fn direction(self) -> WireTag
     {
         match self {
-            | Self::Shift { .. } => WireTag::from(0x06_u8),
-            | Self::Substitute { .. } => WireTag::from(0x07_u8),
+            Self::Shift { .. } => WireTag::from(0x06_u8),
+            Self::Substitute { .. } => WireTag::from(0x07_u8),
         }
     }
 
@@ -2544,7 +2560,7 @@ impl RewriteGoal
     const fn subject(self) -> AnyNode
     {
         match self {
-            | Self::Shift { subject, .. } | Self::Substitute { subject, .. } => subject,
+            Self::Shift { subject, .. } | Self::Substitute { subject, .. } => subject,
         }
     }
 }
@@ -2590,7 +2606,7 @@ pub fn encode_rewrite(
     encoding.put_tag(goal.direction());
     encoding.put_content(subject);
     match goal {
-        | RewriteGoal::Shift {
+        RewriteGoal::Shift {
             depth,
             cutoff,
             amount,
@@ -2600,7 +2616,7 @@ pub fn encode_rewrite(
             encoding.put_count(ComponentCount(usize::from(cutoff)));
             encoding.put_count(ComponentCount(usize::from(amount)));
         },
-        | RewriteGoal::Substitute {
+        RewriteGoal::Substitute {
             depth, replacement, ..
         } => {
             let replacement = table.place(arena, AnyNode::Value(replacement));

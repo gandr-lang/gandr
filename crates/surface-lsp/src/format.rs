@@ -98,17 +98,17 @@ impl fmt::Display for Unformatted
     ) -> fmt::Result
     {
         match *self {
-            | Self::Grammar(error) => {
+            Self::Grammar(error) => {
                 write!(
                     f,
                     "not formatted: the built-in grammar did not build: {error}"
                 )
             },
-            | Self::Parse(ref error) => {
+            Self::Parse(ref error) => {
                 write!(f, "not formatted: the parse did not commit: {error}")
             },
-            | Self::Refused(ref error) => write!(f, "not formatted: {error}"),
-            | Self::Position(ref error) => write!(f, "not formatted: {error}"),
+            Self::Refused(ref error) => write!(f, "not formatted: {error}"),
+            Self::Position(ref error) => write!(f, "not formatted: {error}"),
         }
     }
 }
@@ -205,8 +205,8 @@ pub fn edits(
         Ok(())
     };
     match window {
-        | Window::Whole => replace(0, source, laid)?,
-        | Window::Within(range) => {
+        Window::Whole => replace(0, source, laid)?,
+        Window::Within(range) => {
             let (start, end) = (
                 usize::from(range.start.byte(&index)),
                 usize::from(range.end.byte(&index)),

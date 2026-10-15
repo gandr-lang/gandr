@@ -166,10 +166,10 @@ impl fmt::Display for SpecError
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Shape => "expected `pow:LO..HI` or `double:LO..HI`",
-            | Self::Body => "the program is neither `pow` nor `double`",
-            | Self::Exponent => "an exponent is not a natural number",
-            | Self::Reversed => "the range ends before it starts",
+            Self::Shape => "expected `pow:LO..HI` or `double:LO..HI`",
+            Self::Body => "the program is neither `pow` nor `double`",
+            Self::Exponent => "an exponent is not a natural number",
+            Self::Reversed => "the range ends before it starts",
         })
     }
 }
@@ -207,9 +207,9 @@ impl FromStr for ProgramSpec
         let (body, range) = spelling.split_once(':').ok_or(SpecError::Shape)?;
         let (low, high) = range.split_once("..").ok_or(SpecError::Shape)?;
         let body = match body {
-            | "pow" => Body::Power,
-            | "double" => Body::Double,
-            | _ => return Err(SpecError::Body),
+            "pow" => Body::Power,
+            "double" => Body::Double,
+            _ => return Err(SpecError::Body),
         };
         let low = low.parse().map_err(|_unparsed| SpecError::Exponent)?;
         let high = high.parse().map_err(|_unparsed| SpecError::Exponent)?;
@@ -237,8 +237,8 @@ impl fmt::Display for ProgramSpec
     ) -> fmt::Result
     {
         let body = match self.body {
-            | Body::Power => "pow",
-            | Body::Double => "double",
+            Body::Power => "pow",
+            Body::Double => "double",
         };
         write!(f, "{body}:{}..{}", self.low.0, self.high.0)
     }
@@ -277,15 +277,15 @@ impl ProgramSpec
         let hypothesis = arena.alloc_type(Type::In(model))?;
         let inner = arena.alloc_type(Type::Nat(Stage::Inner(model)))?;
         let function = match self.body {
-            | Body::Power => gandr_core_nbe::stage::power(&mut arena, model)?,
-            | Body::Double => gandr_core_nbe::stage::double(&mut arena, model)?,
+            Body::Power => gandr_core_nbe::stage::power(&mut arena, model)?,
+            Body::Double => gandr_core_nbe::stage::double(&mut arena, model)?,
         };
         let mut sources = Vec::new();
         for exponent in self.low.0 ..= self.high.0 {
             let numeral = arena.alloc(Term::Natural(Stage::Outer, Natural(exponent)))?;
             let applied = arena.alloc(Term::Apply(function, numeral))?;
             match self.body {
-                | Body::Power => {
+                Body::Power => {
                     let input = arena.alloc(Term::Variable(Index(0)))?;
                     let input = arena.alloc(Term::Quote(input))?;
                     let source = arena.alloc(Term::Apply(applied, input))?;
@@ -294,7 +294,7 @@ impl ProgramSpec
                     let source = arena.alloc(Term::Quote(source))?;
                     sources.push(source);
                 },
-                | Body::Double => {
+                Body::Double => {
                     for input in [Natural(2), Natural(3)] {
                         let input = arena.alloc(Term::Natural(Stage::Inner(model), input))?;
                         let input = arena.alloc(Term::Quote(input))?;
@@ -392,8 +392,8 @@ impl Fork for Pooled
                         // A poisoned cursor only means another task's job
                         // panicked; the panic resumes when the scope ends.
                         let next = match cursor.lock() {
-                            | Ok(mut items) => items.next(),
-                            | Err(poisoned) => poisoned.into_inner().next(),
+                            Ok(mut items) => items.next(),
+                            Err(poisoned) => poisoned.into_inner().next(),
                         };
                         let Some(item) = next
                         else {
@@ -462,8 +462,8 @@ impl Workers
     ) -> Result<Checked, ProgramError>
     {
         match *self {
-            | Self::Serial => staging::check(program, memo, GATE, ALLOWANCE, &Serial, clock),
-            | Self::Pooled(ref pool, ref fork) => {
+            Self::Serial => staging::check(program, memo, GATE, ALLOWANCE, &Serial, clock),
+            Self::Pooled(ref pool, ref fork) => {
                 pool.install(|| staging::check(program, memo, GATE, ALLOWANCE, fork, clock))
             },
         }
@@ -529,8 +529,8 @@ impl fmt::Display for StageFault
     ) -> fmt::Result
     {
         match *self {
-            | Self::Built(error) => write!(f, "the program was not built: {error}"),
-            | Self::Checked(error) => write!(f, "{error}"),
+            Self::Built(error) => write!(f, "the program was not built: {error}"),
+            Self::Checked(error) => write!(f, "{error}"),
         }
     }
 }
@@ -606,14 +606,14 @@ impl Classes
         let mut classes = Self::default();
         for admission in &checked.admissions {
             let count = match *admission {
-                | Ok(ref report) => match report.admission {
-                    | FamilyAdmission::Admitted { .. } => &mut classes.admitted,
-                    | FamilyAdmission::Partial { .. } => &mut classes.partial,
-                    | FamilyAdmission::Plain(_) => &mut classes.plain,
-                    | FamilyAdmission::Refused(_) => &mut classes.refused,
-                    | FamilyAdmission::WorkBoundExceeded(_) => &mut classes.bound,
+                Ok(ref report) => match report.admission {
+                    FamilyAdmission::Admitted { .. } => &mut classes.admitted,
+                    FamilyAdmission::Partial { .. } => &mut classes.partial,
+                    FamilyAdmission::Plain(_) => &mut classes.plain,
+                    FamilyAdmission::Refused(_) => &mut classes.refused,
+                    FamilyAdmission::WorkBoundExceeded(_) => &mut classes.bound,
                 },
-                | Err(_) => &mut classes.faulted,
+                Err(_) => &mut classes.faulted,
             };
             *count = count.saturating_add(1);
         }
@@ -635,8 +635,8 @@ impl fmt::Display for Staged
     ) -> fmt::Result
     {
         let checked = match self.outcome {
-            | Ok(ref checked) => checked,
-            | Err(fault) => return write!(f, "{}: {fault}", self.spec),
+            Ok(ref checked) => checked,
+            Err(fault) => return write!(f, "{}: {fault}", self.spec),
         };
         let readmitted = checked
             .readmissions
@@ -689,9 +689,9 @@ impl fmt::Display for StageVerdict
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Readmitted => "readmitted",
-            | Self::Refused => "refused",
-            | Self::Faulted => "faulted",
+            Self::Readmitted => "readmitted",
+            Self::Refused => "refused",
+            Self::Faulted => "faulted",
         })
     }
 }
@@ -847,8 +847,8 @@ impl StageRun
             // Formatting into the hasher cannot fail: `Feed` never errs.
             let _written = writeln!(feed, "{}", staged.spec);
             let checked = match staged.outcome {
-                | Ok(ref checked) => checked,
-                | Err(fault) => {
+                Ok(ref checked) => checked,
+                Err(fault) => {
                     let _written = writeln!(feed, "{fault}");
                     continue;
                 },
@@ -864,13 +864,16 @@ impl StageRun
             );
             for admission in &checked.admissions {
                 let _written = match *admission {
-                    | Ok(ref report) => match report.admission {
-                        | FamilyAdmission::Admitted { ref schema, .. } => {
+                    Ok(ref report) => match report.admission {
+                        FamilyAdmission::Admitted { ref schema, .. } => {
                             write!(feed, "admitted {schema:?}")
                         },
-                        | ref other => write!(feed, "{other:?}"),
+                        ref other @ (FamilyAdmission::Partial { .. }
+                        | FamilyAdmission::Plain(_)
+                        | FamilyAdmission::WorkBoundExceeded(_)
+                        | FamilyAdmission::Refused(_)) => write!(feed, "{other:?}"),
                     },
-                    | Err(error) => write!(feed, "{error}"),
+                    Err(error) => write!(feed, "{error}"),
                 };
             }
         }
@@ -957,10 +960,10 @@ impl Staging
         let mut programs = Vec::with_capacity(self.programs.len());
         for (index, spec) in self.programs.into_iter().enumerate() {
             let outcome = match spec.program(ProgramId(index)) {
-                | Ok(program) => workers
+                Ok(program) => workers
                     .check(program, &mut memo, &clock)
                     .map_err(StageFault::Checked),
-                | Err(error) => Err(StageFault::Built(error)),
+                Err(error) => Err(StageFault::Built(error)),
             };
             programs.push(Staged { spec, outcome });
         }

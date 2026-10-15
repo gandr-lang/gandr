@@ -76,7 +76,7 @@ use crate::common::submit;
 fn rows(composed: &Composed<'_>) -> Vec<(String, Outcome, Settlement)>
 {
     match *composed {
-        | Composed::Settled { ref report, .. } => report
+        Composed::Settled { ref report, .. } => report
             .declarations()
             .iter()
             .map(|declaration| {
@@ -87,7 +87,7 @@ fn rows(composed: &Composed<'_>) -> Vec<(String, Outcome, Settlement)>
                 )
             })
             .collect(),
-        | Composed::Refused(ref refusal) => panic!("refused as a whole: {refusal}"),
+        Composed::Refused(ref refusal) => panic!("refused as a whole: {refusal}"),
     }
 }
 
@@ -128,8 +128,8 @@ fn checks() -> Outcome
 fn produced(typing: &Typing) -> &[ContentNode]
 {
     match *typing {
-        | Typing::Synthesised { ref produced, .. } => produced.nodes(),
-        | Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => &[],
+        Typing::Synthesised { ref produced, .. } => produced.nodes(),
+        Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => &[],
     }
 }
 
@@ -160,8 +160,8 @@ fn census(
 ) -> gandr_core_incremental::ResumeCensus
 {
     match submission.resumed() {
-        | Maybe::Present(resumed) => resumed.census(),
-        | Maybe::Absent(reason) => panic!("the submission carries no resume: {reason:?}"),
+        Maybe::Present(resumed) => resumed.census(),
+        Maybe::Absent(reason) => panic!("the submission carries no resume: {reason:?}"),
     }
 }
 

@@ -336,18 +336,21 @@ mod entries
                     .map(|_| Placed::Refused)
             });
             let (mold, def) = match node.label() {
-                | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => match grammar.mold(mold) {
-                    | Ok(def) => (mold, def),
-                    | Err(_) => continue,
+                NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => match grammar.mold(mold) {
+                    Ok(def) => (mold, def),
+                    Err(_) => continue,
                 },
-                | NodeLabel::Doc => {
+                NodeLabel::Doc => {
                     stack.extend(
                         tree.children(position)
                             .map(|child| (child, Some(Placed::Quoted), None, run, discarding)),
                     );
                     continue;
                 },
-                | _ => {
+                NodeLabel::Wald
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space => {
                     stack.extend(
                         tree.children(position)
                             .map(|child| (child, placed, None, run, discarding)),
@@ -369,9 +372,9 @@ mod entries
             let applied = melded && def.label == "(" && def.sort == Sort::Expression;
             let called = if applied { spelled(opener) } else { "" };
             let within = match run {
-                | _ if called == "recorded" => Run::Moves,
-                | Run::Moves if called == "selected" || called == "offered" => Run::Labelled,
-                | held => held,
+                _ if called == "recorded" => Run::Moves,
+                Run::Moves if called == "selected" || called == "offered" => Run::Labelled,
+                held @ (Run::Outside | Run::Moves | Run::Labelled) => held,
             };
             let span = node.span();
             let text = source
@@ -395,10 +398,7 @@ mod entries
                         .and_then(|before| children.get(before))
                         .map_or("", |&before| spelled(Some(before)))
                 };
-                let discarded = match bound.take() {
-                    | Some(discards) => discards,
-                    | None => discarding,
-                };
+                let discarded = bound.take().unwrap_or(discarding);
                 if spelled(Some(child)) == "<-" && previous(2) == "run" {
                     bound = Some(previous(1) == "_");
                 }
@@ -429,11 +429,11 @@ mod entries
                 && parent.is_some_and(|(.., qualifying)| qualifying)
                 && (def.label == "constructor" || def.label == "type_identifier");
             let moved = match run {
-                | Run::Outside => false,
-                | Run::Moves => {
+                Run::Outside => false,
+                Run::Moves => {
                     (applied && MOVES.contains(&called)) || (!melded && MOVES.contains(&text))
                 },
-                | Run::Labelled => !melded && def.label == "identifier",
+                Run::Labelled => !melded && def.label == "identifier",
             };
             let chained = melded
                 && (def.label == "*" || def.label == "+")
@@ -489,7 +489,7 @@ mod entries
                 .map(|(key, _)| key)
                 .collect();
             let judged_refused: BTreeSet<ConstantIndex> = match composed {
-                | Composed::Settled { ref report, .. } => report
+                Composed::Settled { ref report, .. } => report
                     .declarations()
                     .iter()
                     .filter(|declaration| {
@@ -497,7 +497,7 @@ mod entries
                     })
                     .map(DeclarationReport::constant)
                     .collect(),
-                | _ => BTreeSet::new(),
+                Composed::Refused(_) => BTreeSet::new(),
             };
             if let Ok(lowering) = lower_source(&grammar, text, &mut LoweringCount::default())
                 && let Lowered::Module { ref module, .. } = lowering.into_lowered()
@@ -560,15 +560,15 @@ mod entries
         let mut failures = Vec::new();
         for key in &met {
             match standings.get(key.as_str()) {
-                | None => failures.push(format!("unclassified kind `{key}`")),
-                | Some(&Standing::Design(reason)) => {
+                None => failures.push(format!("unclassified kind `{key}`")),
+                Some(&Standing::Design(reason)) => {
                     if !missing.contains_key(key) {
                         failures.push(format!(
                             "`{key}` stands by design ({reason}), yet every node has its entry: pin it owed at 0"
                         ));
                     }
                 },
-                | Some(&Standing::Owed(pinned)) => {
+                Some(&Standing::Owed(pinned)) => {
                     let (count, ref at) = missing.get(key).cloned().unwrap_or((0, String::new()));
                     if count != pinned {
                         failures.push(format!(

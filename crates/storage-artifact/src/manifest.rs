@@ -786,8 +786,8 @@ where
     let stored = store.load(root)?;
     let node = decode_node(stored.bytes(), &mut DecodeWork::new())?;
     let internal = match node {
-        | DecodedNode::Leaf(leaf) => return Ok(leaf.records().to_vec()),
-        | DecodedNode::Internal(internal) => internal,
+        DecodedNode::Leaf(leaf) => return Ok(leaf.records().to_vec()),
+        DecodedNode::Internal(internal) => internal,
     };
     let mut records = Vec::new();
     for child in internal.children() {

@@ -472,27 +472,27 @@ mod duplication
             let indices: Vec<u32> = (0 .. job.binders).collect();
             let read = (!indices.is_empty()).then(|| self.seeded.pick(&indices));
             match job.family {
-                | Family::Value => {
+                Family::Value => {
                     let plan = match (self.seeded.pick(&[0_u8, 1, 2, 3]), read) {
-                        | (0, Some(index)) => Plan::Variable(index),
-                        | (1, Some(index)) => {
+                        (0, Some(index)) => Plan::Variable(index),
+                        (1, Some(index)) => {
                             let variable = self
                                 .core
                                 .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
                             let unit = self.core.value_unit();
                             Plan::OpaqueValue(self.core.value_tuple(&[variable, unit]))
                         },
-                        | (2, _) => Plan::OpaqueValue(self.core.value_unit()),
-                        | _ => Plan::Unit,
+                        (2, _) => Plan::OpaqueValue(self.core.value_unit()),
+                        _ => Plan::Unit,
                     };
                     self.set(job.slot, plan);
                 },
-                | Family::Computation => {
+                Family::Computation => {
                     let returned = match read {
-                        | Some(index) => self
+                        Some(index) => self
                             .core
                             .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)),
-                        | None => self.core.value_unit(),
+                        None => self.core.value_unit(),
                     };
                     if self.seeded.pick(&[true, false]) {
                         let opaque = self.core.computation_return(returned);
@@ -567,49 +567,49 @@ mod duplication
             };
             let under = job.binders.saturating_add(1);
             let choice = match job.family {
-                | Family::Value => self.seeded.pick(&[0_u8, 1, 9, 9]),
-                | Family::Computation => self.seeded.pick(&[4_u8, 5, 6, 7, 8, 9, 9]),
+                Family::Value => self.seeded.pick(&[0_u8, 1, 9, 9]),
+                Family::Computation => self.seeded.pick(&[4_u8, 5, 6, 7, 8, 9, 9]),
             };
             match choice {
-                | 0 => {
+                0 => {
                     let (first, second) = (self.slot(), self.slot());
                     self.set(job.slot, Plan::Pair(first, second));
                     self.queue(child(first, Family::Value, first_budget, job.binders));
                     self.queue(child(second, Family::Value, second_budget, job.binders));
                 },
-                | 1 => {
+                1 => {
                     let body = self.slot();
                     self.set(job.slot, Plan::Thunk(body));
                     self.queue(child(body, Family::Computation, budget, job.binders));
                 },
-                | 4 => {
+                4 => {
                     let body = self.slot();
                     self.set(job.slot, Plan::Lambda(body));
                     self.queue(child(body, Family::Computation, budget, under));
                 },
-                | 5 => {
+                5 => {
                     let value = self.slot();
                     self.set(job.slot, Plan::Return(value));
                     self.queue(child(value, Family::Value, budget, job.binders));
                 },
-                | 6 => {
+                6 => {
                     let value = self.slot();
                     self.set(job.slot, Plan::Force(value));
                     self.queue(child(value, Family::Value, budget, job.binders));
                 },
-                | 7 => {
+                7 => {
                     let (head, argument) = (self.slot(), self.slot());
                     self.set(job.slot, Plan::Application(head, argument));
                     self.queue(child(head, Family::Computation, first_budget, job.binders));
                     self.queue(child(argument, Family::Value, second_budget, job.binders));
                 },
-                | 8 => {
+                8 => {
                     let (bound, body) = (self.slot(), self.slot());
                     self.set(job.slot, Plan::Bind(bound, body));
                     self.queue(child(bound, Family::Computation, first_budget, job.binders));
                     self.queue(child(body, Family::Computation, second_budget, under));
                 },
-                | _ => self.share(job, Job {
+                _ => self.share(job, Job {
                     budget: first_budget,
                     ..job
                 }),
@@ -669,12 +669,12 @@ mod duplication
             });
             if self.seeded.pick(&[true, true, false]) {
                 let lambda = match leg_family {
-                    | Family::Value => {
+                    Family::Value => {
                         let lambda = self.slot();
                         self.set(leg_slot, Plan::Thunk(lambda));
                         lambda
                     },
-                    | Family::Computation => leg_slot,
+                    Family::Computation => leg_slot,
                 };
                 let inner = self.slot();
                 self.set(lambda, Plan::Lambda(inner));
@@ -700,15 +700,15 @@ mod duplication
                 distance: 0,
             };
             let embedded = match (job.family, leg_family) {
-                | (Family::Value, Family::Value) | (Family::Computation, Family::Computation) => {
+                (Family::Value, Family::Value) | (Family::Computation, Family::Computation) => {
                     occurrence
                 },
-                | (Family::Value, Family::Computation) => {
+                (Family::Value, Family::Computation) => {
                     let inner = self.slot();
                     self.set(inner, occurrence);
                     Plan::Thunk(inner)
                 },
-                | (Family::Computation, Family::Value) => {
+                (Family::Computation, Family::Value) => {
                     let inner = self.slot();
                     self.set(inner, occurrence);
                     Plan::Return(inner)
@@ -716,8 +716,8 @@ mod duplication
             };
             self.set(first, embedded);
             let (plan, binders) = match job.family {
-                | Family::Value => (Plan::Pair(first, rest), job.binders),
-                | Family::Computation => (Plan::Bind(first, rest), job.binders.saturating_add(1)),
+                Family::Value => (Plan::Pair(first, rest), job.binders),
+                Family::Computation => (Plan::Bind(first, rest), job.binders.saturating_add(1)),
             };
             self.set(body, plan);
             self.queue(Job {
@@ -796,18 +796,18 @@ mod duplication
         let mut visits = Vec::from([Visit::Node(root)]);
         while let Some(visit) = visits.pop() {
             match visit {
-                | Visit::Open(share) => open.push(share),
-                | Visit::Close => {
+                Visit::Open(share) => open.push(share),
+                Visit::Close => {
                     open.pop();
                 },
-                | Visit::Node(slot) => match plans[slot.0] {
-                    | Plan::Share { leg, body, .. } => {
+                Visit::Node(slot) => match plans[slot.0] {
+                    Plan::Share { leg, body, .. } => {
                         visits.push(Visit::Close);
                         visits.push(Visit::Node(body));
                         visits.push(Visit::Open(slot));
                         visits.push(Visit::Node(leg));
                     },
-                    | Plan::Occurrence { distance, .. } => {
+                    Plan::Occurrence { distance, .. } => {
                         let innermost = open
                             .len()
                             .checked_sub(1)
@@ -820,17 +820,17 @@ mod duplication
                         positions[slot.0] = arities[share.0];
                         arities[share.0] = arities[share.0].saturating_add(1);
                     },
-                    | Plan::Pair(first, second)
+                    Plan::Pair(first, second)
                     | Plan::Application(first, second)
                     | Plan::Bind(first, second) => {
                         visits.push(Visit::Node(second));
                         visits.push(Visit::Node(first));
                     },
-                    | Plan::Thunk(child)
+                    Plan::Thunk(child)
                     | Plan::Lambda(child)
                     | Plan::Return(child)
                     | Plan::Force(child) => visits.push(Visit::Node(child)),
-                    | Plan::Pending
+                    Plan::Pending
                     | Plan::Unit
                     | Plan::Variable(_)
                     | Plan::OpaqueValue(_)
@@ -843,12 +843,12 @@ mod duplication
         let mut minted: Vec<Option<OverlayId>> = vec![None; plans.len()];
         for slot in (0 .. plans.len()).rev() {
             let value = |child: Slot| match minted[child.0] {
-                | Some(OverlayId::Value(id)) => id,
-                | other => panic!("a value child, minted before its parent: {other:?}"),
+                Some(OverlayId::Value(id)) => id,
+                other => panic!("a value child, minted before its parent: {other:?}"),
             };
             let computation = |child: Slot| match minted[child.0] {
-                | Some(OverlayId::Computation(id)) => id,
-                | other => panic!("a computation child, minted before its parent: {other:?}"),
+                Some(OverlayId::Computation(id)) => id,
+                other => panic!("a computation child, minted before its parent: {other:?}"),
             };
             let as_value = |node: ValueNode, overlay: &mut Overlay| {
                 OverlayId::Value(overlay.mint_value(node).expect("a small plan mints"))
@@ -857,62 +857,60 @@ mod duplication
                 OverlayId::Computation(overlay.mint_computation(node).expect("a small plan mints"))
             };
             let made = match plans[slot] {
-                | Plan::Pending => panic!("every slot is settled"),
-                | Plan::Unit => as_value(ValueNode::Grafted(ValueGraft::Unit), &mut overlay),
-                | Plan::Variable(index) => as_value(
+                Plan::Pending => panic!("every slot is settled"),
+                Plan::Unit => as_value(ValueNode::Grafted(ValueGraft::Unit), &mut overlay),
+                Plan::Variable(index) => as_value(
                     ValueNode::Grafted(ValueGraft::Variable {
                         zone: Zone::Intuitionistic,
                         index: DeBruijnIndex::from(index),
                     }),
                     &mut overlay,
                 ),
-                | Plan::OpaqueValue(id) => as_value(ValueNode::Opaque(id), &mut overlay),
-                | Plan::OpaqueComputation(id) => as_computation(CompNode::Opaque(id), &mut overlay),
-                | Plan::Occurrence { family, distance } => {
+                Plan::OpaqueValue(id) => as_value(ValueNode::Opaque(id), &mut overlay),
+                Plan::OpaqueComputation(id) => as_computation(CompNode::Opaque(id), &mut overlay),
+                Plan::Occurrence { family, distance } => {
                     let bound = Bound {
                         distance: ShareDistance::from(distance),
                         position: SharePosition::from(positions[slot]),
                     };
                     match family {
-                        | Family::Value => as_value(ValueNode::Bound(bound), &mut overlay),
-                        | Family::Computation => {
-                            as_computation(CompNode::Bound(bound), &mut overlay)
-                        },
+                        Family::Value => as_value(ValueNode::Bound(bound), &mut overlay),
+                        Family::Computation => as_computation(CompNode::Bound(bound), &mut overlay),
                     }
                 },
-                | Plan::Pair(first, second) => as_value(
+                Plan::Pair(first, second) => as_value(
                     ValueNode::Grafted(ValueGraft::Pair(value(first), value(second))),
                     &mut overlay,
                 ),
-                | Plan::Thunk(body) => as_value(
+                Plan::Thunk(body) => as_value(
                     ValueNode::Grafted(ValueGraft::Thunk(computation(body))),
                     &mut overlay,
                 ),
-                | Plan::Lambda(body) => as_computation(
+                Plan::Lambda(body) => as_computation(
                     CompNode::Grafted(CompGraft::Lambda(computation(body))),
                     &mut overlay,
                 ),
-                | Plan::Return(returned) => as_computation(
+                Plan::Return(returned) => as_computation(
                     CompNode::Grafted(CompGraft::Return(value(returned))),
                     &mut overlay,
                 ),
-                | Plan::Force(forced) => as_computation(
+                Plan::Force(forced) => as_computation(
                     CompNode::Grafted(CompGraft::Force(value(forced))),
                     &mut overlay,
                 ),
-                | Plan::Application(head, argument) => as_computation(
+                Plan::Application(head, argument) => as_computation(
                     CompNode::Grafted(CompGraft::Application(computation(head), value(argument))),
                     &mut overlay,
                 ),
-                | Plan::Bind(bound, body) => as_computation(
+                Plan::Bind(bound, body) => as_computation(
                     CompNode::Grafted(CompGraft::Bind(computation(bound), computation(body))),
                     &mut overlay,
                 ),
-                | Plan::Share { family, leg, body } => {
+                Plan::Share { family, leg, body } => {
                     let arity = ShareArity::from(arities[slot]);
                     let leg = minted[leg.0].expect("a leg is minted before its share");
                     match family {
-                        | Family::Value => as_value(
+                        Family::Value => as_value(
                             ValueNode::Shared(Sharing {
                                 arity,
                                 leg,
@@ -920,7 +918,7 @@ mod duplication
                             }),
                             &mut overlay,
                         ),
-                        | Family::Computation => as_computation(
+                        Family::Computation => as_computation(
                             CompNode::Shared(Sharing {
                                 arity,
                                 leg,
@@ -972,13 +970,13 @@ mod duplication
     ) -> Term
     {
         match root {
-            | OverlayId::Value(id) => {
+            OverlayId::Value(id) => {
                 Term::Value(erase_value(overlay, id, core).expect("a valid root erases"))
             },
-            | OverlayId::Computation(id) => Term::Computation(
+            OverlayId::Computation(id) => Term::Computation(
                 erase_computation(overlay, id, core).expect("a valid root erases"),
             ),
-            | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+            OverlayId::ValueType(_) | OverlayId::CompType(_) => {
                 panic!("the property generates evaluation roots")
             },
         }
@@ -1130,13 +1128,13 @@ mod duplication
                 let installed = TracedDuplication::install(stance, &mut log)
                     .expect("a recording sink carries either stance");
                 let rebuilt = match root {
-                    | OverlayId::Value(id) => installed
+                    OverlayId::Value(id) => installed
                         .duplicate_value(&mut overlay, &core, id)
                         .map(OverlayId::Value),
-                    | OverlayId::Computation(id) => installed
+                    OverlayId::Computation(id) => installed
                         .duplicate_computation(&mut overlay, &core, id)
                         .map(OverlayId::Computation),
-                    | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+                    OverlayId::ValueType(_) | OverlayId::CompType(_) => {
                         panic!("the property generates evaluation roots")
                     },
                 }
@@ -1164,14 +1162,14 @@ mod duplication
             let input = measured(&overlay, root);
             let policy = DuplicationPolicy::default();
             let rebuilt = match root {
-                | OverlayId::Value(id) => {
+                OverlayId::Value(id) => {
                     duplicate_value(&mut overlay, &core, policy, id).map(OverlayId::Value)
                 },
-                | OverlayId::Computation(id) => {
+                OverlayId::Computation(id) => {
                     duplicate_computation(&mut overlay, &core, policy, id)
                         .map(OverlayId::Computation)
                 },
-                | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+                OverlayId::ValueType(_) | OverlayId::CompType(_) => {
                     panic!("the property generates evaluation roots")
                 },
             }

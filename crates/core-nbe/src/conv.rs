@@ -180,9 +180,9 @@ impl Settlement
     pub fn verdict(self) -> Convertibility
     {
         match self {
-            | Self::Identical | Self::StructurallyEqual => Convertibility::Convertible,
-            | Self::GuardedApart | Self::StructurallyApart => Convertibility::Distinct,
-            | Self::Deferred(_) => Convertibility::Undecided,
+            Self::Identical | Self::StructurallyEqual => Convertibility::Convertible,
+            Self::GuardedApart | Self::StructurallyApart => Convertibility::Distinct,
+            Self::Deferred(_) => Convertibility::Undecided,
         }
     }
 }
@@ -448,8 +448,8 @@ fn early_by_guard(
 ) -> Early
 {
     match left.settles(right) {
-        | GuardAnswer::Apart => Early::Apart,
-        | GuardAnswer::Inconclusive => Early::Open,
+        GuardAnswer::Apart => Early::Apart,
+        GuardAnswer::Inconclusive => Early::Open,
     }
 }
 
@@ -510,9 +510,9 @@ pub fn convert_values(
 {
     let early = early_values(domain, left, right)?;
     match early {
-        | Early::Identical => Ok(Settlement::Identical),
-        | Early::Apart => Ok(Settlement::GuardedApart),
-        | Early::Open => Walk::new(core, domain).settle(Goal::Values(left, right, Context::Rigid)),
+        Early::Identical => Ok(Settlement::Identical),
+        Early::Apart => Ok(Settlement::GuardedApart),
+        Early::Open => Walk::new(core, domain).settle(Goal::Values(left, right, Context::Rigid)),
     }
 }
 
@@ -561,9 +561,9 @@ pub fn convert_computations(
 {
     let early = early_comps(domain, left, right)?;
     match early {
-        | Early::Identical => Ok(Settlement::Identical),
-        | Early::Apart => Ok(Settlement::GuardedApart),
-        | Early::Open => Walk::new(core, domain).settle(Goal::Comps(left, right, Context::Rigid)),
+        Early::Identical => Ok(Settlement::Identical),
+        Early::Apart => Ok(Settlement::GuardedApart),
+        Early::Open => Walk::new(core, domain).settle(Goal::Comps(left, right, Context::Rigid)),
     }
 }
 
@@ -623,9 +623,9 @@ impl<'run> Walk<'run>
         self.goals.push(root);
         let walked = self.run()?;
         Ok(match (walked, self.outstanding) {
-            | (Walked::Apart, _) => Settlement::StructurallyApart,
-            | (Walked::Exhausted, Outstanding::Deferred(reason)) => Settlement::Deferred(reason),
-            | (Walked::Exhausted, Outstanding::Nothing) => Settlement::StructurallyEqual,
+            (Walked::Apart, _) => Settlement::StructurallyApart,
+            (Walked::Exhausted, Outstanding::Deferred(reason)) => Settlement::Deferred(reason),
+            (Walked::Exhausted, Outstanding::Nothing) => Settlement::StructurallyEqual,
         })
     }
 
@@ -663,27 +663,27 @@ impl<'run> Walk<'run>
                 continue;
             }
             let (local, context) = match goal {
-                | Goal::Values(left, right, context) => {
+                Goal::Values(left, right, context) => {
                     let local = self.values(left, right, context)?;
                     (local, context)
                 },
-                | Goal::Comps(left, right, context) => {
+                Goal::Comps(left, right, context) => {
                     let local = self.comps(left, right, context)?;
                     (local, context)
                 },
-                | Goal::Neutrals(left, right, context) => {
+                Goal::Neutrals(left, right, context) => {
                     let local = self.neutrals(left, right, context)?;
                     (local, context)
                 },
-                | Goal::Closures(left, right) => {
+                Goal::Closures(left, right) => {
                     let local = self.closures(left, right)?;
                     (local, Context::Flexible(Deferral::Binder))
                 },
             };
             match (local, context) {
-                | (Local::Agree, _) => {},
-                | (Local::Disagree, Context::Rigid) => return Ok(Walked::Apart),
-                | (Local::Disagree, Context::Flexible(reason)) | (Local::Defer(reason), _) => {
+                (Local::Agree, _) => {},
+                (Local::Disagree, Context::Rigid) => return Ok(Walked::Apart),
+                (Local::Disagree, Context::Flexible(reason)) | (Local::Defer(reason), _) => {
                     self.defer(reason);
                 },
             }
@@ -764,15 +764,14 @@ impl<'run> Walk<'run>
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
         Ok(match (held.head(), held.unfolding()) {
-            | (
-                NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_),
-                _,
-            ) => Context::Flexible(Deferral::Indeterminate),
-            | (
+            (NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_), _) => {
+                Context::Flexible(Deferral::Indeterminate)
+            },
+            (
                 NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_),
                 Unfolding::Rigid,
             ) => Context::Rigid,
-            | (
+            (
                 NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_),
                 Unfolding::Unforced(_) | Unfolding::Forced(_),
             ) => Context::Flexible(Deferral::Unfolding),
@@ -811,8 +810,8 @@ impl<'run> Walk<'run>
     {
         let context = self.unfoldable(neutral)?;
         Ok(match context {
-            | Context::Rigid => Local::Disagree,
-            | Context::Flexible(reason) => Local::Defer(reason),
+            Context::Rigid => Local::Disagree,
+            Context::Flexible(reason) => Local::Defer(reason),
         })
     }
 
@@ -844,8 +843,8 @@ impl<'run> Walk<'run>
     ) -> Result<&'run Literal, ConversionFault>
     {
         match self.core.value(literal) {
-            | Some(&Value::Literal(ref payload)) => Ok(payload),
-            | Some(_) | None => Err(ConversionFault::LiteralPayload { literal }),
+            Some(&Value::Literal(ref payload)) => Ok(payload),
+            Some(_) | None => Err(ConversionFault::LiteralPayload { literal }),
         }
     }
 
@@ -903,16 +902,16 @@ impl<'run> Walk<'run>
     {
         let early = early_values(self.domain, left, right)?;
         match early {
-            | Early::Identical => return Ok(Local::Agree),
-            | Early::Apart => return Ok(Local::Disagree),
-            | Early::Open => {},
+            Early::Identical => return Ok(Local::Agree),
+            Early::Apart => return Ok(Local::Disagree),
+            Early::Open => {},
         }
         let (Some(&one), Some(&other)) = (self.domain.value(left), self.domain.value(right))
         else {
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
         match (one, other) {
-            | (
+            (
                 DomainValue::Constructor {
                     datatype: left_code,
                     tag: left_tag,
@@ -944,9 +943,9 @@ impl<'run> Walk<'run>
                     left_code,
                     right_code,
                 )? {
-                    | CodeComparison::Apart => return Ok(Local::Disagree),
-                    | CodeComparison::Undecided => return Ok(Local::Defer(Deferral::Unfolding)),
-                    | CodeComparison::Equal => {},
+                    CodeComparison::Apart => return Ok(Local::Disagree),
+                    CodeComparison::Undecided => return Ok(Local::Defer(Deferral::Unfolding)),
+                    CodeComparison::Equal => {},
                 }
                 self.goals.extend(
                     left_fields
@@ -957,7 +956,7 @@ impl<'run> Walk<'run>
                 );
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainValue::Record {
                     source: left_source,
                     fields: left_fields,
@@ -1007,7 +1006,7 @@ impl<'run> Walk<'run>
                 );
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
                 DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
             ) => Ok(
@@ -1020,8 +1019,8 @@ impl<'run> Walk<'run>
                     Local::Disagree
                 },
             ),
-            | (DomainValue::ListNil { .. }, DomainValue::ListNil { .. }) => Ok(Local::Agree),
-            | (
+            (DomainValue::ListNil { .. }, DomainValue::ListNil { .. }) => Ok(Local::Agree),
+            (
                 DomainValue::Tuple {
                     fields: left_fields,
                     ..
@@ -1051,7 +1050,7 @@ impl<'run> Walk<'run>
                 );
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainValue::Flow {
                     former: left_former,
                     parts: left_parts,
@@ -1083,7 +1082,7 @@ impl<'run> Walk<'run>
                 );
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainValue::Literal { literal: first, .. },
                 DomainValue::Literal {
                     literal: second, ..
@@ -1101,7 +1100,7 @@ impl<'run> Walk<'run>
                     Local::Disagree
                 })
             },
-            | (
+            (
                 DomainValue::ListCons {
                     first: left_first,
                     second: left_second,
@@ -1119,7 +1118,7 @@ impl<'run> Walk<'run>
                     .push(Goal::Values(left_first, right_first, context));
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainValue::Injection {
                     summand: left_summand,
                     body: left_body,
@@ -1138,7 +1137,7 @@ impl<'run> Walk<'run>
                     .push(Goal::Values(left_body, right_body, context));
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainValue::Here {
                     point: left_point, ..
                 },
@@ -1150,7 +1149,7 @@ impl<'run> Walk<'run>
                     .push(Goal::Values(left_point, right_point, context));
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainValue::Thunk {
                     body: left_body, ..
                 },
@@ -1161,7 +1160,7 @@ impl<'run> Walk<'run>
                 self.goals.push(Goal::Closures(left_body, right_body));
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainValue::Lift {
                     target: left_target,
                     body: left_body,
@@ -1187,7 +1186,7 @@ impl<'run> Walk<'run>
                     .push(Goal::Values(left_body, right_body, context));
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainValue::Code {
                     code: left_code, ..
                 },
@@ -1202,12 +1201,12 @@ impl<'run> Walk<'run>
                     left_code,
                     right_code,
                 )? {
-                    | CodeComparison::Equal => Local::Agree,
-                    | CodeComparison::Apart => Local::Disagree,
-                    | CodeComparison::Undecided => Local::Defer(Deferral::Unfolding),
+                    CodeComparison::Equal => Local::Agree,
+                    CodeComparison::Apart => Local::Disagree,
+                    CodeComparison::Undecided => Local::Defer(Deferral::Unfolding),
                 },
             ),
-            | (
+            (
                 DomainValue::StaticLambda {
                     lambda: left_lambda,
                     ..
@@ -1224,12 +1223,12 @@ impl<'run> Walk<'run>
                     left_lambda,
                     right_lambda,
                 )? {
-                    | CodeComparison::Equal => Local::Agree,
-                    | CodeComparison::Apart => Local::Disagree,
-                    | CodeComparison::Undecided => Local::Defer(Deferral::Unfolding),
+                    CodeComparison::Equal => Local::Agree,
+                    CodeComparison::Apart => Local::Disagree,
+                    CodeComparison::Undecided => Local::Defer(Deferral::Unfolding),
                 },
             ),
-            | (
+            (
                 DomainValue::Neutral {
                     neutral: left_neutral,
                     ..
@@ -1243,7 +1242,7 @@ impl<'run> Walk<'run>
                     .push(Goal::Neutrals(left_neutral, right_neutral, context));
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainValue::Neutral { .. },
                 DomainValue::Thunk { .. } | DomainValue::StaticLambda { .. },
             )
@@ -1251,9 +1250,9 @@ impl<'run> Walk<'run>
                 DomainValue::Thunk { .. } | DomainValue::StaticLambda { .. },
                 DomainValue::Neutral { .. },
             ) => Ok(Local::Defer(Deferral::Binder)),
-            | (DomainValue::Neutral { neutral, .. }, _)
+            (DomainValue::Neutral { neutral, .. }, _)
             | (_, DomainValue::Neutral { neutral, .. }) => self.neutral_against_former(neutral),
-            | (
+            (
                 DomainValue::PathCertificate { .. }
                 | DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
@@ -1319,9 +1318,9 @@ impl<'run> Walk<'run>
     {
         let early = early_comps(self.domain, left, right)?;
         match early {
-            | Early::Identical => return Ok(Local::Agree),
-            | Early::Apart => return Ok(Local::Disagree),
-            | Early::Open => {},
+            Early::Identical => return Ok(Local::Agree),
+            Early::Apart => return Ok(Local::Disagree),
+            Early::Open => {},
         }
         let (Some(&one), Some(&other)) = (
             self.domain.computation(left),
@@ -1331,7 +1330,7 @@ impl<'run> Walk<'run>
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
         match (one, other) {
-            | (
+            (
                 DomainComp::Lambda {
                     body: left_body, ..
                 },
@@ -1342,7 +1341,7 @@ impl<'run> Walk<'run>
                 self.goals.push(Goal::Closures(left_body, right_body));
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainComp::Return {
                     value: left_value, ..
                 },
@@ -1354,7 +1353,7 @@ impl<'run> Walk<'run>
                     .push(Goal::Values(left_value, right_value, context));
                 Ok(Local::Agree)
             },
-            | (
+            (
                 DomainComp::Neutral {
                     neutral: left_neutral,
                     ..
@@ -1370,7 +1369,7 @@ impl<'run> Walk<'run>
             },
             // Two fixpoints compare by congruence: their own closed source
             // nodes. A fixpoint never unfolds to meet anything else.
-            | (
+            (
                 DomainComp::Fixpoint {
                     recursive: left_recursive,
                     ..
@@ -1384,11 +1383,11 @@ impl<'run> Walk<'run>
                     .push(Goal::Closures(left_recursive, right_recursive));
                 Ok(Local::Agree)
             },
-            | (DomainComp::Neutral { .. }, DomainComp::Lambda { .. })
+            (DomainComp::Neutral { .. }, DomainComp::Lambda { .. })
             | (DomainComp::Lambda { .. }, DomainComp::Neutral { .. }) => {
                 Ok(Local::Defer(Deferral::Binder))
             },
-            | (
+            (
                 DomainComp::Neutral { neutral, .. },
                 DomainComp::Return { .. } | DomainComp::Fixpoint { .. },
             )
@@ -1396,7 +1395,7 @@ impl<'run> Walk<'run>
                 DomainComp::Return { .. } | DomainComp::Fixpoint { .. },
                 DomainComp::Neutral { neutral, .. },
             ) => self.neutral_against_former(neutral),
-            | (
+            (
                 DomainComp::Lambda { .. },
                 DomainComp::Return { .. } | DomainComp::Fixpoint { .. },
             )
@@ -1477,14 +1476,14 @@ impl<'run> Walk<'run>
         let left_context = self.unfoldable(left)?;
         let right_context = self.unfoldable(right)?;
         let beneath = match (left_context, right_context) {
-            | (Context::Rigid, Context::Rigid) => context,
-            | (Context::Flexible(reason), _) | (_, Context::Flexible(reason)) => {
+            (Context::Rigid, Context::Rigid) => context,
+            (Context::Flexible(reason), _) | (_, Context::Flexible(reason)) => {
                 Context::Flexible(reason)
             },
         };
         let mismatch = match beneath {
-            | Context::Rigid => Local::Disagree,
-            | Context::Flexible(reason) => Local::Defer(reason),
+            Context::Rigid => Local::Disagree,
+            Context::Flexible(reason) => Local::Defer(reason),
         };
         let (Some(one), Some(other)) = (self.domain.neutral(left), self.domain.neutral(right))
         else {
@@ -1504,15 +1503,15 @@ impl<'run> Walk<'run>
         }
         let mut queued = Vec::new();
         match (one.head(), other.head()) {
-            | (NeutralHead::Returned(left_head), NeutralHead::Returned(right_head)) => {
+            (NeutralHead::Returned(left_head), NeutralHead::Returned(right_head)) => {
                 queued.push(Goal::Comps(left_head, right_head, beneath));
             },
-            | (left_head, right_head) if left_head != right_head => return Ok(mismatch),
-            | _ => {},
+            (left_head, right_head) if left_head != right_head => return Ok(mismatch),
+            _ => {},
         }
         for (&left_elimination, &right_elimination) in one.spine().iter().zip(other.spine()) {
             match (left_elimination, right_elimination) {
-                | (Elimination::DataCase(left), Elimination::DataCase(right)) => {
+                (Elimination::DataCase(left), Elimination::DataCase(right)) => {
                     let (_, left_branches) =
                         crate::rules::case_source(self.core, self.domain, left)?;
                     let (_, right_branches) =
@@ -1524,17 +1523,17 @@ impl<'run> Walk<'run>
                 },
                 // A split's closure holds the split itself, so one source
                 // body already fixes the arity.
-                | (Elimination::Split(left), Elimination::Split(right)) => {
+                (Elimination::Split(left), Elimination::Split(right)) => {
                     queued.push(Goal::Closures(left, right));
                 },
-                | (Elimination::Projection(left), Elimination::Projection(right)) => {
+                (Elimination::Projection(left), Elimination::Projection(right)) => {
                     if crate::rules::projection_key(self.core, left)?
                         != crate::rules::projection_key(self.core, right)?
                     {
                         return Ok(mismatch);
                     }
                 },
-                | (
+                (
                     Elimination::PathTransport {
                         motive: left_motive,
                         value: left_value,
@@ -1556,7 +1555,7 @@ impl<'run> Walk<'run>
                 ) => match crate::identity::motives(self.domain, left_motive, right_motive)
                     .map_err(ConversionFault::Domain)?
                 {
-                    | crate::identity::Motives::Alike(bindings) => {
+                    crate::identity::Motives::Alike(bindings) => {
                         let flexible = Context::Flexible(Deferral::Binder);
                         queued.extend(
                             bindings
@@ -1565,11 +1564,11 @@ impl<'run> Walk<'run>
                         );
                         queued.push(Goal::Values(left_value, right_value, beneath));
                     },
-                    | crate::identity::Motives::Unlike => {
+                    crate::identity::Motives::Unlike => {
                         return Ok(Local::Defer(Deferral::Binder));
                     },
                 },
-                | (
+                (
                     Elimination::TelescopeTransport {
                         motive: left_motive,
                         start: left_start,
@@ -1585,7 +1584,7 @@ impl<'run> Walk<'run>
                 ) => match crate::identity::motives(self.domain, left_motive, right_motive)
                     .map_err(ConversionFault::Domain)?
                 {
-                    | crate::identity::Motives::Alike(bindings) => {
+                    crate::identity::Motives::Alike(bindings) => {
                         let flexible = Context::Flexible(Deferral::Binder);
                         queued.extend(
                             bindings
@@ -1598,14 +1597,11 @@ impl<'run> Walk<'run>
                             Goal::Values(left_value, right_value, beneath),
                         ]);
                     },
-                    | crate::identity::Motives::Unlike => {
+                    crate::identity::Motives::Unlike => {
                         return Ok(Local::Defer(Deferral::Binder));
                     },
                 },
-                | (
-                    Elimination::Transport(left_argument),
-                    Elimination::Transport(right_argument),
-                )
+                (Elimination::Transport(left_argument), Elimination::Transport(right_argument))
                 | (
                     Elimination::ProductTransport(left_argument),
                     Elimination::ProductTransport(right_argument),
@@ -1617,12 +1613,12 @@ impl<'run> Walk<'run>
                 ) => {
                     queued.push(Goal::Values(left_argument, right_argument, beneath));
                 },
-                | (Elimination::Force, Elimination::Force) => {},
-                | (Elimination::Bind(left_body), Elimination::Bind(right_body))
+                (Elimination::Force, Elimination::Force) => {},
+                (Elimination::Bind(left_body), Elimination::Bind(right_body))
                 | (Elimination::Fixpoint(left_body), Elimination::Fixpoint(right_body)) => {
                     queued.push(Goal::Closures(left_body, right_body));
                 },
-                | (
+                (
                     Elimination::ListFold {
                         on_nil: ln,
                         on_cons: lc,
@@ -1637,7 +1633,7 @@ impl<'run> Walk<'run>
                     queued.push(Goal::Closures(ln, rn));
                     queued.push(Goal::Closures(lc, rc));
                 },
-                | (Elimination::Case(left_branches), Elimination::Case(right_branches)) => {
+                (Elimination::Case(left_branches), Elimination::Case(right_branches)) => {
                     let left_branches = self
                         .domain
                         .branches(left_branches)
@@ -1653,7 +1649,7 @@ impl<'run> Walk<'run>
                         |(&left_branch, &right_branch)| Goal::Closures(left_branch, right_branch),
                     ));
                 },
-                | (
+                (
                     Elimination::Transport(_)
                     | Elimination::DataCase(_)
                     | Elimination::Split(_)
@@ -1790,7 +1786,7 @@ pub fn equal_paths(
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
         match (*one, *other) {
-            | (
+            (
                 DomainValue::PathCertificate { certificate: a, .. },
                 DomainValue::PathCertificate { certificate: b, .. },
             ) => {
@@ -1800,7 +1796,7 @@ pub fn equal_paths(
                     return Ok(gandr_core_term::CertificateEquality::Different);
                 }
             },
-            | (
+            (
                 DomainValue::PathProduct {
                     first: a,
                     second: b,
@@ -1812,10 +1808,7 @@ pub fn equal_paths(
                     ..
                 },
             ) => pending.extend([(a, c), (b, d)]),
-            | (
-                DomainValue::Neutral { neutral: a, .. },
-                DomainValue::Neutral { neutral: b, .. },
-            ) => {
+            (DomainValue::Neutral { neutral: a, .. }, DomainValue::Neutral { neutral: b, .. }) => {
                 let (Some(a), Some(b)) = (domain.neutral(a), domain.neutral(b))
                 else {
                     return Err(ConversionFault::Domain(DomainFault::Dangling));
@@ -1824,7 +1817,7 @@ pub fn equal_paths(
                     return Ok(gandr_core_term::CertificateEquality::Different);
                 }
             },
-            | _ => return Ok(gandr_core_term::CertificateEquality::Different),
+            _ => return Ok(gandr_core_term::CertificateEquality::Different),
         }
     }
     Ok(gandr_core_term::CertificateEquality::Equal)

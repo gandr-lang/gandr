@@ -102,9 +102,9 @@ impl Application
     ) -> FreeTerm
     {
         match self {
-            | Self::Ctor => FreeTerm::ctor(name, args),
-            | Self::Op => FreeTerm::op(name, args),
-            | Self::Results => FreeTerm::results(args),
+            Self::Ctor => FreeTerm::ctor(name, args),
+            Self::Op => FreeTerm::op(name, args),
+            Self::Results => FreeTerm::results(args),
         }
     }
 }
@@ -201,19 +201,19 @@ where
     let mut built: Vec<FreeTerm> = Vec::new();
     while let Some(step) = work.pop() {
         match step {
-            | Rebuild::Enter(node) => match node.view() {
-                | TermView::Var(name) => built.push(on_var(name)),
-                | TermView::Ctor { name, args } => {
+            Rebuild::Enter(node) => match node.view() {
+                TermView::Var(name) => built.push(on_var(name)),
+                TermView::Ctor { name, args } => {
                     schedule(&mut work, Application::Ctor, on_head(name), args);
                 },
-                | TermView::Op { name, args } => {
+                TermView::Op { name, args } => {
                     schedule(&mut work, Application::Op, on_head(name), args);
                 },
-                | TermView::Results { args } => {
+                TermView::Results { args } => {
                     schedule(&mut work, Application::Results, Name::from(""), args);
                 },
             },
-            | Rebuild::Assemble {
+            Rebuild::Assemble {
                 application,
                 name,
                 arity,
@@ -323,7 +323,7 @@ fn match_node(
     let mut pending = vec![(pattern, ground)];
     while let Some((pattern, ground)) = pending.pop() {
         let aligned = match (pattern.view(), ground.view()) {
-            | (TermView::Var(name), _) => {
+            (TermView::Var(name), _) => {
                 if let Some(existing) = out.get(name) {
                     if existing.to_node() != ground {
                         return PatternMatch::from(false);
@@ -334,7 +334,7 @@ fn match_node(
                 }
                 continue;
             },
-            | (
+            (
                 TermView::Ctor {
                     name: pattern_name,
                     args: pattern_args,
@@ -354,11 +354,10 @@ fn match_node(
                     args: ground_args,
                 },
             ) if pattern_name == ground_name => (pattern_args, ground_args),
-            | (
-                TermView::Results { args: pattern_args },
-                TermView::Results { args: ground_args },
-            ) => (pattern_args, ground_args),
-            | _ => return PatternMatch::from(false),
+            (TermView::Results { args: pattern_args }, TermView::Results { args: ground_args }) => {
+                (pattern_args, ground_args)
+            },
+            _ => return PatternMatch::from(false),
         };
         let (pattern_args, ground_args) = aligned;
         let pattern_args: Vec<TermNode<'_>> = pattern_args.collect();
@@ -399,10 +398,10 @@ pub fn subterm_at<'term>(
     let mut cursor = term.to_node();
     for &index in position {
         let next = match cursor.view() {
-            | TermView::Ctor { mut args, .. }
+            TermView::Ctor { mut args, .. }
             | TermView::Op { mut args, .. }
             | TermView::Results { mut args } => args.nth(usize::from(index)),
-            | TermView::Var(_) => None,
+            TermView::Var(_) => None,
         };
         let Some(next) = next
         else {
@@ -453,10 +452,10 @@ pub fn replace_at(
     let mut spine: Vec<(Application, Name, Vec<FreeTerm>, TermPositionIndex)> = Vec::new();
     for &index in position {
         let (application, name, args) = match cursor.view() {
-            | TermView::Ctor { name, args } => (Application::Ctor, name.clone(), args),
-            | TermView::Op { name, args } => (Application::Op, name.clone(), args),
-            | TermView::Results { args } => (Application::Results, Name::from(""), args),
-            | TermView::Var(_) => return Maybe::Absent(position::Absent::OffTerm),
+            TermView::Ctor { name, args } => (Application::Ctor, name.clone(), args),
+            TermView::Op { name, args } => (Application::Op, name.clone(), args),
+            TermView::Results { args } => (Application::Results, Name::from(""), args),
+            TermView::Var(_) => return Maybe::Absent(position::Absent::OffTerm),
         };
         let args: Vec<TermNode<'_>> = args.collect();
         let Some(&child) = args.get(usize::from(index))
@@ -525,8 +524,8 @@ pub fn rewrite_with_face(
     }
     let rewritten = subst_term(&face.rhs, &binding);
     match replace_at(term, position, rewritten) {
-        | Maybe::Present(whole) => Maybe::Present((binding, whole)),
-        | Maybe::Absent(position::Absent::OffTerm) => Maybe::Absent(rewrite::Absent::OffTerm),
+        Maybe::Present(whole) => Maybe::Present((binding, whole)),
+        Maybe::Absent(position::Absent::OffTerm) => Maybe::Absent(rewrite::Absent::OffTerm),
     }
 }
 
@@ -563,8 +562,8 @@ pub fn apply_path(
             return Maybe::Absent(rewrite::Absent::UnknownRule);
         };
         match rewrite_with_face(&current, &step.pos, face) {
-            | Maybe::Present((_, whole)) => current = whole,
-            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            Maybe::Present((_, whole)) => current = whole,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
         }
     }
     Maybe::Present(current)

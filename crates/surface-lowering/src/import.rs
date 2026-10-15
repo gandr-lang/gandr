@@ -361,15 +361,15 @@ impl<'source> ModuleImports<'source>
         let _fresh = root.insert(&NamePath::root(), Binding::new(index, declaration.span));
         let mut policy = OneSource;
         let bound = match Modifier::alias_as(alias.clone()).apply(root, &mut policy) {
-            | Ok(qualified) => self
+            Ok(qualified) => self
                 .scope
                 .import_subtree(&NamePath::root(), qualified, &mut policy),
-            | Err(rejection) => Err(ScopeError::from(rejection)),
+            Err(rejection) => Err(ScopeError::from(rejection)),
         };
         if let Err(_shadowed) = bound {
             let first = match self.scope.resolve(&NamePath::from(Vec::from([alias]))) {
-                | Maybe::Present(held) => held.tag,
-                | Maybe::Absent(_) => declaration.span,
+                Maybe::Present(held) => held.tag,
+                Maybe::Absent(_) => declaration.span,
             };
             return Err(LoweringRefusal::DuplicateImportAlias {
                 span: declaration.span,

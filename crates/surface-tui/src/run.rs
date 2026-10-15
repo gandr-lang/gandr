@@ -145,9 +145,9 @@ impl InputSource for Keyboard
     fn next(&mut self) -> Input
     {
         match ratatui::crossterm::event::read() {
-            | Ok(Event::Key(event)) if event.kind == KeyEventKind::Press => key(event),
-            | Ok(_) => Input::Redraw,
-            | Err(error) => Input::Failed(Fault::Input(error)),
+            Ok(Event::Key(event)) if event.kind == KeyEventKind::Press => key(event),
+            Ok(_) => Input::Redraw,
+            Err(error) => Input::Failed(Fault::Input(error)),
         }
     }
 }
@@ -184,17 +184,22 @@ impl InputSource for Keyboard
         Input::Failed(_) => false,
     }
 })]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "`KeyCode` is crossterm's key enum, wide and growing; every key the face does not \
+              bind redraws"
+)]
 fn key(event: KeyEvent) -> Input
 {
     let control = event.modifiers.contains(KeyModifiers::CONTROL);
     let alt = event.modifiers.contains(KeyModifiers::ALT);
     match event.code {
-        | KeyCode::Char('c') if control => Input::Key(Key::Interrupt),
-        | KeyCode::Char(typed) if !control && !alt => Input::Key(Key::Char(typed)),
-        | KeyCode::Enter => Input::Key(Key::Enter),
-        | KeyCode::Backspace => Input::Key(Key::Backspace),
-        | KeyCode::Esc => Input::Key(Key::Quit),
-        | _ => Input::Redraw,
+        KeyCode::Char('c') if control => Input::Key(Key::Interrupt),
+        KeyCode::Char(typed) if !control && !alt => Input::Key(Key::Char(typed)),
+        KeyCode::Enter => Input::Key(Key::Enter),
+        KeyCode::Backspace => Input::Key(Key::Backspace),
+        KeyCode::Esc => Input::Key(Key::Quit),
+        _ => Input::Redraw,
     }
 }
 
@@ -251,19 +256,19 @@ where
     Source: InputSource,
 {
     let mut app = match App::new() {
-        | Ok(app) => app,
-        | Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
+        Ok(app) => app,
+        Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
     };
     loop {
         let _frame = terminal.draw(|frame| draw(frame, &app))?;
         match source.next() {
-            | Input::Key(key) => match app.handle(key) {
-                | Ok(Handled::Continue) => {},
-                | Ok(Handled::Quit) => return Ok(Ended::Completed),
-                | Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
+            Input::Key(key) => match app.handle(key) {
+                Ok(Handled::Continue) => {},
+                Ok(Handled::Quit) => return Ok(Ended::Completed),
+                Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
             },
-            | Input::Redraw => {},
-            | Input::Failed(fault) => return Ok(Ended::Faulted(fault)),
+            Input::Redraw => {},
+            Input::Failed(fault) => return Ok(Ended::Faulted(fault)),
         }
     }
 }
@@ -299,13 +304,13 @@ where
 pub fn run() -> io::Result<Ended>
 {
     let ended = match ratatui::try_init() {
-        | Ok(mut terminal) => drive(&mut terminal, &mut Keyboard),
-        | Err(error) => Err(error),
+        Ok(mut terminal) => drive(&mut terminal, &mut Keyboard),
+        Err(error) => Err(error),
     };
     let restored = ratatui::try_restore();
     match (ended, restored) {
-        | (Ok(ended), Ok(())) => Ok(ended),
-        | (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+        (Ok(ended), Ok(())) => Ok(ended),
+        (Err(error), _) | (Ok(_), Err(error)) => Err(error),
     }
 }
 

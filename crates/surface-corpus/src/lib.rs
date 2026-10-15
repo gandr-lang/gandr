@@ -86,30 +86,30 @@
 //!     .iter()
 //!     .filter_map(|lowered| {
 //!         let (declared, defined) = match lowered.outcome() {
-//!             | DeclarationOutcome::Completed {
+//!             DeclarationOutcome::Completed {
 //!                 declared_type,
 //!                 body,
 //!             } => (Maybe::Present(declared_type), Maybe::Present(body)),
-//!             | DeclarationOutcome::Uncompleted { declared_type } => (
+//!             DeclarationOutcome::Uncompleted { declared_type } => (
 //!                 Maybe::Present(declared_type),
 //!                 Maybe::Absent(body::Absent::Hole),
 //!             ),
-//!             | DeclarationOutcome::Bodied { body } => (
+//!             DeclarationOutcome::Bodied { body } => (
 //!                 Maybe::Absent(signature::Absent::Unsigned),
 //!                 Maybe::Present(body),
 //!             ),
-//!             | DeclarationOutcome::Data(index) => {
+//!             DeclarationOutcome::Data(index) => {
 //!                 let origin = OriginToken::from(usize::from(lowered.origin()));
 //!                 return match module.data(index) {
-//!                     | Maybe::Present(signature) => Some(Declaration::data(
+//!                     Maybe::Present(signature) => Some(Declaration::data(
 //!                         lowered.constant(),
 //!                         std::sync::Arc::clone(signature),
 //!                         origin,
 //!                     )),
-//!                     | Maybe::Absent(_) => None,
+//!                     Maybe::Absent(_) => None,
 //!                 };
 //!             },
-//!             | DeclarationOutcome::Abstract(sealing) => {
+//!             DeclarationOutcome::Abstract(sealing) => {
 //!                 let site = SealSite::new(
 //!                     SealingSite::from(usize::from(sealing.sealing)),
 //!                     ComponentOrdinal::from(usize::from(sealing.component)),
@@ -125,7 +125,7 @@
 //!                     OriginToken::from(usize::from(lowered.origin())),
 //!                 ));
 //!             },
-//!             | DeclarationOutcome::Refused(_) => return None,
+//!             DeclarationOutcome::Refused(_) => return None,
 //!         };
 //!         let origin = OriginToken::from(usize::from(lowered.origin()));
 //!         Some(Declaration::new(

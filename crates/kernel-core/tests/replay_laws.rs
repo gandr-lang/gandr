@@ -242,12 +242,12 @@ mod laws
         let mut covered = [false; 6];
         for (sides, claim, trace, reason, class) in rows {
             let row = match reason {
-                | ReplayRefusal::Unreadable => 0,
-                | ReplayRefusal::Inapplicable { .. } => 1,
-                | ReplayRefusal::NonAuthoritative { .. } => 2,
-                | ReplayRefusal::Contradicted { .. } => 3,
-                | ReplayRefusal::Exhausted => 4,
-                | ReplayRefusal::Leftover { .. } => 5,
+                ReplayRefusal::Unreadable => 0,
+                ReplayRefusal::Inapplicable { .. } => 1,
+                ReplayRefusal::NonAuthoritative { .. } => 2,
+                ReplayRefusal::Contradicted { .. } => 3,
+                ReplayRefusal::Exhausted => 4,
+                ReplayRefusal::Leftover { .. } => 5,
             };
             covered[row] = true;
             assert_eq!(

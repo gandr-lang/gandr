@@ -195,19 +195,19 @@ fn round_trips_to_identity(
 ) -> RoundTripIdentity
 {
     let valid = match (a, b) {
-        | (&Elaborated::Trivial, &Elaborated::Trivial) => true,
-        | (&Elaborated::Cert(ref ca), &Elaborated::Cert(ref cb)) => {
+        (&Elaborated::Trivial, &Elaborated::Trivial) => true,
+        (&Elaborated::Cert(ref ca), &Elaborated::Cert(ref cb)) => {
             if ca.joins_at != cb.overlap.peak {
                 return RoundTripIdentity::from(false);
             }
             let composite = compose_invertible(ca, cb);
             composite.overlap.peak == composite.joins_at && bool::from(composite.replay(cells))
         },
-        | (&Elaborated::Trivial, &Elaborated::Cert(ref c))
+        (&Elaborated::Trivial, &Elaborated::Cert(ref c))
         | (&Elaborated::Cert(ref c), &Elaborated::Trivial) => {
             c.overlap.peak == c.joins_at && bool::from(c.replay(cells))
         },
-        | (&Elaborated::Stuck, _) | (_, &Elaborated::Stuck) => false,
+        (&Elaborated::Stuck, _) | (_, &Elaborated::Stuck) => false,
     };
     RoundTripIdentity::from(valid)
 }
@@ -294,7 +294,7 @@ impl ProtypeIso
             resolve_cert(&self.fwd, derivations),
             resolve_cert(&self.bwd, derivations),
         ) {
-            | (Maybe::Present(fwd), Maybe::Present(bwd)) => {
+            (Maybe::Present(fwd), Maybe::Present(bwd)) => {
                 let fwd = fwd.elaborate();
                 let bwd = bwd.elaborate();
                 IsoValidity::from(
@@ -302,7 +302,7 @@ impl ProtypeIso
                         && bool::from(round_trips_to_identity(&bwd, &fwd, cells)),
                 )
             },
-            | _ => IsoValidity::from(false),
+            _ => IsoValidity::from(false),
         }
     }
 }
@@ -327,12 +327,23 @@ fn resolve_cert<'env>(
 ) -> Maybe<&'env Derivation, witness_resolution::Absent>
 {
     match *term.to_node().kind() {
-        | ProtermKind::Cert { id } => match derivations.get(usize::from(DerivationIndex::from(id)))
-        {
-            | Some(derivation) => Maybe::Present(derivation),
-            | None => Maybe::Absent(witness_resolution::Absent::Unbound(id)),
-        },
-        | _ => Maybe::Absent(witness_resolution::Absent::NotCertificate),
+        ProtermKind::Cert { id } => derivations
+            .get(usize::from(DerivationIndex::from(id)))
+            .map_or(
+                Maybe::Absent(witness_resolution::Absent::Unbound(id)),
+                Maybe::Present,
+            ),
+        ProtermKind::Var { .. }
+        | ProtermKind::Refl { .. }
+        | ProtermKind::PathInd { .. }
+        | ProtermKind::Pair { .. }
+        | ProtermKind::SeamInd
+        | ProtermKind::Lam { .. }
+        | ProtermKind::App
+        | ProtermKind::ProdIntro
+        | ProtermKind::ProjL
+        | ProtermKind::ProjR
+        | ProtermKind::UnitTerm => Maybe::Absent(witness_resolution::Absent::NotCertificate),
     }
 }
 quenchant_shape::reason_enum! {

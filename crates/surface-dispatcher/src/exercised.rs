@@ -125,18 +125,18 @@ impl fmt::Display for Row
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::LambdaChecks => "a lambda checks",
-            | Self::ReturnChecks => "a return checks",
-            | Self::ForceSynthesises => "a force synthesises",
-            | Self::ApplicationSynthesises => "an application synthesises",
-            | Self::SubsumptionBridge => "the subsumption bridge",
-            | Self::UndefinedTermName => "an undefined term name",
-            | Self::UndefinedTypeHead => "an undefined type head",
-            | Self::ShapeRefusal => "a shape refusal",
-            | Self::NonSynthesisableHead => "a non-synthesisable head",
-            | Self::NonSynthesisableDefinition => "a non-synthesisable definition",
-            | Self::ReservedForm => "an engine capability boundary",
-            | Self::AddressableObligation => "an addressable obligation",
+            Self::LambdaChecks => "a lambda checks",
+            Self::ReturnChecks => "a return checks",
+            Self::ForceSynthesises => "a force synthesises",
+            Self::ApplicationSynthesises => "an application synthesises",
+            Self::SubsumptionBridge => "the subsumption bridge",
+            Self::UndefinedTermName => "an undefined term name",
+            Self::UndefinedTypeHead => "an undefined type head",
+            Self::ShapeRefusal => "a shape refusal",
+            Self::NonSynthesisableHead => "a non-synthesisable head",
+            Self::NonSynthesisableDefinition => "a non-synthesisable definition",
+            Self::ReservedForm => "an engine capability boundary",
+            Self::AddressableObligation => "an addressable obligation",
         })
     }
 }
@@ -217,18 +217,18 @@ impl Exercised
     ) -> DeclarationCount
     {
         match row {
-            | Row::LambdaChecks => self.lambda_checks,
-            | Row::ReturnChecks => self.return_checks,
-            | Row::ForceSynthesises => self.force_synthesises,
-            | Row::ApplicationSynthesises => self.application_synthesises,
-            | Row::SubsumptionBridge => self.subsumption_bridge,
-            | Row::UndefinedTermName => self.undefined_term_name,
-            | Row::UndefinedTypeHead => self.undefined_type_head,
-            | Row::ShapeRefusal => self.shape_refusal,
-            | Row::NonSynthesisableHead => self.non_synthesisable_head,
-            | Row::NonSynthesisableDefinition => self.non_synthesisable_definition,
-            | Row::ReservedForm => self.reserved_form,
-            | Row::AddressableObligation => self.addressable_obligation,
+            Row::LambdaChecks => self.lambda_checks,
+            Row::ReturnChecks => self.return_checks,
+            Row::ForceSynthesises => self.force_synthesises,
+            Row::ApplicationSynthesises => self.application_synthesises,
+            Row::SubsumptionBridge => self.subsumption_bridge,
+            Row::UndefinedTermName => self.undefined_term_name,
+            Row::UndefinedTypeHead => self.undefined_type_head,
+            Row::ShapeRefusal => self.shape_refusal,
+            Row::NonSynthesisableHead => self.non_synthesisable_head,
+            Row::NonSynthesisableDefinition => self.non_synthesisable_definition,
+            Row::ReservedForm => self.reserved_form,
+            Row::AddressableObligation => self.addressable_obligation,
         }
     }
 
@@ -379,18 +379,18 @@ impl Exercised
     ) -> &mut DeclarationCount
     {
         match row {
-            | Row::LambdaChecks => &mut self.lambda_checks,
-            | Row::ReturnChecks => &mut self.return_checks,
-            | Row::ForceSynthesises => &mut self.force_synthesises,
-            | Row::ApplicationSynthesises => &mut self.application_synthesises,
-            | Row::SubsumptionBridge => &mut self.subsumption_bridge,
-            | Row::UndefinedTermName => &mut self.undefined_term_name,
-            | Row::UndefinedTypeHead => &mut self.undefined_type_head,
-            | Row::ShapeRefusal => &mut self.shape_refusal,
-            | Row::NonSynthesisableHead => &mut self.non_synthesisable_head,
-            | Row::NonSynthesisableDefinition => &mut self.non_synthesisable_definition,
-            | Row::ReservedForm => &mut self.reserved_form,
-            | Row::AddressableObligation => &mut self.addressable_obligation,
+            Row::LambdaChecks => &mut self.lambda_checks,
+            Row::ReturnChecks => &mut self.return_checks,
+            Row::ForceSynthesises => &mut self.force_synthesises,
+            Row::ApplicationSynthesises => &mut self.application_synthesises,
+            Row::SubsumptionBridge => &mut self.subsumption_bridge,
+            Row::UndefinedTermName => &mut self.undefined_term_name,
+            Row::UndefinedTypeHead => &mut self.undefined_type_head,
+            Row::ShapeRefusal => &mut self.shape_refusal,
+            Row::NonSynthesisableHead => &mut self.non_synthesisable_head,
+            Row::NonSynthesisableDefinition => &mut self.non_synthesisable_definition,
+            Row::ReservedForm => &mut self.reserved_form,
+            Row::AddressableObligation => &mut self.addressable_obligation,
         }
     }
 }
@@ -433,18 +433,18 @@ fn carried(
 {
     let mut rows = Exercised::default();
     match declaration.produced() {
-        | Produced::Judged(Verdict::Checked { body, evidence, .. }) => {
+        Produced::Judged(Verdict::Checked { body, evidence, .. }) => {
             formers(arena, body, worklist, &mut rows);
             bridged(evidence.conversions(), &mut rows);
         },
-        | Produced::Judged(Verdict::Synthesised { body, synthesised }) => {
+        Produced::Judged(Verdict::Synthesised { body, synthesised }) => {
             formers(arena, body, worklist, &mut rows);
             bridged(synthesised.conversions(), &mut rows);
         },
-        | Produced::Judged(Verdict::Owed(_)) => rows.mark(Row::AddressableObligation),
-        | Produced::Judged(Verdict::Refused(refusal)) => checking_row(refusal, lowered, &mut rows),
-        | Produced::Unlowered(refusal) => lowering_row(refusal, &mut rows),
-        | Produced::Judged(Verdict::Data) | Produced::Guarded(_) => {},
+        Produced::Judged(Verdict::Owed(_)) => rows.mark(Row::AddressableObligation),
+        Produced::Judged(Verdict::Refused(refusal)) => checking_row(refusal, lowered, &mut rows),
+        Produced::Unlowered(refusal) => lowering_row(refusal, &mut rows),
+        Produced::Judged(Verdict::Data) | Produced::Guarded(_) => {},
     }
     rows
 }
@@ -516,21 +516,21 @@ fn checking_row(
 )
 {
     match refusal {
-        | CheckRefusal::ShapeMismatch {
+        CheckRefusal::ShapeMismatch {
             wanted: ExpectedShape::Returner,
             ..
         } => rows.mark(Row::ShapeRefusal),
-        | CheckRefusal::NotSynthesisable {
+        CheckRefusal::NotSynthesisable {
             form: CheckingForm::Lambda(_),
         } => rows.mark(Row::NonSynthesisableHead),
-        | CheckRefusal::NotSynthesisable {
+        CheckRefusal::NotSynthesisable {
             form: CheckingForm::Thunk(thunk),
         } => {
             if is_whole_unsigned_body(lowered, thunk) == WholeBody::Whole {
                 rows.mark(Row::NonSynthesisableDefinition);
             }
         },
-        | CheckRefusal::NotADataType(_)
+        CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
         | CheckRefusal::DataFieldLevel { .. }
         | CheckRefusal::RuleNotPresentable { .. }
@@ -671,8 +671,8 @@ fn is_whole_unsigned_body(
 ) -> WholeBody
 {
     match lowered.outcome() {
-        | DeclarationOutcome::Bodied { body } if body == thunk => WholeBody::Whole,
-        | DeclarationOutcome::Bodied { .. }
+        DeclarationOutcome::Bodied { body } if body == thunk => WholeBody::Whole,
+        DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Completed { .. }
         | DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
@@ -716,13 +716,13 @@ fn lowering_row(
 )
 {
     match refusal {
-        | LoweringRefusal::UnresolvedName { .. } => rows.mark(Row::UndefinedTermName),
-        | LoweringRefusal::UnresolvedTypeHead { .. } => rows.mark(Row::UndefinedTypeHead),
-        | LoweringRefusal::OutOfFragment {
+        LoweringRefusal::UnresolvedName { .. } => rows.mark(Row::UndefinedTermName),
+        LoweringRefusal::UnresolvedTypeHead { .. } => rows.mark(Row::UndefinedTypeHead),
+        LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::Reserved,
             ..
         } => rows.mark(Row::ReservedForm),
-        | LoweringRefusal::OutOfFragment {
+        LoweringRefusal::OutOfFragment {
             boundary:
                 FragmentBoundary::Unadmitted
                 | FragmentBoundary::WrongSort
@@ -815,26 +815,26 @@ fn formers(
     worklist.push(Node::Value(body));
     while let Some(node) = worklist.pop() {
         match node {
-            | Node::Value(id) => match arena.value(id) {
-                | Some(&Value::Constructor { ref fields, .. }) => {
+            Node::Value(id) => match arena.value(id) {
+                Some(&Value::Constructor { ref fields, .. }) => {
                     worklist.extend(fields.iter().copied().map(Node::Value));
                 },
-                | Some(&Value::Record(ref fields)) => {
+                Some(&Value::Record(ref fields)) => {
                     worklist.extend(fields.values().copied().map(Node::Value));
                 },
-                | Some(&Value::Reify(ref frames)) => {
+                Some(&Value::Reify(ref frames)) => {
                     worklist.extend(frames.iter().filter_map(|frame| match *frame {
-                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
                             Some(Node::Value(value))
                         },
-                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                        gandr_core_term::control::StackFrame::Bind(body) => {
                             Some(Node::Computation(body))
                         },
-                        | gandr_core_term::control::StackFrame::Project(_) => None,
+                        gandr_core_term::control::StackFrame::Project(_) => None,
                     }));
                 },
-                | Some(&Value::Thunk(suspended)) => worklist.push(Node::Computation(suspended)),
-                | Some(
+                Some(&Value::Thunk(suspended)) => worklist.push(Node::Computation(suspended)),
+                Some(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
@@ -861,10 +861,10 @@ fn formers(
                     worklist.push(Node::Value(first));
                     worklist.push(Node::Value(second));
                 },
-                | Some(&Value::Tuple(ref components)) => {
+                Some(&Value::Tuple(ref components)) => {
                     worklist.extend(components.iter().map(|&component| Node::Value(component)));
                 },
-                | Some(
+                Some(
                     &(Value::PathRefl(injected)
                     | Value::Here(injected)
                     | Value::Stay(injected)
@@ -873,16 +873,16 @@ fn formers(
                 ) => {
                     worklist.push(Node::Value(injected));
                 },
-                | Some(&Value::Recorded(ref moves)) => {
+                Some(&Value::Recorded(ref moves)) => {
                     worklist.extend(moves.iter().filter_map(|step| match step.payload() {
-                        | quenchant_shape::shape::Maybe::Present(payload) => {
+                        quenchant_shape::shape::Maybe::Present(payload) => {
                             Some(Node::Value(payload))
                         },
-                        | quenchant_shape::shape::Maybe::Absent(_) => None,
+                        quenchant_shape::shape::Maybe::Absent(_) => None,
                     }));
                 },
-                | Some(&Value::Lift { body: lifted, .. }) => worklist.push(Node::Value(lifted)),
-                | Some(
+                Some(&Value::Lift { body: lifted, .. }) => worklist.push(Node::Value(lifted)),
+                Some(
                     &(Value::Returned(computation)
                     | Value::Nested(computation)
                     | Value::Run(computation)),
@@ -893,7 +893,7 @@ fn formers(
                 // application build one, whose codes are values that hold no
                 // computation former, so they mark no row. A hole holds
                 // nothing, and a mark's body is not judged, so neither does.
-                | Some(
+                Some(
                     &Value::Primitive { .. }
                     | &(Value::Variable { .. }
                     | Value::Constant(_)
@@ -908,8 +908,8 @@ fn formers(
                 )
                 | None => {},
             },
-            | Node::Computation(id) => match arena.computation(id) {
-                | Some(&Computation::DataCase {
+            Node::Computation(id) => match arena.computation(id) {
+                Some(&Computation::DataCase {
                     scrutinee,
                     ref branches,
                     ..
@@ -917,16 +917,16 @@ fn formers(
                     worklist.push(Node::Value(scrutinee));
                     worklist.extend(branches.iter().copied().map(Node::Computation));
                 },
-                | Some(
+                Some(
                     &(Computation::RecordProjection(record, _)
                     | Computation::TupleProjection(record, _)),
                 ) => {
                     worklist.push(Node::Value(record));
                 },
-                | Some(&Computation::Perform { payload, .. }) => {
+                Some(&Computation::Perform { payload, .. }) => {
                     worklist.push(Node::Value(payload));
                 },
-                | Some(
+                Some(
                     &(Computation::Handle {
                         subject,
                         on_return,
@@ -943,12 +943,12 @@ fn formers(
                     worklist.extend([Node::Computation(subject), Node::Computation(on_return)]);
                     worklist.extend(clauses.iter().map(|clause| Node::Computation(clause.body)));
                 },
-                | Some(&Computation::Exercise {
+                Some(&Computation::Exercise {
                     capability,
                     payload,
                     ..
                 }) => worklist.extend([Node::Value(capability), Node::Value(payload)]),
-                | Some(
+                Some(
                     &(Computation::Resume(value, body)
                     | Computation::Split {
                         scrutinee: value,
@@ -958,16 +958,16 @@ fn formers(
                 ) => {
                     worklist.extend([Node::Value(value), Node::Computation(body)]);
                 },
-                | Some(
+                Some(
                     &(Computation::Reset(body)
                     | Computation::Shift(body)
                     | Computation::Project(_, body)),
                 ) => worklist.push(Node::Computation(body)),
-                | Some(&Computation::With(first, second)) => {
+                Some(&Computation::With(first, second)) => {
                     worklist.extend([Node::Computation(first), Node::Computation(second)]);
                 },
 
-                | Some(&Computation::ListFold {
+                Some(&Computation::ListFold {
                     list,
                     on_nil,
                     on_cons,
@@ -977,10 +977,10 @@ fn formers(
                     Node::Computation(on_nil),
                     Node::Computation(on_cons),
                 ]),
-                | Some(&Computation::Primitive { ref arguments, .. }) => {
+                Some(&Computation::Primitive { ref arguments, .. }) => {
                     worklist.extend(arguments.iter().copied().map(Node::Value));
                 },
-                | Some(
+                Some(
                     &(Computation::Transport(path, value)
                     | Computation::PathTransport { path, value, .. }
                     | Computation::Ride {
@@ -989,7 +989,7 @@ fn formers(
                 ) => {
                     worklist.extend([Node::Value(path), Node::Value(value)]);
                 },
-                | Some(&Computation::TelescopeTransport {
+                Some(&Computation::TelescopeTransport {
                     path,
                     start,
                     over,
@@ -998,42 +998,42 @@ fn formers(
                 }) => {
                     worklist.extend([path, start, over, value].map(Node::Value));
                 },
-                | Some(&Computation::Lambda(under)) => {
+                Some(&Computation::Lambda(under)) => {
                     rows.mark(Row::LambdaChecks);
                     worklist.push(Node::Computation(under));
                 },
-                | Some(&Computation::Application(head, argument)) => {
+                Some(&Computation::Application(head, argument)) => {
                     rows.mark(Row::ApplicationSynthesises);
                     worklist.push(Node::Computation(head));
                     worklist.push(Node::Value(argument));
                 },
-                | Some(&Computation::Return(returned)) => {
+                Some(&Computation::Return(returned)) => {
                     rows.mark(Row::ReturnChecks);
                     worklist.push(Node::Value(returned));
                 },
-                | Some(&Computation::Force(forced)) => {
+                Some(&Computation::Force(forced)) => {
                     rows.mark(Row::ForceSynthesises);
                     worklist.push(Node::Value(forced));
                 },
-                | Some(&Computation::Bind(first, then)) => {
+                Some(&Computation::Bind(first, then)) => {
                     worklist.push(Node::Computation(first));
                     worklist.push(Node::Computation(then));
                 },
-                | Some(&Computation::Case {
+                Some(&Computation::Case {
                     scrutinee,
                     ref branches,
                 }) => {
                     worklist.push(Node::Value(scrutinee));
                     worklist.extend(branches.iter().map(|&branch| Node::Computation(branch)));
                 },
-                | Some(&Computation::Fixpoint { body, .. }) => {
+                Some(&Computation::Fixpoint { body, .. }) => {
                     worklist.push(Node::Computation(body));
                 },
-                | Some(&Computation::Session(ref action)) => {
+                Some(&Computation::Session(ref action)) => {
                     worklist.extend(action.values().map(Node::Value));
                     worklist.extend(action.computations().map(Node::Computation));
                 },
-                | Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None => {},
+                Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None => {},
             },
         }
     }
@@ -1094,9 +1094,9 @@ mod tests
         let grammar = built_in().expect("the built-in grammar builds");
         let mut lowerings = LoweringCount::default();
         match compose(&grammar, CorpusRoot::Fixture, source, &mut lowerings) {
-            | Ok(Composed::Settled { exercised, .. }) => exercised,
-            | Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),
-            | Err(fault) => panic!("faulted: {fault}"),
+            Ok(Composed::Settled { exercised, .. }) => exercised,
+            Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),
+            Err(fault) => panic!("faulted: {fault}"),
         }
     }
 
@@ -1256,9 +1256,9 @@ def d : Integer ;
         left.absorb(&right);
         for row in Row::ALL {
             let expected = match row {
-                | Row::LambdaChecks => 5_usize,
-                | Row::ReservedForm | Row::AddressableObligation => 1_usize,
-                | Row::ReturnChecks
+                Row::LambdaChecks => 5_usize,
+                Row::ReservedForm | Row::AddressableObligation => 1_usize,
+                Row::ReturnChecks
                 | Row::ForceSynthesises
                 | Row::ApplicationSynthesises
                 | Row::SubsumptionBridge

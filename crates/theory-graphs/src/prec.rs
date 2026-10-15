@@ -306,9 +306,9 @@ impl Display for PrecSpecError
     ) -> FmtResult
     {
         match *self {
-            | Self::CapacityExceeded => f.write_str("precedence id capacity exceeded"),
-            | Self::DuplicateName { ref name } => write!(f, "duplicate precedence name {name}"),
-            | Self::InvalidEdge {
+            Self::CapacityExceeded => f.write_str("precedence id capacity exceeded"),
+            Self::DuplicateName { ref name } => write!(f, "duplicate precedence name {name}"),
+            Self::InvalidEdge {
                 tighter,
                 looser,
                 node_count,
@@ -651,9 +651,9 @@ impl Display for PrecDagError
     ) -> FmtResult
     {
         match *self {
-            | Self::Cycle(ref cycle) => Display::fmt(cycle, f),
-            | Self::Graph(ref error) => Display::fmt(error, f),
-            | Self::Inconsistent => f.write_str("precedence linear extension is inconsistent"),
+            Self::Cycle(ref cycle) => Display::fmt(cycle, f),
+            Self::Graph(ref error) => Display::fmt(error, f),
+            Self::Inconsistent => f.write_str("precedence linear extension is inconsistent"),
         }
     }
 }
@@ -668,9 +668,9 @@ impl Error for PrecDagError
     fn source(&self) -> Option<&(dyn Error + 'static)>
     {
         match *self {
-            | Self::Cycle(ref cycle) => Some(cycle),
-            | Self::Graph(ref error) => Some(error),
-            | Self::Inconsistent => None,
+            Self::Cycle(ref cycle) => Some(cycle),
+            Self::Graph(ref error) => Some(error),
+            Self::Inconsistent => None,
         }
     }
 }
@@ -1070,12 +1070,12 @@ impl PrecDag
     ) -> PrecedenceComparison
     {
         match (left, right) {
-            | (Bound::Root, _) | (_, Bound::Bottom) => PrecedenceComparison::from(false),
-            | (Bound::Bottom, Bound::Root) => PrecedenceComparison::from(true),
-            | (Bound::Bottom, Bound::Value(prec)) | (Bound::Value(prec), Bound::Root) => {
+            (Bound::Root, _) | (_, Bound::Bottom) => PrecedenceComparison::from(false),
+            (Bound::Bottom, Bound::Root) => PrecedenceComparison::from(true),
+            (Bound::Bottom, Bound::Value(prec)) | (Bound::Value(prec), Bound::Root) => {
                 PrecedenceComparison::from(bool::from(self.knows(prec)))
             },
-            | (Bound::Value(left), Bound::Value(right)) => self.lt(left, right, assoc),
+            (Bound::Value(left), Bound::Value(right)) => self.lt(left, right, assoc),
         }
     }
 
@@ -1111,12 +1111,12 @@ impl PrecDag
     ) -> PrecedenceComparison
     {
         match (left, right) {
-            | (Bound::Bottom, _) | (_, Bound::Root) => PrecedenceComparison::from(false),
-            | (Bound::Root, Bound::Bottom) => PrecedenceComparison::from(true),
-            | (Bound::Root, Bound::Value(prec)) | (Bound::Value(prec), Bound::Bottom) => {
+            (Bound::Bottom, _) | (_, Bound::Root) => PrecedenceComparison::from(false),
+            (Bound::Root, Bound::Bottom) => PrecedenceComparison::from(true),
+            (Bound::Root, Bound::Value(prec)) | (Bound::Value(prec), Bound::Bottom) => {
                 PrecedenceComparison::from(bool::from(self.knows(prec)))
             },
-            | (Bound::Value(left), Bound::Value(right)) => self.gt(left, right, assoc),
+            (Bound::Value(left), Bound::Value(right)) => self.gt(left, right, assoc),
         }
     }
 
@@ -1151,11 +1151,11 @@ impl PrecDag
     ) -> PrecedenceComparison
     {
         match (left, right) {
-            | (Bound::Value(left), Bound::Value(right)) => self.eq(left, right, assoc),
-            | (Bound::Bottom, Bound::Bottom) | (Bound::Root, Bound::Root) => {
+            (Bound::Value(left), Bound::Value(right)) => self.eq(left, right, assoc),
+            (Bound::Bottom, Bound::Bottom) | (Bound::Root, Bound::Root) => {
                 PrecedenceComparison::from(true)
             },
-            | (Bound::Bottom, Bound::Root | Bound::Value(_))
+            (Bound::Bottom, Bound::Root | Bound::Value(_))
             | (Bound::Root, Bound::Bottom | Bound::Value(_))
             | (Bound::Value(_), Bound::Bottom | Bound::Root) => PrecedenceComparison::from(false),
         }
@@ -1192,14 +1192,14 @@ impl PrecDag
     ) -> PrecedenceComparison
     {
         match (left, right) {
-            | (Bound::Bottom | Bound::Root, Bound::Bottom | Bound::Root) => {
+            (Bound::Bottom | Bound::Root, Bound::Bottom | Bound::Root) => {
                 PrecedenceComparison::from(true)
             },
-            | (Bound::Bottom | Bound::Root, Bound::Value(prec))
+            (Bound::Bottom | Bound::Root, Bound::Value(prec))
             | (Bound::Value(prec), Bound::Bottom | Bound::Root) => {
                 PrecedenceComparison::from(bool::from(self.knows(prec)))
             },
-            | (Bound::Value(left), Bound::Value(right)) => self.comparable(left, right),
+            (Bound::Value(left), Bound::Value(right)) => self.comparable(left, right),
         }
     }
 
@@ -1769,9 +1769,9 @@ fn word_of_len<T>(items: &[T]) -> FingerprintWord64
 fn assoc_tag(assoc: Assoc) -> FingerprintByte
 {
     match assoc {
-        | Assoc::Non => FingerprintByte::from(0_u8),
-        | Assoc::Left => FingerprintByte::from(1_u8),
-        | Assoc::Right => FingerprintByte::from(2_u8),
+        Assoc::Non => FingerprintByte::from(0_u8),
+        Assoc::Left => FingerprintByte::from(1_u8),
+        Assoc::Right => FingerprintByte::from(2_u8),
     }
 }
 

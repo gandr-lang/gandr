@@ -400,12 +400,12 @@ fn named_kind_coverage_is_semantic() -> Result<(), Box<dyn Error>>
         .any(|&(form_sort, _prec)| form_sort == Sort::Item);
     for entry in named_kind_parity() {
         match entry.realization {
-            | NamedKindRealization::StructuralForms => assert!(
+            NamedKindRealization::StructuralForms => assert!(
                 realised.contains(entry.kind),
                 "named kind {} is realised by a form or an adaptation",
                 entry.kind
             ),
-            | NamedKindRealization::FileRoot => assert!(item_has_forms),
+            NamedKindRealization::FileRoot => assert!(item_has_forms),
         }
     }
     let inventoried: Vec<&str> = named_kind_parity()

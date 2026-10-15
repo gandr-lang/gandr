@@ -140,8 +140,8 @@ impl<'catalogue> Site<'catalogue>
         for (source_index, _) in catalogue.entries() {
             for (target_index, target) in catalogue.entries() {
                 let maps = match catalogue.maps(source_index, target_index) {
-                    | quenchant_shape::shape::Maybe::Present(maps) => maps,
-                    | quenchant_shape::shape::Maybe::Absent(_) => &[],
+                    quenchant_shape::shape::Maybe::Present(maps) => maps,
+                    quenchant_shape::shape::Maybe::Absent(_) => &[],
                 };
                 arrows.push(
                     maps.iter()
@@ -315,9 +315,9 @@ impl Part
     ) -> Membership
     {
         match self {
-            | Self::Whole => Membership::Inside,
-            | Self::Raising => arrow.raising,
-            | Self::Lowering => arrow.lowering,
+            Self::Whole => Membership::Inside,
+            Self::Raising => arrow.raising,
+            Self::Lowering => arrow.lowering,
         }
     }
 
@@ -332,9 +332,9 @@ impl Part
     ) -> Membership
     {
         match self {
-            | Self::Whole => Membership::Inside,
-            | Self::Raising => map.raising(),
-            | Self::Lowering => map.lowering(target),
+            Self::Whole => Membership::Inside,
+            Self::Raising => map.raising(),
+            Self::Lowering => map.lowering(target),
         }
     }
 }
@@ -588,15 +588,15 @@ pub fn degree_order(
         let (low, high) = (Degree::of(from), Degree::of(to));
         for arrow in site.arrows(source, target) {
             let ordered = match (arrow.invertibility, arrow.raising, arrow.lowering, scope) {
-                | (Invertibility::Invertible, ..) => low == high,
-                | (Invertibility::NotInvertible, Membership::Inside, ..) => low < high,
-                | (
+                (Invertibility::Invertible, ..) => low == high,
+                (Invertibility::NotInvertible, Membership::Inside, ..) => low < high,
+                (
                     Invertibility::NotInvertible,
                     Membership::Outside,
                     Membership::Inside,
                     Scope::Both,
                 ) => high < low,
-                | (
+                (
                     Invertibility::NotInvertible,
                     Membership::Outside,
                     Membership::Inside,
@@ -660,8 +660,8 @@ pub fn direct_core(site: &Site<'_>) -> Outcome<MapCase>
         for arrow in site.arrows(source, target) {
             tally.count();
             let ordered = match arrow.invertibility {
-                | Invertibility::Invertible => low == high,
-                | Invertibility::NotInvertible => low < high,
+                Invertibility::Invertible => low == high,
+                Invertibility::NotInvertible => low < high,
             };
             if arrow.raising == Membership::Outside || !ordered {
                 return tally.fails(site.case((source, target), arrow.map));
@@ -752,10 +752,10 @@ impl fmt::Display for FactorizationDefect
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Missing => "no factorization",
-            | Self::SeveralMiddles => "middles of different classes",
-            | Self::Unrelated => "two factorizations not related by an isomorphism",
-            | Self::NotUniquelyRelated => "two factorizations related by several isomorphisms",
+            Self::Missing => "no factorization",
+            Self::SeveralMiddles => "middles of different classes",
+            Self::Unrelated => "two factorizations not related by an isomorphism",
+            Self::NotUniquelyRelated => "two factorizations related by several isomorphisms",
         })
     }
 }
@@ -911,9 +911,9 @@ fn factorization_defect(
             })
             .count();
         match connecting {
-            | 0 => return Some(FactorizationDefect::Unrelated),
-            | 1 => {},
-            | _ => return Some(FactorizationDefect::NotUniquelyRelated),
+            0 => return Some(FactorizationDefect::Unrelated),
+            1 => {},
+            _ => return Some(FactorizationDefect::NotUniquelyRelated),
         }
     }
     None
@@ -1408,8 +1408,8 @@ pub fn codegeneracies(site: &Site<'_>) -> Outcome<MapCase>
             let points = usize::from(from.point_count())
                 == usize::from(to.point_count()).saturating_add(removed);
             let cores = match (from.core(), to.core()) {
-                | (Ok(left), Ok(right)) => left.key() == right.key(),
-                | _ => false,
+                (Ok(left), Ok(right)) => left.key() == right.key(),
+                _ => false,
             };
             let lowered =
                 Degree::of(from) == Degree::of(to).raised_by(deletion.map.kernel().count());

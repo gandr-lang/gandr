@@ -93,8 +93,8 @@ impl fmt::Display for ScopeError
     ) -> fmt::Result
     {
         match *self {
-            | Self::Rejected(ref rejection) => fmt::Display::fmt(rejection, f),
-            | Self::NoOpenSection => f.write_str("no open section to close"),
+            Self::Rejected(ref rejection) => fmt::Display::fmt(rejection, f),
+            Self::NoOpenSection => f.write_str("no open section to close"),
         }
     }
 }

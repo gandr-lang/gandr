@@ -154,9 +154,9 @@ impl fmt::Display for Standing
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Within => "within",
-            | Self::Over => "**over**",
-            | Self::Unmeasured => "unmeasured",
+            Self::Within => "within",
+            Self::Over => "**over**",
+            Self::Unmeasured => "unmeasured",
         })
     }
 }
@@ -227,9 +227,9 @@ impl Row
     pub fn standing(&self) -> Standing
     {
         match self.median {
-            | Maybe::Present(median) if median > self.limit => Standing::Over,
-            | Maybe::Present(_) => Standing::Within,
-            | Maybe::Absent(Unsampled::NoSuccessfulJob) => Standing::Unmeasured,
+            Maybe::Present(median) if median > self.limit => Standing::Over,
+            Maybe::Present(_) => Standing::Within,
+            Maybe::Absent(Unsampled::NoSuccessfulJob) => Standing::Unmeasured,
         }
     }
 }
@@ -393,8 +393,8 @@ impl fmt::Display for Report
         writeln!(f, "| --- | --- | ---: | ---: | ---: | --- |")?;
         for row in &self.rows {
             let median = match row.median {
-                | Maybe::Present(median) => median.to_string(),
-                | Maybe::Absent(Unsampled::NoSuccessfulJob) => "—".to_owned(),
+                Maybe::Present(median) => median.to_string(),
+                Maybe::Absent(Unsampled::NoSuccessfulJob) => "—".to_owned(),
             };
             writeln!(
                 f,

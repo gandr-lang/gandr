@@ -140,8 +140,8 @@ impl Lints
         let mut lints = Self::default();
         for lint in enabled {
             match lint {
-                | Lint::ExplicitExits => lints.explicit_exits = Reach::Everywhere,
-                | Lint::ExplicitRuns => lints.explicit_runs = AskedRuns::Every,
+                Lint::ExplicitExits => lints.explicit_exits = Reach::Everywhere,
+                Lint::ExplicitRuns => lints.explicit_runs = AskedRuns::Every,
             }
         }
         lints
@@ -235,14 +235,14 @@ pub fn shown(
 ) -> Shown
 {
     match (declaration.settlement(), unsettled_by(declaration), verb) {
-        | (Settlement::Unsettled, Unsettled::Obligations, Verb::Check(Goals::Reported)) => {
+        (Settlement::Unsettled, Unsettled::Obligations, Verb::Check(Goals::Reported)) => {
             Shown::Goal
         },
-        | (Settlement::Unsettled, Unsettled::Obligations | Unsettled::Verdict, _) => Shown::Line,
-        | (Settlement::Settled, _, Verb::Test) if declaration.membership() == Membership::Fixture => {
+        (Settlement::Unsettled, Unsettled::Obligations | Unsettled::Verdict, _) => Shown::Line,
+        (Settlement::Settled, _, Verb::Test) if declaration.membership() == Membership::Fixture => {
             Shown::Line
         },
-        | (Settlement::Settled, _, Verb::Test | Verb::Check(_)) => Shown::Counted,
+        (Settlement::Settled, _, Verb::Test | Verb::Check(_)) => Shown::Counted,
     }
 }
 
@@ -280,8 +280,8 @@ enum Unsettled
 fn unsettled_by(declaration: &DeclarationReport<'_>) -> Unsettled
 {
     match (declaration.stated(), declaration.outcome()) {
-        | (&Stated::Verdict(Outcome::Checks(_)), Outcome::Checks(_)) => Unsettled::Obligations,
-        | (
+        (&Stated::Verdict(Outcome::Checks(_)), Outcome::Checks(_)) => Unsettled::Obligations,
+        (
             &(Stated::Verdict(
                 Outcome::Checks(_)
                 | Outcome::Refuses(_)
@@ -322,9 +322,9 @@ impl fmt::Display for RunVerdict
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Settled => "settled",
-            | Self::Unsettled => "unsettled",
-            | Self::Faulted => "faulted",
+            Self::Settled => "settled",
+            Self::Unsettled => "unsettled",
+            Self::Faulted => "faulted",
         })
     }
 }
@@ -676,8 +676,8 @@ impl RunReport
         let engine = self.tally.refusals().count(FailureClass::EngineFault);
         let unsettled = usize::from(self.tally.declarations().unsettled());
         let gating = match verb {
-            | Verb::Check(Goals::Reported) => unsettled.saturating_sub(usize::from(self.goals)),
-            | Verb::Check(Goals::Gated) | Verb::Test => unsettled,
+            Verb::Check(Goals::Reported) => unsettled.saturating_sub(usize::from(self.goals)),
+            Verb::Check(Goals::Gated) | Verb::Test => unsettled,
         };
         if usize::from(self.sources.faulted) > 0_usize || usize::from(engine) > 0_usize {
             RunVerdict::Faulted
@@ -778,18 +778,18 @@ impl RunReport
     )
     {
         let slot = match root {
-            | SourceRoot::Strict => &mut self.sources.strict,
-            | SourceRoot::Fixture => &mut self.sources.fixture,
-            | SourceRoot::Pending => &mut self.sources.pending,
+            SourceRoot::Strict => &mut self.sources.strict,
+            SourceRoot::Fixture => &mut self.sources.fixture,
+            SourceRoot::Pending => &mut self.sources.pending,
         };
         *slot = slot.one_more();
         match standing {
-            | Standing::Refused => self.sources.refused = self.sources.refused.one_more(),
-            | Standing::Lowered => {
+            Standing::Refused => self.sources.refused = self.sources.refused.one_more(),
+            Standing::Lowered => {
                 self.sources.lowered_pending = self.sources.lowered_pending.one_more();
             },
-            | Standing::Pending => return,
-            | Standing::Settled | Standing::Unsettled => {},
+            Standing::Pending => return,
+            Standing::Settled | Standing::Unsettled => {},
         }
         if let Composed::Settled {
             ref report,

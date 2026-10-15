@@ -48,8 +48,8 @@ impl Sign
     const fn reverse(self) -> Self
     {
         match self {
-            | Self::Varies(variance) => Self::Varies(variance.reverse()),
-            | Self::Invariant => Self::Invariant,
+            Self::Varies(variance) => Self::Varies(variance.reverse()),
+            Self::Invariant => Self::Invariant,
         }
     }
 }
@@ -166,23 +166,23 @@ fn walk(
     while let Some(visit) = pending.pop() {
         allowance.charge()?;
         match visit {
-            | Visit::Type(id, sign, at) => {
+            Visit::Type(id, sign, at) => {
                 let site = AnyNode::ValueType(id);
                 match *arena.value_type(id).ok_or(FlowError::Arena)? {
-                    | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                    ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                         pending.extend(parts.iter().map(|&part| Visit::Type(part, sign, at)));
                     },
-                    | ValueType::Record(ref fields) => {
+                    ValueType::Record(ref fields) => {
                         pending.extend(fields.values().map(|&field| Visit::Type(field, sign, at)));
                     },
-                    | ValueType::List(inner) | ValueType::Lift { inner, .. } => {
+                    ValueType::List(inner) | ValueType::Lift { inner, .. } => {
                         pending.push(Visit::Type(inner, sign, at));
                     },
-                    | ValueType::Thunk(body) => pending.push(Visit::Comp(body, sign, at)),
-                    | ValueType::Element { code, .. } => {
+                    ValueType::Thunk(body) => pending.push(Visit::Comp(body, sign, at)),
+                    ValueType::Element { code, .. } => {
                         pending.push(Visit::Code(code, sign, at, site));
                     },
-                    | ValueType::Flow {
+                    ValueType::Flow {
                         domain,
                         source,
                         target,
@@ -191,46 +191,77 @@ fn walk(
                         pending.push(Visit::Endpoint(target, sign, at, site));
                         pending.push(Visit::Endpoint(source, sign.reverse(), at, site));
                     },
-                    | ValueType::FlowUniverse(source, target) => {
+                    ValueType::FlowUniverse(source, target) => {
                         pending.push(Visit::Endpoint(target, sign, at, site));
                         pending.push(Visit::Endpoint(source, sign.reverse(), at, site));
                     },
-                    | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => {
-                    },
-                    | _ => pending.push(Visit::Fixed(id, at)),
+                    ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => {},
+                    ValueType::Data { .. }
+                    | ValueType::Session { .. }
+                    | ValueType::PathUniverse(..)
+                    | ValueType::Path { .. }
+                    | ValueType::Sigma { .. }
+                    | ValueType::StaticPi { .. } => pending.push(Visit::Fixed(id, at)),
                 }
             },
-            | Visit::Comp(id, sign, at) => match *arena.comp_type(id).ok_or(FlowError::Arena)? {
-                | CompType::Returner(result) => pending.push(Visit::Type(result, sign, at)),
-                | CompType::Arrow { domain, codomain } => {
+            Visit::Comp(id, sign, at) => match *arena.comp_type(id).ok_or(FlowError::Arena)? {
+                CompType::Returner(result) => pending.push(Visit::Type(result, sign, at)),
+                CompType::Arrow { domain, codomain } => {
                     pending.push(Visit::Comp(codomain, sign, at));
                     pending.push(Visit::Type(domain, sign.reverse(), at));
                 },
-                | CompType::Pi { domain, codomain } => {
+                CompType::Pi { domain, codomain } => {
                     let under = u32::from(at).checked_add(1).ok_or(FlowError::Budget)?;
                     pending.push(Visit::Comp(codomain, sign, DeBruijnIndex::from(under)));
                     pending.push(Visit::Type(domain, sign.reverse(), at));
                 },
-                | CompType::With(left, right) => {
+                CompType::With(left, right) => {
                     pending.push(Visit::Comp(right, sign, at));
                     pending.push(Visit::Comp(left, sign, at));
                 },
-                | CompType::Element { code, .. } => {
+                CompType::Element { code, .. } => {
                     pending.push(Visit::Code(code, sign, at, AnyNode::CompType(id)));
                 },
             },
-            | Visit::Code(code, sign, at, site) => match *arena
-                .value(code)
-                .ok_or(FlowError::Arena)?
-            {
-                | Value::Quote(quoted) => pending.push(Visit::Type(quoted, sign, at)),
-                | Value::QuoteComputation(quoted) => pending.push(Visit::Comp(quoted, sign, at)),
-                | _ => occurrence(arena, &mut table, code, (sign, at), site)?,
+            Visit::Code(code, sign, at, site) => {
+                match *arena.value(code).ok_or(FlowError::Arena)? {
+                    Value::Quote(quoted) => pending.push(Visit::Type(quoted, sign, at)),
+                    Value::QuoteComputation(quoted) => pending.push(Visit::Comp(quoted, sign, at)),
+                    Value::Constructor { .. }
+                    | Value::Record(_)
+                    | Value::SessionPath { .. }
+                    | Value::SessionFlow { .. }
+                    | Value::Stay { .. }
+                    | Value::ForwardFlow { .. }
+                    | Value::FunctionFlow { .. }
+                    | Value::Then { .. }
+                    | Value::FlowProduct(..)
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Here { .. }
+                    | Value::Returned(_)
+                    | Value::Higher { .. }
+                    | Value::HigherEvaluation { .. }
+                    | Value::QuantifiedEvaluation { .. }
+                    | Value::Variable(_)
+                    | Value::Constant(_)
+                    | Value::Literal(_)
+                    | Value::Tuple(_)
+                    | Value::Injection(..)
+                    | Value::ListNil
+                    | Value::ListCons(..)
+                    | Value::Thunk(_)
+                    | Value::Lift { .. }
+                    | Value::StaticApplication(..) => {
+                        occurrence(arena, &mut table, code, (sign, at), site)?;
+                    },
+                }
             },
-            | Visit::Endpoint(point, sign, at, site) => {
+            Visit::Endpoint(point, sign, at, site) => {
                 occurrence(arena, &mut table, point, (sign, at), site)?;
             },
-            | Visit::Fixed(ty, at) => {
+            Visit::Fixed(ty, at) => {
                 if reach_type(arena, &mut table, ty, at) == Reach::Reaches {
                     return Err(FlowError::NonCovariantMotive(AnyNode::ValueType(ty)));
                 }
@@ -270,8 +301,8 @@ fn occurrence(
 ) -> Result<(), FlowError>
 {
     let admitted = match arena.value(value) {
-        | Some(&Value::Variable(index)) if index == at => sign == Sign::Varies(Variance::Covariant),
-        | _ => reach_value(arena, table, value, at) == Reach::Clear,
+        Some(&Value::Variable(index)) if index == at => sign == Sign::Varies(Variance::Covariant),
+        _ => reach_value(arena, table, value, at) == Reach::Clear,
     };
     if admitted {
         Ok(())

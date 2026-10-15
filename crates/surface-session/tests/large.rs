@@ -81,13 +81,13 @@ impl core::fmt::Display for FormEdit
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            | Self::Change(_) => "change",
-            | Self::Insert(_) => "insert",
-            | Self::Delete(_) => "delete",
-            | Self::Move(..) => "move",
-            | Self::Merge(_) => "merge",
-            | Self::Split(_) => "split",
-            | Self::RefuseWhole(_) => "refuse whole",
+            Self::Change(_) => "change",
+            Self::Insert(_) => "insert",
+            Self::Delete(_) => "delete",
+            Self::Move(..) => "move",
+            Self::Merge(_) => "merge",
+            Self::Split(_) => "split",
+            Self::RefuseWhole(_) => "refuse whole",
         })
     }
 }
@@ -182,30 +182,30 @@ impl Module
         let count = self.forms.len();
         let at = |Position(position): Position| position.checked_rem(count).unwrap_or(0);
         match *edit {
-            | FormEdit::Change(position) => {
+            FormEdit::Change(position) => {
                 if let Some(form) = self.forms.get_mut(at(position)) {
                     change(form);
                 }
             },
-            | FormEdit::Insert(position) => {
+            FormEdit::Insert(position) => {
                 let fresh = self.fresh;
                 self.fresh = self.fresh.saturating_add(1);
                 self.forms
                     .insert(at(position), format!("def fresh{fresh} = {fresh} ;"));
             },
-            | FormEdit::Delete(position) => {
+            FormEdit::Delete(position) => {
                 if count > 0 {
                     let _deleted = self.forms.remove(at(position));
                 }
             },
-            | FormEdit::Move(from, to) => {
+            FormEdit::Move(from, to) => {
                 if count > 0 {
                     let form = self.forms.remove(at(from));
                     let to = to.0.checked_rem(count).unwrap_or(0).min(self.forms.len());
                     self.forms.insert(to, form);
                 }
             },
-            | FormEdit::Merge(position) => {
+            FormEdit::Merge(position) => {
                 let position = at(position);
                 let terminated = self
                     .forms
@@ -220,14 +220,14 @@ impl Module
                     }
                 }
             },
-            | FormEdit::Split(position) => {
+            FormEdit::Split(position) => {
                 if let Some(form) = self.forms.get_mut(at(position))
                     && let Some(equals) = form.find(" = ")
                 {
                     form.insert_str(equals.saturating_add(2), " ;\n");
                 }
             },
-            | FormEdit::RefuseWhole(position) => {
+            FormEdit::RefuseWhole(position) => {
                 let fresh = self.fresh;
                 self.fresh = self.fresh.saturating_add(1);
                 self.forms.insert(at(position), format!("pure {fresh}"));
@@ -310,12 +310,12 @@ pub fn module(
         let mut shape = Vec::with_capacity(2);
         let i = index;
         match index % 9 {
-            | 0 => {
+            0 => {
                 shape.push(format!("@[ runs(\"{i}\") ]\ndef v{i} : Integer ;"));
                 shape.push(format!("def v{i} = {i} ;"));
             },
-            | 1 => shape.push(format!("def id{i}(a : Type, x : a) -> -F a {{ return x }}")),
-            | 2 => {
+            1 => shape.push(format!("def id{i}(a : Type, x : a) -> -F a {{ return x }}")),
+            2 => {
                 shape.push(format!("def t{i} : +U (-F Integer) ;"));
                 shape.push(format!(
                     "def t{i} = thunk {{ id{}(Integer, v{}) }} ;",
@@ -323,7 +323,7 @@ pub fn module(
                     i.saturating_sub(2)
                 ));
             },
-            | 3 => {
+            3 => {
                 shape.push(format!(
                     "def m{i} : (Type[+, 0] -> Type[-, 0]) -> Type[+, 0] -> Type[+, 0] -> Type[+, 0] ;"
                 ));
@@ -331,7 +331,7 @@ pub fn module(
                     "def m{i} = \\T. \\A. \\B. +U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)) ;"
                 ));
             },
-            | 4 => {
+            4 => {
                 shape.push(format!(
                     "def p{i} : +U (Integer -> Integer -> -F Integer) ;"
                 ));
@@ -339,7 +339,7 @@ pub fn module(
                     "def p{i} = thunk {{ fn (x) {{ fn (y) {{ return x }} }} }} ;"
                 ));
             },
-            | 5 => {
+            5 => {
                 shape.push(format!("def c{i} : +U (-F Integer) ;"));
                 shape.push(format!(
                     "def c{i} = thunk {{ become ((force p{})(v{}))(7) }} ;",
@@ -347,8 +347,8 @@ pub fn module(
                     i.saturating_sub(5)
                 ));
             },
-            | 6 => match root {
-                | SourceRoot::Strict => {
+            6 => match root {
+                SourceRoot::Strict => {
                     shape.push(format!(
                         "def u{i} : +U (Integer -> Integer -> -F Integer) ;"
                     ));
@@ -357,13 +357,13 @@ pub fn module(
                         i.saturating_sub(2)
                     ));
                 },
-                | SourceRoot::Fixture | SourceRoot::Pending => {
+                SourceRoot::Fixture | SourceRoot::Pending => {
                     shape.push(format!(
                         "@[ refuses(\"OutOfFragment\") ]\ndef h{i} = thunk {{ return ?seed{i} }} ;"
                     ));
                 },
             },
-            | 7 => {
+            7 => {
                 shape.push(format!(
                     "data Box{i} : Type {{\n  Empty{i} : Box{i};\n  Full{i} : (n : Integer) --> Box{i};\n}}"
                 ));
@@ -371,8 +371,8 @@ pub fn module(
                     "def unbox{i}(b : Box{i}) -> -F Integer {{\n  case b {{\n    Empty{i} => return 0,\n    Full{i}(n) => return n\n  }}\n}}"
                 ));
             },
-            | _ => match root {
-                | SourceRoot::Strict => {
+            _ => match root {
+                SourceRoot::Strict => {
                     shape.push(format!("def w{i} : +U (Integer -> -F Integer) ;"));
                     shape.push(format!(
                         "def w{i} = thunk {{ fn (n) {{ run a <- (force p{})(n)(n) ; run b <- (force p{})(a)(n) ; return b }} }} ;",
@@ -380,7 +380,7 @@ pub fn module(
                         i.saturating_sub(4)
                     ));
                 },
-                | SourceRoot::Fixture | SourceRoot::Pending => {
+                SourceRoot::Fixture | SourceRoot::Pending => {
                     let boxed = i.saturating_sub(1);
                     shape.push(format!(
                         "@[ refuses(\"NonExhaustiveMatch\") ]\ndef k{i}(b : Box{boxed}) -> -F Integer {{\n  case b {{\n    Empty{boxed} => return {i}\n  }}\n}}"

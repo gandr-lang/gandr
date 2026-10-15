@@ -117,11 +117,11 @@ impl fmt::Display for TokenKind
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            | Self::Open => "an open record",
-            | Self::Word => "a word record",
-            | Self::Bytes => "a bytes record",
-            | Self::Child => "a child record",
-            | Self::Close => "a close record",
+            Self::Open => "an open record",
+            Self::Word => "a word record",
+            Self::Bytes => "a bytes record",
+            Self::Child => "a child record",
+            Self::Close => "a close record",
         })
     }
 }
@@ -486,11 +486,11 @@ impl Record<'_>
     pub(crate) const fn kind(&self) -> TokenKind
     {
         match *self {
-            | Self::Open(_) => TokenKind::Open,
-            | Self::Word(_) => TokenKind::Word,
-            | Self::Bytes(_) => TokenKind::Bytes,
-            | Self::Child(_) => TokenKind::Child,
-            | Self::Close => TokenKind::Close,
+            Self::Open(_) => TokenKind::Open,
+            Self::Word(_) => TokenKind::Word,
+            Self::Bytes(_) => TokenKind::Bytes,
+            Self::Child(_) => TokenKind::Child,
+            Self::Close => TokenKind::Close,
         }
     }
 }
@@ -572,14 +572,14 @@ pub(crate) fn split_record(body: TokenBody<'_>) -> Result<BodyFront<'_>, RecordF
     };
 
     let (record, rest) = match kind {
-        | KIND_OPEN => {
+        KIND_OPEN => {
             let Some((&tag, rest)) = rest.split_first()
             else {
                 return Err(RecordFault::Truncated);
             };
             (Record::Open(ConstructorTag(tag)), rest)
         },
-        | KIND_WORD => {
+        KIND_WORD => {
             let Some((word, rest)) = rest.split_first_chunk::<8>()
             else {
                 return Err(RecordFault::Truncated);
@@ -589,7 +589,7 @@ pub(crate) fn split_record(body: TokenBody<'_>) -> Result<BodyFront<'_>, RecordF
                 rest,
             )
         },
-        | KIND_BYTES => {
+        KIND_BYTES => {
             let Some((length, rest)) = rest.split_first_chunk::<8>()
             else {
                 return Err(RecordFault::Truncated);
@@ -604,7 +604,7 @@ pub(crate) fn split_record(body: TokenBody<'_>) -> Result<BodyFront<'_>, RecordF
             };
             (Record::Bytes(TokenBytes::from(payload)), rest)
         },
-        | KIND_CHILD => {
+        KIND_CHILD => {
             let Some((digest, rest)) = rest.split_first_chunk::<CHUNK_DIGEST_LEN>()
             else {
                 return Err(RecordFault::Truncated);
@@ -619,8 +619,8 @@ pub(crate) fn split_record(body: TokenBody<'_>) -> Result<BodyFront<'_>, RecordF
             );
             (Record::Child(pointer), rest)
         },
-        | KIND_CLOSE => (Record::Close, rest),
-        | _ => return Err(RecordFault::UnknownKind),
+        KIND_CLOSE => (Record::Close, rest),
+        _ => return Err(RecordFault::UnknownKind),
     };
 
     Ok(BodyFront::Record(record, TokenBody::from(rest)))
@@ -704,16 +704,16 @@ impl BodyWriter
     ) -> Result<(), ValueError>
     {
         match record {
-            | Record::Open(tag) => {
+            Record::Open(tag) => {
                 self.0.push(KIND_OPEN);
                 self.0.push(tag.0);
             },
-            | Record::Word(word) => {
+            Record::Word(word) => {
                 self.0.push(KIND_WORD);
                 self.0
                     .extend_from_slice(u64::from(word).to_le_bytes().as_slice());
             },
-            | Record::Bytes(payload) => {
+            Record::Bytes(payload) => {
                 let Ok(length) = u64::try_from(payload.as_ref().len())
                 else {
                     return Err(ValueError::ArithmeticOverflow {
@@ -724,13 +724,13 @@ impl BodyWriter
                 self.0.extend_from_slice(length.to_le_bytes().as_slice());
                 self.0.extend_from_slice(payload.as_ref());
             },
-            | Record::Child(pointer) => {
+            Record::Child(pointer) => {
                 self.0.push(KIND_CHILD);
                 self.0.extend_from_slice(pointer.digest().as_ref());
                 self.0
                     .extend_from_slice(u32::from(pointer.offset()).to_le_bytes().as_slice());
             },
-            | Record::Close => self.0.push(KIND_CLOSE),
+            Record::Close => self.0.push(KIND_CLOSE),
         }
 
         Ok(())
@@ -937,8 +937,8 @@ impl EmissionShape
     pub(crate) fn open(&mut self) -> Result<(), ValueError>
     {
         *self = match *self {
-            | Self::Empty => Self::Inside(OpenDepth(1_usize)),
-            | Self::Inside(OpenDepth(depth)) => {
+            Self::Empty => Self::Inside(OpenDepth(1_usize)),
+            Self::Inside(OpenDepth(depth)) => {
                 let Some(deeper) = depth.checked_add(1_usize)
                 else {
                     return Err(ValueError::ArithmeticOverflow {
@@ -947,7 +947,7 @@ impl EmissionShape
                 };
                 Self::Inside(OpenDepth(deeper))
             },
-            | Self::Complete => {
+            Self::Complete => {
                 return Err(ValueError::MalformedEmission {
                     fault: EmissionFault::SecondRoot,
                 });
@@ -986,8 +986,8 @@ impl EmissionShape
     pub(crate) fn payload(self) -> Result<(), ValueError>
     {
         match self {
-            | Self::Inside(_) => Ok(()),
-            | Self::Empty | Self::Complete => Err(ValueError::MalformedEmission {
+            Self::Inside(_) => Ok(()),
+            Self::Empty | Self::Complete => Err(ValueError::MalformedEmission {
                 fault: EmissionFault::PayloadOutsideConstructor,
             }),
         }
@@ -1036,8 +1036,8 @@ impl EmissionShape
         };
 
         let (shape, closing) = match depth.checked_sub(1_usize) {
-            | Some(0_usize) | None => (Self::Complete, Closing::Root),
-            | Some(shallower) => (Self::Inside(OpenDepth(shallower)), Closing::Inner),
+            Some(0_usize) | None => (Self::Complete, Closing::Root),
+            Some(shallower) => (Self::Inside(OpenDepth(shallower)), Closing::Inner),
         };
         *self = shape;
 
@@ -1075,11 +1075,11 @@ impl EmissionShape
     pub(crate) fn finish(self) -> Result<(), ValueError>
     {
         match self {
-            | Self::Complete => Ok(()),
-            | Self::Empty => Err(ValueError::MalformedEmission {
+            Self::Complete => Ok(()),
+            Self::Empty => Err(ValueError::MalformedEmission {
                 fault: EmissionFault::EmptyValue,
             }),
-            | Self::Inside(_) => Err(ValueError::MalformedEmission {
+            Self::Inside(_) => Err(ValueError::MalformedEmission {
                 fault: EmissionFault::UnclosedConstructor,
             }),
         }

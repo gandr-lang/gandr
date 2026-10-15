@@ -419,19 +419,19 @@ impl NodeSupport
     ) -> Self
     {
         let (plane, telescope) = match goal {
-            | SupportGoal::ValueTypeLevel(id) => {
+            SupportGoal::ValueTypeLevel(id) => {
                 let reach = session.reaches.value_type_reach(arena, id);
                 (SupportPlane::Type, reached_slice(context, reach))
             },
-            | SupportGoal::CompTypeLevel(id) => {
+            SupportGoal::CompTypeLevel(id) => {
                 let reach = session.reaches.comp_type_reach(arena, id);
                 (SupportPlane::Type, reached_slice(context, reach))
             },
-            | SupportGoal::SynthValue(id) | SupportGoal::CheckValue(id, _) => {
+            SupportGoal::SynthValue(id) | SupportGoal::CheckValue(id, _) => {
                 let reach = session.reaches.value_reach(arena, id);
                 (SupportPlane::Term, reached_slice(context, reach))
             },
-            | SupportGoal::SynthComp(id) | SupportGoal::CheckComp(id, _) => {
+            SupportGoal::SynthComp(id) | SupportGoal::CheckComp(id, _) => {
                 let reach = session.reaches.comp_reach(arena, id);
                 (SupportPlane::Term, reached_slice(context, reach))
             },
@@ -777,7 +777,7 @@ impl LooseDepths
         tasks.push(root);
         while let Some(task) = tasks.pop() {
             match task {
-                | ReachTask::OpenValue(id) => {
+                ReachTask::OpenValue(id) => {
                     if self.values.contains_key(&id) {
                         continue;
                     }
@@ -788,7 +788,7 @@ impl LooseDepths
                     };
                     tasks.push(ReachTask::CloseValue(id));
                     match *node {
-                        | Value::Constructor {
+                        Value::Constructor {
                             datatype,
                             ref fields,
                             ..
@@ -796,14 +796,14 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValueType(datatype));
                             tasks.extend(fields.iter().copied().map(ReachTask::OpenValue));
                         },
-                        | Value::Record(ref fields) => {
+                        Value::Record(ref fields) => {
                             tasks.extend(fields.values().copied().map(ReachTask::OpenValue));
                         },
-                        | Value::Variable(_)
+                        Value::Variable(_)
                         | Value::Constant(_)
                         | Value::ListNil
                         | Value::Literal(_) => {},
-                        | Value::PathEquiv {
+                        Value::PathEquiv {
                             path_type,
                             forward,
                             backward,
@@ -813,7 +813,7 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(forward));
                             tasks.push(ReachTask::OpenValue(backward));
                         },
-                        | Value::SessionPath {
+                        Value::SessionPath {
                             path_type,
                             payload_paths,
                             ..
@@ -826,12 +826,12 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValueType(path_type));
                             tasks.push(ReachTask::OpenValue(payload_paths));
                         },
-                        | Value::PathRefl(code)
+                        Value::PathRefl(code)
                         | Value::Here { point: code, .. }
                         | Value::Stay { point: code, .. } => {
                             tasks.push(ReachTask::OpenValue(code));
                         },
-                        | Value::Higher {
+                        Value::Higher {
                             evidence: ref values,
                             ..
                         }
@@ -841,7 +841,7 @@ impl LooseDepths
                         } => {
                             tasks.extend(values.iter().copied().map(ReachTask::OpenValue));
                         },
-                        | Value::HigherEvaluation { ref components, .. } => tasks.extend(
+                        Value::HigherEvaluation { ref components, .. } => tasks.extend(
                             components
                                 .iter()
                                 .flat_map(|component| {
@@ -849,7 +849,7 @@ impl LooseDepths
                                 })
                                 .map(ReachTask::OpenValue),
                         ),
-                        | Value::ForwardFlow {
+                        Value::ForwardFlow {
                             flow_type,
                             translator,
                             ref outputs,
@@ -859,7 +859,7 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(translator));
                             tasks.extend(outputs.iter().copied().map(ReachTask::OpenValue));
                         },
-                        | Value::FunctionFlow {
+                        Value::FunctionFlow {
                             flow_type,
                             domain,
                             codomain,
@@ -868,7 +868,7 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(domain));
                             tasks.push(ReachTask::OpenValue(codomain));
                         },
-                        | Value::PathProduct(first, second)
+                        Value::PathProduct(first, second)
                         | Value::FlowProduct(first, second)
                         | Value::ListCons(first, second)
                         | Value::StaticApplication(first, second)
@@ -876,26 +876,26 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(first));
                             tasks.push(ReachTask::OpenValue(second));
                         },
-                        | Value::Tuple(ref components) => {
+                        Value::Tuple(ref components) => {
                             tasks.extend(components.iter().copied().map(ReachTask::OpenValue));
                         },
-                        | Value::Injection(_, body) | Value::Lift { body, .. } => {
+                        Value::Injection(_, body) | Value::Lift { body, .. } => {
                             tasks.push(ReachTask::OpenValue(body));
                         },
-                        | Value::Thunk(body) | Value::Returned(body) => {
+                        Value::Thunk(body) | Value::Returned(body) => {
                             tasks.push(ReachTask::OpenComp(body));
                         },
-                        | Value::Quote(quoted) => tasks.push(ReachTask::OpenValueType(quoted)),
-                        | Value::QuoteComputation(quoted) => {
+                        Value::Quote(quoted) => tasks.push(ReachTask::OpenValueType(quoted)),
+                        Value::QuoteComputation(quoted) => {
                             tasks.push(ReachTask::OpenCompType(quoted));
                         },
                     }
                 },
-                | ReachTask::CloseValue(id) => {
+                ReachTask::CloseValue(id) => {
                     let reach = self.combine_value(arena, id);
                     let _prior = self.values.insert(id, reach);
                 },
-                | ReachTask::OpenComp(id) => {
+                ReachTask::OpenComp(id) => {
                     if self.computations.contains_key(&id) {
                         continue;
                     }
@@ -906,7 +906,7 @@ impl LooseDepths
                     };
                     tasks.push(ReachTask::CloseComp(id));
                     match *node {
-                        | Computation::DataCase {
+                        Computation::DataCase {
                             scrutinee,
                             motive,
                             ref branches,
@@ -915,7 +915,7 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenCompType(motive));
                             tasks.extend(branches.iter().copied().map(ReachTask::OpenComp));
                         },
-                        | Computation::SigmaSplit {
+                        Computation::SigmaSplit {
                             scrutinee,
                             motive,
                             body,
@@ -926,11 +926,11 @@ impl LooseDepths
                                 ReachTask::OpenComp(body),
                             ]);
                         },
-                        | Computation::RecordProjection(record, _)
+                        Computation::RecordProjection(record, _)
                         | Computation::TupleProjection(record, _) => {
                             tasks.push(ReachTask::OpenValue(record));
                         },
-                        | Computation::ListFold {
+                        Computation::ListFold {
                             element,
                             result,
                             list,
@@ -945,11 +945,11 @@ impl LooseDepths
                                 ReachTask::OpenComp(on_cons),
                             ]);
                         },
-                        | Computation::Transport(path, value) => {
+                        Computation::Transport(path, value) => {
                             tasks.push(ReachTask::OpenValue(path));
                             tasks.push(ReachTask::OpenValue(value));
                         },
-                        | Computation::PathTransport {
+                        Computation::PathTransport {
                             motive,
                             path,
                             value,
@@ -963,7 +963,7 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(path));
                             tasks.push(ReachTask::OpenValue(value));
                         },
-                        | Computation::TelescopeTransport {
+                        Computation::TelescopeTransport {
                             motive,
                             path,
                             start,
@@ -985,7 +985,7 @@ impl LooseDepths
                                 ReachTask::OpenValue(value),
                             ]);
                         },
-                        | Computation::RelatedApplication {
+                        Computation::RelatedApplication {
                             path,
                             left,
                             right,
@@ -1000,23 +1000,23 @@ impl LooseDepths
                                 ReachTask::OpenComp(body),
                             ]);
                         },
-                        | Computation::Lambda(body)
+                        Computation::Lambda(body)
                         | Computation::Fixpoint { body, .. }
                         | Computation::Project(_, body) => {
                             tasks.push(ReachTask::OpenComp(body));
                         },
-                        | Computation::Application(head, argument) => {
+                        Computation::Application(head, argument) => {
                             tasks.push(ReachTask::OpenComp(head));
                             tasks.push(ReachTask::OpenValue(argument));
                         },
-                        | Computation::Return(value) | Computation::Force(value) => {
+                        Computation::Return(value) | Computation::Force(value) => {
                             tasks.push(ReachTask::OpenValue(value));
                         },
-                        | Computation::Bind(bound, body) | Computation::With(bound, body) => {
+                        Computation::Bind(bound, body) | Computation::With(bound, body) => {
                             tasks.push(ReachTask::OpenComp(bound));
                             tasks.push(ReachTask::OpenComp(body));
                         },
-                        | Computation::Case {
+                        Computation::Case {
                             scrutinee,
                             ref branches,
                         } => {
@@ -1025,11 +1025,11 @@ impl LooseDepths
                         },
                     }
                 },
-                | ReachTask::CloseComp(id) => {
+                ReachTask::CloseComp(id) => {
                     let reach = self.combine_comp(arena, id);
                     let _prior = self.computations.insert(id, reach);
                 },
-                | ReachTask::OpenValueType(id) => {
+                ReachTask::OpenValueType(id) => {
                     if self.value_types.contains_key(&id) {
                         continue;
                     }
@@ -1040,19 +1040,19 @@ impl LooseDepths
                     };
                     tasks.push(ReachTask::CloseValueType(id));
                     match *node {
-                        | ValueType::Data { ref arguments, .. } => {
+                        ValueType::Data { ref arguments, .. } => {
                             tasks.extend(arguments.iter().copied().map(ReachTask::OpenValue));
                         },
-                        | ValueType::Record(ref fields) => {
+                        ValueType::Record(ref fields) => {
                             tasks.extend(fields.values().copied().map(ReachTask::OpenValueType));
                         },
-                        | ValueType::Base(_)
+                        ValueType::Base(_)
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_) => {},
-                        | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                        ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                             tasks.extend(parts.iter().copied().map(ReachTask::OpenValueType));
                         },
-                        | ValueType::StaticPi {
+                        ValueType::StaticPi {
                             domain: first,
                             codomain: second,
                         }
@@ -1060,12 +1060,12 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValueType(first));
                             tasks.push(ReachTask::OpenValueType(second));
                         },
-                        | ValueType::PathUniverse(source, target)
+                        ValueType::PathUniverse(source, target)
                         | ValueType::FlowUniverse(source, target) => {
                             tasks.push(ReachTask::OpenValue(source));
                             tasks.push(ReachTask::OpenValue(target));
                         },
-                        | ValueType::Path {
+                        ValueType::Path {
                             domain,
                             left,
                             right,
@@ -1079,24 +1079,24 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(left));
                             tasks.push(ReachTask::OpenValue(right));
                         },
-                        | ValueType::Session {
+                        ValueType::Session {
                             payloads: inner, ..
                         }
                         | ValueType::Lift { inner, .. }
                         | ValueType::List(inner) => {
                             tasks.push(ReachTask::OpenValueType(inner));
                         },
-                        | ValueType::Thunk(body) => tasks.push(ReachTask::OpenCompType(body)),
-                        | ValueType::Element { code, .. } => {
+                        ValueType::Thunk(body) => tasks.push(ReachTask::OpenCompType(body)),
+                        ValueType::Element { code, .. } => {
                             tasks.push(ReachTask::OpenValue(code));
                         },
                     }
                 },
-                | ReachTask::CloseValueType(id) => {
+                ReachTask::CloseValueType(id) => {
                     let reach = self.combine_value_type(arena, id);
                     let _prior = self.value_types.insert(id, reach);
                 },
-                | ReachTask::OpenCompType(id) => {
+                ReachTask::OpenCompType(id) => {
                     if self.comp_types.contains_key(&id) {
                         continue;
                     }
@@ -1107,24 +1107,24 @@ impl LooseDepths
                     };
                     tasks.push(ReachTask::CloseCompType(id));
                     match *node {
-                        | CompType::Returner(result) => {
+                        CompType::Returner(result) => {
                             tasks.push(ReachTask::OpenValueType(result));
                         },
-                        | CompType::Arrow { domain, codomain }
+                        CompType::Arrow { domain, codomain }
                         | CompType::Pi { domain, codomain } => {
                             tasks.push(ReachTask::OpenValueType(domain));
                             tasks.push(ReachTask::OpenCompType(codomain));
                         },
-                        | CompType::Element { code, .. } => {
+                        CompType::Element { code, .. } => {
                             tasks.push(ReachTask::OpenValue(code));
                         },
-                        | CompType::With(left, right) => {
+                        CompType::With(left, right) => {
                             tasks.push(ReachTask::OpenCompType(left));
                             tasks.push(ReachTask::OpenCompType(right));
                         },
                     }
                 },
-                | ReachTask::CloseCompType(id) => {
+                ReachTask::CloseCompType(id) => {
                     let reach = self.combine_comp_type(arena, id);
                     let _prior = self.comp_types.insert(id, reach);
                 },
@@ -1294,18 +1294,18 @@ ValueType::Element { code, .. } => self.cached_value(code),
             return LooseDepth::WIDEST;
         };
         match *node {
-            | ValueType::Data { ref arguments, .. } => {
+            ValueType::Data { ref arguments, .. } => {
                 arguments.iter().fold(LooseDepth(0), |depth, id| {
                     depth.join(self.cached_value(*id))
                 })
             },
-            | ValueType::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| {
+            ValueType::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| {
                 depth.join(self.cached_value_type(*id))
             }),
-            | ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => {
+            ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => {
                 self.cached_value(source).join(self.cached_value(target))
             },
-            | ValueType::Path {
+            ValueType::Path {
                 domain,
                 left,
                 right,
@@ -1318,30 +1318,30 @@ ValueType::Element { code, .. } => self.cached_value(code),
                 .cached_value_type(domain)
                 .join(self.cached_value(left))
                 .join(self.cached_value(right)),
-            | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => {
+            ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => {
                 LooseDepth(0)
             },
-            | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+            ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                 parts.iter().fold(LooseDepth(0), |depth, id| {
                     depth.join(self.cached_value_type(*id))
                 })
             },
-            | ValueType::StaticPi {
+            ValueType::StaticPi {
                 domain: first,
                 codomain: second,
             } => self
                 .cached_value_type(first)
                 .join(self.cached_value_type(second)),
-            | ValueType::Sigma { first, second } => self
+            ValueType::Sigma { first, second } => self
                 .cached_value_type(first)
                 .join(self.cached_value_type(second).under_binder()),
-            | ValueType::Session {
+            ValueType::Session {
                 payloads: inner, ..
             }
             | ValueType::Lift { inner, .. }
             | ValueType::List(inner) => self.cached_value_type(inner),
-            | ValueType::Thunk(body) => self.cached_comp_type(body),
-            | ValueType::Element { code, .. } => self.cached_value(code),
+            ValueType::Thunk(body) => self.cached_comp_type(body),
+            ValueType::Element { code, .. } => self.cached_value(code),
         }
     }
 
@@ -1386,15 +1386,15 @@ ValueType::Element { code, .. } => self.cached_value(code),
             return LooseDepth::WIDEST;
         };
         match *node {
-            | CompType::Returner(result) => self.cached_value_type(result),
-            | CompType::Arrow { domain, codomain } => self
+            CompType::Returner(result) => self.cached_value_type(result),
+            CompType::Arrow { domain, codomain } => self
                 .cached_value_type(domain)
                 .join(self.cached_comp_type(codomain)),
-            | CompType::Pi { domain, codomain } => self
+            CompType::Pi { domain, codomain } => self
                 .cached_value_type(domain)
                 .join(self.cached_comp_type(codomain).under_binder()),
-            | CompType::Element { code, .. } => self.cached_value(code),
-            | CompType::With(left, right) => self
+            CompType::Element { code, .. } => self.cached_value(code),
+            CompType::With(left, right) => self
                 .cached_comp_type(left)
                 .join(self.cached_comp_type(right)),
         }
@@ -1455,7 +1455,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             return LooseDepth::WIDEST;
         };
         match *node {
-            | Value::Constructor {
+            Value::Constructor {
                 datatype,
                 ref fields,
                 ..
@@ -1464,21 +1464,21 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .fold(self.cached_value_type(datatype), |depth, id| {
                     depth.join(self.cached_value(*id))
                 }),
-            | Value::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| {
+            Value::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| {
                 depth.join(self.cached_value(*id))
             }),
-            | Value::Variable(index) => {
+            Value::Variable(index) => {
                 // reason: an unrepresentable reach conservatively uses the whole context.
                 LooseDepth(u32::from(arith::saturating_add(
                     arith::Int::from(u32::from(index)),
                     arith::Int::from(1_u32),
                 )))
             },
-            | Value::ListNil | Value::Constant(_) | Value::Literal(_) => LooseDepth(0),
-            | Value::Tuple(ref components) => components.iter().fold(LooseDepth(0), |depth, id| {
+            Value::ListNil | Value::Constant(_) | Value::Literal(_) => LooseDepth(0),
+            Value::Tuple(ref components) => components.iter().fold(LooseDepth(0), |depth, id| {
                 depth.join(self.cached_value(*id))
             }),
-            | Value::PathEquiv {
+            Value::PathEquiv {
                 path_type,
                 forward,
                 backward,
@@ -1487,7 +1487,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .cached_value_type(path_type)
                 .join(self.cached_value(forward))
                 .join(self.cached_value(backward)),
-            | Value::SessionPath {
+            Value::SessionPath {
                 path_type,
                 payload_paths,
                 ..
@@ -1499,10 +1499,10 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             } => self
                 .cached_value_type(path_type)
                 .join(self.cached_value(payload_paths)),
-            | Value::PathRefl(code)
+            Value::PathRefl(code)
             | Value::Here { point: code, .. }
             | Value::Stay { point: code, .. } => self.cached_value(code),
-            | Value::ForwardFlow {
+            Value::ForwardFlow {
                 flow_type,
                 translator,
                 ref outputs,
@@ -1512,7 +1512,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                     .join(self.cached_value(translator)),
                 |depth, id| depth.join(self.cached_value(*id)),
             ),
-            | Value::FunctionFlow {
+            Value::FunctionFlow {
                 flow_type,
                 domain,
                 codomain,
@@ -1520,7 +1520,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .cached_value_type(flow_type)
                 .join(self.cached_value(domain))
                 .join(self.cached_value(codomain)),
-            | Value::Higher {
+            Value::Higher {
                 evidence: ref values,
                 ..
             }
@@ -1530,7 +1530,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             } => values.iter().fold(LooseDepth(0), |depth, id| {
                 depth.join(self.cached_value(*id))
             }),
-            | Value::HigherEvaluation { ref components, .. } => {
+            Value::HigherEvaluation { ref components, .. } => {
                 components.iter().fold(LooseDepth(0), |depth, component| {
                     depth
                         .join(self.cached_value(component.left))
@@ -1538,17 +1538,17 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                         .join(self.cached_value(component.evidence))
                 })
             },
-            | Value::PathProduct(first, second)
+            Value::PathProduct(first, second)
             | Value::FlowProduct(first, second)
             | Value::ListCons(first, second)
             | Value::StaticApplication(first, second)
             | Value::Then { first, second, .. } => {
                 self.cached_value(first).join(self.cached_value(second))
             },
-            | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
-            | Value::Thunk(body) | Value::Returned(body) => self.cached_comp(body),
-            | Value::Quote(quoted) => self.cached_value_type(quoted),
-            | Value::QuoteComputation(quoted) => self.cached_comp_type(quoted),
+            Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
+            Value::Thunk(body) | Value::Returned(body) => self.cached_comp(body),
+            Value::Quote(quoted) => self.cached_value_type(quoted),
+            Value::QuoteComputation(quoted) => self.cached_comp_type(quoted),
         }
     }
 
@@ -1611,7 +1611,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             return LooseDepth::WIDEST;
         };
         match *node {
-            | Computation::DataCase {
+            Computation::DataCase {
                 scrutinee,
                 motive,
                 ref branches,
@@ -1620,7 +1620,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                     .join(self.cached_comp_type(motive).under_binder()),
                 |depth, id| depth.join(self.cached_comp(*id)),
             ),
-            | Computation::SigmaSplit {
+            Computation::SigmaSplit {
                 scrutinee,
                 motive,
                 body,
@@ -1628,9 +1628,10 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .cached_value(scrutinee)
                 .join(self.cached_comp_type(motive).under_binder())
                 .join(self.cached_comp(body).under_binder().under_binder()),
-            | Computation::RecordProjection(record, _)
-            | Computation::TupleProjection(record, _) => self.cached_value(record),
-            | Computation::ListFold {
+            Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => {
+                self.cached_value(record)
+            },
+            Computation::ListFold {
                 element,
                 result,
                 list,
@@ -1642,10 +1643,10 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .join(self.cached_value(list))
                 .join(self.cached_comp(on_nil))
                 .join(self.cached_comp(on_cons).under_binder().under_binder()),
-            | Computation::Transport(path, value) => {
+            Computation::Transport(path, value) => {
                 self.cached_value(path).join(self.cached_value(value))
             },
-            | Computation::PathTransport {
+            Computation::PathTransport {
                 motive,
                 path,
                 value,
@@ -1659,7 +1660,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .under_binder()
                 .join(self.cached_value(path))
                 .join(self.cached_value(value)),
-            | Computation::TelescopeRide {
+            Computation::TelescopeRide {
                 motive,
                 flow: path,
                 start,
@@ -1678,7 +1679,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .join(self.cached_value(start))
                 .join(self.cached_value(over))
                 .join(self.cached_value(value)),
-            | Computation::RelatedApplication {
+            Computation::RelatedApplication {
                 path,
                 left,
                 right,
@@ -1695,21 +1696,19 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                         .under_binder()
                         .under_binder(),
                 ),
-            | Computation::Lambda(body) | Computation::Fixpoint { body, .. } => {
+            Computation::Lambda(body) | Computation::Fixpoint { body, .. } => {
                 self.cached_comp(body).under_binder()
             },
-            | Computation::Application(head, argument) => {
+            Computation::Application(head, argument) => {
                 self.cached_comp(head).join(self.cached_value(argument))
             },
-            | Computation::Return(value) | Computation::Force(value) => self.cached_value(value),
-            | Computation::Project(_, pair) => self.cached_comp(pair),
-            | Computation::Bind(bound, body) => self
+            Computation::Return(value) | Computation::Force(value) => self.cached_value(value),
+            Computation::Project(_, pair) => self.cached_comp(pair),
+            Computation::Bind(bound, body) => self
                 .cached_comp(bound)
                 .join(self.cached_comp(body).under_binder()),
-            | Computation::With(left, right) => {
-                self.cached_comp(left).join(self.cached_comp(right))
-            },
-            | Computation::Case {
+            Computation::With(left, right) => self.cached_comp(left).join(self.cached_comp(right)),
+            Computation::Case {
                 scrutinee,
                 ref branches,
             } => branches

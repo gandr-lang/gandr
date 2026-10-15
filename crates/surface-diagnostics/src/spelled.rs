@@ -215,15 +215,15 @@ impl Spellings
             .declarations()
             .iter()
             .filter_map(|declaration| match declaration.produced().refusal() {
-                | Maybe::Present(Refusal::Checking(refusal)) => Some(refusal.compared()),
-                | Maybe::Present(Refusal::Lowering(_) | Refusal::Corpus(_)) | Maybe::Absent(_) => {
+                Maybe::Present(Refusal::Checking(refusal)) => Some(refusal.compared()),
+                Maybe::Present(Refusal::Lowering(_) | Refusal::Corpus(_)) | Maybe::Absent(_) => {
                     None
                 },
             })
             .flat_map(|compared| [compared.expected, compared.found])
             .filter_map(|side| match side {
-                | Maybe::Present(node) => Some(node),
-                | Maybe::Absent(_) => None,
+                Maybe::Present(node) => Some(node),
+                Maybe::Absent(_) => None,
             })
             .chain(failures.0.values().flat_map(Failure::types))
             .collect();
@@ -240,8 +240,8 @@ impl Spellings
                 continue;
             }
             let root = match node {
-                | TypeNode::Value(id) => CoreNode::ValueType(id),
-                | TypeNode::Computation(id) => CoreNode::CompType(id),
+                TypeNode::Value(id) => CoreNode::ValueType(id),
+                TypeNode::Computation(id) => CoreNode::CompType(id),
             };
             if let Ok(presentation) = present_type(
                 &source,
@@ -396,8 +396,13 @@ fn words_point(
         .declarations()
         .iter()
         .find_map(|held| match held.outcome() {
-            | DeclarationOutcome::Data(family) if held.constant() == cells.sort() => Some(family),
-            | _ => None,
+            DeclarationOutcome::Data(family) if held.constant() == cells.sort() => Some(family),
+            DeclarationOutcome::Completed { .. }
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::Refused(_) => None,
         })
     else {
         return unworded;
@@ -430,8 +435,8 @@ fn words_point(
         });
     }
     match (spelled.pop(), spelled.is_empty()) {
-        | (Some(point), true) => Maybe::Present((cells.sort(), point)),
-        | _ => unworded,
+        (Some(point), true) => Maybe::Present((cells.sort(), point)),
+        _ => unworded,
     }
 }
 
@@ -510,15 +515,15 @@ impl Families
                         .zip(signature.constructors())
                         .enumerate()
                         .map(|(tag, (name, fields))| match point {
-                            | Maybe::Present((_, ref point)) if tag == 0 => {
+                            Maybe::Present((_, ref point)) if tag == 0 => {
                                 (alloc::format!("{name}({point})"), fields.len())
                             },
-                            | _ => (name.clone(), fields.len()),
+                            Maybe::Present(_) | Maybe::Absent(_) => (name.clone(), fields.len()),
                         })
                         .collect();
                     let placement = match point {
-                        | Maybe::Present(_) => Placement::Consed,
-                        | Maybe::Absent(_) => Placement::Applied,
+                        Maybe::Present(_) => Placement::Consed,
+                        Maybe::Absent(_) => Placement::Applied,
                     };
                     Some(Family {
                         constant: usize::from(declaration.constant()),
@@ -563,8 +568,8 @@ impl Families
                     .iter()
                     .map(|&(ref name, fields)| (Name::from(name.as_str()), Arity::from(fields)));
                 match family.placement {
-                    | Placement::Applied => constructors.family(named, members),
-                    | Placement::Consed => constructors.words(named, members),
+                    Placement::Applied => constructors.family(named, members),
+                    Placement::Consed => constructors.words(named, members),
                 }
             }
         }
