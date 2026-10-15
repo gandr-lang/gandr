@@ -67,6 +67,13 @@ def mul(a : Circle, b : Circle) -> -F Circle {
   }
 }
 
+/// The unit squared: `mul(Base, Base)` computes the point without spelling
+/// it, so the path from it to itself is the circle's words, and reflexivity
+/// at the point inhabits it (#485).
+@[ checks ]
+def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) ;
+def unitSquared = here(Base) ;
+
 /// Rotating by `b` and back is the identity (cubical's `rotInv-1`, `b · a ·
 /// invLooper b ≡ a`, `_·_` associating to the left). The obligation over `a`
 /// moves `mul(b, a)` through its second argument, but `mul`'s case is over

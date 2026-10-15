@@ -815,6 +815,45 @@ mod native_formers
     }
 
     #[test]
+    fn a_path_whose_endpoints_compute_the_point_is_its_words_485()
+    {
+        let mut arena = CoreArena::new();
+        let (mut declarations, circle) = one_loop(&mut arena);
+        // `kept = thunk (λx. case x { Base ⇒ return Base })` at constant 3,
+        // which each endpoint calls at the point: it computes the point
+        // without spelling it.
+        let returner = arena.comp_type_returner(circle.carrier);
+        let (kept_type, kept) =
+            case_over(&mut arena, (circle.carrier, returner), circle.point, &[]);
+        declarations.push(definition(ConstantIndex::from(3_usize), kept_type, kept));
+        // `thunk (return ε)` at `U F Path(S, ⟨kept(Base)⟩, ⟨kept(Base)⟩)`: the
+        // empty word, reflexivity at the point as the surface lowers it,
+        // synthesises the words and crosses to the path.
+        let function = arena.value_constant(ConstantIndex::from(3_usize));
+        let forced = arena.computation_force(function);
+        let applied = arena.computation_application(forced, circle.point);
+        let computed = arena.value_returned(applied);
+        let path = arena.value_type_path(circle.carrier, computed, computed);
+        let returns_path = arena.comp_type_returner(path);
+        let declared = arena.value_type_thunk(returns_path);
+        let returned = arena.computation_return(circle.empty);
+        let body = arena.value_thunk(returned);
+        declarations.push(definition(ConstantIndex::from(4_usize), declared, body));
+        let (report, crossed) = run(&mut arena, &declarations);
+        assert!(
+            matches!(report.judged()[4].verdict(), Verdict::Checked { .. }),
+            "the path at a computed point is the words, which reflexivity at the point inhabits: \
+             {:?}",
+            report.judged()[4].verdict()
+        );
+        assert!(
+            matches!(crossed.readmitted()[4].outcome(), Outcome::Defined { .. }),
+            "and the kernel re-derives it at the path at the point: {:?}",
+            crossed.readmitted()[4].outcome()
+        );
+    }
+
+    #[test]
     fn a_loop_obligation_unfolds_the_arm_s_definitions()
     {
         let mut arena = CoreArena::new();

@@ -2684,7 +2684,12 @@ where
                         crate::element_identity::path_parts(arena, expected)?;
                     // A path whose one endpoint spells a looped point and whose
                     // other converts with it is those words: the value checks at
-                    // the words, and the path then converts with them.
+                    // the words, and the path then converts with them. A path
+                    // whose endpoints both compute the point without spelling
+                    // it, `Path(Circle, mul(Base, Base), mul(Base, Base))`,
+                    // checks at the words of the one type of words over its
+                    // sort, and converts with the path at that point, which
+                    // pairs each endpoint with the point (#485).
                     let spelled = |sides| judgement.presentations.words(arena, domain, sides);
                     if spelled((left, right)).is_none()
                         && let Some(words) =
@@ -2693,6 +2698,25 @@ where
                         let words = arena.value_type_data(words, Vec::new());
                         frames.push(Frame::ConvertValue(expected));
                         frames.push(Frame::ProduceValue(words));
+                        goal = Goal::CheckValue(id, words);
+                        continue 'expand;
+                    }
+                    if spelled((left, right)).is_none()
+                        && let Some(&ValueType::Data {
+                            declaration: sort,
+                            ref arguments,
+                        }) = arena.value_type(domain)
+                        && arguments.is_empty()
+                        && let mut looping = judgement.presentations.looping(sort)
+                        && let Some((words, _)) = looping.next()
+                        && looping.next().is_none()
+                        && let Some(point) =
+                            crate::words::point(arena, judgement.presentations, words)
+                    {
+                        let at_point = arena.value_type_path(domain, point, point);
+                        let words = arena.value_type_data(words, Vec::new());
+                        frames.push(Frame::ConvertValue(expected));
+                        frames.push(Frame::ProduceValue(at_point));
                         goal = Goal::CheckValue(id, words);
                         continue 'expand;
                     }
