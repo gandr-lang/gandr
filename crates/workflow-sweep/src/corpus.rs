@@ -22,15 +22,14 @@ const ROOTS: [&str; 2] = ["strict", "fixture"];
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CorpusName(String);
 
-impl CorpusName
+impl AsRef<str> for CorpusName
 {
     /// The name as text.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
-    pub fn as_str(&self) -> &str
+    fn as_ref(&self) -> &str
     {
         &self.0
     }
@@ -94,12 +93,12 @@ impl Class
     ///   splitting strict by directory, keeping the whole directory path, or
     ///   dropping the root changes a class.
     /// - witness: `corpus::tests::a_class_is_the_directory_below_its_root`
-    #[spec(ensures: |ret| name.as_str().starts_with(ret.0.as_str()))]
+    #[spec(ensures: |ret| name.as_ref().starts_with(ret.0.as_str()))]
     #[inline]
     #[must_use]
     pub fn of(name: &CorpusName) -> Self
     {
-        let mut parts = name.as_str().split('/');
+        let mut parts = name.as_ref().split('/');
         let root = parts.next().unwrap_or_default();
         let below: Vec<&str> = parts.collect();
         match (root, below.as_slice()) {
@@ -281,7 +280,7 @@ mod tests
         assert!(
             found
                 .iter()
-                .any(|source| source.name.as_str().matches('/').count() > 2),
+                .any(|source| source.name.as_ref().matches('/').count() > 2),
             "a source two directories below its root is reached"
         );
         assert!(
@@ -293,7 +292,7 @@ mod tests
         assert!(
             found
                 .iter()
-                .all(|source| source.path.ends_with(source.name.as_str())),
+                .all(|source| source.path.ends_with(source.name.as_ref())),
             "each path is the source its name stands for"
         );
     }

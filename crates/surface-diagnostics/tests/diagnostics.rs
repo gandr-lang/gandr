@@ -1588,7 +1588,7 @@ mod diagnostics
             let candidates: Vec<_> = gandr_workflow_sweep::corpus::sources()
                 .expect("the corpus reads")
                 .into_iter()
-                .filter(|source| source.name.as_str().starts_with("fixture/pathological/"))
+                .filter(|source| source.name.as_ref().starts_with("fixture/pathological/"))
                 .collect();
             let sweep = Sweep::asked().expect("the run's sweep resolves");
             let visited: BTreeSet<_> = sweep

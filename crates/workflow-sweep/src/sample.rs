@@ -68,7 +68,7 @@ impl Sample
     ///   most one choice.
     /// - witness: `sample::tests::a_sample_keeps_every_class_and_every_change`
     /// - witness: `sample::tests::an_added_source_moves_at_most_one_choice`
-    #[spec(ensures: |ret| ret.iter().all(|kept| candidates.iter().any(|candidate| candidate.name == kept.name)) && candidates.iter().filter(|candidate| changed.touches(&candidate.name)).all(|touched| ret.iter().any(|kept| kept.name == touched.name)))]
+    #[spec(ensures: |ret| ret.iter().all(|kept| candidates.iter().any(|candidate| candidate.name == kept.name)) && changed.names().all(|name| candidates.iter().all(|candidate| candidate.name != *name) || ret.iter().any(|kept| kept.name == *name)))]
     #[inline]
     #[must_use]
     pub fn select(
@@ -98,8 +98,8 @@ impl Sample
             }
             let _ranked = taken.insert(at);
         }
-        for (at, source) in candidates.iter().enumerate() {
-            if changed.touches(&source.name) {
+        for name in changed.names() {
+            if let Some(at) = candidates.iter().position(|source| source.name == *name) {
                 let _changed = taken.insert(at);
             }
         }
@@ -121,7 +121,7 @@ impl Sample
         let mut hasher = blake3::Hasher::new();
         let _name = hasher.update(self.name.0.as_bytes());
         let _separator = hasher.update(&[0]);
-        let _source = hasher.update(source.name.as_str().as_bytes());
+        let _source = hasher.update(source.name.as_ref().as_bytes());
         Rank(*hasher.finalize().as_bytes())
     }
 }
@@ -143,11 +143,10 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn source(name: &str) -> Source
+    fn source(name: CorpusName) -> Source
     {
-        let name = CorpusName::from(name);
         Source {
-            path: PathBuf::from(name.as_str()),
+            path: PathBuf::from(name.as_ref()),
             class: Class::of(&name),
             name,
         }
@@ -160,9 +159,17 @@ mod tests
     fn corpus() -> Vec<Source>
     {
         let mut sources: Vec<Source> = (0_u8 .. 12_u8)
-            .map(|index| source(&format!("fixture/model/m{index:02}.gandr")))
-            .chain((0_u8 .. 4_u8).map(|index| source(&format!("fixture/pending/p{index}.gandr"))))
-            .chain([source("strict/values.gandr")])
+            .map(|index| {
+                source(CorpusName::from(
+                    format!("fixture/model/m{index:02}.gandr").as_str(),
+                ))
+            })
+            .chain((0_u8 .. 4_u8).map(|index| {
+                source(CorpusName::from(
+                    format!("fixture/pending/p{index}.gandr").as_str(),
+                ))
+            }))
+            .chain([source(CorpusName::from("strict/values.gandr"))])
             .collect();
         sources.sort_by(|left, right| left.name.cmp(&right.name));
         sources
@@ -246,7 +253,7 @@ mod tests
         };
         let before = names(&sample.select(&corpus, &Changed::default()));
         let mut grown = corpus;
-        grown.push(source("fixture/model/m99.gandr"));
+        grown.push(source(CorpusName::from("fixture/model/m99.gandr")));
         let after = names(&sample.select(&grown, &Changed::default()));
         let dropped = before.iter().filter(|name| !after.contains(name)).count();
         assert!(

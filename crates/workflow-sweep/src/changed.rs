@@ -18,8 +18,39 @@ pub const BASE: &str = "GANDR_SWEEP_BASE";
 ///
 /// # Specification
 /// - provides: the names a sample takes whatever their rank.
+#[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Changed(BTreeSet<CorpusName>);
+
+/// A revision Git resolves: a commit, a branch, or an expression such as
+/// `HEAD^`.
+///
+/// # Specification
+/// - provides: the base a change is measured against.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Revision<'text>(&'text str);
+
+impl<'text> From<&'text str> for Revision<'text>
+{
+    /// The revision spelled `spelled`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(spelled: &'text str) -> Self
+    {
+        Self(spelled)
+    }
+}
+
+/// The arguments of one Git invocation, after `git -C <directory>`.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct GitArgs<'args>(&'args [&'args str]);
 
 impl Changed
 {
@@ -56,11 +87,11 @@ impl Changed
     {
         let base = match std::env::var(BASE) {
             Ok(base) if !base.is_empty() => base,
-            Ok(_) | Err(_) => git(corpus, &["merge-base", "origin/main", "HEAD"])?
+            Ok(_) | Err(_) => git(corpus, GitArgs(&["merge-base", "origin/main", "HEAD"]))?
                 .trim()
                 .to_owned(),
         };
-        Self::against(corpus, &base)
+        Self::against(corpus, Revision::from(base.as_str()))
     }
 
     /// The changed sources against `base`.
@@ -82,20 +113,26 @@ impl Changed
     #[inline]
     pub fn against(
         corpus: &Path,
-        base: &str,
+        base: Revision<'_>,
     ) -> Result<Self, SweepError>
     {
-        let differing = git(corpus, &[
-            "diff",
-            "--name-only",
-            "--no-renames",
-            "--diff-filter=AM",
-            "--relative",
-            base,
-            "--",
-            ".",
-        ])?;
-        let untracked = git(corpus, &["ls-files", "--others", "--exclude-standard"])?;
+        let differing = git(
+            corpus,
+            GitArgs(&[
+                "diff",
+                "--name-only",
+                "--no-renames",
+                "--diff-filter=AM",
+                "--relative",
+                base.0,
+                "--",
+                ".",
+            ]),
+        )?;
+        let untracked = git(
+            corpus,
+            GitArgs(&["ls-files", "--others", "--exclude-standard"]),
+        )?;
         Ok(Self(
             differing
                 .lines()
@@ -108,20 +145,6 @@ impl Changed
                 .map(CorpusName::from)
                 .collect(),
         ))
-    }
-
-    /// Whether the change touches the source named `name`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn touches(
-        &self,
-        name: &CorpusName,
-    ) -> bool
-    {
-        self.0.contains(name)
     }
 
     /// The changed sources, by name, ascending.
@@ -150,7 +173,7 @@ impl FromIterator<CorpusName> for Changed
     }
 }
 
-/// What `git args` prints, run in `directory`.
+/// What `git` prints when run in `directory` with `args`.
 ///
 /// # Specification
 /// - requires: `git` on the path.
@@ -159,7 +182,6 @@ impl FromIterator<CorpusName> for Changed
 /// - fails: [`SweepError::Git`] naming the invocation when it cannot run, exits
 ///   unsuccessfully — with its standard error — or prints what is not UTF-8.
 /// - panics: none.
-/// - executable: none — the outcome is the external process's.
 ///
 /// # Errors
 /// As `fails` lists.
@@ -170,17 +192,17 @@ impl FromIterator<CorpusName> for Changed
 #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(*error, SweepError::Git { .. }), |_| true))]
 fn git(
     directory: &Path,
-    args: &[&str],
+    args: GitArgs<'_>,
 ) -> Result<String, SweepError>
 {
     let refuse = |detail: String| SweepError::Git {
-        command: format!("git {}", args.join(" ")),
+        command: format!("git {}", args.0.join(" ")),
         detail,
     };
     let output = Command::new("git")
         .arg("-C")
         .arg(directory)
-        .args(args)
+        .args(args.0)
         .output()
         .map_err(|error| refuse(error.to_string()))?;
     if !output.status.success() {
@@ -198,6 +220,8 @@ mod tests
     use std::process::Command;
 
     use super::Changed;
+    use super::GitArgs;
+    use super::Revision;
     use crate::corpus::CorpusName;
     use crate::error::SweepError;
 
@@ -207,7 +231,7 @@ mod tests
     /// trivial.
     fn run(
         directory: &Path,
-        args: &[&str],
+        args: GitArgs<'_>,
     )
     {
         let status = Command::new("git")
@@ -215,7 +239,7 @@ mod tests
             .arg(directory)
             .args(["-c", "user.name=sweep", "-c", "user.email=sweep@invalid"])
             .args(["-c", "commit.gpgsign=false"])
-            .args(args)
+            .args(args.0)
             .status()
             .expect("git runs");
         assert!(status.success(), "git {args:?}");
@@ -228,7 +252,7 @@ mod tests
             std::env::temp_dir().join(format!("gandr-sweep-changed-{}", std::process::id()));
         let corpus = scratch.join("crates").join("surface-corpus");
         std::fs::create_dir_all(corpus.join("fixture/model")).expect("the scratch corpus is made");
-        run(&scratch, &["init", "--quiet"]);
+        run(&scratch, GitArgs(&["init", "--quiet"]));
         for name in [
             "fixture/model/kept.gandr",
             "fixture/model/edited.gandr",
@@ -236,15 +260,18 @@ mod tests
         ] {
             std::fs::write(corpus.join(name), "def a = 1 ;\n").expect("a file is written");
         }
-        run(&scratch, &["add", "."]);
-        run(&scratch, &["commit", "--quiet", "-m", "base"]);
+        run(&scratch, GitArgs(&["add", "."]));
+        run(&scratch, GitArgs(&["commit", "--quiet", "-m", "base"]));
         std::fs::write(corpus.join("fixture/model/edited.gandr"), "def a = 2 ;\n")
             .expect("an edit is written");
         std::fs::write(corpus.join("fixture/model/added.gandr"), "def b = 1 ;\n")
             .expect("a new source is written");
         std::fs::write(corpus.join("notes.txt"), "edited\n").expect("a non-source is edited");
-        let changed = Changed::against(&corpus, "HEAD");
-        let missing = Changed::against(&corpus, "refs/heads/no-such-branch-for-a-sweep");
+        let changed = Changed::against(&corpus, Revision::from("HEAD"));
+        let missing = Changed::against(
+            &corpus,
+            Revision::from("refs/heads/no-such-branch-for-a-sweep"),
+        );
         std::fs::remove_dir_all(&scratch).expect("the scratch repository is removed");
         assert_eq!(
             changed.expect("HEAD resolves").names().collect::<Vec<_>>(),

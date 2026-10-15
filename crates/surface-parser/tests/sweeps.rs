@@ -203,7 +203,7 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
     let mut moved = Vec::new();
     let mut worse: Vec<(usize, usize, String)> = Vec::new();
     for source in &sources {
-        let rel = source.name.as_str();
+        let rel = source.name.as_ref();
         let record = records.join(rel).with_extension("recovery");
         sourced.push(record.clone());
         if only.as_deref().is_some_and(|only| only != rel) {
@@ -422,7 +422,7 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
         differential(&|| format!("stray {stray:?}"), stray);
     }
     for source in sweep.visit(TABLES, &corpus::sources()?) {
-        let rel = source.name.as_str();
+        let rel = source.name.as_ref();
         let src = std::fs::read_to_string(&source.path)
             .map_err(|error| format!("{}: {error}", source.path.display()))?;
         differential(&|| format!("{rel} whole"), &src);
