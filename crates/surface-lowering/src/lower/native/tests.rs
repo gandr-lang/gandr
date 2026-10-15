@@ -1800,6 +1800,51 @@ fn a_leaf_copy_keeps_each_use_naming_its_pattern_variable()
     );
 }
 
+/// The leaf under `S(x)` copies the arm's use of `a` and then copies that copy
+/// into the `back` form, both in one rewrite; the second copy still names the
+/// parameter the use was written against, and no variable the form carries
+/// names another binder.
+#[test]
+fn a_leaf_copy_of_a_copy_keeps_the_use_naming_its_binder()
+{
+    let source = concat!(
+        "data Int : Type { Z : Int; S : (x : Int) --> Int; }\n",
+        "def r(n : Int) -> -F Path(Int, n, n) { here(n) }\n",
+        "def f(a : Int, b : Int) -> -F Path(Int, a, a) { case b { Z => back(r(a)), S(x) => back(r(a)) } }\n",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let parameter = source.find("a : Int").expect("`f` declares `a`");
+    let bound = Maybe::Present(crate::fixture::span(
+        gandr_surface_syntax::ByteOffset::from(parameter),
+        gandr_surface_syntax::ByteOffset::from(parameter.saturating_add(1)),
+    ));
+    let form = source
+        .rfind("back(r(a))")
+        .expect("the `S(x)` arm writes `back`");
+    let carried: Vec<ValueId> = arena
+        .values_since(gandr_core_term::ArenaWatermark::default())
+        .filter(|&id| {
+            matches!(arena.value(id), Some(&Value::Variable { .. }))
+                && matches!(module.origins().value(id), Maybe::Present(origin)
+                    if usize::from(origin.span().start()) == form)
+        })
+        .collect();
+    assert!(
+        carried
+            .iter()
+            .any(|&id| module.origins().binding(id) == bound),
+        "the `back` form's copy of the use names `a`: {carried:?}"
+    );
+    assert!(
+        carried.iter().all(
+            |&id| matches!(module.origins().binding(id), Maybe::Absent(_))
+                || module.origins().binding(id) == bound
+        ),
+        "no variable the `back` form carries names another binder: {carried:?}"
+    );
+}
+
 #[test]
 fn sum_patterns_case_on_the_stated_arity()
 {

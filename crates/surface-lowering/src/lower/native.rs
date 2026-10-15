@@ -6069,6 +6069,12 @@ pub(super) fn record_since(
 /// stands for the scrutinee's own node, which the leaf did not mint; that
 /// node keeps the binding it was written with.
 ///
+/// A rewrite can copy a copy: an arm that writes a call inside another form
+/// reports the use's first copy as the source of a second. The copies are
+/// recorded in ascending order and each source is read as the loop reaches
+/// it, so the second copy finds the binder its source took earlier in the
+/// same pass; reading every source before recording any left it unbound.
+///
 /// # Specification
 /// - requires: `carried` is what the rewrites since `floor` reported, and no
 ///   variable the origin table records a binding for was minted after it.
@@ -6084,8 +6090,11 @@ pub(super) fn record_since(
 ///   variables swapped names each at the variable that binds it, and a variable
 ///   binding the whole scrutinee leaves the scrutinee bound at its parameter; a
 ///   copy left without its binding, bound at the other component, or a
-///   scrutinee rebound at the pattern fails the witness.
+///   scrutinee rebound at the pattern fails the witness. A copy the same
+///   rewrite made of a copy names the use's binder too; reading every source
+///   before recording any leaves it unbound and fails the second witness.
 /// - witness: `lower::native::tests::a_leaf_copy_keeps_each_use_naming_its_pattern_variable`
+/// - witness: `lower::native::tests::a_leaf_copy_of_a_copy_keeps_the_use_naming_its_binder`
 #[spec(
     requires: sink.arena.values_since(floor).next().is_none_or(|first| {
         sink.origins.bindings().last().is_none_or(|&(held, _)| held < first)
@@ -6107,23 +6116,26 @@ fn carry_bindings(
     else {
         return;
     };
-    let mut copies: Vec<(ValueId, gandr_surface_syntax::ByteSpan)> = carried
+    let mut copies: Vec<(ValueId, ValueId)> = carried
         .iter()
         .filter_map(|pair| match *pair {
-            Carried::Value(held, written) if first <= written => match sink.origins.binding(held) {
-                Maybe::Present(binder) => Some((written, binder)),
-                Maybe::Absent(_) => None,
-            },
+            Carried::Value(held, written) if first <= written => Some((written, held)),
             Carried::Value(..)
             | Carried::Computation(..)
             | Carried::ValueType(..)
             | Carried::CompType(..) => None,
         })
         .collect();
-    copies.sort_unstable_by_key(|&(written, _)| written);
-    copies.dedup_by_key(|&mut (written, _)| written);
-    for (written, binder) in copies {
-        sink.origins.record_binding(written, binder);
+    copies.sort_by_key(|&(written, _)| written);
+    let mut recorded = None;
+    for (written, held) in copies {
+        if recorded == Some(written) {
+            continue;
+        }
+        if let Maybe::Present(binder) = sink.origins.binding(held) {
+            sink.origins.record_binding(written, binder);
+            recorded = Some(written);
+        }
     }
 }
 
