@@ -59,166 +59,174 @@ use super::client::Record;
 use super::editing::Oracle;
 use super::editing::Session;
 use super::editing::panic_message;
+use super::shapes;
 
-/// The share of corpus positions a hover answers, in thousandths, below
-/// which hovering has regressed: the share measured when it was last
-/// changed. A change that answers more positions raises it; a position inside
-/// a declaration's body that no entry holds answers nothing, so the
+/// The corpus positions no hover answers, above which hovering has regressed:
+/// the count measured when it was last changed. A position inside a
+/// declaration's body that no entry holds answers nothing, so the
 /// declaration's own answer is not counted there. A position inside a comment
 /// is hovered but not counted: a comment is no hover target, and corpus items
-/// carry comments saying what they demonstrate, so counting them would lower
-/// the share for documentation alone.
-const ANSWERED_FLOOR: usize = 773;
+/// carry comments saying what they demonstrate, so counting them would move
+/// the count for documentation alone.
+const UNANSWERED_CEILING: usize = 27_209;
 
-/// The floors each node kind's hovers hold, as [`floor`] reads a row: the kind,
-/// then, in thousandths of the corpus positions whose smallest meaningful node
-/// is of that kind, the least share a hover answers at the node itself, the
-/// greatest share an ancestor answers and the greatest share a `?` answers.
-/// The figures are the shares measured when the row was last changed; a
-/// change that answers a kind at its own nodes moves its row. A kind measured
-/// with no row here and none in [`MEANINGLESS`] fails the sweep, so a new kind
-/// is decided rather than counted silently, and so does a row whose kind the
+/// The misses each node kind's hovers may hold, as [`KindFloor`] reads a row:
+/// the kind, then counts of the corpus positions whose smallest meaningful
+/// node is of that kind — answered by an ancestor, answered by nothing,
+/// answered with a `?`, answered in another shape than the kind's
+/// ([`shapes`]). Each count must not rise; the share answered at the node and
+/// the share answered in shape are printed beside them and held by none.
+///
+/// The counts are absolute so that deleting corpus text never fails the
+/// sweep: a source that shrinks takes its misses with it, where a share of
+/// fewer positions can fall with every remaining position answered. A row
+/// changes only with a stated cause — a change that answers or shapes a kind
+/// at its own nodes lowers it, a corpus source added or extended with misses
+/// raises it, and the commit moving it says which. A row whose kind answers
+/// out of shape names the issue its answers wait on. A kind measured with no
+/// row here and none in [`MEANINGLESS`] fails the sweep, so a new kind is
+/// decided rather than counted silently, and so does a row whose kind the
 /// corpus no longer has.
 const KIND_FLOORS: &[KindFloor] = &[
-    KindFloor("expression become_expression", 0, 932, 60),
-    KindFloor("expression binary_expression", 491, 16, 50),
-    KindFloor("expression block", 247, 540, 29),
-    KindFloor("expression block name", 0, 783, 0),
-    KindFloor("expression boolean", 0, 0, 0),
-    KindFloor("expression break_expression", 1000, 0, 0),
-    KindFloor("expression break_value_expression", 0, 625, 0),
-    KindFloor("expression call_expression", 833, 24, 74),
-    KindFloor("expression case_expression", 856, 5, 62),
-    KindFloor("expression close_expression", 388, 277, 138),
-    KindFloor("expression constructor", 469, 448, 43),
-    KindFloor("expression continue_expression", 400, 0, 0),
-    KindFloor("expression double_quoted_string", 0, 0, 0),
-    KindFloor("expression dup_expression", 0, 0, 0),
-    KindFloor("expression file_descriptor", 0, 0, 0),
-    KindFloor("expression for_expression", 0, 0, 0),
-    KindFloor("expression for_expression name", 0, 0, 0),
-    KindFloor("expression force_expression", 846, 0, 76),
-    KindFloor("expression glob_expression", 0, 0, 0),
-    KindFloor("expression glob_expression name", 0, 0, 0),
-    KindFloor("expression handle_expression", 745, 0, 0),
-    KindFloor("expression handle_expression name", 106, 626, 0),
-    KindFloor("expression hole", 970, 29, 705),
-    KindFloor("expression host_escape", 0, 0, 0),
-    KindFloor("expression identifier", 542, 276, 59),
-    KindFloor("expression if_expression", 0, 0, 0),
-    KindFloor("expression instantiation_expression", 666, 240, 139),
-    KindFloor("expression labelled_sum_expression", 990, 9, 0),
-    KindFloor("expression labelled_sum_expression name", 0, 1000, 0),
-    KindFloor("expression lambda_expression", 642, 0, 30),
-    KindFloor("expression lambda_expression name", 405, 135, 27),
-    KindFloor("expression lazy_record_expression", 1000, 0, 0),
-    KindFloor("expression lazy_record_expression name", 0, 1000, 0),
-    KindFloor("expression list_expression", 0, 0, 0),
-    KindFloor("expression list_operator", 0, 27, 0),
-    KindFloor("expression loop_expression", 696, 0, 0),
-    KindFloor("expression number", 467, 58, 3),
-    KindFloor("expression offer_expression", 1000, 0, 0),
-    KindFloor("expression pack_expression", 0, 0, 0),
-    KindFloor("expression parenthesized_expression", 317, 347, 18),
-    KindFloor("expression pipeline", 0, 0, 0),
-    KindFloor("expression projection_expression", 300, 37, 37),
-    KindFloor("expression projection_expression name", 0, 292, 31),
-    KindFloor("expression pure_expression", 337, 162, 0),
-    KindFloor("expression redirection_operator", 0, 0, 0),
-    KindFloor("expression return_expression", 771, 18, 8),
-    KindFloor("expression run_expression", 1000, 0, 0),
-    KindFloor("expression select_expression", 714, 285, 0),
-    KindFloor("expression select_expression name", 0, 1000, 0),
-    KindFloor("expression send_expression", 1000, 0, 0),
-    KindFloor("expression shell_block", 0, 34, 0),
-    KindFloor("expression shell_word", 0, 25, 0),
-    KindFloor("expression single_quoted_string", 0, 0, 0),
-    KindFloor("expression string", 30, 898, 71),
-    KindFloor("expression subshell", 0, 0, 0),
-    KindFloor("expression telescope_expression", 699, 52, 9),
-    KindFloor("expression telescope_expression name", 847, 60, 0),
-    KindFloor("expression thunk_expression", 887, 0, 38),
-    KindFloor("expression typed_number", 0, 0, 0),
-    KindFloor("expression unary_expression", 0, 0, 0),
-    KindFloor("expression unit", 892, 24, 0),
-    KindFloor("expression variable_expansion", 0, 0, 0),
-    KindFloor("expression while_expression", 1000, 0, 0),
-    KindFloor("instantiation instantiation_expression", 0, 860, 0),
-    KindFloor("instantiation instantiation_expression name", 0, 0, 0),
-    KindFloor("item circuit_declaration", 0, 370, 0),
-    KindFloor("item circuit_declaration name", 227, 181, 0),
-    KindFloor("item codata_declaration", 421, 50, 0),
-    KindFloor("item codata_declaration name", 339, 48, 0),
-    KindFloor("item data_declaration", 166, 118, 0),
-    KindFloor("item data_declaration name", 716, 15, 0),
-    KindFloor("item def_value", 640, 239, 24),
-    KindFloor("item def_value name", 899, 20, 30),
-    KindFloor("item extern_block", 0, 0, 0),
-    KindFloor("item extern_block name", 0, 0, 0),
-    KindFloor("item import_declaration", 0, 0, 0),
-    KindFloor("item import_declaration name", 0, 0, 0),
-    KindFloor("item module_declaration", 62, 0, 0),
-    KindFloor("item module_declaration name", 127, 84, 0),
-    KindFloor("item operator_declaration", 0, 0, 0),
-    KindFloor("item rec_block", 0, 0, 0),
-    KindFloor("item rec_block name", 0, 0, 0),
-    KindFloor("item sign_declaration", 286, 41, 0),
-    KindFloor("item sign_declaration name", 738, 18, 0),
-    KindFloor("module_member module_declaration", 762, 0, 75),
-    KindFloor("module_member module_declaration name", 501, 303, 83),
-    KindFloor("pattern cons_pattern", 1000, 0, 0),
-    KindFloor("pattern cons_pattern name", 666, 333, 0),
-    KindFloor("pattern constructor_pattern", 839, 35, 7),
-    KindFloor("pattern constructor_pattern name", 801, 48, 9),
-    KindFloor("pattern hole", 0, 0, 0),
-    KindFloor("pattern identifier", 699, 102, 2),
-    KindFloor("pattern labelled_sum_pattern", 1000, 0, 0),
-    KindFloor("pattern labelled_sum_pattern name", 1000, 0, 0),
-    KindFloor("pattern literal_pattern", 597, 369, 239),
-    KindFloor("pattern or_pattern", 1000, 0, 0),
-    KindFloor("pattern telescope_pattern", 1000, 0, 0),
-    KindFloor("pattern telescope_pattern name", 125, 875, 0),
-    KindFloor("pattern tuple_pattern", 0, 1000, 0),
-    KindFloor("pattern wildcard", 571, 285, 0),
-    KindFloor("type capability_type", 1000, 0, 0),
-    KindFloor("type capability_type name", 0, 1000, 0),
-    KindFloor("type end_session_type", 847, 43, 0),
-    KindFloor("type f_type", 828, 100, 1),
-    KindFloor("type f_type name", 0, 1000, 0),
-    KindFloor("type function_type", 931, 22, 0),
-    KindFloor("type labelled_sum_type", 989, 0, 0),
-    KindFloor("type lazy_product_type", 166, 833, 0),
-    KindFloor("type lazy_record_type", 865, 134, 0),
-    KindFloor("type mu_session_type", 923, 0, 0),
-    KindFloor("type mu_session_type name", 924, 0, 0),
-    KindFloor("type number", 750, 0, 0),
-    KindFloor("type package_type", 0, 0, 0),
-    KindFloor("type package_type name", 0, 0, 0),
-    KindFloor("type parenthesized_type", 0, 942, 3),
-    KindFloor("type path_type", 972, 27, 0),
-    KindFloor("type primitive_type", 753, 112, 0),
-    KindFloor("type product_type", 840, 160, 40),
-    KindFloor("type receive_session_type", 933, 66, 933),
-    KindFloor("type send_session_type", 914, 28, 0),
-    KindFloor("type static_abstraction", 1000, 0, 0),
-    KindFloor("type static_abstraction name", 0, 1000, 0),
-    KindFloor("type sum_type", 166, 333, 0),
-    KindFloor("type telescope_type", 830, 0, 0),
-    KindFloor("type type_application", 787, 72, 0),
-    KindFloor("type type_application name", 0, 846, 0),
-    KindFloor("type type_identifier", 832, 59, 0),
-    KindFloor("type type_path", 1000, 0, 0),
-    KindFloor("type type_path name", 0, 1000, 0),
-    KindFloor("type type_variable", 835, 26, 0),
-    KindFloor("type u_type", 862, 25, 0),
-    KindFloor("type universe_type", 877, 31, 0),
-    KindFloor("type unknown_type", 0, 1000, 0),
-    KindFloor("type value_function_type", 972, 27, 0),
+    KindFloor("expression become_expression", 1014, 78, 36, 0),
+    KindFloor("expression binary_expression", 2, 59, 2, 4), // shape: #401
+    KindFloor("expression block", 359, 152, 20, 0),
+    KindFloor("expression block name", 29, 8, 0, 0),
+    KindFloor("expression boolean", 0, 30, 0, 0),
+    KindFloor("expression break_expression", 0, 0, 0, 0),
+    KindFloor("expression break_value_expression", 35, 21, 0, 0),
+    KindFloor("expression call_expression", 71, 412, 134, 96), // shape: #401, `?`
+    KindFloor("expression case_expression", 11, 266, 121, 12), // shape: #401
+    KindFloor("expression close_expression", 70, 84, 35, 0),
+    KindFloor("expression constructor", 1290, 239, 95, 0),
+    KindFloor("expression continue_expression", 0, 24, 0, 0),
+    KindFloor("expression double_quoted_string", 0, 83, 0, 0),
+    KindFloor("expression dup_expression", 0, 5, 0, 0),
+    KindFloor("expression file_descriptor", 0, 2, 0, 0),
+    KindFloor("expression for_expression", 0, 8, 0, 0),
+    KindFloor("expression for_expression name", 0, 1, 0, 0),
+    KindFloor("expression force_expression", 0, 10, 5, 0),
+    KindFloor("expression glob_expression", 0, 10, 0, 0),
+    KindFloor("expression glob_expression name", 0, 8, 0, 0),
+    KindFloor("expression handle_expression", 0, 132, 0, 33), // shape: #401
+    KindFloor("expression handle_expression name", 141, 60, 0, 1), // shape: #401
+    KindFloor("expression hole", 1, 0, 24, 0),
+    KindFloor("expression host_escape", 0, 6, 0, 0),
+    KindFloor("expression identifier", 2262, 1502, 166, 194), // shape: #401
+    KindFloor("expression if_expression", 0, 96, 0, 0),
+    KindFloor("expression instantiation_expression", 57, 22, 33, 0),
+    KindFloor("expression labelled_sum_expression", 5, 0, 0, 0),
+    KindFloor("expression labelled_sum_expression name", 10, 0, 0, 0),
+    KindFloor("expression lambda_expression", 0, 70, 6, 0),
+    KindFloor("expression lambda_expression name", 5, 17, 1, 0),
+    KindFloor("expression lazy_record_expression", 0, 0, 0, 0),
+    KindFloor("expression lazy_record_expression name", 18, 0, 0, 0),
+    KindFloor("expression list_expression", 0, 76, 0, 0),
+    KindFloor("expression list_operator", 0, 36, 0, 0),
+    KindFloor("expression loop_expression", 0, 24, 0, 18), // shape: #401
+    KindFloor("expression number", 22, 251, 2, 0),
+    KindFloor("expression offer_expression", 0, 0, 0, 0),
+    KindFloor("expression pack_expression", 0, 30, 0, 0),
+    KindFloor("expression parenthesized_expression", 90, 90, 5, 0),
+    KindFloor("expression pipeline", 0, 5, 0, 0),
+    KindFloor("expression projection_expression", 4, 106, 1, 2), // shape: #401
+    KindFloor("expression projection_expression name", 212, 561, 1, 0),
+    KindFloor("expression pure_expression", 52, 160, 0, 24), // shape: #401
+    KindFloor("expression redirection_operator", 0, 4, 0, 0),
+    KindFloor("expression return_expression", 42, 468, 18, 6), // shape: #401
+    KindFloor("expression run_expression", 0, 0, 0, 0),
+    KindFloor("expression select_expression", 18, 0, 0, 0),
+    KindFloor("expression select_expression name", 37, 0, 0, 0),
+    KindFloor("expression send_expression", 0, 0, 0, 0),
+    KindFloor("expression shell_block", 0, 112, 0, 0),
+    KindFloor("expression shell_word", 0, 229, 0, 0),
+    KindFloor("expression single_quoted_string", 0, 110, 0, 0),
+    KindFloor("expression string", 81, 528, 14, 0),
+    KindFloor("expression subshell", 0, 10, 0, 0),
+    KindFloor("expression telescope_expression", 21, 212, 8, 0),
+    KindFloor("expression telescope_expression name", 13, 20, 0, 0),
+    KindFloor("expression thunk_expression", 0, 122, 28, 7), // shape: #401
+    KindFloor("expression typed_number", 0, 52, 0, 0),
+    KindFloor("expression unary_expression", 0, 1, 0, 0),
+    KindFloor("expression unit", 12, 40, 0, 0),
+    KindFloor("expression variable_expansion", 0, 29, 0, 0),
+    KindFloor("expression while_expression", 0, 0, 0, 0),
+    KindFloor("instantiation instantiation_expression", 82, 14, 0, 0),
+    KindFloor("instantiation instantiation_expression name", 0, 10, 0, 0),
+    KindFloor("item circuit_declaration", 0, 78, 0, 0),
+    KindFloor("item circuit_declaration name", 20, 65, 0, 0),
+    KindFloor("item codata_declaration", 0, 74, 0, 0),
+    KindFloor("item codata_declaration name", 5, 63, 0, 0),
+    KindFloor("item data_declaration", 0, 1700, 0, 0),
+    KindFloor("item data_declaration name", 22, 385, 0, 0),
+    KindFloor("item def_value", 0, 911, 105, 143), // shape: #401
+    KindFloor("item def_value name", 174, 664, 153, 122), // shape: #401
+    KindFloor("item extern_block", 0, 142, 0, 0),
+    KindFloor("item extern_block name", 0, 80, 0, 0),
+    KindFloor("item import_declaration", 0, 69, 0, 0),
+    KindFloor("item import_declaration name", 0, 15, 0, 0),
+    KindFloor("item module_declaration", 0, 595, 0, 40), // shape: #405
+    KindFloor("item module_declaration name", 52, 483, 0, 0),
+    KindFloor("item operator_declaration", 0, 56, 0, 0),
+    KindFloor("item rec_block", 0, 25, 0, 0),
+    KindFloor("item rec_block name", 0, 9, 0, 0),
+    KindFloor("item sign_declaration", 0, 1371, 0, 0),
+    KindFloor("item sign_declaration name", 18, 231, 0, 0),
+    KindFloor("module_member module_declaration", 0, 445, 10, 74), // shape: #401
+    KindFloor("module_member module_declaration name", 1, 359, 12, 81), // shape: #401
+    KindFloor("pattern cons_pattern", 0, 0, 0, 12),                // shape: #408
+    KindFloor("pattern cons_pattern name", 24, 0, 0, 0),
+    KindFloor("pattern constructor_pattern", 10, 35, 2, 0),
+    KindFloor("pattern constructor_pattern name", 40, 125, 8, 0),
+    KindFloor("pattern hole", 0, 12, 0, 0),
+    KindFloor("pattern identifier", 75, 145, 2, 0),
+    KindFloor("pattern labelled_sum_pattern", 0, 0, 0, 19), // shape: #408
+    KindFloor("pattern labelled_sum_pattern name", 0, 0, 0, 0),
+    KindFloor("pattern literal_pattern", 34, 3, 22, 0),
+    KindFloor("pattern or_pattern", 0, 0, 0, 0),
+    KindFloor("pattern telescope_pattern", 0, 0, 0, 0),
+    KindFloor("pattern telescope_pattern name", 7, 0, 0, 0),
+    KindFloor("pattern tuple_pattern", 3, 0, 0, 0),
+    KindFloor("pattern wildcard", 4, 2, 0, 0),
+    KindFloor("type capability_type", 0, 0, 0, 0),
+    KindFloor("type capability_type name", 43, 0, 0, 0),
+    KindFloor("type end_session_type", 6, 15, 0, 0),
+    KindFloor("type f_type", 132, 94, 2, 12), // shape: #404
+    KindFloor("type f_type name", 14, 0, 0, 0),
+    KindFloor("type function_type", 6, 12, 0, 0),
+    KindFloor("type labelled_sum_type", 0, 4, 0, 0),
+    KindFloor("type lazy_product_type", 5, 0, 0, 0),
+    KindFloor("type lazy_record_type", 19, 0, 0, 0),
+    KindFloor("type mu_session_type", 0, 3, 0, 0),
+    KindFloor("type mu_session_type name", 0, 4, 0, 17), // shape: #401
+    KindFloor("type number", 0, 2, 0, 0),
+    KindFloor("type package_type", 0, 99, 0, 0),
+    KindFloor("type package_type name", 0, 11, 0, 0),
+    KindFloor("type parenthesized_type", 547, 34, 2, 0),
+    KindFloor("type path_type", 48, 0, 0, 0),
+    KindFloor("type primitive_type", 553, 658, 0, 0),
+    KindFloor("type product_type", 4, 0, 1, 6), // shape: #404
+    KindFloor("type receive_session_type", 2, 0, 0, 0),
+    KindFloor("type send_session_type", 2, 4, 0, 0),
+    KindFloor("type static_abstraction", 0, 0, 0, 38), // shape: #404
+    KindFloor("type static_abstraction name", 46, 0, 0, 0),
+    KindFloor("type sum_type", 2, 3, 0, 0),
+    KindFloor("type telescope_type", 0, 58, 0, 0),
+    KindFloor("type type_application", 43, 83, 0, 43), // shape: #404
+    KindFloor("type type_application name", 850, 154, 0, 0),
+    KindFloor("type type_identifier", 268, 478, 1, 0),
+    KindFloor("type type_path", 0, 0, 0, 8), // shape: #404
+    KindFloor("type type_path name", 97, 0, 0, 0),
+    KindFloor("type type_variable", 25, 129, 0, 90), // shape: #401
+    KindFloor("type u_type", 17, 75, 0, 10),         // shape: #404
+    KindFloor("type universe_type", 40, 116, 0, 0),
+    KindFloor("type unknown_type", 8, 0, 0, 0),
+    KindFloor("type value_function_type", 2, 0, 0, 0),
 ];
 
 /// The node kinds with no meaning of their own to hover, each with why: the
 /// sweep counts their positions but pins no floor on them.
-const MEANINGLESS: &[(&str, &str)] = &[
+pub(super) const MEANINGLESS: &[(&str, &str)] = &[
     (
         "grout",
         "the parser's repair of text the source did not write: no node the source wrote",
@@ -342,12 +350,12 @@ const PATH: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'/');
 
 /// One corpus source as an editor opens it.
-struct Source
+pub(super) struct Source
 {
     /// Its `file` URI.
-    uri: String,
+    pub uri: String,
     /// Its text.
-    text: String,
+    pub text: String,
 }
 
 /// Every corpus source, in path order, under its canonical path so it
@@ -367,7 +375,7 @@ struct Source
 #[spec(ensures: |ret| ret.len() > 100 && ret.iter().all(|source|
     source.uri.starts_with("file://")
         && Path::new(&source.uri).extension().is_some_and(|extension| extension == "gandr")))]
-fn corpus() -> Vec<Source>
+pub(super) fn corpus() -> Vec<Source>
 {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../surface-corpus")
@@ -403,30 +411,17 @@ fn corpus() -> Vec<Source>
         .collect()
 }
 
-/// The floors one node kind's hovers hold over the corpus: the kind — its
-/// form's grammar sort, then its named kind — and, in thousandths of its
-/// positions, the least share answered at the node itself, the greatest share
-/// answered by an ancestor of the node and the greatest share answered with a
-/// `?`.
+/// The misses one node kind's hovers may hold over the corpus, as counts of
+/// positions: the kind — its form's grammar sort, then its named kind — then
+/// how many positions an ancestor answers, how many nothing answers, how many
+/// an answer with a `?` answers and how many an answer of another shape than
+/// the kind's answers. Each count must not rise.
 #[derive(Clone, Copy, Debug)]
-struct KindFloor(&'static str, usize, usize, usize);
-
-/// The shares of one node kind's positions a hover answered each way, in
-/// thousandths.
-#[derive(Clone, Copy, Debug)]
-struct Shares
-{
-    /// Answered at the node itself.
-    at_node: usize,
-    /// Answered by an ancestor of the node.
-    ancestor: usize,
-    /// Answered with a `?`.
-    unknown: usize,
-}
+struct KindFloor(&'static str, usize, usize, usize, usize);
 
 /// How the hovers of one node kind's corpus positions answered.
 #[derive(Clone, Copy, Debug, Default)]
-struct Coverage
+pub(super) struct Coverage
 {
     /// The positions counted.
     positions: usize,
@@ -439,6 +434,10 @@ struct Coverage
     unanswered: usize,
     /// Those a hover answered with a `?` in it, wherever it answered.
     unknown: usize,
+    /// Those a hover answered in the shape the kind demands.
+    shaped: usize,
+    /// Those a hover answered in another shape.
+    unshaped: usize,
 }
 
 impl Coverage
@@ -457,39 +456,25 @@ impl Coverage
         self.ancestor = self.ancestor.saturating_add(other.ancestor);
         self.unanswered = self.unanswered.saturating_add(other.unanswered);
         self.unknown = self.unknown.saturating_add(other.unknown);
-    }
-
-    /// The answered counts in thousandths of the positions.
-    ///
-    /// # Specification
-    /// trivial.
-    fn shares(self) -> Shares
-    {
-        let share = |count: usize| {
-            count
-                .saturating_mul(1000_usize)
-                .checked_div(self.positions)
-                .unwrap_or_default()
-        };
-        Shares {
-            at_node: share(self.at_node),
-            ancestor: share(self.ancestor),
-            unknown: share(self.unknown),
-        }
+        self.shaped = self.shaped.saturating_add(other.shaped);
+        self.unshaped = self.unshaped.saturating_add(other.unshaped);
     }
 }
 
 /// The smallest node with a meaning of its own holding one written leaf of a
 /// source.
 #[derive(Clone, Debug)]
-struct Owner
+pub(super) struct Owner
 {
     /// The leaf's byte range.
-    leaf: (usize, usize),
+    pub leaf: (usize, usize),
     /// The node's byte range.
-    node: (usize, usize),
+    pub node: (usize, usize),
+    /// The byte range of the form the leaf is a tile of: the node's own for a
+    /// form's keyword or an atom, the form spelling it for a name.
+    pub form: (usize, usize),
     /// The node's kind: its form's grammar sort, then its named kind.
-    kind: String,
+    pub kind: String,
 }
 
 /// The owner of every written leaf of `text`, in source order.
@@ -500,11 +485,17 @@ struct Owner
 ///   leaf starts: a name a form spells as one of its own tiles — an identifier,
 ///   a constructor, a type's name or variable, such as a declaration's name, a
 ///   parameter, a loop or a word pattern's letter — is owned by itself, as kind
-///   `<sort> <form> name`; any other tile of the form its parent completes — a
-///   keyword, a delimiter, an operator — by that form; any other tile, an atom
-///   such as a name, a constructor or a literal, by itself; grout by itself, as
-///   kind `grout`. A kind is the sort of the owning form's mold and its named
-///   kind, so a name in a pattern and a name in a term are two kinds.
+///   `<sort> <form> name`, its form the form spelling it; any other tile of the
+///   form its parent completes — a keyword, a delimiter, an operator — by that
+///   form; any other tile, an atom such as a name, a constructor or a literal,
+///   by itself; grout by itself, as kind `grout`. A kind is the sort of the
+///   owning form's mold and its named kind, so a name in a pattern and a name
+///   in a term are two kinds. Every leaf inside an attribute block or a module
+///   member's inline `@[ … ]` — its payload's strings, numbers and names as
+///   well as its own tiles — is owned by the attribute, as kind `item
+///   attribute_block`, or `item attribute_block name` for a name: an
+///   attribute's payload states what its declaration is expected to do, not a
+///   term of the program.
 /// - provides: the node a hover at a leaf answers by node.
 /// - panics: the grammar does not know a mold of the tree, or the parse faults.
 ///
@@ -514,7 +505,8 @@ struct Owner
 ///   against the answers the issue recorded.
 /// - witness: `editor::editor::scenarios::hovering_every_position_of_each_corpus_source_answers_without_fault`
 #[spec(ensures: |ret| ret.is_sorted_by_key(|owner| owner.leaf.0)
-    && ret.iter().all(|owner| owner.node.0 <= owner.leaf.0 && owner.leaf.1 <= owner.node.1))]
+    && ret.iter().all(|owner| owner.node.0 <= owner.leaf.0 && owner.leaf.1 <= owner.node.1
+        && owner.form.0 <= owner.node.0 && owner.node.1 <= owner.form.1))]
 fn owners(
     grammar: &Pbg,
     text: SourceText<'_>,
@@ -549,9 +541,44 @@ fn owners(
         )
     };
     let mut owners = Vec::new();
+    let mut attributes: Vec<(usize, usize)> = Vec::new();
     for position in tree.positions() {
         let node = tree.node(position).expect("a position names a node");
-        let (owner, kind) = match node.label() {
+        let (owner, form, kind) = match node.label() {
+            | NodeLabel::Meld(form) => {
+                if grammar.named_kind(form).expect("a tree's mold is known").0 == "attribute_block"
+                {
+                    attributes.push(range(node));
+                }
+                // A module member writes its attributes inline, as its own
+                // `@[ … ]` tiles before its keyword.
+                if kind(form) == "module_member module_declaration" {
+                    let mut open = None;
+                    for child in tree.children(position) {
+                        let Some(child) = tree.node(child)
+                        else {
+                            continue;
+                        };
+                        let NodeLabel::Tile(tile) = child.label()
+                        else {
+                            continue;
+                        };
+                        match (
+                            grammar.mold(tile).expect("a tree's mold is known").label,
+                            open,
+                        ) {
+                            | ("@[", None) => open = Some(range(child).0),
+                            | ("]", Some(start)) => {
+                                attributes.push((start, range(child).1));
+                                open = None;
+                            },
+                            | ("def" | "type", None) => break,
+                            | _ => {},
+                        }
+                    }
+                }
+                continue;
+            },
             | NodeLabel::Tile(mold) => {
                 let parent = parents
                     .get(usize::from(position))
@@ -563,25 +590,41 @@ fn owners(
                         if NAMES
                             .contains(&grammar.mold(mold).expect("a tree's mold is known").label)
                         {
-                            (range(node), format!("{} name", kind(form)))
+                            (range(node), range(parent), format!("{} name", kind(form)))
                         }
                         else {
-                            (range(parent), kind(form))
+                            (range(parent), range(parent), kind(form))
                         }
                     },
-                    | Some(_) | None => (range(node), kind(mold)),
+                    | Some(_) | None => (range(node), range(node), kind(mold)),
                 }
             },
             | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
-                (range(node), String::from("grout"))
+                (range(node), range(node), String::from("grout"))
             },
-            | NodeLabel::Wald | NodeLabel::Meld(_) | NodeLabel::Space | NodeLabel::Doc => continue,
+            | NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => continue,
         };
         owners.push(Owner {
             leaf: range(node),
             node: owner,
+            form,
             kind,
         });
+    }
+    for owner in &mut owners {
+        if let Some(&block) = attributes
+            .iter()
+            .find(|block| block.0 <= owner.leaf.0 && owner.leaf.1 <= block.1)
+        {
+            owner.kind = if owner.kind.ends_with(" name") {
+                String::from("item attribute_block name")
+            }
+            else {
+                String::from("item attribute_block")
+            };
+            owner.node = block;
+            owner.form = block;
+        }
     }
     owners.sort_by_key(|owner| owner.leaf.0);
     owners
@@ -591,7 +634,7 @@ fn owners(
 ///
 /// # Specification
 /// trivial.
-fn spot(at: &Value) -> Position
+pub(super) fn spot(at: &Value) -> Position
 {
     let coordinate = |name: &str| {
         at[name]
@@ -943,6 +986,102 @@ fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
     });
 }
 
+/// One position of a corpus source as the sweep hovers it.
+pub(super) struct Hovered
+{
+    /// Its byte offset.
+    pub offset: usize,
+    /// Whether it lies in a comment, which is hovered but not counted.
+    pub comment: bool,
+    /// The smallest node with a meaning of its own holding it; none for
+    /// layout and for a comment.
+    pub owner: Option<Owner>,
+    /// The hover's answer, `null` for none.
+    pub shown: Value,
+}
+
+/// Every position of `source`, each hovered over a fresh connection opening
+/// it whole.
+///
+/// # Specification
+/// - requires: `source` parses under `grammar`.
+/// - ensures: one entry per character boundary of the text and its end, in
+///   order, each with whether a comment holds it, the owner of the written leaf
+///   holding it — none for layout and comments — and the hover's answer.
+/// - provides: the input of the sweep and of the hover goldens.
+/// - panics: a written byte lies in no leaf, or the server faults.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sweep counts every non-comment position of the corpus
+///   through this, and the goldens pin every answer of five sources.
+/// - witness: `editor::editor::scenarios::hovering_every_position_of_each_corpus_source_answers_without_fault`
+/// - witness: `editor::editor::shapes::the_headline_sources_hover_as_their_goldens`
+#[spec(ensures: |ret| ret.len() == source.text.chars().count().saturating_add(1))]
+pub(super) fn hovered(
+    grammar: &Pbg,
+    source: &Source,
+) -> Vec<Hovered>
+{
+    let owners = owners(grammar, SourceText::from(source.text.as_str()));
+    let mut client = Client::initialized(Record::Dropped, Quiet::Unheld);
+    let _opened = client.notify(
+        Method("textDocument/didOpen"),
+        &json!({ "textDocument": {
+            "uri": source.uri, "languageId": "gandr", "version": 1_i32, "text": source.text,
+        }}),
+    );
+    let text = Text(&source.text);
+    let comments: Vec<(usize, usize)> = label(SourceFragment::from(source.text.as_str()))
+        .into_iter()
+        .filter(|token| token.lexeme == Lexeme::Space)
+        .filter_map(|token| {
+            let start = usize::try_from(token.start).ok()?;
+            let end = usize::try_from(token.end).ok()?;
+            let layout = source.text.get(start .. end)?;
+            (layout.starts_with("//") || layout.starts_with("/*")).then_some((start, end))
+        })
+        .collect();
+    source
+        .text
+        .char_indices()
+        .map(|(offset, _)| offset)
+        .chain([source.text.len()])
+        .map(|offset| {
+            let at = Position::of(text, Offset(offset));
+            let shown = client.request(
+                Method("textDocument/hover"),
+                &json!({ "textDocument": { "uri": source.uri }, "position": at.json() }),
+            );
+            let comment = comments
+                .iter()
+                .any(|&(start, end)| (start .. end).contains(&offset));
+            let written = !comment
+                && source
+                    .text
+                    .get(offset ..)
+                    .and_then(|rest| rest.chars().next())
+                    .is_some_and(|glyph| !glyph.is_whitespace());
+            let owner = written.then(|| {
+                owners
+                    .partition_point(|owner| owner.leaf.0 <= offset)
+                    .checked_sub(1_usize)
+                    .and_then(|at| owners.get(at))
+                    .filter(|owner| offset < owner.leaf.1)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        panic!("{}: byte {offset} is written but in no leaf", source.uri)
+                    })
+            });
+            Hovered {
+                offset,
+                comment,
+                owner,
+                shown,
+            }
+        })
+        .collect()
+}
+
 #[test]
 fn hovering_every_position_of_each_corpus_source_answers_without_fault()
 {
@@ -954,91 +1093,58 @@ fn hovering_every_position_of_each_corpus_source_answers_without_fault()
     );
     let grammar = built_in().expect("the built-in grammar builds");
     let positions = AtomicUsize::new(0_usize);
-    let answered = AtomicUsize::new(0_usize);
+    let unanswered = AtomicUsize::new(0_usize);
     let by_kind: Mutex<BTreeMap<String, Coverage>> = Mutex::new(BTreeMap::new());
     each_in_parallel(&sources, |source| {
-        let owners = owners(&grammar, SourceText::from(source.text.as_str()));
-        let mut rows: BTreeMap<String, Coverage> = BTreeMap::new();
-        let mut client = Client::initialized(Record::Dropped, Quiet::Unheld);
-        let _opened = client.notify(
-            Method("textDocument/didOpen"),
-            &json!({ "textDocument": {
-                "uri": source.uri, "languageId": "gandr", "version": 1_i32, "text": source.text,
-            }}),
-        );
+        let hovers = hovered(&grammar, source);
+        let shaped = shapes::judged(&grammar, source, &hovers);
         let text = Text(&source.text);
-        let comments: Vec<(usize, usize)> = label(SourceFragment::from(source.text.as_str()))
-            .into_iter()
-            .filter(|token| token.lexeme == Lexeme::Space)
-            .filter_map(|token| {
-                let start = usize::try_from(token.start).ok()?;
-                let end = usize::try_from(token.end).ok()?;
-                let layout = source.text.get(start .. end)?;
-                (layout.starts_with("//") || layout.starts_with("/*")).then_some((start, end))
-            })
-            .collect();
-        let offsets = source
-            .text
-            .char_indices()
-            .map(|(offset, _)| offset)
-            .chain([source.text.len()]);
-        for offset in offsets {
-            let at = Position::of(text, Offset(offset));
-            let shown = client.request(
-                Method("textDocument/hover"),
-                &json!({ "textDocument": { "uri": source.uri }, "position": at.json() }),
-            );
-            if comments
-                .iter()
-                .any(|&(start, end)| (start .. end).contains(&offset))
-            {
+        let mut rows: BTreeMap<String, Coverage> = BTreeMap::new();
+        for (hover, shaped) in hovers.iter().zip(shaped) {
+            if hover.comment {
                 continue;
             }
             let _counted = positions.fetch_add(1_usize, Ordering::Relaxed);
-            if !shown.is_null() {
-                let _counted = answered.fetch_add(1_usize, Ordering::Relaxed);
+            if hover.shown.is_null() {
+                let _counted = unanswered.fetch_add(1_usize, Ordering::Relaxed);
             }
-            if source
-                .text
-                .get(offset ..)
-                .and_then(|rest| rest.chars().next())
-                .is_none_or(char::is_whitespace)
-            {
-                continue;
-            }
-            let Some(owner) = owners
-                .partition_point(|owner| owner.leaf.0 <= offset)
-                .checked_sub(1_usize)
-                .and_then(|at| owners.get(at))
-                .filter(|owner| offset < owner.leaf.1)
+            let Some(ref owner) = hover.owner
             else {
-                panic!("{}: byte {offset} is written but in no leaf", source.uri);
+                continue;
             };
             let mut row = Coverage {
                 positions: 1_usize,
                 ..Coverage::default()
             };
-            if shown.is_null() {
+            if hover.shown.is_null() {
                 row.unanswered = 1_usize;
             }
             else {
-                let start = spot(&shown["range"]["start"]);
-                let end = spot(&shown["range"]["end"]);
-                let node_start = Position::of(text, Offset(owner.node.0));
-                let node_end = Position::of(text, Offset(owner.node.1));
-                if (node_start.line, node_start.character) <= (start.line, start.character)
-                    && (end.line, end.character) <= (node_end.line, node_end.character)
-                {
+                if shapes::reach(text, owner, &hover.shown) == shapes::Reach::AtNode {
                     row.at_node = 1_usize;
                 }
                 else {
                     row.ancestor = 1_usize;
                 }
-                if shown["contents"]["value"]
+                // A `?` the printer writes for an unknown stands alone; one
+                // opening a word is a session type's receive.
+                if hover.shown["contents"]["value"]
                     .as_str()
-                    .is_some_and(|value| value.contains('?'))
+                    .is_some_and(|value| {
+                        value.match_indices('?').any(|(at, _)| {
+                            !value
+                                .get(at + 1 ..)
+                                .and_then(|rest| rest.chars().next())
+                                .is_some_and(char::is_alphabetic)
+                        })
+                    })
                 {
                     row.unknown = 1_usize;
+                }
+                match shaped {
+                    | shapes::Judged::Shaped => row.shaped = 1_usize,
+                    | shapes::Judged::Unshaped => row.unshaped = 1_usize,
+                    | shapes::Judged::Unheld => {},
                 }
             }
             rows.entry(owner.kind.clone()).or_default().add(row);
@@ -1049,28 +1155,40 @@ fn hovering_every_position_of_each_corpus_source_answers_without_fault()
         }
     });
     let positions = positions.into_inner();
-    let answered = answered.into_inner();
-    let share = answered
-        .saturating_mul(1000_usize)
-        .checked_div(positions)
-        .unwrap_or_default();
-    assert!(
-        share >= ANSWERED_FLOOR,
-        "hovers answer {answered} of {positions} corpus positions, {share}‰, below the floor of \
-         {ANSWERED_FLOOR}‰"
-    );
+    let unanswered = unanswered.into_inner();
     let by_kind = by_kind
         .into_inner()
         .expect("no visit panicked holding the table");
-    eprintln!("| kind | positions | at the node | by an ancestor | unanswered | `?` |");
-    eprintln!("| --- | --- | --- | --- | --- | --- |");
+    eprintln!("{positions} corpus positions, {unanswered} answered by nothing");
+    eprintln!(
+        "| kind | positions | at the node ‰ | shape ‰ | by an ancestor | unanswered | `?` | \
+         unshaped |"
+    );
+    eprintln!("| --- | --- | --- | --- | --- | --- | --- | --- |");
     for (kind, row) in &by_kind {
+        let share = |count: usize| {
+            count
+                .saturating_mul(1000_usize)
+                .checked_div(row.positions)
+                .unwrap_or_default()
+        };
         eprintln!(
-            "| {kind} | {} | {} | {} | {} | {} |",
-            row.positions, row.at_node, row.ancestor, row.unanswered, row.unknown
+            "| {kind} | {} | {} | {} | {} | {} | {} | {} |",
+            row.positions,
+            share(row.at_node),
+            share(row.shaped),
+            row.ancestor,
+            row.unanswered,
+            row.unknown,
+            row.unshaped
         );
     }
     let mut misses = Vec::new();
+    if unanswered > UNANSWERED_CEILING {
+        misses.push(format!(
+            "{unanswered} corpus positions answered by nothing, above {UNANSWERED_CEILING}"
+        ));
+    }
     for (kind, row) in &by_kind {
         if MEANINGLESS
             .iter()
@@ -1078,31 +1196,21 @@ fn hovering_every_position_of_each_corpus_source_answers_without_fault()
         {
             continue;
         }
-        let Some(&KindFloor(_, at_least, ancestors, unknowns)) =
+        let Some(&KindFloor(_, ancestors, unanswered, unknowns, unshaped)) =
             KIND_FLOORS.iter().find(|floor| floor.0 == kind)
         else {
             misses.push(format!("{kind}: no floor and not meaningless"));
             continue;
         };
-        let Shares {
-            at_node,
-            ancestor,
-            unknown,
-        } = row.shares();
-        if at_node < at_least {
-            misses.push(format!(
-                "{kind}: {at_node}‰ answered at the node, below {at_least}‰"
-            ));
-        }
-        if ancestor > ancestors {
-            misses.push(format!(
-                "{kind}: {ancestor}‰ answered by an ancestor, above {ancestors}‰"
-            ));
-        }
-        if unknown > unknowns {
-            misses.push(format!(
-                "{kind}: {unknown}‰ answered with `?`, above {unknowns}‰"
-            ));
+        for (what, count, ceiling) in [
+            ("answered by an ancestor", row.ancestor, ancestors),
+            ("answered by nothing", row.unanswered, unanswered),
+            ("answered with `?`", row.unknown, unknowns),
+            ("answered in another shape", row.unshaped, unshaped),
+        ] {
+            if count > ceiling {
+                misses.push(format!("{kind}: {count} {what}, above {ceiling}"));
+            }
         }
     }
     for &KindFloor(kind, ..) in KIND_FLOORS {

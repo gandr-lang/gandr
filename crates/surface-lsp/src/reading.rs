@@ -77,14 +77,15 @@ pub struct Declaration
     pub key: Option<NodeKey>,
     /// The symbol it declares.
     pub symbol: DocumentSymbol,
-    /// Its head: from the symbol's start to the brace opening the form's own
-    /// body, or the whole symbol for a form without one.
+    /// Its head: from the declaring form's own start — past any attribute
+    /// block before it — to the brace opening the form's own body, or to the
+    /// symbol's end for a form without one.
     pub head: Range,
 }
 
-/// The head of the form at `at` declaring `symbol`: from the symbol's start to
-/// the first brace among the form's own tiles, or the symbol's range when the
-/// form has none.
+/// The head of the form at `at` declaring `symbol`: from the form's own start
+/// to the first brace among its own tiles, or to the symbol's end when the form
+/// has none.
 ///
 /// # Specification
 /// trivial.
@@ -107,8 +108,14 @@ fn head(
             })
             .flatten()
     });
+    let start = tree
+        .node(at)
+        .and_then(|node| {
+            Position::of_byte(index, RenderOffset::from(usize::from(node.span().start()))).ok()
+        })
+        .map_or(symbol.range.start, |start| start.max(symbol.range.start));
     Range {
-        start: symbol.range.start,
+        start,
         end: brace.unwrap_or(symbol.range.end),
     }
 }

@@ -20,6 +20,7 @@ mod census
     use gandr_surface_dispatcher::Composed;
     use gandr_surface_dispatcher::Declared;
     use gandr_surface_dispatcher::Evaluation;
+    use gandr_surface_dispatcher::RoundTrip;
     use gandr_surface_dispatcher::Step;
     use gandr_surface_dispatcher::TypeTable;
     use gandr_surface_dispatcher::Walk;
@@ -212,6 +213,80 @@ mod census
             census.dishonest,
             Vec::<String>::new(),
             "every `?` is a member of the honest set"
+        );
+    }
+
+    /// The printed types that do not read back to their certificate's, by how,
+    /// above which the printer or the reading has regressed: each count must
+    /// not rise, and a commit lowering one moves its row. Absolute counts,
+    /// so a corpus source deleted takes its misses with it.
+    ///
+    /// - `Different`: a spelling that reads back as another type — an unused
+    ///   binder printed (#398), a loop word printed as its path type (#399), a
+    ///   session state or a capability region dropped (#400), a term inside a
+    ///   type read as another (#402).
+    /// - `Open`: a type naming a binder in scope, not read (#403).
+    /// - `Refused`: a spelling that parses and refuses to lower (#401, #402).
+    /// - `Unknown`: a type the printer writes with `?`, which the census of
+    ///   honest `?` holds; nothing to read back.
+    /// - `Unparsed`: a spelling the grammar refuses (#401).
+    /// - `Unspelled`: a type the printer could not spell at all.
+    const READ_BACK_MISSES: [(&str, usize); 6] = [
+        ("Different", 466),
+        ("Open", 1142),
+        ("Refused", 30),
+        ("Unknown", 114),
+        ("Unparsed", 173),
+        ("Unspelled", 0),
+    ];
+
+    #[test]
+    fn every_printed_type_reads_back_to_its_certificate()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let page = PageWidth::from(PAGE);
+        let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
+        while let Maybe::Present(step) = walk.step() {
+            let Step::Source { text, .. } = step
+            else {
+                continue;
+            };
+            let Ok(table) = TypeTable::of(&grammar, text)
+            else {
+                continue;
+            };
+            for read in table.read_back(&grammar, page, Form::Sugared) {
+                let class = match read.trip {
+                    | RoundTrip::Equal => "Equal",
+                    | RoundTrip::Different => "Different",
+                    | RoundTrip::Open => "Open",
+                    | RoundTrip::Refused(_) => "Refused",
+                    | RoundTrip::Unknown => "Unknown",
+                    | RoundTrip::Unparsed => "Unparsed",
+                    | RoundTrip::Unspelled => "Unspelled",
+                };
+                *trips.entry(class).or_default() += 1;
+            }
+        }
+        for (class, count) in &trips {
+            eprintln!("| {class} | {count} |");
+        }
+        assert!(
+            trips.get("Equal").is_some_and(|&equal| equal > 0_usize),
+            "the corpus's printed types read back"
+        );
+        let risen: Vec<String> = READ_BACK_MISSES
+            .iter()
+            .filter_map(|&(class, ceiling)| {
+                let count = trips.get(class).copied().unwrap_or_default();
+                (count > ceiling).then(|| format!("{class}: {count}, above {ceiling}"))
+            })
+            .collect();
+        assert_eq!(
+            risen,
+            Vec::<String>::new(),
+            "printed types that do not read back"
         );
     }
 }

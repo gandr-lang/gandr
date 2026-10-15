@@ -108,6 +108,8 @@ assert_eq!(tally.seal(), Seal::Unsealed);
 
 The same example is the crate-level doctest. `cargo nextest run -p gandr-surface-corpus` runs the crate's tests. Source-level settlement witnesses parse, lower and check their modules; counter and formatter boundary witnesses also construct values directly to reach saturation and sink failures.
 
+Five headline sources — `fixture/model/higher-cells/ua-corolla.gandr`, `fixture/model/identity/transport-dependent.gandr`, `fixture/model/identity/transport-path.gandr`, `fixture/model/identity/funext.gandr` and `fixture/model/identity/circle.gandr` — keep a golden of every hover beside their role goldens, as `crates/surface-grammar/tests/highlight/<source>.hover`: one line per run of positions answered alike, its span, the text, the hover text and its range. A change that moves a hover moves a line; `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-lsp --test editor -E 'test(the_headline_sources_hover_as_their_goldens)'` rewrites them, and the diff is the review.
+
 ## Where the detail lives
 
 Mechanism, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:

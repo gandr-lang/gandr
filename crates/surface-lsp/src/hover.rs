@@ -19,15 +19,20 @@
 //! - **The innermost typed node holding the cursor**, about its span: a term
 //!   with its type, and, when an outer judgement checked it against a type
 //!   spelled otherwise, that type after it; a binder with its name and the type
-//!   of its uses; a written type with its text and its universe. A keyword or a
-//!   delimiter inside a term answers that term, so `return` and `{` answer the
-//!   computation they open.
+//!   of its uses; a written type with its text and its universe; a term the
+//!   source writes as one name — a use, a constructor, a member — with that
+//!   name before its type, as its binder answers. A keyword or a delimiter
+//!   inside a term answers that term, so `return` and `{` answer the
+//!   computation they open. A node spanning a whole declaration — the body's
+//!   term the lowering writes over its declaration — answers as that
+//!   declaration's name does, about its head when the cursor is there.
 //! - **The head of the innermost declaration holding the cursor** — from its
-//!   first attribute to the brace opening its own body, or all of it when it
-//!   has none — about the head, as for its name: the keyword that introduces
-//!   it, the colon of its signature, the layout and documentation before its
-//!   body. Inside a body, a member answers by its own entries, and a position
-//!   no entry holds answers nothing, rather than the declaration around it.
+//!   declaring form's start to the brace opening its own body, or all of it
+//!   when it has none — about the head, as for its name: the keyword that
+//!   introduces it, the colon of its signature, the layout before its body. An
+//!   attribute before the head answers the same, about the attributes. Inside a
+//!   body, a member answers by its own entries, and a position no entry holds
+//!   answers nothing, rather than the declaration around it.
 //!
 //! A position in no declaration's head hovers nothing, and so does a document
 //! whose grammar did not build. Every type is spelled through the shared
@@ -54,20 +59,47 @@
 //! holds every node kind to that rule. It classes each position by the
 //! smallest node holding it — a name a form spells as a node of its own, the
 //! form's keywords and delimiters as the form's — and counts, per kind, the
-//! positions answered at that node, by an ancestor, by nothing and with a
-//! `?`, against floors pinned per kind. A share answered at the node falls, or
-//! one answered by an ancestor or with a `?` rises, and the sweep fails. The
-//! kinds with no meaning of their own to hover are listed with why and
-//! counted but not held: the parser's repair grout, which the source never
-//! wrote, and an attribute's brackets, keywords and name, which state what
-//! the declaration they decorate is expected to do and are answered by its
-//! head.
+//! positions answered at that node, by an ancestor, by nothing, with a `?`,
+//! and in another shape than the kind's (below). Each count is pinned per kind
+//! as an absolute ceiling, so deleting corpus text never fails the sweep; the
+//! shares answered at the node and in shape are printed beside them and held
+//! by none. A row moves only with a stated cause: a change that answers or
+//! shapes a kind lowers it, a source added with misses raises it. The kinds
+//! with no meaning of their own to hover are listed with why and counted but
+//! not held: the parser's repair grout, which the source never wrote, and an
+//! attribute's brackets, keywords, name and payload, which state what the
+//! declaration they decorate is expected to do and are answered by it.
 //!
 //! The alternative was one corpus-wide answered share: it counts an answer
 //! from the match as covering a pattern inside it, so a kind answered only by
-//! its ancestors passed unseen. The table returns to one share if keeping its
-//! rows costs more than the gaps they find: a row moves only with a change
-//! that answers, or stops answering, a kind at its own nodes.
+//! its ancestors passed unseen. Shares per kind were the next alternative: a
+//! source deleted can lower a share with every remaining position answered.
+//! The table returns to one share if keeping its rows costs more than the
+//! gaps they find.
+//!
+//! # A hover's content holds its node kind's shape
+//!
+//! Answering at the node says where the answer comes from, not what it says.
+//! The guarantee comes in three layers:
+//!
+//! - **Coverage by node**: the sweep's counts above, per kind.
+//! - **Content by shape and read-back**: each answer at its node holds the
+//!   shape its kind demands — a name `<name> : <type>`, a written type `<type>
+//!   : <universe>`, a literal its native type, a keyword or delimiter of a term
+//!   the term's type, of a declaration the declaration's answer — with every
+//!   type in it parsing as a written type; the sweep counts the answers out of
+//!   shape per kind (`editor::shapes`). Every type the table prints is read
+//!   back — parsed, lowered beside the source, compared with the certificate's
+//!   type (`TypeTable::read_back`) — and the dispatcher's census pins the types
+//!   that do not, by why. Five headline sources keep a golden of every hover
+//!   beside their role goldens.
+//! - **Totality, statically**: the `answer-totality` lint, queued — every path
+//!   through the hover ends in an answer or a named absence.
+//!
+//! The alternative was a golden of every corpus hover: it pins everything
+//! and no review can read it. Shapes hold the corpus; the goldens hold five
+//! sources a reader checks line by line. The choice returns to goldens when
+//! a generator over types draws the sources the goldens pin (issue #386).
 
 use alloc::format;
 use alloc::string::String;
@@ -80,6 +112,7 @@ use gandr_surface_dispatcher::TypedSpan;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
+use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::Session;
@@ -182,13 +215,17 @@ pub struct Style
 ///   table holds the lowering's refusal of it, that refusal after a blank line;
 ///   then the documentation the session filed for the form after a blank line,
 ///   about the name's range; else, on the innermost typed node holding the
-///   position, a block of its type — a binder's name or a written type's text
-///   before ` : ` — and, for a term checked against a type spelled otherwise,
-///   that type in a second block, about the node's range; else, in the head of
-///   a non-module declaration — from its start to the brace opening its own
-///   body — as on its name, about the head. Absent elsewhere, and absent for a
-///   declaration with neither a type, a refusal nor documentation. Every type
-///   is spelled in `style`'s form, and every block is written as [`Code`]
+///   position: when the node spans a whole non-module declaration — its body's
+///   term written over the declaration — as on that declaration's name, about
+///   its head when the position is there and the node's range otherwise; else a
+///   block of its type — a binder's name, a written type's text or a term
+///   written as one name before ` : ` — and, for a term checked against a type
+///   spelled otherwise, that type in a second block, about the node's range;
+///   else, in the head of a non-module declaration — from its form's start to
+///   the brace opening its own body — as on its name, about the head, and in
+///   the attributes before the head, about them. Absent elsewhere, and absent
+///   for a declaration with neither a type, a refusal nor documentation. Every
+///   type is spelled in `style`'s form, and every block is written as [`Code`]
 ///   writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
@@ -257,6 +294,25 @@ pub fn hover<Store, Blocks>(
             RenderOffset::from(usize::from(entry.span().end())),
         )
     {
+        // An entry standing for a whole declaration — its body's term, written
+        // at the declaration's span — answers as the declaration it stands for.
+        if let Some(whole) = found.iter().rfind(|found| {
+            found.symbol.kind != SymbolKind::MODULE
+                && range.start <= found.symbol.selection_range.start
+                && found.symbol.range.end <= range.end
+                && found.symbol.range.start <= position
+                && position <= found.symbol.range.end
+        }) {
+            let about = if whole.head.start <= position && position < whole.head.end {
+                whole.head
+            }
+            else {
+                range
+            };
+            if let Maybe::Present(answer) = declared(session, table, whole, about, &quoted, style) {
+                return Maybe::Present(answer);
+            }
+        }
         let mut value = typed(&quoted, &entry, style.markup);
         if let Some(note) = oriented {
             value.push_str("\n\n");
@@ -307,13 +363,26 @@ pub fn hover<Store, Blocks>(
             });
         }
     }
+    // The head answers its declaration, and so do the attributes before it,
+    // about their own stretch.
     let enclosing = found.iter().rfind(|found| {
         found.symbol.kind != SymbolKind::MODULE
-            && found.head.start <= position
+            && found.symbol.range.start <= position
             && position < found.head.end
     });
     match enclosing {
-        | Some(enclosing) => declared(session, table, enclosing, enclosing.head, &quoted, style),
+        | Some(enclosing) => {
+            let about = if enclosing.head.start <= position {
+                enclosing.head
+            }
+            else {
+                Range {
+                    start: enclosing.symbol.range.start,
+                    end: enclosing.head.start,
+                }
+            };
+            declared(session, table, enclosing, about, &quoted, style)
+        },
         | None => Maybe::Absent(hovered::Absent::Untyped),
     }
 }
@@ -442,18 +511,21 @@ fn declared<Store, Blocks>(
 ///
 /// # Specification
 /// - requires: `entry` was read from the table of the `quoted` document.
-/// - ensures: a block: a term's type alone; a binder's name and a written
-///   type's text, each when it is one line of the source and in the colours the
-///   document gives it, then ` : ` and the entry's type; for a term checked
-///   against a type spelled otherwise, a second block of that type after a line
-///   saying so.
+/// - ensures: a block: a binder's name, a written type's text and a term the
+///   document writes as one name — one highlighter span over exactly the term,
+///   in a name's role: a variable, a parameter, a function, a member, a
+///   constructor, a type, a type variable or a label, never a literal, a
+///   keyword or an operator — each when it is one line of the source and in the
+///   colours the document gives it, then ` : ` and the entry's type; any other
+///   term's type alone; for a term checked against a type spelled otherwise, a
+///   second block of that type after a line saying so.
 /// - provides: the node half of [`hover`].
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a use, a binder, a written type and a mismatched term are
-///   asserted at their exact texts.
+/// - hypothesis: L3 — a use, a binder, a written type, a literal and a
+///   mismatched term are asserted at their exact texts.
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::html_hovers_colour_the_name_and_the_type`
 #[spec(ensures: |ret| ret.starts_with(markup.opener().0))]
@@ -464,12 +536,40 @@ fn typed(
 ) -> String
 {
     let start = usize::from(entry.span().start());
+    let end = usize::from(entry.span().end());
+    let named = || {
+        let at = quoted
+            .spans
+            .partition_point(|span| usize::from(span.range.start()) < start);
+        quoted.spans.get(at).is_some_and(|span| {
+            usize::from(span.range.start()) == start
+                && usize::from(span.range.end()) == end
+                && matches!(
+                    span.role,
+                    HlRole::FunctionDef
+                        | HlRole::FunctionCall
+                        | HlRole::VariableDef
+                        | HlRole::VariableParam
+                        | HlRole::Member
+                        | HlRole::Variable
+                        | HlRole::Constructor
+                        | HlRole::Type
+                        | HlRole::TypeBuiltin
+                        | HlRole::TypeVariable
+                        | HlRole::Label
+                )
+        })
+    };
     let written = <&str>::from(quoted.text)
-        .get(start .. usize::from(entry.span().end()))
-        .filter(|written| !written.contains('\n'));
+        .get(start .. end)
+        .filter(|written| !written.contains('\n'))
+        .filter(|_| match entry.subject() {
+            | Subject::Binder | Subject::Type => true,
+            | Subject::Term => named(),
+        });
     let mut code = Code::new(markup);
-    match (entry.subject(), written) {
-        | (Subject::Binder | Subject::Type, Some(written)) => {
+    match written {
+        | Some(written) => {
             quoted.quote(
                 &mut code,
                 SourceText::from(written),
@@ -480,7 +580,7 @@ fn typed(
                 Host::Signature,
             );
         },
-        | (Subject::Term, _) | (Subject::Binder | Subject::Type, None) => {
+        | None => {
             code.printed(SourceText::from(entry.ty().as_ref()), Host::Type);
         },
     }
@@ -620,7 +720,7 @@ mod tests
     #[test]
     fn each_marked_position_hovers_its_answer()
     {
-        let rows: [(&str, &str, Result<String, hovered::Absent>); 16] = [
+        let rows: [(&str, &str, Result<String, hovered::Absent>); 19] = [
             (
                 "a synthesised declaration's name",
                 "def ans$0wer = 42 ;\n",
@@ -652,7 +752,22 @@ mod tests
             (
                 "a use",
                 "def f(x: Integer) -> -F Integer { return $0x }\n",
+                Ok(fenced(SourceText::from("x : Integer"))),
+            ),
+            (
+                "a literal",
+                "def f(x: Integer) -> -F Integer { return 4$02 }\n",
                 Ok(fenced(SourceText::from("Integer"))),
+            ),
+            (
+                "the keyword introducing a function",
+                "d$0ef f(x: Integer) -> -F Integer { return x }\n",
+                Ok(fenced(SourceText::from("f : +U (Integer -> -F Integer)"))),
+            ),
+            (
+                "the brace closing a function's body",
+                "def f(x: Integer) -> -F Integer { return x $0}\n",
+                Ok(fenced(SourceText::from("f : +U (Integer -> -F Integer)"))),
             ),
             (
                 "a written value type",
@@ -697,7 +812,7 @@ mod tests
             (
                 "a term past a refusal in its body",
                 "def g(x: Integer) -> -F Integer { run y <- force 1 ; return $0x }\n",
-                Ok(fenced(SourceText::from("Integer"))),
+                Ok(fenced(SourceText::from("x : Integer"))),
             ),
             (
                 "a comment between declarations",
@@ -863,7 +978,7 @@ mod tests
                 data,
                 (4, 8),
                 Ok(fenced(SourceText::from(
-                    "+U (NatDiv -> NatDiv -> -F #{NatDiv, NatDiv})",
+                    "divmod : +U (NatDiv -> NatDiv -> -F #{NatDiv, NatDiv})",
                 ))),
             ),
             (
@@ -876,7 +991,7 @@ mod tests
                 "a rule's pattern variable",
                 data,
                 (4, 14),
-                Ok(fenced(SourceText::from("NatDiv"))),
+                Ok(fenced(SourceText::from("m : NatDiv"))),
             ),
             (
                 "a rule's results",

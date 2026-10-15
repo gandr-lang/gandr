@@ -1,0 +1,372 @@
+1:1-1:4 sign ⇒ Magma : Sig @1:1-1:12
+1:6-1:10 Magma ⇒ Magma : Sig @1:6-1:11
+1:12-2:6 {⏎  sort ⇒ Magma : Sig @1:1-5:2
+2:8-2:8 M ⇒ M : Type @2:8-2:9
+2:10-2:10 : ⇒ Magma : Sig @1:1-5:2
+2:12-2:15 Type ⇒ Type : Type[+, 1] @2:12-2:16
+2:16-3:6 ;⏎  oper ⇒ Magma : Sig @1:1-5:2
+3:8-3:10 mul ⇒ mul : (M, M) => M @3:8-3:11
+3:12-3:14 : ( ⇒ Magma : Sig @1:1-5:2
+3:15-3:15 x ⇒ x : M @3:15-3:16
+3:17-3:17 : ⇒ Magma : Sig @1:1-5:2
+3:19-3:19 M ⇒ M : Type @3:19-3:20
+3:20-3:20 , ⇒ Magma : Sig @1:1-5:2
+3:22-3:22 y ⇒ y : M @3:22-3:23
+3:24-3:24 : ⇒ Magma : Sig @1:1-5:2
+3:26-3:26 M ⇒ M : Type @3:26-3:27
+3:27-3:33 ) --> ( ⇒ Magma : Sig @1:1-5:2
+3:34-3:34 z ⇒ z : M @3:34-3:35
+3:36-3:36 : ⇒ Magma : Sig @1:1-5:2
+3:38-3:38 M ⇒ M : Type @3:38-3:39
+3:39-4:6 );⏎  oper ⇒ Magma : Sig @1:1-5:2
+4:8-4:10 one ⇒ one : () => M @4:8-4:11
+4:12-4:21 : () --> ( ⇒ Magma : Sig @1:1-5:2
+4:22-4:22 z ⇒ z : M @4:22-4:23
+4:24-4:24 : ⇒ Magma : Sig @1:1-5:2
+4:26-4:26 M ⇒ M : Type @4:26-4:27
+4:27-5:1 );⏎} ⇒ Magma : Sig @1:1-5:2
+7:1-7:11 @[ checks ] ⇒ exchange : Bool => Bool @7:1-8:1
+8:1-8:3 def ⇒ exchange : Bool => Bool @8:1-8:35
+8:5-8:13 exchange( ⇒ exchange : Bool => Bool @8:5-8:13
+8:14-8:14 b ⇒ b : Bool @8:14-8:15
+8:16-8:16 : ⇒ exchange : Bool => Bool @8:1-8:35
+8:18-8:21 Bool ⇒ Bool : Type @8:18-8:22
+8:22-8:25 ) -> ⇒ exchange : Bool => Bool @8:1-8:35
+8:27-8:28 -F ⇒ -F Bool : Type[-] @8:27-8:34
+8:30-8:33 Bool ⇒ Bool : Type @8:30-8:34
+8:35-8:35 { ⇒ exchange : Bool => Bool @8:1-13:2
+9:3-9:6 case ⇒ -F Bool @9:3-12:4
+9:8-9:8 b ⇒ b : Bool @9:8-9:9
+9:10-9:10 { ⇒ -F Bool @9:3-12:4
+10:5-10:8 true ⇒ true : Bool @10:5-10:9
+10:10-10:11 => ⇒ -F Bool @9:3-12:4
+10:13-10:18 return ⇒ -F Bool @10:13-10:32
+10:20-10:25 +{.1 = ⇒ Bool @10:20-10:32
+10:27-10:30 unit ⇒ Unit @10:27-10:31
+10:31-10:31 } ⇒ Bool @10:20-10:32
+10:32-10:32 , ⇒ -F Bool @9:3-12:4
+11:5-11:9 false ⇒ false : Bool @11:5-11:10
+11:11-11:12 => ⇒ -F Bool @9:3-12:4
+11:14-11:19 return ⇒ -F Bool @11:14-11:33
+11:21-11:26 +{.0 = ⇒ Bool @11:21-11:33
+11:28-11:31 unit ⇒ Unit @11:28-11:32
+11:32-11:32 } ⇒ Bool @11:21-11:33
+12:3-12:3 } ⇒ -F Bool @9:3-12:4
+13:1-13:1 } ⇒ exchange : Bool => Bool @8:1-13:2
+15:1-15:11 @[ checks ] ⇒ flip : Bool => Bool @15:1-16:1
+16:1-16:3 def ⇒ flip : Bool => Bool @16:1-16:31
+16:5-16:9 flip( ⇒ flip : Bool => Bool @16:5-16:9
+16:10-16:10 b ⇒ b : Bool @16:10-16:11
+16:12-16:12 : ⇒ flip : Bool => Bool @16:1-16:31
+16:14-16:17 Bool ⇒ Bool : Type @16:14-16:18
+16:18-16:21 ) -> ⇒ flip : Bool => Bool @16:1-16:31
+16:23-16:24 -F ⇒ -F Bool : Type[-] @16:23-16:30
+16:26-16:29 Bool ⇒ Bool : Type @16:26-16:30
+16:31-16:31 { ⇒ flip : Bool => Bool @16:1-20:2
+17:3-17:5 run ⇒ -F Bool @17:3-17:6
+17:7-17:7 c ⇒ c : Bool @17:7-17:8
+17:9-17:10 <- ⇒ flip : Bool => Bool @16:1-20:2
+17:12-17:19 exchange ⇒ exchange : Bool => Bool @17:12-17:20
+17:20-17:20 ( ⇒ -F Bool @17:12-17:23
+17:21-17:21 b ⇒ b : Bool @17:21-17:22
+17:22-17:22 ) ⇒ -F Bool @17:12-17:23
+17:23-17:23 ; ⇒ flip : Bool => Bool @16:1-20:2
+18:3-18:5 run ⇒ -F Bool @18:3-18:6
+18:7-18:7 d ⇒ d : Bool @18:7-18:8
+18:9-18:10 <- ⇒ flip : Bool => Bool @16:1-20:2
+18:12-18:19 exchange ⇒ exchange : Bool => Bool @18:12-18:20
+18:20-18:20 ( ⇒ -F Bool @18:12-18:23
+18:21-18:21 c ⇒ c : Bool @18:21-18:22
+18:22-18:22 ) ⇒ -F Bool @18:12-18:23
+18:23-19:8 ;⏎  become ⇒ flip : Bool => Bool @16:1-20:2
+19:10-19:17 exchange ⇒ exchange : Bool => Bool @19:10-19:18
+19:18-19:18 ( ⇒ -F Bool @19:10-19:21
+19:19-19:19 d ⇒ d : Bool @19:19-19:20
+19:20-19:20 ) ⇒ -F Bool @19:10-19:21
+20:1-20:1 } ⇒ flip : Bool => Bool @16:1-20:2
+22:1-22:11 @[ checks ] ⇒ stay : Bool => Bool @22:1-23:1
+23:1-23:3 def ⇒ stay : Bool => Bool @23:1-23:31
+23:5-23:9 stay( ⇒ stay : Bool => Bool @23:5-23:9
+23:10-23:10 b ⇒ b : Bool @23:10-23:11
+23:12-23:12 : ⇒ stay : Bool => Bool @23:1-23:31
+23:14-23:17 Bool ⇒ Bool : Type @23:14-23:18
+23:18-23:21 ) -> ⇒ stay : Bool => Bool @23:1-23:31
+23:23-23:24 -F ⇒ -F Bool : Type[-] @23:23-23:30
+23:26-23:29 Bool ⇒ Bool : Type @23:26-23:30
+23:31-23:31 { ⇒ stay : Bool => Bool @23:1-25:2
+24:3-24:8 return ⇒ -F Bool @24:3-24:11
+24:10-24:10 b ⇒ b : Bool @24:10-24:11
+25:1-25:1 } ⇒ stay : Bool => Bool @23:1-25:2
+27:1-27:11 @[ checks ] ⇒ keep : +{Unit} => +{Unit} @27:1-28:1
+28:1-28:3 def ⇒ keep : +{Unit} => +{Unit} @28:1-28:37
+28:5-28:9 keep( ⇒ keep : +{Unit} => +{Unit} @28:5-28:9
+28:10-28:10 e ⇒ e : +{Unit} @28:10-28:11
+28:12-28:12 : ⇒ keep : +{Unit} => +{Unit} @28:1-28:37
+28:14-28:15 +{ ⇒ +{Unit} : Type @28:14-28:21
+28:16-28:19 Unit ⇒ Unit : Type @28:16-28:20
+28:20-28:20 } ⇒ +{Unit} : Type @28:14-28:21
+28:21-28:24 ) -> ⇒ keep : +{Unit} => +{Unit} @28:1-28:37
+28:26-28:27 -F ⇒ -F +{Unit} : Type[-] @28:26-28:36
+28:29-28:30 +{ ⇒ +{Unit} : Type @28:29-28:36
+28:31-28:34 Unit ⇒ Unit : Type @28:31-28:35
+28:35-28:35 } ⇒ +{Unit} : Type @28:29-28:36
+28:37-28:37 { ⇒ keep : +{Unit} => +{Unit} @28:1-30:2
+29:3-29:8 return ⇒ -F +{Unit} @29:3-29:11
+29:10-29:10 e ⇒ e : +{Unit} @29:10-29:11
+30:1-30:1 } ⇒ keep : +{Unit} => +{Unit} @28:1-30:2
+32:1-32:11 @[ checks ] ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @32:1-33:1
+33:1-33:3 def ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @33:1-33:106
+33:5-33:12 opposite ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @33:5-33:13
+33:14-33:14 = ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @33:1-33:106
+33:16-33:24 ua[1, 4]( ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @33:16-33:104
+33:25-33:29 Magma ⇒ Magma : Type @33:25-33:30
+33:30-33:30 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @33:16-33:104
+33:32-33:36 Magma ⇒ Magma : Type @33:32-33:37
+33:37-33:37 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @33:16-33:104
+33:39-33:41 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @33:39-33:70
+33:42-33:44 mul ⇒ mul : Bool => Bool @33:42-33:45
+33:46-33:46 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @33:39-33:70
+33:48-33:55 exchange ⇒ exchange : Bool => Bool @33:48-33:56
+33:56-33:58 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @33:39-33:70
+33:59-33:61 one ⇒ one : +{Unit} => +{Unit} @33:59-33:62
+33:63-33:63 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @33:39-33:70
+33:65-33:68 keep ⇒ keep : +{Unit} => +{Unit} @33:65-33:69
+33:69-33:69 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @33:39-33:70
+33:70-33:70 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @33:16-33:104
+33:72-33:74 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @33:72-33:103
+33:75-33:77 mul ⇒ mul : Bool => Bool @33:75-33:78
+33:79-33:79 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @33:72-33:103
+33:81-33:88 exchange ⇒ exchange : Bool => Bool @33:81-33:89
+33:89-33:91 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @33:72-33:103
+33:92-33:94 one ⇒ one : +{Unit} => +{Unit} @33:92-33:95
+33:96-33:96 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @33:72-33:103
+33:98-33:101 keep ⇒ keep : +{Unit} => +{Unit} @33:98-33:102
+33:102-33:102 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @33:72-33:103
+33:103-33:103 ) ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @33:16-33:104
+33:105-33:105 ; ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @33:1-33:106
+35:1-35:11 @[ checks ] ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @35:1-36:1
+36:1-36:3 def ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @36:1-36:154
+36:5-36:9 moves ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @36:5-36:10
+36:11-36:11 : ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @36:1-36:154
+36:13-36:17 Path( ⇒ Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) : Type @36:13-36:152
+36:18-36:19 #{ ⇒ #{Unit, #{+{Unit}, Bool}} : Type @36:18-36:43
+36:20-36:23 Unit ⇒ Unit : Type @36:20-36:24
+36:24-36:24 , ⇒ #{Unit, #{+{Unit}, Bool}} : Type @36:18-36:43
+36:26-36:27 #{ ⇒ #{+{Unit}, Bool} : Type @36:26-36:42
+36:28-36:29 +{ ⇒ +{Unit} : Type @36:28-36:35
+36:30-36:33 Unit ⇒ Unit : Type @36:30-36:34
+36:34-36:34 } ⇒ +{Unit} : Type @36:28-36:35
+36:35-36:35 , ⇒ #{+{Unit}, Bool} : Type @36:26-36:42
+36:37-36:40 Bool ⇒ Bool : Type @36:37-36:41
+36:41-36:41 } ⇒ #{+{Unit}, Bool} : Type @36:26-36:42
+36:42-36:42 } ⇒ #{Unit, #{+{Unit}, Bool}} : Type @36:18-36:43
+36:43-36:43 , ⇒ Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) : Type @36:13-36:152
+36:45-36:54 transport( ⇒ -F (Unit * (+{Unit} * Bool)) @36:45-36:111
+36:55-36:57 \X. ⇒ \X. X : Type @36:55-36:60
+36:59-36:59 X ⇒ X : Type @36:59-36:60
+36:60-36:60 , ⇒ -F (Unit * (+{Unit} * Bool)) @36:45-36:111
+36:62-36:69 opposite ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @36:62-36:70
+36:70-36:70 , ⇒ -F (Unit * (+{Unit} * Bool)) @36:45-36:111
+36:72-36:73 #{ ⇒ Unit * (+{Unit} * Bool) @36:72-36:110
+36:74-36:77 unit ⇒ Unit @36:74-36:78
+36:78-36:78 , ⇒ Unit * (+{Unit} * Bool) @36:72-36:110
+36:80-36:81 #{ ⇒ +{Unit} * Bool @36:80-36:109
+36:82-36:87 +{.0 = ⇒ +{Unit} @36:82-36:94
+36:89-36:92 unit ⇒ Unit @36:89-36:93
+36:93-36:93 } ⇒ +{Unit} @36:82-36:94
+36:94-36:94 , ⇒ +{Unit} * Bool @36:80-36:109
+36:96-36:101 +{.0 = ⇒ Bool @36:96-36:108
+36:103-36:106 unit ⇒ Unit @36:103-36:107
+36:107-36:107 } ⇒ Bool @36:96-36:108
+36:108-36:108 } ⇒ +{Unit} * Bool @36:80-36:109
+36:109-36:109 } ⇒ Unit * (+{Unit} * Bool) @36:72-36:110
+36:110-36:110 ) ⇒ -F (Unit * (+{Unit} * Bool)) @36:45-36:111
+36:111-36:111 , ⇒ Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) : Type @36:13-36:152
+36:113-36:114 #{ ⇒ Unit * (+{Unit} * Bool) @36:113-36:151
+36:115-36:118 unit ⇒ Unit @36:115-36:119
+36:119-36:119 , ⇒ Unit * (+{Unit} * Bool) @36:113-36:151
+36:121-36:122 #{ ⇒ +{Unit} * Bool @36:121-36:150
+36:123-36:128 +{.0 = ⇒ +{Unit} @36:123-36:135
+36:130-36:133 unit ⇒ Unit @36:130-36:134
+36:134-36:134 } ⇒ +{Unit} @36:123-36:135
+36:135-36:135 , ⇒ +{Unit} * Bool @36:121-36:150
+36:137-36:142 +{.1 = ⇒ Bool @36:137-36:149
+36:144-36:147 unit ⇒ Unit @36:144-36:148
+36:148-36:148 } ⇒ Bool @36:137-36:149
+36:149-36:149 } ⇒ +{Unit} * Bool @36:121-36:150
+36:150-36:150 } ⇒ Unit * (+{Unit} * Bool) @36:113-36:151
+36:151-36:151 ) ⇒ Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) : Type @36:13-36:152
+36:153-36:153 ; ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @36:1-36:154
+37:1-37:3 def ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @37:1-37:59
+37:5-37:9 moves ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @37:5-37:10
+37:11-37:11 = ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @37:1-37:59
+37:13-37:17 here( ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @37:13-37:57
+37:18-37:19 #{ ⇒ Unit * (+{Unit} * Bool) @37:18-37:56
+37:20-37:23 unit ⇒ Unit @37:20-37:24
+37:24-37:24 , ⇒ Unit * (+{Unit} * Bool) @37:18-37:56
+37:26-37:27 #{ ⇒ +{Unit} * Bool @37:26-37:55
+37:28-37:33 +{.0 = ⇒ +{Unit} @37:28-37:40
+37:35-37:38 unit ⇒ Unit @37:35-37:39
+37:39-37:39 } ⇒ +{Unit} @37:28-37:40
+37:40-37:40 , ⇒ +{Unit} * Bool @37:26-37:55
+37:42-37:47 +{.1 = ⇒ Bool @37:42-37:54
+37:49-37:52 unit ⇒ Unit @37:49-37:53
+37:53-37:53 } ⇒ Bool @37:42-37:54
+37:54-37:54 } ⇒ +{Unit} * Bool @37:26-37:55
+37:55-37:55 } ⇒ Unit * (+{Unit} * Bool) @37:18-37:56
+37:56-37:56 ) ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @37:13-37:57
+37:58-37:58 ; ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @37:1-37:59
+39:1-39:32 @[ refuses("EndpointMism… ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @39:1-40:1
+40:1-40:3 def ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @40:1-40:154
+40:5-40:9 stays ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @40:5-40:10
+40:11-40:11 : ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @40:1-40:154
+40:13-40:17 Path( ⇒ Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.0 = unit}}}) : Type @40:13-40:152
+40:18-40:19 #{ ⇒ #{Unit, #{+{Unit}, Bool}} : Type @40:18-40:43
+40:20-40:23 Unit ⇒ Unit : Type @40:20-40:24
+40:24-40:24 , ⇒ #{Unit, #{+{Unit}, Bool}} : Type @40:18-40:43
+40:26-40:27 #{ ⇒ #{+{Unit}, Bool} : Type @40:26-40:42
+40:28-40:29 +{ ⇒ +{Unit} : Type @40:28-40:35
+40:30-40:33 Unit ⇒ Unit : Type @40:30-40:34
+40:34-40:34 } ⇒ +{Unit} : Type @40:28-40:35
+40:35-40:35 , ⇒ #{+{Unit}, Bool} : Type @40:26-40:42
+40:37-40:40 Bool ⇒ Bool : Type @40:37-40:41
+40:41-40:41 } ⇒ #{+{Unit}, Bool} : Type @40:26-40:42
+40:42-40:42 } ⇒ #{Unit, #{+{Unit}, Bool}} : Type @40:18-40:43
+40:43-40:43 , ⇒ Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.0 = unit}}}) : Type @40:13-40:152
+40:45-40:54 transport( ⇒ -F (Unit * (+{Unit} * Bool)) @40:45-40:111
+40:55-40:57 \X. ⇒ \X. X : Type @40:55-40:60
+40:59-40:59 X ⇒ X : Type @40:59-40:60
+40:60-40:60 , ⇒ -F (Unit * (+{Unit} * Bool)) @40:45-40:111
+40:62-40:69 opposite ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @40:62-40:70
+40:70-40:70 , ⇒ -F (Unit * (+{Unit} * Bool)) @40:45-40:111
+40:72-40:73 #{ ⇒ Unit * (+{Unit} * Bool) @40:72-40:110
+40:74-40:77 unit ⇒ Unit @40:74-40:78
+40:78-40:78 , ⇒ Unit * (+{Unit} * Bool) @40:72-40:110
+40:80-40:81 #{ ⇒ +{Unit} * Bool @40:80-40:109
+40:82-40:87 +{.0 = ⇒ +{Unit} @40:82-40:94
+40:89-40:92 unit ⇒ Unit @40:89-40:93
+40:93-40:93 } ⇒ +{Unit} @40:82-40:94
+40:94-40:94 , ⇒ +{Unit} * Bool @40:80-40:109
+40:96-40:101 +{.0 = ⇒ Bool @40:96-40:108
+40:103-40:106 unit ⇒ Unit @40:103-40:107
+40:107-40:107 } ⇒ Bool @40:96-40:108
+40:108-40:108 } ⇒ +{Unit} * Bool @40:80-40:109
+40:109-40:109 } ⇒ Unit * (+{Unit} * Bool) @40:72-40:110
+40:110-40:110 ) ⇒ -F (Unit * (+{Unit} * Bool)) @40:45-40:111
+40:111-40:111 , ⇒ Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.0 = unit}}}) : Type @40:13-40:152
+40:113-40:114 #{ ⇒ Unit * (+{Unit} * Bool) @40:113-40:151
+40:115-40:118 unit ⇒ Unit @40:115-40:119
+40:119-40:119 , ⇒ Unit * (+{Unit} * Bool) @40:113-40:151
+40:121-40:122 #{ ⇒ +{Unit} * Bool @40:121-40:150
+40:123-40:128 +{.0 = ⇒ +{Unit} @40:123-40:135
+40:130-40:133 unit ⇒ Unit @40:130-40:134
+40:134-40:134 } ⇒ +{Unit} @40:123-40:135
+40:135-40:135 , ⇒ +{Unit} * Bool @40:121-40:150
+40:137-40:142 +{.0 = ⇒ Bool @40:137-40:149
+40:144-40:147 unit ⇒ Unit @40:144-40:148
+40:148-40:148 } ⇒ Bool @40:137-40:149
+40:149-40:149 } ⇒ +{Unit} * Bool @40:121-40:150
+40:150-40:150 } ⇒ Unit * (+{Unit} * Bool) @40:113-40:151
+40:151-40:151 ) ⇒ Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.0 = unit}}}) : Type @40:13-40:152
+40:153-40:153 ; ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @40:1-40:154
+41:1-41:3 def ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @41:1-41:59
+41:5-41:9 stays ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @41:5-41:10
+41:11-41:11 = ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @41:1-41:59
+41:13-41:17 here( ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @41:13-41:57
+41:18-41:19 #{ ⇒ Unit * (+{Unit} * Bool) @41:18-41:56
+41:20-41:23 unit ⇒ Unit @41:20-41:24
+41:24-41:24 , ⇒ Unit * (+{Unit} * Bool) @41:18-41:56
+41:26-41:27 #{ ⇒ +{Unit} * Bool @41:26-41:55
+41:28-41:33 +{.0 = ⇒ +{Unit} @41:28-41:40
+41:35-41:38 unit ⇒ Unit @41:35-41:39
+41:39-41:39 } ⇒ +{Unit} @41:28-41:40
+41:40-41:40 , ⇒ +{Unit} * Bool @41:26-41:55
+41:42-41:47 +{.0 = ⇒ Bool @41:42-41:54
+41:49-41:52 unit ⇒ Unit @41:49-41:53
+41:53-41:53 } ⇒ Bool @41:42-41:54
+41:54-41:54 } ⇒ +{Unit} * Bool @41:26-41:55
+41:55-41:55 } ⇒ Unit * (+{Unit} * Bool) @41:18-41:56
+41:56-41:56 ) ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @41:13-41:57
+41:58-41:58 ; ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @41:1-41:59
+43:1-43:11 @[ checks ] ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @43:1-44:1
+44:1-44:3 def ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:1-44:100
+44:5-44:14 reopposite ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:5-44:15
+44:16-44:16 = ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:1-44:100
+44:18-44:26 ua[1, 4]( ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:18-44:98
+44:27-44:31 Magma ⇒ Magma : Type @44:27-44:32
+44:32-44:32 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:18-44:98
+44:34-44:38 Magma ⇒ Magma : Type @44:34-44:39
+44:39-44:39 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:18-44:98
+44:41-44:43 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:41-44:68
+44:44-44:46 mul ⇒ mul : Bool => Bool @44:44-44:47
+44:48-44:48 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:41-44:68
+44:50-44:53 flip ⇒ flip : Bool => Bool @44:50-44:54
+44:54-44:56 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:41-44:68
+44:57-44:59 one ⇒ one : +{Unit} => +{Unit} @44:57-44:60
+44:61-44:61 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:41-44:68
+44:63-44:66 keep ⇒ keep : +{Unit} => +{Unit} @44:63-44:67
+44:67-44:67 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:41-44:68
+44:68-44:68 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:18-44:98
+44:70-44:72 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:70-44:97
+44:73-44:75 mul ⇒ mul : Bool => Bool @44:73-44:76
+44:77-44:77 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:70-44:97
+44:79-44:82 flip ⇒ flip : Bool => Bool @44:79-44:83
+44:83-44:85 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:70-44:97
+44:86-44:88 one ⇒ one : +{Unit} => +{Unit} @44:86-44:89
+44:90-44:90 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:70-44:97
+44:92-44:95 keep ⇒ keep : +{Unit} => +{Unit} @44:92-44:96
+44:96-44:96 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:70-44:97
+44:97-44:97 ) ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:18-44:98
+44:99-44:99 ; ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:1-44:100
+46:1-46:11 @[ checks ] ⇒ agree : Path(Bool => Bool, exchange, flip) @46:1-47:1
+47:1-47:3 def ⇒ agree : Path(Bool => Bool, exchange, flip) @47:1-47:57
+47:5-47:9 agree ⇒ agree : Path(Bool => Bool, exchange, flip) @47:5-47:10
+47:11-47:11 : ⇒ agree : Path(Bool => Bool, exchange, flip) @47:1-47:57
+47:13-47:17 Path( ⇒ Path(+U (Bool -> -F Bool), exchange, flip) : Type @47:13-47:55
+47:18-47:21 +U ( ⇒ +U (Bool -> -F Bool) : Type @47:18-47:38
+47:22-47:25 Bool ⇒ Bool : Type @47:22-47:26
+47:27-47:28 -> ⇒ Bool -> -F Bool : Type[-] @47:22-47:37
+47:30-47:31 -F ⇒ -F Bool : Type[-] @47:30-47:37
+47:33-47:36 Bool ⇒ Bool : Type @47:33-47:37
+47:37-47:37 ) ⇒ +U (Bool -> -F Bool) : Type @47:18-47:38
+47:38-47:38 , ⇒ Path(+U (Bool -> -F Bool), exchange, flip) : Type @47:13-47:55
+47:40-47:47 exchange ⇒ exchange : Bool => Bool @47:40-47:48
+47:48-47:48 , ⇒ Path(+U (Bool -> -F Bool), exchange, flip) : Type @47:13-47:55
+47:50-47:53 flip ⇒ flip : Bool => Bool @47:50-47:54
+47:54-47:54 ) ⇒ Path(+U (Bool -> -F Bool), exchange, flip) : Type @47:13-47:55
+47:56-47:56 ; ⇒ agree : Path(Bool => Bool, exchange, flip) @47:1-47:57
+48:1-48:3 def ⇒ agree : Path(Bool => Bool, exchange, flip) @48:1-48:37
+48:5-48:9 agree ⇒ agree : Path(Bool => Bool, exchange, flip) @48:5-48:10
+48:11-48:11 = ⇒ agree : Path(Bool => Bool, exchange, flip) @48:1-48:37
+48:13-48:19 funext( ⇒ Path(Bool => Bool, exchange, flip) @48:13-48:35
+48:20-48:27 exchange ⇒ exchange : Bool => Bool @48:20-48:28
+48:28-48:28 , ⇒ Path(Bool => Bool, exchange, flip) @48:13-48:35
+48:30-48:33 flip ⇒ flip : Bool => Bool @48:30-48:34
+48:34-48:34 ) ⇒ Path(Bool => Bool, exchange, flip) @48:13-48:35
+48:36-48:36 ; ⇒ agree : Path(Bool => Bool, exchange, flip) @48:1-48:37
+50:1-50:33 @[ refuses("PointwiseDis… ⇒ disagree : Path(Bool => Bool, exchange, stay) @50:1-51:1
+51:1-51:3 def ⇒ disagree : Path(Bool => Bool, exchange, stay) @51:1-51:60
+51:5-51:12 disagree ⇒ disagree : Path(Bool => Bool, exchange, stay) @51:5-51:13
+51:14-51:14 : ⇒ disagree : Path(Bool => Bool, exchange, stay) @51:1-51:60
+51:16-51:20 Path( ⇒ Path(+U (Bool -> -F Bool), exchange, stay) : Type @51:16-51:58
+51:21-51:24 +U ( ⇒ +U (Bool -> -F Bool) : Type @51:21-51:41
+51:25-51:28 Bool ⇒ Bool : Type @51:25-51:29
+51:30-51:31 -> ⇒ Bool -> -F Bool : Type[-] @51:25-51:40
+51:33-51:34 -F ⇒ -F Bool : Type[-] @51:33-51:40
+51:36-51:39 Bool ⇒ Bool : Type @51:36-51:40
+51:40-51:40 ) ⇒ +U (Bool -> -F Bool) : Type @51:21-51:41
+51:41-51:41 , ⇒ Path(+U (Bool -> -F Bool), exchange, stay) : Type @51:16-51:58
+51:43-51:50 exchange ⇒ exchange : Bool => Bool @51:43-51:51
+51:51-51:51 , ⇒ Path(+U (Bool -> -F Bool), exchange, stay) : Type @51:16-51:58
+51:53-51:56 stay ⇒ stay : Bool => Bool @51:53-51:57
+51:57-51:57 ) ⇒ Path(+U (Bool -> -F Bool), exchange, stay) : Type @51:16-51:58
+51:59-51:59 ; ⇒ disagree : Path(Bool => Bool, exchange, stay) @51:1-51:60
+52:1-52:3 def ⇒ disagree : Path(Bool => Bool, exchange, stay) @52:1-52:40
+52:5-52:12 disagree ⇒ disagree : Path(Bool => Bool, exchange, stay) @52:5-52:13
+52:14-52:14 = ⇒ disagree : Path(Bool => Bool, exchange, stay) @52:1-52:40
+52:16-52:22 funext( ⇒ ?⏎⏎checked against⏎⏎Path(Bool => Bool, exchange, stay) @52:16-52:38
+52:23-52:30 exchange ⇒ exchange : Bool => Bool @52:23-52:31
+52:31-52:31 , ⇒ ?⏎⏎checked against⏎⏎Path(Bool => Bool, exchange, stay) @52:16-52:38
+52:33-52:36 stay ⇒ stay : Bool => Bool @52:33-52:37
+52:37-52:37 ) ⇒ ?⏎⏎checked against⏎⏎Path(Bool => Bool, exchange, stay) @52:16-52:38
+52:39-52:39 ; ⇒ disagree : Path(Bool => Bool, exchange, stay) @52:1-52:40
