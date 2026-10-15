@@ -1369,7 +1369,7 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — the differential witness builds its molders here and
     ///   reads their verdicts against each other.
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.verdicts == verdicts && ret.disagreements == DisagreementCount(0) && ret.candidates.is_empty())]
@@ -1977,7 +1977,7 @@ impl<'pbg> Molder<'pbg>
     ///   the corpus, the drop matrix and the editor scenario: a declared menu
     ///   that met a member's own frontier unmarked shares a window whose
     ///   verdict differs from the member's dry run.
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[spec(captures: before = self.exposed, ensures: |()| self.window_floor.is_some() || self.exposed == before)]
     fn note_declared_menu(
         &mut self,
@@ -2400,7 +2400,7 @@ impl<'pbg> Molder<'pbg>
     ///   the differential witness a push class whose members flag differently.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2574,7 +2574,7 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
     /// - witness: `mold::tests::a_window_reads_the_token_after_a_tied_separator`
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2613,7 +2613,7 @@ impl<'pbg> Molder<'pbg>
     ///   corpus, the drop matrix and the editor scenario through this
     ///   comparison; a comparison that missed the menus or the choice would let
     ///   a table verdict differ unseen.
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[cold]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -2650,7 +2650,7 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — as [`choose`](Self::choose); the differential witness
     ///   reads the two procedures against each other.
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2766,7 +2766,7 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — the differential witness compares the two procedures'
     ///   admitted menus at every decision.
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2943,7 +2943,7 @@ impl<'pbg> Molder<'pbg>
     ///   mutations change the checkpoint bytes.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2986,7 +2986,7 @@ impl<'pbg> Molder<'pbg>
     ///   comparison; a comparison that missed the menus, the choice, or a menu
     ///   one procedure's windows gathered over would let a table verdict differ
     ///   unseen.
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[cold]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -3035,7 +3035,7 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — as [`choose_stream`](Self::choose_stream); the
     ///   differential witness reads the two procedures against each other.
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

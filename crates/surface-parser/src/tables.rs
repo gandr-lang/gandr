@@ -150,7 +150,7 @@ const CHAIN_CAPACITY: usize = 64;
 ///   `admits_at`'s at every decision of the corpus, the drop matrix and the
 ///   editor scenario; a set missing from the union or a continuation read
 ///   against the wrong frontier shows as a disagreement.
-/// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+/// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
 #[derive(Clone, Debug)]
 pub struct Admission<'pbg>
 {
@@ -188,7 +188,7 @@ impl<'pbg> Admission<'pbg>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Admission`].
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[spec(ensures: |ret| ret.open == frontier.open && ret.refuses_item_paren == (bool::from(frontier.head_operand) && frontier.expected == Sort::Expression))]
     pub(crate) fn new(
         pbg: &'pbg Pbg,
@@ -236,7 +236,7 @@ impl<'pbg> Admission<'pbg>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Admission`].
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[spec(ensures: |ret| self.pbg.mold(mold).is_ok() || bool::from(ret))]
     pub(crate) fn admits(
         &mut self,
@@ -294,7 +294,7 @@ impl<'pbg> Admission<'pbg>
 /// - hypothesis: L3 — the differential witness compares the verdicts the push
 ///   classes reach with the dry runs' at every decision; a chain cut short
 ///   merges candidates a deeper frontier tells apart.
-/// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+/// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
 #[derive(Clone, Debug, Default)]
 pub struct SettleChain
 {
@@ -342,7 +342,7 @@ impl SettleChain
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`SettleChain`].
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[spec(ensures: |()| self.molds.len() <= CHAIN_CAPACITY)]
     pub(crate) fn read(
         &mut self,
@@ -378,7 +378,7 @@ impl SettleChain
     /// - hypothesis: L3 — as [`SettleChain`]; a stale chain left keyed would
     ///   key a later decision's candidates against frontiers the state no
     ///   longer holds.
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[spec(ensures: |()| self.molds.is_empty() && !self.keyed)]
     pub(crate) fn unkey(&mut self)
     {
@@ -398,7 +398,7 @@ impl SettleChain
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`SettleChain`].
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     #[spec(ensures: |ret| (!self.keyed || pbg.observation(mold).is_err()) == (ret == PushKey::Alone(mold)))]
     pub(crate) fn key(
         &self,
@@ -448,7 +448,7 @@ impl SettleChain
 ///   classes reach with the dry runs' over every windowed tie of the corpus,
 ///   the drop matrix and the editor scenario; a signature that drops a
 ///   position, a label or an identity merges openers whose windows differ.
-/// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+/// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
 #[derive(Clone, Debug, Default)]
 pub struct WindowClasses
 {
@@ -508,7 +508,7 @@ impl WindowClasses
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`WindowClasses`].
-    /// - witness: `tests::acceptance::table_verdicts_equal_dry_run_verdicts`
+    /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
     ///
     /// # Termination
     /// Each level's nodes reach only later levels, of which there are at most

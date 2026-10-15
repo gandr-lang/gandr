@@ -42,9 +42,11 @@ serde_json.workspace = true
 
 # The editor-simulation suite generates random edit scripts and shrinks a
 # failing one to its smallest keystroke sequence; the inline completion's
-# ranking golden is an inline snapshot.
+# ranking golden is an inline snapshot; the corpus sweeps draw their samples
+# through the sweep crate.
 [dev-dependencies]
 expect-test.workspace = true
+gandr-workflow-sweep.workspace = true
 proptest.workspace = true
 
 [lints]

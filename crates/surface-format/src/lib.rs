@@ -261,7 +261,7 @@ pub enum Layout
 ///   source's digest and material; goldens fix each layout rule at a narrow and
 ///   a wide page, and exact texts fix the top-level joins, the verbatim forms,
 ///   a repaired form, the line ending and the pieces.
-/// - witness: `format::tests::every_source_keeps_its_meaning_and_formats_once`
+/// - witness: `format::tests::sweeps::every_source_keeps_its_meaning_and_formats_once`
 /// - witness: `format::tests::a_block_breaks_one_item_per_line_when_it_does_not_fit`
 /// - witness: `format::tests::top_level_forms_and_comments_keep_their_lines`
 /// - witness: `format::tests::a_repaired_form_is_copied_as_written`

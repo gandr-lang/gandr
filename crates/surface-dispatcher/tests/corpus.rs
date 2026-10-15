@@ -192,70 +192,6 @@ mod corpus
         );
     }
 
-    /// A wider visit over both roots hands over, step by step, exactly what
-    /// the serial walk yields, and answers the serial walk's report.
-    #[test]
-    fn every_width_composes_the_corpus_alike()
-    {
-        let paths = vec![root(Path::new("strict")), root(Path::new("fixture"))];
-        for width in [
-            Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(1))),
-            Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(6))),
-            Width::PerformanceCores,
-        ] {
-            let mut serial = Walk::new(paths.clone());
-            let visited =
-                Walk::new(paths.clone()).visit(width, |step| -> ControlFlow<Infallible> {
-                    let Maybe::Present(expected) = serial.step()
-                    else {
-                        panic!("the serial walk ended first at {width:?}");
-                    };
-                    match (step, expected) {
-                        (
-                            Step::Source {
-                                path,
-                                root,
-                                text,
-                                composed,
-                                standing,
-                            },
-                            Step::Source {
-                                path: serial_path,
-                                root: serial_root,
-                                text: serial_text,
-                                composed: serial_composed,
-                                standing: serial_standing,
-                            },
-                        ) => {
-                            assert_eq!(
-                                (path, root, text, standing),
-                                (serial_path, serial_root, serial_text, serial_standing),
-                                "the visit at {width:?} reaches the serial walk's source"
-                            );
-                            assert!(
-                                composed == serial_composed,
-                                "{} composes alike at {width:?}",
-                                path.display()
-                            );
-                        },
-                        (Step::Fault { path, fault }, _) | (_, Step::Fault { path, fault }) => {
-                            panic!("{}: {fault}", path.display());
-                        },
-                    }
-                    ControlFlow::Continue(())
-                });
-            assert!(
-                matches!(serial.step(), Maybe::Absent(_)),
-                "the visit at {width:?} hands over every source"
-            );
-            assert_eq!(
-                visited,
-                ControlFlow::Continue(serial.report()),
-                "the visit at {width:?} counts the serial walk's report"
-            );
-        }
-    }
-
     /// Every non-directory `.gandr` entry under `corpus`, with directory
     /// links followed and each canonical directory listed once.
     ///
@@ -626,5 +562,107 @@ mod corpus
             Vec::<String>::new(),
             "focusing refuses only codes, element identity, holes and session actions"
         );
+    }
+
+    /// The width sweep: a wider visit over corpus sources hands over, step by
+    /// step, exactly what the serial walk over them yields, and answers the
+    /// serial walk's report.
+    mod sweeps
+    {
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+
+        use super::*;
+
+        /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
+        /// this name, at least one of each corpus class — `strict` and each
+        /// directory below `fixture` — and every source the change adds or
+        /// modifies (`gandr-workflow-sweep`), each walked as its own path. The
+        /// `sweeps` profile walks the two roots whole.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("every_width_composes_the_corpus_alike"),
+            size: SampleSize(64),
+        };
+
+        #[test]
+        fn every_width_composes_the_corpus_alike()
+        {
+            let sweep = Sweep::asked().expect("the run's sweep resolves");
+            let paths: Vec<PathBuf> = match sweep.coverage() {
+                gandr_workflow_sweep::Coverage::Full => {
+                    vec![root(Path::new("strict")), root(Path::new("fixture"))]
+                },
+                gandr_workflow_sweep::Coverage::Sampled => {
+                    let visited = sweep.visit(
+                        SAMPLE,
+                        &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                    );
+                    assert!(
+                        visited.len() >= SAMPLE.size.0,
+                        "the sample is drawn: {}",
+                        visited.len()
+                    );
+                    visited.into_iter().map(|source| source.path).collect()
+                },
+            };
+            for width in [
+                Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(1))),
+                Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(6))),
+                Width::PerformanceCores,
+            ] {
+                let mut serial = Walk::new(paths.clone());
+                let visited =
+                    Walk::new(paths.clone()).visit(width, |step| -> ControlFlow<Infallible> {
+                        let Maybe::Present(expected) = serial.step()
+                        else {
+                            panic!("the serial walk ended first at {width:?}");
+                        };
+                        match (step, expected) {
+                            (
+                                Step::Source {
+                                    path,
+                                    root,
+                                    text,
+                                    composed,
+                                    standing,
+                                },
+                                Step::Source {
+                                    path: serial_path,
+                                    root: serial_root,
+                                    text: serial_text,
+                                    composed: serial_composed,
+                                    standing: serial_standing,
+                                },
+                            ) => {
+                                assert_eq!(
+                                    (path, root, text, standing),
+                                    (serial_path, serial_root, serial_text, serial_standing),
+                                    "the visit at {width:?} reaches the serial walk's source"
+                                );
+                                assert!(
+                                    composed == serial_composed,
+                                    "{} composes alike at {width:?}",
+                                    path.display()
+                                );
+                            },
+                            (Step::Fault { path, fault }, _) | (_, Step::Fault { path, fault }) => {
+                                panic!("{}: {fault}", path.display());
+                            },
+                        }
+                        ControlFlow::Continue(())
+                    });
+                assert!(
+                    matches!(serial.step(), Maybe::Absent(_)),
+                    "the visit at {width:?} hands over every source"
+                );
+                assert_eq!(
+                    visited,
+                    ControlFlow::Continue(serial.report()),
+                    "the visit at {width:?} counts the serial walk's report"
+                );
+            }
+        }
     }
 }

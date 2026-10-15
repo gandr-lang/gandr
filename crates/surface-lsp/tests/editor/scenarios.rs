@@ -1,10 +1,10 @@
-//! The scenarios: the corpus typed and erased, scripted edits that break and
-//! fix a document, and random edit scripts undone to where they started.
+//! The scenarios: the corpus typed, erased and hovered, scripted edits that
+//! break and fix a document, and random edit scripts undone to where they
+//! started.
 //!
-//! The gate types and erases a sample of the corpus and generates a share of
-//! the random scripts; `GANDR_SWEEPS_WHOLE=1` (`mise run ci:sweeps`, the
-//! daily lane) visits every source and runs every script. A source that fails
-//! in the sample fails the gate, and one outside it fails the daily lane.
+//! The corpus scenarios and the random scripts are sweeps, in [`sweeps`]: each
+//! visits its stated sample under every pull-request profile and every source
+//! and every script under the `sweeps` profile, nightly.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -15,7 +15,6 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use std::panic::catch_unwind;
 use std::path::Path;
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 use anodized::spec;
@@ -254,69 +253,6 @@ const NAMES: [&str; 4] = [
     "type_variable",
 ];
 
-/// The random edit scripts each scenario generates in a whole run.
-const CASES: u32 = 32;
-
-/// The random edit scripts each scenario generates in the gate's run: a
-/// quarter of the whole's. Their cost is the scripts' keystrokes: the whole's
-/// 32 took the random-edit scenario 40 s and the two-editor scenarios 22 s
-/// and 19 s on the enforcing lane (medians of five merge-queue runs).
-const SAMPLED_CASES: u32 = 8;
-
-/// The gate's erasure: every fourth corpus source by index after the length
-/// sort, the longest in, every keystroke held to the oracle. On four cores
-/// with specifications enforced the sample erases in 29 s against the whole
-/// corpus's 48 s, the longest source setting both.
-const ERASED: Sample = Sample {
-    stride: Stride(4),
-    ceiling: Ceiling(usize::MAX),
-};
-
-/// The gate's typing, a smoke: every eighth corpus source no longer than a
-/// kibibyte, by index after the length sort. On four cores with
-/// specifications enforced the whole corpus types in 88 s, 66 s of it the
-/// longest source alone, which no sample that keeps that source can shorten;
-/// the sources past the ceiling are typed by the whole run, and the erasure's
-/// sample still holds the longest to the oracle at every keystroke. The smoke
-/// types in 4 s.
-const TYPED: Sample = Sample {
-    stride: Stride(8),
-    ceiling: Ceiling(1024),
-};
-
-/// What part of the corpus a sweep visits under the gate; the whole run,
-/// `GANDR_SWEEPS_WHOLE=1` (`mise run ci:sweeps`), visits every source.
-#[derive(Clone, Copy, Debug)]
-struct Sample
-{
-    /// The step between the sources it visits.
-    stride: Stride,
-    /// The longest source it visits.
-    ceiling: Ceiling,
-}
-
-/// A sample's step: it visits the sources whose index after the length sort
-/// this divides.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct Stride(usize);
-
-/// The length in bytes past which a source is left to the whole run.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct Ceiling(usize);
-
-/// How much a run of the corpus sweeps covers.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Sweep
-{
-    /// Every source and every random script: `mise run ci:sweeps`, the
-    /// daily lane.
-    Whole,
-    /// The gate's samples and its share of random scripts: `mise run check`.
-    Sampled,
-}
-
 /// The texts a random edit script starts from.
 const SEEDS: [&str; 4] = [
     "",
@@ -365,44 +301,43 @@ pub(super) struct Source
 /// - requires: the corpus crate sits beside this one.
 /// - ensures: one source per `.gandr` file under the corpus's `strict` and
 ///   `fixture` roots, in path order, each with its percent-escaped `file` URI.
-/// - provides: the texts the corpus scenarios type and erase.
+/// - provides: the texts the hover goldens read.
 /// - panics: the corpus cannot be read.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the corpus scenarios assert they reached more than a
-///   hundred sources; an empty or truncated walk fails that floor.
-/// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
-#[spec(ensures: |ret| ret.len() > 100 && ret.iter().all(|source|
-    source.uri.starts_with("file://")
-        && Path::new(&source.uri).extension().is_some_and(|extension| extension == "gandr")))]
+/// - hypothesis: L3 — the goldens find each headline source here; an empty or
+///   truncated walk loses one.
+/// - witness: `editor::editor::shapes::the_headline_sources_hover_as_their_goldens`
+#[spec(ensures: |ret| ret.len() > 100)]
 pub(super) fn corpus() -> Vec<Source>
 {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../surface-corpus")
-        .canonicalize()
-        .expect("the corpus sits beside the language server");
-    let mut pending = vec![root.join("strict"), root.join("fixture")];
-    let mut paths: Vec<PathBuf> = Vec::new();
-    while let Some(directory) = pending.pop() {
-        for entry in std::fs::read_dir(&directory).expect("a corpus directory reads") {
-            let path = entry.expect("a corpus entry reads").path();
-            if path.is_dir() {
-                pending.push(path);
-            }
-            else if path
-                .extension()
-                .is_some_and(|extension| extension == "gandr")
-            {
-                paths.push(path);
-            }
-        }
-    }
-    paths.sort();
-    paths
-        .into_iter()
-        .map(|path| {
-            let text = std::fs::read_to_string(&path).expect("a corpus source reads");
-            let spelled = path.to_str().expect("a corpus path is UTF-8");
+    opened(&gandr_workflow_sweep::corpus::sources().expect("the corpus reads"))
+}
+
+/// `sources` as an editor opens them: each one's percent-escaped `file` URI
+/// and its text, in the order given.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one source per one given, in order, each URI the `file` URI of
+///   its canonical path.
+/// - provides: what the corpus sweeps type, erase and hover.
+/// - panics: a source cannot be read or its path is not UTF-8.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every corpus sweep opens its sources through this; a lost
+///   source or a URI the walk does not classify fails a sweep.
+/// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+#[spec(ensures: |ret| ret.len() == sources.len() && ret.iter().all(|source|
+    source.uri.starts_with("file://")
+        && Path::new(&source.uri).extension().is_some_and(|extension| extension == "gandr")))]
+pub(super) fn opened(sources: &[gandr_workflow_sweep::Source]) -> Vec<Source>
+{
+    sources
+        .iter()
+        .map(|source| {
+            let text = std::fs::read_to_string(&source.path).expect("a corpus source reads");
+            let spelled = source.path.to_str().expect("a corpus path is UTF-8");
             Source {
                 uri: format!("file://{}", utf8_percent_encode(spelled, PATH)),
                 text,
@@ -503,7 +438,7 @@ pub(super) struct Owner
 /// - hypothesis: L3 — the sweep's per-kind table separates a pattern's name,
 ///   the operator of a cons pattern and the keywords of a match, each measured
 ///   against the answers the issue recorded.
-/// - witness: `editor::editor::scenarios::hovering_every_position_of_each_corpus_source_answers_without_fault`
+/// - witness: `editor::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
 #[spec(ensures: |ret| ret.is_sorted_by_key(|owner| owner.leaf.0)
     && ret.iter().all(|owner| owner.node.0 <= owner.leaf.0 && owner.leaf.1 <= owner.node.1
         && owner.form.0 <= owner.node.0 && owner.node.1 <= owner.form.1))]
@@ -645,89 +580,6 @@ pub(super) fn spot(at: &Value) -> Position
     Position {
         line: coordinate("line"),
         character: coordinate("character"),
-    }
-}
-
-impl Sweep
-{
-    /// The coverage the environment asks for: the whole when
-    /// `GANDR_SWEEPS_WHOLE` is set, the gate's samples otherwise.
-    ///
-    /// # Specification
-    /// trivial.
-    fn asked() -> Self
-    {
-        if std::env::var_os("GANDR_SWEEPS_WHOLE").is_some() {
-            Self::Whole
-        }
-        else {
-            Self::Sampled
-        }
-    }
-
-    /// The corpus sources a sweep visits, the longest first: every source in
-    /// a whole run, and `sample`'s share in the gate's.
-    ///
-    /// # Specification
-    /// - requires: the corpus crate sits beside this one.
-    /// - ensures: the walk reached more than a hundred sources. A whole run
-    ///   returns every one; a sampled run returns, of those no longer than the
-    ///   sample's ceiling, the ones whose index after the length sort its
-    ///   stride divides, standing for more than a hundred sources. Either way
-    ///   longest first, sources of one length in path order.
-    /// - provides: the sources the typing and the erasure visit.
-    /// - panics: the corpus cannot be read, the walk reaches a hundred sources
-    ///   or fewer, or the sample stands for a hundred or fewer.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a truncated walk fails the whole run's floor, and a
-    ///   sample whose ceiling or stride left too few sources fails the sampled
-    ///   run's; the order is the predicate's.
-    /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
-    /// - witness: `editor::editor::scenarios::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
-    #[spec(ensures: |ret| ret.is_sorted_by(|longer, shorter| longer.text.len() >= shorter.text.len()))]
-    fn visited(
-        self,
-        sample: Sample,
-    ) -> Vec<Source>
-    {
-        let mut sources = corpus();
-        assert!(
-            sources.len() > 100,
-            "the corpus is walked whole: {}",
-            sources.len()
-        );
-        sources.sort_by_key(|source| core::cmp::Reverse(source.text.len()));
-        if self == Self::Whole {
-            return sources;
-        }
-        let Sample {
-            stride: Stride(stride),
-            ceiling: Ceiling(ceiling),
-        } = sample;
-        let sampled: Vec<Source> = sources
-            .into_iter()
-            .filter(|source| source.text.len() <= ceiling)
-            .step_by(stride)
-            .collect();
-        assert!(
-            sampled.len().saturating_mul(stride) > 100,
-            "every {stride}th source of at most {ceiling} bytes stands for a hundred or more: {}",
-            sampled.len()
-        );
-        sampled
-    }
-
-    /// The random edit scripts each scenario generates.
-    ///
-    /// # Specification
-    /// trivial.
-    fn scripts(self) -> ProptestConfig
-    {
-        ProptestConfig::with_cases(match self {
-            Self::Whole => CASES,
-            Self::Sampled => SAMPLED_CASES,
-        })
     }
 }
 
@@ -929,9 +781,8 @@ fn apply(
 /// # Adequacy
 /// - hypothesis: L3 — the corpus scenarios visit through here; one shared index
 ///   hands each source to exactly one worker, and a panic in a worker fails the
-///   scope, so a failing source fails the scenario, and the daily lane's log
-///   names it.
-/// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
+///   scope, so a failing source fails the scenario, and the run's log names it.
+/// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
 fn each_in_parallel(
     sources: &[Source],
     visit: impl Fn(&Source) + Sync,
@@ -951,38 +802,6 @@ fn each_in_parallel(
                 }
             });
         }
-    });
-}
-
-#[test]
-fn typing_each_corpus_source_keeps_every_answer_faithful()
-{
-    let sources = Sweep::asked().visited(TYPED);
-    each_in_parallel(&sources, |source| {
-        let mut session =
-            Session::open(source.uri.clone(), Text(""), Typing::Assisted, Oracle::Line);
-        session.type_in(Text(&source.text));
-        session.closes_over_streams();
-    });
-}
-
-#[test]
-fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
-{
-    let sources = Sweep::asked().visited(ERASED);
-    each_in_parallel(&sources, |source| {
-        let mut session = Session::open(
-            source.uri.clone(),
-            Text(&source.text),
-            Typing::Assisted,
-            Oracle::Keystroke,
-        );
-        session.erase_lines();
-        assert!(
-            session.buffer().text().0.is_empty(),
-            "the document is erased"
-        );
-        session.closes_over_streams();
     });
 }
 
@@ -1014,7 +833,7 @@ pub(super) struct Hovered
 /// # Adequacy
 /// - hypothesis: L3 — the sweep counts every non-comment position of the corpus
 ///   through this, and the goldens pin every answer of five sources.
-/// - witness: `editor::editor::scenarios::hovering_every_position_of_each_corpus_source_answers_without_fault`
+/// - witness: `editor::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
 /// - witness: `editor::editor::shapes::the_headline_sources_hover_as_their_goldens`
 #[spec(ensures: |ret| ret.len() == source.text.chars().count().saturating_add(1))]
 pub(super) fn hovered(
@@ -1080,147 +899,6 @@ pub(super) fn hovered(
             }
         })
         .collect()
-}
-
-#[test]
-fn hovering_every_position_of_each_corpus_source_answers_without_fault()
-{
-    let sources = corpus();
-    assert!(
-        sources.len() > 100,
-        "the corpus is walked whole: {}",
-        sources.len()
-    );
-    let grammar = built_in().expect("the built-in grammar builds");
-    let positions = AtomicUsize::new(0_usize);
-    let unanswered = AtomicUsize::new(0_usize);
-    let by_kind: Mutex<BTreeMap<String, Coverage>> = Mutex::new(BTreeMap::new());
-    each_in_parallel(&sources, |source| {
-        let hovers = hovered(&grammar, source);
-        let shaped = shapes::judged(&grammar, source, &hovers);
-        let text = Text(&source.text);
-        let mut rows: BTreeMap<String, Coverage> = BTreeMap::new();
-        for (hover, shaped) in hovers.iter().zip(shaped) {
-            if hover.comment {
-                continue;
-            }
-            let _counted = positions.fetch_add(1_usize, Ordering::Relaxed);
-            if hover.shown.is_null() {
-                let _counted = unanswered.fetch_add(1_usize, Ordering::Relaxed);
-            }
-            let Some(ref owner) = hover.owner
-            else {
-                continue;
-            };
-            let mut row = Coverage {
-                positions: 1_usize,
-                ..Coverage::default()
-            };
-            if hover.shown.is_null() {
-                row.unanswered = 1_usize;
-            }
-            else {
-                if shapes::reach(text, owner, &hover.shown) == shapes::Reach::AtNode {
-                    row.at_node = 1_usize;
-                }
-                else {
-                    row.ancestor = 1_usize;
-                }
-                // A `?` the printer writes for an unknown stands alone; one
-                // opening a word is a session type's receive.
-                if hover.shown["contents"]["value"]
-                    .as_str()
-                    .is_some_and(|value| {
-                        value.match_indices('?').any(|(at, _)| {
-                            !value
-                                .get(at + 1 ..)
-                                .and_then(|rest| rest.chars().next())
-                                .is_some_and(char::is_alphabetic)
-                        })
-                    })
-                {
-                    row.unknown = 1_usize;
-                }
-                match shaped {
-                    shapes::Judged::Shaped => row.shaped = 1_usize,
-                    shapes::Judged::Unshaped => row.unshaped = 1_usize,
-                    shapes::Judged::Unheld => {},
-                }
-            }
-            rows.entry(owner.kind.clone()).or_default().add(row);
-        }
-        let mut by_kind = by_kind.lock().expect("no visit panicked holding the table");
-        for (kind, row) in rows {
-            by_kind.entry(kind).or_default().add(row);
-        }
-    });
-    let positions = positions.into_inner();
-    let unanswered = unanswered.into_inner();
-    let by_kind = by_kind
-        .into_inner()
-        .expect("no visit panicked holding the table");
-    eprintln!("{positions} corpus positions, {unanswered} answered by nothing");
-    eprintln!(
-        "| kind | positions | at the node ‰ | shape ‰ | by an ancestor | unanswered | `?` | \
-         unshaped |"
-    );
-    eprintln!("| --- | --- | --- | --- | --- | --- | --- | --- |");
-    for (kind, row) in &by_kind {
-        let share = |count: usize| {
-            count
-                .saturating_mul(1000_usize)
-                .checked_div(row.positions)
-                .unwrap_or_default()
-        };
-        eprintln!(
-            "| {kind} | {} | {} | {} | {} | {} | {} | {} |",
-            row.positions,
-            share(row.at_node),
-            share(row.shaped),
-            row.ancestor,
-            row.unanswered,
-            row.unknown,
-            row.unshaped
-        );
-    }
-    let mut misses = Vec::new();
-    if unanswered > UNANSWERED_CEILING {
-        misses.push(format!(
-            "{unanswered} corpus positions answered by nothing, above {UNANSWERED_CEILING}"
-        ));
-    }
-    for (kind, row) in &by_kind {
-        if MEANINGLESS
-            .iter()
-            .any(|&(meaningless, _)| meaningless == kind)
-        {
-            continue;
-        }
-        let Some(&KindFloor(_, ancestors, unanswered, unknowns, unshaped)) =
-            KIND_FLOORS.iter().find(|floor| floor.0 == kind)
-        else {
-            misses.push(format!("{kind}: no floor and not meaningless"));
-            continue;
-        };
-        for (what, count, ceiling) in [
-            ("answered by an ancestor", row.ancestor, ancestors),
-            ("answered by nothing", row.unanswered, unanswered),
-            ("answered with `?`", row.unknown, unknowns),
-            ("answered in another shape", row.unshaped, unshaped),
-        ] {
-            if count > ceiling {
-                misses.push(format!("{kind}: {count} {what}, above {ceiling}"));
-            }
-        }
-    }
-    for &KindFloor(kind, ..) in KIND_FLOORS {
-        if !by_kind.contains_key(kind) {
-            misses.push(format!(
-                "{kind}: a floor for a kind the corpus no longer has"
-            ));
-        }
-    }
-    assert_eq!(misses, Vec::<String>::new(), "hover coverage by node");
 }
 
 #[test]
@@ -1556,72 +1234,364 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
     );
 }
 
-proptest! {
-    #![proptest_config(Sweep::asked().scripts())]
+/// The corpus sweeps and the random edit scripts. Each visits the sample its
+/// constant states under every pull-request profile and everything under the
+/// `sweeps` profile (`gandr-workflow-sweep`): every source, every script from
+/// a fresh seed. A sample ranks the corpus by its BLAKE3 digest under the
+/// sweep's name, holds at least one source of each corpus class — `strict` and
+/// each directory below `fixture` — and adds every source the change adds or
+/// modifies, so a corpus edit is swept on the pull request that makes it.
+mod sweeps
+{
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::SampleName;
+    use gandr_workflow_sweep::SampleSize;
+    use gandr_workflow_sweep::Sweep;
+    use proptest::test_runner::RngSeed;
 
-    #[test]
-    fn random_edits_keep_every_answer_faithful(
-        seed in select(SEEDS.as_slice()),
-        assisted in any::<bool>(),
-        script in proptest::collection::vec(edit(), 1_usize .. 24_usize),
-    ) {
-        let typing = if assisted { Typing::Assisted } else { Typing::Plain };
-        let mut session = Session::open(
-            String::from("file:///strict/random.gandr"),
-            Text(seed),
-            typing,
-            Oracle::Keystroke,
+    use super::*;
+
+    /// The random edit scripts each scenario generates under the `sweeps`
+    /// profile, each run from a fresh seed.
+    const CASES: u32 = 32;
+
+    /// The random edit scripts each scenario generates under every
+    /// pull-request profile: a quarter of the whole's, drawn from
+    /// [`SCRIPTS_SEED`] so every run generates the same eight.
+    const SAMPLED_CASES: u32 = 8;
+
+    /// The seed the sampled scripts are drawn from.
+    const SCRIPTS_SEED: u64 = 0x6761_6e64_7273_7765;
+
+    /// The typing sweep's sample: sixteen sources no longer than
+    /// [`TYPED_CEILING`], every keystroke held to the oracle.
+    const TYPED: Sample = Sample {
+        name: SampleName("typing_each_corpus_source_keeps_every_answer_faithful"),
+        size: SampleSize(16),
+    };
+
+    /// The longest source the typing sweep's sample types, in bytes: typing
+    /// costs a check per keystroke over the whole text, so a long source alone
+    /// types for longer than the bound. A changed source past it is typed
+    /// nightly; the erasure and the hover sweep visit it on the pull request.
+    const TYPED_CEILING: Ceiling = Ceiling(1024);
+
+    /// The erasure's sample: twenty-four sources, every keystroke held to the
+    /// oracle.
+    const ERASED: Sample = Sample {
+        name: SampleName("erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful"),
+        size: SampleSize(24),
+    };
+
+    /// The hover sweep's sample: forty-eight sources, every position hovered.
+    const HOVERED: Sample = Sample {
+        name: SampleName("hovering_every_position_of_each_corpus_source_answers_without_fault"),
+        size: SampleSize(48),
+    };
+
+    /// The length in bytes past which a sampled sweep leaves a source to the
+    /// `sweeps` profile.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug)]
+    struct Ceiling(u64);
+
+    /// The sources `sample` visits in this run, the longest first so the
+    /// longest starts at once. A sampled run draws from the sources no longer
+    /// than `ceiling`; the `sweeps` profile visits every source.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the visited sources, sorted longest first.
+    /// - provides: the sources each corpus sweep visits.
+    /// - panics: the corpus or the change cannot be read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus sweep draws its sources through this; a
+    ///   lost or misordered source changes what a sweep visits, which the
+    ///   sample's own witnesses in `gandr-workflow-sweep` pin.
+    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
+    #[spec(ensures: |ret| ret.is_sorted_by(|longer, shorter| longer.text.len() >= shorter.text.len()))]
+    fn visited(
+        sample: Sample,
+        ceiling: Ceiling,
+    ) -> Vec<Source>
+    {
+        let sweep = Sweep::asked().expect("the run's sweep resolves");
+        let candidates: Vec<_> = gandr_workflow_sweep::corpus::sources()
+            .expect("the corpus reads")
+            .into_iter()
+            .filter(|source| {
+                sweep.coverage() == gandr_workflow_sweep::Coverage::Full
+                    || std::fs::metadata(&source.path).is_ok_and(|meta| meta.len() <= ceiling.0)
+            })
+            .collect();
+        let mut sources = opened(&sweep.visit(sample, &candidates));
+        assert!(
+            sources.len() >= sample.size.0,
+            "the sample is drawn: {}",
+            sources.len()
         );
-        let opened = session.published().clone();
-        for &step in &script {
-            apply(&mut session, step);
+        sources.sort_by_key(|source| core::cmp::Reverse(source.text.len()));
+        sources
+    }
+
+    /// The random scripts the run generates: [`SAMPLED_CASES`] from
+    /// [`SCRIPTS_SEED`], or [`CASES`] from a fresh seed under the `sweeps`
+    /// profile.
+    ///
+    /// # Specification
+    /// trivial.
+    fn scripts() -> ProptestConfig
+    {
+        match gandr_workflow_sweep::Coverage::asked() {
+            gandr_workflow_sweep::Coverage::Full => ProptestConfig::with_cases(CASES),
+            gandr_workflow_sweep::Coverage::Sampled => ProptestConfig {
+                rng_seed: RngSeed::Fixed(SCRIPTS_SEED),
+                ..ProptestConfig::with_cases(SAMPLED_CASES)
+            },
         }
-        while session.buffer().history() == History::Undoable {
-            session.undo();
-        }
-        prop_assert_eq!(session.buffer().text(), Text(seed), "undoing every edit restores the text");
-        prop_assert_eq!(session.published(), &opened, "and the diagnostics it opened with");
     }
 
     #[test]
-    fn two_editors_on_one_buffer_each_keep_their_answers(
-        seed in select(SEEDS.as_slice()),
-        script in proptest::collection::vec(edit(), 1_usize .. 16_usize),
-    ) {
-        let mut first = Session::open_shared(
-            String::from("file:///strict/shared.gandr"),
-            Text(seed),
-            Typing::Assisted,
-            Oracle::Keystroke,
-        );
-        let mut second = first.beside(Typing::Assisted);
-        for &step in &script {
-            apply(&mut first, step);
-            apply(&mut second, step);
-            prop_assert_eq!(first.buffer().text(), second.buffer().text(), "one buffer, two clients");
-        }
-        first.replays_over_streams();
-        second.replays_over_streams();
+    fn typing_each_corpus_source_keeps_every_answer_faithful()
+    {
+        let sources = visited(TYPED, TYPED_CEILING);
+        each_in_parallel(&sources, |source| {
+            let mut session =
+                Session::open(source.uri.clone(), Text(""), Typing::Assisted, Oracle::Line);
+            session.type_in(Text(&source.text));
+            session.closes_over_streams();
+        });
     }
 
     #[test]
-    fn two_editors_on_their_own_buffers_each_keep_their_answers(
-        seed in select(SEEDS.as_slice()),
-        script in proptest::collection::vec((any::<bool>(), edit()), 1_usize .. 16_usize),
-    ) {
-        let mut first = Session::open_shared(
-            String::from("file:///strict/diverged.gandr"),
-            Text(seed),
-            Typing::Assisted,
-            Oracle::Keystroke,
+    fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
+    {
+        let sources = visited(ERASED, Ceiling(u64::MAX));
+        each_in_parallel(&sources, |source| {
+            let mut session = Session::open(
+                source.uri.clone(),
+                Text(&source.text),
+                Typing::Assisted,
+                Oracle::Keystroke,
+            );
+            session.erase_lines();
+            assert!(
+                session.buffer().text().0.is_empty(),
+                "the document is erased"
+            );
+            session.closes_over_streams();
+        });
+    }
+
+    #[test]
+    fn hovering_every_position_of_each_corpus_source_answers_without_fault()
+    {
+        let sources = visited(HOVERED, Ceiling(u64::MAX));
+        let grammar = built_in().expect("the built-in grammar builds");
+        let positions = AtomicUsize::new(0_usize);
+        let unanswered = AtomicUsize::new(0_usize);
+        let by_kind: Mutex<BTreeMap<String, Coverage>> = Mutex::new(BTreeMap::new());
+        each_in_parallel(&sources, |source| {
+            let hovers = hovered(&grammar, source);
+            let shaped = shapes::judged(&grammar, source, &hovers);
+            let text = Text(&source.text);
+            let mut rows: BTreeMap<String, Coverage> = BTreeMap::new();
+            for (hover, shaped) in hovers.iter().zip(shaped) {
+                if hover.comment {
+                    continue;
+                }
+                let _counted = positions.fetch_add(1_usize, Ordering::Relaxed);
+                if hover.shown.is_null() {
+                    let _counted = unanswered.fetch_add(1_usize, Ordering::Relaxed);
+                }
+                let Some(ref owner) = hover.owner
+                else {
+                    continue;
+                };
+                let mut row = Coverage {
+                    positions: 1_usize,
+                    ..Coverage::default()
+                };
+                if hover.shown.is_null() {
+                    row.unanswered = 1_usize;
+                }
+                else {
+                    if shapes::reach(text, owner, &hover.shown) == shapes::Reach::AtNode {
+                        row.at_node = 1_usize;
+                    }
+                    else {
+                        row.ancestor = 1_usize;
+                    }
+                    // A `?` the printer writes for an unknown stands alone; one
+                    // opening a word is a session type's receive.
+                    if hover.shown["contents"]["value"]
+                        .as_str()
+                        .is_some_and(|value| {
+                            value.match_indices('?').any(|(at, _)| {
+                                !value
+                                    .get(at + 1 ..)
+                                    .and_then(|rest| rest.chars().next())
+                                    .is_some_and(char::is_alphabetic)
+                            })
+                        })
+                    {
+                        row.unknown = 1_usize;
+                    }
+                    match shaped {
+                        shapes::Judged::Shaped => row.shaped = 1_usize,
+                        shapes::Judged::Unshaped => row.unshaped = 1_usize,
+                        shapes::Judged::Unheld => {},
+                    }
+                }
+                rows.entry(owner.kind.clone()).or_default().add(row);
+            }
+            let mut by_kind = by_kind.lock().expect("no visit panicked holding the table");
+            for (kind, row) in rows {
+                by_kind.entry(kind).or_default().add(row);
+            }
+        });
+        let positions = positions.into_inner();
+        let unanswered = unanswered.into_inner();
+        let by_kind = by_kind
+            .into_inner()
+            .expect("no visit panicked holding the table");
+        eprintln!("{positions} corpus positions, {unanswered} answered by nothing");
+        eprintln!(
+            "| kind | positions | at the node ‰ | shape ‰ | by an ancestor | unanswered | `?` | \
+         unshaped |"
         );
-        let mut second = first.beside(Typing::Plain);
-        for &(in_first, step) in &script {
-            apply(if in_first { &mut first } else { &mut second }, step);
-            first.verify();
-            second.verify();
+        eprintln!("| --- | --- | --- | --- | --- | --- | --- | --- |");
+        for (kind, row) in &by_kind {
+            let share = |count: usize| {
+                count
+                    .saturating_mul(1000_usize)
+                    .checked_div(row.positions)
+                    .unwrap_or_default()
+            };
+            eprintln!(
+                "| {kind} | {} | {} | {} | {} | {} | {} | {} |",
+                row.positions,
+                share(row.at_node),
+                share(row.shaped),
+                row.ancestor,
+                row.unanswered,
+                row.unknown,
+                row.unshaped
+            );
         }
-        first.replays_over_streams();
-        second.replays_over_streams();
+        let mut misses = Vec::new();
+        if unanswered > UNANSWERED_CEILING {
+            misses.push(format!(
+                "{unanswered} corpus positions answered by nothing, above {UNANSWERED_CEILING}"
+            ));
+        }
+        for (kind, row) in &by_kind {
+            if MEANINGLESS
+                .iter()
+                .any(|&(meaningless, _)| meaningless == kind)
+            {
+                continue;
+            }
+            let Some(&KindFloor(_, ancestors, unanswered, unknowns, unshaped)) =
+                KIND_FLOORS.iter().find(|floor| floor.0 == kind)
+            else {
+                misses.push(format!("{kind}: no floor and not meaningless"));
+                continue;
+            };
+            for (what, count, ceiling) in [
+                ("answered by an ancestor", row.ancestor, ancestors),
+                ("answered by nothing", row.unanswered, unanswered),
+                ("answered with `?`", row.unknown, unknowns),
+                ("answered in another shape", row.unshaped, unshaped),
+            ] {
+                if count > ceiling {
+                    misses.push(format!("{kind}: {count} {what}, above {ceiling}"));
+                }
+            }
+        }
+        // A sample need not hold every kind; only the whole corpus can show a
+        // floor whose kind is gone.
+        if gandr_workflow_sweep::Coverage::asked() == gandr_workflow_sweep::Coverage::Full {
+            for &KindFloor(kind, ..) in KIND_FLOORS {
+                if !by_kind.contains_key(kind) {
+                    misses.push(format!(
+                        "{kind}: a floor for a kind the corpus no longer has"
+                    ));
+                }
+            }
+        }
+        assert_eq!(misses, Vec::<String>::new(), "hover coverage by node");
+    }
+
+    proptest! {
+        #![proptest_config(scripts())]
+
+        #[test]
+        fn random_edits_keep_every_answer_faithful(
+            seed in select(SEEDS.as_slice()),
+            assisted in any::<bool>(),
+            script in proptest::collection::vec(edit(), 1_usize .. 24_usize),
+        ) {
+            let typing = if assisted { Typing::Assisted } else { Typing::Plain };
+            let mut session = Session::open(
+                String::from("file:///strict/random.gandr"),
+                Text(seed),
+                typing,
+                Oracle::Keystroke,
+            );
+            let opened = session.published().clone();
+            for &step in &script {
+                apply(&mut session, step);
+            }
+            while session.buffer().history() == History::Undoable {
+                session.undo();
+            }
+            prop_assert_eq!(session.buffer().text(), Text(seed), "undoing every edit restores the text");
+            prop_assert_eq!(session.published(), &opened, "and the diagnostics it opened with");
+        }
+
+        #[test]
+        fn two_editors_on_one_buffer_each_keep_their_answers(
+            seed in select(SEEDS.as_slice()),
+            script in proptest::collection::vec(edit(), 1_usize .. 16_usize),
+        ) {
+            let mut first = Session::open_shared(
+                String::from("file:///strict/shared.gandr"),
+                Text(seed),
+                Typing::Assisted,
+                Oracle::Keystroke,
+            );
+            let mut second = first.beside(Typing::Assisted);
+            for &step in &script {
+                apply(&mut first, step);
+                apply(&mut second, step);
+                prop_assert_eq!(first.buffer().text(), second.buffer().text(), "one buffer, two clients");
+            }
+            first.replays_over_streams();
+            second.replays_over_streams();
+        }
+
+        #[test]
+        fn two_editors_on_their_own_buffers_each_keep_their_answers(
+            seed in select(SEEDS.as_slice()),
+            script in proptest::collection::vec((any::<bool>(), edit()), 1_usize .. 16_usize),
+        ) {
+            let mut first = Session::open_shared(
+                String::from("file:///strict/diverged.gandr"),
+                Text(seed),
+                Typing::Assisted,
+                Oracle::Keystroke,
+            );
+            let mut second = first.beside(Typing::Plain);
+            for &(in_first, step) in &script {
+                apply(if in_first { &mut first } else { &mut second }, step);
+                first.verify();
+                second.verify();
+            }
+            first.replays_over_streams();
+            second.replays_over_streams();
+        }
     }
 }

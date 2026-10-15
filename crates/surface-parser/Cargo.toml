@@ -27,9 +27,11 @@ gandr-surface-syntax.workspace = true
 gandr-theory-graphs.workspace = true
 gandr-theory-spec-combinators.workspace = true
 
-# The recovery harness fingerprints trees by grammar-stable mold names.
+# The recovery harness fingerprints trees by grammar-stable mold names; the
+# sweeps draw their samples through the sweep crate.
 [dev-dependencies]
 blake3.workspace = true
+gandr-workflow-sweep.workspace = true
 proptest.workspace = true
 
 [lints]

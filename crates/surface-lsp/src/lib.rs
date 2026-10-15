@@ -242,23 +242,26 @@
 //! _Reversal:_ a check that only an in-process drive can make moves the
 //! single-editor sessions back in process, with the replay.
 //!
-//! **The gate samples the corpus sweeps; a daily lane runs them whole.** With
-//! specifications enforced the sweeps set the merge queue's critical path, so
-//! the gate (`mise run check`) visits a sample and the daily lane
-//! (`mise run ci:sweeps`, which sets `GANDR_SWEEPS_WHOLE=1`) every source. The
-//! erasure and the ghost-text sweep visit every fourth source by index after
-//! the length sort, the longest in. The typing is a smoke, every eighth source
-//! no longer than a kibibyte: the longest source alone types for longer than
-//! the gate can spend, and no sample that keeps it is shorter, while the
-//! erasure's sample still holds it to the oracle at every keystroke. The random
-//! edit scenarios generate a quarter of their scripts. A source that fails in
-//! the sample fails the gate and one outside it fails the daily lane: nothing
-//! goes untested, part of it is tested later. The constants beside each sweep
-//! state their measured cost. _Alternatives:_ the whole corpus in the gate,
-//! which held the queue's enforcing lane past fifteen minutes; a random sample,
-//! whose failure the next run cannot reproduce. _Reversal:_ the samples widen
-//! to the whole once the specification cost per keystroke falls far enough
-//! that the whole fits the gate.
+//! **Every corpus sweep samples on a pull request and runs whole nightly.**
+//! With specifications enforced a sweep over the whole corpus takes minutes,
+//! past the 30 s every test is held to, so each sweep sits in a `sweeps`
+//! module and visits a sample its constant states under every pull-request
+//! profile, and every source under the `sweeps` nextest profile, which the
+//! nightly workflow runs in both modes. A sample ranks the corpus by its
+//! BLAKE3 digest under the sweep's name, holds a source of each corpus class,
+//! and adds every source the change adds or modifies (`gandr-workflow-sweep`):
+//! a run reproduces, and a corpus edit is swept on the pull request that makes
+//! it. The typing samples only sources no longer than a kibibyte: the longest
+//! source alone types for longer than the bound, and the erasure still holds a
+//! long source to the oracle at every keystroke. The random edit scenarios
+//! generate a quarter of their scripts from one fixed seed. A source that
+//! fails in the sample fails the pull request and one outside it fails the
+//! nightly run: nothing goes untested, part of it is tested later.
+//! _Alternatives:_ the whole corpus on every pull request, which held the
+//! enforcing lane past fifteen minutes; a stride over the length-sorted corpus,
+//! which never visits a source between its steps until nightly; a random
+//! sample, whose failure the next run cannot reproduce. _Reversal:_ a sweep
+//! whose whole fits the bound leaves its `sweeps` module.
 //!
 //! Two effects cannot be observed by a useful return-value predicate: `serve`
 //! owns opaque generic input/output streams, and `Capabilities::fmt` writes

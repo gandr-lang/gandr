@@ -486,7 +486,7 @@ mod session
     /// - hypothesis: L2 — full corpus report/token comparisons read both strict
     ///   and fixture roots, distinguishing a wrong or unavailable corpus root.
     /// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
-    /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
+    /// - witness: `session::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
     #[spec(ensures: |ret| ret.is_absolute() && ret.is_dir() && ret.ends_with("surface-corpus"))]
     fn corpus() -> PathBuf
     {
@@ -496,59 +496,32 @@ mod session
             .expect("the corpus is checked out beside this crate")
     }
 
-    /// Every `.gandr` source under the corpus's strict and fixture roots, in
-    /// path order.
+    /// `sources` as a client opens them: each one's URI and complete text, in
+    /// the order given.
     ///
     /// # Specification
-    /// - requires: corpus roots form a readable finite directory tree with
-    ///   UTF-8 paths and source text, unchanged during enumeration.
-    /// - ensures: every .gandr file under strict and fixture is returned once,
-    ///   in path order, with its URI and complete source text.
+    /// - requires: each source is readable UTF-8 text at a UTF-8 path.
+    /// - ensures: one source per one given, in order, with its URI and complete
+    ///   source text.
     /// - provides: client inputs for the independent token-coverage comparison.
     /// - fails: never in the valid filesystem domain.
-    /// - panics: a directory, entry or source cannot be read or a path is not
-    ///   UTF-8.
+    /// - panics: a source cannot be read or a path is not UTF-8.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — source membership agrees with the independent
     ///   dispatcher walk; each source token stream covers its
-    ///   grammar-classified bytes. Runtime checks distinguish URI shape,
-    ///   duplicate paths and ordering deviations.
-    /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
-    #[spec(ensures: |ret|
-        ret.iter().all(|source| source.uri.starts_with("file://")
-            && Path::new(&source.uri).extension().is_some_and(|extension| extension == "gandr"))
-            && ret.iter().zip(ret.iter().skip(1)).all(|(first, second)|
-                match (percent_encoding::percent_decode_str(&first.uri).decode_utf8(),
-                       percent_encoding::percent_decode_str(&second.uri).decode_utf8()) {
-                    (Ok(first), Ok(second)) => Path::new(first.as_ref()) < Path::new(second.as_ref()),
-                    _ => false,
-                }))]
-    fn corpus_sources() -> Vec<Source>
+    ///   grammar-classified bytes. Runtime checks distinguish URI shape.
+    /// - witness: `session::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
+    #[spec(ensures: |ret| ret.len() == sources.len()
+        && ret.iter().all(|source| source.uri.starts_with("file://")
+            && Path::new(&source.uri).extension().is_some_and(|extension| extension == "gandr")))]
+    fn opened(sources: &[gandr_workflow_sweep::Source]) -> Vec<Source>
     {
-        let root = corpus();
-        let mut pending = vec![root.join("strict"), root.join("fixture")];
-        let mut paths = Vec::new();
-        while let Some(directory) = pending.pop() {
-            for entry in std::fs::read_dir(&directory).expect("a corpus directory lists") {
-                let path = entry.expect("a corpus entry reads").path();
-                if path.is_dir() {
-                    pending.push(path);
-                }
-                else if path
-                    .extension()
-                    .is_some_and(|extension| extension == "gandr")
-                {
-                    paths.push(path);
-                }
-            }
-        }
-        paths.sort();
-        paths
-            .into_iter()
-            .map(|path| Source {
-                uri: uri(&path),
-                text: std::fs::read_to_string(&path).expect("a corpus source reads"),
+        sources
+            .iter()
+            .map(|source| Source {
+                uri: uri(&source.path),
+                text: std::fs::read_to_string(&source.path).expect("a corpus source reads"),
             })
             .collect()
     }
@@ -904,113 +877,6 @@ mod session
         );
     }
 
-    #[test]
-    fn corpus_tokens_cover_the_highlighted_bytes()
-    {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let roles = RoleTable::build(&grammar).expect("the role table builds");
-        let sources = corpus_sources();
-        let root = corpus();
-        let mut walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
-        let mut expected_uris = alloc::collections::BTreeSet::new();
-        while let Maybe::Present(step) = walk.step() {
-            let Step::Source { path, .. } = step
-            else {
-                panic!("a readable corpus source");
-            };
-            let _inserted = expected_uris.insert(uri(path));
-        }
-        assert_eq!(
-            sources
-                .iter()
-                .map(|source| source.uri.clone())
-                .collect::<alloc::collections::BTreeSet<_>>(),
-            expected_uris
-        );
-        let mut messages = opening();
-        for (id, source) in sources.iter().enumerate() {
-            messages.push(open(source));
-            messages.push(json!({
-                "jsonrpc": "2.0", "id": id, "method": "textDocument/semanticTokens/full",
-                "params": {"textDocument": {"uri": source.uri}},
-            }));
-        }
-        messages.extend(closing());
-        let (_, written) = session(&messages);
-        let streams = written
-            .iter()
-            .filter_map(|message| {
-                let id = message.get("id").and_then(Value::as_u64)?;
-                let data = message.pointer("/result/data").and_then(Value::as_array)?;
-                Some((
-                    id,
-                    data.iter()
-                        .map(|integer| integer.as_u64().expect("an integer"))
-                        .collect::<Vec<_>>(),
-                ))
-            })
-            .collect::<BTreeMap<_, _>>();
-        for (id, source) in sources.iter().enumerate() {
-            let text = source.text.as_str();
-            let tree = gandr_surface_parser::parse(&grammar, text.into())
-                .expect("a corpus source parses")
-                .into_tree();
-            let spans = roles.highlight(&tree).expect("a corpus source highlights");
-            let mut expected = Vec::new();
-            for span in spans.iter().filter(|span| span.role != HlRole::Other) {
-                let (start, end) = (
-                    usize::from(span.range.start()),
-                    usize::from(span.range.end()),
-                );
-                let mut piece = start;
-                let covered = text
-                    .get(start .. end)
-                    .expect("a span lies on character boundaries");
-                for (offset, character) in covered.char_indices() {
-                    if character == '\n' || character == '\r' {
-                        if piece < start + offset {
-                            expected.push((piece, start + offset));
-                        }
-                        piece = start + offset + 1;
-                    }
-                }
-                if piece < end {
-                    expected.push((piece, end));
-                }
-            }
-            let index = LineIndex::new(text.into());
-            let byte = |row: u64, col: u64| {
-                usize::from(index.byte_of_utf16_pos(Utf16Pos {
-                    row: PositionRow::from(usize::try_from(row).expect("a row fits")),
-                    col: Utf16Column::from(usize::try_from(col).expect("a column fits")),
-                }))
-            };
-            let stream = &streams[&u64::try_from(id).expect("an id fits")];
-            assert_eq!(stream.len() % 5, 0_usize, "five integers per token");
-            let (mut row, mut col) = (0_u64, 0_u64);
-            let mut decoded = Vec::new();
-            for token in stream.chunks_exact(5) {
-                let &[line_delta, start_delta, length, _, _] = token
-                else {
-                    panic!("a chunk of five holds five integers");
-                };
-                if line_delta == 0 {
-                    col += start_delta;
-                }
-                else {
-                    row += line_delta;
-                    col = start_delta;
-                }
-                decoded.push((byte(row, col), byte(row, col + length)));
-            }
-            assert_eq!(
-                decoded, expected,
-                "{}: the tokens cover exactly the highlighted bytes, line by line",
-                source.uri
-            );
-        }
-    }
-
     /// One line of the server log.
     #[repr(transparent)]
     #[derive(Clone, Copy)]
@@ -1186,5 +1052,141 @@ mod session
             "Content-Length: 17\r\n\r\n{\"text\":\"é😀\"}Content-Length: 4\r\n\r\nnull".as_bytes()
         );
         assert_eq!(written(&stream), messages);
+    }
+
+    /// The token sweep: each corpus source's semantic tokens against its
+    /// highlighted bytes.
+    mod sweeps
+    {
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+
+        use super::*;
+
+        /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
+        /// this name, at least one of each corpus class — `strict` and each
+        /// directory below `fixture` — and every source the change adds or
+        /// modifies (`gandr-workflow-sweep`). The `sweeps` profile reads every
+        /// source. Every run holds the whole corpus's membership to the
+        /// dispatcher's walk.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("corpus_tokens_cover_the_highlighted_bytes"),
+            size: SampleSize(64),
+        };
+
+        #[test]
+        fn corpus_tokens_cover_the_highlighted_bytes()
+        {
+            let grammar = built_in().expect("the built-in grammar builds");
+            let roles = RoleTable::build(&grammar).expect("the role table builds");
+            let all = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
+            let root = corpus();
+            let mut walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
+            let mut expected_uris = alloc::collections::BTreeSet::new();
+            while let Maybe::Present(step) = walk.step() {
+                let Step::Source { path, .. } = step
+                else {
+                    panic!("a readable corpus source");
+                };
+                let _inserted = expected_uris.insert(uri(path));
+            }
+            assert_eq!(
+                all.iter()
+                    .map(|source| uri(&source.path))
+                    .collect::<alloc::collections::BTreeSet<_>>(),
+                expected_uris
+            );
+            let sweep = Sweep::asked().expect("the run's sweep resolves");
+            let sources = opened(&sweep.visit(SAMPLE, &all));
+            assert!(
+                sources.len() >= SAMPLE.size.0,
+                "the sample is drawn: {}",
+                sources.len()
+            );
+            let mut messages = opening();
+            for (id, source) in sources.iter().enumerate() {
+                messages.push(open(source));
+                messages.push(json!({
+                    "jsonrpc": "2.0", "id": id, "method": "textDocument/semanticTokens/full",
+                    "params": {"textDocument": {"uri": source.uri}},
+                }));
+            }
+            messages.extend(closing());
+            let (_, written) = session(&messages);
+            let streams = written
+                .iter()
+                .filter_map(|message| {
+                    let id = message.get("id").and_then(Value::as_u64)?;
+                    let data = message.pointer("/result/data").and_then(Value::as_array)?;
+                    Some((
+                        id,
+                        data.iter()
+                            .map(|integer| integer.as_u64().expect("an integer"))
+                            .collect::<Vec<_>>(),
+                    ))
+                })
+                .collect::<BTreeMap<_, _>>();
+            for (id, source) in sources.iter().enumerate() {
+                let text = source.text.as_str();
+                let tree = gandr_surface_parser::parse(&grammar, text.into())
+                    .expect("a corpus source parses")
+                    .into_tree();
+                let spans = roles.highlight(&tree).expect("a corpus source highlights");
+                let mut expected = Vec::new();
+                for span in spans.iter().filter(|span| span.role != HlRole::Other) {
+                    let (start, end) = (
+                        usize::from(span.range.start()),
+                        usize::from(span.range.end()),
+                    );
+                    let mut piece = start;
+                    let covered = text
+                        .get(start .. end)
+                        .expect("a span lies on character boundaries");
+                    for (offset, character) in covered.char_indices() {
+                        if character == '\n' || character == '\r' {
+                            if piece < start + offset {
+                                expected.push((piece, start + offset));
+                            }
+                            piece = start + offset + 1;
+                        }
+                    }
+                    if piece < end {
+                        expected.push((piece, end));
+                    }
+                }
+                let index = LineIndex::new(text.into());
+                let byte = |row: u64, col: u64| {
+                    usize::from(index.byte_of_utf16_pos(Utf16Pos {
+                        row: PositionRow::from(usize::try_from(row).expect("a row fits")),
+                        col: Utf16Column::from(usize::try_from(col).expect("a column fits")),
+                    }))
+                };
+                let stream = &streams[&u64::try_from(id).expect("an id fits")];
+                assert_eq!(stream.len() % 5, 0_usize, "five integers per token");
+                let (mut row, mut col) = (0_u64, 0_u64);
+                let mut decoded = Vec::new();
+                for token in stream.chunks_exact(5) {
+                    let &[line_delta, start_delta, length, _, _] = token
+                    else {
+                        panic!("a chunk of five holds five integers");
+                    };
+                    if line_delta == 0 {
+                        col += start_delta;
+                    }
+                    else {
+                        row += line_delta;
+                        col = start_delta;
+                    }
+                    decoded.push((byte(row, col), byte(row, col + length)));
+                }
+                assert_eq!(
+                    decoded, expected,
+                    "{}: the tokens cover exactly the highlighted bytes, line by line",
+                    source.uri
+                );
+            }
+        }
     }
 }

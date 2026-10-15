@@ -22,9 +22,11 @@ gandr-surface-parser.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 
-# Golden layouts at two widths.
+# Golden layouts at two widths; the corpus sweep draws its sample through the
+# sweep crate.
 [dev-dependencies]
 expect-test.workspace = true
+gandr-workflow-sweep.workspace = true
 
 [lints]
 workspace = true

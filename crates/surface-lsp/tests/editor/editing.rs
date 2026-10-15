@@ -120,7 +120,7 @@ impl Session
     /// # Adequacy
     /// - hypothesis: L2 — every single-editor scenario opens here; the opening
     ///   publication is compared exactly as a keystroke's is.
-    /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
     #[spec(requires: uri.starts_with("file://"),
         ensures: |ret| ret.version == 1_i32 && ret.buffer.text() == text && ret.uri.starts_with("file://"))]
     pub fn open(
@@ -148,7 +148,7 @@ impl Session
     /// # Adequacy
     /// - hypothesis: L2 — both two-editor scenarios open their first editor
     ///   here; the opening publication is compared exactly as a keystroke's is.
-    /// - witness: `editor::editor::scenarios::two_editors_on_one_buffer_each_keep_their_answers`
+    /// - witness: `editor::editor::scenarios::sweeps::two_editors_on_one_buffer_each_keep_their_answers`
     #[spec(requires: uri.starts_with("file://"),
         ensures: |ret| ret.version == 1_i32 && ret.buffer.text() == text && ret.uri.starts_with("file://"))]
     pub fn open_shared(
@@ -182,7 +182,7 @@ impl Session
     /// - hypothesis: L2 — both two-editor scenarios open their second editor
     ///   here; a second open that disturbed the first's document shows at the
     ///   first's next keystroke.
-    /// - witness: `editor::editor::scenarios::two_editors_on_one_buffer_each_keep_their_answers`
+    /// - witness: `editor::editor::scenarios::sweeps::two_editors_on_one_buffer_each_keep_their_answers`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -396,8 +396,8 @@ impl Session
     /// - hypothesis: L2 — every keystroke of every scenario passes here; a
     ///   server that skipped a publication, published a stale version or held a
     ///   different text fails at that keystroke.
-    /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
-    /// - witness: `editor::editor::scenarios::random_edits_keep_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
     #[spec(captures: [keystrokes = self.keystrokes, version = self.version],
         ensures: self.keystrokes == keystrokes.saturating_add(1)
             && self.version == if changes.is_empty() { version } else { version.saturating_add(1) })]
@@ -486,8 +486,8 @@ impl Session
     ///   answer at the keystroke that caused it, or by the next line. The
     ///   molder's dry runs are the oracle of its tables: a table verdict that
     ///   differs on an intermediate text fails at that keystroke.
-    /// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
-    /// - witness: `editor::editor::scenarios::random_edits_keep_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `editor::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
     fn check(
         &mut self,
         cadence: Oracle,

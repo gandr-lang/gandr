@@ -239,8 +239,8 @@ impl Document
 ///   each keystroke to a fresh connection's over the same text and every hover
 ///   to answering; a reading kept past a change disagrees at the keystroke that
 ///   made it.
-/// - witness: `editor::editor::scenarios::random_edits_keep_every_answer_faithful`
-/// - witness: `editor::editor::scenarios::typing_each_corpus_source_keeps_every_answer_faithful`
+/// - witness: `editor::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
+/// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
 struct HeldText
 {
     /// The text.

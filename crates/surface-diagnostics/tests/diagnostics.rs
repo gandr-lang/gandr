@@ -5,6 +5,8 @@
 //! and asserts the diagnostics its step yields: their classes, their spans,
 //! their annotations, their contexts and their words.
 
+extern crate alloc;
+
 /// The cases, in a `cfg(test)` module so the crate's lint wall reads them as
 /// test code rather than as shipping code.
 #[cfg(test)]
@@ -1557,108 +1559,150 @@ mod diagnostics
         );
     }
 
-    #[test]
-    fn a_malformed_form_reports_its_parse_error_alone()
+    /// The malformed-form sweep: each pathological fixture cut short at every
+    /// word, each cut's malformed form reporting its parse error alone.
+    mod sweeps
     {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../surface-corpus/fixture/pathological")
-            .canonicalize()
-            .expect("the corpus is checked out beside this crate");
-        let mut walk = Walk::new(vec![root]);
-        let mut repaired = 0_usize;
-        while let Maybe::Present(step) = walk.step() {
-            let Step::Source { path, text, .. } = step
-            else {
-                continue;
-            };
-            let whole = text.as_ref();
-            let cuts = whole
-                .match_indices([' ', '\n'])
-                .map(|(at, _)| at.saturating_add(1_usize))
-                .chain([whole.len()]);
-            for cut in cuts {
-                let typed = SourceText::from(whole.get(.. cut).expect("a cut at an ASCII byte"));
-                let Ok(composed) = compose(
-                    &grammar,
-                    SourceRoot::Fixture.corpus_root(),
-                    typed,
-                    &mut LoweringCount::default(),
-                )
+        use alloc::collections::BTreeSet;
+
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+
+        use super::*;
+
+        /// The sample: twenty sources under `fixture/pathological`, ranked by
+        /// their BLAKE3 digest under this name, and every one the change adds
+        /// or modifies (`gandr-workflow-sweep`). The `sweeps` profile
+        /// cuts every pathological source.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("a_malformed_form_reports_its_parse_error_alone"),
+            size: SampleSize(20),
+        };
+
+        #[test]
+        fn a_malformed_form_reports_its_parse_error_alone()
+        {
+            let grammar = built_in().expect("the built-in grammar builds");
+            let candidates: Vec<_> = gandr_workflow_sweep::corpus::sources()
+                .expect("the corpus reads")
+                .into_iter()
+                .filter(|source| source.name.as_str().starts_with("fixture/pathological/"))
+                .collect();
+            let sweep = Sweep::asked().expect("the run's sweep resolves");
+            let visited: BTreeSet<_> = sweep
+                .visit(SAMPLE, &candidates)
+                .into_iter()
+                .map(|source| source.path)
+                .collect();
+            assert!(
+                visited.len() >= SAMPLE.size.0,
+                "the sample is drawn: {}",
+                visited.len()
+            );
+            let root = gandr_workflow_sweep::corpus::directory()
+                .expect("the corpus is checked out beside this crate")
+                .join("fixture/pathological");
+            let mut walk = Walk::new(vec![root]);
+            let mut repaired = 0_usize;
+            while let Maybe::Present(step) = walk.step() {
+                let Step::Source { path, text, .. } = step
                 else {
                     continue;
                 };
-                let step = Step::Source {
-                    path,
-                    root: SourceRoot::Fixture,
-                    text: typed,
-                    composed,
-                    standing: Standing::Unsettled,
-                };
-                let Step::Source {
-                    composed: Composed::Settled { ref report, .. },
-                    ..
-                } = step
-                else {
+                if !visited.contains(path) {
                     continue;
-                };
-                let unsettled: Vec<_> = report
-                    .declarations()
-                    .iter()
-                    .filter(|declaration| declaration.settlement() == Settlement::Unsettled)
-                    .collect();
-                let severities: Vec<Severity> = entries(&step, Verb::Check(Goals::Gated))
-                    .map(|diagnostic| diagnostic.severity)
-                    .filter(|&severity| matches!(severity, Severity::Error | Severity::Note))
-                    .collect();
-                assert_eq!(
-                    severities.len(),
-                    unsettled.len(),
-                    "one entry per unsettled declaration"
-                );
-                for malformed in &unsettled {
-                    if !matches!(
-                        malformed.produced().refusal(),
-                        Maybe::Present(Refusal::Lowering(LoweringRefusal::MalformedForm {
-                            fault: FormFault::Repaired(_),
-                            ..
-                        }))
-                    ) {
+                }
+                let whole = text.as_ref();
+                let cuts = whole
+                    .match_indices([' ', '\n'])
+                    .map(|(at, _)| at.saturating_add(1_usize))
+                    .chain([whole.len()]);
+                for cut in cuts {
+                    let typed =
+                        SourceText::from(whole.get(.. cut).expect("a cut at an ASCII byte"));
+                    let Ok(composed) = compose(
+                        &grammar,
+                        SourceRoot::Fixture.corpus_root(),
+                        typed,
+                        &mut LoweringCount::default(),
+                    )
+                    else {
                         continue;
-                    }
-                    repaired = repaired.saturating_add(1_usize);
-                    let named: Vec<_> = unsettled
+                    };
+                    let step = Step::Source {
+                        path,
+                        root: SourceRoot::Fixture,
+                        text: typed,
+                        composed,
+                        standing: Standing::Unsettled,
+                    };
+                    let Step::Source {
+                        composed: Composed::Settled { ref report, .. },
+                        ..
+                    } = step
+                    else {
+                        continue;
+                    };
+                    let unsettled: Vec<_> = report
+                        .declarations()
                         .iter()
-                        .zip(&severities)
-                        .filter(|&(declaration, _)| declaration.name() == malformed.name())
+                        .filter(|declaration| declaration.settlement() == Settlement::Unsettled)
+                        .collect();
+                    let severities: Vec<Severity> = entries(&step, Verb::Check(Goals::Gated))
+                        .map(|diagnostic| diagnostic.severity)
+                        .filter(|&severity| matches!(severity, Severity::Error | Severity::Note))
                         .collect();
                     assert_eq!(
-                        named
+                        severities.len(),
+                        unsettled.len(),
+                        "one entry per unsettled declaration"
+                    );
+                    for malformed in &unsettled {
+                        if !matches!(
+                            malformed.produced().refusal(),
+                            Maybe::Present(Refusal::Lowering(LoweringRefusal::MalformedForm {
+                                fault: FormFault::Repaired(_),
+                                ..
+                            }))
+                        ) {
+                            continue;
+                        }
+                        repaired = repaired.saturating_add(1_usize);
+                        let named: Vec<_> = unsettled
                             .iter()
-                            .filter(|&&(_, &severity)| severity == Severity::Error)
-                            .count(),
-                        1_usize,
-                        "{} cut at {cut}: `{}` reports its parse error alone",
-                        path.display(),
-                        malformed.name()
-                    );
-                    assert!(
-                        named.iter().all(|&(declaration, _)| !matches!(
-                            declaration.produced().refusal(),
-                            Maybe::Present(Refusal::Lowering(
-                                LoweringRefusal::OutOfFragment { .. }
-                            ))
-                        )),
-                        "{} cut at {cut}: `{}` is malformed, never unsupported",
-                        path.display(),
-                        malformed.name()
-                    );
+                            .zip(&severities)
+                            .filter(|&(declaration, _)| declaration.name() == malformed.name())
+                            .collect();
+                        assert_eq!(
+                            named
+                                .iter()
+                                .filter(|&&(_, &severity)| severity == Severity::Error)
+                                .count(),
+                            1_usize,
+                            "{} cut at {cut}: `{}` reports its parse error alone",
+                            path.display(),
+                            malformed.name()
+                        );
+                        assert!(
+                            named.iter().all(|&(declaration, _)| !matches!(
+                                declaration.produced().refusal(),
+                                Maybe::Present(Refusal::Lowering(
+                                    LoweringRefusal::OutOfFragment { .. }
+                                ))
+                            )),
+                            "{} cut at {cut}: `{}` is malformed, never unsupported",
+                            path.display(),
+                            malformed.name()
+                        );
+                    }
                 }
             }
+            assert!(
+                repaired > 0_usize,
+                "typing the corpus meets malformed forms"
+            );
         }
-        assert!(
-            repaired > 0_usize,
-            "typing the corpus meets malformed forms"
-        );
     }
 }

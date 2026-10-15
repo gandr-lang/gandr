@@ -240,53 +240,94 @@ mod census
         ("Unspelled", 0),
     ];
 
-    #[test]
-    fn every_printed_type_reads_back_to_its_certificate()
+    /// The read-back sweep: every printed type of each corpus source read back
+    /// against its certificate.
+    mod sweeps
     {
-        let grammar = built_in().expect("the built-in grammar builds");
-        let page = PageWidth::from(PAGE);
-        let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
-        let mut walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
-        while let Maybe::Present(step) = walk.step() {
-            let Step::Source { text, .. } = step
-            else {
-                continue;
-            };
-            let Ok(table) = TypeTable::of(&grammar, text)
-            else {
-                continue;
-            };
-            for read in table.read_back(&grammar, page, Form::Sugared) {
-                let class = match read.trip {
-                    RoundTrip::Equal => "Equal",
-                    RoundTrip::Different => "Different",
-                    RoundTrip::Open => "Open",
-                    RoundTrip::Refused(_) => "Refused",
-                    RoundTrip::Unknown => "Unknown",
-                    RoundTrip::Unparsed => "Unparsed",
-                    RoundTrip::Unspelled => "Unspelled",
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+
+        use super::*;
+
+        /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
+        /// this name, at least one of each corpus class — `strict` and each
+        /// directory below `fixture` — and every source the change adds or
+        /// modifies (`gandr-workflow-sweep`). The `sweeps` profile reads every
+        /// source. The ceilings are upper bounds, so a sample holds them; their
+        /// counts are measured under the `sweeps` profile, which prints them.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("every_printed_type_reads_back_to_its_certificate"),
+            size: SampleSize(64),
+        };
+
+        #[test]
+        fn every_printed_type_reads_back_to_its_certificate()
+        {
+            let grammar = built_in().expect("the built-in grammar builds");
+            let page = PageWidth::from(PAGE);
+            let sweep = Sweep::asked().expect("the run's sweep resolves");
+            let visited: BTreeSet<PathBuf> = sweep
+                .visit(
+                    SAMPLE,
+                    &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                )
+                .into_iter()
+                .map(|source| source.path)
+                .collect();
+            assert!(
+                visited.len() >= SAMPLE.size.0,
+                "the sample is drawn: {}",
+                visited.len()
+            );
+            let corpus = gandr_workflow_sweep::corpus::directory().expect("the corpus resolves");
+            let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
+            let mut walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
+            while let Maybe::Present(step) = walk.step() {
+                let Step::Source { path, text, .. } = step
+                else {
+                    continue;
                 };
-                *trips.entry(class).or_default() += 1;
+                if !visited.contains(path) {
+                    continue;
+                }
+                let Ok(table) = TypeTable::of(&grammar, text)
+                else {
+                    continue;
+                };
+                for read in table.read_back(&grammar, page, Form::Sugared) {
+                    let class = match read.trip {
+                        RoundTrip::Equal => "Equal",
+                        RoundTrip::Different => "Different",
+                        RoundTrip::Open => "Open",
+                        RoundTrip::Refused(_) => "Refused",
+                        RoundTrip::Unknown => "Unknown",
+                        RoundTrip::Unparsed => "Unparsed",
+                        RoundTrip::Unspelled => "Unspelled",
+                    };
+                    *trips.entry(class).or_default() += 1;
+                }
             }
+            for (class, count) in &trips {
+                eprintln!("| {class} | {count} |");
+            }
+            assert!(
+                trips.get("Equal").is_some_and(|&equal| equal > 0_usize),
+                "the corpus's printed types read back"
+            );
+            let risen: Vec<String> = READ_BACK_MISSES
+                .iter()
+                .filter_map(|&(class, ceiling)| {
+                    let count = trips.get(class).copied().unwrap_or_default();
+                    (count > ceiling).then(|| format!("{class}: {count}, above {ceiling}"))
+                })
+                .collect();
+            assert_eq!(
+                risen,
+                Vec::<String>::new(),
+                "printed types that do not read back"
+            );
         }
-        for (class, count) in &trips {
-            eprintln!("| {class} | {count} |");
-        }
-        assert!(
-            trips.get("Equal").is_some_and(|&equal| equal > 0_usize),
-            "the corpus's printed types read back"
-        );
-        let risen: Vec<String> = READ_BACK_MISSES
-            .iter()
-            .filter_map(|&(class, ceiling)| {
-                let count = trips.get(class).copied().unwrap_or_default();
-                (count > ceiling).then(|| format!("{class}: {count}, above {ceiling}"))
-            })
-            .collect();
-        assert_eq!(
-            risen,
-            Vec::<String>::new(),
-            "printed types that do not read back"
-        );
     }
 }

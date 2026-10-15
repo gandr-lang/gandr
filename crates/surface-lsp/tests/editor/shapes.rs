@@ -117,7 +117,7 @@ enum Shape
 /// # Adequacy
 /// - hypothesis: L3 — the sweep holds every measured kind to the shape this
 ///   names, and a kind whose answers changed shape moves its row.
-/// - witness: `editor::editor::scenarios::hovering_every_position_of_each_corpus_source_answers_without_fault`
+/// - witness: `editor::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
 fn shape_of(owner: &Owner) -> Shape
 {
     match owner.kind.as_str() {
@@ -168,7 +168,7 @@ pub(super) enum Reach
 /// # Adequacy
 /// - hypothesis: L3 — the sweep separates answers at the node from an
 ///   ancestor's by this, against the rows #389 recorded.
-/// - witness: `editor::editor::scenarios::hovering_every_position_of_each_corpus_source_answers_without_fault`
+/// - witness: `editor::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
 pub(super) fn reach(
     text: Text<'_>,
     owner: &Owner,
@@ -254,7 +254,7 @@ fn result(spelled: Text<'_>) -> Text<'_>
 /// # Adequacy
 /// - hypothesis: L3 — the sweep's rows count what this judges over the whole
 ///   corpus, red where a kind's answers lost their shape.
-/// - witness: `editor::editor::scenarios::hovering_every_position_of_each_corpus_source_answers_without_fault`
+/// - witness: `editor::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
 #[spec(ensures: |ret| ret.len() == hovers.len())]
 pub(super) fn judged(
     grammar: &Pbg,

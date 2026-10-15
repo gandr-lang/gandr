@@ -135,7 +135,7 @@ impl Leaves<'_>
 ///   comment texts compared with the source's in order; a dropped, duplicated
 ///   or reordered leaf breaks that comparison, and a repaired source is copied
 ///   byte for byte.
-/// - witness: `format::tests::every_source_keeps_its_meaning_and_formats_once`
+/// - witness: `format::tests::sweeps::every_source_keeps_its_meaning_and_formats_once`
 /// - witness: `format::tests::a_repaired_form_is_copied_as_written`
 /// - witness: `format::tests::strings_shell_blocks_and_holes_are_copied_as_written`
 #[spec(ensures: |ret| ret.leaves.windows(2).all(|pair| matches!(pair, [left, right] if left.span.end() <= right.span.start()))
