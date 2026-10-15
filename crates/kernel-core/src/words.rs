@@ -12,9 +12,11 @@
 //! - along the empty word, the operand: `tr(P, ε, v) ⇝ return v`;
 //! - along a longer word, letter by letter: `tr(P, ℓ ∷ u, v) ⇝ y ← tr(P, ℓ ∷ ε,
 //!   v); tr(P↑, u↑, y)`;
-//! - with a returned path or operand, that value first, as the evaluator reads
-//!   every returned value and an elimination meeting one runs it: `tr(P, ⟨c⟩,
-//!   v) ⇝ w ← c; tr(P↑, w, v↑)` and `tr(P, w, ⟨c⟩) ⇝ y ← c; tr(P↑, w↑, y)`;
+//! - with a returned operand or path, that value first — the operand before the
+//!   path, as the evaluator's append runs a held operand — as an elimination
+//!   meeting one runs it: `tr(P, w, ⟨c⟩) ⇝ y ← c; tr(P↑, w↑, y)` and `tr(P,
+//!   ⟨c⟩, v) ⇝ w ← c; tr(P↑, w, v↑)`; the empty word's row first of all, since
+//!   it reads neither side's run;
 //! - along one letter in a path family `y. Path(C, l, r)` whose carrier never
 //!   reads `y`, by conjugation (the book's lemma 2.11.2), `l(ℓ)⁻¹ · v · r(ℓ)`:
 //!   with both endpoints fixed or moving the word is spliced at once; with an
@@ -24,9 +26,9 @@
 //!   fixed and moving ones.
 //! - in a singleton family `y. Path(C, a, y)`, where no row above reads the
 //!   path, by the word moved, as `then` appends on its first word: `tr(P, q, ε)
-//!   ⇝ return q` and `tr(P, q, ℓ ∷ p) ⇝ return ℓ ∷ ⟨tr(P, q, p)⟩`, the rest's
-//!   transport held as the value it returns, as the evaluator reads a stuck one
-//!   under its letter.
+//!   ⇝ return q`, `tr(P, ⟨c⟩, ε) ⇝ c`, and `tr(P, q, ℓ ∷ p) ⇝ return ℓ ∷ ⟨tr(P,
+//!   q, p)⟩`, the rest's transport held as the value it returns, as the
+//!   evaluator reads a stuck one under its letter.
 //!
 //! An endpoint's image of a letter is the loop arm the innermost function's
 //! case carries for the letter's loop — inverted along the family `z.
@@ -46,8 +48,12 @@
 //! transport-elimination step in the trace alphabet would change the artifact
 //! for one reading. The reading is confined to transport's path and operand
 //! and to a constant whose body is a constructor of a type of words, so no
-//! other definition unfolds by it. Reversal: a recorded trace position under
-//! a transport's family, which would let the engine record the unfolding.
+//! other definition unfolds by it — with one exception the evaluator shares:
+//! a returned operand the append rows read, a call held at its definition such
+//! as `spin(Z)`, takes the one δ-step its head admits (the replay's
+//! `run_held_operand`), as the evaluator's append runs a held operand.
+//! Reversal: a recorded trace position under a transport's family, which would
+//! let the engine record the unfolding.
 
 use alloc::vec::Vec;
 
@@ -938,15 +944,17 @@ where
 ///
 /// # Specification
 /// - requires: nothing; an ill-typed term reduces or sticks without panicking.
-/// - ensures: `Reduced` with the transport along a named path's word; with a
-///   returned path run first; with a returned operand run first; with the
-///   operand returned along the empty word, or its named word reread; with the
-///   first letter's transport bound into the rest's along a longer word; along
-///   one letter in a path family over a carrier its binder never reads, with
-///   the spliced word returned when both endpoints are fixed or moving and the
-///   words splice, or with the images of the endpoints bound and the operand
-///   transported along them as the module states; along a path no row reads, or
-///   a letter whose splice fails, by [`appended`]'s rows; `Stuck` otherwise.
+/// - ensures: `Reduced` with the transport along a named path's word; with the
+///   path returned along the empty word by [`appended`]'s row, before either
+///   side runs; with a returned operand run first; with a returned path run
+///   next; with the operand returned along the empty word, or its named word
+///   reread; with the first letter's transport bound into the rest's along a
+///   longer word; along one letter in a path family over a carrier its binder
+///   never reads, with the spliced word returned when both endpoints are fixed
+///   or moving and the words splice, or with the images of the endpoints bound
+///   and the operand transported along them as the module states; along a path
+///   no row reads, or a letter whose splice fails, by [`appended`]'s rows;
+///   `Stuck` otherwise.
 /// - provides: the replay's reading of transport along a word, the engine's
 ///   evaluator's rows as reducts.
 /// - fails: never.
@@ -965,6 +973,7 @@ where
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `native_formers::native_formers::a_composite_along_a_returned_path_cancels_to_the_empty_word`
 /// - witness: `native_formers::native_formers::a_word_appends_on_its_first_word`
+/// - witness: `native_formers::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
 #[spec(ensures: |ret| match ret {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
@@ -989,18 +998,17 @@ where
     if let Some(body) = named(arena, unfoldings, path) {
         return Reduction::Reduced(arena.computation_path_transport(motive, body, value));
     }
-    // A returned path runs first, as the evaluator reads every returned
-    // value: `tr(P, ⟨c⟩, v) ⇝ w ← c; tr(P↑, w, v↑)`.
-    if let Some(&Value::Returned(along)) = arena.value(path) {
-        let one = BinderDepth::from(1_u32);
-        let lifted = shift_value_type(arena, table, memo, motive, one, one);
-        let onward = shift_value(arena, table, memo, value, BinderDepth::NONE, one);
-        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let transported = arena.computation_path_transport(lifted, bound, onward);
-        return Reduction::Reduced(arena.computation_bind(along, transported));
+    // The empty word moved along a path is the path, whatever the path runs
+    // to, as the evaluator's append reads it before a held path would run:
+    // `tr(P, q, ε) ⇝ return q`.
+    if head(arena, presentations, value) == Head::Empty
+        && let Reduction::Reduced(reduct) = appended(arena, (table, memo), unfoldings, term)
+    {
+        return Reduction::Reduced(reduct);
     }
-    // A returned operand runs first, as an elimination meeting one does:
-    // `tr(P, w, ⟨c⟩) ⇝ y ← c; tr(P↑, w↑, y)`.
+    // A returned operand runs first, as an elimination meeting one does and as
+    // the evaluator's append runs a held operand: `tr(P, w, ⟨c⟩) ⇝ y ← c;
+    // tr(P↑, w↑, y)`.
     if let Some(&Value::Returned(operand)) = arena.value(value) {
         let one = BinderDepth::from(1_u32);
         let lifted = shift_value_type(arena, table, memo, motive, one, one);
@@ -1008,6 +1016,16 @@ where
         let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
         let along = arena.computation_path_transport(lifted, onward, bound);
         return Reduction::Reduced(arena.computation_bind(operand, along));
+    }
+    // A returned path runs next, as the evaluator reads every returned value:
+    // `tr(P, ⟨c⟩, v) ⇝ w ← c; tr(P↑, w, v↑)`.
+    if let Some(&Value::Returned(along)) = arena.value(path) {
+        let one = BinderDepth::from(1_u32);
+        let lifted = shift_value_type(arena, table, memo, motive, one, one);
+        let onward = shift_value(arena, table, memo, value, BinderDepth::NONE, one);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let transported = arena.computation_path_transport(lifted, bound, onward);
+        return Reduction::Reduced(arena.computation_bind(along, transported));
     }
     let (tag, words, rest) = match head(arena, presentations, path) {
         Head::Empty => (FreeCells::nil(), None, path),
@@ -1174,11 +1192,12 @@ where
 /// - requires: nothing; an ill-typed term reduces or sticks without panicking.
 /// - ensures: in a family `y. Path(C, a, y)` whose carrier and left endpoint
 ///   never read `y`, `Reduced` with the path returned when the operand is the
-///   empty word — `tr(P, q, ε) ⇝ return q` — with the operand's first letter
-///   returned before the rest's transport, held as the value it returns, when
-///   the operand is `ℓ ∷ p` — `tr(P, q, ℓ ∷ p) ⇝ return ℓ ∷ ⟨tr(P, q, p)⟩`, a
-///   letter looping at the one point — and with the operand reread when a
-///   definition names it; `Stuck` otherwise.
+///   empty word — `tr(P, q, ε) ⇝ return q`, and `tr(P, ⟨c⟩, ε) ⇝ c` for a
+///   returned path, as the evaluator returns a held one — with the operand's
+///   first letter returned before the rest's transport, held as the value it
+///   returns, when the operand is `ℓ ∷ p` — `tr(P, q, ℓ ∷ p) ⇝ return ℓ ∷
+///   ⟨tr(P, q, p)⟩`, a letter looping at the one point — and with the operand
+///   reread when a definition names it; `Stuck` otherwise.
 /// - provides: the replay's reading of the evaluator's append row
 ///   (`gandr-core-nbe`'s `eval::words::appended`) as reducts.
 /// - fails: never.
@@ -1190,11 +1209,12 @@ where
 ///   letter before the parameters' composite; the replay re-derives what the
 ///   checker accepted by those rows only when it reads them too.
 /// - witness: `native_formers::native_formers::a_word_appends_on_its_first_word`
+/// - witness: `native_formers::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
 #[spec(ensures: |ret| match ret {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
 })]
-fn appended<M>(
+pub fn appended<M>(
     arena: &mut TermArena,
     (table, memo): (&mut ContentTable, &mut M),
     unfoldings: &Unfoldings,
@@ -1208,26 +1228,18 @@ where
         path,
         value,
     } = term;
-    let Some(&ValueType::Path {
-        domain: carrier,
-        left,
-        right,
-    }) = arena.value_type(motive)
-    else {
-        return Reduction::Stuck;
-    };
-    if binder_use(arena, table, memo, Family::Type(carrier)) != BinderUse::Ignored {
+    if singleton(arena, (table, memo), motive).is_none() {
         return Reduction::Stuck;
     }
-    let (Some(Action::Fixed), Some(Action::Moving)) = (
-        action(arena, table, memo, left),
-        action(arena, table, memo, right),
-    )
-    else {
-        return Reduction::Stuck;
-    };
     match head(arena, unfoldings.presentations(), value) {
-        Head::Empty => Reduction::Reduced(arena.computation_return(path)),
+        // A returned path is the computation it holds, as the evaluator's
+        // append returns a held path: `tr(P, ⟨c⟩, ε) ⇝ c`.
+        Head::Empty => {
+            if let Some(&Value::Returned(along)) = arena.value(path) {
+                return Reduction::Reduced(along);
+            }
+            Reduction::Reduced(arena.computation_return(path))
+        },
         Head::Letter { tag, rest, .. } => {
             let Some(&Value::Constructor { datatype, .. }) = arena.value(value)
             else {
@@ -1242,4 +1254,90 @@ where
             Reduction::Reduced(arena.computation_path_transport(motive, path, body))
         }),
     }
+}
+
+/// The left endpoint of `motive` when it is a singleton family `y. Path(C, a,
+/// y)` whose carrier and left endpoint never read `y`: the family the append
+/// rows read.
+///
+/// # Specification
+/// - requires: nothing; an ill-typed motive reads as `None`.
+/// - ensures: `Some(a)` exactly when `motive` is a path type whose carrier
+///   ignores its binder, whose left endpoint is fixed and whose right endpoint
+///   moves; `None` otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`appended`], whose rows fire only in this family.
+/// - witness: `native_formers::native_formers::a_word_appends_on_its_first_word`
+#[spec(ensures: |ret| ret.is_none_or(|left| arena.value(left).is_some()))]
+fn singleton<M>(
+    arena: &mut TermArena,
+    (table, memo): (&mut ContentTable, &mut M),
+    motive: ValueTypeId,
+) -> Option<ValueId>
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let Some(&ValueType::Path {
+        domain: carrier,
+        left,
+        right,
+    }) = arena.value_type(motive)
+    else {
+        return None;
+    };
+    if binder_use(arena, table, memo, Family::Type(carrier)) != BinderUse::Ignored {
+        return None;
+    }
+    let (Some(Action::Fixed), Some(Action::Moving)) = (
+        action(arena, table, memo, left),
+        action(arena, table, memo, right),
+    )
+    else {
+        return None;
+    };
+    Some(left)
+}
+
+/// The computation a returned operand holds where the append rows read it:
+/// the call the evaluator's append runs, a held operand, before it reads the
+/// operand's word.
+///
+/// # Specification
+/// - requires: nothing; an ill-typed term reads as `None`.
+/// - ensures: `Some(c)` exactly when the operand is `⟨c⟩`, no definition names
+///   the path, the path is no word's letter or empty word, and `motive` is a
+///   [`singleton`] family; `None` otherwise.
+/// - provides: where the replay takes the δ-step the evaluator's held-operand
+///   run takes, so both engines read `spin(Z) then q` as `q`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a composite whose first word is a call returning the
+///   empty word reduces to its second word in both engines; were the call left
+///   held, the replay would refuse what the checker accepted.
+/// - witness: `native_formers::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+#[spec(ensures: |ret| ret.is_none_or(|held| arena.computation(held).is_some()))]
+pub fn held_operand<M>(
+    arena: &mut TermArena,
+    (table, memo): (&mut ContentTable, &mut M),
+    unfoldings: &Unfoldings,
+    term: ElementTransport,
+) -> Option<ComputationId>
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let Some(&Value::Returned(operand)) = arena.value(term.value)
+    else {
+        return None;
+    };
+    if named(arena, unfoldings, term.path).is_some()
+        || head(arena, unfoldings.presentations(), term.path) != Head::Other
+    {
+        return None;
+    }
+    singleton(arena, (table, memo), term.motive).map(|_left| operand)
 }

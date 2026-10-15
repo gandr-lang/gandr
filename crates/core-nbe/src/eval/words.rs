@@ -1170,8 +1170,9 @@ pub(super) fn transport(
 ///   never read `y`, [`Moved::Stepped`] with `path` returned when `value` is
 ///   the empty word — `tr(P, q, here(a)) ⇝ q` — with the transport of the rest
 ///   bound into `w. return ℓ ∷ w` when `value` is `ℓ ∷ p` — `tr(P, q, ℓ ∷ p) ⇝
-///   ℓ ∷ tr(P, q, p)`, a letter looping at the one point — and with the operand
-///   reread when a definition names it; [`Moved::Unmoved`] with the machine
+///   ℓ ∷ tr(P, q, p)`, a letter looping at the one point — with the operand
+///   reread when a definition names it, and supplied again as what it returns
+///   when the run holds it as a call; [`Moved::Unmoved`] with the machine
 ///   unchanged otherwise.
 /// - fails: as [`head`] and [`family_actions`].
 /// - panics: none.
@@ -1185,6 +1186,7 @@ pub(super) fn transport(
 ///   letter before the parameters' composite, as the free model's append
 ///   computes on its first word; a row on the path instead leaves both stuck.
 /// - witness: `eval::words::tests::a_word_appends_on_its_first_word`
+/// - witness: `eval::words::tests::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
 #[spec(
     captures: [tasks = machine.tasks.len(), comps = machine.comps.len()],
     ensures: |ret| ret.is_err() || matches!(ret, Ok(Moved::Unmoved)) && machine.tasks.len() == tasks && machine.comps.len() == comps
@@ -1215,14 +1217,81 @@ pub(super) fn appended(
             machine.values.extend([path, rest]);
         },
         Head::Other => {
-            let Some(body) = named(core, domain, machine, value)?
+            if let Some(body) = named(core, domain, machine, value)? {
+                reread(machine, motive, (path, value), (Side::Right, body));
+                return Ok(Moved::Stepped);
+            }
+            // An operand the run holds, a call such as `spin(Z)`, reads as
+            // what it returns, as the kernel runs a returned operand first:
+            // its computation runs on through its definitions, and what it
+            // returns moves along the path ([`ran`]).
+            let Some(computation) = super::held_endpoint(domain, value)?
             else {
                 return Ok(Moved::Unmoved);
             };
-            reread(machine, motive, (path, value), (Side::Right, body));
+            let onward = domain.native_continuation(CompBody::Appending {
+                motive,
+                path,
+                operand: value,
+            });
+            machine.tasks.push(Task::BindClosure(onward));
+            machine.tasks.push(Task::Yield);
+            machine.tasks.push(Task::Running);
+            machine.comps.push(computation);
         },
     }
     Ok(Moved::Stepped)
+}
+
+/// Move what a held operand's run returned along the path, bound by a
+/// [`CompBody::Appending`] continuation.
+///
+/// # Specification
+/// - requires: `read` is what the run of `operand`'s held computation returned;
+///   `path` and `operand` are the transport's in `motive`.
+/// - ensures: the transport of `read` along `path` in `motive` queued when
+///   `read` is no held endpoint; otherwise the transport stuck as the evaluator
+///   leaves one no rule moves, over `operand`, on the computation stack.
+/// - fails: [`EvalFault::TransportedNonPath`] for a stuck run along a path that
+///   is no neutral; as [`super::held_endpoint`] and the spine's growth
+///   otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `spin(Z) then q` reads as `q` once `spin(Z)` returns the
+///   empty word; read as its call, the transport sticks.
+/// - witness: `eval::words::tests::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+#[spec(
+    captures: [tasks = machine.tasks.len(), comps = machine.comps.len()],
+    ensures: |ret| ret.is_err() || machine.tasks.len() > tasks || machine.comps.len() > comps,
+)]
+pub(super) fn ran(
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    (motive, path, operand): (ValueClosureId, DomainValueId, DomainValueId),
+    read: DomainValueId,
+) -> Result<(), EvalFault>
+{
+    if super::held_endpoint(domain, read)?.is_none() {
+        machine.tasks.push(Task::PathTransport(motive));
+        machine.values.extend([path, read]);
+        return Ok(());
+    }
+    let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(path)
+    else {
+        return Err(EvalFault::TransportedNonPath);
+    };
+    let grown = super::extend_spine(domain, neutral, crate::domain::Elimination::PathTransport {
+        motive,
+        value: operand,
+    })?;
+    machine
+        .comps
+        .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+    Ok(())
 }
 
 /// How a path family's two endpoints act on a letter, or `None` for a family
@@ -1697,6 +1766,8 @@ mod tests
     const FIRST: usize = 4;
     /// `second`, the same over its second of two arguments.
     const SECOND: usize = 5;
+    /// `zero`, a call whose body returns the empty word.
+    const ZERO: usize = 6;
 
     /// The terms the witnesses build on, in the checker's arena.
     struct Circle
@@ -1722,6 +1793,8 @@ mod tests
         /// `second`'s body: `thunk (λb. λa. case a { Base ⇒ return b; loop ⇒
         /// return loop })`.
         second: ValueId,
+        /// `zero`'s body: `thunk (return ε)`.
+        zero: ValueId,
     }
 
     /// The circle's terms.
@@ -1758,6 +1831,8 @@ mod tests
         };
         let first = binary(core, 1, 0);
         let second = binary(core, 0, 1);
+        let returned = core.computation_return(empty);
+        let zero = core.value_thunk(returned);
         Circle {
             carrier,
             point,
@@ -1768,6 +1843,7 @@ mod tests
             flip,
             first,
             second,
+            zero,
         }
     }
 
@@ -1814,6 +1890,7 @@ mod tests
             (ConstantIndex::from(FLIP), 1_u32, circle.flip),
             (ConstantIndex::from(FIRST), 2_u32, circle.first),
             (ConstantIndex::from(SECOND), 3_u32, circle.second),
+            (ConstantIndex::from(ZERO), 4_u32, circle.zero),
         ] {
             let _height = chain
                 .define(
@@ -2027,6 +2104,51 @@ mod tests
             decided(&core, &chain, (appended, inverted)),
             Some(MachineVerdict::NotConvertible),
             "and is no other letter"
+        );
+    }
+
+    #[test]
+    fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
+    {
+        let mut core = CoreArena::new();
+        let circle = circle(&mut core);
+        let chain = chain(&circle, Count::Recorded);
+        let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let family = core.value_type_path(circle.carrier, circle.point, moving);
+        let after = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        // `zero then q` is `q`, `zero` a call that returns the empty word.
+        let zero = core.value_constant(ConstantIndex::from(ZERO));
+        let forced = core.computation_force(zero);
+        let held = core.value_returned(forced);
+        let composite = core.computation_path_transport(family, after, held);
+        let composite = core.computation_lambda(composite);
+        let itself = core.computation_return(after);
+        let itself = core.computation_lambda(itself);
+        // The checker holds an endpoint's call at its definition, as `spin(Z)`
+        // stands in `spin(Z) then spin(a)`.
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root())
+            .reading_endpoints(crate::eval::Endpoints::Hold);
+        let mut domain = DomainArena::new();
+        let fuel = Fuel::from(512_u32);
+        let left = eval_computation(&core, &mut domain, definitions, fuel, composite)
+            .expect("the composite evaluates");
+        let right = eval_computation(&core, &mut domain, definitions, fuel, itself)
+            .expect("the path evaluates");
+        let mut log = TraceLog::<TraceNode>::new();
+        let report = decide::<_, NullMemo>(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::computations(left, right),
+            &mut log,
+        )
+        .expect("the machine answers");
+        assert_eq!(
+            report.verdict(),
+            MachineVerdict::Convertible,
+            "a call returning the empty word moved along a path is the path"
         );
     }
 }

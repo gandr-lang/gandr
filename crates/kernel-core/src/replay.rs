@@ -1642,6 +1642,10 @@ enum Continuation
     /// It eliminates the variable there: the continuation `E[x]` of a bind
     /// that a returned endpoint's elimination was rebuilt into.
     Eliminates,
+    /// It returns the variable as it is, `return x`: the η-expansion of `F`
+    /// that [`BindRule::ReturnEta`] builds, which reading through only folds
+    /// back into the call it expanded.
+    Returns,
     /// Anything else.
     Other,
 }
@@ -2680,6 +2684,113 @@ where
             _ => return Err(unreadable()),
         };
         self.unfold(goal, side, constant)
+    }
+
+    /// The δ-step a reading takes at `term`'s defined head `constant`, with a
+    /// recursive definition's own recursion refolded to its name.
+    ///
+    /// A recursive definition's body is a suspended fixpoint, and its gate
+    /// opens it with the fixpoint itself for its recursive calls, so a call
+    /// that reads through one level leaves `fix f x` where the source wrote
+    /// `f(x)`. The evaluator reads that recursion back as the call its source
+    /// wrote. This step unfolds the head to the same fixpoint with its body's
+    /// recursion bound to the constant instead — `fix _. b[f ↦ c]` for `fix f.
+    /// b` — which opens at the same gate and computes the same value, so a
+    /// recursive call `spin(x)` stays the call its source wrote, which
+    /// [`Self::shut_recursion`] then reads through. Everywhere else it is
+    /// [`Self::unfold_term`]'s step.
+    ///
+    /// # Specification
+    /// - requires: `term`'s head is `constant`, defined.
+    /// - ensures: for a computation whose head, under application, bind and
+    ///   projection frames, forces `constant`, whose body is a suspended
+    ///   fixpoint, the fixpoint refolded — its body opened at the constant and
+    ///   weakened past the binder it no longer reads, its evidence kept — under
+    ///   those frames; otherwise [`Self::unfold_term`]'s reduct.
+    /// - provides: the δ-step of [`Self::normalize_returned`] and
+    ///   [`Self::run_held_operand`].
+    /// - fails: as [`Self::unfold_term`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Termination
+    /// - reason: the `loop` descending the head path and the `while let` loop
+    ///   rebuilding it, not recursion.
+    /// - measure: the focus's arena position while descending, then the frames
+    ///   left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `spin(S(x)) then spin(a)` against `loop ∷ (spin(x)
+    ///   then spin(a))` at the mode switch: unfolded to the bare fixpoint, the
+    ///   recursive call reads `fix f x` and the sides stay apart.
+    /// - witness: `native_formers::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    #[spec(ensures: |ret| ret.map_or(true, |reduct| matches!((term, reduct), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))))]
+    fn unfold_refolded(
+        &mut self,
+        term: Term,
+        constant: ConstantIndex,
+    ) -> Result<Term, Stop>
+    {
+        let Term::Computation(start) = term
+        else {
+            return self.unfold_term(term, constant);
+        };
+        let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
+        else {
+            return self.unfold_term(term, constant);
+        };
+        let Some(&Value::Thunk(suspended)) = self.arena.value(body)
+        else {
+            return self.unfold_term(term, constant);
+        };
+        let Some(&Computation::Fixpoint {
+            body: open,
+            evidence,
+        }) = self.arena.computation(suspended)
+        else {
+            return self.unfold_term(term, constant);
+        };
+        let mut frames = Vec::new();
+        let mut focus = start;
+        loop {
+            match self.arena.computation(focus) {
+                Some(&Computation::Application(function, argument)) => {
+                    frames.push(Frame::Apply(argument));
+                    focus = function;
+                },
+                Some(&Computation::Bind(bound, next)) => {
+                    frames.push(Frame::Bind(next));
+                    focus = bound;
+                },
+                Some(&Computation::Project(side, pair)) => {
+                    frames.push(Frame::Project(side));
+                    focus = pair;
+                },
+                Some(&Computation::Force(forced))
+                    if self.arena.value(forced) == Some(&Value::Constant(constant)) =>
+                {
+                    break;
+                },
+                Some(_) | None => return self.unfold_term(term, constant),
+            }
+        }
+        let named = self.arena.value_constant(constant);
+        let opened = self.instantiate(open, named);
+        let weakened = crate::rewrite::shift_computation(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            opened,
+            BinderDepth::NONE,
+            BinderDepth::from(1_u32),
+        );
+        let mut rebuilt = self.arena.computation_fixpoint(weakened, evidence);
+        while let Some(frame) = frames.pop() {
+            rebuilt = self.wrap(rebuilt, frame);
+        }
+        Ok(Term::Computation(rebuilt))
     }
 
     /// Apply the δ-rule decision the trace names at a goal with a defined
@@ -5021,13 +5132,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 progress = Progress::Reduced;
                             },
                             crate::path_universe::Reduction::Stuck => {
-                                match crate::words::transport_word(
-                                    self.arena,
-                                    &mut self.table,
-                                    &mut self.memo,
-                                    self.evaluator,
-                                    term,
-                                ) {
+                                match self.transport_along_word(term)? {
                                     crate::path_universe::Reduction::Reduced(reduct) => {
                                         focus = reduct;
                                         progress = Progress::Reduced;
@@ -5343,12 +5448,19 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                         self.arena.computation(body),
                                         Some(&Computation::PathTransport { .. })
                                     ))
-                            ) =>
+                            )
+                            || self.reading == Reading::Forced
+                                && self.shut_recursion(call).is_some() =>
                     {
-                        if self.continuation_of(body) == Continuation::Eliminates {
+                        if matches!(
+                            self.continuation_of(body),
+                            Continuation::Eliminates | Continuation::Returns
+                        ) {
                             // Read through, this bind restores the elimination
                             // of a returned endpoint it came from, which binds
-                            // the same call again: it never returns. It stays
+                            // the same call again: it never returns; or it is
+                            // the call's own η-expansion, which the goal reads
+                            // back as the call and expands again. It stays
                             // over its call, and the next bind out is tried
                             // over both.
                             let call = self.arena.computation_bind(call, body);
@@ -5439,17 +5551,23 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
 
     /// What `body` does with its own bound variable at its head: eliminates
     /// it, as the continuation `E[x]` of a bind [`Self::bind_returned`]
-    /// builds, or anything else.
+    /// builds, returns it as it is, or anything else.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Continuation::Eliminates`] exactly when `body` is a force,
     ///   a projection, a case, a data case, a dependent split or a list fold
-    ///   inspecting the innermost variable, or a fixpoint applied to it.
+    ///   inspecting the innermost variable, a fixpoint applied to it, or a
+    ///   transport along it or of it — the continuation the transport rows
+    ///   build when they run a returned path or operand;
+    ///   [`Continuation::Returns`] exactly when `body` is `return` of the
+    ///   innermost variable.
     /// - provides: the binds an endpoint reading in [`Self::whnf`] passes over:
-    ///   run with the call as a returned endpoint, such a continuation meets
-    ///   that endpoint at its head and binds the same call again, so it never
-    ///   returns, and a reading nested into it would never end.
+    ///   run with the call as a returned endpoint, an eliminating continuation
+    ///   meets that endpoint at its head and binds the same call again, so it
+    ///   never returns, and a reading nested into it would never end; read
+    ///   through, a returning one is the call's η-expansion folded back, which
+    ///   the goal expands again without end.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -5459,6 +5577,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   the engine reads it; nesting into the bind a fixpoint's gate builds
     ///   loops until the budget declines the endpoint.
     /// - witness: `replay::tests::an_endpoint_passes_over_a_bind_its_own_elimination_built`
+    /// - witness: `replay::tests::an_endpoint_stays_over_the_eta_expansion_of_its_stuck_call_473`
+    /// - witness: `replay::tests::an_endpoint_stays_over_the_run_of_its_transported_operand_473`
     #[spec(ensures: |ret| ret == Continuation::Other || self.arena.computation(body).is_some())]
     fn continuation_of(
         &self,
@@ -5492,6 +5612,21 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             && let Some(&Computation::Fixpoint { .. }) = self.arena.computation(head)
         {
             argument
+        }
+        else if let Some(&Computation::PathTransport { path, value, .. }) =
+            self.arena.computation(body)
+        {
+            let bound = Some(&Value::Variable(DeBruijnIndex::from(0_u32)));
+            if self.arena.value(path) == bound || self.arena.value(value) == bound {
+                return Continuation::Eliminates;
+            }
+            return Continuation::Other;
+        }
+        else if let Some(&Computation::Return(returned)) = self.arena.computation(body) {
+            if self.arena.value(returned) == Some(&Value::Variable(DeBruijnIndex::from(0_u32))) {
+                return Continuation::Returns;
+            }
+            return Continuation::Other;
         }
         else {
             return Continuation::Other;
@@ -5664,7 +5799,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 if let Ok(Shape::Neutral(Head::Constant(constant, Status::Defined), _)) =
                     self.shape(term, &Frozen::default(), ConversionSide::Left)
                 {
-                    term = self.unfold_term(term, constant)?;
+                    term = self.unfold_refolded(term, constant)?;
                     continue;
                 }
                 return Ok(if reduced == computation {
@@ -5676,6 +5811,246 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             }
         }
         Ok(value)
+    }
+
+    /// The definition `call` recurses into when its head forces a recursive
+    /// definition whose gate no constructor opens: `spin(x)` for a variable
+    /// `x`.
+    ///
+    /// Such a call is stuck at a variable as surely as one headed by it: a
+    /// δ-step only reaches the same fixpoint stuck at the same argument. The
+    /// evaluator holds it as the call its source wrote, and the forced
+    /// reading, which follows no trace, reads through a bind over it as it
+    /// reads through one over a variable's call, rather than leave the δ-step
+    /// in its normal form.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some(k)` exactly when `call`, under its applications, forces
+    ///   the constant `k`, `k`'s body is a suspended fixpoint, and the argument
+    ///   at the fixpoint's gate is a variable, a constant or a static
+    ///   application; `None` otherwise.
+    /// - provides: the forced reading's read-through test in [`Self::whnf`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop down the application spine, not
+    ///   recursion.
+    /// - measure: the focus's arena position.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `spin(S(x)) then spin(a)` reads at the mode switch as
+    ///   `loop ∷ (spin(x) then spin(a))`, the recursive call held as written;
+    ///   δ-stepped, it reads as the bare fixpoint at `x` and the sides stay
+    ///   apart.
+    /// - witness: `native_formers::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    #[spec(ensures: |ret| ret.is_none_or(|constant| self.unfoldings.unfolding(constant) != Unfoldable::Opaque))]
+    fn shut_recursion(
+        &self,
+        call: ComputationId,
+    ) -> Option<ConstantIndex>
+    {
+        let mut arguments = Vec::new();
+        let mut head = call;
+        while let Some(&Computation::Application(function, argument)) = self.arena.computation(head)
+        {
+            arguments.push(argument);
+            head = function;
+        }
+        let Some(&Computation::Force(forced)) = self.arena.computation(head)
+        else {
+            return None;
+        };
+        let Some(&Value::Constant(constant)) = self.arena.value(forced)
+        else {
+            return None;
+        };
+        let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
+        else {
+            return None;
+        };
+        let Some(&Value::Thunk(suspended)) = self.arena.value(body)
+        else {
+            return None;
+        };
+        let Some(&Computation::Fixpoint { evidence, .. }) = self.arena.computation(suspended)
+        else {
+            return None;
+        };
+        let position = match evidence {
+            FixpointEvidence::Staged { position } => usize::from(position),
+            FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => 0,
+        };
+        let gate = arguments
+            .len()
+            .checked_sub(position.saturating_add(1))
+            .and_then(|at| arguments.get(at).copied())?;
+        match self.arena.value(gate) {
+            Some(&(Value::Variable(_) | Value::Constant(_) | Value::StaticApplication(..))) => {
+                Some(constant)
+            },
+            Some(_) | None => None,
+        }
+    }
+
+    /// `term` with its held operand, where the append rows read one, taken the
+    /// one δ-step its defined head admits.
+    ///
+    /// The evaluator's append runs a held operand — a call such as `spin(Z)`,
+    /// held as an endpoint — before it reads the operand's word, unfolding
+    /// what the run meets, and records no decision for it: the dialogue under
+    /// a stuck transport names no unfolding. The replay takes the same step
+    /// here, by [`Self::unfold_term`], and the weak head loop runs the reduct
+    /// as the returned operand it stands for.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `term` with its operand `⟨c⟩` replaced by `⟨c'⟩`, `c'` the
+    ///   δ-reduct of `c`, exactly when [`crate::words::held_operand`] reads `c`
+    ///   and `c` is stuck at a defined head; `term` itself otherwise.
+    /// - provides: the replay's reading of the evaluator's held-operand run.
+    /// - fails: as [`Self::unfold_term`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `spin(Z) then spin(a)` replays as `spin(a)`; left
+    ///   held, the call sticks the bind that runs it and the replay refuses
+    ///   what the checker accepted.
+    /// - witness: `native_formers::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+    #[spec(ensures: |ret| match ret {
+        Ok(read) => self.arena.value(read.value).is_some(),
+        Err(_) => true,
+    })]
+    fn run_held_operand(
+        &mut self,
+        term: crate::element_identity::ElementTransport,
+    ) -> Result<crate::element_identity::ElementTransport, Stop>
+    {
+        let Some(held) = crate::words::held_operand(
+            self.arena,
+            (&mut self.table, &mut self.memo),
+            self.evaluator,
+            term,
+        )
+        else {
+            return Ok(term);
+        };
+        let Ok(Shape::Neutral(Head::Constant(constant, Status::Defined), _)) = self.shape(
+            Term::Computation(held),
+            &Frozen::default(),
+            ConversionSide::Left,
+        )
+        else {
+            return Ok(term);
+        };
+        // A recursive definition's run stays held at a gate no constructor
+        // opens, `spin(x)` for a variable `x`: the evaluator's run answers
+        // nothing there and leaves the operand as it is, and so does this.
+        if let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
+            && let Some(&Value::Thunk(suspended)) = self.arena.value(body)
+            && let Some(&Computation::Fixpoint { evidence, .. }) = self.arena.computation(suspended)
+        {
+            let position = match evidence {
+                FixpointEvidence::Staged { position } => usize::from(position),
+                FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => 0,
+            };
+            let mut arguments = Vec::new();
+            let mut head = held;
+            while let Some(&Computation::Application(function, argument)) =
+                self.arena.computation(head)
+            {
+                arguments.push(argument);
+                head = function;
+            }
+            let gate = arguments
+                .len()
+                .checked_sub(position.saturating_add(1))
+                .and_then(|at| arguments.get(at).copied());
+            if !gate.is_some_and(|argument| {
+                matches!(self.arena.value(argument), Some(&Value::Constructor { .. }))
+            }) {
+                return Ok(term);
+            }
+        }
+        let Term::Computation(unfolded) =
+            self.unfold_refolded(Term::Computation(held), constant)?
+        else {
+            return Err(unreadable());
+        };
+        Ok(crate::element_identity::ElementTransport {
+            value: self.arena.value_returned(unfolded),
+            ..term
+        })
+    }
+
+    /// One transport step along a word where
+    /// [`crate::element_identity::transport_beta`] sticks: the held operand
+    /// run, then a held path read by the append rows, then
+    /// [`crate::words::transport_word`].
+    ///
+    /// The evaluator holds an endpoint's call at the first definition it is
+    /// stuck on, and a held path never runs: its append reads the operand's
+    /// word, `tr(P, ⟨spin(a)⟩, loop ∷ p) ⇝ loop ∷ ⟨tr(P, ⟨spin(a)⟩, p)⟩`. A
+    /// returned path whose computation a definition heads is that held path,
+    /// so it takes [`crate::words::appended`]'s rows before
+    /// [`crate::words::transport_word`] would run it first; any other
+    /// returned path runs first, as the evaluator runs every value it does
+    /// not hold.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`crate::words::appended`]'s reduct when, after
+    ///   [`Self::run_held_operand`], the path is `⟨c⟩` with `c` stuck at a
+    ///   defined head and the append rows read the operand;
+    ///   [`crate::words::transport_word`]'s answer otherwise.
+    /// - provides: the replay's reading of transport along a word.
+    /// - fails: as [`Self::run_held_operand`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `spin(S(x)) then spin(a)` replays as `loop ∷ (spin(x)
+    ///   then spin(a))`, as the checker reads it; run first, the held `spin(a)`
+    ///   sticks the bind and the replay refuses what the checker accepted.
+    /// - witness: `native_formers::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+    #[spec(ensures: |ret| match ret {
+        Ok(crate::path_universe::Reduction::Reduced(reduct)) => self.arena.computation(reduct).is_some(),
+        Ok(crate::path_universe::Reduction::Stuck) | Err(_) => true,
+    })]
+    fn transport_along_word(
+        &mut self,
+        term: crate::element_identity::ElementTransport,
+    ) -> Result<crate::path_universe::Reduction, Stop>
+    {
+        let term = self.run_held_operand(term)?;
+        if let Some(&Value::Returned(along)) = self.arena.value(term.path)
+            && let Ok(Shape::Neutral(Head::Constant(_, Status::Defined), _)) = self.shape(
+                Term::Computation(along),
+                &Frozen::default(),
+                ConversionSide::Left,
+            )
+            && let crate::path_universe::Reduction::Reduced(reduct) = crate::words::appended(
+                self.arena,
+                (&mut self.table, &mut self.memo),
+                self.evaluator,
+                term,
+            )
+        {
+            return Ok(crate::path_universe::Reduction::Reduced(reduct));
+        }
+        Ok(crate::words::transport_word(
+            self.arena,
+            &mut self.table,
+            &mut self.memo,
+            self.evaluator,
+            term,
+        ))
     }
 
     /// `computation` under `frame`.
@@ -7883,6 +8258,76 @@ mod tests
                 &mut arena,
                 &Unfoldings::default(),
                 ReplaySides::Values(endpoint, expected),
+                ReplayBudget::default()
+            ),
+            KernelVerdict::Convertible
+        );
+    }
+
+    #[test]
+    fn an_endpoint_stays_over_the_eta_expansion_of_its_stuck_call_473()
+    {
+        // `⟨f a⟩` against `⟨x ← f Z; force x⟩`, `f` opaque: one bind short, the
+        // left takes the η-rule of `F` to `x ← f a; return x`. Read through,
+        // that bind is `return ⟨f a⟩`, the goal reads it back as `f a` and
+        // expands it again until the budget declines; staying over its call,
+        // the two binds compare and the calls stand apart long before the
+        // budget.
+        let mut arena = TermArena::new();
+        let nat = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+        let opaque = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(opaque);
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let held = arena.computation_application(forced, variable);
+        let at_zero = arena.computation_application(forced, zero);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let eliminated = arena.computation_force(bound);
+        let right = arena.computation_bind(at_zero, eliminated);
+        let left = arena.value_returned(held);
+        let right = arena.value_returned(right);
+
+        let verdict = convert(
+            &mut arena,
+            &Unfoldings::default(),
+            ReplaySides::Values(left, right),
+            ReplayBudget::default(),
+        );
+        assert_ne!(verdict, KernelVerdict::Declined(ReplayDecline::Budget));
+        assert_ne!(verdict, KernelVerdict::Convertible);
+    }
+
+    #[test]
+    fn an_endpoint_stays_over_the_run_of_its_transported_operand_473()
+    {
+        // `⟨tr(z. Path(N, Z, z), p, ⟨f Z⟩)⟩` against itself, `f` opaque and
+        // `p` a variable: the operand runs first, `y ← f Z; tr(P↑, p↑, y)`.
+        // Read through, that bind's continuation is the transport of the
+        // returned call again, which runs it again until the budget
+        // declines; staying over its call, the two sides are one bind each
+        // and convert.
+        let mut arena = TermArena::new();
+        let nat = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+        let opaque = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(opaque);
+        let endpoint = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let family = arena.value_type_path(nat, zero, endpoint);
+        let path = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let mut sides = [zero; 2];
+        for side in &mut sides {
+            let call = arena.computation_application(forced, zero);
+            let operand = arena.value_returned(call);
+            let transported = arena.computation_path_transport(family, path, operand);
+            *side = arena.value_returned(transported);
+        }
+        let [left, right] = sides;
+
+        assert_eq!(
+            convert(
+                &mut arena,
+                &Unfoldings::default(),
+                ReplaySides::Values(left, right),
                 ReplayBudget::default()
             ),
             KernelVerdict::Convertible

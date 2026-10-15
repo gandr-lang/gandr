@@ -108,9 +108,9 @@ def spinDown(n : Int) -> -F Path(Path(Circle, Base, Base), spin(P(n)), back(loop
 /// induction on the second summand. `spin` puts its new loop first where
 /// cubical's `intLoop` puts it last, so the law composes the spins the other
 /// way round, as the words compute: `(loop ∷ p) then q` is
-/// `loop ∷ (p then q)`. At zero `spin(Z)` is a call held as the empty word,
-/// and the composite over it does not yet compute to `spin(a)` (#440).
-@[ refuses("EndpointMismatch") ]
+/// `loop ∷ (p then q)`. At zero `spin(Z)` is a call that returns the empty
+/// word, and the composite over it runs that call first (#473).
+@[ checks ]
 def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus(a, b)), spin(b) then spin(a)) {
   case b {
     Z => here(spin(a)),

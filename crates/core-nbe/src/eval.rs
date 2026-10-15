@@ -1237,6 +1237,10 @@ enum Task
     /// Read the value the computation on the stack returns: a compound
     /// endpoint's value.
     Returned,
+    /// Read the value the computation on the stack returns, running it on
+    /// through every manifest definition it is stuck on whatever the run's
+    /// endpoint stance: a held operand's run ([`words::appended`]).
+    Running,
     /// Evaluate a core value.
     Value
     {
@@ -3181,7 +3185,7 @@ fn run(
                 && machine.values.len() == entry_values
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)),
                     Some(DomainValue::Here { point, .. }) if Some(*point) == entry_value),
-            Task::Returned => entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
+            Task::Returned | Task::Running => entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
                 && ((machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
                     || machine.tasks.len() > entry_tasks),
             Task::ReadThrough { .. } | Task::ReadContinued { .. } => (machine.comps.len() == entry_comps && machine.tasks.len() >= entry_tasks)
@@ -3254,6 +3258,11 @@ fn run(
                 && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
                 && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. })
                     if matches!((domain.value(value), domain.value(word)), (Some(&DomainValue::Constructor { tag, .. }), Some(&DomainValue::Constructor { tag: first, .. })) if tag == first)),
+            Task::Body { body: crate::closure::CompBody::Appending { motive, path, .. }, env } => machine.values.len() == entry_values.saturating_add(2)
+                && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)).is_some_and(|bound| machine.values.ends_with(&[path, bound])))
+                && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::PathTransport(held)]) if held == motive)
+                || machine.values.len() == entry_values && machine.tasks.len() == entry_tasks
+                    && machine.comps.len() == entry_comps.saturating_add(1),
             Task::Body { body: crate::closure::CompBody::Conjugated { .. } | crate::closure::CompBody::Mapping { .. }, .. } => machine.values.len() == entry_values
                 && (machine.comps.len() == entry_comps.saturating_add(1) || machine.tasks.len() > entry_tasks),
             Task::PathProduct(_) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
@@ -3538,6 +3547,13 @@ fn step(
                     machine.values.extend([rest, bound]);
                     Ok(())
                 },
+                // `v. tr(P, q, v)`: the held operand's run moves along the
+                // path, unless it returned a held endpoint again.
+                crate::closure::CompBody::Appending {
+                    motive,
+                    path,
+                    operand,
+                } => words::ran(domain, machine, (motive, path, operand), bound),
                 // `w. return ℓ ∷ w`: the word's first letter goes back before
                 // the rest's transport.
                 crate::closure::CompBody::Prefixed(word) => {
@@ -3659,7 +3675,12 @@ fn step(
         },
         Task::Returned => {
             let produced = machine.pop_comp()?;
-            resume_returned(domain, machine, produced)
+            let stance = machine.definitions.endpoints();
+            resume_returned(domain, machine, (produced, stance))
+        },
+        Task::Running => {
+            let produced = machine.pop_comp()?;
+            resume_returned(domain, machine, (produced, Endpoints::Run))
         },
         Task::ListCons(term) => {
             let second = machine.pop_value()?;
@@ -6304,17 +6325,18 @@ fn push_eliminations(
 
 /// Deliver the value a compound endpoint's computation returns, running a
 /// computation stuck on a manifest definition on through that definition
-/// when the run's stance is [`Endpoints::Run`], and reading the rest through
-/// their binds ([`read_from`]).
+/// when `stance` is [`Endpoints::Run`], and reading the rest through their
+/// binds ([`read_from`]).
 ///
 /// # Specification
 /// - requires: nothing; a dangling id is refused.
 /// - ensures: under [`Endpoints::Run`], a computation stuck on a neutral whose
 ///   head has a body here — forced already, or lowered in this run's chain —
 ///   queues the head's body, the neutral's spine over it and this delivery
-///   again, so the endpoint runs on until it returns or sticks on a rigid head;
-///   any other computation, under either stance, is delivered as [`read_from`]
-///   delivers it from its spine's first position.
+///   again — [`Task::Returned`] at the run's own stance, [`Task::Running`]
+///   otherwise — so the endpoint runs on until it returns or sticks on a rigid
+///   head; any other computation, under either stance, is delivered as
+///   [`read_from`] delivers it from its spine's first position.
 /// - provides: the reading of a compound endpoint as what its computation
 ///   returns: `dbl(x)` and `x + x` are one endpoint once `dbl` unfolds. The run
 ///   is strict where a value position is lazy, because an endpoint is compared
@@ -6344,10 +6366,10 @@ fn push_eliminations(
 fn resume_returned(
     domain: &mut DomainArena,
     machine: &mut Machine<'_>,
-    produced: DomainCompId,
+    (produced, stance): (DomainCompId, Endpoints),
 ) -> Result<(), EvalFault>
 {
-    if machine.definitions.endpoints() == Endpoints::Run
+    if stance == Endpoints::Run
         && let DomainComp::Neutral { neutral, .. } = *domain
             .computation(produced)
             .ok_or(EvalFault::Domain(DomainFault::Dangling))?
@@ -6370,7 +6392,14 @@ fn resume_returned(
             Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)) => None,
         };
         if let Some(head) = head {
-            machine.tasks.push(Task::Returned);
+            machine
+                .tasks
+                .push(if stance == machine.definitions.endpoints() {
+                    Task::Returned
+                }
+                else {
+                    Task::Running
+                });
             let _answer = push_eliminations(machine, held.spine());
             machine.tasks.push(head);
             return Ok(());
@@ -6738,25 +6767,7 @@ pub fn run_held(
     value: DomainValueId,
 ) -> Result<(Option<DomainValueId>, Fuel), EvalFault>
 {
-    let held = |domain: &DomainArena, value| -> Result<Option<DomainCompId>, EvalFault> {
-        let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(value)
-        else {
-            return Ok(None);
-        };
-        let node = domain
-            .neutral(neutral)
-            .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
-        Ok(match node.head() {
-            NeutralHead::Returned(computation) if node.spine().is_empty() => Some(computation),
-            NeutralHead::Variable { .. }
-            | NeutralHead::Constant(_)
-            | NeutralHead::Module(_)
-            | NeutralHead::Hole { .. }
-            | NeutralHead::Mark { .. }
-            | NeutralHead::Returned(_) => None,
-        })
-    };
-    let Some(computation) = held(domain, value)?
+    let Some(computation) = held_endpoint(domain, value)?
     else {
         return Ok((None, fuel));
     };
@@ -6765,13 +6776,56 @@ pub fn run_held(
     machine.tasks.push(Task::Returned);
     run(core, domain, &mut machine)?;
     let read = machine.pop_value()?;
-    let read = if held(domain, read)?.is_some() {
+    let read = if held_endpoint(domain, read)?.is_some() {
         None
     }
     else {
         Some(read)
     };
     Ok((read, machine.fuel))
+}
+
+/// The computation a held endpoint stands for: `value` when it is a neutral
+/// headed by a returned computation, with an empty spine.
+///
+/// # Specification
+/// - requires: nothing; a dangling id is refused.
+/// - ensures: `Some(computation)` exactly when `value` is such a neutral over
+///   `computation`; `None` for any other value.
+/// - provides: the test [`run_held`] and a held operand's run
+///   ([`words::appended`]) share.
+/// - fails: [`EvalFault::Domain`] for a value or neutral the arena does not
+///   hold.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`run_held`].
+/// - witness: `presented::tests::a_held_call_under_a_presented_constructor_reads_as_what_it_returns`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |held| held.is_none_or(|computation| domain.computation(computation).is_some())))]
+pub fn held_endpoint(
+    domain: &DomainArena,
+    value: DomainValueId,
+) -> Result<Option<DomainCompId>, EvalFault>
+{
+    let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(value)
+    else {
+        return Ok(None);
+    };
+    let node = domain
+        .neutral(neutral)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    Ok(match node.head() {
+        NeutralHead::Returned(computation) if node.spine().is_empty() => Some(computation),
+        NeutralHead::Variable { .. }
+        | NeutralHead::Constant(_)
+        | NeutralHead::Module(_)
+        | NeutralHead::Hole { .. }
+        | NeutralHead::Mark { .. }
+        | NeutralHead::Returned(_) => None,
+    })
 }
 
 /// Assemble a nominal value from its already evaluated fields.

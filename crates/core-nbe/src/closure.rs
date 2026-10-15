@@ -535,6 +535,19 @@ pub enum CompBody
     /// continuation `w. return ℓ ∷ w` the transport of a word `ℓ ∷ p` in a
     /// singleton family binds `p`'s transport into.
     Prefixed(DomainValueId),
+    /// After a held operand of a singleton family's transport ran, transport
+    /// what it returned along the path, or stick the transport over the
+    /// operand when it returned a held endpoint again: the continuation `v.
+    /// tr(P, q, v)` a composite over a call binds the call's run into.
+    Appending
+    {
+        /// The singleton family, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The path the operand moves along.
+        path: DomainValueId,
+        /// The held operand.
+        operand: DomainValueId,
+    },
     /// After the image of a letter under one endpoint of a path family ran,
     /// run the other's or splice the transported path between them.
     Conjugated
