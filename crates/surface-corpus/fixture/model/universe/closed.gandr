@@ -41,6 +41,12 @@ def endo(a : Type, n : Nat, v : a) -> -F Type { return (a => a) }
 @[ checks ]
 def endoBare(a : Type, n : Nat) -> -F Type { return (a => a) }
 
+/// The functions from a code to its decode, quoted in a body: the codomain
+/// `el(c)` names the arrow's own binder, which no signature type names, so
+/// the arrow is the Π over `c` (#583).
+@[ checks ]
+def byCode(n : Nat) -> -F Type { return (+U ((c : U) -> -F el(c))) }
+
 /// One, at the decode of the natural code, which runs to `Nat`.
 @[ checks ]
 def one : el(NatC) ;

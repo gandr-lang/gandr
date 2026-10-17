@@ -616,6 +616,7 @@ use crate::origin::OriginTable;
 use crate::resolve::Bound;
 use crate::resolve::Frame;
 use crate::resolve::HeadArity;
+use crate::resolve::Mentioned;
 use crate::resolve::OperandCount;
 use crate::resolve::Scope;
 use crate::resolve::ScopeId;
@@ -5408,6 +5409,46 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.scope.mention(binder);
             Telescope::Signature
         }
+    }
+
+    /// Whether the type at `node`, which introduces `binder`, names it: in the
+    /// telescope [`Self::name_in_type`] counted the type's reads in, so a type
+    /// a body quotes depends on a binder its own reads name, and any other
+    /// type on one a signature type names (#583).
+    ///
+    /// # Specification
+    /// - requires: `node` is the type introducing `binder`, or a node inside
+    ///   it; every read of the type has been recorded.
+    /// - ensures: whether `binder` binds in [`Telescope::Quote`] when `node`
+    ///   lies in a body quote, and in [`Telescope::Signature`] otherwise.
+    /// - provides: the Π-or-arrow and Σ-or-product decision, in step with the
+    ///   indices the type's reads were minted at.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dependent arrow a body quotes, whose codomain names
+    ///   its binder, is the Π over it; one whose codomain does not is the plain
+    ///   arrow.
+    /// - witness: `lower::tests::a_dependent_arrow_a_body_quotes_binds_what_its_codomain_names`
+    #[spec(ensures: |ret| ret == self.scope.binds(binder, if self.in_quote.contains(&node) {
+        Telescope::Quote
+    } else {
+        Telescope::Signature
+    }))]
+    fn names_own_binder(
+        &self,
+        node: NodeIndex,
+        binder: ScopeId,
+    ) -> Mentioned
+    {
+        let telescope = if self.in_quote.contains(&node) {
+            Telescope::Quote
+        }
+        else {
+            Telescope::Signature
+        };
+        self.scope.binds(binder, telescope)
     }
 
     /// Classify a number literal.
@@ -15462,6 +15503,55 @@ mod tests
             arena.value(code),
             Some(&past_n),
             "and so is a computation type's"
+        );
+    }
+
+    /// #583: a dependent arrow a body quotes is the Π over its binder when its
+    /// codomain names it, though only the quote names it, and the plain arrow
+    /// when nothing does.
+    #[test]
+    fn a_dependent_arrow_a_body_quotes_binds_what_its_codomain_names()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def named(n : Integer) -> -F Type { return (+U ((t : Type) -> -F t)) } def \
+                 unnamed(n : Integer) -> -F Type { return (+U ((t : Type) -> -F Integer)) }",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let arrow = |arena: &CoreArena, at: usize| {
+            let Some(&Value::Thunk(suspended)) = arena.value(body_of(lowered[at]))
+            else {
+                panic!("the body is a thunk");
+            };
+            let Some(&Computation::Lambda(over_n)) = arena.computation(suspended)
+            else {
+                panic!("over `n`");
+            };
+            let Some(&Computation::Return(quote)) = arena.computation(over_n)
+            else {
+                panic!("returning the quote");
+            };
+            let Some(&Value::Quote(quoted)) = arena.value(quote)
+            else {
+                panic!("a quoted value type");
+            };
+            let Some(&ValueType::Thunk(arrow)) = arena.value_type(quoted)
+            else {
+                panic!("the thunked arrow");
+            };
+            arena.comp_type(arrow).cloned()
+        };
+
+        assert!(
+            matches!(arrow(&arena, 0_usize), Some(CompType::Pi { .. })),
+            "`-F t` names the binder the quote introduces, so the arrow is the Π over it"
+        );
+        assert!(
+            matches!(arrow(&arena, 1_usize), Some(CompType::Arrow { .. })),
+            "`-F Integer` names nothing, so the arrow binds nothing"
         );
     }
 

@@ -2388,11 +2388,12 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: every entry's type is already minted or absent; every
     ///   mention in the entries has been recorded.
-    /// - ensures: the record type over `fields` when no binder of `binders` is
-    ///   mentioned; otherwise the last entry's type wrapped, innermost first,
-    ///   by one link per binder: `Σ` over its entry's type when the binder is
-    ///   mentioned, the eager product of two otherwise; every node with the
-    ///   written origin; nothing when a type did not lower.
+    /// - ensures: the record type over `fields` when the entries name no binder
+    ///   of `binders`, as [`Self::names_own_binder`] reads them; otherwise the
+    ///   last entry's type wrapped, innermost first, by one link per binder:
+    ///   `Σ` over its entry's type when the entries name the binder, the eager
+    ///   product of two otherwise; every node with the written origin; nothing
+    ///   when a type did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2414,7 +2415,7 @@ impl<'source> Lowerer<'_, 'source>
         let written = stretch(&self.parameters, binders);
         if !written
             .iter()
-            .any(|parameter| bool::from(self.scope.mentioned(parameter.frame)))
+            .any(|parameter| bool::from(self.names_own_binder(last, parameter.frame)))
         {
             return self.mint_record_type(fields, sink, origin);
         }
@@ -2431,7 +2432,7 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(first) => first,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
-            nested = if bool::from(self.scope.mentioned(parameter.frame)) {
+            nested = if bool::from(self.names_own_binder(last, parameter.frame)) {
                 sink.arena.value_type_sigma(first, nested)
             }
             else {
@@ -2761,8 +2762,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: every entry's type and the codomain are already minted or
     ///   absent.
     /// - ensures: `+U (Π A1. … Π An. -F B)`, an entry's arrow dependent when
-    ///   its frame is mentioned, every node with the written origin; nothing
-    ///   when a type did not lower.
+    ///   the telescope names its frame, as [`Self::names_own_binder`] reads it,
+    ///   every node with the written origin; nothing when a type did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2797,7 +2798,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut arrow = sink.arena.comp_type_returner(returned);
         sink.origins.record_comp_type(arrow, origin);
         for (parameter, &domain) in written.iter().zip(&domains).rev() {
-            arrow = if bool::from(self.scope.mentioned(parameter.frame)) {
+            arrow = if bool::from(self.names_own_binder(codomain, parameter.frame)) {
                 let id = sink.arena.comp_type_pi(domain, arrow);
                 if let Maybe::Present(binder) = self.origin_at(parameter.binder) {
                     sink.origins.record_arrow(id, binder);
@@ -2821,14 +2822,16 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the binder's type and the codomain are already minted or
     ///   absent.
-    /// - ensures: `Π (x : A). C` when the codomain names the binder, `A → C`
-    ///   otherwise, with the written origin; nothing when a type did not lower.
+    /// - ensures: `Π (x : A). C` when the codomain names the binder, as
+    ///   [`Self::names_own_binder`] reads it, `A → C` otherwise, with the
+    ///   written origin; nothing when a type did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::dependent_arrow`].
     /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
+    /// - witness: `lower::tests::a_dependent_arrow_a_body_quotes_binds_what_its_codomain_names`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
     pub(super) fn mint_dependent_arrow(
         &self,
@@ -2853,7 +2856,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(reason);
             },
         };
-        let id = if bool::from(self.scope.mentioned(frame)) {
+        let id = if bool::from(self.names_own_binder(codomain, frame)) {
             let id = sink.arena.comp_type_pi(domain, body);
             if let Maybe::Present(binder) = self.origin_at(binder) {
                 sink.origins.record_arrow(id, binder);
