@@ -1518,8 +1518,9 @@ pub(crate) struct ElementTransport
 /// # Adequacy
 /// - hypothesis: L3 — `here` transports to the value; a product, a sum and a
 ///   list motive compute constructorwise, a list one cell per step; the
-///   universe clause reaches native transport; a neutral path over a dependent
-///   motive sticks.
+///   universe clause reaches native transport along any path but a returned
+///   one, which sticks here for the word rows to run; a neutral path over a
+///   dependent motive sticks.
 /// - witness: `element_identity::tests::transport_on_here_is_the_identity_by_replay`
 /// - witness: `element_identity::tests::transport_computes_through_the_fold_clauses`
 /// - witness: `path_universe::tests::recursive_transport_tests::negation_moves_a_list_one_cell_at_a_time`
@@ -1590,8 +1591,12 @@ where
             Ok(Reduction::Reduced(arena.computation_bind(step, returned)))
         },
         ValueType::Element { code, target } => {
+            // A returned path is left to the word rows, which run it after
+            // the rows that read a held path: native transport has no clause
+            // for a returned path, and would stick on what the run returns.
             let universe_family = matches!(arena.value(code), Some(&Value::Variable(index)) if index == DeBruijnIndex::from(0_u32))
-                && target == Level::zero();
+                && target == Level::zero()
+                && !matches!(arena.value(path), Some(&Value::Returned(_)));
             Ok(if universe_family {
                 Reduction::Reduced(arena.computation_transport(path, value))
             }
