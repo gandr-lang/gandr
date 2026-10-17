@@ -14,6 +14,22 @@
 //! name is kept, and once the family is read each operation whose rules
 //! compile is admitted as a declaration of its own (`crate::operation`).
 //!
+//! # A family named as a builtin type
+//!
+//! A family whose name the grammar spells as a tile of its own — `Unit`,
+//! `Integer`, every builtin type atom — is refused
+//! `LoweringRefusal::ShadowedBuiltin` at its name, under either shadow
+//! policy (#535). In a type the grammar reads that spelling as the builtin
+//! atom, never as a type identifier, so no type the source writes, the
+//! family's own generator results included, could name the family:
+//! warn-and-allow's "the declaration wins" has nothing to win.
+//!
+//! - **Alternatives.** The family could shadow the builtin inside its own
+//!   declaration, its generator results read as the family; every use outside
+//!   it would still read the builtin, a family no source could reach.
+//! - **Reversal.** A grammar that molds a builtin atom's spelling as a type
+//!   identifier where a source declaration binds it.
+//!
 //! # A cell between terms
 //!
 //! A member whose arrow stands between two closed terms of the family, `loop
@@ -56,6 +72,7 @@ use anodized::spec;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::RuleNode;
 use gandr_kernel_term::ConstantIndex;
+use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -398,9 +415,12 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: the family's name takes its slot, which owns the declaration
     ///   and its decorations; a clean form is pushed onto the data list, its
     ///   constructors entered by name, and its definition half and attributes
-    ///   filed; the form's first fault is offered to the slot instead. A cell
-    ///   member's fault refuses the slot once the form is filed, so the
-    ///   attributes stating what the declaration expects stay with it.
+    ///   filed; the form's first fault is offered to the slot instead. A name
+    ///   the grammar spells as a tile of its own refuses the slot
+    ///   [`LoweringRefusal::ShadowedBuiltin`] at the name, held on a signature
+    ///   half with the declaration's attributes. A cell member's fault refuses
+    ///   the slot once the form is filed, so the attributes stating what the
+    ///   declaration expects stay with it.
     /// - provides: the data half of [`super::collect`].
     /// - fails: when the form has no name to file a refusal under.
     /// - panics: none.
@@ -483,6 +503,21 @@ impl<'source> Collector<'_, 'source>
         }
         else if let Err(refusal) = attributed {
             Tail::Refused(refusal)
+        }
+        else if self.pbg.tile_label(LabelText(name.as_ref())).is_some() {
+            // The half that carries the refusal and the expectation stating
+            // it, as a `sign` block's held refusal does.
+            if let Some(entry) = self.collected.slots.get_mut(slot.0) {
+                entry.signature = Maybe::Present(Half {
+                    declaration,
+                    operand: Operand::Signature,
+                });
+                entry.attributes.append(&mut attributes);
+            }
+            Tail::Refused(LoweringRefusal::ShadowedBuiltin {
+                span: named.span,
+                name,
+            })
         }
         else {
             match self.data_form(declaration, slot, &mut cursor) {

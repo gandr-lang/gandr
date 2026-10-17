@@ -1,0 +1,7 @@
+/// A family named `Unit` (#535): the grammar reads `Unit` in a type as the
+/// builtin unit type, so no type the source writes could name the family,
+/// and the declaration is refused at its name.
+@[ refuses("ShadowedBuiltin") ]
+data Unit : Type {
+  Pt : Unit;
+}
