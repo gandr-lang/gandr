@@ -11681,10 +11681,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             let bound = match statement.binding {
                 StatementBinding::Typed { annotation, .. } => {
-                    let Maybe::Present(result) = self.value_type_at(annotation)
+                    let Maybe::Present(written) = self.value_type_at(annotation)
                     else {
                         return Maybe::Absent(lowered::Absent::Unminted);
                     };
+                    // The annotation was read as a type, in the signature's
+                    // telescope; the computation it ascribes stands in the
+                    // body, whose context binds every binder (#662).
+                    let frame = self.reading(annotation).frame();
+                    let result = self.relocate_value_type(
+                        written,
+                        frame,
+                        Telescope::Signature,
+                        sink,
+                        origin,
+                    );
                     let returner = sink.arena.comp_type_returner(result);
                     sink.origins.record_comp_type(returner, origin);
                     let ascribed = sink.arena.computation_ascribe(bound, returner);
