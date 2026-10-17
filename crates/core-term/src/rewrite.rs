@@ -4754,6 +4754,50 @@ pub fn shift_comp_type_under_traced(
     }
 }
 
+/// [`shift_value_type_under`], reporting every node it rewrote beside the node
+/// it rewrote it from.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`.
+/// - ensures: `subject` with every free index counting past its innermost
+///   `scope` binders raised by `amount` and every index below kept; `carried`
+///   gains one pair per node the shift changed, as
+///   [`substitute_environment_traced`] reports them; `subject` itself, nothing
+///   minted and nothing reported when `amount` is none.
+/// - provides: carrying a written type under binders, for a caller that keeps a
+///   table beside the arena and answers each copy where its source was written.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path type between an index inside the scope and one
+///   past it raises only the second endpoint and reports it and the path; no
+///   amount mints and reports nothing.
+/// - witness: `rewrite::tests::a_traced_value_type_shift_reports_each_copy`
+#[spec(captures: entry = (arena.watermark(), carried.len()), ensures: |ret| carried.len() >= entry.1
+    && (amount != Binders::NONE || (ret == subject && arena.watermark() == entry.0 && carried.len() == entry.1)))]
+#[inline]
+#[must_use]
+pub fn shift_value_type_under_traced(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+    scope: Binders,
+    amount: Binders,
+    carried: &mut Vec<Carried>,
+) -> ValueTypeId
+{
+    if amount == Binders::NONE {
+        return subject;
+    }
+    let mut engine = Engine::new(arena);
+    let shifted = engine.run(Node::ValueType(subject), scope, Rewrite::Shift(amount));
+    report(&engine.memo, carried);
+    match shifted {
+        Node::ValueType(id) => id,
+        Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
+    }
+}
+
 /// Instantiate the binder of `body` at `argument`, reporting every node it
 /// rewrote beside the node it rewrote it from.
 ///

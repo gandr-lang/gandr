@@ -2740,6 +2740,62 @@ fn a_traced_type_shift_reports_each_copy()
 }
 
 #[test]
+fn a_traced_value_type_shift_reports_each_copy()
+{
+    let mut arena = CoreArena::new();
+    let [kept, past] = [0_u32, 1].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
+    let carrier = arena.value_type_unit();
+    let path = arena.value_type_path(carrier, kept, past);
+    let mut carried = Vec::new();
+    let shifted = super::shift_value_type_under_traced(
+        &mut arena,
+        path,
+        Binders::ONE,
+        Binders::ONE,
+        &mut carried,
+    );
+    let Some(&ValueType::Path { left, right, .. }) = arena.value_type(shifted)
+    else {
+        panic!("a shifted path type");
+    };
+    assert_eq!(left, kept, "the endpoint inside the scope stands");
+    assert_eq!(
+        arena.value(right),
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(2_u32),
+        }),
+        "the endpoint past the scope is raised"
+    );
+    carried.sort_unstable();
+    let mut expected = vec![
+        Carried::Value(past, right),
+        Carried::ValueType(path, shifted),
+    ];
+    expected.sort_unstable();
+    assert_eq!(
+        carried, expected,
+        "exactly the rewritten nodes are reported"
+    );
+    let mark = arena.watermark();
+    let mut none = Vec::new();
+    assert_eq!(
+        super::shift_value_type_under_traced(
+            &mut arena,
+            path,
+            Binders::ONE,
+            Binders::NONE,
+            &mut none
+        ),
+        path
+    );
+    assert!(
+        none.is_empty() && mark == arena.watermark(),
+        "no amount mints and reports nothing"
+    );
+}
+
+#[test]
 fn a_traced_instantiation_replaces_its_binder()
 {
     let mut arena = CoreArena::new();

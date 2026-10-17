@@ -48,3 +48,11 @@ def equivToIso(a : Type, b : Type, e : a ≃ b) -> -F (a ≅ b) {
     }
   }
 }
+
+/// A bi-invertible map is a path from itself to itself among the bi-invertible
+/// maps, by reflexivity: the point is checked against `a ≃ b` beneath `e`,
+/// which that type does not read, and the type reads back as written (#674).
+@[ checks ]
+def equivHere(a : Type, b : Type, e : a ≃ b) -> -F Path(a ≃ b, e, e) {
+  return here(e)
+}
