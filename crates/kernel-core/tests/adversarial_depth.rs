@@ -148,7 +148,11 @@ mod adversarial_depth
                 )
             },
         };
-        assert_eq!(Ok(()), verdict, "the chain-deep definition checks");
+        assert_eq!(
+            Ok(()),
+            verdict.map(drop),
+            "the chain-deep definition checks"
+        );
         // The arena is dropped here, on the worker's small stack and with no
         // ordering care taken, which is the teardown half of the claim.
         census

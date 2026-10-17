@@ -1,9 +1,13 @@
 //! Recursive nominal blocks, structural fixpoints typed by stages and gated
 //! fixpoint unfolding through admission and replay.
 
+extern crate alloc;
+
 #[cfg(test)]
 mod recursive_data
 {
+    use alloc::collections::BTreeMap;
+
     use anodized::spec;
     use gandr_kernel_conversion_trace::ConversionDecision;
     use gandr_kernel_core::CheckedId;
@@ -25,6 +29,7 @@ mod recursive_data
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::FieldLabel;
     use gandr_kernel_term::FieldPosition;
     use gandr_kernel_term::FixpointEvidence;
     use gandr_kernel_term::GroundSort;
@@ -38,18 +43,47 @@ mod recursive_data
     use gandr_kernel_term::ValueId;
     use gandr_kernel_term::ValueTypeId;
 
-    /// A block whose one field breaks one occurrence rule.
-    #[derive(Clone, Copy, Debug)]
-    enum Fixture
+    /// Where a one-parameter block's one field places the family `T A`, `A`
+    /// its parameter, beside `List`, whose parameter is strictly positive,
+    /// and `Test`, whose parameter is consumed.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Placement
     {
-        /// `U (T A → F 1)`: the family under a function's domain.
-        Negative,
-        /// `T A × 1`: the family under a field-local positive former.
+        /// `T A`.
+        Direct,
+        /// `U (F (T A))`: the returner's result.
+        Returned,
+        /// `U (Π (x : 1). F (T A))`: a dependent function's codomain.
+        Codomain,
+        /// `T A × 1`.
+        Product,
+        /// `T A + 1`.
+        Sum,
+        /// `{ x : T A }`.
+        Record,
+        /// `[T A]`.
+        List,
+        /// `Σ (x : 1). T A`.
+        Sigma,
+        /// `U (F (T A) & F 1)`.
+        With,
+        /// `List ⌜T A⌝`: through a strictly positive parameter.
         Nested,
-        /// `U (F (T A))`: a thunked family with no domain to vary over.
-        Returner,
-        /// `T ⌜1⌝`: the family at an argument other than its parameter.
+        /// `U (T A → F 1)`: under a function's domain, one stage below.
+        Domain,
+        /// `U (U (T A → F 1) → F 1)`: under two domains.
+        TwoDomains,
+        /// `T ⌜1⌝`: at an argument other than its parameter.
         NonUniform,
+        /// `U (T ⌜1⌝ → F 1)`: at another argument under a domain.
+        NonUniformDomain,
+        /// `Test ⌜T A⌝`: through a consumed parameter.
+        Consumed,
+        /// `U (Test ⌜T A⌝ → F 1)`: through a consumed parameter under a
+        /// domain.
+        ConsumedDomain,
+        /// `Lift (T A)`: the family lifted, a type no stage reaches.
+        Lifted,
         /// A declaration after the block's own position.
         Later,
         /// The family in its own parameter telescope.
@@ -212,58 +246,140 @@ mod recursive_data
             .expect("Tree is strictly positive")
     }
 
-    /// Offer a one-parameter block whose one field breaks one occurrence
-    /// rule, and return its refusal.
+    /// `U (domain → returns)`: a thunked function from `domain`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn consuming(
+        arena: &mut TermArena,
+        domain: ValueTypeId,
+        returns: CompTypeId,
+    ) -> ValueTypeId
+    {
+        let function = arena.comp_type_arrow(domain, returns);
+        arena.value_type_thunk(function)
+    }
+
+    /// Admit `Test A`: `test` over one function `U (El A → F 1)`, so the
+    /// parameter stands under a domain and is not strictly positive.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the block is refused and leaves no entry behind.
-    /// - panics: if the block is admitted.
+    /// - ensures: the returned identifier names a checked one-parameter data
+    ///   declaration at the environment's next position.
+    /// - panics: if the declaration is refused.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — each fixture differs from an admitted block in one
-    ///   occurrence, so its refusal names that occurrence alone.
-    /// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name`
-    #[spec(captures: before = environment.entries().len(), ensures: |ret| environment.entries().len() == before && matches!(ret,
+    /// - hypothesis: L3 — a family nested through `Test`'s parameter is refused
+    ///   where one nested through `List`'s is admitted.
+    /// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
+    #[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+    fn consumed(environment: &mut Environment) -> CheckedId
+    {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let parameter = arena.value_variable(DeBruijnIndex::from(0));
+        let element = arena.value_type_element(parameter, Level::zero());
+        let unit = arena.value_type_unit();
+        let returns = arena.comp_type_returner(unit);
+        let field = consuming(arena, element, returns);
+        let declaration = staging.data(
+            LevelSignature::monomorphic(),
+            vec![universe],
+            vec![vec![field]],
+            universe,
+        );
+        environment.add_decl(declaration).expect("Test is admitted")
+    }
+
+    /// Admit `List` and `Test`, then offer a one-parameter block whose one
+    /// field places the family as `placement` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the block, at position 2, or its refusal, one of the
+    ///   occurrence refusals.
+    /// - panics: if `List` or `Test` is refused.
+    ///
+    /// # Errors
+    /// The kernel's refusal of the block.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each placement differs from `T A` in one former, so
+    ///   its verdict is that former's.
+    /// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error,
         KernelError::NegativeOccurrence(_)
         | KernelError::NestedOccurrence(_)
         | KernelError::IndexOccurrence(_)
         | KernelError::NonUniformOccurrence(_)
-        | KernelError::CrossBlockReference { .. }))]
-    fn refusal(
-        environment: &mut Environment,
-        fixture: Fixture,
-    ) -> KernelError
+        | KernelError::CrossBlockReference { .. }), |id| usize::from(id.position()) == 2))]
+    fn placed(placement: Placement) -> Result<CheckedId, KernelError>
     {
-        let before = environment.entries().len();
-        let position = ConstantIndex::from(before);
+        let mut environment = Environment::new();
+        let list = list(&mut environment).position();
+        let consumed = consumed(&mut environment).position();
+        let position = ConstantIndex::from(environment.entries().len());
         let mut staging = environment.stage();
         let arena = staging.arena();
         let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
         let unit = arena.value_type_unit();
+        let returns = arena.comp_type_returner(unit);
         let parameter = arena.value_variable(DeBruijnIndex::from(0));
         let own = arena.value_type_data(position, vec![parameter]);
+        // Past one binder the parameter is one out.
+        let past = arena.value_variable(DeBruijnIndex::from(1));
+        let own_past = arena.value_type_data(position, vec![past]);
+        let code = arena.value_quote(own);
+        let one = arena.value_quote(unit);
         let mut parameters = vec![universe];
-        let field = match fixture {
-            Fixture::Negative => {
-                let returner = arena.comp_type_returner(unit);
-                let function = arena.comp_type_arrow(own, returner);
-                arena.value_type_thunk(function)
-            },
-            Fixture::Nested => arena.value_type_product(&[own, unit]),
-            Fixture::Returner => {
+        let field = match placement {
+            Placement::Direct => own,
+            Placement::Returned => {
                 let returner = arena.comp_type_returner(own);
                 arena.value_type_thunk(returner)
             },
-            Fixture::NonUniform => {
-                let code = arena.value_quote(unit);
-                arena.value_type_data(position, vec![code])
+            Placement::Codomain => {
+                let returner = arena.comp_type_returner(own_past);
+                let function = arena.comp_type_pi(unit, returner);
+                arena.value_type_thunk(function)
             },
-            Fixture::Later => {
-                let later = before.checked_add(1).expect("a later position");
+            Placement::Product => arena.value_type_product(&[own, unit]),
+            Placement::Sum => arena.value_type_sum(&[own, unit]),
+            Placement::Record => arena
+                .value_type_record(BTreeMap::from([(FieldLabel::from(String::from("x")), own)])),
+            Placement::List => arena.value_type_list(own),
+            Placement::Sigma => arena.value_type_sigma(unit, own_past),
+            Placement::With => {
+                let first = arena.comp_type_returner(own);
+                let both = arena.comp_type_with(first, returns);
+                arena.value_type_thunk(both)
+            },
+            Placement::Nested => arena.value_type_data(list, vec![code]),
+            Placement::Domain => consuming(arena, own, returns),
+            Placement::TwoDomains => {
+                let inner = consuming(arena, own, returns);
+                consuming(arena, inner, returns)
+            },
+            Placement::NonUniform => arena.value_type_data(position, vec![one]),
+            Placement::NonUniformDomain => {
+                let other = arena.value_type_data(position, vec![one]);
+                consuming(arena, other, returns)
+            },
+            Placement::Consumed => arena.value_type_data(consumed, vec![code]),
+            Placement::ConsumedDomain => {
+                let tested = arena.value_type_data(consumed, vec![code]);
+                consuming(arena, tested, returns)
+            },
+            Placement::Lifted => arena.value_type_lift(own, Level::zero()),
+            Placement::Later => {
+                let later = usize::from(position)
+                    .checked_add(1)
+                    .expect("a later position");
                 arena.value_type_data(ConstantIndex::from(later), vec![])
             },
-            Fixture::Parameter => {
+            Placement::Parameter => {
                 parameters.push(own);
                 unit
             },
@@ -274,9 +390,117 @@ mod recursive_data
             vec![vec![field]],
             universe,
         );
+        environment.add_decl(declaration)
+    }
+
+    /// What a consumer of `Chain` applies the test a link holds to.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Consumer
+    {
+        /// The chain before the link, one stage below it.
+        Before,
+        /// The link itself: Curry's consumer.
+        Itself,
+        /// The link itself, through a helper that takes the test at its
+        /// declared type.
+        Handed,
+    }
+
+    /// Admit `Chain`, `start` and `link : (prev : Chain, test : U (Chain → F
+    /// 1))`, and `apply : U (U (Chain → F 1) → Chain → F 1)`, `λg. λx.
+    /// (force g) x`; then offer `λc. case c of { start ↦ return (); link ↦
+    /// λprev test. … }`, applying `test` to what `consumer` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the consumer is admitted exactly when it applies the test to
+    ///   the chain before the link, and otherwise refused as `StageNotBelow`.
+    /// - panics: if `Chain` or `apply` is refused.
+    ///
+    /// # Errors
+    /// The kernel's refusal of the consumer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the consumers differ only in the value the test is
+    ///   applied to.
+    /// - witness: `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`
+    /// - witness: `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call`
+    #[spec(ensures: |ret| ret.is_ok() == (consumer == Consumer::Before)
+        && (ret.is_ok() || matches!(ret, Err(KernelError::StageNotBelow { .. }))))]
+    fn chain(consumer: Consumer) -> Result<CheckedId, KernelError>
+    {
+        let mut environment = Environment::new();
+        let chain = ConstantIndex::from(environment.entries().len());
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let own = arena.value_type_data(chain, vec![]);
+        let unit = arena.value_type_unit();
+        let returns = arena.comp_type_returner(unit);
+        let test = consuming(arena, own, returns);
+        let declaration = staging.data(
+            LevelSignature::monomorphic(),
+            vec![],
+            vec![vec![], vec![own, test]],
+            kind,
+        );
         environment
             .add_decl(declaration)
-            .expect_err("the occurrence is refused")
+            .expect("Chain is stratified");
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let own = arena.value_type_data(chain, vec![]);
+        let unit = arena.value_type_unit();
+        let returns = arena.comp_type_returner(unit);
+        let test = consuming(arena, own, returns);
+        let tested = arena.comp_type_arrow(own, returns);
+        let handing = arena.comp_type_arrow(test, tested);
+        let declared = arena.value_type_thunk(handing);
+        let argument = arena.value_variable(DeBruijnIndex::from(0));
+        let applied = call(arena, DeBruijnIndex::from(1), argument);
+        let body = arena.computation_lambda(applied);
+        let body = arena.computation_lambda(body);
+        let value = arena.value_thunk(body);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+        let apply = environment
+            .add_decl(declaration)
+            .expect("apply is admitted")
+            .position();
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let own = arena.value_type_data(chain, vec![]);
+        let unit = arena.value_type_unit();
+        let returns = arena.comp_type_returner(unit);
+        let done = arena.value_unit();
+        let on_start = arena.computation_return(done);
+        // Under the link's fields: `test` 0, `prev` 1, `c` 2.
+        let applied = match consumer {
+            Consumer::Before => {
+                let prev = arena.value_variable(DeBruijnIndex::from(1));
+                call(arena, DeBruijnIndex::from(0), prev)
+            },
+            Consumer::Itself => {
+                let link = arena.value_variable(DeBruijnIndex::from(2));
+                call(arena, DeBruijnIndex::from(0), link)
+            },
+            Consumer::Handed => {
+                let helper = arena.value_constant(apply);
+                let forced = arena.computation_force(helper);
+                let test = arena.value_variable(DeBruijnIndex::from(0));
+                let handed = arena.computation_application(forced, test);
+                let link = arena.value_variable(DeBruijnIndex::from(2));
+                arena.computation_application(handed, link)
+            },
+        };
+        let on_link = arena.computation_lambda(applied);
+        let on_link = arena.computation_lambda(on_link);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0));
+        let case = arena.computation_data_case(scrutinee, returns, vec![on_start, on_link]);
+        let body = arena.computation_lambda(case);
+        let declared = consuming(arena, own, returns);
+        let value = arena.value_thunk(body);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+        environment.add_decl(declaration)
     }
 
     /// `λx. case x [F Nat] of { zero ↦ on_zero; succ ↦ on_successor }`.
@@ -939,41 +1163,125 @@ mod recursive_data
         );
     }
 
+    /// Every placeable former admits the family it places, at a strictly
+    /// positive position and under domains alike; what no stage reaches is
+    /// refused by the occurrence it is.
     #[test]
-    fn occurrences_are_refused_by_name()
+    fn accessibility_is_decided_on_every_former()
     {
-        let mut environment = Environment::new();
+        for placement in [
+            Placement::Direct,
+            Placement::Returned,
+            Placement::Codomain,
+            Placement::Product,
+            Placement::Sum,
+            Placement::Record,
+            Placement::List,
+            Placement::Sigma,
+            Placement::With,
+            Placement::Nested,
+            Placement::Domain,
+            Placement::TwoDomains,
+        ] {
+            let admitted = placed(placement);
+            assert!(admitted.is_ok(), "{placement:?}: {admitted:?}");
+        }
         let field = OccurrenceSite::Field {
             tag: ConstructorTag::from(0),
             field: FieldPosition::from(0),
         };
-        assert_eq!(
-            refusal(&mut environment, Fixture::Negative),
-            KernelError::NegativeOccurrence(field)
-        );
-        assert_eq!(
-            refusal(&mut environment, Fixture::Nested),
-            KernelError::NestedOccurrence(field)
-        );
-        assert_eq!(
-            refusal(&mut environment, Fixture::Returner),
-            KernelError::NestedOccurrence(field)
-        );
-        assert_eq!(
-            refusal(&mut environment, Fixture::NonUniform),
-            KernelError::NonUniformOccurrence(field)
-        );
-        assert_eq!(
-            refusal(&mut environment, Fixture::Later),
-            KernelError::CrossBlockReference {
+        for (placement, refusal) in [
+            (
+                Placement::NonUniform,
+                KernelError::NonUniformOccurrence(field),
+            ),
+            (
+                Placement::NonUniformDomain,
+                KernelError::NegativeOccurrence(field),
+            ),
+            (Placement::Consumed, KernelError::NestedOccurrence(field)),
+            (
+                Placement::ConsumedDomain,
+                KernelError::NegativeOccurrence(field),
+            ),
+            (Placement::Lifted, KernelError::IndexOccurrence(field)),
+            (Placement::Later, KernelError::CrossBlockReference {
                 site: field,
-                index: ConstantIndex::from(1_usize),
-            }
+                index: ConstantIndex::from(3_usize),
+            }),
+            (
+                Placement::Parameter,
+                KernelError::IndexOccurrence(OccurrenceSite::Parameter(ParameterPosition::from(1))),
+            ),
+        ] {
+            assert_eq!(placed(placement).map(drop), Err(refusal), "{placement:?}");
+        }
+    }
+
+    /// `Chain`'s test consumes the family under a domain, so a link's test
+    /// takes chains one stage below the link: the block declares, and a
+    /// consumer applying the test to the chain before the link is admitted.
+    #[test]
+    fn a_negative_occurrence_below_the_stage_declares()
+    {
+        let admitted = chain(Consumer::Before);
+        assert!(admitted.is_ok(), "{admitted:?}");
+    }
+
+    /// Curry's consumer applies a link's test to the link itself, at no
+    /// stage the test takes: refused at the call, written directly or
+    /// through a helper.
+    #[test]
+    fn currys_consumer_is_refused_at_its_call()
+    {
+        for consumer in [Consumer::Itself, Consumer::Handed] {
+            let refused = chain(consumer);
+            assert!(
+                matches!(
+                    refused,
+                    Err(KernelError::StageNotBelow {
+                        found: Standing::Top,
+                        ..
+                    })
+                ),
+                "{consumer:?}: {refused:?}"
+            );
+        }
+    }
+
+    /// `Rose`, `node : (kids : List ⌜Rose⌝)`, nests the family through
+    /// `List`'s strictly positive parameter: the block declares, and a node
+    /// with no children is a rose.
+    #[test]
+    fn a_nested_occurrence_through_a_strictly_positive_parameter_declares()
+    {
+        let mut environment = Environment::new();
+        let list = list(&mut environment).position();
+        let rose = ConstantIndex::from(environment.entries().len());
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let own = arena.value_type_data(rose, vec![]);
+        let code = arena.value_quote(own);
+        let kids = arena.value_type_data(list, vec![code]);
+        let declaration = staging.data(
+            LevelSignature::monomorphic(),
+            vec![],
+            vec![vec![kids]],
+            kind,
         );
-        assert_eq!(
-            refusal(&mut environment, Fixture::Parameter),
-            KernelError::IndexOccurrence(OccurrenceSite::Parameter(ParameterPosition::from(1)))
-        );
+        let declared = environment.add_decl(declaration);
+        assert!(declared.is_ok(), "{declared:?}");
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let own = arena.value_type_data(rose, vec![]);
+        let code = arena.value_quote(own);
+        let kids = arena.value_type_data(list, vec![code]);
+        let none = arena.value_constructor(kids, ConstructorTag::from(0), vec![]);
+        let sprig = arena.value_constructor(own, ConstructorTag::from(0), vec![none]);
+        let declaration = staging.def(LevelSignature::monomorphic(), own, sprig);
+        let defined = environment.add_decl(declaration);
+        assert!(defined.is_ok(), "{defined:?}");
     }
 
     #[test]
@@ -1377,7 +1685,8 @@ mod recursive_data
         /// `Odd : (b : U (El(el base) → F U))`, `base : U` a definition after
         /// the decoder: at a code no case put below the decoder's stage.
         Level,
-        /// `Neg : (b : U (U → F 1))`: no decoder, the family under a domain.
+        /// `Neg : (b : U (Lift U → F 1))`: no decoder, the family lifted
+        /// under a domain, which no stage reaches.
         Negative,
     }
 
@@ -1438,7 +1747,8 @@ mod recursive_data
             Decoded::Negative => {
                 let unit = arena.value_type_unit();
                 let into = arena.comp_type_returner(unit);
-                let arrow = arena.comp_type_arrow(own, into);
+                let lifted = arena.value_type_lift(own, Level::zero());
+                let arrow = arena.comp_type_arrow(lifted, into);
                 vec![arena.value_type_thunk(arrow)]
             },
         };
@@ -1511,7 +1821,7 @@ mod recursive_data
 
     /// A block one member of which is refused is refused whole, the
     /// environment unchanged: the decoder at a place that does not descend
-    /// below its own stage, and the family under a function's domain.
+    /// below its own stage, and the family lifted under a function's domain.
     #[test]
     fn a_mutual_block_is_refused_whole()
     {

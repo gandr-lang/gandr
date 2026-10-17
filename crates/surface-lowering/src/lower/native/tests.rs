@@ -496,10 +496,10 @@ fn a_recursive_family_names_itself_in_its_fields()
         matches!(verdicts.as_slice(), [
             Verdict::Data,
             Verdict::Data,
-            Verdict::Refused(gandr_core_checker::CheckRefusal::NegativeOccurrence(_)),
+            Verdict::Data,
             Verdict::Data,
         ]),
-        "the positive families form and the negative one is refused by name: {verdicts:?}"
+        "every family forms, the one under its own domain stratified: {verdicts:?}"
     );
 }
 

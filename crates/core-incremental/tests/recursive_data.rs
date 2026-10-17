@@ -104,17 +104,18 @@ fn occurrence(
 }
 
 /// `Nat`, fixpoints that check, refuse a claim and stand at a head, a
-/// structurally descending `double`, and each refused occurrence.
+/// structurally descending `double`, a family consuming its parameter, and
+/// each refused occurrence.
 ///
 /// # Specification
-/// - ensures: eleven items at ascending positions.
+/// - ensures: twelve items at ascending positions.
 /// - panics: only if the program container refuses the fixture.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each item reaches one admitted form or one refusal of the
 ///   recursion vocabulary.
 /// - witness: `tests::recursive_data::recursive_data_checkpoints_round_trip_and_resume`
-#[spec(ensures: |ret| ret.items().len() == 11)]
+#[spec(ensures: |ret| ret.items().len() == 12)]
 fn program() -> Program
 {
     let mut arena = CoreArena::new();
@@ -174,35 +175,49 @@ fn program() -> Program
         arena.value_thunk(fixpoint)
     };
 
+    // A lifted occurrence under a domain: no stage reaches it.
     let negative = occurrence(&mut arena, ConstantIndex::from(5_usize), |arena, own| {
         let unit = arena.value_type_unit();
         let returner = arena.comp_type_returner(unit);
-        let function = arena.comp_type_arrow(own, returner);
+        let lifted = arena.value_type_lift(own, Level::zero());
+        let function = arena.comp_type_arrow(lifted, returner);
         (vec![], arena.value_type_thunk(function))
     });
-    let nested = occurrence(&mut arena, ConstantIndex::from(6_usize), |arena, own| {
+    // `Tested A` consumes its parameter: `A` is not strictly positive in it.
+    let tested = occurrence(&mut arena, ConstantIndex::from(6_usize), |arena, _own| {
+        let parameter = var(arena, DeBruijnIndex::from(0));
+        let element = arena.value_type_element(parameter, Level::zero());
         let unit = arena.value_type_unit();
-        (vec![], arena.value_type_product(&[own, unit]))
+        let returner = arena.comp_type_returner(unit);
+        let function = arena.comp_type_arrow(element, returner);
+        (vec![], arena.value_type_thunk(function))
     });
-    let non_uniform = occurrence(&mut arena, ConstantIndex::from(7_usize), |arena, _own| {
+    let nested = occurrence(&mut arena, ConstantIndex::from(7_usize), |arena, own| {
+        let code = arena.value_quote(own);
+        (
+            vec![],
+            arena.value_type_data(ConstantIndex::from(6_usize), vec![code]),
+        )
+    });
+    let non_uniform = occurrence(&mut arena, ConstantIndex::from(8_usize), |arena, _own| {
         let unit = arena.value_type_unit();
         let code = arena.value_quote(unit);
         (
             vec![],
-            arena.value_type_data(ConstantIndex::from(7_usize), vec![code]),
+            arena.value_type_data(ConstantIndex::from(8_usize), vec![code]),
         )
     });
-    let later = occurrence(&mut arena, ConstantIndex::from(8_usize), |arena, _own| {
+    let later = occurrence(&mut arena, ConstantIndex::from(9_usize), |arena, _own| {
         (
             vec![],
-            arena.value_type_data(ConstantIndex::from(9_usize), vec![]),
+            arena.value_type_data(ConstantIndex::from(10_usize), vec![]),
         )
     });
     let tail = data(
-        ConstantIndex::from(9_usize),
+        ConstantIndex::from(10_usize),
         DataSignature::new(vec![], vec![vec![]], kind),
     );
-    let telescope = occurrence(&mut arena, ConstantIndex::from(10_usize), |arena, own| {
+    let telescope = occurrence(&mut arena, ConstantIndex::from(11_usize), |arena, own| {
         let unit = arena.value_type_unit();
         (vec![own], unit)
     });
@@ -226,6 +241,7 @@ fn program() -> Program
             definition(ConstantIndex::from(4_usize), doubling_type, doubling),
         ),
         Item::new(ItemKey::from("Negative"), negative),
+        Item::new(ItemKey::from("Tested"), tested),
         Item::new(ItemKey::from("Nested"), nested),
         Item::new(ItemKey::from("NonUniform"), non_uniform),
         Item::new(ItemKey::from("Later"), later),
@@ -276,24 +292,25 @@ fn recursive_data_checkpoints_round_trip_and_resume()
         typings[5],
         &Typing::Refused(Refusal::NegativeOccurrence(field))
     );
+    assert_eq!(typings[6], &Typing::Data);
     assert_eq!(
-        typings[6],
+        typings[7],
         &Typing::Refused(Refusal::NestedOccurrence(field))
     );
     assert_eq!(
-        typings[7],
+        typings[8],
         &Typing::Refused(Refusal::NonUniformOccurrence(field))
     );
     assert!(
         matches!(
-            typings[8],
+            typings[9],
             Typing::Refused(Refusal::CrossBlockReference { site, .. }) if *site == field
         ),
         "{typings:?}"
     );
-    assert_eq!(typings[9], &Typing::Data);
+    assert_eq!(typings[10], &Typing::Data);
     assert_eq!(
-        typings[10],
+        typings[11],
         &Typing::Refused(Refusal::IndexOccurrence(OccurrenceSite::Parameter(
             ParameterPosition::from(1_usize)
         )))

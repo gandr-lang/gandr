@@ -9,8 +9,11 @@
 //!   `A^ι`, and the self binder is the same telescope with it at `A^{<ι}`.
 //! - **A case opens one stage below its scrutinee's.** [`open_case`] mints one
 //!   child `s' < s` for a scrutinee at `A^s`, shared by the case's arms, after
-//!   naming a scrutinee at a bound `A^{<^k ι}` by a chain of `k` fresh stages;
-//!   [`stage_branch`] binds each recursive field at `s'`.
+//!   naming a scrutinee at a bound `A^{<^k ι}` by a chain of `k` fresh stages,
+//!   and a root for a stratified scrutinee at no stage; [`stage_branch`] binds
+//!   each field at `s'` through [`stage_field`], which moves every occurrence
+//!   of the block's families the occurrence walk placed — under a function's
+//!   domain too — to `s'`.
 //! - **A constructor stands above its fields.** [`constructor_owes`] reads what
 //!   a constructor checked at a stage owes: its recursive fields one step
 //!   lower, and, for a constructor with no field whose own type is the family,
@@ -24,10 +27,10 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_core_term::Binders;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
@@ -42,7 +45,6 @@ use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
 use crate::CheckingContext;
-use crate::conversion::Agreement;
 use crate::refusal::ExpectedShape;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
@@ -97,88 +99,40 @@ pub struct Owed
     pub fields: Stage,
 }
 
-/// Why a type has no kin past itself.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Kinless
-{
-    /// It is no family of a mutual block of several.
-    Lone,
-}
-
 /// The families a case on `datatype`, or a constructor of it wanted at a
 /// stage, refines at that stage: one mutual block's families share one
 /// stage, as the kernel's do.
 ///
 /// # Specification
-/// - ensures: [`Kinless::Lone`] unless `datatype` is a family a block of
-///   several families opened; then each of those families in scope taking as
-///   many parameters as `datatype` has arguments, at `datatype`'s arguments, in
-///   block order.
-/// - fails: never.
+/// - ensures: the mutual block of several families `datatype`'s declaration is
+///   one of, or its declaration's block alone.
+/// - fails: [`CheckRefusal::MachineInvariant`] for a type that is no data type;
+///   the unfolding's refusal.
 /// - panics: none.
+/// - executable: none — the type is read through the weak-head unfolding the
+///   body performs against the mutable context; a predicate would rerun it.
+///
+/// # Errors
+/// As `- fails:`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a rose tree's node and its list of children, one block,
 ///   recurse through each other at one stage.
 /// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
-#[spec(ensures: |ret| match ret {
-    Maybe::Present(ref families) => families.len() >= 2,
-    Maybe::Absent(_) => true,
-})]
-pub fn kin(
+pub fn families(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
-) -> Maybe<Vec<ValueTypeId>, Kinless>
+) -> Result<crate::occurrence::Block, CheckRefusal>
 {
-    let Some(&ValueType::Data { declaration, .. }) = context.arena().value_type(datatype)
+    let head = context.whnf_value_type(datatype)?;
+    let Some(&ValueType::Data { declaration, .. }) = context.arena().value_type(head)
     else {
-        return Maybe::Absent(Kinless::Lone);
+        return Err(CheckRefusal::MachineInvariant);
     };
-    let Maybe::Present(block) = context.kin_of(declaration)
-    else {
-        return Maybe::Absent(Kinless::Lone);
-    };
-    let Some(&ValueType::Data { ref arguments, .. }) = context.arena().value_type(datatype)
-    else {
-        return Maybe::Absent(Kinless::Lone);
-    };
-    let arguments = arguments.clone();
-    let (first, past) = (usize::from(block.first()), usize::from(block.families()));
-    let mut families = Vec::with_capacity(past.saturating_sub(first));
-    for position in first .. past {
-        let position = gandr_kernel_term::ConstantIndex::from(position);
-        if position == declaration {
-            families.push(datatype);
-        }
-        else if let Maybe::Present(signature) = context.data_in_scope(position)
-            && signature.parameters().len() == arguments.len()
-        {
-            families.push(
-                context
-                    .arena_mut()
-                    .value_type_data(position, arguments.clone()),
-            );
-        }
-    }
-    if families.len() < 2 {
-        return Maybe::Absent(Kinless::Lone);
-    }
-    Maybe::Present(families)
-}
-
-/// The families [`kin`] found, or `datatype` alone.
-///
-/// # Specification
-/// trivial.
-pub fn families<'kin>(
-    kin: &'kin Maybe<Vec<ValueTypeId>, Kinless>,
-    datatype: &'kin ValueTypeId,
-) -> &'kin [ValueTypeId]
-{
-    match *kin {
-        Maybe::Present(ref families) => families.as_slice(),
-        Maybe::Absent(_) => core::slice::from_ref(datatype),
-    }
+    Ok(match context.kin_of(declaration) {
+        Maybe::Present(block) => block,
+        Maybe::Absent(_) => crate::occurrence::Block::lone(declaration),
+    })
 }
 
 /// Open the stage of the fixpoint `at` checked at `expected`, recursing on
@@ -315,14 +269,20 @@ impl Dependence
 /// Open a case on a scrutinee of type `scrutinee`: the type the case reads
 /// it as, and the stage its arms bind recursive fields at.
 ///
+/// A value of a stratified family at no stage is read at a fresh root: its
+/// fields stand at that root, which nothing outside the arms is known to
+/// reach, so a field under a function's domain takes only what the arm built
+/// below it — never the scrutinee itself, which stands at no stage.
+///
 /// # Specification
 /// - requires: `scrutinee` is the type the case's scrutinee synthesised.
 /// - ensures: for `A^s` at an exact `s`, `A` and a fresh child of `s`; for a
 ///   bound `A^{<^k ι}`, `A` and a fresh child of the last of `k` fresh stages
-///   chained below `ι`, which name the scrutinee's stage; any other type as it
-///   stands, with [`Unstaged::Plain`].
+///   chained below `ι`, which name the scrutinee's stage; for a stratified
+///   family at no stage, the type as it stands and a fresh root; any other type
+///   as it stands, with [`Unstaged::Plain`].
 /// - fails: [`CheckRefusal::MachineInvariant`] for a stage this judgement did
-///   not mint.
+///   not mint; the unfolding's refusal.
 /// - panics: none.
 ///
 /// # Errors
@@ -331,10 +291,12 @@ impl Dependence
 /// # Adequacy
 /// - hypothesis: L3 — a case on the recursed-on parameter and a case on one of
 ///   its fields each mint one child, so a call on a field two cases deep is two
-///   steps below the fixpoint's stage.
+///   steps below the fixpoint's stage; a case on a stratified value at no stage
+///   binds its negative field at a root its own scrutinee does not fit.
 /// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+/// - witness: `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call`
 #[spec(ensures: |ret| match ret {
-    Ok((read, Maybe::Present(_))) => matches!(context.arena().value_type(scrutinee), Some(&ValueType::Staged { base, .. }) if base == read),
+    Ok((read, Maybe::Present(_))) => read == scrutinee || matches!(context.arena().value_type(scrutinee), Some(&ValueType::Staged { base, .. }) if base == read),
     Ok((read, Maybe::Absent(_))) => read == scrutinee,
     Err(_) => true,
 })]
@@ -345,6 +307,12 @@ pub fn open_case(
 {
     let Some(&ValueType::Staged { base, stage }) = context.arena().value_type(scrutinee)
     else {
+        let head = context.whnf_value_type(scrutinee)?;
+        if let Some(&ValueType::Data { declaration, .. }) = context.arena().value_type(head)
+            && context.stratification(declaration) == crate::occurrence::Stratification::Stratified
+        {
+            return Ok((scrutinee, Maybe::Present(context.stages_mut().mint_root())));
+        }
         return Ok((scrutinee, Maybe::Absent(Unstaged::Plain)));
     };
     let unminted = |_unminted| CheckRefusal::MachineInvariant;
@@ -362,121 +330,311 @@ pub fn open_case(
     Ok((base, Maybe::Present(child)))
 }
 
-/// Whether two formed value types convert, invariantly.
+/// One node of a type a staging rebuild reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Part
+{
+    /// A value type.
+    Value(ValueTypeId),
+    /// A computation type.
+    Computation(CompTypeId),
+}
+
+/// What a staging rebuild does with a node next.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Visit
+{
+    /// Read the node: stage it, or queue its placed children.
+    Open(Part),
+    /// Rebuild the node from its children's results.
+    Close(Part),
+}
+
+/// Hand each child of `part` the stage order places to `each`, in order: the
+/// former's own children where it is placeable, the types an argument of a
+/// data type quotes, and none for any other former.
 ///
 /// # Specification
 /// trivial.
-fn same(
-    context: &mut CheckingContext<'_>,
-    left: ValueTypeId,
-    right: ValueTypeId,
-) -> Result<Agreement, CheckRefusal>
+fn placed<Each>(
+    arena: &CoreArena,
+    part: Part,
+    mut each: Each,
+) where
+    Each: FnMut(Part),
 {
-    crate::conversion::equivalent(context, left, right)
+    match part {
+        Part::Value(id) => match arena.value_type(id) {
+            Some(&ValueType::Data { ref arguments, .. }) => {
+                for &argument in arguments {
+                    if let Some(&Value::Quote(quoted)) = arena.value(argument) {
+                        each(Part::Value(quoted));
+                    }
+                }
+            },
+            Some(&ValueType::Thunk(body)) => each(Part::Computation(body)),
+            Some(&ValueType::Record(ref fields)) => {
+                for &field in fields.values() {
+                    each(Part::Value(field));
+                }
+            },
+            Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
+                for &component in parts {
+                    each(Part::Value(component));
+                }
+            },
+            Some(&ValueType::Sigma { first, second }) => {
+                each(Part::Value(first));
+                each(Part::Value(second));
+            },
+            Some(&ValueType::List(element)) => each(Part::Value(element)),
+            Some(_) | None => {},
+        },
+        Part::Computation(id) => match arena.comp_type(id) {
+            Some(&(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain })) => {
+                each(Part::Value(domain));
+                each(Part::Computation(codomain));
+            },
+            Some(&CompType::Returner { result, .. }) => each(Part::Value(result)),
+            Some(&CompType::With(first, second)) => {
+                each(Part::Computation(first));
+                each(Part::Computation(second));
+            },
+            Some(_) | None => {},
+        },
+    }
 }
 
-/// A field type with its recursive occurrence refined at `stage`.
+/// The value type a rebuilt child is.
 ///
 /// # Specification
-/// - requires: `recursive` is the family's application at the field's depth.
-/// - ensures: the family itself at `stage`; a thunk of an arrow whose codomain
-///   returns the family with that result at `stage`; a data type with each
-///   argument quoting the family quoting it at `stage`; the field itself when
-///   it holds none of the three.
-/// - fails: the conversion's refusal.
+/// trivial.
+const fn value_part(part: Part) -> Result<ValueTypeId, CheckRefusal>
+{
+    match part {
+        Part::Value(id) => Ok(id),
+        Part::Computation(_) => Err(CheckRefusal::MachineInvariant),
+    }
+}
+
+/// The computation type a rebuilt child is.
+///
+/// # Specification
+/// trivial.
+const fn computation_part(part: Part) -> Result<CompTypeId, CheckRefusal>
+{
+    match part {
+        Part::Computation(id) => Ok(id),
+        Part::Value(_) => Err(CheckRefusal::MachineInvariant),
+    }
+}
+
+/// `part` rebuilt over `children`, the results of its placed children in
+/// order.
+///
+/// # Specification
+/// - requires: `children` holds one result per child [`placed`] hands out for
+///   `part`, of the same kind, in order.
+/// - ensures: the same former over `children`.
+/// - fails: [`CheckRefusal::MachineInvariant`] for a child of the wrong kind or
+///   count.
 /// - panics: none.
 ///
 /// # Errors
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a direct field, a function field and a field of a family
-///   quoting the type each move to the stage, and a field holding none stays.
-/// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
-/// - witness: `recursion::tests::a_rose_tree_recurses_through_map_at_its_children_s_stage`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| staged == field
-    || matches!(context.arena().value_type(staged), Some(ValueType::Staged { .. } | ValueType::Thunk(_) | ValueType::Data { .. }))))]
-pub fn stage_field(
-    context: &mut CheckingContext<'_>,
-    field: ValueTypeId,
-    recursive: ValueTypeId,
-    stage: Stage,
-) -> Result<ValueTypeId, CheckRefusal>
+/// - hypothesis: L3 — a function field over its own family is rebuilt at the
+///   case's stage, so a call through it on the chain before the link is
+///   admitted and one on the link itself is refused.
+/// - witness: `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |rebuilt| matches!((part, *rebuilt),
+    (Part::Value(_), Part::Value(_)) | (Part::Computation(_), Part::Computation(_)))))]
+fn rebuild(
+    arena: &mut CoreArena,
+    part: Part,
+    children: &[Part],
+) -> Result<Part, CheckRefusal>
 {
-    if same(context, field, recursive)? == Agreement::Convertible {
-        return Ok(context.arena_mut().value_type_staged(field, stage));
-    }
-    let head = context.whnf_value_type(field)?;
-    match context.arena().value_type(head).cloned() {
-        Some(ValueType::Thunk(body)) => {
-            let (domain, codomain, dependence) = match context.arena().comp_type(body) {
-                Some(&CompType::Arrow { domain, codomain }) => {
-                    (domain, codomain, Dependence::Ambient)
-                },
-                Some(&CompType::Pi { domain, codomain }) => {
-                    (domain, codomain, Dependence::Dependent)
-                },
-                Some(
-                    &(CompType::Returner { .. }
-                    | CompType::With(..)
-                    | CompType::Element { .. }
-                    | CompType::Unknown),
-                )
-                | None => return Ok(field),
-            };
-            let Some(CompType::Returner { result, effects }) =
-                context.arena().comp_type(codomain).cloned()
-            else {
-                return Ok(field);
-            };
-            let under = match dependence {
-                Dependence::Ambient => recursive,
-                Dependence::Dependent => {
-                    gandr_core_term::shift_value_type(context.arena_mut(), recursive, Binders::ONE)
-                },
-            };
-            if same(context, result, under)? != Agreement::Convertible {
-                return Ok(field);
-            }
-            let arena = context.arena_mut();
-            let staged = arena.value_type_staged(result, stage);
-            let returner = arena.comp_type_returner_with_effects(staged, effects);
-            let function = dependence.former(arena, domain, returner);
-            Ok(arena.value_type_thunk(function))
-        },
-        Some(ValueType::Data {
-            declaration,
-            arguments,
-        }) => {
-            let mut staged = arguments;
-            let mut changed = Changed::Kept;
-            for argument in &mut staged {
-                if let Some(&Value::Quote(quoted)) = context.arena().value(*argument)
-                    && same(context, quoted, recursive)? == Agreement::Convertible
-                {
-                    let arena = context.arena_mut();
-                    let refined = arena.value_type_staged(quoted, stage);
-                    *argument = arena.value_quote(refined);
-                    changed = Changed::Refined;
+    let child = |position: usize| {
+        children
+            .get(position)
+            .copied()
+            .ok_or(CheckRefusal::MachineInvariant)
+    };
+    match part {
+        Part::Value(id) => match arena.value_type(id).cloned() {
+            Some(ValueType::Data {
+                declaration,
+                mut arguments,
+            }) => {
+                let mut next = 0_usize;
+                for argument in &mut arguments {
+                    if let Some(&Value::Quote(_)) = arena.value(*argument) {
+                        let quoted = value_part(child(next)?)?;
+                        next = next.saturating_add(1);
+                        *argument = arena.value_quote(quoted);
+                    }
                 }
-            }
-            match changed {
-                Changed::Kept => Ok(field),
-                Changed::Refined => Ok(context.arena_mut().value_type_data(declaration, staged)),
-            }
+                Ok(Part::Value(arena.value_type_data(declaration, arguments)))
+            },
+            Some(ValueType::Thunk(_)) => {
+                let body = computation_part(child(0)?)?;
+                Ok(Part::Value(arena.value_type_thunk(body)))
+            },
+            Some(ValueType::Record(mut fields)) => {
+                for (position, field) in fields.values_mut().enumerate() {
+                    *field = value_part(child(position)?)?;
+                }
+                Ok(Part::Value(arena.value_type_record(fields)))
+            },
+            Some(ValueType::Product(_)) => {
+                let parts = children
+                    .iter()
+                    .map(|&component| value_part(component))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Part::Value(arena.value_type_product(&parts)))
+            },
+            Some(ValueType::Sum(_)) => {
+                let parts = children
+                    .iter()
+                    .map(|&component| value_part(component))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Part::Value(arena.value_type_sum(&parts)))
+            },
+            Some(ValueType::Sigma { .. }) => {
+                let (first, second) = (value_part(child(0)?)?, value_part(child(1)?)?);
+                Ok(Part::Value(arena.value_type_sigma(first, second)))
+            },
+            Some(ValueType::List(_)) => {
+                let element = value_part(child(0)?)?;
+                Ok(Part::Value(arena.value_type_list(element)))
+            },
+            Some(_) | None => Err(CheckRefusal::MachineInvariant),
         },
-        Some(_) | None => Ok(field),
+        Part::Computation(id) => match arena.comp_type(id).cloned() {
+            Some(CompType::Arrow { .. }) => {
+                let (domain, codomain) = (value_part(child(0)?)?, computation_part(child(1)?)?);
+                Ok(Part::Computation(arena.comp_type_arrow(domain, codomain)))
+            },
+            Some(CompType::Pi { .. }) => {
+                let (domain, codomain) = (value_part(child(0)?)?, computation_part(child(1)?)?);
+                Ok(Part::Computation(arena.comp_type_pi(domain, codomain)))
+            },
+            Some(CompType::Returner { effects, .. }) => {
+                let result = value_part(child(0)?)?;
+                Ok(Part::Computation(
+                    arena.comp_type_returner_with_effects(result, effects),
+                ))
+            },
+            Some(CompType::With(..)) => {
+                let (first, second) = (computation_part(child(0)?)?, computation_part(child(1)?)?);
+                Ok(Part::Computation(arena.comp_type_with(first, second)))
+            },
+            Some(_) | None => Err(CheckRefusal::MachineInvariant),
+        },
     }
 }
 
-/// Whether a walk refined anything.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum Changed
+/// A field type with every occurrence of a family of `block` the stage order
+/// places refined at `stage`.
+///
+/// The occurrence walk admitted the field only with every such occurrence
+/// uniform, so each is matched by its declaration rather than by conversion:
+/// the family at the constructor's arguments is the only application of it a
+/// placed position holds.
+///
+/// # Specification
+/// - requires: `field` is a field type of a family of `block` its occurrence
+///   walk admitted.
+/// - ensures: the field with each application of a family of `block` reached
+///   through the placeable formers — a thunk, a function's domain and codomain,
+///   a returner's result, a record's fields, a product's and a sum's parts, a
+///   dependent pair, a list, a lazy product, and the types a data type's
+///   arguments quote — at `stage`; the field itself, the same node, when it
+///   holds none.
+/// - fails: [`CheckRefusal::MachineInvariant`] for a malformed arena.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `while let` worklist, not recursion; each node is opened once
+///   and closed once.
+/// - measure: the unread nodes under `field`, finite because the arena is
+///   acyclic.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a direct field, a function field, a field under a
+///   function's domain and a field of a family quoting the type each move to
+///   the stage, and a field holding none stays.
+/// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+/// - witness: `recursion::tests::a_rose_tree_recurses_through_map_at_its_children_s_stage`
+/// - witness: `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call`
+/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| staged == field
+    || context.arena().value_type(staged).is_some()))]
+pub fn stage_field(
+    context: &mut CheckingContext<'_>,
+    field: ValueTypeId,
+    block: &crate::occurrence::Block,
+    stage: Stage,
+) -> Result<ValueTypeId, CheckRefusal>
 {
-    /// Nothing.
-    Kept,
-    /// At least one argument.
-    Refined,
+    let arena = context.arena_mut();
+    let mut visits = alloc::vec![Visit::Open(Part::Value(field))];
+    let mut results: Vec<Part> = Vec::new();
+    while let Some(visit) = visits.pop() {
+        match visit {
+            Visit::Open(part) => {
+                if let Part::Value(id) = part
+                    && let Some(&ValueType::Data { declaration, .. }) = arena.value_type(id)
+                    && block.family(declaration) == crate::occurrence::Membership::Family
+                {
+                    results.push(Part::Value(arena.value_type_staged(id, stage)));
+                    continue;
+                }
+                visits.push(Visit::Close(part));
+                let start = visits.len();
+                placed(arena, part, |child| visits.push(Visit::Open(child)));
+                visits
+                    .get_mut(start ..)
+                    .ok_or(CheckRefusal::MachineInvariant)?
+                    .reverse();
+            },
+            Visit::Close(part) => {
+                let mut count = 0_usize;
+                placed(arena, part, |_child| count = count.saturating_add(1));
+                let first = results
+                    .len()
+                    .checked_sub(count)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                let children = results
+                    .get(first ..)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                let mut kept = true;
+                let mut position = 0_usize;
+                placed(arena, part, |child| {
+                    kept = kept && children.get(position) == Some(&child);
+                    position = position.saturating_add(1);
+                });
+                let rebuilt = if kept {
+                    part
+                }
+                else {
+                    rebuild(arena, part, children)?
+                };
+                results.truncate(first);
+                results.push(rebuilt);
+            },
+        }
+    }
+    match results.as_slice() {
+        &[Part::Value(staged)] => Ok(staged),
+        &[] | &[Part::Computation(_)] | &[_, _, ..] => Err(CheckRefusal::MachineInvariant),
+    }
 }
 
 /// A case branch's type with its recursive fields at the stage the case
@@ -498,11 +656,12 @@ enum Changed
 ///   that [`crate::former::branch_type`] built over `datatype`: a Π where the
 ///   rest names the field, a plain arrow otherwise.
 /// - ensures: the same telescope, each field under the same former, with each
-///   field domain naming `datatype` — or any family of its mutual block, its
-///   [`kin`] — at `child`; inside the declaration's own fixpoint, every
-///   occurrence of its constant in a field domain replaced by its self binder,
-///   and [`Identified::Read`] exactly when one was, the telescope then owed its
-///   formation in the block's foresight.
+///   field domain's placed occurrences of `datatype` — or of any family of its
+///   mutual block, the [`families`] of it — at `child` through [`stage_field`];
+///   inside the declaration's own fixpoint, every occurrence of its constant in
+///   a field domain replaced by its self binder, and [`Identified::Read`]
+///   exactly when one was, the telescope then owed its formation in the block's
+///   foresight.
 /// - fails: [`CheckRefusal::MachineInvariant`] for a telescope shorter than
 ///   `fields`; the conversion's refusal.
 /// - panics: none.
@@ -547,21 +706,13 @@ pub fn stage_branch(
         focus = codomain;
     }
     let own = context.own_fixpoint();
-    let kin = kin(context, datatype);
-    let families = families(&kin, &datatype);
+    let block = families(context, datatype)?;
     let mut identified = Identified::Kept;
     // A field stands under the Π binders before it, and only those: a plain
     // arrow's rest was strengthened past its field.
     let mut depth = 0_u32;
     for &mut (ref mut domain, dependence) in &mut domains {
-        for &family in families {
-            let recursive = gandr_core_term::shift_value_type(
-                context.arena_mut(),
-                family,
-                Binders::from(depth),
-            );
-            *domain = stage_field(context, *domain, recursive, Stage::At(child))?;
-        }
+        *domain = stage_field(context, *domain, &block, Stage::At(child))?;
         if let Maybe::Present((constant, index)) = own {
             let past = u32::from(index)
                 .checked_add(depth)

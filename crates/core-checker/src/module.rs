@@ -117,7 +117,7 @@
 //! one admission refuses them all. The block's families share one stage, so
 //! a recursion over the sum of them — a rose tree's node and its forest,
 //! measured together — descends through either, as
-//! [`crate::recursion::kin`] states. Witnesses:
+//! [`crate::recursion::families`] states. Witnesses:
 //! `recursive_data::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`,
 //! `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`.
 

@@ -309,9 +309,10 @@ pub enum RefusalName
     AbsentTupleComponent,
     /// The checker reports `MissingRecordField`.
     MissingRecordField,
-    /// A data declaration's own family occurs under a function's domain.
+    /// A data declaration's own family occurs under a function's domain where
+    /// no stage reaches it.
     NegativeOccurrence,
-    /// A data declaration's own family occurs inside another former.
+    /// A data declaration's own family occurs nested where no stage reaches it.
     NestedOccurrence,
     /// A data declaration's own family occurs inside a term a type reads.
     IndexOccurrence,

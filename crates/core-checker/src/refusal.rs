@@ -860,10 +860,13 @@ pub enum CheckRefusal
         /// The child that classifies no codes.
         found: ValueTypeId,
     },
-    /// A data declaration's own family occurs under a function's domain.
+    /// A data declaration's own family occurs under a function's domain where
+    /// no stage reaches it: at other arguments, inside a term, or through a
+    /// parameter that is not strictly positive.
     NegativeOccurrence(gandr_kernel_term::OccurrenceSite),
-    /// A data declaration's own family occurs inside another former or
-    /// another family's arguments.
+    /// A data declaration's own family occurs nested through another family's
+    /// parameter that is not strictly positive, or under a former that places
+    /// nothing.
     NestedOccurrence(gandr_kernel_term::OccurrenceSite),
     /// A data declaration's own family occurs inside a term a type reads, or
     /// in its own parameter telescope.

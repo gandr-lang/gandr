@@ -102,6 +102,18 @@
 //!   argument does not stand below the stage is refused as
 //!   [`CheckRefusal::StageNotBelow`], naming where the argument stood and the
 //!   bound.
+//! - **A field places its family where a stage reaches it.** A data
+//!   declaration's field may hold its family, at its own parameters, under any
+//!   placeable former — a thunk, an arrow's domain or codomain, a returner's
+//!   result, a record, product, sum, list or Σ component, a `&` branch, or a
+//!   strictly positive parameter of an earlier family. Under no function's
+//!   domain the family is strictly positive; under one, its block is
+//!   stratified, and a case puts that occurrence at `A^{s'}` with the recursive
+//!   fields, so a function field takes the case's fields and never its
+//!   scrutinee. A case on a stratified value at no stage reads it at a fresh
+//!   root its scrutinee does not fit. Curry's consumer, `λb. case b of { MkBad
+//!   f ↦ (force f) b }`, is refused as `StageNotBelow` at its call; an
+//!   occurrence no stage reaches is refused by name in the `occurrence` module.
 //!
 //! The kernel re-derives every stage from the case structure and the
 //! evidence's staged position, and no stage is carried on a node or crosses
@@ -123,7 +135,17 @@
 //! definition can break a guarantee already given. Every later rung of the
 //! recursion lane keeps this invariant.
 //!
-//! Three alternatives were weighed:
+//! **Accessibility is the declaration rule**: Guermond and Nadathur's ground
+//! stratification read through the accessible argument positions of Guo,
+//! Hagens, Kop and Vale — a positive occurrence at or below the constructor's
+//! stage, a negative one strictly below it. Curry's paradox is refused where
+//! it is built, at its consumer, so a well-founded consumer of the same
+//! family stands. A function field's domain sits at the case's stage `s'`,
+//! not below it: the field takes the values the case put below its
+//! scrutinee, the recursive fields among them, and the scrutinee itself
+//! never fits.
+//!
+//! Five alternatives were weighed:
 //!
 //! - **The descent claim**, a syntactic walk over case fields that the kernel
 //!   replayed, gave the same verdicts over the corpus but recursed on the last
@@ -139,6 +161,15 @@
 //!   solver, decide more than the corpus asks for and add a consistency gate.
 //!   Reversal: the sized rung, once a program needs a stage quantified over (a
 //!   helper typed at a stage) or a measure.
+//! - **Positivity by position**, every occurrence under a domain refused at the
+//!   declaration and every nested one refused as `NestedOccurrence`, turned
+//!   away function fields a consumer applies only below the stage and a rose
+//!   tree over `List`. Reversal: a family the stratified reading admits that a
+//!   model of the stage order rejects.
+//! - **Mendler-style abstraction**, each field over an abstract recursive type,
+//!   admits the same families but makes every consumer take its own recursion
+//!   as an argument. Reversal: a consumer whose termination the stage order
+//!   cannot state.
 //!
 //! The rules where they are applied are in the `recursion` module.
 //!

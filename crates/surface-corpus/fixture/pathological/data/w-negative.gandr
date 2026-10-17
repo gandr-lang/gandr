@@ -1,8 +1,9 @@
 // What a function-typed field refuses. A W-type's node may hold a function
-// into its own family, but not from it: a family to the left of the arrow is a
-// negative occurrence, and no fold over it is well-founded. A definition of
-// the family's block stands for its body, so naming the family through one
-// hides nothing. Shared with `../../model/data/w-tree.gandr`.
+// into its own family, and one from it whose domain stands strictly below the
+// node (`./curry.gandr`, #517); a family to the left of the arrow where no
+// stage reaches is a negative occurrence: applied to other arguments than its
+// parameters, or named through a definition of its block, which stands for
+// its body and so hides nothing. Shared with `../../model/data/w-tree.gandr`.
 
 /// The two branches of a binary node.
 @[ checks ]
@@ -11,10 +12,11 @@ data Two : Type {
   R : Two;
 }
 
-/// A node consuming its own family: `Bad` stands left of the arrow.
+/// A node consuming its family at another argument than its parameter:
+/// `Lop(Two)` stands left of the arrow where no stage reaches (#517).
 @[ refuses("NegativeOccurrence") ]
-data Bad : Type {
-  Mk : (f : +U (Bad -> -F Two)) --> Bad;
+data Lop(a : Type) : Type {
+  MkLop : (f : +U (Lop(Two) -> -F Two)) --> Lop(a);
 }
 
 /// The same node with its domain written through a definition of its block

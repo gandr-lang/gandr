@@ -1,11 +1,13 @@
-// Rose trees: a node holds a forest of children, and a forest is empty or a
-// tree before a forest. The two families name each other, so they are one
-// block, admitted as one and sharing one stage; and the two measures name
-// each other, so they are one fixpoint over the sum of their domains, each
-// measure that fixpoint at its own summand. A call through either stands one
-// stage below the node or forest it was read from. #393 is where the direct
-// form, the children a `List(Rose)` kept and typed by stage, supersedes this
-// block and the example is revisited.
+// Rose trees: a node holds its children, in two forms. Written directly, a
+// node holds a `List` of nodes: the list's parameter is strictly positive, so
+// each child stands below the node and the family declares (#517). Written as
+// a block, a node holds a forest and a forest is empty or a tree before a
+// forest: the two families name each other, so they are one block, admitted
+// as one and sharing one stage; and the two measures name each other, so they
+// are one fixpoint over the sum of their domains, each measure that fixpoint
+// at its own summand. A call through either stands one stage below the node or
+// forest it was read from. The direct form's measure, recursing through a
+// list's map at its children's stage, is #393.
 
 /// Natural numbers, the measure the fold counts in.
 @[ checks ]
@@ -22,6 +24,31 @@ def rec plus(n : Nat, m : Nat) -> -F Nat {
     Succ(p) => Succ(plus[<](n, p))
   }
 }
+
+/// Lists, whose element stands only where a list holds it: strictly
+/// positive, so a family nests through it.
+@[ checks ]
+data List(a : Type) : Type {
+  Nil : List(a);
+  Cons : (head : a, tail : List(a)) --> List(a);
+}
+
+/// The direct form: a node over a list of nodes, nested through `List`'s
+/// strictly positive parameter (#517).
+@[ checks ]
+data Bush : Type {
+  Sprout : (kids : List(Bush)) --> Bush;
+}
+
+/// A node without children, written directly.
+@[ checks ]
+def sprig : Bush ;
+def sprig = Sprout((Nil : List(Bush))) ;
+
+/// A node over two childless nodes, written directly.
+@[ checks ]
+def shrub : Bush ;
+def shrub = Sprout((Cons(sprig, (Cons(sprig, (Nil : List(Bush))) : List(Bush))) : List(Bush))) ;
 
 /// The tree and its forest, one block: each family names the other, and
 /// the two measures recurse through each other.

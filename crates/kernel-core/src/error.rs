@@ -530,10 +530,13 @@ pub enum KernelError
     ConstructorArity,
     /// A case does not provide exactly one branch per constructor.
     NonExhaustiveDataCase,
-    /// A data declaration's own family stands under a function's domain.
+    /// A data declaration's own family stands under a function's domain where
+    /// no stage reaches it: at other arguments, inside a term, or through a
+    /// parameter that is not strictly positive.
     NegativeOccurrence(gandr_kernel_term::OccurrenceSite),
-    /// A data declaration's own family stands inside another family's
-    /// arguments or under a field-local positive former.
+    /// A data declaration's own family stands nested through another family's
+    /// parameter that is not strictly positive, or under a former that places
+    /// nothing.
     NestedOccurrence(gandr_kernel_term::OccurrenceSite),
     /// A data declaration's own family stands inside a term a type reads: a
     /// decode, a quote, a lift, path endpoints, or its parameter telescope.
@@ -574,8 +577,9 @@ pub enum KernelError
     LoopUndecided(gandr_kernel_term::CellIndex),
     /// A value checked where the recursion typing wants a stage it does not
     /// stand at or below: a self-reference's argument not strictly below the
-    /// fixpoint's stage, or a constructor with no recursive field where no
-    /// value in scope shows a stage below the one wanted.
+    /// fixpoint's stage, a constructor with no recursive field where no value
+    /// in scope shows a stage below the one wanted, or a value at no stage
+    /// where one is wanted.
     StageNotBelow
     {
         /// Where the value stands.
@@ -835,11 +839,12 @@ impl core::fmt::Display for KernelError
             Self::NonExhaustiveDataCase => {
                 f.write_str("a data case did not cover exactly its constructor table")
             },
-            Self::NegativeOccurrence(_) => {
-                f.write_str("a data declaration's family stood under a function's domain")
-            },
+            Self::NegativeOccurrence(_) => f.write_str(
+                "a data declaration's family stood under a function's domain where no stage \
+                     reaches it",
+            ),
             Self::NestedOccurrence(_) => {
-                f.write_str("a data declaration's family stood nested inside another former")
+                f.write_str("a data declaration's family stood nested where no stage reaches it")
             },
             Self::IndexOccurrence(_) => {
                 f.write_str("a data declaration's family stood inside a term a type reads")

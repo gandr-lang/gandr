@@ -751,12 +751,12 @@ fn checked(
         },
         CheckRefusal::NegativeOccurrence(site) => write!(
             f,
-            "the datatype occurs to the left of an arrow in its {}",
+            "the datatype occurs to the left of an arrow in its {} where no stage reaches it; it is admitted there only applied directly to its own parameters, one stage below its constructor",
             Site(site)
         ),
         CheckRefusal::NestedOccurrence(site) => write!(
             f,
-            "the datatype occurs nested inside another type in its {}",
+            "the datatype occurs nested inside another type in its {}, at a place that type does not hold strictly positively",
             Site(site)
         ),
         CheckRefusal::IndexOccurrence(site) => {
