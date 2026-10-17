@@ -1,8 +1,9 @@
 // What a hand-written Tarski universe refuses. A decode that runs to a quote
 // is the quoted type, so a value of another type is refused there; a decode
 // over a binder is a type of its own, so a value at `el(c)` does not stand
-// at the decode of the arrow from `c` to `c`; and a field read through the
-// code before it checks at that code's decode.
+// at the decode of the arrow from `c` to `c`; a field read through the code
+// before it checks at that code's decode; and the decoder named with no code
+// is no type.
 
 /// Natural numbers, free: every constructor term is its own value.
 data Nat : Type {
@@ -48,3 +49,9 @@ data Coded : Type {
 @[ refuses("TypeMismatch") ]
 def miscoded : Coded ;
 def miscoded = Pack(NatC, NatC) ;
+
+/// The decoder named bare where a type is read: `el` computes a code only once
+/// applied, so the head is refused at the arity it was offered, not read as a
+/// path endpoint (#690).
+@[ refuses("OutOfFragment") ]
+def unapplied(c : U) -> -F el { return c }

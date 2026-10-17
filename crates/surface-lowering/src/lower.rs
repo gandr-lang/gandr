@@ -8731,10 +8731,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the one reading of a type operator's use, bare or applied,
     ///   as a value or as the type it denotes.
     /// - fails: yields the arity refusal for a data family applied to other
-    ///   than its parameter count; the wrong-sort refusal where the position
-    ///   reads neither a value nor the sort of the decode's universe;
-    ///   propagates [`LoweringRefusal::BudgetExceeded`] from the walk of the
-    ///   code's type.
+    ///   than its parameter count, and for a dynamic function named bare where
+    ///   a type is read, which computes a code only once applied (#690); the
+    ///   wrong-sort refusal where the position reads neither a value nor the
+    ///   sort of the decode's universe; propagates
+    ///   [`LoweringRefusal::BudgetExceeded`] from the walk of the code's type.
     /// - panics: none.
     ///
     /// # Errors
@@ -8844,6 +8845,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         else {
             let count = OperandCount::from(applied.end.saturating_sub(applied.start));
+            if dynamic && !called {
+                return Err(site.out(FragmentBoundary::Arity(count)));
+            }
             let universe =
                 self.written_universe(declared, count, site.reading.positional_universe())?;
             let produced = match universe.sort {
