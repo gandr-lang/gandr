@@ -1664,6 +1664,7 @@ impl Default for Pieces
 /// - witness: `form::tests::an_unknown_child_mold_retains_only_the_new_prefix`
 /// - witness: `form::tests::every_label_shape_is_read_and_unknown_molds_are_located`
 /// - witness: `form::tests::unknown_root_molds_clear_the_reused_buffer`
+/// - witness: `form::tests::a_form_whose_own_children_are_whole_reports_no_repair_of_an_operand`
 #[inline]
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -2958,6 +2959,22 @@ mod tests
                 .all(|piece| piece.placed().span != at(5_usize, 5_usize)),
             "the grout is not read as a piece"
         );
+    }
+
+    #[test]
+    fn a_form_whose_own_children_are_whole_reports_no_repair_of_an_operand()
+    {
+        let pbg = grammar();
+        for source in ["def x = (3 + ) ;", "def x = thunk { return } ;"] {
+            let tree = repaired(&pbg, SourceText::from(source));
+            let read = first_declaration(&pbg, &tree);
+            assert!(
+                matches!(read.repair, Maybe::Absent(_)),
+                "`{source}`: the declaration closes, so the repair inside its operand is the \
+                 operand's own: {:?}",
+                read.repair
+            );
+        }
     }
 
     #[test]

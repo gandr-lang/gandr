@@ -167,6 +167,15 @@ fn a_functor_body_never_reaches_the_kernel()
             .any(|structure| matches!(structure.stratum(), Stratum::Functor(_))),
         "the functor's body is a structure of its own stratum"
     );
+    for instance in ["A", "B"] {
+        assert!(
+            !structures
+                .iter()
+                .any(|structure| structure.path() == [name(instance), name("S")]),
+            "`{instance}` images the template's nested modules, never the parameter it was \
+             applied at"
+        );
+    }
     for declared in lowered.module.declarations() {
         let stratum = match declared.container() {
             Container::TopLevel(_) => Stratum::Module,
@@ -396,5 +405,71 @@ fn a_parameter_is_read_only_inside_its_functor()
             .any(|&(_, _, amounts)| matches!(amounts, Amounts::Refused(_))),
         "only the parameter's own name reads through the parameter; another module is read \
          as itself: {found:?}"
+    );
+}
+
+#[test]
+fn an_argument_naming_a_functor_is_unresolved()
+{
+    let source = [SEED, COUNTER, "module A = MkCounter(MkCounter) ;\n"].concat();
+    let found = rows(&lower(source.as_str()));
+    assert!(
+        found.iter().any(|&(ref path, _, amounts)| path == "A"
+            && amounts
+                == Amounts::Refused(LoweringRefusal::UnresolvedName {
+                    span: span_of(source.as_str(), "MkCounter", 2_usize),
+                    name: name("MkCounter"),
+                })),
+        "a functor is no module, so an argument naming one names nothing: {found:?}"
+    );
+}
+
+#[test]
+fn a_dotted_argument_reads_the_nested_module_it_names()
+{
+    let source = [
+        COUNTER,
+        "module Outer { module Other { def seed = 1 ; } module Seed :> #{ type T, seed : T, next \
+         : +U[ω] (T -> -F T) } { type T = Integer ; def seed = 0 ; def next = thunk { fn (n) { \
+         return n } } ; } }\nmodule A = MkCounter(Outer.Seed) ;\nmodule B = \
+         MkCounter(Outer.Nope) ;\n",
+    ]
+    .concat();
+    let found = rows(&lower(source.as_str()));
+    assert!(
+        found.contains(&row("A.seed", Role::Witness, Amounts::Completed)),
+        "`Outer.Seed` binds the nested module of that name, not its sibling before it: \
+         {found:?}"
+    );
+    assert!(
+        found.iter().any(|&(ref path, _, amounts)| path == "B"
+            && amounts
+                == Amounts::Refused(LoweringRefusal::UnknownMember {
+                    span: span_of(source.as_str(), "Nope", 0_usize),
+                    module: name("Outer"),
+                    member: name("Nope"),
+                })),
+        "and a segment naming no nested module is refused at that segment: {found:?}"
+    );
+}
+
+#[test]
+fn a_type_component_binds_the_argument_type_of_its_own_name()
+{
+    let source = [
+        COUNTER,
+        "module Two :> #{ type U, type T, seed : T, next : +U[ω] (T -> -F T) } { type U = String \
+         ; type T = Integer ; def seed = 0 ; def next = thunk { fn (n) { return n } } ; }\nmodule \
+         A = MkCounter(Two) ;\n",
+    ]
+    .concat();
+    let mut lowered = lower(source.as_str());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements
+            .iter()
+            .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
+        "the parameter's `T` is the argument's `T`, not the type exported before it: \
+         {judgements:?}"
     );
 }

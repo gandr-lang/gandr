@@ -776,19 +776,27 @@ fn a_derived_operation_needs_a_written_path_answer()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        SourceText::from("def g(p: Path(Integer, 1, 1)) -> -F Integer {\n  become back(p)\n}\n"),
+        SourceText::from(concat!(
+            "def g(p: Path(Integer, 1, 1)) -> -F Integer {\n  become back(p)\n}\n",
+            "data Triple(a : Type, b : Type, c : Type) : Type {\n  Mk : Triple(a, b, c);\n}\n",
+            "def three(p: Path(Integer, 1, 1)) -> -F Triple(Integer, Integer, Integer) {\n  become back(p)\n}\n",
+        )),
         &mut arena,
     );
-    assert!(
-        matches!(
-            outcome_of(&module, "g".into()),
-            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
-                boundary: FragmentBoundary::Unannotated,
-                ..
-            })
-        ),
-        "`back` reads its motive off a written path answer"
-    );
+    for name in ["g", "three"] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                    boundary: FragmentBoundary::Unannotated,
+                    ..
+                })
+            ),
+            "`back` reads its motive off a written path or flow answer, `Flow` at three \
+             arguments, not `{name}`'s: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
 }
 
 #[test]
@@ -806,6 +814,7 @@ fn a_derived_operation_synthesises_its_path_at_the_words()
             "def pointed : Path(Circle, Base, Base);\ndef pointed = cong(Base, loop);\n",
             "def broken(x : Circle) -> -F Bogus {\n  case x {\n    Base => Base\n  }\n}\n",
             "def over_broken : Path(Circle, Base, Base);\ndef over_broken = cong(broken, loop);\n",
+            "def emptyFirst : Path(Circle, Base, Base);\ndef emptyFirst = here(Base) then loop;\n",
         )),
         &mut arena,
     );
@@ -847,6 +856,19 @@ fn a_derived_operation_synthesises_its_path_at_the_words()
                 if matches!(arena.value(left), Some(&Value::Constructor { .. })) && moving(right)
         ),
         "the composite starts at the point the loop's words spell and moves its end"
+    );
+
+    let (motive, path, value) = transport(body("emptyFirst"), "emptyFirst");
+    assert!(
+        matches!(arena.value(path), Some(&Value::Constant(_)))
+            && matches!(arena.value(value), Some(&Value::Constructor { .. }))
+            && matches!(
+                arena.value_type(motive),
+                Some(&ValueType::Path { left, right, .. })
+                    if matches!(arena.value(left), Some(&Value::Constructor { .. })) && moving(right)
+            ),
+        "the empty word first is a word too: its composite transports it along the loop, from \
+         the point the words spell"
     );
 
     let (motive, path, _) = transport(body("undone"), "undone");
@@ -972,6 +994,49 @@ fn a_derived_operation_reads_a_parameter_or_a_call()
         ),
         "a signature reads its own parameters' path types"
     );
+}
+
+#[test]
+fn a_motive_telescope_rebuilds_exactly_when_an_entry_is_an_arrow()
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let body = arena.comp_type_returner(unit);
+    let rebuilt = |arena: &mut CoreArena, outer_arrow: bool, inner_arrow: bool| {
+        let inner = if inner_arrow {
+            arena.comp_type_arrow(unit, body)
+        }
+        else {
+            arena.comp_type_pi(unit, body)
+        };
+        let written = if outer_arrow {
+            arena.comp_type_arrow(unit, inner)
+        }
+        else {
+            arena.comp_type_pi(unit, inner)
+        };
+        let mut copies = Vec::new();
+        let read = super::telescope(arena, written, &mut copies);
+        let dependent = matches!(
+            arena.comp_type(read),
+            Some(&gandr_core_term::CompType::Pi { codomain, .. })
+                if matches!(arena.comp_type(codomain), Some(&gandr_core_term::CompType::Pi { .. }))
+        );
+        (read != written, dependent)
+    };
+    assert_eq!(
+        rebuilt(&mut arena, false, false),
+        (false, true),
+        "a telescope dependent in both entries is read as written"
+    );
+    for (outer_arrow, inner_arrow) in [(false, true), (true, false), (true, true)] {
+        assert_eq!(
+            rebuilt(&mut arena, outer_arrow, inner_arrow),
+            (true, true),
+            "an arrow in either entry is rebuilt as a dependent telescope: outer {outer_arrow}, \
+             inner {inner_arrow}"
+        );
+    }
 }
 
 #[test]
@@ -1379,6 +1444,20 @@ fn a_move_out_of_shape_is_refused()
             Some(FragmentBoundary::Unannotated),
         ],
         "an unknown move, a bare send, a send of two, a label that is a call and a named motive"
+    );
+    let source = "def twice = recorded(sent(1, 2));\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let start = source.find("sent(1, 2)").expect("the move is written");
+    assert!(
+        matches!(
+            outcome_of(&module, "twice".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { span, .. })
+                if usize::from(span.start()) == start
+                    && usize::from(span.end()) == start.saturating_add("sent(1, 2)".len())
+        ),
+        "a send of two is refused at the move, not the record around it: {:?}",
+        outcome_of(&module, "twice".into())
     );
 }
 

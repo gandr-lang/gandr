@@ -18539,6 +18539,17 @@ mod tests
                 "{why}"
             );
         }
+        let tree = repaired(&pbg, SourceText::from("def a = r."));
+        assert_eq!(
+            refusal_in(&pbg, &tree),
+            LoweringRefusal::MalformedForm {
+                span: at(10_usize, 10_usize),
+                form: FormName::from(NamedKind("projection_expression")),
+                fault: FormFault::Repaired(Repair::Unended(crate::form::Ending::Unnamed)),
+            },
+            "a projection missing its field names no one tile, since a label or an index may \
+             end it"
+        );
     }
 
     #[test]

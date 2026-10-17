@@ -1184,6 +1184,8 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
     /// - witness: `operation::tests::an_operation_whose_rules_miss_a_constructor_is_not_callable`
     /// - witness: `operation::tests::an_operation_calling_a_later_one_is_not_callable`
+    /// - witness: `operation::tests::an_operation_declared_twice_in_one_family_is_routed_once`
+    /// - witness: `operation::tests::a_declined_rule_withholds_only_its_own_operation`
     #[spec(
         captures: before = (Mark::of(&self.collected.slots), self.collected.operations.len()),
         ensures: self.collected.slots.len().saturating_sub(usize::from(before.0))

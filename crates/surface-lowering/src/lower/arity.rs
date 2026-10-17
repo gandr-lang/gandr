@@ -1574,6 +1574,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
+    /// - witness: `lower::arity::tests::an_observation_reads_through_one_thunk_only`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownMold { .. })))]
     pub(super) fn stated_form(
         &mut self,

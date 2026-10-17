@@ -308,6 +308,7 @@ struct Work<'face>
 /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
 /// - witness: `operation::tests::an_operation_whose_rules_miss_a_constructor_is_not_callable`
 /// - witness: `operation::tests::an_operation_calling_a_later_one_is_not_callable`
+/// - witness: `operation::tests::a_rule_of_another_arity_than_its_operation_routes_nothing`
 pub fn plan_operation(
     operation: &OperDesc,
     faces: &[&RuleFace],

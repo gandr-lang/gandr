@@ -1354,6 +1354,7 @@ impl<Data, Tag> Trie<Data, Tag>
     ///   their old bindings into subsequent paths.
     /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
     /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
+    /// - witness: `namespace::trie::tests::a_detached_subtree_leaves_its_slots_for_reuse`
     #[spec(
         requires: node.0 > 0
             && self.nodes.get(node.0).is_some_and(|slot| {
@@ -1544,6 +1545,7 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
     /// - witness: `namespace::trie::tests::relocation_and_collision_keep_payloads_with_their_tags`
     /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    /// - witness: `namespace::trie::tests::a_detached_subtree_leaves_its_slots_for_reuse`
     #[spec(
         requires: from.0 < source.nodes.len()
             && self.nodes.get(into.0).is_some_and(|node| {
@@ -1608,6 +1610,7 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
     /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
     /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    /// - witness: `namespace::trie::tests::pruning_stops_at_a_node_that_still_has_children`
     #[spec(
         requires: chain.first() == Some(&NodeId::ROOT)
             && chain.len() <= path.segments().len().saturating_add(1)
@@ -2108,6 +2111,43 @@ mod tests
         assert_eq!(
             subject.get(&path("a.deep")),
             Maybe::Absent(binding::Absent::Unbound)
+        );
+    }
+
+    #[test]
+    fn a_detached_subtree_leaves_its_slots_for_reuse()
+    {
+        let mut subject = namespace(&[entry("a.deep", Payload(1)), entry("b", Payload(2))]);
+        let held = subject.nodes.len();
+        let _moved = subject.detach_subtree(&path("a"));
+        let _fresh = subject.insert(&path("x.y"), Binding::new(Payload(7), ()));
+        assert_eq!(
+            subject.nodes.len(),
+            held,
+            "the two slots the detached `a.deep` held carry `x.y`"
+        );
+
+        let mut subject = namespace(&[entry("x.a", Payload(1)), entry("b", Payload(2))]);
+        let held = subject.nodes.len();
+        let _moved = subject.detach_subtree(&path("x.a"));
+        let _first = subject.insert(&path("y"), Binding::new(Payload(7), ()));
+        let _second = subject.insert(&path("z"), Binding::new(Payload(8), ()));
+        assert_eq!(
+            subject.nodes.len(),
+            held,
+            "the emptied `x` is pruned and its slot carries a later binding too"
+        );
+    }
+
+    #[test]
+    fn pruning_stops_at_a_node_that_still_has_children()
+    {
+        let mut subject = namespace(&[entry("x.a", Payload(1)), entry("x.c", Payload(2))]);
+        let _moved = subject.detach_subtree(&path("x.a"));
+        assert_eq!(
+            listing(&subject),
+            expected(&[entry("x.c", Payload(2))]),
+            "`x` keeps its other child, so it is not pruned"
         );
     }
 

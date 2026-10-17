@@ -1805,6 +1805,21 @@ mod modules
             )],
             "an opaque operator would be an atom at a kind no universe is, and is refused by name"
         );
+        let represented = "module M :> #{ type Pair : Type -> Type } { type Pair = Integer; }";
+        assert_eq!(
+            rows(&lower(represented)),
+            [row(
+                "M.Pair",
+                Role::Abstract,
+                Amounts::Refused(LoweringRefusal::UnreadAscription {
+                    span: span_of(represented, "Pair", 0_usize),
+                    name: name("Pair"),
+                    form: AscriptionForm::Kinded,
+                })
+            )],
+            "and so is one whose member is a plain type, which the operator would take as its \
+             representation"
+        );
 
         let manifest = "module M : #{ type Hom = Integer } { }";
         let lowered = lower(manifest);
@@ -2753,6 +2768,32 @@ mod modules
     }
 
     #[test]
+    fn a_later_seal_leaves_an_earlier_extent()
+    {
+        let extent = |source: &str| {
+            let lowered = lower(source);
+            match lowered
+                .module
+                .declarations()
+                .first()
+                .map(LoweredDeclaration::outcome)
+            {
+                Some(DeclarationOutcome::Abstract(sealing)) => usize::from(sealing.extent),
+                other => panic!("the first declaration is the abstract type: {other:?}"),
+            }
+        };
+        let alone = "module Counter :> #{ type T, seed : T } { type T = Integer ; def seed = 7 ; }";
+        let followed = "module Counter :> #{ type T, seed : T } { type T = Integer ; def seed = 7 ; \
+                        }\nmodule Other :> #{ type U, one : U } { type U = Integer ; def one = 1 ; }";
+        assert_eq!(
+            extent(followed),
+            extent(alone),
+            "sealing a later module leaves the earlier module's seal where its own last member \
+             put it"
+        );
+    }
+
+    #[test]
     fn opaque_ascription_seals()
     {
         let source = "module Counter :> #{ type T, seed : T } { type T = Integer ; def seed = 7 ; \
@@ -3376,6 +3417,21 @@ mod modules
             1_usize,
         );
         forward("module M { def a = a; }", "M.a", "a", 1_usize, 0_usize);
+        forward(
+            "data Circle : Type { Base : Circle; loop : Base <-> Base; }\nmodule M { def w : \
+             Path(Circle, Base, Base) ; def w = loop ∷ here(Base) ; def loop = 1 ; }",
+            "M.w",
+            "loop",
+            1_usize,
+            2_usize,
+        );
+        forward(
+            "module M { def a = here(1); def here = 1; }",
+            "M.a",
+            "here",
+            0_usize,
+            1_usize,
+        );
         forward(
             "module M { module N { def a = b; } def b = 1; }",
             "M.N.a",

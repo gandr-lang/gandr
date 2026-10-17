@@ -883,6 +883,8 @@ impl<'source> Collector<'_, 'source>
     ///   module.
     /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `modules::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `modules::modules::functors::an_argument_naming_a_functor_is_unresolved`
+    /// - witness: `modules::modules::functors::a_dotted_argument_reads_the_nested_module_it_names`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.0 < self.collected.structures.len()))]
     fn argument(
         &self,
@@ -959,6 +961,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — an argument exporting every component and one missing
     ///   one.
     /// - witness: `modules::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `modules::modules::functors::a_type_component_binds_the_argument_type_of_its_own_name`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Argued::Value(slot)) => matches!(component.form, ParameterForm::Value(_)) && slot.0 < self.collected.slots.len(),
         | Maybe::Present(Argued::Type(found)) => !matches!(component.form, ParameterForm::Value(_)) && found.name == component.name,
@@ -1018,6 +1021,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::apply`].
     /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `modules::modules::functors::a_functor_body_never_reaches_the_kernel`
     #[spec(
         captures: before = (self.collected.instances.len(), self.collected.structures.len()),
         ensures: self.collected.instances.len() == before.0.saturating_add(1)

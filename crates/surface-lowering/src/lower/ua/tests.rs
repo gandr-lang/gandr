@@ -174,22 +174,36 @@ fn a_statement_the_syntax_cannot_read_is_refused()
         }
     };
     let records = "#{mul = exchange, one = keep}";
-    assert!(matches!(
-        refused(&format!("ua[1](Magma, Magma, {records}, {records})")),
-        LoweringRefusal::OutOfFragment {
-            boundary: FragmentBoundary::Arity(count),
-            ..
-        } if count == OperandCount::from(1_usize)
+    let start = MAGMA.len().saturating_add("def opposite = ".len());
+    let spans = |refusal: &LoweringRefusal<'_>| {
+        refusal.span().map(|span| {
+            (
+                usize::from(span.start()).saturating_sub(start),
+                usize::from(span.end()).saturating_sub(start),
+            )
+        })
+    };
+    let single = refused(&format!("ua[1](Magma, Magma, {records}, {records})"));
+    assert!(
+        matches!(
+            single,
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            } if count == OperandCount::from(1_usize)
+        ) && spans(&single) == quenchant_shape::shape::Maybe::Present((0_usize, 5_usize)),
+        "a single resident is refused at the head that writes it: {single:?}"
+    );
+    let typed = refused(&format!(
+        "ua[1, Integer](Magma, Magma, {records}, {records})"
     ));
-    assert!(matches!(
-        refused(&format!(
-            "ua[1, Integer](Magma, Magma, {records}, {records})"
-        )),
-        LoweringRefusal::OutOfFragment {
+    assert!(
+        matches!(typed, LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::Unadmitted,
             ..
-        }
-    ));
+        }) && spans(&typed) == quenchant_shape::shape::Maybe::Present((6_usize, 13_usize)),
+        "a resident not written in digits alone is refused where it stands: {typed:?}"
+    );
     assert!(matches!(
         refused(&format!("ua[1, 4](Magma, Magma, {records})")),
         LoweringRefusal::OutOfFragment {

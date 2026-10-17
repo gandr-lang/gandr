@@ -1474,6 +1474,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   readings.
     /// - witness: `lower::identity::tests::a_bound_name_shadows_an_identity_operation`
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
+    /// - witness: `modules::modules::a_forward_member_reference_is_refused_by_position`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -3884,6 +3885,7 @@ impl<'source> Lowerer<'_, 'source>
 /// - hypothesis: L3 — a motive whose body ignores its element and one that
 ///   names both entries.
 /// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
+/// - witness: `lower::identity::tests::a_motive_telescope_rebuilds_exactly_when_an_entry_is_an_arrow`
 #[spec(ensures: |ret| ret == written || matches!(arena.comp_type(ret), Some(&CompType::Pi { .. })))]
 fn telescope(
     arena: &mut CoreArena,
