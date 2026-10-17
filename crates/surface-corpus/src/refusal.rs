@@ -203,6 +203,7 @@ impl Error for CorpusRefusal
 ///   expectations; changing a name or source position changes settlement.
 /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
 /// - witness: `refusal::tests::a_near_miss_names_no_refusal`
+/// - witness: `refusal::tests::every_refusal_spelling_reads_as_the_text_that_names_it`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RefusalSpelling(&'static str);
@@ -1789,6 +1790,21 @@ mod tests
                 RefusalName::named_by(&StringLiteral::new(String::from(written))),
                 Maybe::Absent(refusal_name::Absent::Unnamed),
                 "`{written}` is not the spelling of any refusal"
+            );
+        }
+    }
+
+    #[test]
+    fn every_refusal_spelling_reads_as_the_text_that_names_it()
+    {
+        for name in RefusalName::VOCABULARY {
+            let spelling = name.spelling();
+            let text: &str = spelling.as_ref();
+            assert_eq!(text, name.to_string(), "{name:?} spells as it prints");
+            assert_eq!(
+                RefusalName::named_by(&StringLiteral::new(String::from(text))),
+                Maybe::Present(name),
+                "`{text}` names {name:?}"
             );
         }
     }
