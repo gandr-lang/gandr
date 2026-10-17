@@ -142,6 +142,10 @@ use crate::resolve::SurfaceName;
 #[cfg(test)]
 mod tests;
 
+/// An offer's arm labels, each with the bytes its pattern is written at, in
+/// source order (#298).
+pub(super) type ArmLabels = Vec<(ByteSpan, FieldLabel)>;
+
 /// One step of the walk down a protocol: read the form at `at` as the state
 /// `state`, or leave the innermost `mu` binder.
 ///
@@ -905,6 +909,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         closed(site, &mut cursor, TileName::PAREN_OPEN)?;
         let subject = site.one(cursor.operands())?;
+        let mut arms = Vec::new();
         let action = if keyword == TileName::SEND {
             closed(site, &mut cursor, TileName::COMMA)?;
             let payload = site.one(cursor.operands())?;
@@ -940,12 +945,14 @@ impl<'source> Lowerer<'_, 'source>
         else if keyword == TileName::OFFER {
             closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
             let endpoint = self.endpoint(frame, subject)?;
-            self.offer(site, cursor, frame, endpoint)?
+            let (offered, labels) = self.offer(site, cursor, frame, endpoint)?;
+            arms = labels;
+            offered
         }
         else {
             return Err(site.fault(site.at.span, FormFault::MisplacedTile));
         };
-        self.plan(site, Plan::Action(action, subject.span));
+        self.plan(site, Plan::Action(action, subject.span, arms));
 
         Ok(())
     }
@@ -955,7 +962,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `cursor` stands at the offer's `{`.
     /// - ensures: one arm per label, each body read as a computation under
-    ///   `frame`, taking the offer's answer and the paths through it.
+    ///   `frame`, taking the offer's answer and the paths through it; beside
+    ///   the action, each arm's label with the bytes its pattern is written at,
+    ///   in written order.
     /// - fails: a pattern other than a label, refused as an unadmitted pattern;
     ///   a label armed twice, as a duplicate definition; a tile out of place.
     /// - panics: none.
@@ -967,14 +976,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::session_action`].
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     /// - witness: `lower::session::tests::an_offer_arm_is_one_label`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |action| matches!(*action, SessionAction::Offer { endpoint: subject, .. } if subject == endpoint)))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ref action, ref labels)| matches!(*action, SessionAction::Offer { endpoint: subject, ref arms } if subject == endpoint && arms.len() == labels.len())))]
     fn offer(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
         frame: Frame,
         endpoint: DeBruijnIndex,
-    ) -> Result<SessionAction<NodeIndex, NodeIndex, NodeIndex>, LoweringRefusal<'source>>
+    ) -> Result<(SessionAction<NodeIndex, NodeIndex, NodeIndex>, ArmLabels), LoweringRefusal<'source>>
     {
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
         let mut written: Vec<(Placed, Placed)> = Vec::new();
@@ -991,6 +1000,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         exhausted(site, &cursor)?;
         let mut arms: BTreeMap<FieldLabel, NodeIndex> = BTreeMap::new();
+        let mut labels: ArmLabels = Vec::with_capacity(written.len());
         let mut labelled: BTreeMap<SurfaceName<'source>, Placed> = BTreeMap::new();
         for &(pattern, body) in &written {
             let named = self
@@ -1013,7 +1023,9 @@ impl<'source> Lowerer<'_, 'source>
                 });
             }
             let _first = labelled.insert(label, pattern);
-            let _armed = arms.insert(FieldLabel::from(String::from(label.as_ref())), body.node);
+            let armed = FieldLabel::from(String::from(label.as_ref()));
+            labels.push((pattern.span, armed.clone()));
+            let _armed = arms.insert(armed, body.node);
             self.read(body.node, Reading::Computation(frame));
             if let Some(&answer) = self.answers.get(&site.at.node) {
                 let _passed = self.answers.insert(body.node, answer);
@@ -1021,7 +1033,7 @@ impl<'source> Lowerer<'_, 'source>
             self.pass_paths(site.at.node, body.node);
         }
 
-        Ok(SessionAction::Offer { endpoint, arms })
+        Ok((SessionAction::Offer { endpoint, arms }, labels))
     }
 
     /// Read one `recv(c) as x ;` statement, its `recv` tile already read.
@@ -1048,7 +1060,7 @@ impl<'source> Lowerer<'_, 'source>
         captures: before = self.statements.len(),
         ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
             && self.statements.last().is_some_and(|last| last.origin == recv.node && last.bound == recv.node)
-            && matches!(self.plans.get(usize::from(recv.node)), Some(&Plan::Action(SessionAction::Receive { .. }, _)))),
+            && matches!(self.plans.get(usize::from(recv.node)), Some(&Plan::Action(SessionAction::Receive { .. }, _, _)))),
     )]
     pub(super) fn receive(
         &mut self,
@@ -1076,7 +1088,11 @@ impl<'source> Lowerer<'_, 'source>
         self.note_binder(binder, name)?;
         self.plan(
             statement,
-            Plan::Action(SessionAction::Receive { endpoint }, subject.span),
+            Plan::Action(
+                SessionAction::Receive { endpoint },
+                subject.span,
+                Vec::new(),
+            ),
         );
         self.statements.push(Statement {
             origin: recv.node,
@@ -1259,26 +1275,27 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Mint a session action over its children, its endpoint written at
-    /// `subject`.
+    /// `subject` and an offer's arm labels at `arms`.
     ///
     /// # Specification
     /// - requires: every child of `action` is already minted or absent.
     /// - ensures: the action over its children's lowered nodes, with the
-    ///   written origin, and a label at `subject` naming the action's endpoint;
-    ///   nothing when a child did not lower.
+    ///   written origin, a label at `subject` naming the action's endpoint and
+    ///   one at each arm's pattern naming the branch it takes; nothing when a
+    ///   child did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every action of the seat exchange, each endpoint
-    ///   answering at its action.
+    ///   answering at its action and each offer arm's label at its branch.
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     /// - witness: `lower::session::tests::each_endpoint_answers_at_its_action`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     pub(super) fn mint_action(
         &self,
         action: &SessionAction<NodeIndex, NodeIndex, NodeIndex>,
-        subject: ByteSpan,
+        (subject, arms): (ByteSpan, &[(ByteSpan, FieldLabel)]),
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -1306,6 +1323,15 @@ impl<'source> Lowerer<'_, 'source>
                     span: subject,
                     labelled: Labelled::Endpoint(id),
                 });
+                for &(span, ref label) in arms {
+                    sink.origins.record_label(Label {
+                        span,
+                        labelled: Labelled::Branch {
+                            action: id,
+                            label: label.clone(),
+                        },
+                    });
+                }
                 Maybe::Present(sink.computation(id, origin))
             },
             Err(reason) => Maybe::Absent(reason),

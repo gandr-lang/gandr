@@ -121,6 +121,7 @@ use gandr_core_term::identity::Relation;
 use gandr_core_term::instantiate_value_type_under;
 use gandr_core_term::pattern::Pattern;
 use gandr_core_term::pattern::PatternId;
+use gandr_core_term::session::Step;
 use gandr_core_term::shift_value;
 use gandr_core_term::shift_value_type_under_traced;
 use gandr_core_term::strengthen_value_type;
@@ -1462,6 +1463,37 @@ impl TypeTable
                     };
                     (
                         ty,
+                        Standing::Judged(Within {
+                            constant,
+                            node: CoreNode::Computation(action),
+                        }),
+                    )
+                },
+                // An offer arm's label answers at the session its endpoint
+                // continues as in that arm (#298): the branch it names of the
+                // offer the endpoint stands at.
+                Labelled::Branch { action, ref label } => {
+                    let Some(&(_, TypeNode::Value(offered), constant)) = endpoints
+                        .binary_search_by_key(&TermNode::Computation(action), |&(term, ..)| term)
+                        .ok()
+                        .and_then(|at| endpoints.get(at))
+                    else {
+                        continue;
+                    };
+                    let Some(&ValueType::Session(ref session)) = arena.value_type(offered)
+                    else {
+                        continue;
+                    };
+                    let Ok(Step::Offer(branches)) = session.step()
+                    else {
+                        continue;
+                    };
+                    let Ok(Maybe::Present(next)) = branches.get(label)
+                    else {
+                        continue;
+                    };
+                    (
+                        TypeNode::Value(arena.value_type_session(next)),
                         Standing::Judged(Within {
                             constant,
                             node: CoreNode::Computation(action),
@@ -3961,6 +3993,27 @@ mod tests
             ["Integer", "Integer", "Integer"],
             "the signature, the definition and the synthesised declaration are each keyed"
         );
+    }
+
+    /// #298: an offer arm's label answers at the session its endpoint
+    /// continues as in that arm — the branch it names of the offer.
+    #[test]
+    fn an_offer_arm_answers_at_its_branch_298()
+    {
+        let source = SourceText::from(
+            "def exchange(n : Integer) -> -F Unit {\n  fork (c : &{ next : !String. end, retire : \
+             end }) {\n    offer(c) {\n      next => { send(c, \"notes\"); close(c) },\n      \
+             retire => close(c)\n    }\n  } as peer;\n  select(peer, retire);\n  \
+             close(peer)\n}\n",
+        );
+        let table = table(source);
+        for (needle, ty) in [("next =>", "!String. end"), ("retire =>", "end")] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(Subject::Binder, SourceText::from(ty)),
+                "`{needle}` answers at its branch"
+            );
+        }
     }
 
     #[test]

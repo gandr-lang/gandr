@@ -102,6 +102,7 @@ use anodized::spec;
 use gandr_core_term::Carried;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
+use gandr_core_term::FieldLabel;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::identity::Relation;
@@ -1585,6 +1586,47 @@ impl OriginTable
         }
     }
 
+    /// Carry every label naming the session action `from` — its endpoint's
+    /// and its offer arms' — over to `to`, which a rewrite put in its place.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no endpoint or branch label names `from` unless `from == to`;
+    ///   every one that did names `to`, with its arm's label kept; the count is
+    ///   unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an endpoint and an arm's label written in an offer
+    ///   the lowering rebuilds answer at the rebuilt offer.
+    /// - witness: `lower::session::tests::each_endpoint_answers_at_its_action`
+    #[spec(
+        captures: before = self.labels.len(),
+        ensures: self.labels.len() == before,
+    )]
+    pub(crate) fn relabel_action(
+        &mut self,
+        from: ComputationId,
+        to: ComputationId,
+    )
+    {
+        for label in &mut self.labels {
+            match label.labelled {
+                Labelled::Endpoint(ref mut action) | Labelled::Branch { ref mut action, .. }
+                    if *action == from =>
+                {
+                    *action = to;
+                },
+                Labelled::ValueType { .. }
+                | Labelled::CompType { .. }
+                | Labelled::Value(_)
+                | Labelled::Endpoint(_)
+                | Labelled::Branch { .. } => {},
+            }
+        }
+    }
+
     /// Each label written against an entry, in the order lowered.
     ///
     /// # Specification
@@ -1718,6 +1760,16 @@ pub enum Labelled
     /// The endpoint a session action names, at the session type the typed
     /// run found it standing at there.
     Endpoint(ComputationId),
+    /// An offer arm's label, at the session its endpoint continues as in that
+    /// arm: the branch `label` names of the session type the typed run found
+    /// the endpoint standing at the offer `action`.
+    Branch
+    {
+        /// The offer.
+        action: ComputationId,
+        /// The arm's label.
+        label: FieldLabel,
+    },
 }
 
 /// One alternative of one arm of a lowered match.

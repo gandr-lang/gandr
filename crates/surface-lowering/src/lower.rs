@@ -2327,8 +2327,13 @@ enum Plan
     /// every site the source writes one of its states at.
     Session(Arc<Protocol>, Stretch, Arc<session::Written>),
     /// A session action over the nodes of its payload, its arms and a fork's
-    /// protocol and children, with the bytes its endpoint is written at.
-    Action(SessionAction<NodeIndex, NodeIndex, NodeIndex>, ByteSpan),
+    /// protocol and children, with the bytes its endpoint is written at and,
+    /// for an offer, each arm's label with the bytes its pattern is written at.
+    Action(
+        SessionAction<NodeIndex, NodeIndex, NodeIndex>,
+        ByteSpan,
+        session::ArmLabels,
+    ),
     /// A temporary-access form: an access over its body and unwind, or an
     /// eliminator of its view.
     Access(access::Accessed),
@@ -10537,7 +10542,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Session(ref protocol, payloads, ref written) => {
                 self.mint_session(protocol, payloads, written, sink, origin)
             },
-            Plan::Action(ref action, subject) => self.mint_action(action, subject, sink, origin),
+            Plan::Action(ref action, subject, ref arms) => {
+                self.mint_action(action, (subject, arms), sink, origin)
+            },
             Plan::Access(accessed) => self.mint_access(accessed, sink, origin),
             Plan::World(worlded) => self.mint_world(worlded, sink, origin),
             Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
