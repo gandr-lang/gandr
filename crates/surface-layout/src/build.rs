@@ -919,6 +919,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
     /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
     /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
+    /// - witness: `algebra::tests::finalization_charges_each_original_node_and_probe_once`
     #[spec(
         captures: before = (self.arena, self.nodes.len()),
         ensures: |ret| ret.as_ref().map_or(true,
