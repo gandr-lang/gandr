@@ -234,9 +234,9 @@ use crate::former::Unspelled;
 const fn relation_glyph(relation: Relation) -> Glyphs<'static>
 {
     Glyphs(match relation {
-        Relation::Isomorphism => " ≅",
-        Relation::Equivalence => " ≃",
-        Relation::Flow => " ⇝",
+        Relation::Isomorphism => writes(Production("isomorphism_type"), " ≅"),
+        Relation::Equivalence => writes(Production("equivalence_type"), " ≃"),
+        Relation::Flow => writes(Production("universe_flow_type"), " ⇝"),
     })
 }
 
@@ -480,6 +480,14 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::WorldHold(_)
         | Former::Leta { .. }
         | Former::Migrate { .. } => Kind::Computation,
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                answer_totality,
+                reason = "a node of the honest set carries no sort of its own; the walk writes it \
+                          `?` wherever it stands"
+            )
+        )]
         Former::Unreadable(_) => Kind::Unknown,
     }
 }
@@ -1351,6 +1359,14 @@ fn protocol_template(
             Spelling::State(at) => at,
         };
         match protocol.node(at) {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a session state its protocol does not hold: a malformed protocol, \
+                              with no session former to spell"
+                )
+            )]
             Err(_) => {
                 fidelity = Fidelity::Approximate;
                 text.push('?');
@@ -1362,6 +1378,14 @@ fn protocol_template(
                 text.push_str(". ");
                 pending.push(Spelling::State(next));
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the receive session type's own `?A. S`, which \
+                              `receive_session_type` reads: an answer, not a placeholder"
+                )
+            )]
             Ok(&ProtocolNode::Receive { payload, next }) => {
                 text.push('?');
                 segments.push(Segment::Text(core::mem::take(&mut text)));
@@ -1519,8 +1543,6 @@ enum Bracket
     Sim,
     /// Directed reflexivity, `stay(a)`.
     Stay,
-    /// Directed composition, `then(f, g)`.
-    Then,
     /// The product of two universe flows, `flowProduct(p, q)`.
     FlowProduct,
     /// A forward flow, `forward(f)`.
@@ -1552,7 +1574,6 @@ impl Bracket
             Self::Bisim => "bisim(",
             Self::Sim => "sim(",
             Self::Stay => "stay(",
-            Self::Then => "then(",
             Self::FlowProduct => "flowProduct(",
             Self::Forward => "forward(",
             Self::Arrow => "arrow(",
@@ -1707,6 +1728,33 @@ enum Join
         /// How loosely the spelling binds.
         binding: Binding,
     },
+}
+
+/// The grammar rule a production of the walk writes, named at the arm that
+/// writes it, as the grammar's builders name it.
+///
+/// Every rule the grammar builds is written by some arm or is listed with the
+/// reason no presentation writes it, and every name here is a rule the grammar
+/// builds: the policy library's `mold_coverage` holds the two sets equal at
+/// compile time, reading this constructor's literal at every arm and the
+/// grammar's builder sources (`check:dylint`'s `productions` table). The name
+/// is read there, never at run time.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Production(&'static str);
+
+/// `produced`, the production of `rule`.
+///
+/// # Specification
+/// trivial.
+#[inline]
+const fn writes<T>(
+    rule: Production,
+    produced: T,
+) -> T
+{
+    let _ = rule;
+    produced
 }
 
 /// A name as a former spelled by parts writes it: the name itself, or `?`.
@@ -2391,6 +2439,14 @@ impl Walk<'_, '_>
     /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
     #[spec(ensures: |ref ret| self.unspelled.contains(&reason) && self.fidelity == Fidelity::Approximate
         && matches!(*ret, Ok(()) | Err(PresentationError::Build(_))))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "the one writer of the printer's `?`: each caller states the reason it \
+                      records under its own expectation"
+        )
+    )]
     fn unspell(
         &mut self,
         reason: Unspelled,
@@ -2554,6 +2610,14 @@ impl Walk<'_, '_>
     {
         let text: &str = name.as_ref();
         if text.is_empty() || text.contains(['\n', '\r', '\t']) {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a name a line cannot hold, empty or with a line break or a tab, has \
+                              no one-line spelling"
+                )
+            )]
             return self.unspell(Unspelled::Unprintable);
         }
         if text.contains('.') {
@@ -2601,6 +2665,14 @@ impl Walk<'_, '_>
                 | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
                 | Err(_) => false,
             },
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a label the source does not answer, a malformed source, or a line cannot \
+                      hold has no spelling"
+        )
     )]
     fn label<S>(
         &mut self,
@@ -2670,6 +2742,14 @@ impl Walk<'_, '_>
         ensures: |ref ret| self.pieces.len() == entry
             && (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
             && matches!(*ret, Ok(_) | Err(PresentationError::Build(_))),
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a variable past every open binder and the context, or a binder the \
+                      generated names ran out for, names no binder to spell"
+        )
     )]
     fn variable_leaf(
         &mut self,
@@ -3472,18 +3552,32 @@ impl Walk<'_, '_>
         match reach(admits, depth, kind) {
             Reach::Spell => {},
             Reach::Deep => return self.approximate(Glyphs("<deep>")),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a node of a sort its position does not admit: no spelling is both \
+                              the node and what the position reads"
+                )
+            )]
             Reach::Misplaced => return self.unspell(Unspelled::Misplaced),
         }
         // The slots a former read whole in a shape of its own stands over, in
         // place of its child table's.
         let mut shaped = None;
         let join = match former {
-            | Former::BaseType(BaseType::Integer) => return self.atom(Glyphs("Integer")),
-            | Former::BaseType(BaseType::String) => return self.atom(Glyphs("String")),
-            | Former::Product(arity) if usize::from(arity) == 0 => {
-                return self.atom(Glyphs("Unit"));
+            | Former::BaseType(BaseType::Integer) => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("Integer")));
             },
-            | Former::Sum(arity) if usize::from(arity) == 0 => return self.atom(Glyphs("Void")),
+            | Former::BaseType(BaseType::String) => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("String")));
+            },
+            | Former::Product(arity) if usize::from(arity) == 0 => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("Unit")));
+            },
+            | Former::Sum(arity) if usize::from(arity) == 0 => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("Void")));
+            },
             // `Bool` is the sum of two units, a fixed name as the lowering
             // reads it.
             | Former::Sum(arity)
@@ -3496,14 +3590,37 @@ impl Walk<'_, '_>
                             })
                     }) =>
             {
-                return self.atom(Glyphs("Bool"));
+                return writes(Production("type_identifier"), self.atom(Glyphs("Bool")));
             },
-            | Former::Unit => return self.atom(Glyphs("unit")),
-            | Former::ListNil => return self.atom(Glyphs("nil")),
-            | Former::Abstract(name) | Former::Constant(name) => return self.name(name),
+            | Former::Unit => {
+                return writes(Production("unit.expression"), self.atom(Glyphs("unit")));
+            },
+            | Former::ListNil => {
+                return writes(Production("identifier.expression"), self.atom(Glyphs("nil")));
+            },
+            // A name is written as it stands, a qualified one as its path.
+            | Former::Abstract(name) => {
+                return writes(
+                    Production("type_identifier"),
+                    writes(Production("type_path"), self.name(name)),
+                );
+            },
+            | Former::Constant(name) => {
+                return writes(
+                    Production("identifier.expression"),
+                    writes(
+                        Production("constructor.expression"),
+                        writes(Production("projection_expression"), self.name(name)),
+                    ),
+                );
+            },
             | Former::Literal(value) => {
                 let spelled = literal(value);
-                return self.atom(Glyphs(spelled.0.as_str()));
+                let production = match *value {
+                    | Literal::Integer(_) | Literal::Numeric(_) => Production("number.expression"),
+                    | Literal::Text(_) => Production("string.expression"),
+                };
+                return writes(production, self.atom(Glyphs(spelled.0.as_str())));
             },
             | Former::Capability {
                 authority,
@@ -3519,7 +3636,7 @@ impl Walk<'_, '_>
                 spelled.push('}');
                 return match region {
                     | gandr_core_term::effect::capability::Region::Held => {
-                        self.atom(Glyphs(spelled.as_str()))
+                        writes(Production("capability_type"), self.atom(Glyphs(spelled.as_str())))
                     },
                     // A scoped capability names the scope whose region it
                     // lives in, `Cap {…} at c`; past the scopes the source
@@ -3537,7 +3654,13 @@ impl Walk<'_, '_>
                             Some(name) => {
                                 spelled.push_str(" at ");
                                 spelled.push_str(name.as_ref());
-                                self.atom(Glyphs(spelled.as_str()))
+                                writes(
+                                    Production("at_type"),
+                                    writes(
+                                        Production("capability_type"),
+                                        self.atom(Glyphs(spelled.as_str())),
+                                    ),
+                                )
                             },
                             None => self.approximate(Glyphs(spelled.as_str())),
                         }
@@ -3546,18 +3669,34 @@ impl Walk<'_, '_>
             },
             | Former::Universe { sort, level } => {
                 return match universe(sort, level) {
-                    | Maybe::Present(spelled) => self.atom(Glyphs(spelled.0.as_str())),
+                    | Maybe::Present(spelled) => {
+                        writes(Production("universe_type"), self.atom(Glyphs(spelled.0.as_str())))
+                    },
+                    #[cfg_attr(
+                        dylint_lib = "quenchant_dylints",
+                        expect(
+                            answer_totality,
+                            reason = "a universe over a sort parameter or at a level mentioning a \
+                                      variable, which the surface's universe atom, a sort and a \
+                                      numeral level, cannot write"
+                        )
+                    )]
                     | Maybe::Absent(_) => self.unspell(Unspelled::Universe),
                 };
             },
+            // A variable reads as the name of its binder, in a type as a type
+            // variable.
             | Former::Variable { zone, index } => {
-                return self.variable(zone, index);
+                return writes(
+                    Production("identifier.expression"),
+                    writes(Production("type_variable"), self.variable(zone, index)),
+                );
             },
             | Former::Thunk(_) => match self.bodies {
                 | Bodies::Opaque => return self.approximate(Glyphs("<thunk>")),
-                | Bodies::Spelled => Some(Join::Thunk),
+                | Bodies::Spelled => Some(writes(Production("thunk_expression"), Join::Thunk)),
             },
-            | Former::Run(_) => Some(Join::Prefix(Prefix::Run)),
+            | Former::Run(_) => Some(writes(Production("run_expression"), Join::Prefix(Prefix::Run))),
             | Former::Path { .. }
             | Former::Flow { .. }
             | Former::Relation { .. }
@@ -3584,6 +3723,7 @@ impl Walk<'_, '_>
             | Former::Reset(_)
             | Former::Shift(_)
             | Former::Lazy(..)
+            | Former::Then(..)
             | Former::Project(..)
             | Former::Send { .. }
             | Former::Receive(_)
@@ -3600,16 +3740,24 @@ impl Walk<'_, '_>
             | Former::Leta { .. }
             | Former::Migrate { .. } => Some(self.form(source, node, &former, admits)),
             | Former::Reify => return self.approximate(Glyphs("<stack>")),
-            | Former::Stack(..) => Some(Join::Bracket(Bracket::Stack)),
-            | Former::With(..) if self.form == Form::Sugared => Some(Join::Infix {
-                infix: Infix::Lazy,
-                arity: Arity(2_usize),
-            }),
-            | Former::With(..) => Some(Join::Braced {
-                brace: Brace::Ampersand,
-                arity: Arity(2_usize),
-                entries: Entries::Positional,
-            }),
+            | Former::Stack(..) => {
+                Some(writes(Production("type_application"), Join::Bracket(Bracket::Stack)))
+            },
+            | Former::With(..) if self.form == Form::Sugared => Some(writes(
+                Production("lazy_product_type"),
+                Join::Infix {
+                    infix: Infix::Lazy,
+                    arity: Arity(2_usize),
+                },
+            )),
+            | Former::With(..) => Some(writes(
+                Production("lazy_record_type"),
+                Join::Braced {
+                    brace: Brace::Ampersand,
+                    arity: Arity(2_usize),
+                    entries: Entries::Positional,
+                },
+            )),
             | Former::Session {
                 protocol,
                 state,
@@ -3618,41 +3766,123 @@ impl Walk<'_, '_>
                 let (template, binding, fidelity) = protocol_template(protocol, state);
                 if fidelity == Fidelity::Approximate {
                     self.fidelity = Fidelity::Approximate;
+                    #[cfg_attr(
+                        dylint_lib = "quenchant_dylints",
+                        expect(
+                            answer_totality,
+                            reason = "a session type at a state its protocol does not hold: a \
+                                      malformed protocol"
+                        )
+                    )]
                     let _fresh = self.unspelled.insert(Unspelled::Protocol);
                 }
                 self.protocols.push(template);
-                Some(Join::Session {
+                // The protocol's template writes each session former.
+                let join = Join::Session {
                     payloads: Arity(usize::from(payloads)),
                     binding,
-                })
+                };
+                let join = writes(Production("send_session_type"), join);
+                let join = writes(Production("receive_session_type"), join);
+                let join = writes(Production("end_session_type"), join);
+                let join = writes(Production("mu_session_type"), join);
+                Some(join)
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the numeric base atom: the type of a numeric literal, which the \
+                              surface grammar has no name for"
+                )
+            )]
             | Former::BaseType(BaseType::Numeric) => {
                 return self.unspell(Unspelled::Unreadable(Unreadable::NumericAtom));
             },
+            // The unknown type, where a type is read, is the grammar's
+            // `unknown_type` atom `?`; the lowering admits no unknown type, so
+            // the spelling stays approximate.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the unknown type a hole or a mark synthesises: written as the \
+                              grammar's `unknown_type`, which the lowering does not admit"
+                )
+            )]
+            | Former::Unreadable(Unreadable::UnknownType)
+                if matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType) =>
+            {
+                return writes(
+                    Production("unknown_type"),
+                    self.unspell(Unspelled::Unreadable(Unreadable::UnknownType)),
+                );
+            },
+            // A hole is the term the author has not written; where a term is
+            // read its `?` is the grammar's hole, though the hole's identity
+            // goes unwritten.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a hole, a term the author has not written: the walk writes it as \
+                              the grammar's hole `?`"
+                )
+            )]
+            | Former::Unreadable(Unreadable::Hole) => {
+                return writes(
+                    Production("hole"),
+                    self.unspell(Unspelled::Unreadable(Unreadable::Hole)),
+                );
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the honest set's other members, a dangling handle, an unnamed \
+                              reference, a mark, a lift, a world's capability and the unknown \
+                              type where a term is read, have no surface spelling"
+                )
+            )]
             | Former::Unreadable(reason) => return self.unspell(Unspelled::Unreadable(reason)),
             | Former::PathUniverse(..) => {
                 self.fidelity = Fidelity::Approximate;
-                Some(Join::Bracket(Bracket::PathUniverse))
+                Some(writes(Production("type_application"), Join::Bracket(Bracket::PathUniverse)))
             },
             | Former::PathRefl(_) => {
                 self.fidelity = Fidelity::Approximate;
-                Some(Join::Bracket(Bracket::PathRefl))
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::PathRefl)))
             },
-            | Former::Here(_) => Some(Join::Bracket(Bracket::Here)),
-            | Former::Funext(..) => Some(Join::Bracket(Bracket::Funext)),
-            | Former::Equiv(..) => Some(Join::Bracket(Bracket::Equiv)),
+            | Former::Here(_) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Here)))
+            },
+            | Former::Funext(..) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Funext)))
+            },
+            | Former::Equiv(..) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Equiv)))
+            },
             | Former::SessionRelated(SessionRelation::Equivalence, ..) => {
-                Some(Join::Bracket(Bracket::Bisim))
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Bisim)))
             },
             | Former::SessionRelated(SessionRelation::Subtyping, ..) => {
-                Some(Join::Bracket(Bracket::Sim))
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Sim)))
             },
-            | Former::Stay(_) => Some(Join::Bracket(Bracket::Stay)),
-            | Former::Then(..) => Some(Join::Bracket(Bracket::Then)),
-            | Former::FlowProduct(..) => Some(Join::Bracket(Bracket::FlowProduct)),
-            | Former::Forward(_) => Some(Join::Bracket(Bracket::Forward)),
-            | Former::FunctionFlow(..) => Some(Join::Bracket(Bracket::Arrow)),
-            | Former::RunType(_) => Some(Join::Bracket(Bracket::Run)),
+            | Former::Stay(_) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Stay)))
+            },
+            | Former::FlowProduct(..) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::FlowProduct)))
+            },
+            | Former::Forward(_) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Forward)))
+            },
+            | Former::FunctionFlow(..) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Arrow)))
+            },
+            | Former::RunType(_) => {
+                Some(writes(Production("type_application"), Join::Bracket(Bracket::Run)))
+            },
             | Former::Ua {
                 stratum,
                 source: from,
@@ -3667,49 +3897,96 @@ impl Walk<'_, '_>
                     to.as_ref(),
                 );
                 let head = self.leaf(Glyphs(&head))?;
-                Some(Join::Ua(head))
+                // The stratum's two numerals are the instantiation's type
+                // residents, each a numeral where a type is read.
+                Some(writes(
+                    Production("instantiation_expression"),
+                    writes(
+                        Production("instantiation.type"),
+                        writes(
+                            Production("number.type"),
+                            writes(Production("call_expression"), Join::Ua(head)),
+                        ),
+                    ),
+                ))
             },
             | Former::PathEquiv(..) => {
                 self.fidelity = Fidelity::Approximate;
-                Some(Join::Bracket(Bracket::PathEquiv))
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::PathEquiv)))
             },
-            | Former::PathProduct(..) => Some(Join::Bracket(Bracket::PathProduct)),
+            | Former::PathProduct(..) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::PathProduct)))
+            },
             | Former::Product(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
-                Some(Join::Infix {
-                    infix: Infix::Product,
-                    arity: Arity(usize::from(arity)),
-                })
+                Some(writes(
+                    Production("product_type"),
+                    Join::Infix {
+                        infix: Infix::Product,
+                        arity: Arity(usize::from(arity)),
+                    },
+                ))
             },
             | Former::Sum(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
-                Some(Join::Infix {
-                    infix: Infix::Sum,
-                    arity: Arity(usize::from(arity)),
-                })
+                Some(writes(
+                    Production("sum_type"),
+                    Join::Infix {
+                        infix: Infix::Sum,
+                        arity: Arity(usize::from(arity)),
+                    },
+                ))
             },
             | Former::Tuple(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
-                Some(Join::Tuple(Arity(usize::from(arity))))
+                Some(writes(
+                    Production("parenthesized_expression"),
+                    Join::Tuple(Arity(usize::from(arity))),
+                ))
             },
-            | Former::Product(arity) | Former::Tuple(arity) => Some(Join::Braced {
-                brace: Brace::Hash,
-                arity: Arity(usize::from(arity)),
-                entries: Entries::Positional,
-            }),
-            | Former::Sum(arity) => Some(Join::Braced {
-                brace: Brace::Plus,
-                arity: Arity(usize::from(arity)),
-                entries: Entries::Positional,
-            }),
-            | Former::RecordType(arity) => Some(Join::Braced {
-                brace: Brace::Hash,
-                arity: Arity(usize::from(arity)),
-                entries: Entries::Labelled(Label::Field),
-            }),
-            | Former::List(_) => Some(Join::Bracket(Bracket::List)),
+            | Former::Product(arity) => Some(writes(
+                Production("telescope_type"),
+                Join::Braced {
+                    brace: Brace::Hash,
+                    arity: Arity(usize::from(arity)),
+                    entries: Entries::Positional,
+                },
+            )),
+            | Former::Tuple(arity) => Some(writes(
+                Production("telescope_expression"),
+                Join::Braced {
+                    brace: Brace::Hash,
+                    arity: Arity(usize::from(arity)),
+                    entries: Entries::Positional,
+                },
+            )),
+            | Former::Sum(arity) => Some(writes(
+                Production("labelled_sum_type"),
+                Join::Braced {
+                    brace: Brace::Plus,
+                    arity: Arity(usize::from(arity)),
+                    entries: Entries::Positional,
+                },
+            )),
+            | Former::RecordType(arity) => Some(writes(
+                Production("telescope_type"),
+                Join::Braced {
+                    brace: Brace::Hash,
+                    arity: Arity(usize::from(arity)),
+                    entries: Entries::Labelled(Label::Field),
+                },
+            )),
+            | Former::List(_) => {
+                Some(writes(Production("type_application"), Join::Bracket(Bracket::List)))
+            },
             | Former::ThunkType(body) => {
                 if self.form == Form::Sugared
                     && let Some((domains, codomain)) = self.alias(source, body)
                 {
-                    tasks.push(Task::Join(Join::ValueFunction(Arity(domains.len()))));
+                    tasks.push(Task::Join(writes(
+                        Production("value_function_type"),
+                        writes(
+                            Production("parenthesized_type"),
+                            Join::ValueFunction(Arity(domains.len())),
+                        ),
+                    )));
                     tasks.push(match codomain {
                         Codomain::Result(node) => Task::Visit {
                             node,
@@ -3727,9 +4004,9 @@ impl Walk<'_, '_>
                     }
                     return Ok(());
                 }
-                Some(Join::Prefix(Prefix::Thunk))
+                Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
             },
-            | Former::Returner(_) => Some(Join::Prefix(Prefix::Returner)),
+            | Former::Returner(_) => Some(writes(Production("f_type"), Join::Prefix(Prefix::Returner))),
             | Former::EffectfulReturner { effects, .. } => {
                 let mut annotation = String::from("-F [");
                 for (index, interface) in effects.interfaces().iter().enumerate() {
@@ -3740,30 +4017,47 @@ impl Walk<'_, '_>
                 }
                 annotation.push_str("] ");
                 let head = self.leaf(Glyphs(&annotation))?;
-                Some(Join::EffectReturner(head))
+                Some(writes(Production("f_type.row"), Join::EffectReturner(head)))
             },
-            | Former::Arrow { .. } | Former::StaticPi { .. } => Some(Join::Arrow),
-            | Former::Pi { .. } => Some(Join::Pi),
-            | Former::Sigma { .. } => Some(Join::Sigma),
-            | Former::StaticLambda(_) => Some(Join::StaticLambda),
-            | Former::Record(arity) => Some(Join::Braced {
-                brace: Brace::Hash,
-                arity: Arity(usize::from(arity)),
-                entries: Entries::Labelled(Label::Assignment),
-            }),
-            | Former::ListCons(..) => Some(Join::Bracket(Bracket::ListCons)),
-            | Former::Injection(..) => Some(Join::Braced {
-                brace: Brace::Plus,
-                arity: Arity(1_usize),
-                entries: Entries::Labelled(Label::Summand),
-            }),
+            | Former::Arrow { .. } | Former::StaticPi { .. } => {
+                Some(writes(Production("function_type"), Join::Arrow))
+            },
+            // A dependent arrow names its binder in a parenthesized domain,
+            // `(x : A) -> C`.
+            | Former::Pi { .. } => Some(writes(
+                Production("function_type"),
+                writes(Production("parenthesized_type"), Join::Pi),
+            )),
+            | Former::Sigma { .. } => Some(writes(Production("telescope_type"), Join::Sigma)),
+            | Former::StaticLambda(_) => {
+                Some(writes(Production("static_abstraction"), Join::StaticLambda))
+            },
+            | Former::Record(arity) => Some(writes(
+                Production("telescope_expression"),
+                Join::Braced {
+                    brace: Brace::Hash,
+                    arity: Arity(usize::from(arity)),
+                    entries: Entries::Labelled(Label::Assignment),
+                },
+            )),
+            | Former::ListCons(..) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::ListCons)))
+            },
+            | Former::Injection(..) => Some(writes(
+                Production("labelled_sum_expression"),
+                Join::Braced {
+                    brace: Brace::Plus,
+                    arity: Arity(1_usize),
+                    entries: Entries::Labelled(Label::Summand),
+                },
+            )),
             | Former::StaticApplication(operator, argument) => {
                 Self::spine(source, operator, argument, depth, ReductAs::Term, tasks);
-                return Ok(());
+                return writes(Production("type_application"), Ok(()));
             },
             | Former::Application(function, argument) => {
                 Self::call(source, function, argument, depth, tasks);
-                return Ok(());
+                return writes(Production("call_expression"), Ok(()));
             },
             | Former::Return(_) => match admits {
                 | Admits::Computation(Tail::Ends) => None,
@@ -3772,9 +4066,9 @@ impl Walk<'_, '_>
                 | Admits::ValueType
                 | Admits::CompType
                 | Admits::Value
-                | Admits::Stated => Some(Join::Prefix(Prefix::Pure)),
+                | Admits::Stated => Some(writes(Production("pure_expression"), Join::Prefix(Prefix::Pure))),
             },
-            | Former::Force(_) => Some(Join::Prefix(Prefix::Force)),
+            | Former::Force(_) => Some(writes(Production("force_expression"), Join::Prefix(Prefix::Force))),
             | Former::Bind(bound, rest) => match self.typed_bind(source, bound) {
                 Some((ascribed, result)) => {
                     shaped = Some(Vec::from([
@@ -3782,9 +4076,9 @@ impl Walk<'_, '_>
                         Slot::of(result, Admits::ValueType, Binds::NONE),
                         Slot::of(rest, admits, Binds::ONE),
                     ]));
-                    Some(Join::TypedSequence)
+                    Some(writes(Production("bind_statement"), Join::TypedSequence))
                 },
-                None => Some(Join::Sequence),
+                None => Some(writes(Production("bind_statement"), Join::Sequence)),
             },
             // An ascription outside a typed bind has no spelling of its own:
             // it stands as its body, its type unwritten.
@@ -3793,7 +4087,7 @@ impl Walk<'_, '_>
                 shaped = Some(Vec::from([Slot::of(body, admits, Binds::NONE)]));
                 None
             },
-            | Former::Lambda(_) => Some(Join::Lambda),
+            | Former::Lambda(_) => Some(writes(Production("lambda_expression"), Join::Lambda)),
             // A computation where a value is read stands bare, its run left
             // to the checker, and so does the computation a returned value
             // stands for; its piece, as a decode's and a quote's, is the
@@ -4135,6 +4429,13 @@ impl Walk<'_, '_>
                 | Err(_) => false,
             },
     )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a binder the generated names ran out for has no name to write"
+        )
+    )]
     fn binder(
         &mut self,
         offset: OpenBinders,
@@ -4255,6 +4556,14 @@ impl Walk<'_, '_>
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
     #[spec(ensures: |ref ret| !ret.0.contains(['\n', '\r', '\t']) && !ret.0.is_empty())]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a name the source does not hold or a line cannot hold has no spelling: the \
+                      caller states which"
+        )
+    )]
     fn spelled(
         &mut self,
         name: Option<Name<'_>>,
@@ -4317,6 +4626,15 @@ impl Walk<'_, '_>
             && matches!(ret, Join::Form { pieces: Arity(count), .. }
                 if self.forms.last().is_some_and(|parts| parts.iter().filter(|part| matches!(**part, Part::Piece(_))).count() == count)),
     )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a label, a name or an operation the source does not answer, a malformed \
+                      source, has no spelling: `spelled` writes `?` under the reason each call \
+                      names"
+        )
+    )]
     fn form<S>(
         &mut self,
         source: &S,
@@ -4356,11 +4674,11 @@ impl Walk<'_, '_>
         let binding = match *former {
             Former::Path { .. } => {
                 let _ = parts.text("Path").arguments(Arity(3_usize));
-                Binding::Atom
+                writes(Production("path_type"), Binding::Atom)
             },
             Former::Flow { .. } => {
                 let _ = parts.text("Flow").arguments(Arity(3_usize));
-                Binding::Atom
+                writes(Production("type_application"), Binding::Atom)
             },
             Former::Relation { relation, .. } => {
                 let _ = parts
@@ -4393,7 +4711,7 @@ impl Walk<'_, '_>
                     };
                 }
                 let _ = parts.part(Part::Tight).text(")");
-                Binding::Atom
+                writes(Production("call_expression"), Binding::Atom)
             },
             Former::Constructor {
                 name,
@@ -4402,15 +4720,18 @@ impl Walk<'_, '_>
             } => {
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
                 let _ = parts.text(name).text(" ∷ ").piece(Binding::Cons);
-                Binding::Cons
+                writes(Production("binary_expression.cons"), Binding::Cons)
             },
             Former::Data { name, arity } => {
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
                 let _ = parts.text(name);
                 if usize::from(arity) > 0_usize {
                     let _ = parts.arguments(Arity(usize::from(arity)));
+                    writes(Production("type_application"), Binding::Atom)
                 }
-                Binding::Atom
+                else {
+                    writes(Production("type_identifier"), Binding::Atom)
+                }
             },
             Former::Constructor {
                 name,
@@ -4436,7 +4757,18 @@ impl Walk<'_, '_>
                 if annotated {
                     let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
                 }
-                Binding::Atom
+                let applied = if usize::from(arity) > 0_usize {
+                    writes(Production("call_expression"), Binding::Atom)
+                }
+                else {
+                    writes(Production("constructor.expression"), Binding::Atom)
+                };
+                if annotated {
+                    writes(Production("parenthesized_expression"), applied)
+                }
+                else {
+                    applied
+                }
             },
             Former::Primitive { name, arity } => {
                 // A primitive the surface writes as an operator is written so:
@@ -4452,7 +4784,22 @@ impl Walk<'_, '_>
                             .piece(Binding::Atom)
                             .text(format!(" {spelling} "))
                             .piece(Binding::Atom);
-                        Binding::Cons
+                        match spelling {
+                            "+" => writes(Production("binary_expression.add.plus"), Binding::Cons),
+                            "-" => writes(Production("binary_expression.add.minus"), Binding::Cons),
+                            "*" => writes(Production("binary_expression.mul.times"), Binding::Cons),
+                            "==" => writes(Production("binary_expression.cmp.eq"), Binding::Cons),
+                            "!=" => writes(Production("binary_expression.cmp.ne"), Binding::Cons),
+                            "<" => writes(Production("binary_expression.cmp.lt"), Binding::Cons),
+                            "<=" => writes(Production("binary_expression.cmp.le"), Binding::Cons),
+                            ">" => writes(Production("binary_expression.cmp.gt"), Binding::Cons),
+                            ">=" => writes(Production("binary_expression.cmp.ge"), Binding::Cons),
+                            "&&" => writes(Production("binary_expression.and"), Binding::Cons),
+                            "||" => writes(Production("binary_expression.or"), Binding::Cons),
+                            // The prelude's other infix spellings, should it
+                            // gain one, name their rule here.
+                            _ => Binding::Cons,
+                        }
                     },
                     (Some(gandr_core_term::primitive::Operator::Prefix(spelling)), 1_usize) => {
                         // A literal operand is parenthesized: `-(-1)`, never
@@ -4468,7 +4815,7 @@ impl Walk<'_, '_>
                         else {
                             Binding::Atom
                         });
-                        Binding::Prefix
+                        writes(Production("unary_expression"), Binding::Prefix)
                     },
                     (
                         Some(
@@ -4482,24 +4829,24 @@ impl Walk<'_, '_>
                         let name =
                             self.spelled(Some(Name::from(name.as_ref())), Unspelled::Missing);
                         let _ = parts.text(name).arguments(Arity(usize::from(arity)));
-                        Binding::Atom
+                        writes(Production("call_expression"), Binding::Atom)
                     },
                 }
             },
             Former::Perform { operation, .. } => {
                 let name = self.spelled(Some(operation), Unspelled::Missing);
                 let _ = parts.text(name).arguments(Arity(1_usize));
-                Binding::Atom
+                writes(Production("call_expression"), Binding::Atom)
             },
             Former::Transport(..) => {
                 self.fidelity = Fidelity::Approximate;
                 let _ = parts.text("transport").arguments(Arity(2_usize));
-                Binding::Atom
+                writes(Production("call_expression"), Binding::Atom)
             },
             Former::Resume(..) => {
                 self.fidelity = Fidelity::Approximate;
                 let _ = parts.text("resume").arguments(Arity(2_usize));
-                Binding::Atom
+                writes(Production("resume_expression"), Binding::Atom)
             },
             Former::PathTransport { .. } | Former::Ride { .. } => {
                 let lead = if matches!(*former, Former::Ride { .. }) {
@@ -4515,14 +4862,14 @@ impl Walk<'_, '_>
                     .part(Part::Space)
                     .piece(Binding::Arrow)
                     .rest(Arity(2_usize));
-                Binding::Atom
+                writes(Production("call_expression"), Binding::Atom)
             },
             Former::TelescopeTransport { .. } => {
                 let _ = parts
                     .text("transport(+U ")
                     .piece(Binding::Atom)
                     .rest(Arity(4_usize));
-                Binding::Atom
+                writes(Production("call_expression"), Binding::Atom)
             },
             Former::Fixpoint(_) => {
                 self.fidelity = Fidelity::Approximate;
@@ -4562,7 +4909,13 @@ impl Walk<'_, '_>
                         .piece(Binding::Arrow);
                 }
                 let _ = parts.part(Part::Close);
-                Binding::Prefix
+                writes(
+                    Production("case_expression"),
+                    writes(
+                        Production("labelled_sum_pattern"),
+                        writes(Production("identifier.pattern"), Binding::Prefix),
+                    ),
+                )
             },
             Former::Split { arity, .. } => {
                 let _ = parts
@@ -4570,17 +4923,22 @@ impl Walk<'_, '_>
                     .piece(Binding::Prefix)
                     .text(" {")
                     .part(Part::Open);
-                if usize::from(arity) == 0_usize {
+                let pattern = if usize::from(arity) == 0_usize {
                     let _ = parts.text("unit");
+                    writes(Production("unit.pattern"), Binding::Prefix)
                 }
                 else {
                     let _ = parts
                         .text("#{")
                         .binders(Arity(usize::from(arity)))
                         .text("}");
-                }
+                    writes(
+                        Production("telescope_pattern"),
+                        writes(Production("identifier.pattern"), Binding::Prefix),
+                    )
+                };
                 let _ = parts.text(" => ").piece(Binding::Arrow).part(Part::Close);
-                Binding::Prefix
+                writes(Production("case_expression"), pattern)
             },
             Former::DataCase { arity, .. } => {
                 let _ = parts
@@ -4598,12 +4956,20 @@ impl Walk<'_, '_>
                     let _ = parts.text(" => ").piece(Binding::Arrow);
                 }
                 let _ = parts.part(Part::Close);
-                Binding::Prefix
+                // An arm's pattern is its constructor, applied to its field
+                // binders when it has fields.
+                writes(
+                    Production("case_expression"),
+                    writes(
+                        Production("constructor_pattern"),
+                        writes(Production("constructor.pattern"), Binding::Prefix),
+                    ),
+                )
             },
             Former::RecordProjection(_, label) => {
                 let label = self.spelled(Some(label), Unspelled::Missing);
                 let _ = parts.piece(Binding::Atom).text(".").text(label);
-                Binding::Atom
+                writes(Production("projection_expression"), Binding::Atom)
             },
             Former::TupleProjection(target, index) => {
                 // A positional projection off another is parenthesized,
@@ -4617,14 +4983,14 @@ impl Walk<'_, '_>
                 let _ = parts
                     .piece(loosest)
                     .text(format!(".{}", usize::from(index)));
-                Binding::Atom
+                writes(Production("projection_expression"), Binding::Atom)
             },
             Former::Project(side, _) => {
                 self.fidelity = Fidelity::Approximate;
                 let _ = parts
                     .piece(Binding::Atom)
                     .text(format!(".{}", usize::from(side)));
-                Binding::Atom
+                writes(Production("projection_expression"), Binding::Atom)
             },
             Former::ListFold { .. } => {
                 self.fidelity = Fidelity::Approximate;
@@ -4647,7 +5013,7 @@ impl Walk<'_, '_>
             Former::Handle { clauses: count, .. } => {
                 let _ = parts.text("handle {").body();
                 clauses(self, &mut parts, count);
-                Binding::Prefix
+                writes(Production("handle_expression"), Binding::Prefix)
             },
             Former::Scope {
                 interface,
@@ -4663,7 +5029,7 @@ impl Walk<'_, '_>
                     .text(" {")
                     .body();
                 clauses(self, &mut parts, count);
-                Binding::Prefix
+                writes(Production("handle_expression"), Binding::Prefix)
             },
             Former::Exercise { operation, .. } => {
                 let operation = self.spelled(Some(operation), Unspelled::Missing);
@@ -4672,37 +5038,51 @@ impl Walk<'_, '_>
                     .text(".")
                     .text(operation)
                     .arguments(Arity(1_usize));
-                Binding::Atom
+                writes(
+                    Production("projection_expression"),
+                    writes(Production("call_expression"), Binding::Atom),
+                )
             },
+            // A lazy pair is the positional copattern block, which the lowering
+            // reads back as the pair nested to the right (#630).
             Former::Lazy(..) => {
-                self.fidelity = Fidelity::Approximate;
                 let _ = parts
-                    .text("&{")
-                    .piece(Binding::Sequence)
+                    .text("&{.0 => ")
+                    .piece(Binding::Arrow)
                     .text(",")
                     .part(Part::Space)
-                    .piece(Binding::Sequence)
+                    .text(".1 => ")
+                    .piece(Binding::Arrow)
                     .part(Part::Tight)
                     .text("}");
-                Binding::Atom
+                writes(Production("lazy_record_expression"), Binding::Atom)
+            },
+            // A flow composite is written infix, as the surface writes it and
+            // the lowering reads it back where a flow is answered (#631).
+            Former::Then(..) => {
+                let _ = parts
+                    .piece(Binding::Atom)
+                    .text(" then ")
+                    .piece(Binding::Atom);
+                writes(Production("binary_expression.then"), Binding::Cons)
             },
             Former::Send { endpoint, .. } => {
                 let _ = parts
                     .text("send(")
                     .part(Part::Endpoint(endpoint))
                     .rest(Arity(1_usize));
-                Binding::Atom
+                writes(Production("send_expression"), Binding::Atom)
             },
             Former::Receive(endpoint) => {
                 let _ = parts.text("recv(").part(Part::Endpoint(endpoint)).text(")");
-                Binding::Atom
+                writes(Production("recv_statement"), Binding::Atom)
             },
             Former::Close(endpoint) => {
                 let _ = parts
                     .text("close(")
                     .part(Part::Endpoint(endpoint))
                     .text(")");
-                Binding::Atom
+                writes(Production("close_expression"), Binding::Atom)
             },
             Former::Select { endpoint, label } => {
                 let label = self.spelled(Some(label), Unspelled::Missing);
@@ -4712,7 +5092,7 @@ impl Walk<'_, '_>
                     .text(", ")
                     .text(label)
                     .text(")");
-                Binding::Atom
+                writes(Production("select_expression"), Binding::Atom)
             },
             Former::Offer { endpoint, arms } => {
                 let _ = parts
@@ -4730,7 +5110,7 @@ impl Walk<'_, '_>
                         .piece(Binding::Arrow);
                 }
                 let _ = parts.part(Part::Close);
-                Binding::Prefix
+                writes(Production("offer_expression"), Binding::Prefix)
             },
             Former::Fork { .. } => {
                 let _ = parts
@@ -4745,7 +5125,7 @@ impl Walk<'_, '_>
                     .text(" ;")
                     .part(Part::Line)
                     .piece(Binding::Sequence);
-                Binding::Sequence
+                writes(Production("fork_statement"), Binding::Sequence)
             },
             Former::Hold { .. } => {
                 let _ = parts
@@ -4756,7 +5136,7 @@ impl Walk<'_, '_>
                     .text(" ;")
                     .part(Part::Line)
                     .piece(Binding::Sequence);
-                Binding::Sequence
+                writes(Production("hold_statement"), Binding::Sequence)
             },
             Former::Access { held, .. } => {
                 let _ = parts
@@ -4768,29 +5148,29 @@ impl Walk<'_, '_>
                     .body()
                     .text(" unwind {")
                     .body();
-                Binding::Prefix
+                writes(Production("access_expression"), Binding::Prefix)
             },
             Former::ResumeView { view, .. } => {
                 let _ = parts
                     .text("resume(")
                     .part(Part::Endpoint(view))
                     .rest(Arity(1_usize));
-                Binding::Atom
+                writes(Production("resume_expression"), Binding::Atom)
             },
             Former::AbortView(view) => {
                 let _ = parts.text("abort(").part(Part::Endpoint(view)).text(")");
-                Binding::Atom
+                writes(Production("abort_expression"), Binding::Atom)
             },
             // `A at w` binds as loosely as a word's cons, so a bridge over it
             // parenthesizes it and it parenthesizes any operand but an atom.
             Former::Located { world, .. } => {
                 let world = self.spelled(world, Unspelled::Unreadable(Unreadable::Unnamed));
                 let _ = parts.piece(Binding::Atom).text(" at ").text(world);
-                Binding::Cons
+                writes(Production("at_type"), Binding::Cons)
             },
             Former::WorldHold(_) => {
                 let _ = parts.text("hold ").piece(Binding::Prefix);
-                Binding::Prefix
+                writes(Production("hold_expression"), Binding::Prefix)
             },
             Former::Leta { .. } => {
                 let _ = parts
@@ -4801,13 +5181,21 @@ impl Walk<'_, '_>
                     .text(" ;")
                     .part(Part::Line)
                     .piece(Binding::Sequence);
-                Binding::Sequence
+                writes(Production("leta_statement"), Binding::Sequence)
             },
             Former::Migrate { world, .. } => {
                 let world = self.spelled(world, Unspelled::Unreadable(Unreadable::Unnamed));
                 let _ = parts.text("migrate [").text(world).text("] {").body();
-                Binding::Prefix
+                writes(Production("migrate_expression"), Binding::Prefix)
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "never reached: `visit` writes these formers itself, and only \
+                              formers spelled by parts come here"
+                )
+            )]
             Former::Reify
             | Former::Stack(..)
             | Former::With(..)
@@ -4853,7 +5241,6 @@ impl Walk<'_, '_>
             | Former::Equiv(..)
             | Former::SessionRelated(..)
             | Former::Stay(_)
-            | Former::Then(..)
             | Former::FlowProduct(..)
             | Former::Forward(_)
             | Former::FunctionFlow(..)
@@ -4931,7 +5318,7 @@ impl Walk<'_, '_>
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
             Join::ValueFunction(Arity(domains)) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::Then | Bracket::FlowProduct | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Arrow) => Some(2_usize),
             Join::TypedSequence => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
@@ -5217,7 +5604,6 @@ impl Walk<'_, '_>
                     | Bracket::ListCons
                     | Bracket::Bisim
                     | Bracket::Sim
-                    | Bracket::Then
                     | Bracket::FlowProduct
                     | Bracket::Arrow => {
                         let second = self.pop()?;
@@ -5411,6 +5797,14 @@ where
                 let _argument = walk.substituted.remove(&OpenBinders(walk.opened.len()));
             },
             Task::Substitute(arity) => walk.substitute(arity)?,
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a component the source does not answer: a malformed source, with no \
+                              node to spell"
+                )
+            )]
             Task::Missing => walk.unspell(Unspelled::Missing)?,
             Task::Label(Labelled { of, index, label }) => walk.label(source, of, index, label)?,
             Task::Join(join) => walk.join(join)?,

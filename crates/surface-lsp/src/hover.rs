@@ -490,6 +490,15 @@ fn declared<Store, Blocks>(
         Maybe::Absent(_) => None,
     });
     if held.is_none() && documented.is_none() {
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                answer_totality,
+                reason = "the session holds neither a type nor documentation for the declaration, \
+                          as for an undocumented module, which has no type: the hover shows \
+                          nothing rather than a guess"
+            )
+        )]
         return Maybe::Absent(hovered::Absent::Unknown);
     }
     let mut code = Code::new(style.markup);

@@ -717,6 +717,14 @@ impl<'arena> CoreSource<'arena>
     {
         let Some(value) = self.arena.value(id)
         else {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a handle that names no node: a malformed source, with no term to \
+                              spell"
+                )
+            )]
             return Former::Unreadable(Unreadable::Dangling);
         };
         match *value {
@@ -746,7 +754,23 @@ impl<'arena> CoreSource<'arena>
                     },
                 }
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a hole, a term the author has not written: the walk writes it as \
+                              the grammar's hole `?`"
+                )
+            )]
             Value::Hole(_) => Former::Unreadable(Unreadable::Hole),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a mark, a term the elaborator could not type: the grammar has no \
+                              spelling for a mark"
+                )
+            )]
             Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),
             Value::Returned(body) => Former::Returned(CoreNode::Computation(body)),
             Value::Recorded(ref moves) => Former::Recorded {
@@ -809,6 +833,14 @@ impl<'arena> CoreSource<'arena>
                 forward, backward, ..
             } => Former::PathEquiv(CoreNode::Value(forward), CoreNode::Value(backward)),
             Value::Variable { zone, index } => Former::Variable { zone, index },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a name the naming table does not hold: a malformed table, with no \
+                              name to write"
+                )
+            )]
             Value::Constant(constant) => self
                 .name(constant)
                 .map_or(Former::Unreadable(Unreadable::Unnamed), Former::Constant),
@@ -823,6 +855,14 @@ impl<'arena> CoreSource<'arena>
                 Former::Injection(Component::from(usize::from(summand)), CoreNode::Value(body))
             },
             Value::Thunk(body) => Former::Thunk(CoreNode::Computation(body)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a universe lift: the core's explicit cumulativity, which the \
+                              surface grammar has no syntax for"
+                )
+            )]
             Value::Lift { .. } => Former::Unreadable(Unreadable::Lift),
             Value::Quote(quoted) => Former::Quote(CoreNode::ValueType(quoted)),
             Value::QuoteComputation(quoted) => Former::QuoteComputation(CoreNode::CompType(quoted)),
@@ -905,6 +945,14 @@ impl<'arena> CoreSource<'arena>
         }
         let Some(value_type) = self.arena.value_type(self.unstaged(id))
         else {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a handle that names no node: a malformed source, with no term to \
+                              spell"
+                )
+            )]
             return Former::Unreadable(Unreadable::Dangling);
         };
         match *value_type {
@@ -934,6 +982,14 @@ impl<'arena> CoreSource<'arena>
                 right: CoreNode::Value(target),
             },
             ValueType::Run(code) => Former::RunType(CoreNode::Value(code)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the unknown type a hole or a mark synthesises: the walk writes it \
+                              as the grammar's `unknown_type` where a type is read"
+                )
+            )]
             ValueType::Unknown => Former::Unreadable(Unreadable::UnknownType),
             ValueType::Record(ref fields) if fields.is_empty() => {
                 Former::Product(Arity::from(0_usize))
@@ -951,8 +1007,24 @@ impl<'arena> CoreSource<'arena>
             ValueType::List(element) => Former::List(CoreNode::ValueType(element)),
             ValueType::Thunk(body) => Former::ThunkType(CoreNode::CompType(body)),
             ValueType::Universe { sort, ref level } => Former::Universe { sort, level },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a universe lift: the core's explicit cumulativity, which the \
+                              surface grammar has no syntax for"
+                )
+            )]
             ValueType::Lift { .. } => Former::Unreadable(Unreadable::Lift),
             ValueType::Element { code, .. } => Former::Element(CoreNode::Value(code)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a name the naming table does not hold: a malformed table, with no \
+                              name to write"
+                )
+            )]
             ValueType::Abstract(atom) => self
                 .name(atom)
                 .map_or(Former::Unreadable(Unreadable::Unnamed), Former::Abstract),
@@ -982,9 +1054,25 @@ impl<'arena> CoreSource<'arena>
                 inner: CoreNode::ValueType(inner),
                 world: self.world_name(world),
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a world's capability: the linear resource a migration spends, which \
+                              the surface never writes"
+                )
+            )]
             ValueType::World(WorldType::Capability(_)) => {
                 Former::Unreadable(Unreadable::WorldCapability)
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "never reached: the read strips a stage first, and the arena holds \
+                              no stage over a stage"
+                )
+            )]
             // Never read: the arena holds no stage over a stage.
             ValueType::Staged { .. } => Former::Unreadable(Unreadable::Dangling),
         }
@@ -1029,9 +1117,25 @@ impl<'arena> CoreSource<'arena>
     {
         let Some(comp_type) = self.arena.comp_type(id)
         else {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a handle that names no node: a malformed source, with no term to \
+                              spell"
+                )
+            )]
             return Former::Unreadable(Unreadable::Dangling);
         };
         match *comp_type {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the unknown type a hole or a mark synthesises: the walk writes it \
+                              as the grammar's `unknown_type` where a type is read"
+                )
+            )]
             CompType::Unknown => Former::Unreadable(Unreadable::UnknownType),
             CompType::With(first, second) => {
                 Former::With(CoreNode::CompType(first), CoreNode::CompType(second))
@@ -1149,6 +1253,14 @@ impl<'arena> CoreSource<'arena>
         let computation = CoreNode::Computation;
         let Some(held) = self.arena.computation(id)
         else {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a handle that names no node: a malformed source, with no term to \
+                              spell"
+                )
+            )]
             return Former::Unreadable(Unreadable::Dangling);
         };
         match *held {
@@ -1236,7 +1348,23 @@ impl<'arena> CoreSource<'arena>
             Computation::TupleProjection(tuple, component) => {
                 Former::TupleProjection(value(tuple), Component::from(usize::from(component)))
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a hole, a term the author has not written: the walk writes it as \
+                              the grammar's hole `?`"
+                )
+            )]
             Computation::Hole(_) => Former::Unreadable(Unreadable::Hole),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a mark, a term the elaborator could not type: the grammar has no \
+                              spelling for a mark"
+                )
+            )]
             Computation::Mark { .. } => Former::Unreadable(Unreadable::Mark),
             Computation::ListFold {
                 list,
