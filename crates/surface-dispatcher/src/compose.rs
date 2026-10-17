@@ -176,6 +176,9 @@ use gandr_core_checker::body;
 use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
+use gandr_core_checker::worlds::Entry;
+use gandr_core_checker::worlds::Mobility;
+use gandr_core_checker::worlds::WorldName;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::ConstantIndex;
@@ -194,6 +197,7 @@ use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::Mark;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::Sealing;
 use gandr_surface_lowering::Unit;
@@ -1018,19 +1022,20 @@ pub fn lower_parsed_unit<'source>(
 /// - requires: `module` was lowered from `text` into `arena`; `root` is the
 ///   corpus root the source sits under.
 /// - ensures: the module is adapted to the checker's input, judged with its
-///   held capabilities bounded by `grant` minted into `arena`, built into a
-///   [`Program`] and settled under `root`, the program running each declaration
-///   that states a run outcome. The settled composition carries one report per
-///   declared name, the exercised rows its settled declarations carry, the
-///   refusals of the declarations refused at their own form, which no
-///   expectation can state, the lowering's origin table, moved rather than
-///   copied, the spellings of the types its checker refusals compare and its
-///   failures name, each under its binders' names in `text`, the failures
-///   themselves, every builtin the source shadowed, every exit the lowering
-///   inferred, every run the checker inferred, the program, and no kernel
-///   artifact yet ([`admitted::Absent::Pending`]); a settle fault is carried in
-///   its place. The admission holds the arena the verdicts were judged over,
-///   the verdicts and the module's structured names.
+///   held capabilities bounded by `grant` minted into `arena` and every
+///   declaration entered at `grant`'s entry read against the module's own
+///   worlds, built into a [`Program`] and settled under `root`, the program
+///   running each declaration that states a run outcome. The settled
+///   composition carries one report per declared name, the exercised rows its
+///   settled declarations carry, the refusals of the declarations refused at
+///   their own form, which no expectation can state, the lowering's origin
+///   table, moved rather than copied, the spellings of the types its checker
+///   refusals compare and its failures name, each under its binders' names in
+///   `text`, the failures themselves, every builtin the source shadowed, every
+///   exit the lowering inferred, every run the checker inferred, the program,
+///   and no kernel artifact yet ([`admitted::Absent::Pending`]); a settle fault
+///   is carried in its place. The admission holds the arena the verdicts were
+///   judged over, the verdicts and the module's structured names.
 /// - provides: the composition a face renders before the kernel has been
 ///   offered anything; the readmission mints nothing the settle comparison or
 ///   the program reads.
@@ -1206,8 +1211,10 @@ fn judge_members<'source>(
 {
     let declarations = adapt(&module);
     let grants = grant.grants(&mut arena);
+    let entry = grant.entry(&declared_worlds(&module));
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     context.grant(grants);
+    context.enter_at(entry);
     let verdicts = check_module(&mut context, &declarations);
     let names = module.structured_names();
     let mut program = Program::new(&arena, &module, &verdicts);
@@ -1784,10 +1791,42 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
                     | DeclarationOutcome::Uncompleted { .. }
                     | DeclarationOutcome::Bodied { .. }
                     | DeclarationOutcome::Data(_)
-                    | DeclarationOutcome::Abstract(_),
+                    | DeclarationOutcome::Abstract(_)
+                    | DeclarationOutcome::World,
                     ..,
                 ) => None,
             }
+        })
+        .collect()
+}
+
+/// The worlds `module` declares, by name: what a host's named entry is read
+/// against.
+///
+/// # Specification
+/// - ensures: one entry per world declaration, its name to its admission
+///   position; a name declared twice keeps the later position, which the
+///   lowering has already refused as a duplicate.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module declaring two worlds beside other declarations,
+///   read under a host entry naming them, enters at them; a name it does not
+///   declare grants nothing.
+/// - witness: `compose::tests::a_host_entry_names_the_worlds_a_module_declares`
+#[spec(ensures: |ref ret| ret.len() <= module.declarations().len())]
+fn declared_worlds(module: &LoweredModule<'_>) -> BTreeMap<WorldName, ConstantIndex>
+{
+    module
+        .declarations()
+        .iter()
+        .filter(|declaration| matches!(declaration.outcome(), DeclarationOutcome::World))
+        .map(|declaration| {
+            (
+                WorldName::from(declaration.name().as_ref()),
+                declaration.constant(),
+            )
         })
         .collect()
 }
@@ -1802,9 +1841,11 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
 ///   completed declaration carries its declared type and its body, an
 ///   uncompleted one its declared type and a hole, a bodiless definition its
 ///   body and no signature, each of the three the laws its `respects` attribute
-///   names; a data declaration carries its native signature, shared with the
-///   lowered module, and a sealed abstract type its kind, representation,
-///   extent and site. A refused declaration is not offered.
+///   names and the entry its `entry` attribute names; a data declaration
+///   carries its native signature, shared with the lowered module, a sealed
+///   abstract type its kind, representation, extent, site and mobility, and a
+///   world declaration nothing but its position. A refused declaration is not
+///   offered.
 /// - provides: the one place that names both the lowering's module and the
 ///   checker's declaration input.
 /// - fails: never.
@@ -1836,6 +1877,8 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
                     matches!(*actual.content(), gandr_core_checker::DeclarationContent::Data(ref held) if module.data(index) == Maybe::Present(held)),
                 DeclarationOutcome::Abstract(sealing) =>
                     *actual.content() == gandr_core_checker::DeclarationContent::Abstract(abstract_type(sealing)),
+                DeclarationOutcome::World =>
+                    *actual.content() == gandr_core_checker::DeclarationContent::World,
                 DeclarationOutcome::Refused(_) => false,
             }
     })) && expected.next().is_none()
@@ -1875,24 +1918,33 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                 ));
                 continue;
             },
+            DeclarationOutcome::World => {
+                declarations.push(Declaration::world(
+                    lowered.constant(),
+                    OriginToken::from(usize::from(lowered.origin())),
+                ));
+                continue;
+            },
             DeclarationOutcome::Refused(_) => continue,
         };
-        declarations.push(
-            Declaration::new(
-                lowered.constant(),
-                declared,
-                defined,
-                OriginToken::from(usize::from(lowered.origin())),
-            )
-            .lawful(module.laws(lowered).to_vec()),
-        );
+        let declaration = Declaration::new(
+            lowered.constant(),
+            declared,
+            defined,
+            OriginToken::from(usize::from(lowered.origin())),
+        )
+        .lawful(module.laws(lowered).to_vec());
+        declarations.push(match Entry::declared(module.worlds(lowered)) {
+            Maybe::Present(entry) => declaration.entered(entry),
+            Maybe::Absent(_) => declaration,
+        });
     }
     declarations
 }
 
 /// The checker's abstract type for the sealing the lowering recorded: its
 /// kind, representation and extent, at the site its sealing module and
-/// component number.
+/// component number, mobile exactly when its signature marks it.
 ///
 /// # Specification
 /// trivial.
@@ -1907,6 +1959,10 @@ fn abstract_type(sealing: Sealing) -> AbstractType
             ComponentOrdinal::from(usize::from(sealing.component)),
         ),
     )
+    .marked(match sealing.mark {
+        Mark::Unmarked => Mobility::Immobile,
+        Mark::Mobile => Mobility::Mobile,
+    })
 }
 
 /// Have the kernel re-derive every declaration in `verdicts` the checker
@@ -1952,7 +2008,7 @@ fn abstract_type(sealing: Sealing) -> AbstractType
                     | bridge::Outcome::Marked(_) | bridge::Outcome::Static
                     | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. } | bridge::Refusal::WithheldData { .. }
                         | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }
-                        | bridge::Refusal::Session { .. }))
+                        | bridge::Refusal::Session { .. } | bridge::Refusal::Located { .. }))
                 || matches!(*crossed.outcome(), bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }) if residence(former) == Residence::Checker))),
     Err(ref fault) =>
         verdicts.judged().iter().any(|judged| judged.constant() == fault.constant())
@@ -1980,7 +2036,8 @@ fn readmitted(
                 | bridge::Refusal::WithheldData { .. }
                 | bridge::Refusal::Hole { .. }
                 | bridge::Refusal::Unknown { .. }
-                | bridge::Refusal::Session { .. },
+                | bridge::Refusal::Session { .. }
+                | bridge::Refusal::Located { .. },
             ) => {},
             bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. })
                 if residence(former) == Residence::Checker => {},
@@ -2075,9 +2132,11 @@ mod tests
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckingContext;
     use gandr_core_checker::HostGrant;
+    use gandr_core_checker::ObligationCount;
     use gandr_core_checker::Verdict;
     use gandr_core_checker::bridge;
     use gandr_core_checker::check_module;
+    use gandr_core_checker::worlds::WorldName;
     use gandr_core_term::CertificateEquality;
     use gandr_core_term::Computation;
     use gandr_core_term::CoreArena;
@@ -2123,6 +2182,7 @@ mod tests
     use super::admitted;
     use super::compose;
     use super::judge;
+    use super::judge_module;
     use super::lower_source;
     use super::readmitted;
     use crate::evaluate::Program;
@@ -2248,6 +2308,49 @@ def wrong = "text" ;"#,
             usize::from(report.ledger()),
             1_usize,
             "the owed signature is the module's one obligation"
+        );
+    }
+
+    #[test]
+    fn a_host_entry_names_the_worlds_a_module_declares()
+    {
+        let grammar = grammar();
+        let source = SourceText::from(
+            "world operator ;\nworld seat ;\ndef moved() -> -F Integer { migrate [seat] { pure 1 \
+             } }\n",
+        );
+        let moved = |grant: &HostGrant| {
+            let Lowered::Module { module, arena } =
+                lower_source(&grammar, source, &mut LoweringCount::default())
+                    .expect("the module lowers")
+                    .into_lowered()
+            else {
+                panic!("the module is not refused whole");
+            };
+            match judge_module(CorpusRoot::Fixture, (module, source), arena, grant) {
+                Ok(Composed::Settled { report, .. }) => report
+                    .declarations()
+                    .last()
+                    .map(gandr_surface_corpus::DeclarationReport::outcome),
+                Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),
+                Err(fault) => panic!("faulted: {fault}"),
+            }
+        };
+        let [operator, seat, elsewhere] = ["operator", "seat", "elsewhere"].map(WorldName::from);
+        assert_eq!(
+            moved(&HostGrant::UNBOUNDED),
+            Some(Outcome::Refuses(RefusalName::CapabilityMissing)),
+            "without an entry the migration holds no capability"
+        );
+        assert_eq!(
+            moved(&HostGrant::UNBOUNDED.entering(vec![operator.clone(), seat])),
+            Some(Outcome::Checks(ObligationCount::from(0_usize))),
+            "the host's entry at the operator holds one capability to the seat"
+        );
+        assert_eq!(
+            moved(&HostGrant::UNBOUNDED.entering(vec![operator, elsewhere])),
+            Some(Outcome::Refuses(RefusalName::HostWorldUndeclared)),
+            "a world the module declares nowhere grants nothing"
         );
     }
 
@@ -2861,6 +2964,7 @@ def h = 1 ;"#,
                 other @ (DeclarationOutcome::Uncompleted { .. }
                 | DeclarationOutcome::Data(_)
                 | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_)) => {
                     panic!("`{wanted}` lowers a body, not {other:?}")
                 },
@@ -2983,6 +3087,7 @@ def h = 1 ;"#,
             other @ (DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_)) => {
                 panic!("`{wanted}` lowers a signature, not {other:?}")
             },
@@ -2993,6 +3098,7 @@ def h = 1 ;"#,
             | DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_)) => panic!("`{wanted}` lowers a body, not {other:?}"),
         };
         let shown = |presented: Result<_, _>| {

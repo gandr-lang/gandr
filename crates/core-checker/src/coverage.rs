@@ -699,7 +699,8 @@ impl Walker<'_, '_, '_>
                 | ValueType::Abstract(_)
                 | ValueType::Session(_)
                 | ValueType::StaticPi { .. }
-                | ValueType::Staged { .. }),
+                | ValueType::Staged { .. }
+                | ValueType::World(_)),
             ) => Ok(Kind::Opaque),
         }
     }

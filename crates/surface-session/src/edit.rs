@@ -68,12 +68,14 @@
 //!
 //! # Native declaration snapshots
 //!
-//! `DeclarationTree::Value`, `DeclarationTree::Data` and
-//! `DeclarationTree::Abstract` preserve distinct declaration categories. Data
-//! snapshots retain their kind, parameter telescope and every constructor
-//! field; an abstract type its kind, its representation, the extent of its
-//! seal and its minting site. A schema or category change replaces the item
-//! through delete/insert; native term children still receive localized edits.
+//! `DeclarationTree::Value`, `DeclarationTree::Data`,
+//! `DeclarationTree::Abstract` and `DeclarationTree::World` preserve distinct
+//! declaration categories. Data snapshots retain their kind, parameter
+//! telescope and every constructor field; an abstract type its kind, its
+//! representation, the extent of its seal, its minting site and the mobility
+//! its signature marks; a world declaration has no roots. A schema or
+//! category change replaces the item through delete/insert; native term
+//! children still receive localized edits.
 //! Record labels, constructor tags, nominal identities and all variadic
 //! children participate in agreement. The child reader is an unbounded borrowed
 //! iterator, not a fixed three-child buffer.
@@ -512,7 +514,11 @@ pub enum DeclarationTree
         extent: gandr_kernel_term::SealExtent,
         /// The site that mints the atom.
         site: gandr_core_checker::SealSite,
+        /// Whether its signature marks it mobile.
+        mobility: gandr_core_checker::worlds::Mobility,
     },
+    /// A world declaration; it has no roots.
+    World,
 }
 
 /// One item of a revision: its identity, its signature and its body, each
@@ -590,7 +596,8 @@ impl ItemTree
                 ..
             }
             | DeclarationTree::Data { .. }
-            | DeclarationTree::Abstract { .. } => None,
+            | DeclarationTree::Abstract { .. }
+            | DeclarationTree::World => None,
         }
     }
 
@@ -613,7 +620,8 @@ impl ItemTree
                 ..
             }
             | DeclarationTree::Data { .. }
-            | DeclarationTree::Abstract { .. } => None,
+            | DeclarationTree::Abstract { .. }
+            | DeclarationTree::World => None,
         }
     }
 }
@@ -727,7 +735,8 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
                                     && parameters.iter().chain(constructors.iter().flatten()).chain(core::iter::once(kind)).all(ordered)
                                     && spans.is_empty()
                             } }
- else if let DeclarationTree::Abstract {ref kind,ref representation,extent,site} = *matched_left_value && let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_right_value { ordered(kind) && ordered(representation) && extent == sealed.extent() && site == sealed.site() && spans.is_empty() }
+ else if let DeclarationTree::Abstract {ref kind,ref representation,extent,site,mobility} = *matched_left_value && let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_right_value { ordered(kind) && ordered(representation) && extent == sealed.extent() && site == sealed.site() && mobility == sealed.mobility() && spans.is_empty() }
+ else if matches!(*matched_left_value, DeclarationTree::World) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::World) { spans.is_empty() }
  else { false }
 }
                     }
@@ -821,9 +830,13 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
                         .0,
                         extent: sealed.extent(),
                         site: sealed.site(),
+                        mobility: sealed.mobility(),
                     },
                     Vec::new(),
                 ),
+                gandr_core_checker::DeclarationContent::World => {
+                    (DeclarationTree::World, Vec::new())
+                },
             };
             if let Some(&Maybe::Present(span)) = located.first() {
                 bodies.push((span, ItemOrdinal::from(ordinal)));
@@ -3182,7 +3195,7 @@ where
 /// - ensures: preserves the arena node’s former and non-child payload, resolves
 ///   constants by program identity, and invokes `child` in former order with
 ///   each child’s sort. An absent arena entry is Unresolved at the requested
-///   sort.
+///   sort, and so is a world form, as incremental content lists it.
 /// - panics: only if `child` panics.
 ///
 /// # Adequacy
@@ -3242,6 +3255,7 @@ where
                 Computation::ListFold { .. } => matches!(ret, ContentNode::ListFold { .. }),
                 Computation::Session(ref action) => matches!(ret, ContentNode::Session(ref found) if found.shape() == action.shape()),
                 Computation::Memory(ref form) => matches!(ret, ContentNode::Memory(ref found) if found.shape() == form.shape()),
+                Computation::World(_) => ret == ContentNode::Unresolved(Sort::Computation),
             },
         )
 },
@@ -3521,7 +3535,9 @@ where
             )
             .unwrap_or_else(|never| match never {}),
         ),
-        None => ContentNode::Unresolved(Sort::Computation),
+        // A located program is judged whole, never edited by node: its world
+        // forms, as incremental content lists them, stand by their sort.
+        Some(&Computation::World(_)) | None => ContentNode::Unresolved(Sort::Computation),
     }
 }
 
@@ -3531,9 +3547,9 @@ where
 /// - requires: `child` numbers the supplied child roots.
 /// - ensures: preserves the arena node’s former and non-child payload, resolves
 ///   constants by program identity, and invokes `child` in former order with
-///   each child’s sort. An absent arena entry is Unresolved at the requested
 ///   sort, and so is a staged type: a stage is one judgement's own and names
-///   nothing a program's content could hold.
+///   nothing a program's content could hold. A world type is Unresolved too, as
+///   incremental content lists it.
 /// - panics: only if `child` panics.
 ///
 /// # Adequacy
@@ -3605,7 +3621,7 @@ where
                     if found.protocol() == session.protocol() && found.state() == session.state()
                         && found.payloads().len() == session.payloads().len()),
                 ValueType::Unknown => ret == ContentNode::UnknownType,
-                ValueType::Staged { .. } => ret == ContentNode::Unresolved(Sort::ValueType),
+                ValueType::Staged { .. } | ValueType::World(_) => ret == ContentNode::Unresolved(Sort::ValueType),
             },
         )
 },
@@ -3729,7 +3745,9 @@ where
                 .unwrap_or_else(|never| match never {}),
         ),
         Some(&ValueType::Unknown) => ContentNode::UnknownType,
-        Some(&ValueType::Staged { .. }) | None => ContentNode::Unresolved(Sort::ValueType),
+        Some(&(ValueType::Staged { .. } | ValueType::World(_))) | None => {
+            ContentNode::Unresolved(Sort::ValueType)
+        },
     }
 }
 

@@ -207,9 +207,10 @@
 //! and the lowering needs no annotation of its own. A block with no last
 //! computation is refused at the block as `Arity` with zero. `recv(c) as x;`
 //! binds `x` as `run x <- c;` does, `fork (c : S) t as d;` runs `t` beside
-//! the rest of the block (the `lower::session` module), and `hold x = e;`
-//! holds `e` for the rest of the block (the `lower::access` module). The
-//! statements `val`, `unpack` and `leta` are refused as `Unadmitted`, and
+//! the rest of the block (the `lower::session` module), `hold x = e;`
+//! holds `e` for the rest of the block (the `lower::access` module), and
+//! `leta x = v;` opens the handle `v` over it (the `lower::world` module).
+//! The statements `val` and `unpack` are refused as `Unadmitted`, and
 //! `acquire`, `release` and the shared `fork !` as `Reserved`, each named by
 //! its form at its keyword; and a `run` binder that is annotated or is a
 //! pattern other than a name is refused as `Unadmitted`, at the annotation or
@@ -512,6 +513,7 @@ use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::Protocol;
 use gandr_core_term::session::SessionAction;
+use gandr_core_term::world::WorldForm;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::BaseType;
@@ -543,7 +545,7 @@ use crate::attribute::AttributeTable;
 use crate::attribute::PayloadForm;
 use crate::attribute::PayloadVerdict;
 use crate::attribute::RegisteredAttribute;
-use crate::attribute::laws;
+use crate::attribute::names;
 use crate::attribute::payload;
 use crate::attribute::payload_form;
 use crate::attribute::payload_verdict;
@@ -672,6 +674,8 @@ mod sealing;
 mod session;
 
 mod ua;
+
+mod world;
 
 quenchant_shape::reason_enum! {
     /// Why a node has no lowered core node.
@@ -1236,7 +1240,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1298,6 +1302,8 @@ fn ending(former: Former) -> Ending
         | Former::SessionType
         | Former::Action
         | Former::Access
+        | Former::World
+        | Former::WorldDeclaration
         | Former::Reserved
         | Former::Unadmitted => Ending::Inferred,
     }
@@ -1323,7 +1329,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1395,7 +1401,8 @@ fn iterating(former: Former) -> Ending
                     | Former::Scope
                     | Former::Action
                     | Former::Offer
-                    | Former::Access,
+                    | Former::Access
+                    | Former::World,
                 Family::Term
             ) | (
                 Former::TypeHead
@@ -1428,6 +1435,7 @@ fn iterating(former: Former) -> Ending
                     | Former::Data
                     | Former::Mutual
                     | Former::Reserved
+                    | Former::WorldDeclaration
                     | Former::Unadmitted,
                 Family::Neither
             )
@@ -1469,7 +1477,8 @@ const fn family_of(former: Former) -> Family
         | Former::Scope
         | Former::Action
         | Former::Offer
-        | Former::Access => Family::Term,
+        | Former::Access
+        | Former::World => Family::Term,
         Former::TypeHead
         | Former::TypePath
         | Former::Universe
@@ -1498,6 +1507,7 @@ const fn family_of(former: Former) -> Family
         | Former::Data
         | Former::Mutual
         | Former::Reserved
+        | Former::WorldDeclaration
         | Former::Unadmitted => Family::Neither,
     }
 }
@@ -1656,6 +1666,15 @@ enum StatementBinding
     {
         /// The value held.
         value: NodeIndex,
+    },
+    /// `leta x = v ;` opens the handle `v`, binding `x`, an intuitionistic
+    /// hypothesis located at the handle's world, over the rest of the block.
+    Opened
+    {
+        /// The handle opened.
+        value: NodeIndex,
+        /// The name's own node.
+        name: NodeIndex,
     },
 }
 
@@ -2313,6 +2332,9 @@ enum Plan
     /// A temporary-access form: an access over its body and unwind, or an
     /// eliminator of its view.
     Access(access::Accessed),
+    /// A located form or type: a handle type `A at w`, a hold or a
+    /// migration.
+    World(world::Worlded),
 }
 
 /// A node's lowered core node, at the sort its own form produced.
@@ -4022,7 +4044,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Operand::Signature
                     | Operand::Presented
                     | Operand::Code
-                    | Operand::Model(_) => {},
+                    | Operand::Model(_)
+                    | Operand::World => {},
                 }
             }
         }
@@ -4672,12 +4695,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::SessionType => self.session_type(site),
             Former::Action | Former::Offer => self.session_action(site, cursor),
             Former::Access => self.access_form(site, pieces),
+            Former::World => self.world_form(site, pieces),
             Former::Declaration | Former::Module => self.function(site, cursor),
             Former::AttributeBlock
             | Former::Import
             | Former::Data
             | Former::Mutual
             | Former::Reserved
+            | Former::WorldDeclaration
             | Former::Unadmitted => Err(site.out(FragmentBoundary::WrongSort)),
         }
     }
@@ -6339,6 +6364,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }
                     else if label == TileName::RECV {
                         self.receive(cursor, at, frame)?
+                    }
+                    else if label == TileName::LETA {
+                        self.leta(cursor, at, frame)?
                     }
                     else if self.joined.contains(&site.at.node) {
                         return Err(LoweringRefusal::OutOfFragment {
@@ -10161,7 +10189,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -10182,7 +10210,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Data(..)
                 | Plan::Expansion(..)
                 | Plan::Capability(..)
-                | Plan::Session(..) => Some(Produced::ValueType),
+                | Plan::Session(..)
+                | Plan::World(world::Worlded::At { .. }) => Some(Produced::ValueType),
                 | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
@@ -10414,6 +10443,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Plan::Action(ref action, subject) => self.mint_action(action, subject, sink, origin),
             Plan::Access(accessed) => self.mint_access(accessed, sink, origin),
+            Plan::World(worlded) => self.mint_world(worlded, sink, origin),
             Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
             Plan::Ride(motive, flow, value) => self.mint_ride((motive, flow, value), sink, origin),
             Plan::FlowThen(first, second) => self.mint_flow_then(first, second, sink, origin),
@@ -11402,6 +11432,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Session(..)
             | Plan::Action(..)
             | Plan::Access(_)
+            | Plan::World(_)
             | Plan::TelescopeTransport(_)
             | Plan::Capability(..)
             | Plan::Effectful(..)
@@ -11425,9 +11456,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   `fork (c : S) t as d ;` mints as the fork of `t` at `S` whose parent
     ///   is the rest of the block, at its `fork` tile's origin; a hold `hold x
     ///   = e ;` mints as the hold of `e` whose scope is the rest of the block,
-    ///   at its `hold` tile's origin; a block of no statements is its last
-    ///   computation; nothing is minted when any computation, value or protocol
-    ///   of the block did not lower.
+    ///   at its `hold` tile's origin; a `leta x = v ;` mints as the opening of
+    ///   `v` whose body is the rest of the block, at its `leta` tile's origin,
+    ///   binding the name; a block of no statements is its last computation;
+    ///   nothing is minted when any computation, value or protocol of the block
+    ///   did not lower.
     /// - provides: the block half of thunks, lambdas and function tails.
     /// - fails: never.
     /// - panics: none.
@@ -11498,6 +11531,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 chain = id;
                 continue;
             }
+            if let StatementBinding::Opened { value, name } = statement.binding {
+                let Maybe::Present(value) = self.value_at(value)
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                let id = sink
+                    .arena
+                    .computation_world(WorldForm::Leta { value, body: chain });
+                sink.origins.record_computation(id, origin);
+                if let Maybe::Present(name) = self.origin_at(name) {
+                    sink.origins.record_binder(id, name);
+                }
+                chain = id;
+                continue;
+            }
             if let StatementBinding::Forked { protocol, child } = statement.binding {
                 let (Maybe::Present(protocol), Maybe::Present(child)) =
                     (self.value_type_at(protocol), self.computation_at(child))
@@ -11521,7 +11569,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 StatementBinding::Named(_)
                 | StatementBinding::Typed { .. }
                 | StatementBinding::Forked { .. }
-                | StatementBinding::Held { .. } => None,
+                | StatementBinding::Held { .. }
+                | StatementBinding::Opened { .. } => None,
                 StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
                 StatementBinding::Split(arity) => Some(arity),
             };
@@ -11550,7 +11599,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | StatementBinding::Discarded
                 | StatementBinding::Split(_)
                 | StatementBinding::Forked { .. }
-                | StatementBinding::Held { .. } => bound,
+                | StatementBinding::Held { .. }
+                | StatementBinding::Opened { .. } => bound,
             };
             let id = sink.arena.computation_bind(bound, chain);
             sink.origins.record_computation(id, origin);
@@ -11586,7 +11636,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     #[spec(ensures: |ret| match statement.binding {
         | StatementBinding::Forked { protocol, child } => (ret == Maybe::Present(())) == (matches!(self.value_type_at(protocol), Maybe::Present(_)) && matches!(self.computation_at(child), Maybe::Present(_))),
-        | StatementBinding::Held { value } => (ret == Maybe::Present(())) == matches!(self.value_at(value), Maybe::Present(_)),
+        | StatementBinding::Held { value } | StatementBinding::Opened { value, .. } => (ret == Maybe::Present(())) == matches!(self.value_at(value), Maybe::Present(_)),
         | StatementBinding::Typed { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.computation_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
         | _ => (ret == Maybe::Present(())) == matches!(self.computation_at(statement.bound), Maybe::Present(_)),
     })]
@@ -11600,7 +11650,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .value_type_at(protocol)
                 .and_then(|_protocol| self.computation_at(child))
                 .map(|_child| ()),
-            StatementBinding::Held { value } => self.value_at(value).map(|_value| ()),
+            StatementBinding::Held { value } | StatementBinding::Opened { value, .. } => {
+                self.value_at(value).map(|_value| ())
+            },
             StatementBinding::Typed { annotation, .. } => self
                 .computation_at(statement.bound)
                 .and_then(|_bound| self.value_type_at(annotation))
@@ -12172,8 +12224,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   under the module form's content identity, its refusal offered to the
     ///   module's first member. An `explicit_exits` attribute marks the slot it
     ///   decorates, or every member slot of the module it decorates, as asking
-    ///   for written exits. A `respects` attribute's laws, the constants its
-    ///   payload names, are filed beside its entry.
+    ///   for written exits. The constants a `respects` or `entry` payload names
+    ///   are filed beside its entry, as laws or as worlds.
     /// - provides: the attribute side table of the lowered module, and the
     ///   slots the `explicit-exits` lint reads as asked.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] and
@@ -12281,7 +12333,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             for written in &module.attributes {
                 self.fuel.spend()?;
                 match self.read_attribute(written, &mut seen, arena) {
-                    Ok(Filing::Filed { entry, laws }) => {
+                    Ok(Filing::Filed { entry, named }) => {
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             self.asked.extend(
                                 (usize::from(module.first) .. usize::from(module.end))
@@ -12294,10 +12346,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 .map(SlotIndex::from),
                         );
                         let key = self.key_at(module.module.node);
+                        let attribute = entry.name();
                         table.file(key, entry);
-                        if !laws.is_empty() {
-                            table.file_laws(key, laws);
-                        }
+                        table.file_named(key, attribute, named);
                     },
                     Ok(Filing::Unlowered) => {},
                     Err(refusal) => {
@@ -12372,16 +12423,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             for written in core::mem::take(&mut slot.attributes) {
                 self.fuel.spend()?;
                 match self.read_attribute(&written, &mut seen, arena) {
-                    Ok(Filing::Filed { entry, laws }) => {
+                    Ok(Filing::Filed { entry, named }) => {
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             let _first = self.asked.insert(SlotIndex::from(index));
                         }
                         self.ask_runs(&entry, [SlotIndex::from(index)]);
                         let key = self.key_at(written.decorates);
+                        let attribute = entry.name();
                         table.file(key, entry);
-                        if !laws.is_empty() {
-                            table.file_laws(key, laws);
-                        }
+                        table.file_named(key, attribute, named);
                     },
                     Ok(Filing::Unlowered) => {},
                     Err(refusal) => {
@@ -12546,8 +12596,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   unlowered, which is the case of a payload that itself refused; a text
     ///   where a marker-or-option schema stands is admitted only when it spells
     ///   the option, and is ill-typed as another text otherwise; a `respects`
-    ///   payload is admitted only when it names laws, which the filing carries,
-    ///   and is ill-typed as another value otherwise.
+    ///   or `entry` payload is admitted only when it names declarations, which
+    ///   the filing carries, and is ill-typed as another value otherwise.
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the unknown-attribute refusal with its bounded
     ///   suggestion, the duplicate refusal naming the first spelling, the
@@ -12570,7 +12620,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         captures: before = seen.len(),
         ensures: |ret| match ret.as_ref() {
-            | Ok(&Filing::Filed { ref entry, ref laws }) => {
+            | Ok(&Filing::Filed { ref entry, ref named }) => {
                 seen.len() == before.saturating_add(1_usize)
                     && seen.last() == Some(&(entry.name(), written.span))
                     && entry.span() == written.span
@@ -12583,7 +12633,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         },
                         | _ => false,
                     }
-                    && laws.is_empty() == (entry.schema() != AttributeSchema::Laws)
+                    && named.is_empty() == (entry.schema() != AttributeSchema::Names)
             },
             | Ok(&Filing::Unlowered) => {
                 seen.len() == before
@@ -12658,8 +12708,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 else {
                     return Ok(Filing::Unlowered);
                 };
-                let named = if schema == AttributeSchema::Laws {
-                    let Maybe::Present(named) = laws(arena, value)
+                let named = if schema == AttributeSchema::Names {
+                    let Maybe::Present(named) = names(arena, value)
                     else {
                         return Err(LoweringRefusal::IllTypedPayload {
                             span: placed.span,
@@ -12680,7 +12730,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
         Ok(Filing::Filed {
             entry: AttributeEntry::new(name, schema, value, written.span),
-            laws: named,
+            named,
         })
     }
 
@@ -13105,7 +13155,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .into_iter()
             .any(|half| match half {
                 Maybe::Present(Half {
-                    operand: Operand::Signature,
+                    operand: Operand::Signature | Operand::World,
                     ..
                 })
                 | Maybe::Absent(_) => false,
@@ -13141,14 +13191,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: the slot and its member coordinates are interpreted in this
     ///   lowering run.
     /// - ensures: a stored refusal takes precedence, then a refusal a check
-    ///   after minting filed; a data declaration, or a described family the
-    ///   decoder admitted, `Sig` among them, is the index of its minted
-    ///   signature; an operation, and a `sign` block's definition, is the type
-    ///   and body minted for it; an abstract slot is the abstract type it
-    ///   lowered to, and a kind witness the check of its type member's code at
-    ///   the kind; otherwise the available signature — written, a function
-    ///   tail's, or the type a model derives — and body select Completed,
-    ///   Uncompleted or Bodied.
+    ///   after minting filed; a world declaration is the world it names; a data
+    ///   declaration, or a described family the decoder admitted, `Sig` among
+    ///   them, is the index of its minted signature; an operation, and a `sign`
+    ///   block's definition, is the type and body minted for it; an abstract
+    ///   slot is the abstract type it lowered to, and a kind witness the check
+    ///   of its type member's code at the kind; otherwise the available
+    ///   signature — written, a function tail's, or the type a model derives —
+    ///   and body select Completed, Uncompleted or Bodied.
     /// - provides: the declaration outcome without manufacturing absent halves.
     /// - fails: a refused member witness is Unminted; if neither half exists,
     ///   the signature’s absence is preserved.
@@ -13174,6 +13224,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             else if let Some(&refusal) = self.faults.get(&position) {
                 ret == Maybe::Present(DeclarationOutcome::Refused(refusal))
+            }
+            else if let Maybe::Present(Half { operand: Operand::World, .. }) = slot.definition {
+                ret == Maybe::Present(DeclarationOutcome::World)
             }
             else if let Maybe::Present(Half { operand: Operand::Data(form), .. }) = slot.definition {
                 ret == self.signatures.get(&form).map_or(Maybe::Absent(lowered::Absent::Unminted), |&index| Maybe::Present(DeclarationOutcome::Data(index)))
@@ -13209,7 +13262,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Operand::Written(written) => self.value_type_at(written.node),
                         | Operand::Function => self.signature_at(half.declaration.node),
                         | Operand::Model(_) => self.modelled.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -13222,7 +13275,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .get(&position)
                             .copied()
                             .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code | Operand::Model(_) => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code | Operand::Model(_) | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -13243,7 +13296,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Maybe::Absent(reason) => {
                         declared == Maybe::Absent(reason) && matches!(body, Maybe::Absent(_))
                     },
-                    | Maybe::Present(DeclarationOutcome::Refused(_) | DeclarationOutcome::Data(_) | DeclarationOutcome::Abstract(_)) => false,
+                    | Maybe::Present(DeclarationOutcome::Refused(_) | DeclarationOutcome::Data(_) | DeclarationOutcome::Abstract(_) | DeclarationOutcome::World) => false,
                 }
             }
         },
@@ -13259,6 +13312,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if let Some(&refusal) = self.faults.get(&position) {
             return Maybe::Present(DeclarationOutcome::Refused(refusal));
+        }
+        if let Maybe::Present(Half {
+            operand: Operand::World,
+            ..
+        }) = slot.definition
+        {
+            return Maybe::Present(DeclarationOutcome::World);
         }
         if let Maybe::Present(Half {
             operand: Operand::Data(form),
@@ -13369,7 +13429,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Operand::Operation
                 | Operand::Signature
                 | Operand::Presented
-                | Operand::Code => Maybe::Absent(lowered::Absent::Unminted),
+                | Operand::Code
+                | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
             },
             Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
@@ -13389,7 +13450,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Operand::Signature
                 | Operand::Presented
                 | Operand::Code
-                | Operand::Model(_) => Maybe::Absent(lowered::Absent::Unminted),
+                | Operand::Model(_)
+                | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
             },
             Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
@@ -13665,15 +13727,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Filing
 {
-    /// The entry to file, and the laws a `respects` payload names: empty for
-    /// every other attribute, and never empty for `respects`, whose payload
-    /// names at least one.
+    /// The entry to file, and the declarations a `respects` or `entry`
+    /// payload names: empty for every other attribute, and never empty for
+    /// those two, whose payload names at least one.
     Filed
     {
         /// The entry.
         entry: AttributeEntry,
-        /// The laws its payload names, in written order.
-        laws: Vec<ConstantIndex>,
+        /// The declarations its payload names, in written order.
+        named: Vec<ConstantIndex>,
     },
     /// Nothing: the payload did not lower, which only a payload that itself
     /// refused leaves behind.
@@ -14019,9 +14081,9 @@ fn parameter<'source>(
 
 /// The statements a block opens with a keyword the fragment does not read, by
 /// that keyword, with the form a refusal names each by and the way each
-/// leaves the fragment: `val`, `unpack` and `leta` are not admitted, and
-/// `acquire` and `release` are reserved for shared sessions; `fork` is read
-/// apart, because its two statements share the keyword.
+/// leaves the fragment: `val` and `unpack` are not admitted, and `acquire`
+/// and `release` are reserved for shared sessions; `fork` is read apart,
+/// because its two statements share the keyword.
 ///
 /// # Specification
 /// - requires: lookup is by a block’s leading keyword.
@@ -14039,7 +14101,7 @@ fn parameter<'source>(
 ///   and boundaries, including the shared fork outside this table.
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
 /// - witness: `lower::session::tests::sharing_is_reserved_by_name`
-const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 5_usize] = [
+const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 4_usize] = [
     (
         TileName::VAL,
         FormName::VAL_STATEMENT,
@@ -14048,11 +14110,6 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 5_usize] = [
     (
         TileName::UNPACK,
         FormName::UNPACK_STATEMENT,
-        FragmentBoundary::Unadmitted,
-    ),
-    (
-        TileName::LETA,
-        FormName::LETA_STATEMENT,
         FragmentBoundary::Unadmitted,
     ),
     (
@@ -14074,8 +14131,8 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 5_usize] = [
 /// - requires: `cursor` stands at the tile `label`, in a block, at a place a
 ///   statement may start.
 /// - ensures: `fork` followed by `!` is the shared fork, reserved; a keyword of
-///   the table its form and boundary; `run`, `recv`, `hold` and `fork` without
-///   `!` open statements the block reads, [`statement::Absent::Read`].
+///   the table its form and boundary; `run`, `recv`, `hold`, `leta` and `fork`
+///   without `!` open statements the block reads, [`statement::Absent::Read`].
 /// - provides: the names a block's refused statements are written as;
 ///   [`statement::Absent::NotAKeyword`] for a tile no statement starts with.
 /// - fails: never.
@@ -14096,7 +14153,7 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 5_usize] = [
         ret == if shared {
             Maybe::Present((FormName::FORK_SHARED_STATEMENT, FragmentBoundary::Reserved))
         }
-        else if label == TileName::FORK || label == TileName::RUN || label == TileName::RECV || label == TileName::HOLD {
+        else if label == TileName::FORK || label == TileName::RUN || label == TileName::RECV || label == TileName::HOLD || label == TileName::LETA {
             Maybe::Absent(statement::Absent::Read)
         }
         else {
@@ -14125,7 +14182,11 @@ fn statement_form(
             Maybe::Absent(_) => Maybe::Absent(statement::Absent::Read),
         };
     }
-    if label == TileName::RUN || label == TileName::RECV || label == TileName::HOLD {
+    if label == TileName::RUN
+        || label == TileName::RECV
+        || label == TileName::HOLD
+        || label == TileName::LETA
+    {
         return Maybe::Absent(statement::Absent::Read);
     }
 
@@ -14602,6 +14663,8 @@ pub fn parse_literal(
         | Former::Action
         | Former::Offer
         | Former::Access
+        | Former::World
+        | Former::WorldDeclaration
         | Former::Reserved
         | Former::Unadmitted => return Maybe::Absent(literal::Absent::NotALiteral),
     };
@@ -15119,6 +15182,7 @@ mod tests
             DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_) => {
                 panic!("the declaration lowers a body")
             },
@@ -15151,6 +15215,7 @@ mod tests
             DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_) => {
                 panic!("the declaration lowers a signature")
             },

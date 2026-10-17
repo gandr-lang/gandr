@@ -304,6 +304,7 @@ pub(crate) fn session_at(
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::World(_)
         | ValueTypeView::Unknown => Err(CheckRefusal::MachineInvariant),
     }
 }
@@ -361,6 +362,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
+        | ValueTypeView::World(_)
         | ValueTypeView::Unknown => declared,
     };
     match value_type_view(context.arena(), head)? {
@@ -390,6 +392,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
+        | ValueTypeView::World(_)
         | ValueTypeView::Unknown => Ok(()),
     }
 }

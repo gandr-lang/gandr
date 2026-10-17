@@ -23,6 +23,7 @@
 //! | `gandr check <paths>` | each unsettled declaration, each source refused as a whole | any unsettled declaration |
 //! | `gandr check --goals <paths>` | as `check`, a declaration unsettled by its obligations alone marked `goal:` | any unsettled declaration but those |
 //! | `gandr check --grant <operations> <paths>` | as `check`, every capability a declaration holds bounded by the host operations named, comma-separated and repeatable (`--grant read,write`): one claiming another is refused by name; without the flag every held capability is owed | as `check`, and an operation no host interface offers |
+//! | `gandr check --entry <worlds> <paths>` | as `check`, every declaration entered at the worlds named, comma-separated as an `entry` attribute names them (`--entry operator,seat`): its home first, then one capability per later world; a declaration stating its own entry is checked within it, and a source declaring one of the worlds nowhere grants nothing; without the flag a declaration stands where it states | as `check` |
 //! | `gandr check --jobs <threads> <paths>` | as `check`, its sources parsed and lowered on that many threads | as `check` |
 //! | `gandr check --lint explicit-exits <paths>` | as `check`, plus a warning for every exit the lowering inferred where a body ends, each with the fix that writes its keyword; without the flag only the declarations and modules marked `@[ explicit_exits ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --lint explicit-runs <paths>` | as `check`, plus a warning for every run the checker inferred where a computation stands in a position that reads a value, each with the fix that writes `run`; `--lint explicit-runs=effects` reports only the runs that perform an effect; without a flag only the declarations and modules marked `@[ explicit_runs ]` or `@[ explicit_runs("effects") ]` are linted | as `check`: a finding settles nothing |
@@ -274,6 +275,7 @@ use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::WorldName;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::PageWidth;
@@ -351,6 +353,13 @@ enum Command
         /// any other is refused. Without it, every held capability is owed.
         #[arg(long, value_delimiter = ',', value_name = "OPERATIONS")]
         grant: Option<Vec<OperationName>>,
+        /// Enter every declaration at these worlds, comma-separated: its home
+        /// first, then the world of each capability the host hands it, as an
+        /// `entry` attribute names them. A declaration stating its own entry
+        /// is checked within this one. Without it, a declaration stands where
+        /// it states.
+        #[arg(long, value_delimiter = ',', value_name = "WORLDS")]
+        entry: Vec<WorldName>,
         /// How much of each report to print.
         #[arg(long, value_enum, default_value_t = Level::User)]
         verbosity: Level,
@@ -722,6 +731,7 @@ fn main() -> ExitCode
             goals,
             lint,
             grant,
+            entry,
             verbosity,
             jobs,
             paths,
@@ -733,6 +743,7 @@ fn main() -> ExitCode
                     Err(refused) => return ungranted(&refused),
                 },
             };
+            let grant = grant.entering(entry);
             (
                 Invocation::Check {
                     goals: if goals { Goals::Reported } else { Goals::Gated },

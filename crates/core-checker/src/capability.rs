@@ -86,7 +86,9 @@
 //!   exercise carries no evidence beyond the operation it names. Reversal: when
 //!   the kernel admits effectful computations.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::CompType;
@@ -105,6 +107,7 @@ use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::host::AuthorityError;
 use gandr_core_term::effect::host::HostSignatures;
 use gandr_kernel_term::ConstantIndex;
+use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
 use crate::formation::FormedValueType;
@@ -115,6 +118,9 @@ use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::view::ValueTypeView;
 use crate::view::value_type_view;
+use crate::worlds::Entry;
+use crate::worlds::HostEntry;
+use crate::worlds::WorldName;
 
 /// The authority the host grants a module's held capabilities at the
 /// checker's entry.
@@ -128,22 +134,34 @@ pub enum Grants
     Within(EffectRow),
 }
 
-/// The host operations a run grants, by name: what a driver states before
-/// any arena holds the types those operations carry.
+/// The host operations a run grants and the entry it enters every
+/// declaration at, by name: what a driver states before any arena holds the
+/// types those operations carry or any source declares the worlds.
 ///
 /// # Specification
 /// - ensures: every operation a grant names is one the host declares, checked
 ///   when the grant is formed; [`HostGrant::grants`] mints it into a module's
-///   own arena as the [`Grants`] its checking context is bounded by.
+///   own arena as the [`Grants`] its checking context is bounded by, and
+///   [`HostGrant::entry`] reads its worlds against the ones a module declares
+///   as the [`HostEntry`] its checking context enters at.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a grant of host operations bounds a held capability
 ///   within it and refuses one beyond it; an undeclared operation is refused
-///   when the grant is formed; the unbounded grant bounds nothing.
+///   when the grant is formed; the unbounded grant bounds nothing; a named
+///   entry reads as the module's worlds, or as undeclared where the module
+///   declares one of them nowhere.
 /// - witness: `capability::tests::a_named_grant_bounds_the_held_capabilities`
+/// - witness: `capability::tests::a_named_entry_reads_as_the_declared_worlds`
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[repr(transparent)]
-pub struct HostGrant(Named);
+pub struct HostGrant
+{
+    /// The host operations every held capability is bounded by.
+    operations: Named,
+    /// The worlds of the host's entry, its home first and then the world of
+    /// each capability: none for no entry.
+    worlds: Vec<WorldName>,
+}
 
 /// What a [`HostGrant`] names.
 ///
@@ -160,13 +178,18 @@ enum Named
 
 impl HostGrant
 {
-    /// No grant: every held capability is a hypothesis the ledger owes.
-    pub const UNBOUNDED: Self = Self(Named::Unbounded);
+    /// No grant and no entry: every held capability is a hypothesis the
+    /// ledger owes, and every declaration stands where it states.
+    pub const UNBOUNDED: Self = Self {
+        operations: Named::Unbounded,
+        worlds: Vec::new(),
+    };
 
     /// The grant of exactly `operations`, each the host's.
     ///
     /// # Specification
-    /// - ensures: a grant naming the operations, a repeated one once.
+    /// - ensures: a grant naming the operations, a repeated one once, and no
+    ///   entry.
     /// - fails: an operation no host interface offers.
     /// - panics: none.
     ///
@@ -178,7 +201,9 @@ impl HostGrant
     /// # Adequacy
     /// - hypothesis: L3 — as [`HostGrant`].
     /// - witness: `capability::tests::a_named_grant_bounds_the_held_capabilities`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Self(Named::Unbounded))))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |grant| {
+        matches!(grant.operations, Named::Within(_)) && grant.worlds.is_empty()
+    }))]
     #[inline]
     pub fn within<'name, Operations>(operations: Operations) -> Result<Self, AuthorityError>
     where
@@ -187,7 +212,37 @@ impl HostGrant
         let named: BTreeSet<OperationName> = operations.into_iter().cloned().collect();
         let host = HostSignatures::new(&mut CoreArena::new()).map_err(AuthorityError::Conflict)?;
         let _authority = host.authority(&named)?;
-        Ok(Self(Named::Within(named)))
+        Ok(Self {
+            operations: Named::Within(named),
+            worlds: Vec::new(),
+        })
+    }
+
+    /// This grant, entering every declaration at `worlds`: its home first,
+    /// then the world of each capability, as an `entry` attribute names
+    /// them.
+    ///
+    /// # Specification
+    /// - ensures: the same operations, and the entry `worlds` names in order;
+    ///   no entry for no world.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`HostGrant::entry`].
+    /// - witness: `capability::tests::a_named_entry_reads_as_the_declared_worlds`
+    #[spec(captures: count = worlds.len(), ensures: |ret| ret.worlds.len() == count)]
+    #[inline]
+    #[must_use]
+    pub fn entering(
+        self,
+        worlds: Vec<WorldName>,
+    ) -> Self
+    {
+        Self {
+            operations: self.operations,
+            worlds,
+        }
     }
 
     /// The grant as a checking context's bound, minted into `arena`.
@@ -204,7 +259,7 @@ impl HostGrant
     /// # Adequacy
     /// - hypothesis: L3 — as [`HostGrant`].
     /// - witness: `capability::tests::a_named_grant_bounds_the_held_capabilities`
-    #[spec(ensures: |ret| matches!(ret, Grants::Unbounded) == matches!(self.0, Named::Unbounded))]
+    #[spec(ensures: |ret| matches!(ret, Grants::Unbounded) == matches!(self.operations, Named::Unbounded))]
     #[inline]
     #[must_use]
     pub fn grants(
@@ -212,7 +267,7 @@ impl HostGrant
         arena: &mut CoreArena,
     ) -> Grants
     {
-        let Named::Within(ref named) = self.0
+        let Named::Within(ref named) = self.operations
         else {
             return Grants::Unbounded;
         };
@@ -224,6 +279,48 @@ impl HostGrant
             Err(_conflict) => EffectRow::EMPTY,
         };
         Grants::Within(authority)
+    }
+
+    /// The grant's entry as a checking context's, read against the worlds a
+    /// module declares by name.
+    ///
+    /// # Specification
+    /// - ensures: [`HostEntry::Unbounded`] for a grant naming no world;
+    ///   [`HostEntry::Undeclared`] when a world it names is not in `declared`;
+    ///   otherwise [`HostEntry::Within`] the entry at the first world's
+    ///   declaration, holding one capability per later world's, in order.
+    /// - fails: never — an undeclared world is an answer, refused where a
+    ///   declaration is judged at it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — no world, declared worlds and a world the module does
+    ///   not declare separate the three answers.
+    /// - witness: `capability::tests::a_named_entry_reads_as_the_declared_worlds`
+    #[spec(ensures: |ret| match ret {
+        HostEntry::Unbounded => self.worlds.is_empty(),
+        HostEntry::Undeclared => !self.worlds.is_empty(),
+        HostEntry::Within(ref entry) => entry.capabilities().len() == self.worlds.len().saturating_sub(1),
+    })]
+    #[inline]
+    #[must_use]
+    pub fn entry(
+        &self,
+        declared: &BTreeMap<WorldName, ConstantIndex>,
+    ) -> HostEntry
+    {
+        let mut worlds = Vec::with_capacity(self.worlds.len());
+        for world in &self.worlds {
+            let Some(&constant) = declared.get(world)
+            else {
+                return HostEntry::Undeclared;
+            };
+            worlds.push(constant);
+        }
+        match Entry::declared(&worlds) {
+            Maybe::Present(entry) => HostEntry::Within(entry),
+            Maybe::Absent(_) => HostEntry::Unbounded,
+        }
     }
 }
 
@@ -309,6 +406,7 @@ pub fn authorise(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::Abstract(_)
+        | ValueTypeView::World(_)
         | ValueTypeView::Staged { .. } => Err(CheckRefusal::ShapeMismatch {
             at: TermNode::Value(capability),
             wanted: ExpectedShape::Capability,
@@ -397,6 +495,9 @@ pub fn reaches(
                 },
                 ValueType::Session(ref session) => {
                     pending.extend(session.payloads().iter().copied().map(TypeNode::Value));
+                },
+                ValueType::World(ref world) => {
+                    pending.extend(world.types().map(TypeNode::Value));
                 },
                 ValueType::PathUniverse(..)
                 | ValueType::Run(_)

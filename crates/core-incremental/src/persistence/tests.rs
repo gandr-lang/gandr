@@ -373,6 +373,7 @@ fn kind(typing: &Typing) -> Key
     Key(match *typing {
         Typing::Data => "data",
         Typing::Refused(Refusal::NotADataType(_)) => "not-a-data-type",
+        Typing::Refused(Refusal::Located { .. }) => "located",
         Typing::Refused(Refusal::DataKindNotUniverse(_)) => "data-kind-not-universe",
         Typing::Refused(Refusal::DataFieldLevel { .. }) => "data-field-level",
         Typing::Refused(Refusal::RuleNotPresentable { .. }) => "rule-not-presentable",

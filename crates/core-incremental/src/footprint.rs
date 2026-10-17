@@ -213,7 +213,7 @@ enum Position
     && ret.opacity == content.opacity()
     && ret.hole == match *(content.declaration()) {
 crate::content::DeclarationRoots::Value { body:Maybe::Absent(body::Absent::Hole),.. } => HoleMark::Hole,
-crate::content::DeclarationRoots::Value { body:Maybe::Present(_),.. } | crate::content::DeclarationRoots::Data(_) | crate::content::DeclarationRoots::Abstract(_) => HoleMark::Filled,
+crate::content::DeclarationRoots::Value { body:Maybe::Present(_),.. } | crate::content::DeclarationRoots::Data(_) | crate::content::DeclarationRoots::Abstract(_) | crate::content::DeclarationRoots::World => HoleMark::Filled,
 })]
 #[inline]
 #[must_use]
@@ -271,7 +271,8 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
                 ..
             }
             | crate::content::DeclarationRoots::Data(_)
-            | crate::content::DeclarationRoots::Abstract(_) => HoleMark::Filled,
+            | crate::content::DeclarationRoots::Abstract(_)
+            | crate::content::DeclarationRoots::World => HoleMark::Filled,
         },
     }
 }

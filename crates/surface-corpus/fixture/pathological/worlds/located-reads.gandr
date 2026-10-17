@@ -1,0 +1,55 @@
+// A value is read at the world it stands at. What reads one elsewhere, makes
+// a handle for another world, or names a world nothing declares is refused
+// where it does.
+
+// The operator's and the seat's worlds, and the seat's sealed side of the
+// exchange.
+import "../../model/worlds/seat-and-operator.gandr" ;
+
+/// A handle to the seat's report opened at the operator's world and used
+/// there, refused at the use: what the handle holds is the seat's.
+@[ refuses("Elsewhere") ]
+@[ entry(operator) ]
+def readHere(report : Seat.Report at seat) -> -F Seat.Report {
+  leta written = report;
+  pure written
+}
+
+/// A handle for the seat made at the operator's world, refused: `hold` makes
+/// a handle at the world it runs at, never at another.
+@[ refuses("HoldElsewhere") ]
+@[ entry(operator) ]
+def forged() -> -F (Seat.Report at seat) {
+  (hold Seat.progress)
+}
+
+/// A handle made where no entry places the declaration, refused: the host's
+/// own world is no world a handle names.
+@[ refuses("Unlocated") ]
+def unplaced() -> -F (Seat.Report at seat) {
+  (hold Seat.progress)
+}
+
+/// A migration to a definition, refused: a world position names a world
+/// declaration, and `collect` is the operator's turn.
+@[ refuses("UndeclaredWorld") ]
+@[ entry((operator, seat)) ]
+def toAValue() -> -F Seat.Report {
+  migrate [collect] { pure Seat.progress }
+}
+
+/// A value that is no handle opened as one, refused at the opening.
+@[ refuses("NotAHandle") ]
+@[ entry(seat) ]
+def unhandled() -> -F Seat.Report {
+  leta written = Seat.progress;
+  pure written
+}
+
+/// A call to an entry point from another declaration, refused: an entry is
+/// the host's to grant, and a call would hand it on.
+@[ refuses("EntryNamed") ]
+@[ entry((operator, seat)) ]
+def relayed() -> -F Seat.Report {
+  collect()
+}

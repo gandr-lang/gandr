@@ -910,6 +910,9 @@ pub enum Computation
     /// A memory form: hold a value exclusively, access it through a view,
     /// or end a view by resuming or aborting it.
     Memory(crate::memory::MemoryForm),
+    /// A world form: hold a value at the current world, open a handle at its
+    /// world, or migrate to another world.
+    World(crate::world::WorldForm),
 }
 
 /// A value type: the positive fragment of the core type vocabulary.
@@ -1076,6 +1079,9 @@ pub enum ValueType
         /// How long it lives.
         region: crate::effect::capability::Region,
     },
+    /// A type that names a world: `A at w`, a handle to a value meaningful
+    /// at `w`, or `cap_w`, the one-shot authority to migrate to `w`.
+    World(crate::world::WorldType),
 }
 
 impl ValueType
@@ -2636,6 +2642,17 @@ fn equal_syntax(
                                 .map(|(a, b)| C(a, b)),
                         );
                     },
+                    (&Computation::World(ref left), &Computation::World(ref right)) => {
+                        if left.shape() != right.shape() {
+                            return CertificateEquality::Different;
+                        }
+                        pending.extend(left.values().zip(right.values()).map(|(a, b)| V(a, b)));
+                        pending.extend(
+                            left.computations()
+                                .zip(right.computations())
+                                .map(|(a, b)| C(a, b)),
+                        );
+                    },
                     _ => return CertificateEquality::Different,
                 }
             },
@@ -2846,6 +2863,12 @@ fn equal_syntax(
                                 return CertificateEquality::Different;
                             }
                         }
+                    }
+                    else if let ValueType::World(ref first) = *matched_left_value
+                        && let ValueType::World(ref second) = *matched_right_value
+                        && first.shape() == second.shape()
+                    {
+                        pending.extend(first.types().zip(second.types()).map(|(a, b)| VT(a, b)));
                     }
                     else if (matches!(
                         *matched_left_value,
@@ -3802,6 +3825,13 @@ mod tests
             view: DeBruijnIndex::from(0_u32),
         });
         cases.push((twin, same, alloc::vec![other], "a memory form"));
+        let migrate = |world: usize| crate::world::WorldForm::Migrate {
+            world: crate::world::World::Declared(ConstantIndex::from(world)),
+            body: returned,
+        };
+        let [twin, same, other] =
+            [0_usize, 0, 1].map(|world| arena.computation_world(migrate(world)));
+        cases.push((twin, same, alloc::vec![other], "a world form"));
         let unit_list = arena.value_type_list(unit_type);
         let unit_motive = arena.comp_type_returner(unit_list);
         let [twin, same] = [(); 2].map(|()| arena.computation_ascribe(returned, motive));

@@ -930,6 +930,17 @@ pub enum CheckRefusal
         /// How it breaks.
         defect: crate::access::AccessDefect,
     },
+    /// A located judgement broke: a value crossed where its type does not, a
+    /// migration found no capability or stands where one may run twice, a
+    /// hypothesis was used at another world, or an entry, a world or a
+    /// mobility mark does not hold (see [`crate::worlds`]).
+    Located
+    {
+        /// The node the judgement breaks at.
+        at: CoreNode,
+        /// How it breaks.
+        defect: crate::worlds::LocatedDefect,
+    },
     /// A computation written where a value is read and run there, with no
     /// computation enclosing it to run before: one in a definition's own
     /// value, or under static content.
@@ -1123,7 +1134,7 @@ impl CheckRefusal
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::UnenclosedRun { .. }
-        | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. }
+        | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
         | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
@@ -1182,6 +1193,7 @@ impl CheckRefusal
             | Self::SessionMismatch { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }
+            | Self::Located { .. }
             | Self::CapabilityForged { .. }
             | Self::CapabilityAmplified(_)
             | Self::CapabilityOutsideAuthority { .. }
@@ -1390,6 +1402,7 @@ impl CheckRefusal
             | Self::UnenclosedRun { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }
+            | Self::Located { .. }
             | Self::SessionNotEquivalent { .. }
             | Self::SessionNotSubtype { .. }
             | Self::SessionCodeExpected { .. }

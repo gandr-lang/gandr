@@ -143,7 +143,10 @@ impl Image
                 | Value::Hole(_),
             )
             | Self::Computation(
-                Computation::Hole(_) | Computation::Session(_) | Computation::Memory(_),
+                Computation::Hole(_)
+                | Computation::Session(_)
+                | Computation::Memory(_)
+                | Computation::World(_),
             )
             | Self::ValueType(
                 ValueType::Base(_)
@@ -153,7 +156,8 @@ impl Image
                 | ValueType::Abstract(_)
                 | ValueType::Capability { .. }
                 | ValueType::Unknown
-                | ValueType::Session(_),
+                | ValueType::Session(_)
+                | ValueType::World(_),
             )
             | Self::CompType(CompType::Unknown) => [None, None, None, None, None],
             Self::ValueType(ValueType::Stack {
@@ -610,8 +614,6 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         }
                                     }));
                                 },
-                                // refused_by: container_member · collision: none (both sides
-                                // edited, nowhere the same lines)
                                 Value::Primitive { .. }
                                 | Value::PathRefl(_)
                                 | Value::PathProduct(..)
@@ -723,6 +725,17 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                             ),
                                     );
                                 },
+                                Computation::World(ref form) => {
+                                    self.pending.extend(
+                                        form.values()
+                                            .map(|value| Task::Open(Node::Value(value)))
+                                            .chain(
+                                                form.computations().map(|body| {
+                                                    Task::Open(Node::Computation(body))
+                                                }),
+                                            ),
+                                    );
+                                },
                                 Computation::Primitive { .. }
                                 | Computation::Transport(..)
                                 | Computation::PathTransport { .. }
@@ -777,6 +790,9 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         .rev()
                                         .map(|&ty| Task::Open(Node::ValueType(ty))),
                                 ),
+                                ValueType::World(ref ty) => self
+                                    .pending
+                                    .extend(ty.types().map(|ty| Task::Open(Node::ValueType(ty)))),
                                 ValueType::Capability { ref authority, .. } => {
                                     self.pending.extend(
                                         authority
@@ -989,9 +1005,20 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 |&mut (), body| map_computation(body),
                             )?;
                         },
+                        Image::Computation(Computation::World(ref mut form)) => {
+                            *form = form.try_map(
+                                crate::session::ChildOrder::Forward,
+                                &mut (),
+                                |&mut (), value| map_value(value),
+                                |&mut (), body| map_computation(body),
+                            )?;
+                        },
                         Image::ValueType(ValueType::Session(ref mut session)) => {
                             *session = session
                                 .try_map_payloads(crate::session::ChildOrder::Forward, map_type)?;
+                        },
+                        Image::ValueType(ValueType::World(ref mut ty)) => {
+                            *ty = ty.try_map(map_type)?;
                         },
                         Image::ValueType(ValueType::Capability {
                             ref mut authority, ..

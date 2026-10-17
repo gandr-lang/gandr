@@ -303,6 +303,7 @@ where
         other @ (DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
         | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),
     }
 }
@@ -335,6 +336,7 @@ where
         other @ (DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
         | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a body, not {other:?}"),
     }
 }
@@ -1057,6 +1059,7 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
         | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),
     };
     let (spelled, aliased) = (signature("spelled"), signature("aliased"));

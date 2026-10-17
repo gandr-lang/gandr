@@ -59,6 +59,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
+use gandr_core_term::world::WorldForm;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -477,7 +478,9 @@ impl<'source> Lowerer<'_, 'source>
             | Former::LazyRecord
             | Former::Scope
             | Former::Access
+            | Former::World
             | Former::Declaration
+            | Former::WorldDeclaration
             | Former::Module => (Leaves::Never, Breaks::Never),
             Former::Loop if broken == Breaks::Never => (Leaves::Always, Breaks::Never),
             Former::Loop | Former::While | Former::For => (Leaves::Sometimes, Breaks::Never),
@@ -1215,6 +1218,13 @@ pub(super) fn commute(
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(scope, ends, depth));
                     },
+                    // A `leta`'s body is its tail, one binder deeper; a
+                    // migration's body is not, for what follows a migration
+                    // runs back at the world it left.
+                    Some(Computation::World(WorldForm::Leta { body: scope, .. })) => {
+                        steps.push(Step::Close(node));
+                        steps.push(Step::Open(scope, ends, depth.deeper()));
+                    },
                     _ => match ends.rests {
                         Maybe::Absent(_) => results.push(node),
                         Maybe::Present(at) => match settled.get(at.0) {
@@ -1712,7 +1722,8 @@ fn rebuild(
         | Computation::Split { .. }
         | Computation::Lambda(_)
         | Computation::Session(SessionAction::Fork { .. })
-        | Computation::Memory(MemoryForm::Hold { .. }) => 1_usize,
+        | Computation::Memory(MemoryForm::Hold { .. })
+        | Computation::World(WorldForm::Leta { .. }) => 1_usize,
         Computation::Fixpoint { .. } if sink.loops.contains(&node) => 1_usize,
         Computation::Primitive { .. }
         | Computation::Transport(..)
@@ -1739,7 +1750,8 @@ fn rebuild(
         | Computation::With(..)
         | Computation::Project(..)
         | Computation::Session(_)
-        | Computation::Memory(_) => 0_usize,
+        | Computation::Memory(_)
+        | Computation::World(_) => 0_usize,
     };
     let commuted = results.split_off(results.len().saturating_sub(count));
     let rebuilt = match (held, commuted.as_slice()) {
@@ -1804,6 +1816,12 @@ fn rebuild(
             if commuted != body =>
         {
             sink.arena.computation_memory(MemoryForm::Hold {
+                value,
+                body: commuted,
+            })
+        },
+        (Computation::World(WorldForm::Leta { value, body }), &[commuted]) if commuted != body => {
+            sink.arena.computation_world(WorldForm::Leta {
                 value,
                 body: commuted,
             })

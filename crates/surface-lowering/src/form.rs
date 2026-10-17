@@ -140,7 +140,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 53_usize] = [
+    pub const ALL: [Self; 54_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -170,6 +170,7 @@ impl FormName
         Self::EXPRESSION_STATEMENT,
         Self::MODULE,
         Self::DATA,
+        Self::WORLD_DECLARATION,
         Self::DATA_GENERATOR,
         Self::CONSTRUCTOR_BLOCK_MEMBER,
         Self::CELL_MEMBER,
@@ -259,6 +260,8 @@ impl FormName
     pub const VAL_STATEMENT: Self = Self("val_statement");
     /// The data declaration `data T(a : A) : U { … }`.
     pub const DATA: Self = Self("data_declaration");
+    /// The world declaration `world w ;`.
+    pub const WORLD_DECLARATION: Self = Self("world_declaration");
     /// A data block's generator member `C : (x : A) --> T(a)`, inlined into
     /// the declaration.
     pub const DATA_GENERATOR: Self = Self("data_generator");
@@ -453,8 +456,16 @@ impl TileName
     pub const AT: Self = Self("at");
     /// The capability scope's lead `handle`.
     pub const HANDLE: Self = Self("handle");
-    /// The keyword `hold`, opening a statement that holds a value.
+    /// The keyword `hold`, opening a statement that holds a value, and the
+    /// located hold `hold v` that returns `v` held at the current world.
     pub const HOLD: Self = Self("hold");
+    /// The keyword `migrate`, opening a migration `migrate [w] { t }`.
+    pub const MIGRATE: Self = Self("migrate");
+    /// The keyword `mobile`, marking an abstract signature component whose
+    /// representation may cross between worlds.
+    pub const MOBILE: Self = Self("mobile");
+    /// The keyword `world`, opening a world declaration `world w ;`.
+    pub const WORLD: Self = Self("world");
     /// The sort literal `+` of a universe: the value types.
     pub const PLUS: Self = Self("+");
     /// A double quote opening or closing a string written among a form's own
@@ -779,6 +790,14 @@ pub enum Former
     /// unwind { u }` and the eliminators `resume(v, e)` and `abort(v)` that
     /// end its view.
     Access,
+    /// A located form the world register reads: the hold `hold v`, returning
+    /// `v` held at the current world, and the migration `migrate [w] { t }`,
+    /// running `t` at the world `w` names; the third, `leta x = v ;`, is a
+    /// statement its block reads.
+    World,
+    /// The world declaration `world w ;`: a top-level item naming a world,
+    /// with no body and no type.
+    WorldDeclaration,
     /// A form parsed so it is declined by name until the engine has it:
     /// `dup`, which waits on shared sessions.
     Reserved,
@@ -804,7 +823,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 61_usize] = [
+    pub const ALL: [Self; 63_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -864,6 +883,8 @@ impl Former
         Self::Action,
         Self::Offer,
         Self::Access,
+        Self::World,
+        Self::WorldDeclaration,
         Self::Reserved,
         Self::Unadmitted,
     ];
@@ -888,7 +909,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 73_usize] = [
+pub const FORMERS: [(&str, Former); 76_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -961,6 +982,9 @@ pub const FORMERS: [(&str, Former); 73_usize] = [
     ("access_expression", Former::Access),
     ("resume_expression", Former::Access),
     ("abort_expression", Former::Access),
+    ("hold_expression", Former::World),
+    ("migrate_expression", Former::World),
+    ("world_declaration", Former::WorldDeclaration),
     ("dup_expression", Former::Reserved),
 ];
 

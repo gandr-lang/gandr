@@ -2433,6 +2433,18 @@ pub fn loose_reach(
                                 .map(|child| (CoreNode::Term(TermNode::Computation(child)), depth)),
                         );
                     },
+                    Computation::World(form) => match form {
+                        gandr_core_term::world::WorldForm::Hold { value } => {
+                            work.push((CoreNode::Term(TermNode::Value(value)), depth));
+                        },
+                        gandr_core_term::world::WorldForm::Leta { value, body } => {
+                            work.push((CoreNode::Term(TermNode::Value(value)), depth));
+                            work.push((CoreNode::Term(TermNode::Computation(body)), under));
+                        },
+                        gandr_core_term::world::WorldForm::Migrate { body, .. } => {
+                            work.push((CoreNode::Term(TermNode::Computation(body)), depth));
+                        },
+                    },
                     Computation::Hole(_) => {},
                 }
             },
@@ -2495,6 +2507,11 @@ pub fn loose_reach(
                                 .map(|&payload| (CoreNode::Type(TypeNode::Value(payload)), depth)),
                         );
                     },
+                    ValueType::World(ref world) => work.extend(
+                        world
+                            .types()
+                            .map(|ty| (CoreNode::Type(TypeNode::Value(ty)), depth)),
+                    ),
                     ValueType::Base(_)
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)

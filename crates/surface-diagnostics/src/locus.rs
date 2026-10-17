@@ -50,8 +50,12 @@ use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
+use gandr_core_checker::worlds::Crossed;
+use gandr_core_checker::worlds::LocatedDefect;
+use gandr_core_checker::worlds::Predicate;
 use gandr_core_term::effect::Purity;
 use gandr_core_term::session::ActionKind;
+use gandr_core_term::world::World;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_kernel_term::Standing;
 use gandr_surface_corpus::CorpusRefusal;
@@ -701,7 +705,7 @@ impl Annotations
             | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. } => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label,
             }) && ret.context == UNNAMED,
-        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::RepresentationAboveKind { .. } | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityForged { .. } | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityEscaped { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } => ret.context == UNNAMED,
+        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::RepresentationAboveKind { .. } | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityForged { .. } | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityEscaped { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
 fn checked(
@@ -923,7 +927,8 @@ fn checked(
                 | LinearityDefect::Unrestricted
                 | LinearityDefect::Unbound { .. },
         }
-        | CheckRefusal::Access { at, .. } => (node(origins, at), UNNAMED),
+        | CheckRefusal::Access { at, .. }
+        | CheckRefusal::Located { at, .. } => (node(origins, at), UNNAMED),
     };
     let primary = match primary {
         Maybe::Present(span) => Maybe::Present(Annotation { span, label }),
@@ -1385,6 +1390,75 @@ impl fmt::Display for Checked
                     "the access's unwind performs an effect: an unwind runs under the empty row",
                 ),
             },
+            | CheckRefusal::Located { defect, .. } => match defect {
+                | LocatedDefect::Immobile {
+                    crossed, predicate, ..
+                } => write!(
+                    f,
+                    "{} crosses to another world, but its type {}",
+                    match crossed {
+                        | Crossed::Result => "the migration's result",
+                        | Crossed::Constant => "the declaration named here",
+                    },
+                    match predicate {
+                        | Predicate::Mobile => "has a former that is not mobile",
+                        | Predicate::Open => "is not closed over the world it leaves",
+                    }
+                ),
+                | LocatedDefect::CapabilityMissing { world } => write!(
+                    f,
+                    "the migration to {} finds no capability: its entry was granted none, or an earlier migration spent it",
+                    Place(world)
+                ),
+                | LocatedDefect::CapabilityCaptured { world, by } => write!(
+                    f,
+                    "the migration to {} stands inside {}, which may spend its capability other than once",
+                    Place(world),
+                    Captor(by)
+                ),
+                | LocatedDefect::Elsewhere { bound } => write!(
+                    f,
+                    "the value was bound at {}, and is used at another world",
+                    Place(bound)
+                ),
+                | LocatedDefect::HoldElsewhere { wanted } => write!(
+                    f,
+                    "the hold makes a handle at the world it runs at, not at {}",
+                    Place(wanted)
+                ),
+                | LocatedDefect::Unlocated => f.write_str(
+                    "a hold or a `leta` stands at the host's own world, where no handle is made or opened",
+                ),
+                | LocatedDefect::UndeclaredWorld { world } => write!(
+                    f,
+                    "declaration {} is not a world",
+                    usize::from(world)
+                ),
+                | LocatedDefect::HostWorldUndeclared => {
+                    f.write_str("the host's entry names a world the source does not declare")
+                },
+                | LocatedDefect::MarkUnfounded { predicate, .. } => write!(
+                    f,
+                    "the abstract type is marked `mobile`, but its representation {}",
+                    match predicate {
+                        | Predicate::Mobile => "has a former that is not mobile",
+                        | Predicate::Open => "is not closed over the world it leaves",
+                    }
+                ),
+                | LocatedDefect::EntryNamed { constant } => write!(
+                    f,
+                    "declaration {} is an entry: it spends a capability, and only the host may run it",
+                    usize::from(constant)
+                ),
+                | LocatedDefect::EntryUngranted { constant } => write!(
+                    f,
+                    "declaration {} states an entry the host's does not hold",
+                    usize::from(constant)
+                ),
+                | LocatedDefect::NotAHandle { .. } => {
+                    f.write_str("a `leta` opens a handle at a world, and this value is none")
+                },
+            },
             | CheckRefusal::CapabilityForged { .. } => f.write_str(
                 "a capability type is inhabited only by a capability hypothesis, and this term \
                  is none",
@@ -1584,6 +1658,46 @@ impl fmt::Display for Captor
             Capture::Stack => "a first-class stack",
             Capture::Continuation => "a continuation a handler or a shift may resume",
         })
+    }
+}
+
+/// A world, as prose.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Place(pub World);
+
+impl fmt::Display for Place
+{
+    /// Writes the world: the host's, or a declared one by its position.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one noun phrase per world.
+    /// - provides: the world a located refusal's title names.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no written text or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the host's world and a declared one read apart.
+    /// - witness: `locus::tests::a_located_title_names_its_world`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match self.0 {
+            World::Host => f.write_str("the host's world"),
+            World::Declared(constant) => {
+                write!(
+                    f,
+                    "the world declaration {} declares",
+                    usize::from(constant)
+                )
+            },
+        }
     }
 }
 
@@ -2287,5 +2401,34 @@ mod tests
         })
         .into();
         assert_eq!(captors.len(), 5_usize, "each captor is named apart");
+    }
+
+    #[test]
+    fn a_located_title_names_its_world()
+    {
+        use gandr_core_checker::worlds::LocatedDefect;
+        use gandr_core_term::world::World;
+        use gandr_kernel_term::ConstantIndex;
+        let mut arena = CoreArena::new();
+        let unit = arena.value_unit();
+        let migration = arena.computation_return(unit);
+        let at = CoreNode::Term(TermNode::Computation(migration));
+        let missing = |world| {
+            Checked(CheckRefusal::Located {
+                at,
+                defect: LocatedDefect::CapabilityMissing { world },
+            })
+            .to_string()
+        };
+        let host = missing(World::Host);
+        let seat = missing(World::Declared(ConstantIndex::from(3_usize)));
+        assert!(
+            host.contains("the host's world"),
+            "the host's world is named as such: {host}"
+        );
+        assert!(
+            seat.contains("declaration 3"),
+            "a declared world is named by its declaration: {seat}"
+        );
     }
 }

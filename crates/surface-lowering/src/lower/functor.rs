@@ -662,7 +662,9 @@ impl<'source> Lowerer<'_, 'source>
                     continue;
                 };
                 let renamed = match own {
-                    DeclarationOutcome::Refused(_) | DeclarationOutcome::Data(_) => continue,
+                    DeclarationOutcome::Refused(_)
+                    | DeclarationOutcome::Data(_)
+                    | DeclarationOutcome::World => continue,
                     DeclarationOutcome::Completed {
                         declared_type,
                         body,
@@ -694,6 +696,7 @@ impl<'source> Lowerer<'_, 'source>
                                 .copied()
                                 .unwrap_or(instance.structure),
                             component: sealing.component,
+                            mark: sealing.mark,
                         })
                     },
                 };

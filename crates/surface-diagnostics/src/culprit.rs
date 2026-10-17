@@ -57,6 +57,7 @@ use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
+use gandr_core_checker::worlds::LocatedDefect;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
@@ -326,6 +327,20 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             AccessDefect::Spent => "a view already ended",
             AccessDefect::NotAView => "no view here",
             AccessDefect::UnwindEffect => "an effect in an unwind",
+        },
+        CheckRefusal::Located { defect, .. } => match defect {
+            LocatedDefect::Immobile { .. } => "a value whose type does not cross",
+            LocatedDefect::CapabilityMissing { .. } => "no capability for the world",
+            LocatedDefect::CapabilityCaptured { .. } => "a migration that may run other than once",
+            LocatedDefect::Elsewhere { .. } => "a value bound at another world",
+            LocatedDefect::HoldElsewhere { .. } => "a hold wanted at another world",
+            LocatedDefect::Unlocated => "a handle made or opened at the host's own world",
+            LocatedDefect::UndeclaredWorld { .. } => "no world declaration",
+            LocatedDefect::HostWorldUndeclared => "a world the source does not declare",
+            LocatedDefect::MarkUnfounded { .. } => "a representation that does not cross",
+            LocatedDefect::EntryNamed { .. } => "an entry named from another declaration",
+            LocatedDefect::EntryUngranted { .. } => "an entry the host did not grant",
+            LocatedDefect::NotAHandle { .. } => "not a handle at a world",
         },
         CheckRefusal::CapabilityForged { .. } => "no capability hypothesis",
         CheckRefusal::CapabilityAmplified(_) => "a capability granting less",

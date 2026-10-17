@@ -258,6 +258,10 @@ pub fn sentence(role: FrameRole) -> Sentence
         FrameRole::AccessBody => "checking the body of this access",
         FrameRole::AccessUnwind => "checking the unwind of this access under the empty row",
         FrameRole::ResumeValue => "checking the value this resume writes back",
+        FrameRole::WorldHold => "synthesising the value this holds at its world",
+        FrameRole::LetaValue => "synthesising the handle this opens",
+        FrameRole::LetaBody => "checking the rest under the value this opens",
+        FrameRole::MigrateBody => "checking the body of this migration at its world",
     })
 }
 
@@ -561,6 +565,10 @@ mod tests
             FrameRole::AccessBody,
             FrameRole::AccessUnwind,
             FrameRole::ResumeValue,
+            FrameRole::WorldHold,
+            FrameRole::LetaValue,
+            FrameRole::LetaBody,
+            FrameRole::MigrateBody,
         ];
         let mut sentences: Vec<super::Sentence> =
             roles.iter().map(|&role| sentence(role)).collect();

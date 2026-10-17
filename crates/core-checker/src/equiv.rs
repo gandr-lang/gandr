@@ -499,6 +499,7 @@ pub fn coverage(
                     | ValueTypeView::Staged { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Session(_)
+                    | ValueTypeView::World(_)
                     | ValueTypeView::Unknown => {
                         return Ok(Maybe::Absent(uncovered::Absent::Former));
                     },

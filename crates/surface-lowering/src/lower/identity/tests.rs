@@ -113,6 +113,7 @@ pub(in crate::lower) fn judged(
                 ),
                 DeclarationOutcome::Data(_)
                 | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_) => return None,
             };
             Some(Declaration::new(
@@ -196,6 +197,7 @@ fn tail_of(
         other @ (DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
         | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name:?}` lowers a body: {other:?}"),
     };
     let Some(&Value::Thunk(mut computation)) = arena.value(body)
@@ -827,6 +829,7 @@ fn a_derived_operation_synthesises_its_path_at_the_words()
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
         | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers both halves: {other:?}"),
     };
     let moving = |at| arena.value(at) == Some(&variable(0_u32.into()));
@@ -1363,6 +1366,7 @@ fn a_move_out_of_shape_is_refused()
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
         | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_) => None,
     };
     assert_eq!(
@@ -1409,6 +1413,7 @@ fn a_relation_lowers_to_the_type_it_abbreviates()
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
         | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` is a signature: {other:?}"),
     };
     for (relation, former) in [

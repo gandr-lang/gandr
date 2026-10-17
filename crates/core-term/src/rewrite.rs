@@ -183,6 +183,35 @@ impl Binders
         )))
     }
 
+    /// The count past `binders` more binders, as a former's child that
+    /// [`crate::world::WorldForm::scoped`] reports under them is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the sum of the two counts, clamped at the representable
+    ///   ceiling, which no context reaches.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one and a sum past the u32 ceiling distinguish
+    ///   addition from saturation.
+    /// - witness: `rewrite::tests::binder_counts_clamp_at_the_ceiling`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(binders.0))]
+    #[inline]
+    #[must_use]
+    pub fn beyond(
+        self,
+        binders: Self,
+    ) -> Self
+    {
+        // reason: a binder count uses u32::MAX as its conservative ceiling.
+        Self(u32::from(arith::saturating_add(
+            arith::Int::from(self.0),
+            arith::Int::from(binders.0),
+        )))
+    }
+
     /// The count a variable at `index` reaches past: its index plus one.
     ///
     /// # Specification
@@ -1139,6 +1168,7 @@ Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
 Computation::Memory(ref form) => form.values().count().saturating_add(form.computations().count()),
+Computation::World(ref form) => form.values().count().saturating_add(form.computations().count()),
 }),
         | Node::ValueType(id) => self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
@@ -1147,6 +1177,7 @@ ValueType::Product(ref components) | ValueType::Sum(ref components) => component
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
+ValueType::World(ref ty) => ty.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } => 1,
@@ -1540,6 +1571,19 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                             .map(|child| open(Node::Value(child), depth)),
                     );
                 },
+                // A `leta`'s body stands under the one intuitionistic binder
+                // it opens; every other child stands at the form's depth.
+                Some(&Computation::World(ref form)) => {
+                    self.tasks
+                        .extend(form.scoped().rev().map(|(child, binders)| {
+                            open(Node::Computation(child), depth.beyond(binders))
+                        }));
+                    self.tasks.extend(
+                        form.values()
+                            .rev()
+                            .map(|child| open(Node::Value(child), depth)),
+                    );
+                },
             },
             Node::ValueType(id) => {
                 if let Some(matched_native_node) = self.arena.value_type(id) {
@@ -1581,6 +1625,9 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                                 .rev()
                                 .map(|ty| open(Node::ValueType(ty), depth)),
                         ),
+                        ValueType::World(ref ty) => self
+                            .tasks
+                            .extend(ty.types().map(|ty| open(Node::ValueType(ty), depth))),
                         ValueType::StaticPi {
                             domain: first,
                             codomain: second,
@@ -2330,6 +2377,7 @@ Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 Computation::Session(ref action) => action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count()),
 Computation::Memory(ref form) => form.values().count().saturating_add(form.computations().count()),
+Computation::World(ref form) => form.values().count().saturating_add(form.computations().count()),
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.computation(id).is_some_and(|original| self.arena.computation(ret).is_some_and(|rewritten|
@@ -2845,6 +2893,25 @@ Computation::Memory(ref form) => form.values().count().saturating_add(form.compu
                     self.arena.computation_memory(rewritten)
                 }
             },
+            Computation::World(ref form) => {
+                let rewritten = match form.try_map(
+                    crate::session::ChildOrder::Reverse,
+                    &mut self.results,
+                    |results, value| {
+                        Ok::<_, core::convert::Infallible>(Self::value(results, value))
+                    },
+                    |results, computation| Ok(Self::computation(results, computation)),
+                ) {
+                    Ok(rewritten) => rewritten,
+                    Err(never) => match never {},
+                };
+                if rewritten == *form {
+                    id
+                }
+                else {
+                    self.arena.computation_world(rewritten)
+                }
+            },
         }
     }
 
@@ -2872,6 +2939,7 @@ ValueType::Product(ref components) | ValueType::Sum(ref components) => component
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
+ValueType::World(ref ty) => ty.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
 ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } => 1,
@@ -3117,6 +3185,20 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 }
                 else {
                     self.arena.value_type_session(rewritten)
+                }
+            },
+            ValueType::World(ref ty) => {
+                let rewritten = match ty.try_map(|inner| {
+                    Ok::<_, core::convert::Infallible>(Self::value_type(&mut self.results, inner))
+                }) {
+                    Ok(rewritten) => rewritten,
+                    Err(never) => match never {},
+                };
+                if rewritten == *ty {
+                    id
+                }
+                else {
+                    self.arena.value_type_world(rewritten)
                 }
             },
         }
@@ -4229,6 +4311,13 @@ fn survey_computation(
             );
         },
         Computation::Memory(ref form) => {
+            next.extend(form.values().map(|value| Position::Value(value, region)));
+            next.extend(
+                form.computations()
+                    .map(|body| Position::Computation(body, own)),
+            );
+        },
+        Computation::World(ref form) => {
             next.extend(form.values().map(|value| Position::Value(value, region)));
             next.extend(
                 form.computations()

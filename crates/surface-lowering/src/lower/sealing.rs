@@ -172,6 +172,7 @@ impl Lowerer<'_, '_>
                         extent: SealExtent::from(recorded.extent),
                         sealing: recorded.structure,
                         component: recorded.component,
+                        mark: recorded.mark,
                     });
                 },
                 Role::Witness => {

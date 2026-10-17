@@ -1743,7 +1743,8 @@ where
                             |signature| crate::content::DataContent::of(arena, layout, signature),
                         ))
                     },
-                    gandr_core_checker::DeclarationContent::Abstract(_) => Answer::Untyped,
+                    gandr_core_checker::DeclarationContent::Abstract(_)
+                    | gandr_core_checker::DeclarationContent::World => Answer::Untyped,
                 };
                 (
                     Outcome {
@@ -2011,6 +2012,11 @@ fn adopt(
                 checkpoint.typing.clone(),
                 Answer::Untyped,
             ));
+        },
+        // A world declaration belongs to a located program, whose items are
+        // opaque and returned before this.
+        gandr_core_checker::DeclarationContent::World => {
+            return Maybe::Absent(recall::Absent::Opaque);
         },
     };
     if let Maybe::Present(held) = body

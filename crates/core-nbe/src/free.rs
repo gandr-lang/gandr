@@ -42,6 +42,8 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
+use gandr_core_term::world::WorldForm;
+use gandr_core_term::world::WorldType;
 use gandr_kernel_term::DeBruijnIndex;
 
 /// Whether a set holds a count.
@@ -1259,6 +1261,16 @@ Err(_) => false,
                         },
                         MemoryForm::Abort { .. } => [None, None, None, None, None],
                     },
+                    // A `leta`'s body stands under the one intuitionistic
+                    // binder it opens.
+                    Computation::World(ref form) => match *form {
+                        WorldForm::Hold { value: held } => one(value(held), Lowering::NONE),
+                        WorldForm::Leta {
+                            value: opened,
+                            body,
+                        } => two(value(opened), computation(body), Lowering::ONE),
+                        WorldForm::Migrate { body, .. } => one(computation(body), Lowering::NONE),
+                    },
                 }
             },
             Reached::ValueType(id) => {
@@ -1279,6 +1291,12 @@ Err(_) => false,
                     ),
                     ValueType::List(element) | ValueType::Staged { base: element, .. } => {
                         one(Reached::ValueType(element), Lowering::NONE)
+                    },
+                    ValueType::World(ref ty) => match *ty {
+                        WorldType::At { inner, .. } => {
+                            one(Reached::ValueType(inner), Lowering::NONE)
+                        },
+                        WorldType::Capability(_) => [None, None, None, None, None],
                     },
                     ValueType::PathUniverse(source, target) => {
                         two(value(source), value(target), Lowering::NONE)

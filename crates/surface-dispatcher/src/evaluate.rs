@@ -1802,6 +1802,10 @@ fn references(
                     pending.extend(form.values().map(Node::Value));
                     pending.extend(form.computations().map(Node::Computation));
                 },
+                Some(&Computation::World(ref form)) => {
+                    pending.extend(form.values().map(Node::Value));
+                    pending.extend(form.computations().map(Node::Computation));
+                },
                 Some(&Computation::Hole(_)) | None => {},
             },
         }

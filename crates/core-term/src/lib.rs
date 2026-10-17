@@ -30,6 +30,9 @@
 //!   `Path` and its reflexivity `here`.
 //! - [`ua`] holds what univalence at a stratum reads: the stratum a statement
 //!   fixes and the two descriptions it relates, read as graphical species.
+//! - [`world`] holds the located vocabulary: the handle type `A at w`, the
+//!   capability `cap_w` a migration spends, and the computations `hold`, `leta`
+//!   and `migrate [w]`, one former each beside the rest of the core.
 //! - [`FailureClass`] is the four-class vocabulary every refusal of the core
 //!   pipeline answers to, whichever crate produced it.
 //!
@@ -149,6 +152,7 @@ mod rewrite;
 pub mod session;
 mod syntax;
 pub mod ua;
+pub mod world;
 
 pub use gandr_kernel_term::CellIndex;
 pub use gandr_kernel_term::Component;

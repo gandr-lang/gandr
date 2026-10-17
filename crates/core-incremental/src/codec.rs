@@ -117,12 +117,14 @@ use crate::region::Reference;
 use crate::typing::EndpointSite;
 use crate::typing::Form;
 use crate::typing::Linearity;
+use crate::typing::Located;
+use crate::typing::Place;
 use crate::typing::Refusal;
 use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0a";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0b";
 
 /// The magic and version a program's address is computed over.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x07";
@@ -151,6 +153,9 @@ pub enum UnsupportedPersistence
     /// An id of this sort that the item's arena resolves to nothing: a fact
     /// about another arena, meaningless outside this process.
     Dangling(Sort),
+    /// An item of a program that declares a world, or that states an entry:
+    /// its judgement read homes no footprint records.
+    Located,
 }
 
 /// Why bytes are not a canonical encoding, or a value has none.
@@ -207,6 +212,9 @@ impl fmt::Display for UnsupportedPersistence
                     Sort::CompType => "computation type",
                 };
                 write!(f, "an unresolved {sort} id is process-local")
+            },
+            Self::Located => {
+                f.write_str("a located program's judgements read homes no record keeps")
             },
         }
     }
@@ -2743,6 +2751,189 @@ fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
     })
 }
 
+/// Write a projected world: tag `0` for the host's, tag `1` and the
+/// declaration's reference for a declared one.
+///
+/// # Specification
+/// trivial.
+fn write_place<Out>(
+    writer: &mut Writer<'_, Out>,
+    place: &Place,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *place {
+        Place::Host => writer.tag(Tag(0)),
+        Place::Declared(ref reference) => {
+            writer.tag(Tag(1));
+            write_reference(writer, reference)?;
+        },
+    }
+    Ok(())
+}
+
+/// Read a projected world written by [`write_place`].
+///
+/// # Specification
+/// trivial.
+fn read_place(reader: &mut Reader<'_>) -> Result<Place, CodecError>
+{
+    Ok(match reader.tag()?.0 {
+        0 => Place::Host,
+        1 => Place::Declared(read_reference(reader)?),
+        _ => return Err(CodecError::Corrupt),
+    })
+}
+
+/// The crossing predicates, in stable wire order.
+const PREDICATES: [gandr_core_checker::worlds::Predicate; 2] = [
+    gandr_core_checker::worlds::Predicate::Mobile,
+    gandr_core_checker::worlds::Predicate::Open,
+];
+
+/// What crosses at a refused crossing, in stable wire order.
+const CROSSINGS: [gandr_core_checker::worlds::Crossed; 2] = [
+    gandr_core_checker::worlds::Crossed::Result,
+    gandr_core_checker::worlds::Crossed::Constant,
+];
+
+/// Write how a located judgement broke: the kind's tag, then its payloads in
+/// declaration order.
+///
+/// # Specification
+/// - ensures: the tag, then the defect's payloads in declaration order.
+/// - fails: an unrepresentable reference or type table.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every defect kind round-trips with its payload.
+/// - witness: `codec::tests::located_refusals_round_trip_with_their_worlds`
+fn write_located<Out>(
+    writer: &mut Writer<'_, Out>,
+    defect: &Located,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *defect {
+        Located::Immobile {
+            crossed,
+            ref ty,
+            ref former,
+            predicate,
+        } => {
+            writer.tag(Tag(0));
+            write_listed(writer, &CROSSINGS, &crossed)?;
+            write_type(writer, ty)?;
+            write_type(writer, former)?;
+            write_listed(writer, &PREDICATES, &predicate)?;
+        },
+        Located::CapabilityMissing { ref world } => {
+            writer.tag(Tag(1));
+            write_place(writer, world)?;
+        },
+        Located::CapabilityCaptured { ref world, by } => {
+            writer.tag(Tag(2));
+            write_place(writer, world)?;
+            write_listed(writer, &CAPTURES, &by)?;
+        },
+        Located::Elsewhere { ref bound } => {
+            writer.tag(Tag(3));
+            write_place(writer, bound)?;
+        },
+        Located::HoldElsewhere { ref wanted } => {
+            writer.tag(Tag(4));
+            write_place(writer, wanted)?;
+        },
+        Located::Unlocated => writer.tag(Tag(5)),
+        Located::UndeclaredWorld { ref world } => {
+            writer.tag(Tag(6));
+            write_reference(writer, world)?;
+        },
+        Located::HostWorldUndeclared => writer.tag(Tag(7)),
+        Located::MarkUnfounded {
+            ref atom,
+            ref former,
+            predicate,
+        } => {
+            writer.tag(Tag(8));
+            write_reference(writer, atom)?;
+            write_type(writer, former)?;
+            write_listed(writer, &PREDICATES, &predicate)?;
+        },
+        Located::EntryNamed { ref constant } => {
+            writer.tag(Tag(9));
+            write_reference(writer, constant)?;
+        },
+        Located::EntryUngranted { ref constant } => {
+            writer.tag(Tag(10));
+            write_reference(writer, constant)?;
+        },
+        Located::NotAHandle { ref found } => {
+            writer.tag(Tag(11));
+            write_type(writer, found)?;
+        },
+    }
+    Ok(())
+}
+
+/// Read a located defect written by [`write_located`].
+///
+/// # Specification
+/// - ensures: the defect of the written kind over the written payloads.
+/// - fails: malformed bytes or an unknown kind, crossing, predicate or capture.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every defect kind round-trips with its payload.
+/// - witness: `codec::tests::located_refusals_round_trip_with_their_worlds`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_located(reader: &mut Reader<'_>) -> Result<Located, CodecError>
+{
+    Ok(match reader.tag()?.0 {
+        0 => Located::Immobile {
+            crossed: read_listed(reader, &CROSSINGS)?,
+            ty: read_type(reader)?,
+            former: read_type(reader)?,
+            predicate: read_listed(reader, &PREDICATES)?,
+        },
+        1 => Located::CapabilityMissing {
+            world: read_place(reader)?,
+        },
+        2 => Located::CapabilityCaptured {
+            world: read_place(reader)?,
+            by: read_listed(reader, &CAPTURES)?,
+        },
+        3 => Located::Elsewhere {
+            bound: read_place(reader)?,
+        },
+        4 => Located::HoldElsewhere {
+            wanted: read_place(reader)?,
+        },
+        5 => Located::Unlocated,
+        6 => Located::UndeclaredWorld {
+            world: read_reference(reader)?,
+        },
+        7 => Located::HostWorldUndeclared,
+        8 => Located::MarkUnfounded {
+            atom: read_reference(reader)?,
+            former: read_type(reader)?,
+            predicate: read_listed(reader, &PREDICATES)?,
+        },
+        9 => Located::EntryNamed {
+            constant: read_reference(reader)?,
+        },
+        10 => Located::EntryUngranted {
+            constant: read_reference(reader)?,
+        },
+        11 => Located::NotAHandle {
+            found: read_type(reader)?,
+        },
+        _ => return Err(CodecError::Corrupt),
+    })
+}
+
 /// Write every root of a nominal signature, then the rules presenting it, then
 /// the free cells of a type of words.
 ///
@@ -4049,8 +4240,9 @@ where
 /// Write an item's content.
 ///
 /// # Specification
-/// - ensures: an unsupported refusal names the first unresolved table node;
-///   metadata precedes the table.
+/// - ensures: located content, which has no spelling, is refused before
+///   anything is written; an unsupported refusal names the first unresolved
+///   table node; metadata precedes the table.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — independently built programs have identical content
@@ -4060,10 +4252,15 @@ where
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 #[spec(
     ensures: |ret| match ret {
-        | Ok(()) => content
-            .nodes()
-            .iter()
-            .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+        | Ok(()) => content.locus() == crate::content::Locus::Unlocated
+            && content
+                .nodes()
+                .iter()
+                .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
+            content.locus() == crate::content::Locus::Located
+                || matches!(*content.declaration(), crate::content::DeclarationRoots::World)
+        },
         | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
             content.nodes().iter().find_map(|node| match *node {
                 | ContentNode::Unresolved(found) => Some(found),
@@ -4081,6 +4278,9 @@ fn write_item_content_with<Out>(
 where
     Out: Sink,
 {
+    if content.locus() == crate::content::Locus::Located {
+        return Err(CodecError::Unsupported(UnsupportedPersistence::Located));
+    }
     write_reference(writer, content.reference())?;
     match *(content.declaration()) {
         crate::content::DeclarationRoots::Value {
@@ -4117,12 +4317,20 @@ where
             write_data_roots(writer, roots)?;
         },
         crate::content::DeclarationRoots::Abstract(roots) => {
-            writer.tag(Tag(2));
+            // An unmarked abstract type keeps its original tag; a mobile one
+            // takes its own.
+            writer.tag(Tag(match roots.mobility {
+                gandr_core_checker::worlds::Mobility::Immobile => 2,
+                gandr_core_checker::worlds::Mobility::Mobile => 4,
+            }));
             write_index(writer, roots.kind)?;
             write_index(writer, roots.representation)?;
             writer.count(Count(usize::from(roots.extent)))?;
             writer.count(Count(usize::from(roots.site.sealing())))?;
             writer.count(Count(usize::from(roots.site.component())))?;
+        },
+        crate::content::DeclarationRoots::World => {
+            return Err(CodecError::Unsupported(UnsupportedPersistence::Located));
         },
     }
     write_nodes(writer, content.nodes())
@@ -4230,7 +4438,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
             }
         },
         1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),
-        2 => {
+        tag @ (2 | 4) => {
             let kind = read_index(reader)?;
             let representation = read_index(reader)?;
             let extent = gandr_kernel_term::SealExtent::from(reader.count()?.0);
@@ -4241,6 +4449,12 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 representation,
                 extent,
                 site: gandr_core_checker::SealSite::new(sealing, component),
+                mobility: if tag == 4 {
+                    gandr_core_checker::worlds::Mobility::Mobile
+                }
+                else {
+                    gandr_core_checker::worlds::Mobility::Immobile
+                },
             })
         },
         _ => return Err(CodecError::Corrupt),
@@ -5217,6 +5431,8 @@ where
             | Refusal::DependentBind {
                 ref synthesised, ..
             } => [synthesised.nodes(), &[]],
+            | Refusal::Located { defect: Located::Immobile { ref ty, ref former, .. }, .. } => [ty.nodes(), former.nodes()],
+            | Refusal::Located { defect: Located::MarkUnfounded { ref former, .. } | Located::NotAHandle { found: ref former }, .. } => [former.nodes(), &[]],
             | _ => [&[], &[]],
         };
         match ret {
@@ -5774,6 +5990,11 @@ where
                 write_listed(writer, &CAPTURES, &by)?;
             }
         },
+        Refusal::Located { at, ref defect } => {
+            writer.tag(Tag(79));
+            write_site(writer, at)?;
+            write_located(writer, defect)?;
+        },
     }
     Ok(())
 }
@@ -5925,6 +6146,7 @@ where
                     | Refusal::ForwardUnsupported(_) => 70,
                     | Refusal::Boundary(_) => 71,
                     | Refusal::Access { .. } => 76,
+                    | Refusal::Located { .. } => 79,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -6261,6 +6483,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             };
             Refusal::Access { at, defect }
         },
+        79 => Refusal::Located {
+            at: read_site(reader)?,
+            defect: read_located(reader)?,
+        },
         69 => {
             let at = read_site(reader)?;
             let kind = reader.tag()?.0;
@@ -6377,6 +6603,8 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                     | Refusal::DependentBind {
                         ref synthesised, ..
                     } => [synthesised.nodes(), &[]],
+                    | Refusal::Located { defect: Located::Immobile { ref ty, ref former, .. }, .. } => [ty.nodes(), former.nodes()],
+                    | Refusal::Located { defect: Located::MarkUnfounded { ref former, .. } | Located::NotAHandle { found: ref former }, .. } => [former.nodes(), &[]],
                     | _ => [&[], &[]],
                 },
                 | Typing::Data | Typing::Checked { .. } | Typing::Owed => [&[], &[]],
@@ -6628,6 +6856,8 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
                 | Refusal::DependentBind {
                     ref synthesised, ..
                 } => [synthesised.nodes(), &[]],
+                | Refusal::Located { defect: Located::Immobile { ref ty, ref former, .. }, .. } => [ty.nodes(), former.nodes()],
+                | Refusal::Located { defect: Located::MarkUnfounded { ref former, .. } | Located::NotAHandle { found: ref former }, .. } => [former.nodes(), &[]],
                 | _ => [&[], &[]],
             },
             | Typing::Data | Typing::Checked { .. } | Typing::Owed => [&[], &[]],
@@ -6644,7 +6874,11 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
             .chain(support)
             .chain(tables.into_iter().flatten());
         match ret {
-            | Ok(()) => nodes.all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+            | Ok(()) => checkpoint.content().locus() == crate::content::Locus::Unlocated
+                && nodes.all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
+                checkpoint.content().locus() == crate::content::Locus::Located
+            },
             | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
                 nodes.find_map(|node| match *node {
                     | ContentNode::Unresolved(found) => Some(found),
@@ -6831,6 +7065,19 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             Refusal::DependentBind {
                 ref synthesised, ..
             } => [Some(synthesised), None],
+            Refusal::Located {
+                defect:
+                    Located::Immobile {
+                        ref ty, ref former, ..
+                    },
+                ..
+            } => [Some(ty), Some(former)],
+            Refusal::Located {
+                defect:
+                    Located::MarkUnfounded { ref former, .. }
+                    | Located::NotAHandle { found: ref former },
+                ..
+            } => [Some(former), None],
             Refusal::NotADataType(_)
             | Refusal::DataKindNotUniverse(_)
             | Refusal::RuleNotPresentable { .. }
@@ -6896,7 +7143,8 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::RunNotAdmitted { .. }
             | Refusal::ForwardUnsupported(_)
             | Refusal::Boundary(_)
-            | Refusal::Access { .. } => [None, None],
+            | Refusal::Access { .. }
+            | Refusal::Located { .. } => [None, None],
         },
         Typing::Data | Typing::Checked { .. } | Typing::Owed => [None, None],
     };
@@ -7095,7 +7343,8 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
 /// # Specification
 /// - requires: `contents` are a program's items' contents, in order.
 /// - ensures: the magic, the count, then each item's content.
-/// - fails: [`CodecError::Unsupported`] naming the first unresolved node met.
+/// - fails: [`CodecError::Unsupported`] naming a located item, or the first
+///   unresolved node met.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -7108,10 +7357,14 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 #[spec(
     ensures: |ret| match ret {
-        | Ok(()) => contents
-            .iter()
-            .flat_map(ItemContent::nodes)
-            .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+        | Ok(()) => contents.iter().all(|content| content.locus() == crate::content::Locus::Unlocated)
+            && contents
+                .iter()
+                .flat_map(ItemContent::nodes)
+                .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
+            contents.iter().any(|content| content.locus() == crate::content::Locus::Located)
+        },
         | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
             contents
                 .iter()

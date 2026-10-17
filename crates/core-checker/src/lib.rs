@@ -219,6 +219,20 @@
 //! as [`CheckRefusal::Access`]. The rules, the frames, the decisions and what
 //! later work may assume are in [`access`].
 //!
+//! # Located judgements
+//!
+//! A world declaration names a place, and every judgement stands at one:
+//! `hold v` makes the handle `A at w` at the world it runs at, `leta x = v; t`
+//! opens one there with `x` usable at the handle's world alone, and
+//! `migrate [w] { t }` runs `t` at `w`, spending the consumable capability
+//! `cap_w` the declaration's entry holds in the linear zone. A migration's
+//! result comes back only when it crosses: mobile and open, decided on every
+//! value-type former, a sealed abstract type crossing exactly when its
+//! signature marks it `mobile`. Every way a located judgement breaks is
+//! refused by name as [`CheckRefusal::Located`]; located declarations stay on
+//! the checker's side of the kernel. The rules, the crossing table, the entry
+//! and the decisions are in [`worlds`].
+//!
 //! # Session identity
 //!
 //! `bisim(A, B)` states that two session codes are bisimilar, at `Path(Type,
@@ -474,6 +488,7 @@ mod support;
 pub mod template;
 pub mod ua;
 mod view;
+pub mod worlds;
 
 pub use crate::capability::Grants;
 pub use crate::capability::HostGrant;
@@ -506,6 +521,7 @@ pub use crate::declaration::Declaration;
 pub use crate::declaration::DeclarationContent;
 pub use crate::declaration::OriginToken;
 pub use crate::declaration::body;
+pub use crate::declaration::entry;
 pub use crate::declaration::signature;
 pub use crate::equiv::Equivalence;
 pub use crate::failure::Failure;

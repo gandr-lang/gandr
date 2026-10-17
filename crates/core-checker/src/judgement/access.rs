@@ -297,7 +297,7 @@ impl Machine<'_, '_>
         let found = self.resided(node, held)?;
         match found.resident {
             Resident::Held { .. } => {},
-            Resident::Endpoint(_) | Resident::View { .. } => {
+            Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. } => {
                 return Err(CheckRefusal::Access {
                     at: node,
                     defect: AccessDefect::NotHeld,
@@ -457,6 +457,7 @@ impl Machine<'_, '_>
         };
         let defect = match read.resident {
             Resident::Endpoint(_) => return self.endpoint_as_value(term, index),
+            Resident::Capability { .. } => AccessDefect::NotHeld,
             Resident::Held { .. } if self.sessions.lent.contains(&read.position) => {
                 AccessDefect::Lent
             },
@@ -601,7 +602,9 @@ impl Machine<'_, '_>
         let defect = match (read.resident, read.use_state) {
             (Resident::View { .. }, LinearUse::Available) => return Ok(read),
             (Resident::View { .. }, LinearUse::Consumed) => AccessDefect::Spent,
-            (Resident::Endpoint(_) | Resident::Held { .. }, _) => AccessDefect::NotAView,
+            (Resident::Endpoint(_) | Resident::Held { .. } | Resident::Capability { .. }, _) => {
+                AccessDefect::NotAView
+            },
         };
         Err(CheckRefusal::Access { at: node, defect })
     }

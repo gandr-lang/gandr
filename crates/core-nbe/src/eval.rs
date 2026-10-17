@@ -126,10 +126,10 @@
 //!
 //! Conversion refuses all eight runtime-control formers with
 //! `EvalFault::RuntimeControl(ControlFormer)`, every session action with
-//! `EvalFault::SessionAction` and every memory form with
-//! `EvalFault::MemoryForm`; it never invokes a host. Stack/With type codes
-//! still compare and read back structurally with captured scope and
-//! effect-operation types intact.
+//! `EvalFault::SessionAction`, every memory form with `EvalFault::MemoryForm`
+//! and every world form with `EvalFault::WorldForm`; it never invokes a host.
+//! Stack/With type codes still compare and read back structurally with
+//! captured scope and effect-operation types intact.
 //!
 //! **Choice.** The sequent machine executes control; conversion stays pure.
 //! Host interpretation makes equality state-dependent; erasure certifies
@@ -364,6 +364,9 @@ pub enum EvalFault
     /// A memory form reads and writes a held slot; it runs on the abstract
     /// machine, never in the certificate normalizer.
     MemoryForm,
+    /// A world form holds, opens or migrates between worlds; it runs where
+    /// the host binds its worlds, never in the certificate normalizer.
+    WorldForm,
     /// Runtime-native arithmetic is outside the certificate normalizer.
     NativePrimitive(gandr_core_term::primitive::Primitive),
     /// Transport met neither a native path nor a neutral path operand.
@@ -4274,6 +4277,7 @@ fn step_comp(
         )),
         Computation::Session(_) => Err(EvalFault::SessionAction),
         Computation::Memory(_) => Err(EvalFault::MemoryForm),
+        Computation::World(_) => Err(EvalFault::WorldForm),
         Computation::Exercise { .. } => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Exercise,
         )),
@@ -7194,7 +7198,8 @@ fn step_projection(
             | Computation::With(..)
             | Computation::Project(..)
             | Computation::Session(_)
-            | Computation::Memory(_) => EvalFault::MachineInvariant,
+            | Computation::Memory(_)
+            | Computation::World(_) => EvalFault::MachineInvariant,
         })?;
     machine
         .comps

@@ -2874,6 +2874,8 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Action
                 | Former::Offer
                 | Former::Access
+                | Former::World
+                | Former::WorldDeclaration
                 | Former::Reserved
                 | Former::Unadmitted => return Err(unannotated),
             };

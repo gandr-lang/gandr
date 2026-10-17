@@ -388,6 +388,9 @@ pub struct CheckingContext<'arena>
         Maybe<ComputationId, own::Absent>,
         Maybe<(BinderDepth, ValueTypeId), own::Absent>,
     ),
+    /// The worlds declared, each declaration's home, the entries, the host's
+    /// entry and the entry under way.
+    worlds: crate::worlds::Worlds,
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -521,6 +524,7 @@ impl<'arena> CheckingContext<'arena>
                 Maybe::Absent(own::Absent::Unopened),
                 Maybe::Absent(own::Absent::Unopened),
             ),
+            worlds: crate::worlds::Worlds::default(),
         }
     }
 
@@ -580,6 +584,33 @@ impl<'arena> CheckingContext<'arena>
     {
         if let Some(ref mut log) = self.typings {
             log.endpoints.push(standing);
+        }
+    }
+
+    /// Keep a move of the world register, when a typed run is recording: a
+    /// migration's spent capability and its return.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a recording log's moves grow by `moved` at their end; nothing
+    ///   changes otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a typed run of a migration keeps its push, with the
+    ///   capability available before and spent after, and its return.
+    /// - witness: `worlds::tests::a_migration_consumes_its_capability_visibly`
+    #[spec(
+        captures: before = self.typings.as_ref().map(|log| log.moves.len()),
+        ensures: self.typings.as_ref().map(|log| log.moves.len()) == before.map(|count| count.saturating_add(1)),
+    )]
+    pub(crate) fn keep_move(
+        &mut self,
+        moved: crate::worlds::WorldMove,
+    )
+    {
+        if let Some(ref mut log) = self.typings {
+            log.moves.push(moved);
         }
     }
 
@@ -1234,6 +1265,77 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             .get(&atom)
             .map(|sealed| sealed.level.clone())
             .ok_or(CheckRefusal::NotAnAbstractType(atom))
+    }
+
+    /// Whether the abstract type at `atom` crosses outside its seal.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the mobility the admitted abstract type's signature marks.
+    /// - fails: [`CheckRefusal::NotAnAbstractType`] when no abstract type was
+    ///   admitted at `atom`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::NotAnAbstractType`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a marked and an unmarked atom separate the answer.
+    /// - witness: `worlds::tests::mobility_is_decided_on_every_former`
+    #[spec(ensures: |ret| match self.sealed.get(&atom) {
+        | Some(sealed) => ret == Ok(sealed.declared.mobility()),
+        | None => ret == Err(CheckRefusal::NotAnAbstractType(atom)),
+    })]
+    pub(crate) fn abstract_mobility(
+        &self,
+        atom: ConstantIndex,
+    ) -> Result<crate::worlds::Mobility, CheckRefusal>
+    {
+        self.sealed
+            .get(&atom)
+            .map(|sealed| sealed.declared.mobility())
+            .ok_or(CheckRefusal::NotAnAbstractType(atom))
+    }
+
+    /// Bound every declaration's entry by the host's: the world each body is
+    /// judged at and the capabilities it holds.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every declaration judged after this stands at `host`'s entry,
+    ///   or within it as it states its own.
+    /// - panics: none.
+    /// - executable: none — the clause speaks of the judgements after this
+    ///   call, which no predicate at the call can observe.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::worlds::Worlds::resolve`].
+    /// - witness: `worlds::tests::a_stated_entry_is_bounded_by_the_host_s`
+    #[inline]
+    pub fn enter_at(
+        &mut self,
+        host: crate::worlds::HostEntry,
+    )
+    {
+        self.worlds.host(host);
+    }
+
+    /// The located state: the worlds declared, the homes and the entries.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn worlds(&self) -> &crate::worlds::Worlds
+    {
+        &self.worlds
+    }
+
+    /// The located state, to admit a world, enter or settle a declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn worlds_mut(&mut self) -> &mut crate::worlds::Worlds
+    {
+        &mut self.worlds
     }
 
     /// The abstract types admitted, ascending by position, as offered.
@@ -2213,6 +2315,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::StaticPi { .. }
                 | ValueTypeView::Session(_)
                 | ValueTypeView::Staged { .. }
+                | ValueTypeView::World(_)
                 | ValueTypeView::Unknown => return Ok(head),
             };
             let Maybe::Present(body) = self.unfold(code)?
@@ -2516,6 +2619,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Abstract(_)
                     | ValueTypeView::Session(_)
                     | ValueTypeView::Staged { .. }
+                    | ValueTypeView::World(_)
                     | ValueTypeView::Unknown => Ok(otherwise.clone()),
                 },
                 Maybe::Absent(_) => Ok(otherwise.clone()),
@@ -2566,6 +2670,16 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ) -> BinderDepth
     {
         self.binders.depth(zone)
+    }
+
+    /// The world the judgement stands at, without borrowing the binders
+    /// mutably.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn world(&self) -> gandr_core_term::world::World
+    {
+        self.binders.world()
     }
 
     /// The binders the judgement is under.

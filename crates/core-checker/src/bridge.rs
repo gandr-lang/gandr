@@ -535,7 +535,8 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::RunNotAdmitted { .. }
         | CheckRefusal::ForwardUnsupported { .. }
         | CheckRefusal::Boundary { .. }
-        | CheckRefusal::Access { .. } => Refusal::MachineInvariant,
+        | CheckRefusal::Access { .. }
+        | CheckRefusal::Located { .. } => Refusal::MachineInvariant,
     }
 }
 
@@ -586,6 +587,14 @@ pub enum Refusal
     /// channels, so a declaration that names one stays on the checker's side,
     /// as a declaration whose former the kernel lacks does.
     Session
+    {
+        /// The node.
+        at: CoreNode,
+    },
+    /// A located form, a handle or capability type, or a world: the kernel has
+    /// no worlds, so a declaration that names one stays on the checker's side,
+    /// as one naming a session does.
+    Located
     {
         /// The node.
         at: CoreNode,
@@ -664,7 +673,7 @@ impl Refusal
     /// - witness: `bridge::tests::a_hole_is_refused_where_it_stands_and_its_filling_is_admitted`
     #[spec(ensures: |ret| match *self {
         | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
-        | Self::OutOfFragment { .. } | Self::Session { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::Session { .. } | Self::Located { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
         | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
@@ -675,7 +684,9 @@ impl Refusal
     {
         match *self {
             Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
-            Self::OutOfFragment { .. } | Self::Session { .. } => FailureClass::Unrepresentable,
+            Self::OutOfFragment { .. } | Self::Session { .. } | Self::Located { .. } => {
+                FailureClass::Unrepresentable
+            },
             Self::DanglingNode { .. }
             | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. }
@@ -749,8 +760,9 @@ pub enum Outcome
     /// kernel was offered nothing.
     Marked(CheckRefusal),
     /// The declaration is static: a type operator, classified by a static
-    /// Pi, whose body normalizes away at every use. The kernel was offered
-    /// nothing; each instance a later declaration reaches is reduced, and its
+    /// Pi, whose body normalizes away at every use, or a world, whose
+    /// identity no kernel term carries. The kernel was offered nothing; each
+    /// instance of an operator a later declaration reaches is reduced, and its
     /// certificate replayed, there.
     Static,
     /// The bridge refused to offer the declaration.
@@ -1285,6 +1297,15 @@ where
                 ) {
                     (Some(signature), _) => Offer::Data(signature),
                     (None, Some(&declared)) => Offer::Abstract(declared),
+                    (None, None) if report.worlds().contains(&constant) => {
+                        readmitted.push(Readmitted {
+                            constant,
+                            origin: judged.origin(),
+                            outcome: Outcome::Static,
+                            certificates: Vec::new(),
+                        });
+                        continue;
+                    },
                     (None, None) => {
                         readmitted.push(Readmitted {
                             constant,
@@ -4704,7 +4725,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `native_formers::native_formers::empty_data_elimination_preserves_the_ambient_scope`
     /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
-        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) => Some(1_usize) })],
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) })],
         ensures: |ret| match held {
             | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
             | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
@@ -4746,6 +4767,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Computation::Exercise { .. } => return Err(unadmitted(UnadmittedFormer::Exercise)),
             Computation::Scope { .. } => return Err(unadmitted(UnadmittedFormer::Scope)),
             Computation::Memory(_) => return Err(unadmitted(UnadmittedFormer::Memory)),
+            Computation::World(_) => return Err(Refusal::Located { at: node }),
             Computation::Ride {
                 motive,
                 flow,
@@ -4955,6 +4977,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     Frame::FlowSource { at, target_code },
                     CoreNode::Term(TermNode::Value(source)),
                 )
+            },
+            ValueTypeView::World(_) => {
+                return Err(Refusal::Located {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                });
             },
             ValueTypeView::Run(_) => {
                 return Err(Refusal::OutOfFragment {

@@ -4319,7 +4319,7 @@ fn code_recipe() -> impl proptest::strategy::Strategy<Value = CodeRecipe>
             && ret.0.iter().enumerate().all(|(index,declaration)| declaration.constant() == ConstantIndex::from(index)
                 && match declaration.content() {
                     &crate::DeclarationContent::Value {signature:Maybe::Present(ty),body} => arena.value_type(ty).is_some() && match body { Maybe::Present(body) => arena.value(body).is_some(), Maybe::Absent(_) => true },
-                    &crate::DeclarationContent::Value { .. } | &crate::DeclarationContent::Data(_) | &crate::DeclarationContent::Abstract(_) => false,
+                    &crate::DeclarationContent::Value { .. } | &crate::DeclarationContent::Data(_) | &crate::DeclarationContent::Abstract(_) | &crate::DeclarationContent::World => false,
                 }),
     )]
 fn universe_module(

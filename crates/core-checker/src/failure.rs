@@ -310,6 +310,15 @@ pub enum FrameRole
     AccessUnwind,
     /// A resume waits on its value's check, then spends its view.
     ResumeValue,
+    /// A hold of a value at the current world waits on the value's synthesis.
+    WorldHold,
+    /// A `leta` waits on its handle's synthesis, then opens its binder at the
+    /// handle's world.
+    LetaValue,
+    /// A `leta`'s body is being judged with its binder located.
+    LetaBody,
+    /// A migration's body is being judged at the world it migrated to.
+    MigrateBody,
 }
 
 impl fmt::Display for FrameRole
@@ -441,6 +450,10 @@ impl fmt::Display for FrameRole
             Self::AccessBody => "AccessBody",
             Self::AccessUnwind => "AccessUnwind",
             Self::ResumeValue => "ResumeValue",
+            Self::WorldHold => "WorldHold",
+            Self::LetaValue => "LetaValue",
+            Self::LetaBody => "LetaBody",
+            Self::MigrateBody => "MigrateBody",
         })
     }
 }

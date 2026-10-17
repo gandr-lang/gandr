@@ -267,10 +267,24 @@ pub struct Layout
     occupied: BTreeMap<ConstantIndex, ItemOrdinal>,
     /// The item each reference names.
     named: BTreeMap<Reference, ItemOrdinal>,
+    /// Whether the program declares a world or an item states an entry.
+    locus: crate::content::Locus,
 }
 
 impl Layout
 {
+    /// Whether the program declares a world or an item states an entry: every
+    /// item of a located program is opaque.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn locus(&self) -> crate::content::Locus
+    {
+        self.locus
+    }
+
     /// The reference the admission position `position` resolves to.
     ///
     /// # Specification
@@ -453,6 +467,12 @@ impl Program
             let _vacant = named.insert(reference.clone(), ordinal);
             references.push(reference);
         }
+        let located = items.iter().any(|item| {
+            matches!(
+                *item.declaration.content(),
+                gandr_core_checker::DeclarationContent::World
+            ) || matches!(item.declaration.entry(), Maybe::Present(_))
+        });
         Ok(Self {
             arena,
             layout: Layout {
@@ -460,6 +480,12 @@ impl Program
                 references,
                 occupied,
                 named,
+                locus: if located {
+                    crate::content::Locus::Located
+                }
+                else {
+                    crate::content::Locus::Unlocated
+                },
             },
         })
     }

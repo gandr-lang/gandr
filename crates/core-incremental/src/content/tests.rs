@@ -769,6 +769,59 @@ fn an_unresolved_id_makes_the_item_opaque()
 }
 
 #[test]
+fn an_item_of_a_located_program_is_opaque()
+{
+    let item = |arena: &mut CoreArena, position: usize| {
+        let integer = arena.value_type_base(BaseType::Integer);
+        let zero = arena.value_literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            Magnitude::zero(),
+        )));
+        Item::new(
+            ItemKey::from("plain"),
+            Declaration::new(
+                ConstantIndex::from(position),
+                Maybe::Present(integer),
+                Maybe::Present(zero),
+                OriginToken::from(position),
+            ),
+        )
+    };
+    let mut arena = CoreArena::new();
+    let alone = vec![item(&mut arena, 0)];
+    let alone = Program::new(arena, alone).expect("one item ascends");
+    let alone = encode_item(alone.arena(), alone.layout(), ItemOrdinal::from(0_usize)).content;
+    let mut arena = CoreArena::new();
+    let beside = vec![
+        Item::new(
+            ItemKey::from("seat"),
+            Declaration::world(ConstantIndex::from(0_usize), OriginToken::from(0_usize)),
+        ),
+        item(&mut arena, 1),
+    ];
+    let beside = Program::new(arena, beside).expect("two items ascend");
+    let located = encode_item(beside.arena(), beside.layout(), ItemOrdinal::from(1_usize)).content;
+    assert_eq!(
+        (alone.opacity(), located.opacity()),
+        (Opacity::Transparent, Opacity::Opaque),
+        "the same item is transparent alone and opaque beside a world declaration"
+    );
+    assert_eq!(
+        alone.nodes(),
+        located.nodes(),
+        "its nodes are the same; the program's locus is what differs"
+    );
+    let mut bytes = crate::codec::CheckpointBytes::default();
+    assert_eq!(
+        crate::codec::write_item_content(&mut bytes, &located),
+        Err(crate::codec::CodecError::Unsupported(
+            crate::codec::UnsupportedPersistence::Located
+        )),
+        "and it is refused persistence by name"
+    );
+}
+
+#[test]
 fn a_signature_renumbers_to_its_own_type_content()
 {
     let mut arena = CoreArena::new();

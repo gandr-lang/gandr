@@ -35,7 +35,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `TypeTable`, `TypedSpan`, `Subject`, `Declared`, `typing::Absent` and `checked_against::Absent`: the type of every node of one source a face can point at — each binder, term and written type with its span, spelled when a face asks, with the type a term was checked against when it differs — and each declaration's type or refusal under both its signature's and its definition's keys, from one typed run of the checker.
 - `SourceRoot` and `classify`: the root a source sits under, by its path.
 - `Walk`, `Walk::visit`, `Step`, `Standing`, `Standing::of` and `SourceFault`: the walk at any width, and the standing a step or a session submission carries.
-- `HostGrant`, `OperationName`, `AuthorityError` and `Walk::granting`: the host operations every capability a checked declaration holds is bounded by; `compose` and `test` judge under none.
+- `HostGrant`, `OperationName`, `WorldName`, `AuthorityError` and `Walk::granting`: the host operations every capability a checked declaration holds is bounded by, and the worlds every declaration is entered at, read against the worlds each module declares; `compose` and `test` judge under neither.
 - `RunReport`, `RunVerdict`, `SourceCounts`, `SourceCount`, `Verb`, `Goals`, `Shown` and `shown`: the runner's report, the gate and what each verb prints.
 - `Exercised` and `Row`: the fragment's exercised table, counted.
 - `Program`, `Evaluation`, `ValueSpelling`, `Unfinished`, `Unrunnable`, `RunStatus`, `run_target::Absent` and `declaration_name::Absent`: the run stage.

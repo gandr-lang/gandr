@@ -682,3 +682,133 @@ fn session_refusals_project_their_endpoints_and_states()
     );
     assert_eq!(at, other, "the refusal stands at the disagreeing arm");
 }
+
+#[test]
+fn a_located_refusal_projects_its_worlds_and_types()
+{
+    use gandr_core_checker::AbstractType;
+    use gandr_core_checker::ComponentOrdinal;
+    use gandr_core_checker::SealSite;
+    use gandr_core_checker::SealingSite;
+    use gandr_core_checker::worlds::Mobility;
+    use gandr_core_checker::worlds::Predicate;
+    use gandr_core_term::Sort;
+    use gandr_core_term::world::World;
+    use gandr_core_term::world::WorldForm;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::SealExtent;
+
+    use super::Located;
+    use super::Place;
+    use crate::content::ArenaNode;
+    // `world seat ;`, a declaration migrating to it with no capability, and
+    // an abstract type marked mobile over a thunk.
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let returns = arena.comp_type_returner(string);
+    let thunk = arena.value_type_thunk(returns);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let report = arena.value_literal(Literal::Text(StringLiteral::new(String::from("report"))));
+    let returned = arena.computation_return(report);
+    let migration = arena.computation_world(WorldForm::Migrate {
+        world: World::Declared(ConstantIndex::from(0_usize)),
+        body: returned,
+    });
+    let body = arena.value_thunk(migration);
+    let promised = AbstractType::new(
+        small,
+        thunk,
+        SealExtent::from(0_usize),
+        SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize)),
+    )
+    .marked(Mobility::Mobile);
+    let mut program = Program::new(arena, vec![
+        Item::new(
+            ItemKey::from("seat"),
+            Declaration::world(ConstantIndex::from(0_usize), OriginToken::from(0_usize)),
+        ),
+        Item::new(
+            ItemKey::from("migrating"),
+            Declaration::new(
+                ConstantIndex::from(1_usize),
+                Maybe::Present(thunk),
+                Maybe::Present(body),
+                OriginToken::from(1_usize),
+            ),
+        ),
+        Item::new(
+            ItemKey::from("promised"),
+            Declaration::abstract_type(
+                ConstantIndex::from(2_usize),
+                promised,
+                OriginToken::from(2_usize),
+            ),
+        ),
+    ])
+    .expect("three items ascend");
+    let declarations = program.declarations();
+    let encoded: alloc::vec::Vec<_> = (0_usize .. declarations.len())
+        .map(|ordinal| {
+            encode_item(
+                program.arena(),
+                program.layout(),
+                ItemOrdinal::from(ordinal),
+            )
+        })
+        .collect();
+    let (arena, layout) = program.parts_mut();
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let typings: alloc::vec::Vec<Typing> = declarations
+        .iter()
+        .zip(&encoded)
+        .map(|(declaration, encoded)| {
+            let verdict = check_declaration_supported(&mut context, declaration).verdict();
+            Projection {
+                arena: context.arena(),
+                layout,
+                sites: &encoded.sites,
+            }
+            .typing(&verdict)
+        })
+        .collect();
+    let seat = layout.resolve(ConstantIndex::from(0_usize));
+    let migrated = match encoded[1].sites.of(ArenaNode::Computation(migration)) {
+        Maybe::Present(index) => Site::Node(index),
+        Maybe::Absent(_) => Site::Unreached,
+    };
+    let representation = match encoded[2].sites.of(ArenaNode::ValueType(thunk)) {
+        Maybe::Present(index) => Site::Node(index),
+        Maybe::Absent(_) => Site::Unreached,
+    };
+    assert_eq!(
+        typings,
+        [
+            Typing::Data,
+            Typing::Refused(Refusal::Located {
+                at: migrated,
+                defect: Located::CapabilityMissing {
+                    world: Place::Declared(seat),
+                },
+            }),
+            Typing::Refused(Refusal::Located {
+                at: representation,
+                defect: Located::MarkUnfounded {
+                    atom: layout.resolve(ConstantIndex::from(2_usize)),
+                    former: Projection {
+                        arena: context.arena(),
+                        layout,
+                        sites: &encoded[2].sites,
+                    }
+                    .value_type(thunk),
+                    predicate: Predicate::Mobile,
+                },
+            }),
+        ],
+        "the world projects to its declaration's reference, the atom to its own, and the former to its own type table"
+    );
+    assert!(
+        matches!(migrated, Site::Node(_)) && matches!(representation, Site::Node(_)),
+        "both refusals stand at nodes their items reached"
+    );
+}

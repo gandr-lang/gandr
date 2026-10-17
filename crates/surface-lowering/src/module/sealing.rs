@@ -200,6 +200,21 @@ pub struct Represented
     pub held: SlotIndex,
 }
 
+/// Whether a module signature marks an abstract component `mobile`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Mark
+{
+    /// Written `type T`: the atom stays at the world it was made at.
+    #[default]
+    Unmarked,
+    /// Written `mobile type T`: the atom crosses between worlds as its
+    /// representation does, which the checker confirms where it seals.
+    Mobile,
+}
+
 /// What one abstract component's slot is built from.
 ///
 /// # Specification
@@ -207,8 +222,8 @@ pub struct Represented
 ///   state coordinate preconditions separately.
 /// - ensures: The record names the ascribing module, the component's place in
 ///   its signature, the kind written for it, its name tile, the body member it
-///   reads once matched and its seal's extent once the module closes; it does
-///   not certify that the coordinates are live.
+///   reads once matched, its seal's extent once the module closes and the mark
+///   its signature writes; it does not certify that the coordinates are live.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -235,6 +250,8 @@ pub struct AbstractSlot
     pub representation: Maybe<Represented, representation::Absent>,
     /// How many positions after the slot its seal reaches.
     pub extent: usize,
+    /// Whether the signature marks the component `mobile`.
+    pub mark: Mark,
 }
 
 impl<'source> super::Structure<'source>
@@ -305,6 +322,9 @@ pub struct Sealing
     pub sealing: StructureIndex,
     /// Its component's place among the signature's components.
     pub component: ComponentPlace,
+    /// Whether the signature marks the component `mobile`: a marked atom
+    /// crosses between worlds as its representation does.
+    pub mark: Mark,
 }
 
 /// One abstract type component of an opaquely ascribed module, with the
@@ -502,6 +522,7 @@ impl<'source> Collector<'_, 'source>
                 named: component.named,
                 representation: Maybe::Absent(representation::Absent::Unmatched),
                 extent: 0_usize,
+                mark: component.mark,
             });
         }
     }
@@ -851,6 +872,7 @@ impl<'source> Collector<'_, 'source>
             named: component.named,
             representation: Maybe::Present(represented),
             extent: 0_usize,
+            mark: component.mark,
         });
     }
 

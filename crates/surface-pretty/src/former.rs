@@ -829,6 +829,33 @@ pub enum Former<'source, Node>
     },
     /// A view's abort, `abort(w)`.
     AbortView(DeBruijnIndex),
+    /// A handle at a world, `A at w`.
+    Located
+    {
+        /// The type of the value the handle names.
+        inner: Node,
+        /// The world, when the source names it.
+        world: Option<Name<'source>>,
+    },
+    /// A hold of a value at the world it is computed at, `hold v`.
+    WorldHold(Node),
+    /// A handle opened, `leta x = v ; t`: the rest under the opened value's
+    /// binder.
+    Leta
+    {
+        /// The handle.
+        value: Node,
+        /// The rest.
+        body: Node,
+    },
+    /// A migration, `migrate [w] { t }`.
+    Migrate
+    {
+        /// The world migrated to, when the source names it.
+        world: Option<Name<'source>>,
+        /// The body run there.
+        body: Node,
+    },
     /// A node with no former the printer spells, and why.
     Unreadable(Unreadable),
 }
@@ -865,6 +892,9 @@ pub enum Unreadable
     /// The numeric base atom: the type of a numeric literal, which the surface
     /// grammar has no name for.
     NumericAtom,
+    /// A world's capability: the linear resource a migration spends, which
+    /// the checker opens where a run enters and the surface never writes.
+    WorldCapability,
 }
 
 /// Why the printer wrote `?` at a node: the node read as no former it

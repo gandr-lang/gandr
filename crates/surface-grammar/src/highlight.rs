@@ -159,10 +159,10 @@ const KEYWORDS: &[&str] = &[
     "+U", "-F", "abort", "access", "acquire", "as", "at", "become", "break", "case", "close", "co",
     "codata", "continue", "data", "def", "drop", "dup", "else", "end", "extern", "feed", "fn",
     "for", "forall", "force", "fork", "from", "glob", "handle", "hold", "if", "import", "in",
-    "infix", "infixl", "infixr", "leta", "loop", "migrate", "module", "mu", "node", "offer", "op",
-    "oper", "pack", "package", "postfix", "prefix", "pure", "rec", "recv", "release", "resume",
-    "return", "rule", "run", "select", "send", "sign", "sort", "tail", "then", "thunk", "type",
-    "unit", "unpack", "unwind", "val", "while", "with",
+    "infix", "infixl", "infixr", "leta", "loop", "migrate", "mobile", "module", "mu", "node",
+    "offer", "op", "oper", "pack", "package", "postfix", "prefix", "pure", "rec", "recv",
+    "release", "resume", "return", "rule", "run", "select", "send", "sign", "sort", "tail", "then",
+    "thunk", "type", "unit", "unpack", "unwind", "val", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -885,7 +885,8 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 ///   name of a cons pattern's letter, `g` and `back(g)`, and the view a
 ///   `resume` or an `abort` ends. A member: in a projection, after `.`, inside
 ///   a record bracket `#{`, and inside a block `{` of fields or observations. A
-///   label: a world and the label a `select` names. A named instantiation
+///   label: a world, where a handle's type names it and where a declaration
+///   declares it, and the label a `select` names. A named instantiation
 ///   argument is a parameter, and an attribute name is [`HlRole::Other`]. The
 ///   operation a circuit node applies, between `:` and `(`, is a call. A name
 ///   after a defining keyword is a function definition and after a binding
@@ -908,7 +909,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 #[spec(requires: facts.label.0 == "identifier", ensures: |ret| ret == match facts.kind.0 {
     "identifier" | "cons_pattern" | "resume_expression" | "abort_expression" => HlRole::Variable,
     "projection_expression" => HlRole::Member,
-    "at_type" => HlRole::Label,
+    "at_type" | "world_declaration" => HlRole::Label,
     "attribute_block" => HlRole::Other,
     "instantiation_expression" => HlRole::VariableParam,
     _ if facts.left.crosses(TileLabel(".")).0 => HlRole::Member,
@@ -937,7 +938,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
             return HlRole::Variable;
         },
         "projection_expression" => return HlRole::Member,
-        "at_type" => return HlRole::Label,
+        "at_type" | "world_declaration" => return HlRole::Label,
         "attribute_block" => return HlRole::Other,
         "instantiation_expression" => return HlRole::VariableParam,
         _ => {},
@@ -1230,6 +1231,7 @@ mod tests
             ("codata_declaration", "{", None, HlRole::Member),
             ("select_expression", ",", None, HlRole::Label),
             ("at_type", "at", None, HlRole::Label),
+            ("world_declaration", "world", None, HlRole::Label),
             ("migrate_expression", "[", None, HlRole::Label),
             ("thunk_expression", "[", None, HlRole::Number),
         ];

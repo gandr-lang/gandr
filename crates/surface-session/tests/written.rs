@@ -106,7 +106,8 @@ pub fn refusal<'source, 'function>(
         | DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
-        | DeclarationOutcome::Abstract(_) => None,
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World => None,
     }
 }
 
@@ -189,6 +190,7 @@ impl Written
                 | DeclarationOutcome::Uncompleted { .. }
                 | DeclarationOutcome::Bodied { .. }
                 | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_))
                     if name == function =>
                 {
@@ -198,6 +200,7 @@ impl Written
                 | DeclarationOutcome::Uncompleted { .. }
                 | DeclarationOutcome::Bodied { .. }
                 | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_) => {},
             }
         }

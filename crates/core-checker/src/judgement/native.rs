@@ -592,7 +592,8 @@ impl Machine<'_, '_>
             | &Computation::With(..)
             | &Computation::Project(..)
             | &Computation::Session(_)
-            | &Computation::Memory(_) => return Err(CheckRefusal::MachineInvariant),
+            | &Computation::Memory(_)
+            | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
         };
         let constructors = signature.constructors().len();
         // A case carries one branch per constructor, and then either no loop
@@ -692,7 +693,8 @@ impl Machine<'_, '_>
             | &Computation::With(..)
             | &Computation::Project(..)
             | &Computation::Session(_)
-            | &Computation::Memory(_) => return Err(CheckRefusal::MachineInvariant),
+            | &Computation::Memory(_)
+            | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
         };
         let result =
             gandr_core_term::instantiate_comp_type(self.context.arena_mut(), motive, scrutinee);
@@ -761,7 +763,8 @@ impl Machine<'_, '_>
                     | &Computation::With(..)
                     | &Computation::Project(..)
                     | &Computation::Session(_)
-                    | &Computation::Memory(_) => return Err(CheckRefusal::MachineInvariant),
+                    | &Computation::Memory(_)
+                    | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
                 };
                 self.wait(Frame::NativeNext(Goal::Computation {
                     term: arm,
@@ -821,7 +824,8 @@ impl Machine<'_, '_>
                 | &Computation::With(..)
                 | &Computation::Project(..)
                 | &Computation::Session(_)
-                | &Computation::Memory(_) => return Err(CheckRefusal::MachineInvariant),
+                | &Computation::Memory(_)
+                | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
             };
             self.wait(Frame::NativeNext(Goal::Computation {
                 term: branch,
@@ -1096,7 +1100,8 @@ impl Machine<'_, '_>
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
-            | ValueTypeView::Session(_) => return Err(CheckRefusal::MachineInvariant),
+            | ValueTypeView::Session(_)
+            | ValueTypeView::World(_) => return Err(CheckRefusal::MachineInvariant),
         };
         let arena = self.context.arena_mut();
         let result = instantiate_comp_type(arena, motive, scrutinee);

@@ -190,8 +190,8 @@ enum Root
 /// - requires: the fixture producer preserves the source and boundary
 ///   correspondence represented.
 /// - ensures: Distinguishes definitions and assumptions that enter the artifact
-///   from marked, withheld, static, unfinished, session, unrepresentable and
-///   never-offered declarations.
+///   from marked, withheld, static, unfinished, session, located, world,
+///   unrepresentable and never-offered declarations.
 /// - panics: none.
 /// - executable: none — The enum holds no checker/readmission pair or artifact;
 ///   `class_of`, `export` and the partition witness establish its
@@ -235,6 +235,12 @@ enum Class
     /// kernel has no rule for: an effectful declaration — a capability, its
     /// exercise, its scope — stays on the checker's side.
     Unrepresentable(UnadmittedFormer),
+    /// The checker accepted it at a world, holding a handle or a migration,
+    /// which the kernel has no former for: it stays on the checker's side.
+    Located,
+    /// A world declaration, which names a place and lowers to no term: it
+    /// stays on the checker's side for the declarations that name it.
+    World,
     /// The lowering refused it, under this name, and nothing was offered.
     NeverOffered(RefusalName),
 }
@@ -407,6 +413,7 @@ fn sources(root: Root) -> Vec<PathBuf>
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
             | bridge::Refusal::Session { .. }
+            | bridge::Refusal::Located { .. }
             | bridge::Refusal::OutOfFragment { .. }
         )),
     )
@@ -417,16 +424,17 @@ fn sources(root: Root) -> Vec<PathBuf>
             bridge::Refusal::Withheld { .. }
             | bridge::Refusal::Hole { .. }
             | bridge::Refusal::Unknown { .. }
+            | bridge::Refusal::Located { .. }
             | bridge::Refusal::OutOfFragment { .. }
         )),
     )
-    | (Verdict::Data, &bridge::Outcome::Data { .. }) => true,
+    | (Verdict::Data, &(bridge::Outcome::Data { .. } | bridge::Outcome::Static)) => true,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) => refusal == mark,
     _ => false,
 },
     ensures: |ret| match (verdict, outcome, ret) {
     (_, &bridge::Outcome::Defined { .. }, Class::Defined)
-    | (_, &bridge::Outcome::Static, Class::Static)
+    | (Verdict::Checked { .. } | Verdict::Synthesised { .. }, &bridge::Outcome::Static, Class::Static)
     | (_, &bridge::Outcome::Assumed { .. }, Class::Assumed)
     | (_, &bridge::Outcome::Data { .. }, Class::Data)
     | (
@@ -439,7 +447,9 @@ fn sources(root: Root) -> Vec<PathBuf>
         &bridge::Outcome::Refused(bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }),
         Class::Unfinished,
     )
-    | (_, &bridge::Outcome::Refused(bridge::Refusal::Session { .. }), Class::Session) => true,
+    | (_, &bridge::Outcome::Refused(bridge::Refusal::Session { .. }), Class::Session)
+    | (_, &bridge::Outcome::Refused(bridge::Refusal::Located { .. }), Class::Located)
+    | (Verdict::Data, &bridge::Outcome::Static, Class::World) => true,
     (
         _,
         &bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }),
@@ -467,6 +477,7 @@ fn class_of(
         },
         (Verdict::Owed(_), &bridge::Outcome::Assumed { .. }) => Class::Assumed,
         (Verdict::Data, &bridge::Outcome::Data { .. }) => Class::Data,
+        (Verdict::Data, &bridge::Outcome::Static) => Class::World,
         (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) if refusal == mark => {
             Class::Marked(Refusal::Checking(refusal).name())
         },
@@ -484,6 +495,10 @@ fn class_of(
             Verdict::Checked { .. } | Verdict::Synthesised { .. },
             &bridge::Outcome::Refused(bridge::Refusal::Session { .. }),
         ) => Class::Session,
+        (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
+            &bridge::Outcome::Refused(bridge::Refusal::Located { .. }),
+        ) => Class::Located,
         (
             Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
             &bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }),

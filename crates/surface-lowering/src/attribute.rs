@@ -16,15 +16,17 @@
 //! byte-identical forms in two sources of one unit are filed apart by their
 //! sources (#596).
 //!
-//! # Every schema but `respects` is inert
+//! # Every schema but `respects` and `entry` is inert
 //!
 //! The lowered term is neither read nor written by the attribute pass: a
 //! payload lowers to its own core value, filed here, and nothing about the
-//! decorated declaration's core term depends on it. `respects` is the one
-//! semantic attribute: its payload names the laws a fold rests on, which the
-//! table keeps beside the entry as constants and the checker's declaration
-//! carries. The term is still untouched; what changes is the evidence the
-//! declaration is admitted on.
+//! decorated declaration's core term depends on it. `respects` and `entry`
+//! are the semantic attributes: a `respects` payload names the laws a fold
+//! rests on, and an `entry` payload the worlds a declaration is judged at and
+//! migrates to, which the table keeps beside the entry as constants and the
+//! checker's declaration carries. The term is still untouched; what changes
+//! is the evidence the declaration is admitted on, or the world it is judged
+//! at.
 //!
 //! # An unknown name gets a bounded suggestion
 //!
@@ -48,10 +50,11 @@
 //! The registry is closed: `checks` and `explicit_exits` take no payload,
 //! `explicit_runs` none or a text naming its one option, `effects`, `owes` an
 //! integer, `refuses`, `runs`, `normalizes` and `doc` a text, and `respects`
-//! one declared name or a tuple of them. The attribute block admits one
-//! payload per attribute and refuses an attribute written twice, so several
-//! laws are one tuple, `respects((a, b))`, in the order of the rules they
-//! answer. Five diagnostics
+//! and `entry` one declared name or a tuple of them. The attribute block
+//! admits one payload per attribute and refuses an attribute written twice,
+//! so several laws are one tuple, `respects((a, b))`, in the order of the
+//! rules they answer, and an entry's worlds one tuple, `entry((home, w, …))`,
+//! its home first and then the world of each capability. Five diagnostics
 //! cover what an attribute can get wrong, checked in this order: an unknown
 //! name, with the registered name within edit distance two when one exists;
 //! the same attribute written twice for one declared name, naming the first;
@@ -163,8 +166,8 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a `respects` payload names no laws.
-    pub mod laws {
+    /// Why a `respects` or `entry` payload names no declarations.
+    pub mod names {
         /// The payload is a value of another form.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
@@ -174,18 +177,20 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The laws a `respects` payload names, in the order it names them.
+/// The declarations a `respects` or `entry` payload names, in the order it
+/// names them.
 ///
 /// A declared name lowers to its constant and a tuple to its components, so a
-/// payload names laws exactly when it is one constant or a tuple of them. The
-/// unit is the empty tuple, and a fold resting on no law is no fold: it names
-/// none.
+/// payload names declarations exactly when it is one constant or a tuple of
+/// them. The unit is the empty tuple, and a fold resting on no law is no
+/// fold, as an entry at no world is no entry: it names none.
 ///
 /// # Specification
-/// - requires: `payload` is the lowered value of a `respects` payload.
+/// - requires: `payload` is the lowered value of a payload the
+///   [`AttributeSchema::Names`] schema admitted.
 /// - ensures: the one constant `payload` is, or the constants of its components
 ///   in written order when it is a non-empty tuple of constants;
-///   [`laws::Absent::Unnamed`] for any other value, the unit included.
+///   [`names::Absent::Unnamed`] for any other value, the unit included.
 /// - fails: never — an unnamed payload is an absence, not an error.
 /// - panics: none.
 ///
@@ -198,28 +203,28 @@ quenchant_shape::reason_enum! {
 ///   and the unit separate the answers.
 /// - witness: `attribute::tests::a_respects_payload_names_its_laws_in_written_order`
 #[spec(ensures: |ref ret| match (ret, arena.value(payload)) {
-    | (&Maybe::Present(ref laws), Some(&Value::Constant(law))) => laws.as_slice() == [law],
-    | (&Maybe::Present(ref laws), Some(&Value::Tuple(ref items))) => !items.is_empty() && laws.len() == items.len(),
+    | (&Maybe::Present(ref named), Some(&Value::Constant(name))) => named.as_slice() == [name],
+    | (&Maybe::Present(ref named), Some(&Value::Tuple(ref items))) => !items.is_empty() && named.len() == items.len(),
     | (&Maybe::Present(_), _) => false,
     | (&Maybe::Absent(_), _) => true,
 })]
 #[inline]
-pub fn laws(
+pub fn names(
     arena: &CoreArena,
     payload: ValueId,
-) -> Maybe<Vec<ConstantIndex>, laws::Absent>
+) -> Maybe<Vec<ConstantIndex>, names::Absent>
 {
-    let unnamed = Maybe::Absent(laws::Absent::Unnamed);
+    let unnamed = Maybe::Absent(names::Absent::Unnamed);
     match arena.value(payload) {
-        Some(&Value::Constant(law)) => Maybe::Present(Vec::from([law])),
+        Some(&Value::Constant(name)) => Maybe::Present(Vec::from([name])),
         Some(&Value::Tuple(ref items)) if !items.is_empty() => {
             let mut named = Vec::with_capacity(items.len());
             for &item in items {
-                let Some(&Value::Constant(law)) = arena.value(item)
+                let Some(&Value::Constant(name)) = arena.value(item)
                 else {
                     return unnamed;
                 };
-                named.push(law);
+                named.push(name);
             }
             Maybe::Present(named)
         },
@@ -268,6 +273,10 @@ impl RegisteredAttribute
     /// is over and in the rules' written order, are the evidence for each
     /// rule the fold does not respect by conversion alone.
     pub const RESPECTS: Self = Self("respects");
+    /// `entry`: the declaration it decorates is judged at the world its first
+    /// name declares, holding one capability to migrate to the world each
+    /// later name declares.
+    pub const ENTRY: Self = Self("entry");
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -343,7 +352,7 @@ pub enum AttributeSchema
     /// A bare marker, or the one text literal spelling the option named.
     MarkerOr(&'static str),
     /// One declared name, or a tuple of declared names.
-    Laws,
+    Names,
 }
 
 impl fmt::Display for AttributeSchema
@@ -363,7 +372,7 @@ impl fmt::Display for AttributeSchema
             Self::Integer => f.write_str("an integer payload"),
             Self::Text => f.write_str("a text payload"),
             Self::MarkerOr(option) => write!(f, "no payload or the text \"{option}\""),
-            Self::Laws => f.write_str("a declared name or a tuple of declared names"),
+            Self::Names => f.write_str("a declared name or a tuple of declared names"),
         }
     }
 }
@@ -458,7 +467,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 9_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 10_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -473,7 +482,8 @@ const REGISTRY: [(&str, AttributeSchema); 9_usize] = [
         RegisteredAttribute::EXPLICIT_RUNS.0,
         AttributeSchema::MarkerOr(RegisteredAttribute::EFFECTS),
     ),
-    (RegisteredAttribute::RESPECTS.0, AttributeSchema::Laws),
+    (RegisteredAttribute::RESPECTS.0, AttributeSchema::Names),
+    (RegisteredAttribute::ENTRY.0, AttributeSchema::Names),
 ];
 
 impl AttributeRegistry
@@ -636,8 +646,8 @@ impl AttributeRegistry
 ///   marker-or-option schema; an integer literal exactly by the integer schema;
 ///   a text literal by the text schema and, read as the option it spells, by
 ///   the marker-or-option schema; a text spelling no option by the text schema
-///   alone; a non-literal value exactly by the laws schema; every other pair is
-///   refused, and the refusal is the missing one exactly when nothing was
+///   alone; a non-literal value exactly by the names schema; every other pair
+///   is refused, and the refusal is the missing one exactly when nothing was
 ///   written for a schema that takes something.
 /// - provides: the one decision the payload half of the attribute pass makes,
 ///   separated from the diagnostics that report it.
@@ -657,10 +667,10 @@ impl AttributeRegistry
                 | (AttributeSchema::Integer, PayloadForm::Integer)
                 | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
                 | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
-                | (AttributeSchema::Laws, PayloadForm::OtherValue)
+                | (AttributeSchema::Names, PayloadForm::OtherValue)
         );
         let missing = matches!(form, PayloadForm::Absent)
-            && matches!(schema, AttributeSchema::Integer | AttributeSchema::Text | AttributeSchema::Laws);
+            && matches!(schema, AttributeSchema::Integer | AttributeSchema::Text | AttributeSchema::Names);
         matches!(ret, PayloadVerdict::Admitted) == admitted
             && matches!(ret, PayloadVerdict::Missing) == missing
             && matches!(ret, PayloadVerdict::IllTyped) == (!admitted && !missing)
@@ -678,9 +688,9 @@ pub const fn payload_verdict(
         | (AttributeSchema::Integer, PayloadForm::Integer)
         | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
         | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
-        | (AttributeSchema::Laws, PayloadForm::OtherValue) => PayloadVerdict::Admitted,
+        | (AttributeSchema::Names, PayloadForm::OtherValue) => PayloadVerdict::Admitted,
         (
-            AttributeSchema::Integer | AttributeSchema::Text | AttributeSchema::Laws,
+            AttributeSchema::Integer | AttributeSchema::Text | AttributeSchema::Names,
             PayloadForm::Absent,
         ) => PayloadVerdict::Missing,
         (
@@ -700,7 +710,7 @@ pub const fn payload_verdict(
             PayloadForm::Integer | PayloadForm::OtherText | PayloadForm::OtherValue,
         )
         | (
-            AttributeSchema::Laws,
+            AttributeSchema::Names,
             PayloadForm::Integer | PayloadForm::Text | PayloadForm::OtherText,
         ) => PayloadVerdict::IllTyped,
     }
@@ -796,6 +806,8 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Action
         | Former::Offer
         | Former::Access
+        | Former::World
+        | Former::WorldDeclaration
         | Former::Reserved
         | Former::Unadmitted => PayloadForm::OtherValue,
     }
@@ -968,7 +980,8 @@ impl AttributeEntry
 }
 
 /// Every attributed declaration's entries, keyed by the declaration form's
-/// cross-tree key, and the laws a `respects` entry names under the same key.
+/// cross-tree key, and the laws a `respects` entry and the worlds an `entry`
+/// entry names under the same key.
 ///
 /// # Specification
 /// - requires: producers file entries under the intended declaration's key.
@@ -994,6 +1007,9 @@ pub struct AttributeTable
     /// Declaration key to the laws its `respects` entry names, in the order
     /// the payload names them.
     laws: BTreeMap<UnitKey, Vec<ConstantIndex>>,
+    /// Declaration key to the worlds its `entry` entry names, its home first,
+    /// in the order the payload names them.
+    worlds: BTreeMap<UnitKey, Vec<ConstantIndex>>,
 }
 
 impl AttributeTable
@@ -1009,6 +1025,7 @@ impl AttributeTable
         Self {
             entries: BTreeMap::new(),
             laws: BTreeMap::new(),
+            worlds: BTreeMap::new(),
         }
     }
 
@@ -1147,6 +1164,108 @@ impl AttributeTable
         self.laws.get(&key).map_or(&[], Vec::as_slice)
     }
 
+    /// File `worlds`, what the `entry` entry filed under `key` names: the
+    /// declaration's home, then the world of each capability it holds.
+    ///
+    /// # Specification
+    /// - requires: an entry naming `worlds` is filed under `key`; the attribute
+    ///   pass refuses a second `entry` for one declaration, so `key` holds no
+    ///   worlds yet.
+    /// - ensures: [`Self::worlds`] at `key` answers `worlds`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — worlds filed under one key are read back from it and
+    ///   from no other.
+    /// - witness: `lower::world::tests::an_entry_names_its_home_then_its_capabilities`
+    #[spec(
+        captures: count = worlds.len(),
+        ensures: self.worlds.get(&key).is_some_and(|held| held.len() == count),
+    )]
+    #[inline]
+    pub fn file_worlds(
+        &mut self,
+        key: UnitKey,
+        worlds: Vec<ConstantIndex>,
+    )
+    {
+        let _replaced = self.worlds.insert(key, worlds);
+    }
+
+    /// File `named`, what the `attribute` entry filed under `key` names: as
+    /// worlds for `entry`, as laws for `respects`, and nothing when it names
+    /// none, which is every other attribute's case.
+    ///
+    /// # Specification
+    /// - requires: `named` is what the `attribute` entry filed under `key`
+    ///   names.
+    /// - ensures: [`Self::worlds`] at `key` answers a non-empty `named` of an
+    ///   `entry`, [`Self::laws`] a non-empty `named` of any other attribute,
+    ///   and an empty one changes nothing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an `entry`, a `respects` and an unnamed attribute
+    ///   separate the three routes.
+    /// - witness: `lower::world::tests::an_entry_names_its_home_then_its_capabilities`
+    /// - witness: `lower::tests::a_respects_attribute_names_its_laws_through_either_form`
+    #[spec(
+        captures: count = named.len(),
+        ensures: count == 0
+            || if attribute == RegisteredAttribute::ENTRY { self.worlds(key).len() == count } else { self.laws(key).len() == count },
+    )]
+    #[inline]
+    pub fn file_named(
+        &mut self,
+        key: UnitKey,
+        attribute: RegisteredAttribute,
+        named: Vec<ConstantIndex>,
+    )
+    {
+        if named.is_empty() {
+            return;
+        }
+        if attribute == RegisteredAttribute::ENTRY {
+            self.file_worlds(key, named);
+        }
+        else {
+            self.file_laws(key, named);
+        }
+    }
+
+    /// The worlds the `entry` entry filed under `key` names, its home first,
+    /// in the order it names them.
+    ///
+    /// # Specification
+    /// - requires: nothing — a key holding no worlds is admissible input, a
+    ///   declaration judged where its context places it.
+    /// - ensures: exactly the worlds filed under `key`; the empty slice when
+    ///   none were.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a filed key and an unfiled one separate the two
+    ///   answers.
+    /// - witness: `lower::world::tests::an_entry_names_its_home_then_its_capabilities`
+    #[spec(
+        ensures: |ret| match self.worlds.get(&key) {
+            | Some(worlds) => core::ptr::eq(&raw const *ret, &raw const *worlds.as_slice()),
+            | None => ret.is_empty(),
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn worlds(
+        &self,
+        key: UnitKey,
+    ) -> &[ConstantIndex]
+    {
+        self.worlds.get(&key).map_or(&[], Vec::as_slice)
+    }
+
     /// How many declarations carry at least one entry.
     ///
     /// # Specification
@@ -1212,7 +1331,7 @@ mod tests
     use super::PayloadForm;
     use super::PayloadVerdict;
     use super::edit_distance;
-    use super::laws;
+    use super::names;
     use super::payload;
     use super::payload_verdict;
     use super::registry;
@@ -1308,7 +1427,8 @@ mod tests
             ("doc", AttributeSchema::Text),
             ("explicit_exits", AttributeSchema::Marker),
             ("explicit_runs", AttributeSchema::MarkerOr("effects")),
-            ("respects", AttributeSchema::Laws),
+            ("respects", AttributeSchema::Names),
+            ("entry", AttributeSchema::Names),
         ];
 
         for (spelling, schema) in expected {
@@ -1360,6 +1480,7 @@ mod tests
             ("explicit_exit", "explicit_exits"),
             ("explicit_run", "explicit_runs"),
             ("respect", "respects"),
+            ("entri", "entry"),
         ];
 
         for (written, nearest) in expected {
@@ -1526,27 +1647,27 @@ mod tests
             (option, PayloadForm::OtherText, PayloadVerdict::IllTyped),
             (option, PayloadForm::OtherValue, PayloadVerdict::IllTyped),
             (
-                AttributeSchema::Laws,
+                AttributeSchema::Names,
                 PayloadForm::Absent,
                 PayloadVerdict::Missing,
             ),
             (
-                AttributeSchema::Laws,
+                AttributeSchema::Names,
                 PayloadForm::Integer,
                 PayloadVerdict::IllTyped,
             ),
             (
-                AttributeSchema::Laws,
+                AttributeSchema::Names,
                 PayloadForm::Text,
                 PayloadVerdict::IllTyped,
             ),
             (
-                AttributeSchema::Laws,
+                AttributeSchema::Names,
                 PayloadForm::OtherText,
                 PayloadVerdict::IllTyped,
             ),
             (
-                AttributeSchema::Laws,
+                AttributeSchema::Names,
                 PayloadForm::OtherValue,
                 PayloadVerdict::Admitted,
             ),
@@ -1577,19 +1698,19 @@ mod tests
         let unit = arena.value_unit();
         let mixed = arena.value_tuple(&[named, unit]);
         assert_eq!(
-            laws(&arena, named),
+            names(&arena, named),
             Maybe::Present(vec![first]),
             "a declared name names one law"
         );
         assert_eq!(
-            laws(&arena, pair),
+            names(&arena, pair),
             Maybe::Present(vec![first, second]),
             "a tuple names its laws in the order written, not by position"
         );
         for unnamed in [mixed, unit] {
             assert_eq!(
-                laws(&arena, unnamed),
-                Maybe::Absent(laws::Absent::Unnamed),
+                names(&arena, unnamed),
+                Maybe::Absent(names::Absent::Unnamed),
                 "a payload holding anything but names names no law"
             );
         }

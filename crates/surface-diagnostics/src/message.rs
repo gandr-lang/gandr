@@ -45,6 +45,7 @@ use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
+use gandr_core_checker::worlds::LocatedDefect;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
@@ -844,6 +845,47 @@ fn checked(
                 f.write_str("an `unwind` runs under the empty row and cannot perform an effect")
             },
         },
+        CheckRefusal::Located { defect, .. } => match defect {
+            LocatedDefect::Immobile { .. } => f.write_str(
+                "this value crosses to another world, but its type cannot: mark an abstract type `mobile`, or send what crosses instead",
+            ),
+            LocatedDefect::CapabilityMissing { .. } => f.write_str(
+                "this `migrate` has no capability left for its world: an entry is granted one, and a migration spends it",
+            ),
+            LocatedDefect::CapabilityCaptured { by, .. } => write!(
+                f,
+                "this `migrate` stands inside {}, which may spend its capability other than once",
+                Captor(by)
+            ),
+            LocatedDefect::Elsewhere { .. } => {
+                f.write_str("this value lives at another world; open it there with `leta`")
+            },
+            LocatedDefect::HoldElsewhere { .. } => f.write_str(
+                "`hold` makes a handle at the world it runs at; migrate there to hold a value of that world",
+            ),
+            LocatedDefect::Unlocated => f.write_str(
+                "this stands at the host's own world, where no handle is made or opened: state \
+                 the declaration's world with `@[ entry(w) ]`",
+            ),
+            LocatedDefect::UndeclaredWorld { .. } => {
+                f.write_str("this names no world; declare one with `world w ;`")
+            },
+            LocatedDefect::HostWorldUndeclared => {
+                f.write_str("the host enters at a world this source does not declare")
+            },
+            LocatedDefect::MarkUnfounded { .. } => f.write_str(
+                "this type is marked `mobile`, but its representation cannot cross to another world",
+            ),
+            LocatedDefect::EntryNamed { .. } => f.write_str(
+                "this declaration is an entry, which only the host runs; it cannot be named here",
+            ),
+            LocatedDefect::EntryUngranted { .. } => {
+                f.write_str("this entry is not one the host grants")
+            },
+            LocatedDefect::NotAHandle { .. } => {
+                f.write_str("`leta` opens a handle at a world, and this value is none")
+            },
+        },
         CheckRefusal::CapabilityForged { .. } => f.write_str(
             "a capability cannot be made from a term; only one held or granted can stand here",
         ),
@@ -892,6 +934,7 @@ mod tests
     use gandr_core_checker::ua::StratumDefect;
     use gandr_core_checker::ua::UaDefect;
     use gandr_core_checker::ua::Way;
+    use gandr_core_checker::worlds::LocatedDefect;
     use gandr_core_term::BinderDepth;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Zone;
@@ -1478,6 +1521,78 @@ mod tests
             },
             CheckRefusal::ForwardUnsupported { at: value },
             CheckRefusal::Boundary { at: value },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Immobile {
+                    crossed: gandr_core_checker::worlds::Crossed::Result,
+                    ty: value_type,
+                    former: value_type,
+                    predicate: gandr_core_checker::worlds::Predicate::Mobile,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::CapabilityMissing {
+                    world: gandr_core_term::world::World::Host,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::CapabilityCaptured {
+                    world: gandr_core_term::world::World::Host,
+                    by: Capture::Thunk,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Elsewhere {
+                    bound: gandr_core_term::world::World::Host,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::HoldElsewhere {
+                    wanted: gandr_core_term::world::World::Host,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::Unlocated,
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::UndeclaredWorld {
+                    world: ConstantIndex::from(0_usize),
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::HostWorldUndeclared,
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::MarkUnfounded {
+                    atom: ConstantIndex::from(0_usize),
+                    former: value_type,
+                    predicate: gandr_core_checker::worlds::Predicate::Open,
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::EntryNamed {
+                    constant: ConstantIndex::from(0_usize),
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::EntryUngranted {
+                    constant: ConstantIndex::from(0_usize),
+                },
+            },
+            CheckRefusal::Located {
+                at: node,
+                defect: LocatedDefect::NotAHandle { found: value_type },
+            },
         ]
         .map(Refusal::Checking);
         let corpus = Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot {

@@ -208,6 +208,7 @@ pub fn component(
                 | ValueTypeView::Staged { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Session(_)
+                | ValueTypeView::World(_)
                 | ValueTypeView::Unknown => return Err(refused),
             }
         },
@@ -232,6 +233,7 @@ pub fn component(
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
+        | ValueTypeView::World(_)
         | ValueTypeView::Unknown => return Err(refused),
     };
     Ok(Component {
@@ -352,6 +354,7 @@ pub fn flow_component(
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
+        | ValueTypeView::World(_)
         | ValueTypeView::Unknown => return Err(refused),
     }
     Ok((

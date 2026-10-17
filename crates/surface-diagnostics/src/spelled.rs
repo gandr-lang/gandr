@@ -543,6 +543,7 @@ fn words_point(
             | DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_) => None,
         })
     else {

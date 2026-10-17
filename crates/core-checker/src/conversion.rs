@@ -153,6 +153,7 @@ use gandr_core_term::effect::capability::RegionOrder;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::hole::Knowledge;
 use gandr_core_term::shift_comp_type;
+use gandr_core_term::world::WorldType;
 use gandr_kernel_core::stage_order::Fit;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;
@@ -586,6 +587,7 @@ pub fn decode_bridge(
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Session(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::World(_)
         | ValueTypeView::StaticPi { .. } => Err(CheckRefusal::TypeMismatch(Mismatch::Value {
             at: code,
             synthesised: found,
@@ -1133,6 +1135,25 @@ fn convert(
                         pending.push(values(left_first, right_first));
                         true
                     },
+                    // A handle is covariant in what it holds and names one
+                    // world; a capability names one world.
+                    (
+                        ValueTypeView::World(WorldType::At {
+                            inner: left_inner,
+                            world: left_world,
+                        }),
+                        ValueTypeView::World(WorldType::At {
+                            inner: right_inner,
+                            world: right_world,
+                        }),
+                    ) => {
+                        pending.push(values(left_inner, right_inner));
+                        left_world == right_world
+                    },
+                    (
+                        ValueTypeView::World(WorldType::Capability(left_world)),
+                        ValueTypeView::World(WorldType::Capability(right_world)),
+                    ) => left_world == right_world,
                     (
                         ValueTypeView::PathUniverse(..)
                         | ValueTypeView::Path { .. }
@@ -1156,7 +1177,8 @@ fn convert(
                         | ValueTypeView::Session(_)
                         | ValueTypeView::StaticPi { .. }
                         | ValueTypeView::Capability { .. }
-                        | ValueTypeView::Staged { .. },
+                        | ValueTypeView::Staged { .. }
+                        | ValueTypeView::World(_),
                         _,
                     ) => false,
                 }

@@ -385,6 +385,7 @@ pub fn session_code(
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
+        | ValueTypeView::World(_)
         | ValueTypeView::Unknown => elsewhere,
     }
 }
@@ -686,6 +687,7 @@ pub fn endpoints(
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
+        | ValueTypeView::World(_)
         | ValueTypeView::Unknown => Err(CheckRefusal::ShapeMismatch {
             at,
             wanted: ExpectedShape::Flow,
@@ -882,7 +884,8 @@ pub fn covariant(
                 | ValueType::Unknown
                 | ValueType::Stack { .. }
                 | ValueType::Session(_)
-                | ValueType::Capability { .. } => return Err(refused),
+                | ValueType::Capability { .. }
+                | ValueType::World(_) => return Err(refused),
             },
             Position::CompType(id) => match *arena.comp_type(id).ok_or_else(|| dangling(node))? {
                 CompType::Returner { result, .. } => {
@@ -1109,7 +1112,8 @@ fn computed(
             | ValueType::Stack { .. }
             | ValueType::Session(_)
             | ValueType::Capability { .. }
-            | ValueType::Staged { .. } => return Err(unsupported),
+            | ValueType::Staged { .. }
+            | ValueType::World(_) => return Err(unsupported),
         }
     }
     Ok(())
@@ -1251,7 +1255,8 @@ pub fn run_premises(
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Capability { .. }
-        | ValueTypeView::Session(_) => {
+        | ValueTypeView::Session(_)
+        | ValueTypeView::World(_) => {
             return Err(CheckRefusal::ShapeMismatch {
                 at: TermNode::Value(at),
                 wanted: ExpectedShape::Run,
