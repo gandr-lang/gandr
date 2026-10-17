@@ -131,7 +131,7 @@ mod entries
         ("Pattern constructor", Standing::Owed(6)),
         ("Pattern false", Standing::Owed(0)),
         ("Pattern identifier", Standing::Owed(29)),
-        ("Pattern number", Standing::Owed(8)),
+        ("Pattern number", Standing::Owed(0)),
         ("Pattern true", Standing::Owed(0)),
         ("Pattern |", Standing::Owed(0)),
         ("Type !", Standing::Owed(0)),
@@ -278,9 +278,10 @@ mod entries
 
     /// Why a node needs no entry of its own by where it stands, whatever its
     /// kind: inside an attribute or documentation, inside a declaration the
-    /// lowering refused, as the head of a former's call, as the module a path
-    /// qualifies, as a run literal's move, as an inner link of a product or a
-    /// sum chain, or as the value a discarded bind drops.
+    /// lowering refused, as the head of a former's call, as a count of the
+    /// stratum a head's annotation writes, as the module a path qualifies, as
+    /// a run literal's move, as an inner link of a product or a sum chain, or
+    /// as the value a discarded bind drops.
     ///
     /// # Specification
     /// trivial.
@@ -295,6 +296,11 @@ mod entries
         /// The head of a constructor's or a primitive former's call, or of an
         /// annotation: the call is the one core node, and answers.
         Head,
+        /// A count of the stratum an annotation on a head writes, `1` and `4`
+        /// in `ua[1, 4](a, b, f, g)`: the degree and the catalogue bound the
+        /// former reads off the literal's digits, never a term, so the call
+        /// the annotation heads answers (#298).
+        Stratum,
         /// The module a path selects from, `M` in `M.x` or `M.T`: a
         /// namespace, neither a term nor a type, so the path answers.
         Qualifier,
@@ -459,8 +465,12 @@ mod entries
                 && !melded
                 && def.label == "identifier"
                 && parent.is_some_and(|(_, label, ..)| label == "pure");
+            let counted = !melded
+                && def.label == "number"
+                && parent.is_some_and(|(_, label, headed, _)| label == "[" && !headed);
             let placed = placed
                 .or_else(|| head.then_some(Placed::Head))
+                .or_else(|| counted.then_some(Placed::Stratum))
                 .or_else(|| qualifier.then_some(Placed::Qualifier))
                 .or_else(|| moved.then_some(Placed::Move))
                 .or_else(|| chained.then_some(Placed::Chained))
