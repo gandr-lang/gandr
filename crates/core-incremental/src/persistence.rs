@@ -809,8 +809,9 @@ enum Failure
 ///
 /// # Adequacy
 /// - hypothesis: L3 — actual missing-record and directory-read errors separate
-///   `NotFound` from `Other`. Random staging-name collisions are not forced, so
-///   `AlreadyExists` classification has no dedicated collision witness.
+///   `NotFound` from `Other`, and each kind is classified directly. Random
+///   staging-name collisions are not forced, so the retry that reads
+///   `AlreadyExists` has no collision witness.
 /// - witness: `persistence::tests::file_load_distinguishes_not_found_from_other_read_errors`
 #[expect(
     clippy::std_instead_of_core,

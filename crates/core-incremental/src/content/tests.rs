@@ -395,6 +395,126 @@ fn a_type_minted_back_has_its_own_content()
 }
 
 #[test]
+fn every_dependent_former_mints_back_as_its_own_table()
+{
+    let mut source = CoreArena::new();
+    let integer = source.value_type_base(BaseType::Integer);
+    let string = source.value_type_base(BaseType::String);
+    let sigma = source.value_type_sigma(integer, string);
+    let static_pi = source.value_type_static_pi(string, integer);
+    let returner = source.comp_type_returner(integer);
+    let pi = source.comp_type_pi(string, returner);
+    let thunk = source.value_type_thunk(pi);
+    let ty = source.value_type_product(&[sigma, static_pi, thunk]);
+    let program = single(
+        source,
+        Maybe::Present(ty),
+        Maybe::Absent(body::Absent::Hole),
+    );
+    let content = TypeContent::of_value_type(&program, ty);
+    let mut target = CoreArena::new();
+    let _noise = target.value_type_unit();
+    let mut minted_into = single(
+        target,
+        Maybe::Absent(signature::Absent::Unsigned),
+        Maybe::Absent(body::Absent::Hole),
+    );
+    let minted = {
+        let (arena, layout) = minted_into.parts_mut();
+        content.mint(arena, layout)
+    };
+    let Maybe::Present(minted) = minted
+    else {
+        panic!("a sigma, a static pi and a pi seat: {minted:?}");
+    };
+    assert_eq!(TypeContent::of_value_type(&minted_into, minted), content);
+}
+
+#[test]
+fn a_data_type_mints_only_unapplied()
+{
+    let it = || Reference::Item {
+        key: ItemKey::from("it"),
+        occurrence: Occurrence::from(0_usize),
+    };
+    let mut program = single(
+        CoreArena::new(),
+        Maybe::Absent(signature::Absent::Unsigned),
+        Maybe::Absent(body::Absent::Hole),
+    );
+    let (arena, layout) = program.parts_mut();
+    let bare = TypeContent::from_nodes(vec![ContentNode::Data {
+        declaration: it(),
+        arguments: Vec::new(),
+    }]);
+    assert!(
+        matches!(bare.mint(arena, layout), Maybe::Present(_)),
+        "a data type of no arguments seats at its declaration"
+    );
+    let applied = TypeContent::from_nodes(vec![
+        ContentNode::Data {
+            declaration: it(),
+            arguments: vec![NodeIndex::from(1_usize)],
+        },
+        ContentNode::Constant(Reference::Unoccupied),
+    ]);
+    assert_eq!(
+        applied.mint(arena, layout),
+        Maybe::Absent(seating::Absent::Unseatable),
+        "and one applied to an argument does not"
+    );
+}
+
+#[test]
+fn renumbering_carries_every_frame_and_clause_body_to_its_image()
+{
+    use alloc::sync::Arc;
+
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::control::StackFrame;
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    use gandr_kernel_term::Side;
+
+    let index = NodeIndex::from;
+    let mut shifted = |child: NodeIndex| NodeIndex::from(usize::from(child).saturating_add(10));
+    let reify = |[apply, bind]: [usize; 2]| {
+        ContentNode::Reify(Arc::from([
+            StackFrame::Apply(index(apply)),
+            StackFrame::Bind(index(bind)),
+            StackFrame::Project(Side::Left),
+        ]))
+    };
+    assert_eq!(
+        super::map_children(&reify([1, 2]), &mut shifted),
+        reify([11, 12])
+    );
+    let handle = |[subject, on_return, payload, body]: [usize; 4]| {
+        let signature = EffectSig::new(EffectName::from("Probe"), [EffectOp {
+            name: OperationName::from("ask"),
+            payload: index(payload),
+            reply: index(payload),
+        }])
+        .expect("one operation");
+        ContentNode::Handle {
+            signature,
+            subject: index(subject),
+            on_return: index(on_return),
+            clauses: Arc::from([EffectClause {
+                operation: OperationName::from("ask"),
+                body: index(body),
+            }]),
+        }
+    };
+    assert_eq!(
+        super::map_children(&handle([1, 2, 3, 4]), &mut shifted),
+        handle([11, 12, 13, 14])
+    );
+}
+
+#[test]
 fn effect_rows_round_trip_without_losing_operation_types()
 {
     use gandr_core_term::effect::EffectName;

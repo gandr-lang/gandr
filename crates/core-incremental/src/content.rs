@@ -3382,6 +3382,7 @@ pub fn renumber(
 ///   selection.
 /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
 /// - witness: `content::tests::renumbering_closes_dangling_and_cyclic_tables`
+/// - witness: `content::tests::renumbering_carries_every_frame_and_clause_body_to_its_image`
 #[spec(ensures: |ret| {
         core::mem::discriminant(&ret) == core::mem::discriminant(node)
             && ret.sort() == node.sort()
@@ -4112,6 +4113,8 @@ fn minted_comp_type(
 /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
 /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
 /// - witness: `content::tests::malformed_type_tables_fail_by_structure`
+/// - witness: `content::tests::every_dependent_former_mints_back_as_its_own_table`
+/// - witness: `content::tests::a_data_type_mints_only_unapplied`
 #[spec(
     requires: node.children().iter().all(|(child, _)| matches!(states.get(usize::from(child)), Some(&MintState::Done(_)))),
     ensures: |ret| match ret {

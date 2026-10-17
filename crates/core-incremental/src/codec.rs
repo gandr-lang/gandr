@@ -2464,6 +2464,7 @@ where
 /// - hypothesis: L3 — each defect of the stratum survives persistence under its
 ///   own name.
 /// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_stratum_defect(
     reader: &mut Reader<'_>
@@ -2539,6 +2540,7 @@ where
 /// - hypothesis: L3 — each defect of the translators survives persistence under
 ///   its own name.
 /// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_ua_defect(reader: &mut Reader<'_>) -> Result<gandr_core_checker::ua::UaDefect, CodecError>
 {
@@ -3115,6 +3117,7 @@ fn read_effect_row(
 /// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
+/// - witness: `codec::tests::every_node_former_round_trips_under_its_own_frame`
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -4534,6 +4537,7 @@ where
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+/// - witness: `codec::tests::every_footprint_stance_and_answer_round_trips`
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref footprint) => {
@@ -5836,6 +5840,8 @@ where
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::narrow_fields_refuse_out_of_range_words_after_consuming_them`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+/// - witness: `codec::tests::an_offer_narrowed_fault_is_read_only_at_step_zero`
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -6541,6 +6547,7 @@ where
 ///   payload.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+/// - witness: `codec::tests::every_footprint_stance_and_answer_round_trips`
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {

@@ -1093,6 +1093,10 @@ fn nested_process_local_and_opaque_forms_report_exact_errors()
 }
 
 #[test]
+#[expect(
+    clippy::std_instead_of_core,
+    reason = "`core::io::ErrorKind` is not stable yet"
+)]
 fn file_load_distinguishes_not_found_from_other_read_errors()
 {
     let scratch = Scratch::new(Label("not-found"));
@@ -1109,6 +1113,20 @@ fn file_load_distinguishes_not_found_from_other_read_errors()
         Err(CheckpointStoreError::Io),
         "a record path that cannot be read is an error"
     );
+    for (kind, expected) in [
+        (std::io::ErrorKind::NotFound, super::Failure::NotFound),
+        (
+            std::io::ErrorKind::AlreadyExists,
+            super::Failure::AlreadyExists,
+        ),
+        (std::io::ErrorKind::PermissionDenied, super::Failure::Other),
+    ] {
+        assert_eq!(
+            super::failure_of(&std::io::Error::from(kind)),
+            expected,
+            "{kind:?} is classified as itself"
+        );
+    }
 }
 
 #[test]
@@ -1131,6 +1149,14 @@ fn file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes()
         Err(CheckpointStoreError::Corrupt),
         "a record under another address's name"
     );
+    let mut magic = record.clone();
+    if let Some(first) = magic.first_mut() {
+        *first ^= 0x01_u8;
+    }
+    let mut version = record.clone();
+    if let Some(low) = version.get_mut(8) {
+        *low ^= 0x01_u8;
+    }
     let mut flipped = record.clone();
     if let Some(last) = flipped.last_mut() {
         *last ^= 0x01_u8;
@@ -1139,6 +1165,8 @@ fn file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes()
     let mut extended = record;
     extended.push(0_u8);
     for (damaged, what) in [
+        (magic, "a broken magic alone"),
+        (version, "another version alone"),
         (flipped, "a flipped payload byte"),
         (truncated, "a truncated record"),
         (extended, "a trailing byte"),
