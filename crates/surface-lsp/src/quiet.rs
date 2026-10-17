@@ -148,7 +148,8 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a caret at the end of a declaration missing its `;` is
 ///   inside it, as is one after a space typed there; one past the `;` is in no
 ///   form, and one inside an operand of a finished declaration is in the
-///   operand's form.
+///   operand's form; a caret before a lone word at the top level is in no form,
+///   and one after it is in the word.
 /// - witness: `quiet::tests::the_caret_is_held_by_the_form_it_is_writing`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(span) => span.start() < at,
@@ -258,6 +259,7 @@ pub struct Holding(pub bool);
 ///   two declarations below is not, a goal inside the form is not, and with no
 ///   form every diagnostic publishes.
 /// - witness: `editor::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
+/// - witness: `quiet::tests::a_diagnostic_touching_the_form_is_held_and_one_apart_from_it_published`
 #[spec(ensures: |ret| ret.0.len() <= checked.len() && ret.1.0 == (ret.0.len() < checked.len()))]
 #[must_use]
 pub fn publishable<Reason>(
@@ -484,9 +486,87 @@ mod tests
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Holding;
     use super::caret_form;
     use super::formless;
+    use super::publishable;
+    use crate::position::Character;
+    use crate::position::Line;
+    use crate::position::Position;
+    use crate::position::Range;
+    use crate::protocol::Diagnostic;
+    use crate::protocol::Severity;
     use crate::recheck::grammar;
+
+    /// The range from `start` to `end` on line zero.
+    ///
+    /// # Specification
+    /// trivial.
+    fn columns(
+        start: impl Into<Character>,
+        end: impl Into<Character>,
+    ) -> Range
+    {
+        let line = Line::from(0_u32);
+        Range {
+            start: Position {
+                line,
+                character: start.into(),
+            },
+            end: Position {
+                line,
+                character: end.into(),
+            },
+        }
+    }
+
+    /// An error marking `range`, saying `message`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn error(
+        range: Range,
+        message: impl Into<String>,
+    ) -> Diagnostic
+    {
+        Diagnostic {
+            range,
+            severity: Severity::ERROR,
+            code: None,
+            source: "gandr",
+            message: message.into(),
+            related_information: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_diagnostic_touching_the_form_is_held_and_one_apart_from_it_published()
+    {
+        let form: Maybe<Range, ()> = Maybe::Present(columns(10_u32, 20_u32));
+        let messages = |published: &[Diagnostic]| -> Vec<String> {
+            published
+                .iter()
+                .map(|diagnostic| diagnostic.message.clone())
+                .collect()
+        };
+        let checked = [
+            error(columns(0_u32, 5_u32), "before"),
+            error(columns(5_u32, 10_u32), "touching its start"),
+            error(columns(12_u32, 14_u32), "inside"),
+            error(columns(20_u32, 25_u32), "touching its end"),
+            error(columns(21_u32, 25_u32), "after"),
+        ];
+        let (published, holding) = publishable(&checked, &form);
+        assert_eq!(messages(&published), ["before", "after"]);
+        assert_eq!(holding, Holding(true));
+        let apart = [
+            error(columns(0_u32, 5_u32), "before"),
+            error(columns(21_u32, 25_u32), "after"),
+        ];
+        let (published, holding) = publishable(&apart, &form);
+        assert_eq!(messages(&published), ["before", "after"]);
+        assert_eq!(holding, Holding(false), "nothing held, nothing withheld");
+    }
 
     #[test]
     fn the_caret_is_held_by_the_form_it_is_writing()
@@ -538,6 +618,17 @@ mod tests
         assert!(
             "def a = 1 ;".contains(inner) && inner.contains('1'),
             "the form holding a caret inside the value is the value's or the declaration's: {inner:?}"
+        );
+        let lone = "def a = 1 ;\nx";
+        assert_eq!(
+            held(lone, 12),
+            Maybe::Absent(formless::Absent::Between),
+            "a caret before a lone word has not entered it"
+        );
+        assert_eq!(
+            held(lone, 13),
+            Maybe::Present("x"),
+            "one after it is writing it"
         );
     }
 }

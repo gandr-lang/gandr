@@ -376,6 +376,12 @@ impl Code
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every escaped character, after a coloured run whose
+    ///   tag holds none of them, observes the escape and the tag's end.
+    /// - witness: `markup::tests::plain_text_is_escaped_and_uncoloured`
+    /// - witness: `markup::tests::inline_html_escapes_the_markdown_punctuation_outside_its_tags`
     #[must_use]
     pub fn inline(self) -> String
     {
@@ -513,5 +519,26 @@ mod tests
         let mut inline = Code::new(Markup::Html);
         inline.plain(SourceText::from("a * b_c"));
         assert_eq!(inline.inline(), "<code>a &#42; b&#95;c</code>");
+    }
+
+    /// Inline HTML escapes each piece of markdown punctuation outside the
+    /// tags it wrote, and passes a tag through as written, the text after it
+    /// escaped again.
+    #[test]
+    fn inline_html_escapes_the_markdown_punctuation_outside_its_tags()
+    {
+        let mut inline = Code::new(Markup::Html);
+        inline.quoted(SourceText::from("x"), ByteOffset::from(0_usize), &[
+            HlSpan {
+                range: ByteRange::new(0_usize.into(), 1_usize.into()).expect("an ordered range"),
+                role: HlRole::VariableParam,
+            },
+        ]);
+        inline.plain(SourceText::from(" `\\[]~|!*_"));
+        assert_eq!(
+            inline.inline(),
+            "<code><span style=\"color:var(--vscode-gandr-hover-variableParam);\">x</span> \
+             &#96;&#92;&#91;&#93;&#126;&#124;&#33;&#42;&#95;</code>"
+        );
     }
 }

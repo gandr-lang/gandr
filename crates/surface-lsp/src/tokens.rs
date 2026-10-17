@@ -138,6 +138,11 @@ impl AsRef<[u32]> for TokenStream
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stream of five integers, read back whole, differs
+    ///   from an empty stream and from any stream of one integer.
+    /// - witness: `tokens::tests::a_one_line_keyword_encodes_as_five_integers`
     #[inline]
     fn as_ref(&self) -> &[u32]
     {
@@ -562,10 +567,16 @@ mod tests
     fn a_one_line_keyword_encodes_as_five_integers()
     {
         let index = LineIndex::new(SourceText::from("def x"));
+        let stream = encode(&index, &[span(Bytes(0, 3), HlRole::Keyword)]);
         assert_eq!(
-            encode(&index, &[span(Bytes(0, 3), HlRole::Keyword)]),
+            stream,
             TokenStream::from(vec![0, 0, 3, 0, 0]),
             "line 0, column 0, three units, a keyword, no modifier"
+        );
+        assert_eq!(
+            stream.as_ref(),
+            [0, 0, 3, 0, 0],
+            "the stream lends the integers it holds"
         );
     }
 

@@ -626,5 +626,19 @@ mod tests
                 "no range is given twice: {chains:?}"
             );
         }
+        let between =
+            Reading::of(source).selections(&LineIndex::new(source.as_ref().into()), &[at(
+                Line::from(0),
+                Character::from(9),
+            )]);
+        assert_eq!(
+            between
+                .iter()
+                .map(chain)
+                .next()
+                .and_then(|chain| chain.first().cloned()),
+            Some("0:9-0:10".to_owned()),
+            "where one token ends and the next starts, the one starting is selected"
+        );
     }
 }

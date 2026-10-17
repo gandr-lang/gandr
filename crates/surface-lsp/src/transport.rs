@@ -155,6 +155,11 @@ impl core::error::Error for TransportFault
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stream fault read back through its source observes
+    ///   the stream error's kind; a framing fault observes none.
+    /// - witness: `transport::tests::a_stream_fault_names_the_stream_error_as_its_source`
     #[inline]
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)>
     {
@@ -610,5 +615,23 @@ mod tests
         );
         assert_eq!(output.bytes, golden);
         assert_eq!(output.flushes, 1_usize);
+    }
+
+    /// A stream fault names the stream's own error as its source; a framing
+    /// fault, which carries none, names no source.
+    #[test]
+    fn a_stream_fault_names_the_stream_error_as_its_source()
+    {
+        use core::error::Error as _;
+
+        let fault = TransportFault::Io(io::Error::from(io::ErrorKind::ConnectionReset));
+        assert_eq!(
+            fault
+                .source()
+                .and_then(|source| source.downcast_ref::<io::Error>())
+                .map(io::Error::kind),
+            Some(io::ErrorKind::ConnectionReset)
+        );
+        assert!(TransportFault::Truncated.source().is_none());
     }
 }

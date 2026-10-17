@@ -362,5 +362,47 @@ mod tests
             Vec::new(),
             "a repaired form stays as written"
         );
+        let across = Range {
+            start: at(0_u32, 6_u32),
+            end: at(2_u32, 2_u32),
+        };
+        assert_eq!(
+            edits(SourceText::from(LOOSE), Window::Within(across)).expect("the document formats"),
+            vec![
+                replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a ="),
+                replace(at(2_u32, 6_u32), at(2_u32, 8_u32), ""),
+            ],
+            "a range across two forms formats both"
+        );
+        let to_the_next = Range {
+            start: at(0_u32, 6_u32),
+            end: at(1_u32, 0_u32),
+        };
+        assert_eq!(
+            edits(SourceText::from(LOOSE), Window::Within(to_the_next))
+                .expect("the document formats"),
+            vec![replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a =")],
+            "a range ending where the next form starts leaves that form"
+        );
+        let from_the_end = Range {
+            start: at(0_u32, 13_u32),
+            end: at(2_u32, 2_u32),
+        };
+        assert_eq!(
+            edits(SourceText::from(LOOSE), Window::Within(from_the_end))
+                .expect("the document formats"),
+            vec![replace(at(2_u32, 6_u32), at(2_u32, 8_u32), "")],
+            "a range starting where a form ends leaves that form"
+        );
+        let at_the_start = Range {
+            start: at(1_u32, 0_u32),
+            end: at(1_u32, 0_u32),
+        };
+        assert_eq!(
+            edits(SourceText::from(LOOSE), Window::Within(at_the_start))
+                .expect("the document formats"),
+            vec![replace(at(2_u32, 6_u32), at(2_u32, 8_u32), "")],
+            "a cursor where a form starts formats it"
+        );
     }
 }
