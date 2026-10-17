@@ -1491,11 +1491,8 @@ impl Labeled<'_>
     /// - fails: never.
     /// - panics: none.
     /// - intension: one relabeling of the text before the cursor from this
-    ///   labeling, which rescans from the cursor's previous line, one molding
-    ///   of the form the cursor ends, one bounded walk of its open form, and
-    ///   grammar reads only for the words a candidate is cut against; the
-    ///   written tokens are read off this labeling and the forms the slot can
-    ///   open off `forms`.
+    ///   labeling, which rescans from the cursor's previous line, then
+    ///   [`ghost_before`](Self::ghost_before)'s work at that cut.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the defect rows, one cursor per category, comments
@@ -1522,14 +1519,59 @@ impl Labeled<'_>
     {
         let whole = <&str>::from(self.text);
         let at = whole.floor_char_boundary(usize::from(at));
-        let cut;
-        let before = if at == whole.len() {
-            self
+        if at == whole.len() {
+            self.ghost_before(self, grammar, forms)
         }
         else {
-            cut = self.cut(ByteOffset::from(at));
-            &cut
-        };
+            self.ghost_before(&self.cut(ByteOffset::from(at)), grammar, forms)
+        }
+    }
+
+    /// The ghost texts `grammar`, whose forms are `forms`, offers where
+    /// `before` ends in this text, best first: [`ghost`](Self::ghost) at that
+    /// byte, its cut given.
+    ///
+    /// A caller asking at one cursor of a text with and without the text
+    /// after it cuts once and asks both here. Under specification
+    /// enforcement [`Labeling::relabel`]'s contract labels both texts whole,
+    /// so a cut costs two labelings, and a second cut at the same cursor two
+    /// more.
+    ///
+    /// # Specification
+    /// - requires: `forms` is [`Forms::new`] of `grammar`; `before` is this
+    ///   text or its [`cut`](Self::cut) at a character boundary.
+    /// - ensures: [`ghost`](Self::ghost)'s answer at the byte where `before`
+    ///   ends.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one molding of the form the cursor ends, one bounded walk
+    ///   of its open form, and grammar reads only for the words a candidate is
+    ///   cut against; the written tokens are read off this labeling and the
+    ///   forms the slot can open off `forms`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the defect rows, one cursor per category, comments
+    ///   and the ranking golden assert [`ghost`](Self::ghost)'s exact answers
+    ///   through this function; L2 — every cursor of every corpus source, cut
+    ///   once and asked with and without the text after it, answers at least
+    ///   one snippet and none with `?`.
+    /// - witness: `inline::tests::the_defect_rows_answer_as_wanted`
+    /// - witness: `inline::tests::the_ranking_is_pinned`
+    /// - witness: `inline::tests::sweeps::every_corpus_cursor_has_a_ghost_text`
+    #[must_use]
+    #[spec(
+        requires: <&str>::from(self.text).starts_with(<&str>::from(before.text)),
+        ensures: |ret| (1 ..= SHOWN).contains(&ret.0.len()) && ret.0.iter().all(|snippet| !snippet.0.contains(":?}")),
+    )]
+    pub fn ghost_before(
+        &self,
+        before: &Labeled<'_>,
+        grammar: &Pbg,
+        forms: &Forms,
+    ) -> Ghosts
+    {
+        let whole = <&str>::from(self.text);
+        let at = <&str>::from(before.text).len();
         let tokens = before.labeling.tokens();
         let source = before.text;
         let after = SourceText::from(whole.get(at ..).unwrap_or_default());
@@ -2349,10 +2391,9 @@ mod tests
                 let whole = Labeled::new(SourceText::from(text.as_str()));
                 let cursors = text.char_indices().map(|(at, _)| at).chain([text.len()]);
                 for at in cursors.step_by(CURSOR_STRIDE) {
-                    let at = ByteOffset::from(at);
-                    let prefix = whole.cut(at);
+                    let prefix = whole.cut(ByteOffset::from(at));
                     for labeled in [&whole, &prefix] {
-                        let found = labeled.ghost(&tools.grammar, &tools.forms, at);
+                        let found = labeled.ghost_before(&prefix, &tools.grammar, &tools.forms);
                         let found = found.as_ref();
                         assert!(
                             !found.is_empty() && found.len() <= 8,
