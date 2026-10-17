@@ -499,7 +499,8 @@ struct Typings
 /// # Specification
 /// - ensures: nothing for `back` and `then`; for `cong`, the written result
 ///   type of the function it maps by, or, for a parameter, its written type
-///   until [`Lowerer::refuse_unsynthesised`] reads its arrow's codomain.
+///   until [`Lowerer::refuse_unsynthesised`] reads its arrow's codomain, and
+///   then that codomain with the frame it is carried from.
 /// - executable: none — a tag holds no tree to check its reading against.
 ///
 /// # Adequacy
@@ -527,6 +528,20 @@ enum Synthesis
     {
         /// The binder's written type.
         declared: NodeIndex,
+    },
+    /// The codomain of the arrow a parameter's written type thunks, read under
+    /// `frame`, the frame the parameter's type is read under: `cong` at a
+    /// bound map. Every binder of `frame` is in scope where the operation
+    /// stands, so the codomain is carried there.
+    Bound
+    {
+        /// The codomain's syntax node.
+        codomain: NodeIndex,
+        /// The frame the parameter's type, and so the codomain, is read
+        /// under.
+        frame: Frame,
+        /// The frame the map's use stands under in a type; none in a body.
+        in_type: Option<Frame>,
     },
 }
 
@@ -1720,7 +1735,7 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(ensures: |ret| match ret {
         | Ok(Synthesis::Mapped { codomain, frame: read }) => self.reading(codomain).frame() == read,
         | Ok(Synthesis::Thunked { .. }) | Err(_) => true,
-        | Ok(Synthesis::Paths) => false,
+        | Ok(Synthesis::Paths | Synthesis::Bound { .. }) => false,
     })]
     fn mapped(
         &mut self,
@@ -1843,6 +1858,45 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
+    /// The frame a bound map's use at `function` stands under in a type,
+    /// through parentheses: the use site a static application of the bound
+    /// binder records.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified `function`.
+    /// - ensures: the use site's frame when `function` is planned as the bare
+    ///   static application of a binder; nothing for a body's variable and
+    ///   every other plan.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn steps to the child a transparent plan stands for, strictly
+    /// deeper in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `cong` at a bound map in a body and in a type.
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    #[spec(ensures: |ret| ret.is_none() || !matches!(self.plans.get(usize::from(function)), Some(&Plan::Variable(..))))]
+    fn used_in_type(
+        &self,
+        function: NodeIndex,
+    ) -> Option<Frame>
+    {
+        let mut at = function;
+        loop {
+            match self.plans.get(usize::from(at)) {
+                Some(&Plan::Transparent(inner)) => at = inner,
+                Some(&Plan::StaticApplication(Code::Bound { from, .. }, arguments))
+                    if arguments.start == arguments.end =>
+                {
+                    return Some(from);
+                },
+                _ => return None,
+            }
+        }
+    }
+
     /// Refuse every synthesised derived operation whose path's type is not
     /// read where it stands, the innermost first.
     ///
@@ -1852,11 +1906,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   under a declaration not yet refused, is offered the unannotated
     ///   refusal unless the path its motive is read off — `back`'s and `cong`'s
     ///   path, `then`'s first — reads its type as [`Self::reads_path`] does,
-    ///   and `cong`'s codomain is read under no binder of its function's
-    ///   telescope, in a declaration that lowers. An admitted operation reads
-    ///   its own type when every path it reads does, `then`'s second included.
-    ///   The record keeps every site, the innermost first, for the mint sweep
-    ///   to read `cong`'s codomain.
+    ///   and `cong`'s codomain is read in a declaration that lowers: a declared
+    ///   function's under no binder of its telescope, a parameter's arrow's
+    ///   under the frame its written type is read under, whose binders all
+    ///   stand where the operation does. An admitted operation reads its own
+    ///   type when every path it reads does, `then`'s second included. The
+    ///   record keeps every site, the innermost first, for the mint sweep to
+    ///   read `cong`'s codomain.
     /// - provides: the classification-time guarantee that a synthesised
     ///   operation mints its motive.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
@@ -1873,8 +1929,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a word, a composite of words and an operation over
     ///   one admitted, an operation over a parameter or a call stating its path
-    ///   admitted, one over a parameter stating none refused, and `cong` over a
-    ///   refused function refused.
+    ///   admitted, one over a parameter stating none refused, `cong` over a
+    ///   refused function refused, and `cong` at a parameter whose map type
+    ///   reads an earlier parameter admitted in a body and in a type (#546).
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     #[spec(captures: before = self.synthesised.len(), ensures: |ret| ret.is_err() || self.synthesised.len() == before)]
@@ -1901,19 +1958,37 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            let (path, rest) = match derivation {
-                Derivation::Back { path } | Derivation::Cong { path, .. } => (path, None),
-                Derivation::Then { first, second } => (first, Some(second)),
+            let (path, rest, function) = match derivation {
+                Derivation::Back { path } => (path, None, None),
+                Derivation::Cong { path, function } => (path, None, Some(function)),
+                Derivation::Then { first, second } => (first, Some(second), None),
             };
-            let synthesis = match synthesis {
-                Synthesis::Thunked { declared } => {
-                    self.thunked_codomain(declared)
-                        .map_or(synthesis, |codomain| Synthesis::Mapped {
+            let synthesis = match (synthesis, function) {
+                (Synthesis::Thunked { declared }, Some(function)) => {
+                    match self.thunked_codomain(declared) {
+                        Some(codomain)
+                            if self.reading(codomain).frame() == self.reading(declared).frame() =>
+                        {
+                            Synthesis::Bound {
+                                codomain,
+                                frame: self.reading(codomain).frame(),
+                                in_type: self.used_in_type(function),
+                            }
+                        },
+                        Some(codomain) => Synthesis::Mapped {
                             codomain,
                             frame: self.reading(codomain).frame(),
-                        })
+                        },
+                        None => synthesis,
+                    }
                 },
-                Synthesis::Paths | Synthesis::Mapped { .. } => synthesis,
+                (
+                    Synthesis::Thunked { .. }
+                    | Synthesis::Paths
+                    | Synthesis::Mapped { .. }
+                    | Synthesis::Bound { .. },
+                    _,
+                ) => synthesis,
             };
             let closed = match synthesis {
                 Synthesis::Paths => true,
@@ -1921,6 +1996,7 @@ impl<'source> Lowerer<'_, 'source>
                     !self.collected.refused(codomain).0
                         && self.scope.telescope_binders(frame).all(|binds| !binds)
                 },
+                Synthesis::Bound { codomain, .. } => !self.collected.refused(codomain).0,
                 Synthesis::Thunked { .. } => false,
             };
             let transported = self.reads_path(path, &read)?;
@@ -1990,7 +2066,9 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            if let Synthesis::Mapped { codomain, .. } = synthesis {
+            if let Synthesis::Mapped { codomain, .. } | Synthesis::Bound { codomain, .. } =
+                synthesis
+            {
                 types.push(codomain);
             }
             types.extend(
@@ -2683,8 +2761,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: for `back(p)` at `p : Path(A, a, b)`, `Path(A, b, a)`; for `p
     ///   then q`, `Path(A, a, c)` with `c` read when `q : Path(A, b, c)` is,
     ///   absent otherwise; for `cong(f, p)`, `Path(B, ⟨force f a⟩, ⟨force f
-    ///   b⟩)` with `B` the returner's result the codomain mints, closed. Each
-    ///   path's type is read as [`Self::identity_of`] reads it under `frame`.
+    ///   b⟩)` with `B` the returner's result the codomain mints: closed for a
+    ///   declared function, carried as [`Self::carried`] carries it for a bound
+    ///   map. Each path's type is read as [`Self::identity_of`] reads it under
+    ///   `frame`.
     /// - fails: the unminted absence when the motive's path's type is not read;
     ///   the codomain's absence, or the other-sort absence when it mints no
     ///   returner.
@@ -2692,7 +2772,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each operation over a word, over another, over a
-    ///   parameter and over a call.
+    ///   parameter and over a call, and `cong` at a bound map.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     #[spec(ensures: |ret| match ret {
@@ -2730,7 +2810,10 @@ impl<'source> Lowerer<'_, 'source>
                     .identity_of(second, typings.onward, frame, sink)
                     .map(|onward| onward.right),
             },
-            (Derivation::Cong { .. }, Synthesis::Mapped { codomain, .. }) => {
+            (
+                Derivation::Cong { .. },
+                Synthesis::Mapped { codomain, .. } | Synthesis::Bound { codomain, .. },
+            ) => {
                 let written = match self.comp_type_at(codomain) {
                     Maybe::Present(written) => written,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -2738,6 +2821,19 @@ impl<'source> Lowerer<'_, 'source>
                 let Some(&CompType::Returner { result, .. }) = sink.arena.comp_type(written)
                 else {
                     return Maybe::Absent(lowered::Absent::OtherSort);
+                };
+                let carrier = match synthesis {
+                    Synthesis::Bound {
+                        frame: from,
+                        in_type,
+                        ..
+                    } => match self.carried(result, from, in_type, frame, sink) {
+                        Maybe::Present(carried) => carried,
+                        Maybe::Absent(_) => return Maybe::Absent(lowered::Absent::Unminted),
+                    },
+                    Synthesis::Paths | Synthesis::Mapped { .. } | Synthesis::Thunked { .. } => {
+                        result
+                    },
                 };
                 let mut image = |point| {
                     let forced = sink.arena.computation_force(function);
@@ -2748,7 +2844,7 @@ impl<'source> Lowerer<'_, 'source>
                 let right = image(read.right);
                 Stood {
                     answered: Answered::Path,
-                    carrier: result,
+                    carrier,
                     left,
                     right: Maybe::Present(right),
                 }
@@ -2842,10 +2938,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `declared` is minted or absent, read where a value type is
     ///   read under the frame its binder extends.
-    /// - ensures: the written path type with a binder inserted at each frame of
-    ///   its chain no telescope counts and every index raised past the frames
-    ///   between it and `frame`, for a use in a body; raised past the
-    ///   telescope's binders between it and `in_type`, for a use in a type.
+    /// - ensures: the written path type, carried as [`Self::carried`] carries
+    ///   it from the frame its binder extends.
     /// - fails: [`synthesised::Absent::Unread`] when the type did not lower or
     ///   is no path type.
     /// - panics: none.
@@ -2871,6 +2965,43 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unread;
         };
+        match self.carried(written, from, in_type, frame, sink) {
+            Maybe::Present(carried) => path_identity(sink.arena, carried),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The value type `written`, read under `from`, carried to a use whose
+    /// binders extend `from`: a body under `frame`, or a type under `in_type`.
+    ///
+    /// # Specification
+    /// - requires: `written` is minted in `sink`, read under `from`, and every
+    ///   binder of `from` stands where the use does.
+    /// - ensures: `written` with a binder inserted at each frame of its chain
+    ///   no telescope counts and every index raised past the frames between it
+    ///   and `frame`, for a use in a body; raised past the telescope's binders
+    ///   between it and `in_type`, for a use in a type.
+    /// - fails: [`synthesised::Absent::Unread`] when the relocation mints no
+    ///   returner.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path parameter and a bound map's codomain, each in
+    ///   a body and in a type.
+    /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(carried) => sink.arena.value_type(carried).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn carried(
+        &self,
+        written: ValueTypeId,
+        from: Frame,
+        in_type: Option<Frame>,
+        frame: Frame,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<ValueTypeId, synthesised::Absent>
+    {
         let between = |inner: Frame, outer: Frame, counted: fn(bool) -> bool| {
             let depth = |at: Frame| {
                 self.scope
@@ -2882,20 +3013,17 @@ impl<'source> Lowerer<'_, 'source>
                 u32::try_from(depth(inner).saturating_sub(depth(outer))).unwrap_or(u32::MAX),
             )
         };
-        let carried = if let Some(read) = in_type {
+        if let Some(read) = in_type {
             let lift = between(read, from, |binds| binds);
-            gandr_core_term::shift_value_type(sink.arena, written, lift)
+            return Maybe::Present(gandr_core_term::shift_value_type(sink.arena, written, lift));
         }
-        else {
-            let lift = between(frame, from, |_| true);
-            let wrapped = sink.arena.comp_type_returner(written);
-            let relocated = self.relocate(sink.arena, wrapped, from, lift, None);
-            match sink.arena.comp_type(relocated) {
-                Some(&CompType::Returner { result, .. }) => result,
-                _ => return unread,
-            }
-        };
-        path_identity(sink.arena, carried)
+        let lift = between(frame, from, |_| true);
+        let wrapped = sink.arena.comp_type_returner(written);
+        let relocated = self.relocate(sink.arena, wrapped, from, lift, None);
+        match sink.arena.comp_type(relocated) {
+            Some(&CompType::Returner { result, .. }) => Maybe::Present(result),
+            _ => Maybe::Absent(synthesised::Absent::Unread),
+        }
     }
 
     /// The path type a call's function writes as its result, at the call's
