@@ -1269,6 +1269,42 @@ impl<'source> Scope<'source>
             .map_or(Mentioned(false), |entry| entry.mentioned)
     }
 
+    /// Whether the binder that introduced `binder` binds in `telescope`: a
+    /// type of that telescope names it, or it is written with no type.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-range coordinate is admissible.
+    /// - ensures: a stored frame answers whether it binds in `telescope`; an
+    ///   out-of-range coordinate answers false.
+    /// - provides: whether a type introducing `binder` depends on it, read in
+    ///   the telescope the type's reads counted it in (#583).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mentioned binder, a quoted one and one neither
+    ///   names, each asked in both telescopes.
+    /// - witness: `resolve::tests::a_quoted_binder_binds_only_in_a_body_quote_s_telescope`
+    #[spec(
+        ensures: |ret| {
+            ret.0
+                == self
+                    .frames
+                    .get(binder.0)
+                    .is_some_and(|entry| entry.binds_in(telescope).0)
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn binds(
+        &self,
+        binder: ScopeId,
+        telescope: Telescope,
+    ) -> Mentioned
+    {
+        self.frames
+            .get(binder.0)
+            .map_or(Mentioned(false), |entry| entry.binds_in(telescope))
+    }
+
     /// The de Bruijn index the binder `binder` has from `from` in the
     /// signature's telescope: [`Self::index_in`] at [`Telescope::Signature`].
     ///
@@ -2015,6 +2051,15 @@ mod tests
         assert_eq!(
             scope.telescope_binders(Frame::Inner(n)).collect::<Vec<_>>(),
             Vec::from([false, false, true])
+        );
+        assert_eq!(
+            [x, a, n].map(|binder| {
+                [Telescope::Signature, Telescope::Quote]
+                    .map(|telescope| bool::from(scope.binds(binder, telescope)))
+            }),
+            [[true, true], [false, true], [false, false]],
+            "the mentioned binder binds in both, the quoted one in a body quote's alone, the \
+             unnamed one in neither"
         );
     }
 
