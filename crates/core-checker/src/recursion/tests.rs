@@ -588,6 +588,85 @@ fn a_constructor_of_plain_fields_needs_a_value_below_the_stage()
     );
 }
 
+/// `Empty` at 0, `T = Mk (U (Empty → F T))` at 1, and at 2 `fix f. λt. f (Mk
+/// (thunk (λx. fix y. force y)))` claiming `evidence`, the inner fixpoint
+/// partial.
+///
+/// # Specification
+/// trivial.
+fn thunked_call(
+    arena: &mut CoreArena,
+    evidence: FixpointEvidence,
+) -> Vec<Declaration>
+{
+    let kind = kind(arena);
+    let empty_signature = DataSignature::new(vec![], vec![], kind);
+    let empty = data(arena, ConstantIndex::from(0), vec![]);
+    let own = data(arena, ConstantIndex::from(1), vec![]);
+    let into = arena.comp_type_returner(own);
+    let branch = arena.comp_type_arrow(empty, into);
+    let field = arena.value_type_thunk(branch);
+    let signature = DataSignature::new(vec![], vec![vec![field]], kind);
+    let arrow = arena.comp_type_arrow(own, into);
+    let declared = arena.value_type_thunk(arrow);
+    // Under λx, fix y: `y` 0.
+    let y = var(arena, DeBruijnIndex::from(0));
+    let forced = arena.computation_force(y);
+    let diverging = arena.computation_fixpoint(forced, FixpointEvidence::Partial);
+    let lambda = arena.computation_lambda(diverging);
+    let thunked = arena.value_thunk(lambda);
+    let built = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![thunked]);
+    // Under λt: `t` 0, `f` 1.
+    let recursive = var(arena, DeBruijnIndex::from(1));
+    let called = call(arena, recursive, &[built]);
+    let lambda = arena.computation_lambda(called);
+    let fixpoint = arena.computation_fixpoint(lambda, evidence);
+    let body = arena.value_thunk(fixpoint);
+    vec![
+        declare_data(ConstantIndex::from(0), empty_signature),
+        declare_data(ConstantIndex::from(1), signature),
+        define(ConstantIndex::from(2), declared, body),
+    ]
+}
+
+#[test]
+fn a_thunked_field_shows_no_value_below_the_stage_598()
+{
+    // #598: `Mk`'s one recursive field is thunked, and the thunk never
+    // returns, so `Mk (…)` holds no value below the stage and nothing in
+    // scope shows the stage is above the first: `f (Mk …)` calls itself
+    // forever.
+    let mut arena = CoreArena::new();
+    let declarations = thunked_call(&mut arena, FixpointEvidence::StructuralDescent);
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(
+            verdicts[2],
+            Verdict::Refused(CheckRefusal::StageNotBelow {
+                found: Standing::Top,
+                bound,
+                ..
+            }) if bound == below(Stage::At(StageId::from(0_usize)))
+        ),
+        "{:?}",
+        verdicts[2]
+    );
+    // The control: claiming nothing, the same fixpoint checks as partial.
+    let mut arena = CoreArena::new();
+    let declarations = thunked_call(&mut arena, FixpointEvidence::Partial);
+    let (verdicts, outcomes) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(verdicts[2], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[2]
+    );
+    assert!(
+        matches!(outcomes[2], Outcome::Defined { .. }),
+        "{:?}",
+        outcomes[2]
+    );
+}
+
 /// `List a`, at position 1: `Nil`, `Cons (El a) (List a)`.
 ///
 /// # Specification

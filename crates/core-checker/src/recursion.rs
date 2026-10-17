@@ -13,8 +13,10 @@
 //!   [`stage_branch`] binds each recursive field at `s'`.
 //! - **A constructor stands above its fields.** [`constructor_owes`] reads what
 //!   a constructor checked at a stage owes: its recursive fields one step
-//!   lower, and, for a constructor with none, a value in scope showing the
-//!   stage is not the empty first one ([`room`]).
+//!   lower, and, for a constructor with no field whose own type is the family,
+//!   a value in scope showing the stage is not the empty first one ([`room`]).
+//!   A thunked recursive field shows nothing: it may hold a computation that
+//!   never returns (#598).
 //! - **Subsumption is the order**, decided where a found value type meets a
 //!   wanted one; the conversion reads a stage through
 //!   [`gandr_kernel_core::stage_order::StageOrder::fit`].
@@ -77,7 +79,7 @@ pub enum Room
 {
     /// A hypothesis stands at a stage of a data type at or below the wanted
     /// stage: that stage holds a value, so it is above the first, and every
-    /// constructor without a recursive field stands within it.
+    /// constructor without a field of its family stands within it.
     Witnessed,
     /// No hypothesis does.
     Unwitnessed,
@@ -658,10 +660,11 @@ pub fn constructor_owes(
 /// A data type's first stage is empty — every constructor stands one step
 /// above its recursive fields — so a hypothesis at a stage of a data type is
 /// a value there, and its stage is above the first. A constructor with no
-/// recursive field stands at every stage above the first; so it stands within
-/// `wanted` exactly when some such stage lies within it. A stage that only a
-/// case minted shows nothing: an arm binding no recursive field holds no value
-/// at the case's stage, and that stage may be the first.
+/// field whose own type is its family stands at every stage above the first;
+/// so it stands within `wanted` exactly when some such stage lies within it.
+/// A stage that only a case minted shows nothing: an arm binding no
+/// recursive field holds no value at the case's stage, and that stage may be
+/// the first.
 ///
 /// # Specification
 /// - ensures: [`Room::Witnessed`] exactly when some intuitionistic hypothesis
