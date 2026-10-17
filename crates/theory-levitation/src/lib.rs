@@ -33,6 +33,52 @@
 //! The crate is `no_std` and depends on `core`, `alloc` and the shape
 //! vocabulary of `quenchant-shape`.
 //!
+//! # The generalized logical framework
+//!
+//! Kaposi and Xie's second-order generalized algebraic theories present a
+//! theory with binding by a signature; Kovács and Sattler's generalized
+//! logical framework reads that one signature through two models. The crate
+//! carries the fragment of that reading the rest of gandr needs first:
+//!
+//! - **Generation.** A signature marks each sort that may be bound
+//!   ([`Representability`]) and each restricted binder (`pi+`, a port's binder
+//!   telescope), and [`check_desc`] refuses a binder over a sort that is not
+//!   representable. [`first_order()`] folds the signature, once, into its
+//!   single-substitution first-order model: contexts and substitutions,
+//!   per-sort variables, weakening, single substitution and lifting, the
+//!   substitution laws for each representable sort, and each operation with its
+//!   context explicit and one naturality law. The fold's own decisions are in
+//!   `first_order`.
+//! - **Two views.** For a simply-sorted signature, [`SimplySorted`] identifies
+//!   binding syntax with the generated model's canonical terms
+//!   ([`FirstOrderJudgement`]), and evaluates it into a value domain and reads
+//!   it back ([`Evaluation`]), from the declarations alone (`binding`).
+//!
+//! The fragment is the framework's rule at one depth over closed finitary
+//! signatures: a binder's domain is a representable sort, and a signature is
+//! a finite table, never itself a term. Equality is intensional conversion
+//! where the papers have extensional equality, and universes are stratified
+//! levels where they have a type of types. "Internal" means the crate's own
+//! code universe and evaluation machinery.
+//!
+//! - **Alternatives.** Two-level type theory as the organising frame puts the
+//!   object theory inside a meta-level theory the kernel would have to carry;
+//!   two models over one signature need only the signature table the crate
+//!   already holds. An interpreter per signature (one for λ-calculus, one for
+//!   computations) repeats one evaluation per signature and lets a name select
+//!   a case; the one generic interpreter reads arities only, and a witness over
+//!   three signatures that share no name holds it to that.
+//! - **Reversal.** A binder over a sort that is not representable, or a
+//!   signature that is itself a term (open or infinitary), needs the general
+//!   rule and reopens the fragment; a theory that needs extensional equality at
+//!   its use site needs the papers' model, not conversion.
+//!
+//! The model's equations are carried, not oriented: the identification is with
+//! canonical terms, and deciding whether two arbitrary first-order terms are
+//! equal in the model owes a normalizer the crate does not provide. A sort
+//! indexed by another sort's terms is generated and checked, but its
+//! evaluation waits on dependent pairs in the value domain.
+//!
 //! # The closed tier
 //!
 //! The crate depends on no other crate of the workspace, so no wrapper in its
@@ -43,7 +89,9 @@
 //! symbolic reference (`ValueTypeRef` over `PrimTy` and declared heads), which
 //! is all the generic programs, the arity naming and the rendering read. The
 //! crate is `no_std`, so it cannot name a `std` collection; the compiler holds
-//! that line.
+//! that line. The kernel crates are development dependencies for one witness
+//! only: a generated judgement is mapped into the kernel's arena and admitted
+//! (`tests::glf::model::kernel`); the library names neither.
 //!
 //! - **Alternatives.** Depending on the core term crate for its grade and value
 //!   types puts a core edge under a theory crate, inverting the layering, and
@@ -58,9 +106,15 @@
 //!
 //! # The integration suites
 //!
-//! Two suites check the crate against the laws its consumers rely on, with the
-//! machinery the crate leaves to them supplied as test support.
+//! Three suites check the crate against the laws its consumers rely on, with
+//! the machinery the crate leaves to them supplied as test support.
 //!
+//! - **The framework's checks** (`tests::glf`). Generation compares the fold's
+//!   output with the single-substitution presentation derived by hand
+//!   (`tests::glf::generation`). Identification, both views and the kernel
+//!   check run 256 generated cases per signature (`tests::glf::model`), and the
+//!   three-signature property runs one implementation over signatures that
+//!   share no sort or operation name.
 //! - **Certificates** (`tests::code_iso`). A certificate is a pair of value
 //!   translators between two monomorphic descriptions, judged by replaying its
 //!   round trips against `generic_eq`; its identity is replay-equivalence, the
@@ -119,6 +173,12 @@
 //!
 //! # References
 //!
+//! - Guillaume Allais, Robert Atkey, James Chapman, Conor `McBride`, and James
+//!   `McKinna`. "A Type- and Scope-Safe Universe of Syntaxes with Binding:
+//!   Their Semantics and Proofs." _Journal of Functional Programming_ 31
+//!   (2021), e22. `arXiv:2001.11001` — one evaluation, generic over a
+//!   description of syntax with binding, which `SimplySorted` instantiates with
+//!   a value domain and a readback.
 //! - James Chapman, Pierre-Évariste Dagand, Conor `McBride`, and Peter Morris.
 //!   "The Gentle Art of Levitation." In _Proceedings of the 15th ACM SIGPLAN
 //!   International Conference on Functional Programming (ICFP '10)_, pages
@@ -131,6 +191,15 @@
 //!   154, 1 (2013), pages 153–192. `arXiv:0906.4931` — the presentation of a
 //!   polynomial by finite sets and maps, `Σ_t ∘ Π_π ∘ Δ_s`, which `BridgeArity`
 //!   stores as the bridge diagram `A ←s— J —π→ I —t→ B`.
+//! - Ambrus Kaposi and Szumi Xie. "Second-Order Generalised Algebraic Theories:
+//!   Signatures and First-Order Semantics." In _9th International Conference on
+//!   Formal Structures for Computation and Deduction (FSCD 2024)_, `LIPIcs`
+//!   299, paper 10. `doi:10.4230/LIPIcs.FSCD.2024.10` — the signatures with
+//!   restricted binding over representable sorts, and the single-substitution
+//!   first-order model `first_order` generates.
+//! - András Kovács and Christian Sattler. "A Generalized Logical Framework."
+//!   Extended abstract, TYPES 2025 — one signature read through a first-order
+//!   and an internal model, the two views `binding` identifies.
 //! - Hayato Nasu. _Logical Aspects of Virtual Double Categories_. Preprint,
 //!   January 2025. `arXiv:2501.17869` — the split cartesian fibrant virtual
 //!   double category (Definition 3.2.6) and its splitness lemma (Lemma 3.2.8),
@@ -143,12 +212,14 @@
 extern crate alloc;
 
 mod arity;
+mod binding;
 mod boundary;
 mod builtin;
 mod circuit;
 mod code;
 mod desc;
 mod elaborate;
+mod first_order;
 mod generic;
 mod rule;
 mod sig;
@@ -159,6 +230,13 @@ mod wellformed;
 
 pub use crate::arity::BridgeArity;
 pub use crate::arity::SortRef;
+pub use crate::binding::AdmissionError;
+pub use crate::binding::BindingError;
+pub use crate::binding::BindingJudgement;
+pub use crate::binding::BindingTerm;
+pub use crate::binding::Evaluation;
+pub use crate::binding::FirstOrderJudgement;
+pub use crate::binding::SimplySorted;
 pub use crate::boundary::AttributeEmptiness;
 pub use crate::boundary::AttributePresence;
 pub use crate::boundary::CircuitNodeBudget;
@@ -180,6 +258,7 @@ pub use crate::boundary::SerializedDescText;
 pub use crate::boundary::SerializedValueBytes;
 pub use crate::boundary::SurfaceByteOffset;
 pub use crate::boundary::TermPositionIndex;
+pub use crate::boundary::VariableIndex;
 pub use crate::builtin::bool_desc;
 pub use crate::builtin::list_desc;
 pub use crate::builtin::option_desc;
@@ -217,6 +296,7 @@ pub use crate::desc::DeclPolarity;
 pub use crate::desc::NominalId;
 pub use crate::desc::OperDesc;
 pub use crate::desc::ParamDesc;
+pub use crate::desc::Representability;
 pub use crate::desc::SignDesc;
 pub use crate::desc::SortDesc;
 pub use crate::desc::SortIndex;
@@ -234,6 +314,8 @@ pub use crate::elaborate::WhiskeredCell;
 pub use crate::elaborate::active_position;
 pub use crate::elaborate::elaborate_body;
 pub use crate::elaborate::redex_occurrences;
+pub use crate::first_order::TranslationError;
+pub use crate::first_order::first_order;
 pub use crate::generic::DescValue;
 pub use crate::generic::Payload;
 pub use crate::generic::PayloadArgs;

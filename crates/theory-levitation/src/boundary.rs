@@ -13,12 +13,13 @@
 //! Every count, index, verdict, text and byte string a signature here crosses
 //! is a transparent wrapper of this crate's own (`ConstructorTag`,
 //! `NominalSerial`, `SurfaceByteOffset`, `MonomialCount`, `TermPositionIndex`,
-//! `PortArgumentCount`, `CircuitNodeBudget`, `GenericEquality`,
-//! `RecursiveStatus`, `ContextTotality`, `DiagnosticMessage`,
-//! `SerializedDescText`, `SerializedValueBytes`, `LeafBytes`, …), converting
-//! with `From` both ways, and `NameRef` is the borrowed name. A consumer keeps
-//! its own budgets and verdicts; a wrapper two crates exchange by value lives
-//! in the lower one, which is this crate for every wrapper listed.
+//! `PortArgumentCount`, `VariableIndex`, `CircuitNodeBudget`,
+//! `GenericEquality`, `RecursiveStatus`, `ContextTotality`,
+//! `DiagnosticMessage`, `SerializedDescText`, `SerializedValueBytes`,
+//! `LeafBytes`, …), converting with `From` both ways, and `NameRef` is the
+//! borrowed name. A consumer keeps its own budgets and verdicts; a wrapper two
+//! crates exchange by value lives in the lower one, which is this crate for
+//! every wrapper listed.
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -60,7 +61,7 @@ macro_rules! count_wrapper {
             }
         }
 
-        impl fmt::Display for $name
+        impl core::fmt::Display for $name
         {
             /// Writes the wrapped number.
             ///
@@ -69,14 +70,17 @@ macro_rules! count_wrapper {
             #[inline]
             fn fmt(
                 &self,
-                f: &mut fmt::Formatter<'_>,
-            ) -> fmt::Result
+                f: &mut core::fmt::Formatter<'_>,
+            ) -> core::fmt::Result
             {
-                self.0.fmt(f)
+                core::fmt::Display::fmt(&self.0, f)
             }
         }
     };
 }
+
+// The private counters of other modules take the same shape.
+pub(crate) use count_wrapper;
 
 /// Defines a transparent copyable newtype over one `bool` verdict, with `From`
 /// conversions both ways.
@@ -290,6 +294,12 @@ count_wrapper! {
 count_wrapper! {
     /// A zero-based index into a description's rule faces.
     pub struct RuleIndex(usize);
+}
+
+count_wrapper! {
+    /// A de Bruijn position in a binding judgement's context, counted from the
+    /// newest entry and crossing every sort alike.
+    pub struct VariableIndex(usize);
 }
 
 count_wrapper! {

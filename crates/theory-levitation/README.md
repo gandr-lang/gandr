@@ -1,6 +1,6 @@
 # gandr-theory-levitation
 
-The first-order code universe of gandr's levitated descriptions: codes, the declaration table they populate, rule faces, circuit rules and their elaboration, multi-output arities, the generic programs driven by a description, and the host-side well-formedness pass.
+The first-order code universe of gandr's levitated descriptions: codes, the declaration table they populate, rule faces, circuit rules and their elaboration, multi-output arities, the generic programs driven by a description, the host-side well-formedness pass, and the generalized logical framework's first rungs — the first-order model a signature generates, and one evaluation and readback for every simply-sorted signature.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -15,7 +15,7 @@ The first-order code universe of gandr's levitated descriptions: codes, the decl
 
 **What.** Datatypes as descriptions. A `Code<G>` is one constructor's payload in the first-order fragment `{1, var, ×, +}` with two leaf decorations: a field over a symbolic value type (`ValueTypeRef`, `PrimTy`) carrying a grade `G` and an attribute Σ (`Attrs`), and an atom-abstraction (`AtomSort`). A `SignDesc<G>` is the declaration table of one signature: its minted identity (`NominalId`), its sort set (`SortDesc`), graded parameters (`ParamDesc<G>`), constructors (`CtorDesc<G>`, the σ tag over codes), operations with multi-output arities (`OperDesc`, `BridgeArity`), rewrite faces over free terms (`RuleFace`, `FreeTerm`) and circuit rules (`CircuitRule`) whose boundary pair is derived from a wiring (`derive_boundaries`) and whose filler elaborates to a whiskered composite (`elaborate_body`). The generic programs `generic_eq`, `serialize_value` and `serialize_desc` read any description, declared or retrofitted (`bool_desc`, `option_desc`, `list_desc`, `pair_desc`, `sum_desc`); `check_desc` is the well-formedness pass; `TypedRuleFace` refines a face with a pattern context decoded by a caller-supplied decoder. The crate is `no_std` and depends on `core`, `alloc` and `quenchant-shape`.
 
-**Why.** When a datatype's description is a first-class value, a generic operation over datatypes is an ordinary program over descriptions: structural equality, a canonical wire encoding and an inspectable rendering are written once and cover builtins and declared data alike, and the cell layer above reads one table for every declaration. The fragment is first-order so that code equality is decidable, which content addressing and the matching-modulo engines key on; a levitated universe is also an inductive object a program can recurse over, which an open universe is not.
+**Why.** When a datatype's description is a first-class value, a generic operation over datatypes is an ordinary program over descriptions: structural equality, a canonical wire encoding and an inspectable rendering are written once and cover builtins and declared data alike, and the cell layer above reads one table for every declaration. The fragment is first-order so that code equality is decidable, which content addressing and the matching-modulo engines key on; a levitated universe is also an inductive object a program can recurse over, which an open universe is not. The same holds for binding: a signature with restricted binders generates its own substitution calculus and its own evaluator, so a theory with binding is declared once rather than hand-written per theory.
 
 **How.** Every recursive datum — a code, a value-type reference, a free term, a payload — is one flat table in reverse pre-order with its root apart, each subtree a contiguous range carrying its node count; a borrowed node (`CodeNode`, `TermNode`, `PayloadNode`, `ValueTypeNode`) answers a view (`CodeView`, `TermView`, `PayloadView`, `ValueTypeView`) whose children are an iterator, so every walk is a loop and nothing recurses on the host stack. Circuit-rule derivation unfolds a wiring with an explicit stack, refusing a cycle and bounding the unfolded size by an explicit `CircuitNodeBudget`. Absence is a value: a lookup that can miss returns `Maybe` with a named reason, and a refusal is a typed error.
 
@@ -31,6 +31,8 @@ The first-order code universe of gandr's levitated descriptions: codes, the decl
 - `bool_desc`, `option_desc`, `list_desc`, `pair_desc`, `sum_desc`: the primitive formers retrofitted as descriptions.
 - `sig_desc`, `SIG_CONSTRUCTORS`, `SigValue`, `SigParts`, `SigSort`, `SigOperation`, `SigPort`, `SigRule`, `SigFault`: `Sig`, the datatype whose values are presentations, a presentation's value, and its canonical bytes as the presentation's one identity.
 - `check_desc`, `WfDiagnostic`, `WfKind`, `diagnostic_span`, `RESERVED_DERIVED_MARKERS`: the well-formedness pass over a whole declaration table.
+- `Representability`, `first_order`, `TranslationError`: a sort that may be bound, the `pi+` binder over it, and the fold of a signature into its single-substitution first-order model.
+- `SimplySorted`, `BindingTerm`, `BindingJudgement`, `FirstOrderJudgement`, `Evaluation`, `AdmissionError`, `BindingError`, `VariableIndex`: binding syntax over a simply-sorted signature, identified with the generated model's canonical terms and evaluated into a value domain and read back, from the declarations alone.
 - `PatternContext`, `TypedRuleFace`, `pattern_variable`: a face refined with a context decoded by the caller's decoder.
 - The boundary wrappers (`NameRef`, `ConstructorTag`, `NominalSerial`, `CircuitNodeBudget`, `GenericEquality`, `SerializedValueBytes`, `LeafBytes`, …): every count, verdict, text and byte string a signature here crosses.
 
@@ -109,7 +111,10 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 | Topic | Module |
 | ----- | ------ |
-| The closed tier, the integration suites, consumers, references | [`src/lib.rs`](src/lib.rs) |
+| The closed tier, the generalized logical framework, the integration suites, consumers, references | [`src/lib.rs`](src/lib.rs) |
+| Generating the first-order model | [`first_order`](src/first_order.rs) |
+| Binding syntax and its two views | [`binding`](src/binding.rs) |
+| Evaluation and readback | [`semantics`](src/semantics.rs) |
 | Decoding into core types | [`typed_rule`](src/typed_rule.rs) |
 | Flat representation | [`tree`](src/tree.rs) |
 | Code equality | [`code`](src/code.rs) |

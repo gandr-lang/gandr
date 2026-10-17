@@ -1103,6 +1103,8 @@ dependencies = [
 name = "gandr-theory-levitation"
 version = "0.0.0"
 dependencies = [
+ "gandr-kernel-core",
+ "gandr-kernel-term",
  "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",

@@ -358,6 +358,7 @@ path = "crates/kernel-conversion-trace"
 # - core-session
 # - surface-corpus (dev)
 # - surface-lowering (dev)
+# - theory-levitation (dev)
 [workspace.dependencies.gandr-kernel-core]
 path = "crates/kernel-core"
 default-features = false
@@ -400,6 +401,7 @@ path = "crates/kernel-strata"
 # - surface-repl (dev)
 # - surface-session
 # - surface-tui (dev)
+# - theory-levitation (dev)
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
 default-features = false

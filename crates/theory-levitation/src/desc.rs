@@ -126,6 +126,23 @@ pub enum DeclPolarity
     Codata,
 }
 
+/// Whether a sort lives in the representable sub-universe `U⁺ ⊆ U`: the bit
+/// that admits a sort as the domain of a π⁺ binder.
+///
+/// A representable sort is one a context can be extended by, so an operation
+/// may bind a variable of it; in the first-order model it generates context
+/// extension, weakening, a newest variable, single substitution and lifting.
+/// An ordinary sort generates only its substitution action.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Representability
+{
+    /// An ordinary sort: never a π⁺ domain.
+    Ordinary,
+    /// A representable sort: a π⁺ domain, with context extension in the
+    /// first-order model.
+    Representable,
+}
+
 /// A declared sort of a signature (a 0-cell), with the fixpoint its
 /// declaration names.
 ///
@@ -143,6 +160,8 @@ pub struct SortDesc
     pub name: Name,
     /// The fixpoint the sort's declaration names.
     pub polarity: DeclPolarity,
+    /// Whether this sort admits context extension and restricted binding.
+    pub representability: Representability,
     /// The sort's index telescope, empty for an unindexed sort.
     ///
     /// `sort Hom(dom : Ob, cod : Ob) : Type` declares a sort family, and a
@@ -173,6 +192,7 @@ impl SortDesc
         Self {
             name: name.into(),
             polarity,
+            representability: Representability::Ordinary,
             indices: Box::default(),
         }
     }
@@ -209,7 +229,22 @@ impl SortDesc
         Self {
             name: name.into(),
             polarity,
+            representability: Representability::Ordinary,
             indices: indices.into(),
+        }
+    }
+
+    /// Mark this sort as a member of the representable sub-universe.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn representable(self) -> Self
+    {
+        Self {
+            representability: Representability::Representable,
+            ..self
         }
     }
 }
@@ -227,6 +262,9 @@ pub struct SortIndex
     pub name: Name,
     /// The sort it ranges over, which the same signature declares.
     pub sort: Name,
+    /// The sort family's index arguments, in telescope order; empty for an
+    /// unindexed sort.
+    pub arguments: Box<[crate::rule::FreeTerm]>,
 }
 
 impl SortIndex
@@ -248,6 +286,26 @@ impl SortIndex
         Self {
             name: name.into(),
             sort: sort.into(),
+            arguments: Box::default(),
+        }
+    }
+
+    /// Apply the sort family to the given index terms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn applied<I>(
+        self,
+        arguments: I,
+    ) -> Self
+    where
+        I: Into<Box<[crate::rule::FreeTerm]>>,
+    {
+        Self {
+            arguments: arguments.into(),
+            ..self
         }
     }
 }
