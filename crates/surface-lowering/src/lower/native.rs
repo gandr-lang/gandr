@@ -1662,6 +1662,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   resolves in its importer.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    /// - witness: `lower::native::tests::a_constructor_is_no_value_inside_its_own_family`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(found) => matches!(
             self.collected.owner_of(site.at.node),
@@ -2199,6 +2200,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::cons`].
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    /// - witness: `lower::native::tests::only_back_inverts_a_letter`
     #[spec(ensures: |ret| match ret {
         Ok(Maybe::Present(constructor)) => constructor.arity == 1 && matches!(constructor.form, Generators::Words(_)),
         _ => true,
@@ -2270,6 +2272,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::cons`].
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    /// - witness: `modules::modules::a_forward_member_reference_is_refused_by_position`
     #[spec(ensures: |ret| match ret {
         Ok(Maybe::Present(constructor)) => constructor.arity == 1 && constructor.named == cell,
         _ => true,
@@ -2422,6 +2425,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+    /// - witness: `lower::native::tests::an_annotation_at_a_statement_is_unadmitted`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(_))))]
     pub(super) fn annotated(
         &mut self,
@@ -2531,6 +2535,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a family and a value declaration separate the hit
     ///   from the miss.
     /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
+    /// - witness: `lower::native::tests::the_presentation_code_names_its_family_where_a_type_is_read`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || self.collected.slots.get(usize::from(constant)).is_some())]
     pub(super) fn data_family(
         &self,
@@ -2656,6 +2661,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::patterns_outside_the_fragment_are_declined_by_name`
     /// - witness: `lower::native::tests::a_match_of_no_arms_eliminates_the_empty_sum`
     /// - witness: `lower::exits::tests::a_match_continuing_its_block_answers_what_the_block_does`
+    /// - witness: `lower::native::tests::an_or_pattern_settles_each_alternative`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
     pub(super) fn case(
         &mut self,
@@ -4294,6 +4300,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a catch-all row and a nested constructor each reach
     ///   the branch they admit.
     /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
+    /// - witness: `lower::native::tests::a_case_over_a_family_of_parameters_reads_its_answer_unabstracted`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |test| matches!(*test, Test::Data { .. })))]
     fn switch_data(
         &mut self,
@@ -4820,6 +4827,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   a pair and a two-summand injection its side.
     /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
+    /// - witness: `lower::native::tests::an_or_pattern_settles_each_alternative`
+    /// - witness: `lower::native::tests::a_binary_injection_pattern_is_kept_at_its_side`
     #[spec(captures: before = kept.arms.len(), ensures: kept.arms.len() == before.saturating_add(roots.len()) && kept.spans.len() >= patterns.shapes.len())]
     fn keep(
         patterns: &Written,

@@ -8220,6 +8220,7 @@ mod tests
     use crate::fixture::Spelled;
     use crate::fixture::grammar;
     use crate::fixture::parsed;
+    use crate::fixture::repaired;
     use crate::fixture::span;
     use crate::form::FormName;
     use crate::form::Placed;
@@ -8650,6 +8651,18 @@ mod tests
             },
             "an attribute block decorates the declaration after it, so a trailing one decorates \
              nothing"
+        );
+
+        let tree = repaired(&pbg, SourceText::from("@[ checks ] sign Sta"));
+        assert_eq!(
+            collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap_err(),
+            LoweringRefusal::OutOfFragment {
+                span: span(ByteOffset::from(0_usize), ByteOffset::from(11_usize)),
+                form: FormName::from(NamedKind("attribute_block")),
+                sort: FragmentSort::Declaration,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            "and so does one before a sign the parser repaired, which declares nothing"
         );
     }
 

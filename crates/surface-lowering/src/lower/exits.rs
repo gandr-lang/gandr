@@ -1378,6 +1378,8 @@ fn continue_end(
 /// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
 /// - witness: `lower::tests::a_type_head_answers_at_what_it_stands_for`
 /// - witness: `lower::session::tests::each_endpoint_answers_at_its_action`
+/// - witness: `lower::exits::tests::a_variable_answering_at_its_own_bytes_gains_no_label`
+/// - witness: `lower::exits::tests::a_renamed_parameter_type_stands_in_only_at_other_bytes`
 #[spec(captures: before = sink.origins.labels().len(), ensures: sink.origins.labels().len() >= before)]
 pub(super) fn label_replaced(
     sink: &mut Sink<'_>,

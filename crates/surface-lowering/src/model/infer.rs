@@ -677,6 +677,7 @@ impl Engine
     ///   ones' sorts, and an operation's result sort instantiates over them.
     /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
+    /// - witness: `model::tests::a_result_sort_indexed_by_an_operation_instantiates_at_each_use`
     ///
     /// # Errors
     /// The [`ModelFault`] the specification names.
@@ -896,6 +897,7 @@ impl Engine
     /// # Adequacy
     /// - hypothesis: L2 — a law's two sides agree on one carrier sort.
     /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
+    /// - witness: `model::tests::a_term_at_another_sort_or_inside_its_own_index_is_ill_sorted`
     fn unify_sorts(
         &mut self,
         first: &Sorted,
@@ -937,6 +939,7 @@ impl Engine
     ///   sorts, and two distinct variables do not unify.
     /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
     /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
+    /// - witness: `model::tests::a_result_sort_indexed_by_an_operation_instantiates_at_each_use`
     fn unify(
         &mut self,
         mut work: Vec<(NodeId, NodeId)>,
@@ -1032,6 +1035,7 @@ impl Engine
     /// - hypothesis: L2 — no `CatShape` solution contains its own metavariable,
     ///   so every implicit object is solved.
     /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
+    /// - witness: `model::tests::a_term_at_another_sort_or_inside_its_own_index_is_ill_sorted`
     fn occurs(
         &self,
         meta: MetaId,
@@ -1341,6 +1345,7 @@ impl Engine
 /// - hypothesis: L2 — an implicit object no name was written for reads back as
 ///   the first letter its telescope leaves free.
 /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
+/// - witness: `model::tests::an_implicit_object_past_the_last_free_letter_is_numbered`
 fn fresh(taken: &BTreeSet<Name>) -> Name
 {
     for letter in 'a' ..= 'z' {

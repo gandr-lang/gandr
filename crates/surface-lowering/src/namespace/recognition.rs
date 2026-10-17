@@ -383,6 +383,7 @@ impl SeedTable
     /// - hypothesis: L3 — every table name resolves with its own operation;
     ///   declared shadows displace the subtree.
     /// - witness: `namespace::recognition::tests::native_prelude_seeds_names_and_shadowing`
+    /// - witness: `namespace::recognition::tests::each_namespace_prefix_is_seeded_once_before_its_names`
     #[spec(ensures: |ref ret| gandr_core_term::primitive::PRELUDE.iter().all(|primitive|
         ret.entries().iter().filter(|entry| entry.kind == SeedKind::Primitive(*primitive)).count() == 1))]
     #[inline]
@@ -1063,6 +1064,40 @@ mod tests
             matches!(shadowed.resolve(&path("int.div")), Maybe::Absent(_)),
             "rebinding the prefix removes the seeded subtree"
         );
+    }
+
+    #[test]
+    fn each_namespace_prefix_is_seeded_once_before_its_names()
+    {
+        let table = SeedTable::prelude();
+        let entries = table.entries();
+        let mut prefixed = 0_usize;
+        for (at, entry) in entries.iter().enumerate() {
+            let segments = entry.path.segments();
+            for length in 1 .. segments.len() {
+                let prefix =
+                    super::NamePath::from(segments.get(.. length).unwrap_or_default().to_vec());
+                let seeded: Vec<usize> = entries
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, seed)| seed.path == prefix)
+                    .map(|(position, seed)| {
+                        assert_eq!(
+                            seed.kind,
+                            super::SeedKind::Namespace,
+                            "a prefix seeds a namespace"
+                        );
+                        position
+                    })
+                    .collect();
+                assert!(
+                    matches!(*seeded, [position] if position < at),
+                    "the prefix of entry {at} is seeded once, before it: {seeded:?}"
+                );
+                prefixed = prefixed.saturating_add(1);
+            }
+        }
+        assert!(prefixed > 0, "the prelude seeds dotted names");
     }
 
     use alloc::vec::Vec;

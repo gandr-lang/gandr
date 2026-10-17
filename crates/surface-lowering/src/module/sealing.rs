@@ -892,6 +892,7 @@ impl<'source> Collector<'_, 'source>
     ///   witnesses its signature filed, and a declaration after the module
     ///   reads the atom outside.
     /// - witness: `modules::modules::opaque_ascription_seals`
+    /// - witness: `modules::modules::a_later_seal_leaves_an_earlier_extent`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

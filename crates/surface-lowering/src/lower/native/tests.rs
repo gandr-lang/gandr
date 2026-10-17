@@ -325,6 +325,52 @@ fn reachable(
 }
 
 #[test]
+fn an_annotation_at_a_statement_is_unadmitted()
+{
+    let source = alloc::format!(
+        "{MAYBE}def f(n : Integer) -> -F Integer {{ (None : Maybe(Integer)); return 1 }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let written = "(None : Maybe(Integer))";
+    let start = source.find(written).expect("the annotation is written");
+    assert!(
+        matches!(
+            outcome_of(&module, "f".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                span,
+                boundary: FragmentBoundary::Unadmitted,
+                ..
+            }) if usize::from(span.start()) == start
+                && usize::from(span.end()) == start.saturating_add(written.len())
+        ),
+        "an annotation is a value at a tail, never a statement before one: {:?}",
+        outcome_of(&module, "f".into())
+    );
+}
+
+#[test]
+fn a_constructor_is_no_value_inside_its_own_family()
+{
+    let source = "data T : Type { A : T; B : (x : Path(T, A, A)) --> T; }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let start = source.find("A, A").expect("the endpoint is written");
+    assert!(
+        matches!(
+            outcome_of(&module, "T".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                span,
+                boundary: FragmentBoundary::Unadmitted,
+                ..
+            }) if usize::from(span.start()) == start && usize::from(span.end()) == start.saturating_add(1)
+        ),
+        "a constructor names a value only after its family is declared: {:?}",
+        outcome_of(&module, "T".into())
+    );
+}
+
+#[test]
 fn a_data_declaration_lowers_to_its_signature()
 {
     let mut arena = CoreArena::new();
@@ -1106,6 +1152,17 @@ fn only_the_descent_claim_heads_a_recursive_call()
         declined("ahead", FragmentBoundary::Reserved),
         "productivity is reserved"
     );
+    let claim = source
+        .find("ahead[>]")
+        .map_or(0_usize, |at| at.saturating_add("ahead[".len()));
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("ahead")),
+            LoweringRefusal::OutOfFragment { span, .. }
+                if usize::from(span.start()) == claim && usize::from(span.end()) == claim.saturating_add(1_usize)
+        ),
+        "the reserved claim is refused at itself, not at the whole instantiation"
+    );
     assert!(
         declined("both", FragmentBoundary::Reserved),
         "combined claims are reserved"
@@ -1156,11 +1213,11 @@ fn an_indexed_generator_is_declined()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "data Vec(n : Integer) : Type { Nil : Vec(0); }\ndata Bad(a : Type) : Type { Mk : Bad(Integer); }\ndata Two(a : Type, b : Type) : Type { Mk2 : Two(b, a); }\n",
+            "data Vec(n : Integer) : Type { Nil : Vec(0); }\ndata Bad(a : Type) : Type { Mk : Bad(Integer); }\ndata Two(a : Type, b : Type) : Type { Mk2 : Two(b, a); }\ndata Ext(a : Type) : Type { Mk3 : Ext(a, a); }\n",
         ),
         &mut arena,
     );
-    for name in ["Vec", "Bad", "Two"].map(SurfaceName::from) {
+    for name in ["Vec", "Bad", "Two", "Ext"].map(SurfaceName::from) {
         assert!(
             matches!(refusal_of(&module, name), LoweringRefusal::OutOfFragment {
                 form: FormName::DATA_GENERATOR,
@@ -1787,10 +1844,10 @@ fn a_match_of_no_arms_switches_on_empty_data_and_on_a_path()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "data Empty : Type {{}}\n{COLOR}def absurd(v : Empty) -> -F Integer {{ case v {{}} }}\ndef stated(v : Empty) -> -F Integer {{ case v -> -F Integer {{}} }}\ndef apart(e : Path(Color, Red, Blue)) -> -F Empty {{ case e {{}} }}\n"
+        "data Empty : Type {{}}\ndata Nada(a : Type) : Type {{}}\n{COLOR}def absurd(v : Empty) -> -F Integer {{ case v {{}} }}\ndef stated(v : Empty) -> -F Integer {{ case v -> -F Integer {{}} }}\ndef apart(e : Path(Color, Red, Blue)) -> -F Empty {{ case e {{}} }}\ndef paren(v : (Empty)) -> -F Integer {{ case v {{}} }}\ndef wrapped(e : (Path(Color, Red, Blue))) -> -F Empty {{ case e {{}} }}\ndef applied(v : Nada(Integer)) -> -F Integer {{ case v {{}} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
-    for name in ["absurd", "stated", "apart"] {
+    for name in ["absurd", "stated", "apart", "paren", "wrapped", "applied"] {
         assert!(
             arena
                 .computation(tail_of(&arena, body_named(&module, SurfaceName::from(name))))
@@ -1852,8 +1909,71 @@ fn an_or_pattern_settles_each_alternative()
         [0_usize, 0, 1],
         "each alternative is one record of its arm"
     );
+    let spelled = |text: &str| -> Vec<_> {
+        kept.spans
+            .iter()
+            .filter(|kept| {
+                source.get(usize::from(kept.span.start()) .. usize::from(kept.span.end()))
+                    == Some(text)
+            })
+            .map(|kept| (kept.pattern, kept.reading))
+            .collect()
+    };
+    assert_eq!(
+        spelled("Red | Green"),
+        kept.arms
+            .first()
+            .map(|first| (first.pattern, PatternReading::Matched))
+            .into_iter()
+            .collect::<Vec<_>>(),
+        "the whole or-pattern is kept once, against its first alternative"
+    );
+    let blue = kept.arms.get(2).map(|blue| blue.pattern);
+    assert_eq!(
+        spelled("Blue")
+            .into_iter()
+            .filter(
+                |&(pattern, reading)| Some(pattern) == blue && reading == PatternReading::Matched
+            )
+            .count(),
+        1_usize,
+        "a pattern of one alternative is kept once, as itself"
+    );
     let report = judged(&module, &mut arena);
     assert_accepted(&report);
+}
+
+#[test]
+fn a_binary_injection_pattern_is_kept_at_its_side()
+{
+    let mut arena = CoreArena::new();
+    let source = "def not(b : +{Unit, Unit}) -> -F +{Unit, Unit} { case b { +{.0 = u} => return \
+                  +{.1 = u}, +{.1 = u} => return +{.0 = u} } }\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    let root = tail_of(&arena, body_named(&module, SurfaceName::from("not")));
+    let Maybe::Present(kept) = module.origins().case(root)
+    else {
+        panic!("the match keeps its arms");
+    };
+    let sides: Vec<_> = kept
+        .arms
+        .iter()
+        .map(|arm| match kept.patterns.pattern(arm.pattern) {
+            Some(&Pattern::Injection(side, field)) => {
+                Some((side, kept.patterns.pattern(field).cloned()))
+            },
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        sides,
+        [
+            Some((gandr_kernel_term::Side::Left, Some(Pattern::Binder))),
+            Some((gandr_kernel_term::Side::Right, Some(Pattern::Binder))),
+        ],
+        "a summand of a binary sum is kept as the injection at its side, over its field"
+    );
+    assert_accepted(&judged(&module, &mut arena));
 }
 
 #[test]
@@ -2100,6 +2220,46 @@ fn telescope_patterns_split_and_project()
             .any(|judged| matches!(judged.verdict(), Verdict::Refused(_))),
         "the components are bound in written order, so the second is the string"
     );
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def ragged(t : #{Integer, String}) -> -F Integer { case t { (a, b) => return a, (a, b, c) => return a } }\n",
+        ),
+        &mut arena,
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("ragged")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::WrongSort,
+                ..
+            }
+        ),
+        "a tuple pattern wider than the tuple its column splits is refused: {:?}",
+        refusal_of(&module, SurfaceName::from("ragged"))
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def over(t : #{Integer, String}) -> -F Integer { case t { #{a, b, c} => return a } }\n",
+        ),
+        &mut arena,
+    );
+    let widths: Vec<usize> = reachable(
+        &arena,
+        tail_of(&arena, body_named(&module, SurfaceName::from("over"))),
+    )
+    .into_iter()
+    .filter_map(|at| match arena.computation(at) {
+        Some(&Computation::Split { arity, .. }) => Some(usize::from(arity)),
+        _ => None,
+    })
+    .collect();
+    assert_eq!(
+        widths,
+        [3_usize],
+        "a telescope pattern splits at its own width, which the checker judges against the pair"
+    );
 }
 
 /// A pattern at a scrutinee written with a dependent record splits it under
@@ -2249,6 +2409,85 @@ fn a_case_over_a_variable_answers_its_motive_at_each_constructor()
     assert!(
         matches!(returned_at_zero(&arena, &branches), Value::Variable { .. }),
         "a leaf under an independent case keeps its variables"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn the_presentation_code_names_its_family_where_a_type_is_read()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from("sign Monoid { sort M : Type; }\ndef held : Sig ;\ndef held = Monoid ;\n"),
+        &mut arena,
+    );
+    let sig = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == SurfaceName::from("Sig"))
+        .map(crate::module::LoweredDeclaration::constant)
+        .expect("a `sign` block declares the code it is a value of");
+    let held = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == SurfaceName::from("held"))
+        .map(crate::module::LoweredDeclaration::outcome);
+    let Some(DeclarationOutcome::Completed { declared_type, .. }) = held
+    else {
+        panic!("`held` lowers both halves: {held:?}");
+    };
+    assert_eq!(
+        arena.value_type(declared_type),
+        Some(&ValueType::Data {
+            declaration: sig,
+            arguments: Vec::new(),
+        }),
+        "`Sig` written as a type is the family of no parameters it codes"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_case_over_a_family_of_parameters_reads_its_answer_unabstracted()
+{
+    let mut arena = CoreArena::new();
+    let source = "data Box(a : Type) : Type { Put : (x : a) --> Box(a); }\ndef same(b : \
+                  Box(Integer)) -> -F Path(Box(Integer), b, b) { case b { Put(x) => return \
+                  here(b) } }\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("same")));
+    let reached = reachable(&arena, tail);
+    let motives: Vec<_> = reached
+        .iter()
+        .filter_map(|&at| match arena.computation(at) {
+            Some(&Computation::DataCase { motive, .. }) => Some(motive),
+            _ => None,
+        })
+        .collect();
+    let returned: Vec<Value> = reached
+        .iter()
+        .filter_map(|&at| match arena.computation(at) {
+            Some(&Computation::Return(value)) => match arena.value(value) {
+                Some(&Value::Here(point)) => arena.value(point).cloned(),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    let [motive] = *motives
+    else {
+        panic!("the body cases once: {motives:?}");
+    };
+    assert!(
+        matches!(
+            gandr_core_term::strengthen_comp_type(&mut arena, motive),
+            Maybe::Present(_)
+        ),
+        "no arm is read at its constructor, so the motive reads no scrutinee (#616)"
+    );
+    assert!(
+        matches!(*returned, [Value::Variable { .. }]),
+        "and the leaf reads the scrutinee as itself: {returned:?}"
     );
     assert_accepted(&judged(&module, &mut arena));
 }
@@ -2578,7 +2817,7 @@ fn a_loop_mints_the_words_at_its_point()
 #[test]
 fn a_cell_between_terms_is_a_loop_or_refused_by_name()
 {
-    let source = "data Directed : Type { One : Directed; loop : One --> One; }\ndata Segment : Type { Start : Segment; End : Segment; seg : Start <-> End; }\ndata Ruled : Type { Two : Ruled; cell : Two ==> Two; }\ndata Open : Type { Three : Open; Next : (x : Open) --> Open; cell : Next(x) <-> Next(x); }\ndata Indexed(a : Type) : Type { Four : Indexed(a); cell : Four <-> Four; }\n";
+    let source = "data Directed : Type { One : Directed; loop : One --> One; }\ndata Segment : Type { Start : Segment; End : Segment; seg : Start <-> End; }\ndata Ruled : Type { Two : Ruled; cell : Two ==> Two; }\ndata Swapped : Type { Five : Swapped; cell : Five <=> Five; }\ndata Open : Type { Three : Open; Next : (x : Open) --> Open; cell : Next(x) <-> Next(x); }\ndata Indexed(a : Type) : Type { Four : Indexed(a); cell : Four <-> Four; }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let spelled = |refusal: &LoweringRefusal<'_>| {
@@ -2600,7 +2839,12 @@ fn a_cell_between_terms_is_a_loop_or_refused_by_name()
         "seg : Start <-> End",
         "at the whole cell"
     );
-    for (name, at) in [("Ruled", "==>"), ("Open", "Next(x)"), ("Indexed", "cell")] {
+    for (name, at) in [
+        ("Ruled", "==>"),
+        ("Swapped", "<=>"),
+        ("Open", "Next(x)"),
+        ("Indexed", "cell"),
+    ] {
         let refusal = refusal_of(&module, SurfaceName::from(name));
         assert!(
             matches!(refusal, LoweringRefusal::OutOfFragment {
@@ -2620,6 +2864,30 @@ fn a_cell_between_terms_is_a_loop_or_refused_by_name()
                 .contains(&declaration.name())
         }),
         "a refused cell binds no name"
+    );
+}
+
+#[test]
+fn only_back_inverts_a_letter()
+{
+    let source = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef bad : Path(Circle, \
+                  Base, Base) ;\ndef bad = here(loop) ∷ loop ;\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let written = "here(loop) ∷ loop";
+    let start = source.find(written).expect("the word is written");
+    assert!(
+        matches!(
+            outcome_of(&module, "bad".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                span,
+                boundary: FragmentBoundary::Unadmitted,
+                ..
+            }) if usize::from(span.start()) == start
+                && usize::from(span.end()) == start.saturating_add(written.len())
+        ),
+        "a letter called by any head but `back` is no letter, so the cons is no word: {:?}",
+        outcome_of(&module, "bad".into())
     );
 }
 
@@ -2805,5 +3073,15 @@ fn a_loop_arm_follows_the_constructors_branches()
             }
         ),
         "an arm for a loop the scrutinee's sort does not carry is refused"
+    );
+    let source = "data Eight : Type { Mid : Eight; left : Mid <-> Mid; right : Mid <-> Mid; }\ndef swap(x : Eight) -> -F Eight {\n  case x {\n    Mid => Mid,\n    right => left,\n    left => right\n  }\n}\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert!(
+        matches!(
+            arena.computation(tail_of(&arena, body_named(&module, SurfaceName::from("swap")))),
+            Some(Computation::DataCase { branches, .. }) if branches.len() == 3_usize
+        ),
+        "each loop of one point takes its own arm, the point's branch first"
     );
 }

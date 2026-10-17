@@ -353,6 +353,22 @@ fn an_exit_under_nesting_leaves_its_function()
             "every exit of `{name}` ends its body, under no bind: {binds:?}"
         );
     }
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("pick")));
+    let unrecorded: Vec<ComputationId> = reachable(&arena, tail)
+        .into_iter()
+        .filter(|&node| {
+            matches!(arena.computation(node), Some(&Computation::DataCase { .. }))
+                && matches!(
+                    module.origins().case(node),
+                    quenchant_shape::shape::Maybe::Absent(_)
+                )
+        })
+        .collect();
+    assert!(
+        unrecorded.is_empty(),
+        "each match of `pick`, copied or rebuilt under the exit, keeps its patterns: \
+         {unrecorded:?}"
+    );
     assert_accepted(&judged(&module, &mut arena));
 }
 
@@ -587,4 +603,54 @@ fn a_match_continuing_its_block_answers_what_the_block_does()
         "a written answer on a match continuing its block is refused at itself: {refused:?}"
     );
     assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_variable_answering_at_its_own_bytes_gains_no_label()
+{
+    let source = "def absent(r : #{n : Integer, s : String}) -> -F Integer {\n  case r {\n    #{.z = \
+                  m} => return m\n  }\n}\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let used = spelled(SourceText::from(source), SourceText::from("return m"));
+    let at = usize::from(used.end()).saturating_sub(1_usize);
+    let labelled: Vec<_> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter(|label| usize::from(label.span.start()) == at)
+        .collect();
+    assert!(
+        labelled.is_empty(),
+        "the binder of an absent field is replaced by a value at its own bytes, so its use keeps \
+         no label: {labelled:?}"
+    );
+}
+
+#[test]
+fn a_renamed_parameter_type_stands_in_only_at_other_bytes()
+{
+    let source = "module Seed :> #{ type T, zero : T, next : +U[ω] (T -> -F T) } {\n  type T = \
+                  Integer;\n  def zero = 0;\n  def next(n : T) -> -F T { become n + 1 }\n}\n\nmodule \
+                  MkCounter(S : #{ type T, zero : T, next : +U[ω] (T -> -F T) }) :> #{ type T, \
+                  seed : T, step : +U[ω] (T -> -F T) } {\n  type T = S.T;\n  def seed = \
+                  S.zero;\n  def step = S.next;\n}\n\nmodule A = MkCounter(Seed) ;\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let origins = module.origins();
+    let beside: Vec<_> = origins
+        .stand_ins()
+        .iter()
+        .filter(|&&(standing, written)| {
+            matches!(
+                origins.value_type(standing),
+                quenchant_shape::shape::Maybe::Present(now) if now.span() == written.span()
+            )
+        })
+        .collect();
+    assert!(
+        !origins.stand_ins().is_empty() && beside.is_empty(),
+        "the functor's renamed parameter types stand in where the template writes them, never at \
+         the bytes their replacement already answers at: {beside:?}"
+    );
 }

@@ -265,6 +265,90 @@ fn an_underivable_component_keeps_its_fault()
 }
 
 #[test]
+fn a_term_at_another_sort_or_inside_its_own_index_is_ill_sorted()
+{
+    let model = derived(
+        r"sign Mixed {
+  sort Ob : Type;
+  sort Pt : Type;
+  sort Hom(dom: Ob, cod: Ob) : Type;
+  oper flip : (x : Ob) --> (y : Pt);
+  oper succ : (x : Ob) --> (y : Ob);
+  oper pred : (x : Ob) --> (y : Ob);
+  oper diag : (f : Hom(c, d)) --> Hom(d, d);
+  oper down : (x : Ob) --> Hom(x, pred(x));
+  oper back : (f : Hom(a, succ(a))) --> (z : Ob);
+  rule mixed : flip(flip(x)) ==> flip(x);
+  rule cyc : back(diag(h)) ==> back(diag(h));
+  rule skew : back(down(o)) ==> o;
+}",
+    );
+
+    assert_eq!(
+        spelled(&model, "mixed"),
+        "mixed refused: IllSorted",
+        "an argument at another sort of as many indices"
+    );
+    assert_eq!(
+        spelled(&model, "cyc"),
+        "cyc refused: IllSorted",
+        "an implicit object that would be its own successor"
+    );
+    assert_eq!(
+        spelled(&model, "skew"),
+        "skew refused: IllSorted",
+        "an index naming another operation of as many arguments"
+    );
+}
+
+#[test]
+fn a_result_sort_indexed_by_an_operation_instantiates_at_each_use()
+{
+    let model = derived(
+        r"sign Stepped {
+  sort Ob : Type;
+  sort Hom(dom: Ob, cod: Ob) : Type;
+  oper next : (a : Ob) --> Ob;
+  oper step : (a : Ob) --> Hom(a, next(a));
+  rule again : step(a) ==> step(a);
+}",
+    );
+    assert_eq!(
+        spelled(&model, "again"),
+        "again : (a : Ob) => Path(Hom(a, next(a)), step(a), step(a))",
+        "an index the result sort writes as an application instantiates at the call's argument, \
+         and the two sides' indices unify application against application"
+    );
+}
+
+#[test]
+fn an_implicit_object_past_the_last_free_letter_is_numbered()
+{
+    let morphisms: Vec<String> = ('n' ..= 'z').map(String::from).collect();
+    let mut left = morphisms.first().cloned().unwrap_or_default();
+    for morphism in morphisms.iter().skip(1) {
+        left = format!("comp({left}, {morphism})");
+    }
+    let mut right = morphisms.last().cloned().unwrap_or_default();
+    for morphism in morphisms.iter().rev().skip(1) {
+        right = format!("comp({morphism}, {right})");
+    }
+    let model = derived(format!(
+        "sign Long {{\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper comp : (f : \
+         Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule chain : {left} ==> {right};\n}}"
+    ).as_str());
+    let law = spelled(&model, "chain");
+    assert!(
+        law.starts_with(
+            "chain : (a : Ob, b : Ob, c : Ob, d : Ob, e : Ob, f : Ob, g : Ob, h : Ob, i : Ob, j : \
+             Ob, k : Ob, l : Ob, m : Ob, x0 : Ob, n : Hom(a, b)"
+        ) && law.contains("z : Hom(m, x0)) => Path(Hom(a, x0), "),
+        "the thirteen letters the morphisms leave free name the first objects, and the \
+         fourteenth takes `x0`: {law}"
+    );
+}
+
+#[test]
 fn a_presentation_reads_its_members_off_its_value()
 {
     let presentation = presented(CAT_SHAPE);

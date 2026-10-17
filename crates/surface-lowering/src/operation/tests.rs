@@ -322,6 +322,25 @@ fn an_operation_whose_rules_miss_a_constructor_is_not_callable()
 }
 
 #[test]
+fn a_rule_of_another_arity_than_its_operation_routes_nothing()
+{
+    let source = "data Flag : Type {
+    Down : Flag;
+    Up : Flag;
+    oper pick(x : Flag, y : Flag) -> Flag;
+    rule pick(x) ==> x;
+}
+";
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    assert_eq!(
+        rows(&module),
+        ["Flag Declared"],
+        "a rule naming fewer arguments than the operation takes heads no route"
+    );
+}
+
+#[test]
 fn an_operation_calling_a_later_one_is_not_callable()
 {
     let source = "data Flag : Type {
@@ -339,5 +358,47 @@ fn an_operation_calling_a_later_one_is_not_callable()
         rows(&module),
         ["Flag Declared", "second Operation"],
         "an operation calls only itself and earlier operations"
+    );
+}
+
+#[test]
+fn an_operation_declared_twice_in_one_family_is_routed_once()
+{
+    let source = "data Flag : Type {
+    Down : Flag;
+    Up : Flag;
+    oper keep(x : Flag) -> Flag;
+    oper keep(x : Flag) -> Flag;
+    rule keep(x) ==> x;
+}
+";
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    assert_eq!(
+        rows(&module),
+        ["Flag Declared", "keep Operation"],
+        "the first `keep` takes the name, so its twin is not routed again"
+    );
+}
+
+#[test]
+fn a_declined_rule_withholds_only_its_own_operation()
+{
+    let source = "data Bit : Type {
+    Off : Bit;
+    On : Bit;
+    oper not(a : Bit) -> Bit;
+    oper and(a : Bit, b : Bit) -> Bit;
+    rule not(Off) ==> On;
+    rule not(On) ==> Off;
+    rule and(x, x) ==> x;
+}
+";
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    assert_eq!(
+        rows(&module),
+        ["Bit Declared", "Bit Held", "not Operation"],
+        "`and`'s nonlinear rule is declined and held, and `not` still runs"
     );
 }

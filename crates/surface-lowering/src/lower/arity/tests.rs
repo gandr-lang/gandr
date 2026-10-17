@@ -848,6 +848,27 @@ fn a_session_entry_reads_the_select_and_the_offer()
         ),
         "session types and value types do not mix in one form"
     );
+    for (source, form) in [
+        (
+            "def menu : +U &{get : ! Integer . end, put : ? Integer . end} ;",
+            "offer_session_type",
+        ),
+        (
+            "def pick : +U +{ok : ! Integer . end} ;",
+            "select_session_type",
+        ),
+    ] {
+        assert!(
+            matches!(
+                refused(source),
+                LoweringRefusal::OutOfFragment { form: refused, .. }
+                    if refused == crate::form::FormName::from(NamedKind(form))
+            ),
+            "a session type where a value type is read is refused as the session form it is: \
+             {:?}",
+            refused(source)
+        );
+    }
 }
 
 #[test]
@@ -950,6 +971,51 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
             } if count == OperandCount::from(1_usize)
         ),
         "a block of one clause waits on an n-ary former"
+    );
+    let maybe = "data Maybe(a : Type) : Type { None : Maybe(a); Some : (x : a) --> Maybe(a); }\n";
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{maybe}def some(n : Integer) -> &{{-F Maybe(Integer), -F String}} {{ &{{.0 => return \
+         Some(n), .1 => return \"s\"}} }}\n"
+    );
+    let module = lowered(source.as_str(), &mut arena);
+    assert!(
+        matches!(
+            outcome(&module, "some"),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "each indexed clause answers the entry the answer states at its index, so a constructor \
+         of parameters takes its classifier there: {:?}",
+        outcome(&module, "some")
+    );
+    let source = alloc::format!(
+        "{maybe}def short(n : Integer) -> &{{-F Maybe(Integer), -F String, -F Unit}} {{ &{{.0 \
+         => return Some(n), .1 => return \"s\"}} }}\n"
+    );
+    assert!(
+        matches!(
+            refused(source.as_str()),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "clauses fewer than the entries stated answer none of them, so the constructor has no \
+         classifier: {:?}",
+        refused(source.as_str())
+    );
+}
+
+#[test]
+fn an_observation_reads_through_one_thunk_only()
+{
+    let source = "def obs(m : +U (+U &{get : -F Integer, put : -F String})) -> -F Integer { become \
+                  m.get }\n";
+    assert!(
+        matches!(
+            refused(source),
+            LoweringRefusal::OutOfFragment { span, boundary: FragmentBoundary::WrongSort, .. }
+                if span == at(source, "m.get", 0_usize)
+        ),
+        "a lazy record under two thunks is no observable record: {:?}",
+        refused(source)
     );
 }
 
