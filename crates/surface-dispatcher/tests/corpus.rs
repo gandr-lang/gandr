@@ -13,6 +13,7 @@ extern crate alloc;
 #[cfg(test)]
 mod corpus
 {
+    use alloc::collections::BTreeMap;
     use alloc::collections::BTreeSet;
     use core::convert::Infallible;
     use core::num::NonZeroUsize;
@@ -28,6 +29,8 @@ mod corpus
     use gandr_surface_corpus::Stated;
     use gandr_surface_dispatcher::Composed;
     use gandr_surface_dispatcher::Goals;
+    use gandr_surface_dispatcher::Lowered;
+    use gandr_surface_dispatcher::LoweringCount;
     use gandr_surface_dispatcher::Row;
     use gandr_surface_dispatcher::RunReport;
     use gandr_surface_dispatcher::RunVerdict;
@@ -37,6 +40,11 @@ mod corpus
     use gandr_surface_dispatcher::Verb;
     use gandr_surface_dispatcher::Walk;
     use gandr_surface_dispatcher::Width;
+    use gandr_surface_dispatcher::lower_source;
+    use gandr_surface_grammar::Pbg;
+    use gandr_surface_grammar::built_in;
+    use gandr_surface_lowering::Role;
+    use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
     /// The corpus directory `name`, under the corpus crate.
@@ -660,6 +668,107 @@ mod corpus
             refusals,
             Vec::<String>::new(),
             "focusing refuses only codes, element identity, holes, session actions and world forms"
+        );
+    }
+
+    /// The names a source exports, lowered on its own text: each top-level
+    /// declaration's name and each top-level module's, as the source spells
+    /// them. A constructor belongs to its type and an operation to its family,
+    /// so neither is counted; a module member is reached through its module's
+    /// name; a name the lowering mints for a form — the `Sig` code type a
+    /// signature block declares — is spelled by no source, so it is not
+    /// counted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn exported(
+        grammar: &Pbg,
+        own: SourceText<'_>,
+        lowerings: &mut LoweringCount,
+    ) -> BTreeSet<String>
+    {
+        let lowering = lower_source(grammar, own, lowerings)
+            .unwrap_or_else(|fault| panic!("a model source lowers: {fault}"));
+        let Lowered::Module { ref module, .. } = lowering.into_lowered()
+        else {
+            return BTreeSet::new();
+        };
+        module
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.role() == Role::Declared)
+            .filter_map(|declaration| {
+                let name = module.path_of(declaration).first()?.to_string();
+                let span = declaration.span();
+                let form = own
+                    .as_ref()
+                    .get(usize::from(span.start()) .. usize::from(span.end()))?;
+                form.split(|character: char| !(character.is_alphanumeric() || character == '_'))
+                    .any(|word| word == name)
+                    .then_some(name)
+            })
+            .collect()
+    }
+
+    /// No name is exported by two sources of one model subject — the
+    /// directory directly under `model` that holds them. A lemma two sources
+    /// need is written in the one that owns it and imported by the other, so
+    /// a second declaration of a name a sibling exports is refused here by
+    /// name (#436).
+    #[test]
+    fn no_subject_declares_a_name_twice()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let mut lowerings = LoweringCount::default();
+        let model = root(Path::new("fixture/model"));
+        let mut declared: BTreeMap<(PathBuf, String), BTreeSet<PathBuf>> = BTreeMap::new();
+        let ControlFlow::Continue(_report) = Walk::new(vec![model.clone()]).visit(
+            Width::SERIAL,
+            |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path, text, base, ..
+                } = step
+                else {
+                    panic!("each model source is read: {step:?}");
+                };
+                let relative = path.strip_prefix(&model).expect("under the model root");
+                let mut parts = relative.components();
+                let (Some(subject), Some(_)) = (parts.next(), parts.next())
+                else {
+                    return ControlFlow::Continue(());
+                };
+                let own = <&str>::from(text)
+                    .get(usize::from(base) ..)
+                    .expect("a source's own text follows its base");
+                for name in exported(&grammar, SourceText::from(own), &mut lowerings) {
+                    declared
+                        .entry((PathBuf::from(subject.as_os_str()), name))
+                        .or_default()
+                        .insert(relative.to_path_buf());
+                }
+                ControlFlow::Continue(())
+            },
+        );
+        assert!(!declared.is_empty(), "the model corpus declares names");
+        let twice: Vec<String> = declared
+            .iter()
+            .filter(|&(_, sources)| sources.len() > 1)
+            .map(|(&(ref subject, ref name), sources)| {
+                let sources: Vec<String> = sources
+                    .iter()
+                    .map(|source| source.display().to_string())
+                    .collect();
+                format!(
+                    "{}: `{name}` is declared by {}",
+                    subject.display(),
+                    sources.join(" and ")
+                )
+            })
+            .collect();
+        assert_eq!(
+            twice,
+            Vec::<String>::new(),
+            "each name a subject exports is declared once, in the source that owns it"
         );
     }
 
