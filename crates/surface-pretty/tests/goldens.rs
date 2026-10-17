@@ -1774,6 +1774,61 @@ mod tests
         );
     }
 
+    /// #675: a call of a function literal prints as the value it returns,
+    /// each abstraction's binder written as the argument it takes, the first
+    /// argument the outermost; a literal whose body does more than return
+    /// stays a call.
+    #[test]
+    fn a_called_function_literal_prints_as_what_it_returns_675()
+    {
+        let names = [Name::from("t"), Name::from("u")];
+        let mut core = CoreArena::new();
+        let t = core.value_constant(ConstantIndex::from(0_usize));
+        let u = core.value_constant(ConstantIndex::from(1_usize));
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+
+        let returns = core.computation_return(bound);
+        let identity = core.computation_lambda(returns);
+        let identity = core.value_thunk(identity);
+        let identity = core.computation_force(identity);
+        let called = core.computation_application(identity, t);
+        let called = core.value_nested(called);
+
+        let first = core.computation_return(outer);
+        let first = core.computation_lambda(first);
+        let first = core.computation_lambda(first);
+        let first = core.value_thunk(first);
+        let first = core.computation_force(first);
+        let projected = core.computation_application(first, t);
+        let projected = core.computation_application(projected, u);
+        let projected = core.value_returned(projected);
+
+        let forced = core.computation_force(bound);
+        let forcing = core.computation_lambda(forced);
+        let forcing = core.value_thunk(forcing);
+        let forcing = core.computation_force(forcing);
+        let forcing = core.computation_application(forcing, t);
+        let forcing = core.value_nested(forcing);
+
+        let source = CoreSource::new(&core, &names);
+        for (root, spelling) in [
+            (Root::Value(CoreNode::Value(called)), "t"),
+            (Root::Value(CoreNode::Value(projected)), "t"),
+        ] {
+            assert_eq!(
+                spelled(&source, root),
+                faithful(Written(spelling)),
+                "{root:?} spells as what it returns"
+            );
+        }
+        assert_eq!(
+            spelled(&source, Root::Value(CoreNode::Value(forcing))),
+            approximate(Written("<thunk>(t)")),
+            "a body that does more than return stays a call"
+        );
+    }
+
     /// Every value leaf spells as the surface writes it — a signed integer,
     /// a numeric literal with and without a fraction, a string's escapes, the
     /// unit and a constant by its name — and a thunk, whose body a reader

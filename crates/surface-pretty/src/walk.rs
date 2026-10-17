@@ -4320,7 +4320,8 @@ impl Walk<'_, '_>
     }
 
     /// Schedules an application and the applications under its function as
-    /// one call, `f(a1, …, an)`.
+    /// one call, `f(a1, …, an)`, or, where the function is a function literal
+    /// whose body returns, as the value the call returns.
     ///
     /// # Specification
     /// - requires: the application at `depth` applies `function` to `argument`,
@@ -4331,7 +4332,12 @@ impl Walk<'_, '_>
     ///   value it forces, the bridge the lowering writes before a value it
     ///   calls, and any other head as a computation where the body goes on; the
     ///   join over the head and the arguments, left to right, is pushed below
-    ///   their visits, the head visited first.
+    ///   their visits, the head visited first. A forced thunk literal of at
+    ///   least as many abstractions as the call has arguments, whose body then
+    ///   returns, is scheduled instead as the value it returns, under one
+    ///   binder per argument standing for the argument, the first outermost:
+    ///   the type grammar has no call of a literal, and the reading back
+    ///   compares such a call as what it returns (#675).
     /// - provides: the one spelling the surface writes a call in.
     /// - fails: never.
     /// - panics: none.
@@ -4343,12 +4349,22 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a call of a forced constant on two arguments and a
     ///   call whose head is a returner observe argument order, the elided force
-    ///   and the head's parentheses.
+    ///   and the head's parentheses; a call of a literal identity and of a
+    ///   literal projection on two arguments observe the reduct and the binder
+    ///   each argument stands for, and a literal whose body does more than
+    ///   return stays a call.
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `goldens::tests::a_call_collects_its_arguments_up_to_the_depth_limit`
+    /// - witness: `goldens::tests::a_called_function_literal_prints_as_what_it_returns_675`
     #[spec(
         captures: [entry = tasks.len()],
         ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
+            let substituted = scheduled.iter().find_map(|task| if let Task::Substitute(Arity(count)) = *task { Some(count) } else { None });
+            if let Some(count) = substituted {
+                return count > 0_usize
+                    && scheduled.iter().filter(|task| matches!(**task, Task::Unbind)).count() == count
+                    && count.checked_mul(2_usize).and_then(|both| both.checked_add(2_usize)) == Some(scheduled.len());
+            }
             let Some((&Task::Join(Join::Apply(Arity(arity))), visits)) = scheduled.split_first()
             else { return false; };
             arity > 0_usize && u32::try_from(arity).is_ok_and(|count| count <= DEPTH_LIMIT.0)
@@ -4377,6 +4393,41 @@ impl Walk<'_, '_>
             };
             arguments.push(next);
             head = inner;
+        }
+        if let Former::Force(thunk) = source.read(head)
+            && let Former::Thunk(body) = source.read(thunk)
+        {
+            let mut reduct = body;
+            let mut consumed = 0_usize;
+            while consumed < arguments.len() {
+                let Former::Lambda(inner) = source.read(reduct)
+                else {
+                    break;
+                };
+                reduct = inner;
+                consumed = consumed.saturating_add(1_usize);
+            }
+            if consumed == arguments.len()
+                && let Former::Return(result) = source.read(reduct)
+            {
+                for _ in 0_usize .. consumed {
+                    tasks.push(Task::Unbind);
+                }
+                tasks.push(Task::Visit {
+                    node: result,
+                    admits: Admits::Value,
+                    depth,
+                });
+                tasks.push(Task::Substitute(Arity(consumed)));
+                for node in arguments {
+                    tasks.push(Task::Visit {
+                        node,
+                        admits: Admits::Value,
+                        depth,
+                    });
+                }
+                return;
+            }
         }
         tasks.push(Task::Join(Join::Apply(Arity(arguments.len()))));
         for node in arguments {
