@@ -88,5 +88,9 @@ def winding = #{wind, #{#{spin, sect}, #{spin, retr}}} ;
 
 /// The equivalence is `isoToEquiv` at the quasi-inverse, by conversion.
 @[ checks ]
-def windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base), Int, windingIso)) ;
+def windingByIso : Path(
+  Path(Circle, Base, Base) ≃ Int,
+  winding,
+  isoToEquiv(Path(Circle, Base, Base), Int, windingIso)
+) ;
 def windingByIso = here(winding) ;

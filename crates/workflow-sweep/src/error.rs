@@ -28,6 +28,12 @@ pub enum SweepError
         /// What it reported.
         detail: String,
     },
+    /// The built-in grammar the layout comparison parses with did not build.
+    Grammar
+    {
+        /// What building it reported.
+        detail: String,
+    },
 }
 
 impl fmt::Display for SweepError
@@ -65,6 +71,9 @@ impl fmt::Display for SweepError
                 f,
                 "`{command}` failed: {detail}; set GANDR_SWEEP_BASE to the revision the change is measured against"
             ),
+            Self::Grammar { ref detail } => {
+                write!(f, "the built-in grammar does not build: {detail}")
+            },
         }
     }
 }
@@ -100,6 +109,13 @@ mod tests
             .to_string(),
             "`git merge-base origin/main HEAD` failed: no such ref; set GANDR_SWEEP_BASE to the \
              revision the change is measured against"
+        );
+        assert_eq!(
+            SweepError::Grammar {
+                detail: String::from("a cycle"),
+            }
+            .to_string(),
+            "the built-in grammar does not build: a cycle"
         );
     }
 }

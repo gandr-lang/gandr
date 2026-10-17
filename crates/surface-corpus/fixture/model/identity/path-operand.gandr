@@ -25,7 +25,11 @@ def backThen(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
 
 /// A parameter composed in a type, and reflexivity at it (#423).
 @[ checks ]
-def stated(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p then loop, p then loop) {
+def stated(p : Path(Circle, Base, Base)) -> -F Path(
+  Path(Circle, Base, Base),
+  p then loop,
+  p then loop
+) {
   here(p then loop)
 }
 
@@ -43,14 +47,22 @@ def untwice(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
 
 /// A call composed in a type (#423).
 @[ checks ]
-def thrice(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), walkTwice(p) then p, walkTwice(p) then p) {
+def thrice(p : Path(Circle, Base, Base)) -> -F Path(
+  Path(Circle, Base, Base),
+  walkTwice(p) then p,
+  walkTwice(p) then p
+) {
   here(walkTwice(p) then p)
 }
 
 /// A call of a declaration whose own type holds a derived operation: that
 /// type is read before the operation over it.
 @[ checks ]
-def unthrice(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), walkTwice(p) then p, walkTwice(p) then p) {
+def unthrice(p : Path(Circle, Base, Base)) -> -F Path(
+  Path(Circle, Base, Base),
+  walkTwice(p) then p,
+  walkTwice(p) then p
+) {
   back(thrice(p))
 }
 
@@ -82,13 +94,21 @@ def mapped(f : +U[ω] (Circle -> -F Nat)) -> -F Path(Nat, f(Base), f(Base)) {
 /// `cong` at a parameter map whose type reads an earlier parameter, the type
 /// it maps from: its result read where the operation stands (#546).
 @[ checks ]
-def mappedOver(b : Type, g : +U (b -> -F Nat), u : b, v : b, q : Path(b, u, v)) -> -F Path(Nat, g(v), g(u)) {
+def mappedOver(b : Type, g : +U (b -> -F Nat), u : b, v : b, q : Path(b, u, v)) -> -F Path(
+  Nat,
+  g(v),
+  g(u)
+) {
   back(cong(g, q))
 }
 
 /// The same map into a type it reads, in a type and in a body (#546).
 @[ checks ]
-def mappedInto(a : Type, b : Type, g : +U (b -> -F a), u : b, v : b, q : Path(b, u, v)) -> -F Path(Path(a, g(u), g(v)), cong(g, q), cong(g, q)) {
+def mappedInto(a : Type, b : Type, g : +U (b -> -F a), u : b, v : b, q : Path(b, u, v)) -> -F Path(
+  Path(a, g(u), g(v)),
+  cong(g, q),
+  cong(g, q)
+) {
   here(cong(g, q))
 }
 

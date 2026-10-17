@@ -37,7 +37,10 @@ def spinDown(n : Int) -> -F Path(Path(Circle, Base, Base), spin(P(n)), back(loop
 /// empty word, and the composite over it runs that call first (#473); the
 /// composites the arms carry convert through their definitions (#440).
 @[ checks ]
-def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus(a, b)), spin(b) then spin(a)) {
+def rec spinHom(
+  a : Int,
+  b : Int
+) -> -F Path(Path(Circle, Base, Base), spin(plus(a, b)), spin(b) then spin(a)) {
   case b {
     Z => here(spin(a)),
     S(x) => cong(loopOn, spinHom[<](a, x)),
@@ -54,7 +57,10 @@ def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus
 /// written types (#423), and the kernel reads its endpoint
 /// `plus(wind(q), wind(p))` as the call it returns (#424).
 @[ checks ]
-def rec windHom(q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) -> -F Path(Int, wind(p then q), plus(wind(q), wind(p))) {
+def rec windHom(
+  q : Path(Circle, Base, Base),
+  p : Path(Circle, Base, Base)
+) -> -F Path(Int, wind(p then q), plus(wind(q), wind(p))) {
   case p {
     here => here(wind(q)),
     loop ∷ r => cong(up, windHom[<](q, r)),
@@ -67,8 +73,14 @@ def rec windHom(q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) -> -
 /// by `plusComm`. Each lemma is read at its written result (#423), and the
 /// calls in the types stand as what they return (#426).
 @[ checks ]
-def comm(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p then q, q then p) {
-  back(sect(p then q)) then cong(spin, windHom(q, p)) then cong(spin, plusComm(wind(q), wind(p))) then back(cong(spin, windHom(p, q))) then sect(q then p)
+def comm(
+  p : Path(Circle, Base, Base),
+  q : Path(Circle, Base, Base)
+) -> -F Path(Path(Circle, Base, Base), p then q, q then p) {
+  back(sect(p then q)) then cong(spin, windHom(q, p)) then cong(
+    spin,
+    plusComm(wind(q), wind(p))
+  ) then back(cong(spin, windHom(p, q))) then sect(q then p)
 }
 
 /// Three loops spun and wound count three (cubical's `test-winding-pos`).

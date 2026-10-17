@@ -337,42 +337,42 @@
 87:54-87:54 } ⇒ Path(Circle, Base, Base) ≃ Int @87:15-87:55
 87:56-87:56 ; ⇒ winding : Path(Circle, Base, Base) ≃ Int @87:1-87:57
 90:1-90:11 @[ checks ] ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @90:1-91:1
-91:1-91:3 def ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:1-91:122
+91:1-91:3 def ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:1-95:4
 91:5-91:16 windingByIso ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:5-91:17
-91:18-91:18 : ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:1-91:122
-91:20-91:24 Path( ⇒ Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base), Int, windingIso)) : Type @91:20-91:120
-91:25-91:29 Path( ⇒ Path(Circle, Base, Base) : Type @91:25-91:49
-91:30-91:35 Circle ⇒ Circle : Type @91:30-91:36
-91:36-91:36 , ⇒ Path(Circle, Base, Base) : Type @91:25-91:49
-91:38-91:41 Base ⇒ Base : Circle @91:38-91:42
-91:42-91:42 , ⇒ Path(Circle, Base, Base) : Type @91:25-91:49
-91:44-91:47 Base ⇒ Base : Circle @91:44-91:48
-91:48-91:48 ) ⇒ Path(Circle, Base, Base) : Type @91:25-91:49
-91:50-91:50 ≃ ⇒ Path(Circle, Base, Base) ≃ Int : Type @91:25-91:55
-91:52-91:54 Int ⇒ Int : Type @91:52-91:55
-91:55-91:55 , ⇒ Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base), Int, windingIso)) : Type @91:20-91:120
-91:57-91:63 winding ⇒ winding : Path(Circle, Base, Base) ≃ Int @91:57-91:64
-91:64-91:64 , ⇒ Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base), Int, windingIso)) : Type @91:20-91:120
-91:66-91:75 isoToEquiv ⇒ isoToEquiv : +U ((a : Type) -> (b : Type) -> (a ≅ b) -> -F (a ≃ b)) @91:66-91:76
-91:76-91:76 ( ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @91:66-91:119
-91:77-91:81 Path( ⇒ Path(Circle, Base, Base) : Type @91:77-91:101
-91:82-91:87 Circle ⇒ Circle : Type @91:82-91:88
-91:88-91:88 , ⇒ Path(Circle, Base, Base) : Type @91:77-91:101
-91:90-91:93 Base ⇒ Base : Circle @91:90-91:94
-91:94-91:94 , ⇒ Path(Circle, Base, Base) : Type @91:77-91:101
-91:96-91:99 Base ⇒ Base : Circle @91:96-91:100
-91:100-91:100 ) ⇒ Path(Circle, Base, Base) : Type @91:77-91:101
-91:101-91:101 , ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @91:66-91:119
-91:103-91:105 Int ⇒ Int : Type @91:103-91:106
-91:106-91:106 , ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @91:66-91:119
-91:108-91:117 windingIso ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎checked against⏎⏎#{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base, Base⏎), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base),⏎  b(a(c)), c)) * +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @91:108-91:118
-91:118-91:118 ) ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @91:66-91:119
-91:119-91:119 ) ⇒ Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base), Int, windingIso)) : Type @91:20-91:120
-91:121-91:121 ; ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:1-91:122
-92:1-92:3 def ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @92:1-92:35
-92:5-92:16 windingByIso ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @92:5-92:17
-92:18-92:18 = ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @92:1-92:35
-92:20-92:24 here( ⇒ Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @92:20-92:33
-92:25-92:31 winding ⇒ winding : Path(Circle, Base, Base) ≃ Int @92:25-92:32
-92:32-92:32 ) ⇒ Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @92:20-92:33
-92:34-92:34 ; ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @92:1-92:35
+91:18-91:18 : ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:1-95:4
+91:20-91:24 Path( ⇒ Type @91:20-95:2
+92:3-92:7 Path( ⇒ Path(Circle, Base, Base) : Type @92:3-92:27
+92:8-92:13 Circle ⇒ Circle : Type @92:8-92:14
+92:14-92:14 , ⇒ Path(Circle, Base, Base) : Type @92:3-92:27
+92:16-92:19 Base ⇒ Base : Circle @92:16-92:20
+92:20-92:20 , ⇒ Path(Circle, Base, Base) : Type @92:3-92:27
+92:22-92:25 Base ⇒ Base : Circle @92:22-92:26
+92:26-92:26 ) ⇒ Path(Circle, Base, Base) : Type @92:3-92:27
+92:28-92:28 ≃ ⇒ Path(Circle, Base, Base) ≃ Int : Type @92:3-92:33
+92:30-92:32 Int ⇒ Int : Type @92:30-92:33
+92:33-92:33 , ⇒ Type @91:20-95:2
+93:3-93:9 winding ⇒ winding : Path(Circle, Base, Base) ≃ Int @93:3-93:10
+93:10-93:10 , ⇒ Type @91:20-95:2
+94:3-94:12 isoToEquiv ⇒ isoToEquiv : +U ((a : Type) -> (b : Type) -> (a ≅ b) -> -F (a ≃ b)) @94:3-94:13
+94:13-94:13 ( ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @94:3-94:56
+94:14-94:18 Path( ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
+94:19-94:24 Circle ⇒ Circle : Type @94:19-94:25
+94:25-94:25 , ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
+94:27-94:30 Base ⇒ Base : Circle @94:27-94:31
+94:31-94:31 , ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
+94:33-94:36 Base ⇒ Base : Circle @94:33-94:37
+94:37-94:37 ) ⇒ Path(Circle, Base, Base) : Type @94:14-94:38
+94:38-94:38 , ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @94:3-94:56
+94:40-94:42 Int ⇒ Int : Type @94:40-94:43
+94:43-94:43 , ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @94:3-94:56
+94:45-94:54 windingIso ⇒ windingIso : Path(Circle, Base, Base) ≅ Int⏎⏎checked against⏎⏎#{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base, Base⏎), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base),⏎  b(a(c)), c)) * +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @94:45-94:55
+94:55-94:55 ) ⇒ -F #{a : Path(Circle, Base, Base) => Int, b : #{b : Int => Path(Circle, Base,⏎  Base), c : +U ((c : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base,⏎  Base), b(a(c)), c))} * #{b : Int => Path(Circle, Base, Base),⏎  c : +U ((c : Int) -> -F Path(Int, a(b(c)), c))}} @94:3-94:56
+95:1-95:1 ) ⇒ Type @91:20-95:2
+95:3-95:3 ; ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso))⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @91:1-95:4
+96:1-96:3 def ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @96:1-96:35
+96:5-96:16 windingByIso ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @96:5-96:17
+96:18-96:18 = ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @96:1-96:35
+96:20-96:24 here( ⇒ Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @96:20-96:33
+96:25-96:31 winding ⇒ winding : Path(Circle, Base, Base) ≃ Int @96:25-96:32
+96:32-96:32 ) ⇒ Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @96:20-96:33
+96:34-96:34 ; ⇒ windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base⏎), Int, windingIso)) @96:1-96:35

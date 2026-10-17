@@ -15,8 +15,21 @@ module Evolution {
   type Report = Seat.Report;
   type Handoff = Seat.Handoff;
   type SeatEnd = Seat.SeatEnd;
-  type SeatEnd′ = ?Dispatch. mu turn. +{ report : !Report. &{ next : turn, retire : end }, handoff : !Handoff. end, pause : !Report. turn };
-  type SeatEnd2 = ?Dispatch. +{ report : !Report. &{ next : mu again. +{ report : !Report. &{ next : again, retire : end }, handoff : !Handoff. end }, retire : end }, handoff : !Handoff. end };
+  type SeatEnd′ = ?Dispatch. mu turn. +{
+    report : !Report. &{ next : turn, retire : end },
+    handoff : !Handoff. end,
+    pause : !Report. turn
+  };
+  type SeatEnd2 = ?Dispatch. +{
+    report : !Report. &{
+      next : mu again. +{
+        report : !Report. &{ next : again, retire : end },
+        handoff : !Handoff. end
+      },
+      retire : end
+    },
+    handoff : !Handoff. end
+  };
   /// The old protocol flows to the one with the pause, by simulation.
   @[ checks ]
   def sub : Flow(Type, SeatEnd, SeatEnd′) ;
@@ -39,7 +52,13 @@ module Evolution {
 /// A recorded run of the old protocol: a task received, one report, retired.
 @[ checks ]
 def served : Run(Seat.SeatEnd) ;
-def served = recorded(received(Seat.task), selected(report), sent(Seat.progress), offered(retire), closed) ;
+def served = recorded(
+  received(Seat.task),
+  selected(report),
+  sent(Seat.progress),
+  offered(retire),
+  closed
+) ;
 
 /// A recorded run ridden forward along the simulation.
 @[ checks ]
@@ -55,9 +74,23 @@ def moved = thunk { become forward(served) } ;
 /// A run of the new protocol that takes the pause.
 @[ checks ]
 def paused : Run(Evolution.SeatEnd′) ;
-def paused = recorded(received(Seat.task), selected(pause), sent(Seat.progress), selected(handoff), sent(Seat.notes), closed) ;
+def paused = recorded(
+  received(Seat.task),
+  selected(pause),
+  sent(Seat.progress),
+  selected(handoff),
+  sent(Seat.notes),
+  closed
+) ;
 
 /// The same record is no run of the old protocol, which has no pause.
 @[ refuses("RunNotAdmitted") ]
 def backward : Run(Seat.SeatEnd) ;
-def backward = recorded(received(Seat.task), selected(pause), sent(Seat.progress), selected(handoff), sent(Seat.notes), closed) ;
+def backward = recorded(
+  received(Seat.task),
+  selected(pause),
+  sent(Seat.progress),
+  selected(handoff),
+  sent(Seat.notes),
+  closed
+) ;

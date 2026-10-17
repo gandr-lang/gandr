@@ -10,5 +10,11 @@ import "./circle-base.gandr" ;
 /// reflexivity.
 @[ checks ]
 def looped(a: Nat, b: Nat, q: Path(Nat, a, b)) -> -F Path(Path(Nat, a, b), q, q) {
-  become transport(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Path(Nat, a, y), z, z)), q, here(a), here(q), here(here(a)))
+  become transport(
+    +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Path(Nat, a, y), z, z)),
+    q,
+    here(a),
+    here(q),
+    here(here(a))
+  )
 }

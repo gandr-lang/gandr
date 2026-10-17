@@ -39,20 +39,36 @@ def twice_bound(f : +U[ω] (+{Unit, Unit} -> -F +{Unit, Unit})) -> -F +{Unit, Un
 
 /// A functional is a path to itself.
 @[ checks ]
-def reflexive : Path(+U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}), at_truth, at_truth) ;
+def reflexive : Path(
+  +U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}),
+  at_truth,
+  at_truth
+) ;
 def reflexive = funext(at_truth, at_truth) ;
 
 /// Binding the result and returning it agree at every function.
 @[ checks ]
-def unfolded : Path(+U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}), at_truth, through) ;
+def unfolded : Path(
+  +U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}),
+  at_truth,
+  through
+) ;
 def unfolded = funext(at_truth, through) ;
 
 /// The two spellings of applying twice agree at every function.
 @[ checks ]
-def nested : Path(+U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}), applied_twice, twice_bound) ;
+def nested : Path(
+  +U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}),
+  applied_twice,
+  twice_bound
+) ;
 def nested = funext(applied_twice, twice_bound) ;
 
 /// Reading a function at truth and at falsity differ at some function.
 @[ refuses("PointwiseDistinct") ]
-def elsewhere : Path(+U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}), at_truth, at_falsity) ;
+def elsewhere : Path(
+  +U[ω] (+U[ω] (+{Unit, Unit} -> -F +{Unit, Unit}) -> -F +{Unit, Unit}),
+  at_truth,
+  at_falsity
+) ;
 def elsewhere = funext(at_truth, at_falsity) ;

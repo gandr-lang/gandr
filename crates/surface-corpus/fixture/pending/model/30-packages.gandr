@@ -1,6 +1,4 @@
-def consume(p: package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed: T }))
-  -> -F Integer
-{
+def consume(p: package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed: T })) -> -F Integer {
   unpack m : package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed: T }) = p;
   run r <- force m;
   run f <- r.read;

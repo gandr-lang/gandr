@@ -14,7 +14,10 @@ module Seat :> #{
   type Dispatch,
   mobile type Report,
   type Handoff,
-  type SeatEnd = ?Dispatch. mu turn. +{ report : !Report. &{ next : turn, retire : end }, handoff : !Handoff. end },
+  type SeatEnd = ?Dispatch. mu turn. +{
+    report : !Report. &{ next : turn, retire : end },
+    handoff : !Handoff. end
+  },
   task : Dispatch,
   progress : Report,
   notes : Handoff

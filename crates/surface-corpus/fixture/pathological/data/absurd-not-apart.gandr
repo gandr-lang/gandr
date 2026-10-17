@@ -30,7 +30,11 @@ data Circle : Type {
 
 /// The loop then its inverse is the empty word.
 @[ refuses("NotApart") ]
-def cancelled(e : Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ here(Base), here(Base))) -> -F Empty {
+def cancelled(e : Path(
+  Path(Circle, Base, Base),
+  loop ∷ back(loop) ∷ here(Base),
+  here(Base)
+)) -> -F Empty {
   case e {}
 }
 

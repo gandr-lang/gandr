@@ -1,12 +1,28 @@
 //! The corpus sources a change touches, against the revision it is measured
 //! from: the merge-base selection the obligations report applies to
 //! witnesses, applied to a sweep's inputs.
+//!
+//! A source whose change is layout alone is no change: when the formatter
+//! lays out the base's text and the working tree's text to one text, the two
+//! hold the same tokens and comments in the same order — the invariant
+//! `gandr-surface-format` checks on every text it returns — and every sweep
+//! reads the source as it did before. Such a source leaves the change, so a
+//! layout pass over the corpus keeps the sample at its stated size; the
+//! nightly `sweeps` profile, which visits every source, is the backstop.
+//! The alternative was listing every touched file, which puts a corpus-wide
+//! layout into every sample at once and past the 30 s bound (#492).
 
 use alloc::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
 use anodized::spec;
+use gandr_surface_format::FormatOptions;
+use gandr_surface_format::format;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::built_in;
+use gandr_surface_parser::parse;
+use gandr_surface_syntax::SourceText;
 
 use crate::corpus::CorpusName;
 use crate::error::SweepError;
@@ -63,11 +79,13 @@ impl Changed
     ///   inside a Git work tree holding the base revision.
     /// - ensures: every `.gandr` file below `corpus` that the working tree adds
     ///   or modifies against the base, and every untracked one Git does not
-    ///   ignore, named below `corpus`.
+    ///   ignore, named below `corpus` — less every modified source the
+    ///   formatter lays out to the text it lays the base's out to.
     /// - provides: a sample's changed-files rule; the working tree, not `HEAD`,
     ///   is compared, so an uncommitted edit counts.
     /// - fails: [`SweepError::Git`] when an invocation cannot run, exits
-    ///   unsuccessfully, or prints what is not UTF-8.
+    ///   unsuccessfully, or prints what is not UTF-8; [`SweepError::Grammar`]
+    ///   when the built-in grammar does not build.
     /// - panics: none.
     /// - executable: none — the outcome is the external process's.
     ///
@@ -82,6 +100,7 @@ impl Changed
     ///   Reading `HEAD` instead of the working tree, dropping untracked files,
     ///   or treating a failed command as an empty change fails the witness.
     /// - witness: `changed::tests::a_change_lists_its_modified_and_untracked_sources_and_a_missing_base_is_refused`
+    /// - witness: `changed::tests::a_layout_alone_is_no_change_492`
     #[inline]
     pub fn asked(corpus: &Path) -> Result<Self, SweepError>
     {
@@ -110,6 +129,7 @@ impl Changed
     /// # Adequacy
     /// - hypothesis: L3 — as [`Changed::asked`].
     /// - witness: `changed::tests::a_change_lists_its_modified_and_untracked_sources_and_a_missing_base_is_refused`
+    /// - witness: `changed::tests::a_layout_alone_is_no_change_492`
     #[inline]
     pub fn against(
         corpus: &Path,
@@ -133,18 +153,28 @@ impl Changed
             corpus,
             GitArgs(&["ls-files", "--others", "--exclude-standard"]),
         )?;
-        Ok(Self(
-            differing
-                .lines()
-                .chain(untracked.lines())
-                .filter(|name| {
-                    Path::new(name)
-                        .extension()
-                        .is_some_and(|extension| extension == "gandr")
-                })
-                .map(CorpusName::from)
-                .collect(),
-        ))
+        let grammar = built_in().map_err(|error| SweepError::Grammar {
+            detail: error.to_string(),
+        })?;
+        let source = |name: &&str| {
+            Path::new(name)
+                .extension()
+                .is_some_and(|extension| extension == "gandr")
+        };
+        let mut names = BTreeSet::new();
+        for name in differing.lines().filter(source) {
+            let shown = format!("{}:./{name}", base.0);
+            let before = git(corpus, GitArgs(&["show", &shown]))?;
+            let after = std::fs::read_to_string(corpus.join(name)).ok();
+            let before = laid_out(&grammar, SourceText::from(before.as_str()));
+            let after =
+                after.and_then(|after| laid_out(&grammar, SourceText::from(after.as_str())));
+            if before.is_none() || before != after {
+                names.insert(CorpusName::from(name));
+            }
+        }
+        names.extend(untracked.lines().filter(source).map(CorpusName::from));
+        Ok(Self(names))
     }
 
     /// The changed sources, by name, ascending.
@@ -156,6 +186,35 @@ impl Changed
     {
         self.0.iter()
     }
+}
+
+/// The layout the formatter gives `text`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the text [`format()`] returns at the default options when `text`
+///   parses and formats; none otherwise, so a text that does not lay out is
+///   alike to nothing and stays in the change.
+/// - provides: the layout-only test of [`Changed::against`]: two texts laid out
+///   to one text hold the same tokens and comments in the same order.
+/// - fails: never — a refusal is no layout.
+/// - panics: none.
+/// - executable: none — the answer is the formatter's, which a predicate would
+///   run again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a respaced source lays out alike, an edited token does
+///   not.
+/// - witness: `changed::tests::a_layout_alone_is_no_change_492`
+fn laid_out(
+    grammar: &Pbg,
+    text: SourceText<'_>,
+) -> Option<String>
+{
+    let parsed = parse(grammar, text).ok()?;
+    format(grammar, &parsed, FormatOptions::default())
+        .ok()
+        .map(gandr_surface_format::Formatted::into_text)
 }
 
 impl FromIterator<CorpusName> for Changed
@@ -287,6 +346,41 @@ mod tests
                 Err(SweepError::Git { ref command, .. }) if command.contains("no-such-branch-for-a-sweep")
             ),
             "{missing:?}"
+        );
+    }
+
+    /// #492: a source laid out anew, its tokens and comments the base's, is
+    /// no change; an edited token in a source laid out the same is one.
+    #[test]
+    fn a_layout_alone_is_no_change_492()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-sweep-layout-{}", std::process::id()));
+        let corpus = scratch.join("crates").join("surface-corpus");
+        std::fs::create_dir_all(corpus.join("fixture/model")).expect("the scratch corpus is made");
+        run(&scratch, GitArgs(&["init", "--quiet"]));
+        let base = "// One.\ndef  one =   1 ;\n";
+        for name in ["fixture/model/laid.gandr", "fixture/model/edited.gandr"] {
+            std::fs::write(corpus.join(name), base).expect("a source is written");
+        }
+        run(&scratch, GitArgs(&["add", "."]));
+        run(&scratch, GitArgs(&["commit", "--quiet", "-m", "base"]));
+        std::fs::write(
+            corpus.join("fixture/model/laid.gandr"),
+            "// One.\ndef one = 1 ;\n",
+        )
+        .expect("a layout is written");
+        std::fs::write(
+            corpus.join("fixture/model/edited.gandr"),
+            "// One.\ndef  one =   2 ;\n",
+        )
+        .expect("an edit is written");
+        let changed = Changed::against(&corpus, Revision::from("HEAD"));
+        std::fs::remove_dir_all(&scratch).expect("the scratch repository is removed");
+        assert_eq!(
+            changed.expect("HEAD resolves").names().collect::<Vec<_>>(),
+            [&CorpusName::from("fixture/model/edited.gandr")],
+            "the layout leaves the change, the edit stays"
         );
     }
 }

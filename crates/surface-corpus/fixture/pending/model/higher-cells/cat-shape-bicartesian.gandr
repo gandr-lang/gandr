@@ -49,7 +49,11 @@ def coprod_id(x : SumOb(Integer, String)) -> -F HomPlus(Integer, String, x, x) {
   }
 }
 
-def mixed_elim(a : Integer, b : String, h : HomPlus(Integer, String, Inl(a), Inr(b))) -> -F Integer {
+def mixed_elim(
+  a : Integer,
+  b : String,
+  h : HomPlus(Integer, String, Inl(a), Inr(b))
+) -> -F Integer {
   case h {}
 }
 

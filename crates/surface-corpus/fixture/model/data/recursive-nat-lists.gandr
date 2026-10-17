@@ -53,7 +53,10 @@ def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
 def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   case xs {
     Nil => return (Nil : List(Nat)),
-    Cons(x, rest) => { run y <- f(x); run r <- map_nat[<](f, rest); return (Cons(y, r) : List(Nat)) }
+    Cons(
+      x,
+      rest
+    ) => { run y <- f(x); run r <- map_nat[<](f, rest); return (Cons(y, r) : List(Nat)) }
   }
 }
 
@@ -62,7 +65,10 @@ def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
 def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   case xs {
     Nil => (Nil : List(Nat)),
-    Cons(x, rest) => { run y <- f(x); run r <- map_nat_elided[<](f, rest); (Cons(y, r) : List(Nat)) }
+    Cons(
+      x,
+      rest
+    ) => { run y <- f(x); run r <- map_nat_elided[<](f, rest); (Cons(y, r) : List(Nat)) }
   }
 }
 
@@ -117,7 +123,9 @@ def joined = thunk { become append_nat(small, (Cons(three, (Nil : List(Nat))) : 
 /// The same append, the `return`s elided.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
 def joined_elided : +U (-F List(Nat)) ;
-def joined_elided = thunk { append_nat_elided(small, (Cons(three, (Nil : List(Nat))) : List(Nat))) } ;
+def joined_elided = thunk {
+  append_nat_elided(small, (Cons(three, (Nil : List(Nat))) : List(Nat)))
+} ;
 
 /// Each element of `small` bumped.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
