@@ -130,9 +130,9 @@
 //!   always bind.
 //! - Change: the arrow and the telescope entry bind exactly where a later type
 //!   names their binder, as a function's parameters do.
-//! - Reason: the kernel keeps a Π whose codomain ignores its binder and the
-//!   plain arrow over the same children distinct, and asks the producer to emit
-//!   the dependent former only where the codomain is scoped; reading the
+//! - Reason: the kernel kept a Π whose codomain ignores its binder and the
+//!   plain arrow over the same children distinct, and asked the producer to
+//!   emit the dependent former only where the codomain is scoped; reading the
 //!   spelling as written made `def g : (n : Integer) => Integer` and the `def
 //!   g(n : Integer) -> -F Integer` that defines it two types, and a model's
 //!   `def` members unable to meet the components `Model(S)` derives. A
@@ -140,8 +140,12 @@
 //!   a Π alike (`lower::identity`).
 //! - Alternatives: a Π for every entry once any entry is named, which reads as
 //!   one rule but leaves the same two types.
-//! - Reversal: a conversion that identifies a Π ignoring its binder with the
-//!   plain arrow would make the choice unobservable, and either rule would do.
+//! - Reversal, fired (#577): conversion now identifies a Π whose codomain
+//!   ignores its binder with the plain arrow, in the checker and the kernel,
+//!   because a family applied at its binder (`always(x)`) is a Π no producer
+//!   can narrow before the family is read. The choice is unobservable to
+//!   conversion, and the lowering keeps it for the reading it gives the
+//!   printer.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;

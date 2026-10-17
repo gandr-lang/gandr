@@ -62,9 +62,10 @@
 //! function's parameters do. This reverses the recorded choice of #266, which
 //! read every named binder of `(x : A) -> C` as dependent, the spelling taken
 //! as written; that made `(n : Integer) => Integer` and `def g(n : Integer) ->
-//! -F Integer` two types, because the kernel keeps a Π that ignores its binder
-//! apart from the plain arrow. Transport motives still read, the motive reader
-//! taking either arrow (the decision is in `lower::arity`).
+//! -F Integer` two types while the kernel kept a Π that ignores its binder
+//! apart from the plain arrow, which it no longer does (#577). Transport
+//! motives still read, the motive reader taking either arrow (the decision is
+//! in `lower::arity`).
 //!
 //! **A signature no definition completes is what an artifact owes.** That case
 //! is its own outcome, because it is the producer an obligation ledger reads —
