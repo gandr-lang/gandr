@@ -367,38 +367,33 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a family for a value function space, an arrow for a function
+    /// - ensures: read through the parentheses written around the kind as a
+    ///   whole, a family for a value function space, an arrow for a function
     ///   type, and a universe for any other form or a missing node.
-    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and the
+    ///   hole's refusal for parentheses that do not hold one operand.
     /// - panics: none.
+    /// - executable: none — the classification is of the kind read through its
+    ///   parentheses, which the postcondition could only restate by walking the
+    ///   kind's pieces again.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMold`].
+    /// [`LoweringRefusal`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a telescope kind, an arrow kind and a universe kind
-    ///   separate a family, an operator's kind and an abstract type.
+    ///   separate a family, an operator's kind and an abstract type, and an
+    ///   arrow kind in parentheses is an operator's kind (#611).
     /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
     /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
     /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
-    #[spec(
-        ensures: |ret| ret.as_ref().map_or(true, |form| {
-            let former = self.tree.node(kind.node).and_then(|node| match shape_of(self.pbg, node) {
-                | Ok(Shape::Form { former, .. }) => Some(former),
-                | Ok(_) | Err(_) => None,
-            });
-            *form == match former {
-                | Some(Former::ValueFunctionType) => KindForm::Family,
-                | Some(Former::ArrowType) => KindForm::Arrow,
-                | Some(_) | None => KindForm::Universe,
-            }
-        }),
-    )]
+    /// - witness: `modules::modules::a_kind_reads_through_its_grouping_parentheses`
     pub(super) fn kind_form(
         &self,
         kind: Placed,
     ) -> Result<KindForm, LoweringRefusal<'source>>
     {
+        let kind = super::model::ungrouped(self.pbg, self.tree, kind)?;
         let Some(node) = self.tree.node(kind.node)
         else {
             return Ok(KindForm::Universe);

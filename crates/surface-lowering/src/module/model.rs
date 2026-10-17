@@ -526,10 +526,12 @@ impl<'source> Collector<'_, 'source>
     /// -> U`, states.
     ///
     /// # Specification
-    /// - requires: `kind` is a value function space or a static arrow.
-    /// - ensures: for a static arrow, one per arrow along its spine; otherwise
-    ///   the number of entries its parenthesised domain lists, or one for a
-    ///   domain written bare; none for a kind without a domain.
+    /// - requires: `kind` is a value function space or a static arrow, either
+    ///   possibly in parentheses.
+    /// - ensures: read through the parentheses around the kind as a whole, for
+    ///   a static arrow one per arrow along its spine; otherwise the number of
+    ///   entries its parenthesised domain lists, or one for a domain written
+    ///   bare; none for a kind without a domain.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and the
     ///   spine's refusal.
     /// - panics: none.
@@ -550,6 +552,7 @@ impl<'source> Collector<'_, 'source>
         kind: Placed,
     ) -> Result<OperandCount, LoweringRefusal<'source>>
     {
+        let kind = ungrouped(self.pbg, self.tree, kind)?;
         if self.kind_form(kind) == Ok(super::KindForm::Arrow) {
             return Ok(OperandCount::from(
                 spine_domains(self.pbg, self.tree, kind)?.len(),
@@ -874,14 +877,14 @@ impl<'source> Collector<'_, 'source>
 
 /// The domains of the arrow spine `kind`, `A -> … -> U`, outermost first.
 ///
-/// The spine is the codomain chain: `A -> B -> U` and `A -> (B -> U)` each
-/// state two domains, and `(A -> B) -> U` states one, an operator's kind. A
-/// kind that is no arrow states none.
+/// The spine is the codomain chain: `A -> B -> U`, `A -> (B -> U)` and `(A ->
+/// B -> U)` each state two domains, and `(A -> B) -> U` states one, an
+/// operator's kind. A kind that is no arrow states none.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one domain per arrow walked from `kind` down its codomains,
-///   through any parentheses around a codomain, outermost first.
+///   through any parentheses around the kind or a codomain, outermost first.
 /// - provides: the arity and the indices of a kind written as a static arrow.
 /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and the hole's
 ///   refusal for an arrow whose domain or codomain is not one operand.
@@ -896,8 +899,11 @@ impl<'source> Collector<'_, 'source>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `Type -> Type -> Type` states two domains and a member
-///   binding one parameter against it is refused naming both counts.
+///   binding one parameter against it is refused naming both counts, and `(Type
+///   -> Type)` and `Type -> (Type -> Type)` read through their parentheses
+///   (#611).
 /// - witness: `modules::modules::a_kinded_type_component_spine_declares_its_arity`
+/// - witness: `modules::modules::a_kind_reads_through_its_grouping_parentheses`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |domains| domains.iter().all(|domain| domain.span.start() >= kind.span.start())))]
 pub fn spine_domains<'source>(
     pbg: &Pbg,
@@ -927,7 +933,7 @@ pub fn spine_domains<'source>(
                 }
                 one_in(FormName::MODULE, cursor.operands())?
             },
-            Former::ParenthesizedType if !domains.is_empty() => {
+            Former::ParenthesizedType => {
                 if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
                     return Err(misplaced_in(FormName::MODULE, cursor.here()));
                 }
@@ -975,7 +981,6 @@ pub fn spine_domains<'source>(
             | Former::LazyRecordType
             | Former::ValueFunctionType
             | Former::StaticAbstraction
-            | Former::ParenthesizedType
             | Former::PathType
             | Former::RelationType
             | Former::CapabilityType
@@ -995,5 +1000,59 @@ pub fn spine_domains<'source>(
             | Former::Reserved
             | Former::Unadmitted => return Ok(domains),
         };
+    }
+}
+
+/// The kind `kind` with the parentheses written around it as a whole
+/// dropped: `(A -> U)` is the arrow `A -> U` and `((a : A) => U)` the family
+/// kind `(a : A) => U`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `kind` itself unless it is a parenthesized type, and otherwise
+///   the ungrouped form of the one operand its parentheses hold.
+/// - provides: what a kind states, whatever grouping it is written in.
+/// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and the hole's
+///   refusal for parentheses that do not hold one operand.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal`].
+///
+/// # Termination
+/// - reason: each step moves to a child of the node before it, not recursion.
+/// - measure: the depth of the kind's subtree below the current node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `(Type -> Type)` reads as an arrow of one domain and `((a
+///   : Type) => Type)` as a family of one index (#611).
+/// - witness: `modules::modules::a_kind_reads_through_its_grouping_parentheses`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |inner| inner.span.start() >= kind.span.start() && inner.span.end() <= kind.span.end()))]
+pub fn ungrouped<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    kind: Placed,
+) -> Result<Placed, LoweringRefusal<'source>>
+{
+    let mut position = kind;
+    loop {
+        let Some(node) = tree.node(position.node)
+        else {
+            return Ok(position);
+        };
+        let Shape::Form {
+            former: Former::ParenthesizedType,
+            ..
+        } = shape_of(pbg, node)?
+        else {
+            return Ok(position);
+        };
+        let mut pieces = Pieces::new();
+        read_pieces(pbg, tree, position.node, &mut pieces)?;
+        let mut cursor = Cursor::new(&pieces.pieces, position.span);
+        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
+        }
+        position = one_in(FormName::MODULE, cursor.operands())?;
     }
 }

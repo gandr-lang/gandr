@@ -1945,6 +1945,57 @@ mod modules
         );
     }
 
+    /// #611: the parentheses written around a kind, or around a codomain of
+    /// its spine, only group; a kind in parentheses states what the kind
+    /// inside does.
+    #[test]
+    fn a_kind_reads_through_its_grouping_parentheses()
+    {
+        for (kind, parameters) in [
+            ("Type -> Type", "a : Type"),
+            ("(Type -> Type)", "a : Type"),
+            ("((Type -> Type))", "a : Type"),
+            ("Type -> (Type -> Type)", "a : Type, b : Type"),
+            ("(Type -> (Type -> Type))", "a : Type, b : Type"),
+        ] {
+            let source = format!(
+                "module M : #{{ type Hom : {kind}, probe : Integer }} {{ type Hom({parameters}) = \
+                 a; def probe = 1; }}"
+            );
+            let mut lowered = lower(source.as_str());
+            assert_eq!(
+                rows(&lowered),
+                [
+                    row("M.probe", Role::Declared, Amounts::Completed),
+                    row("M.Hom", Role::Witness, Amounts::Completed),
+                ],
+                "`{kind}` states as many domains as `{parameters}` binds"
+            );
+            let judgements = verdicts(&mut lowered);
+            assert!(
+                judgements
+                    .iter()
+                    .all(|&(_, judgement)| judgement == Judgement::Checked),
+                "and the operator checks at `{kind}`: {judgements:?}"
+            );
+        }
+
+        let family = "module M : #{ type Hom : ((a : Integer, b : Integer) => Type) } { type \
+                      Hom(a : Integer, b : Integer) = Integer; }";
+        let mut lowered = lower(family);
+        assert_eq!(
+            rows(&lowered),
+            [row("M.Hom", Role::Witness, Amounts::Completed)],
+            "a family kind in parentheses states its telescope's two indices"
+        );
+        assert!(
+            verdicts(&mut lowered)
+                .iter()
+                .all(|&(_, judgement)| judgement == Judgement::Checked),
+            "which the checker admits"
+        );
+    }
+
     #[test]
     fn a_manifest_family_component_binds_two_parameters()
     {
