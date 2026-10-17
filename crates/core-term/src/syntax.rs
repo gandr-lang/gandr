@@ -1642,6 +1642,69 @@ fn called_reduct(
     value
 }
 
+/// The value `value` reads as once every run its computation binds a call by
+/// stands for the call, while `steps` lasts.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a value, nested or returned, whose computation is a bind
+///   whose bound is a call — an application whose spine ends at a force — the
+///   nested value of the rest with the binder instantiated at the call kept
+///   nested, taken again while it binds a call and `steps` lasts, one step
+///   spent per run; `value` itself for every other value. The arena is copied
+///   the first time it is written.
+/// - provides: the reading of a nested call the lowering commutes into a run —
+///   `same(same(x))` lowers to `a ← same(x); same(a)` — as the call it was
+///   written as, which a type instantiated at a function holds and the printer
+///   spells (#676).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: every turn spends one of `steps`; the inner loop runs over the
+///   bound call's spine.
+/// - measure: `steps`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one run and two runs over calls read as the nested calls;
+///   a run binding a value forced alone stays a run.
+/// - witness: `syntax::tests::a_run_bound_call_reads_as_the_nested_call_676`
+#[spec(ensures: |ret| ret == value || arena.value(ret).is_some())]
+fn inlined_runs(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    value: ValueId,
+) -> ValueId
+{
+    let mut value = value;
+    let mut carried = Vec::new();
+    while let Some(&(Value::Nested(computation) | Value::Returned(computation))) =
+        arena.value(value)
+        && let Some(&Computation::Bind(bound, rest)) = arena.computation(computation)
+        && let Some(&Computation::Application(mut head, _)) = arena.computation(bound)
+    {
+        while let Some(&Computation::Application(inner, _)) = arena.computation(head) {
+            head = inner;
+        }
+        if !matches!(arena.computation(head), Some(&Computation::Force(_))) {
+            break;
+        }
+        if steps.spend() == Spend::Exhausted {
+            break;
+        }
+        let call = arena.to_mut().value_nested(bound);
+        carried.clear();
+        let rest = crate::rewrite::instantiate_computation_traced(
+            arena.to_mut(),
+            rest,
+            call,
+            &mut carried,
+        );
+        value = arena.to_mut().value_nested(rest);
+    }
+    value
+}
+
 quenchant_shape::reason_enum! {
     /// Why a path type reads as no type of words.
     pub mod unworded {
@@ -2120,10 +2183,14 @@ fn equal_syntax(
                 decoded_comp_type(&mut arena, &mut steps, a),
                 decoded_comp_type(&mut arena, &mut steps, b),
             ),
-            (Reading::Printed(_), V(a, b)) => V(
-                called_reduct(&mut arena, &mut steps, a),
-                called_reduct(&mut arena, &mut steps, b),
-            ),
+            (Reading::Printed(_), V(a, b)) => {
+                let a = inlined_runs(&mut arena, &mut steps, a);
+                let b = inlined_runs(&mut arena, &mut steps, b);
+                V(
+                    called_reduct(&mut arena, &mut steps, a),
+                    called_reduct(&mut arena, &mut steps, b),
+                )
+            },
             (Reading::Printed(_), C(..)) | (Reading::Syntax, _) => goal,
         };
         if !visited.insert(goal) {
@@ -3709,6 +3776,82 @@ mod tests
                 plain,
                 "a body that does more than return stays a call",
             ),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Different,
+                "{what}"
+            );
+        }
+    }
+
+    /// #676: the lowering commutes a nested call in a type into a run,
+    /// `same(same(x))` into `a ← same(x); same(a)`; read back, the run is
+    /// the nested call it was written as.
+    #[test]
+    fn a_run_bound_call_reads_as_the_nested_call_676()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let at = |arena: &mut crate::CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        let call = |arena: &mut crate::CoreArena, function: ValueId, argument: ValueId| {
+            let forced = arena.computation_force(function);
+            arena.computation_application(forced, argument)
+        };
+        // `f` and `x` the two binders around the type.
+        let (f, x) = (at(&mut arena, 1_u32), at(&mut arena, 0_u32));
+        // `f(f(x))` and `f(f(f(x)))` as written: each inner call nested.
+        let inner = call(&mut arena, f, x);
+        let inner = arena.value_returned(inner);
+        let twice = call(&mut arena, f, inner);
+        let twice_value = arena.value_returned(twice);
+        let thrice = call(&mut arena, f, twice_value);
+        let twice = arena.value_nested(twice);
+        let thrice = arena.value_nested(thrice);
+        // `a ← f(x); f(a)`, and `a ← f(x); b ← f(a); f(b)`.
+        let bound = call(&mut arena, f, x);
+        let (f_under, a) = (at(&mut arena, 2_u32), at(&mut arena, 0_u32));
+        let rest = call(&mut arena, f_under, a);
+        let one_run = arena.computation_bind(bound, rest);
+        let one_run = arena.value_nested(one_run);
+        let second = call(&mut arena, f_under, a);
+        let (f_twice_under, b) = (at(&mut arena, 3_u32), at(&mut arena, 0_u32));
+        let last = call(&mut arena, f_twice_under, b);
+        let two_runs = arena.computation_bind(second, last);
+        let two_runs = arena.computation_bind(bound, two_runs);
+        let two_runs = arena.value_nested(two_runs);
+        // `a ← force(f); f(a)`: the bound is no call.
+        let forced = arena.computation_force(f);
+        let forced_run = arena.computation_bind(forced, rest);
+        let forced_run = arena.value_nested(forced_run);
+        let path = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, x);
+        let (twice, thrice, one_run, two_runs, forced_run) = (
+            path(&mut arena, twice),
+            path(&mut arena, thrice),
+            path(&mut arena, one_run),
+            path(&mut arena, two_runs),
+            path(&mut arena, forced_run),
+        );
+        for (left, right, what) in [
+            (one_run, twice, "one run against the call nested once"),
+            (twice, one_run, "in either order"),
+            (two_runs, thrice, "two runs, the second naming the first"),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} reads as one type, which its syntax is not"
+            );
+        }
+        for (left, right, what) in [
+            (one_run, thrice, "a run reads as its own call and no other"),
+            (forced_run, twice, "a run binding no call stays a run"),
         ] {
             assert_eq!(
                 equal_type_reading(&arena, &signatures, left, right),

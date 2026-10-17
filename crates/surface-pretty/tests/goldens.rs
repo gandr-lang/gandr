@@ -1829,6 +1829,38 @@ mod tests
         );
     }
 
+    /// #676: a run the lowering binds a nested call by, `a ← t(u); t(a)`,
+    /// prints as the nested call, `t(t(u))`, and two runs, the second's call
+    /// naming the first's binder, as `t(t(t(u)))`.
+    #[test]
+    fn a_run_bound_call_in_a_type_prints_nested_676()
+    {
+        let names = [Name::from("t"), Name::from("u")];
+        let mut core = CoreArena::new();
+        let t = core.value_constant(ConstantIndex::from(0_usize));
+        let u = core.value_constant(ConstantIndex::from(1_usize));
+        let a = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forced = core.computation_force(t);
+        let bound = core.computation_application(forced, u);
+        let rest = core.computation_application(forced, a);
+        let one = core.computation_bind(bound, rest);
+        let one = core.value_nested(one);
+        let two = core.computation_bind(rest, rest);
+        let two = core.computation_bind(bound, two);
+        let two = core.value_returned(two);
+        let source = CoreSource::new(&core, &names);
+        for (root, spelling) in [
+            (Root::Value(CoreNode::Value(one)), "t(t(u))"),
+            (Root::Value(CoreNode::Value(two)), "t(t(t(u)))"),
+        ] {
+            assert_eq!(
+                spelled(&source, root),
+                faithful(Written(spelling)),
+                "{root:?} spells as the nested call"
+            );
+        }
+    }
+
     /// Every value leaf spells as the surface writes it — a signed integer,
     /// a numeric literal with and without a fraction, a string's escapes, the
     /// unit and a constant by its name — and a thunk, whose body a reader

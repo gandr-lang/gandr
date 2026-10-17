@@ -4421,4 +4421,36 @@ mod tests
             "every printed type reads back: {trips:?}"
         );
     }
+
+    /// #676: a type-valued call nested in a type prints as the nested call
+    /// it was written as, never as the run the lowering binds it by, and
+    /// reads back; so does each law of an equivalence over such a function.
+    #[test]
+    fn a_type_valued_call_nested_in_a_type_reads_back_676()
+    {
+        let source = SourceText::from(
+            "def same(x : Type) -> -F Type {\n  return x\n}\n\ndef sameTwice(x : Type) -> -F \
+             Path(Type, same(same(x)), x) {\n  return here(x)\n}\n\ndef typeSelf : Type ≃ Type \
+             ;\ndef typeSelf = #{same, #{#{same, sameTwice}, #{same, sameTwice}}} ;\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let trips: Vec<(String, RoundTrip)> = table(source)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        for spelled in [
+            "(x : Type) -> -F Path(Type, same(same(x)), x)",
+            "#{a : Type => Type, b : +U ((b : Type) -> -F Path(Type, same(a(b)), b))}",
+        ] {
+            assert!(
+                trips.iter().any(|&(ref printed, _)| printed == spelled),
+                "`{spelled}` is printed: {trips:?}"
+            );
+        }
+        assert!(
+            trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
+            "every printed type reads back: {trips:?}"
+        );
+    }
 }
