@@ -4933,7 +4933,7 @@ fn read_standing(reader: &mut Reader<'_>) -> Result<Standing, CodecError>
 }
 
 /// The faults a presented type's rule is refused for, in stable wire order.
-const RULE_FAULTS: [gandr_kernel_term::RuleFault; 9] = [
+const RULE_FAULTS: [gandr_kernel_term::RuleFault; 10] = [
     gandr_kernel_term::RuleFault::VariableHeaded,
     gandr_kernel_term::RuleFault::UnknownConstructor,
     gandr_kernel_term::RuleFault::Arity,
@@ -4943,6 +4943,7 @@ const RULE_FAULTS: [gandr_kernel_term::RuleFault; 9] = [
     gandr_kernel_term::RuleFault::Duplicated,
     gandr_kernel_term::RuleFault::SlotMismatch,
     gandr_kernel_term::RuleFault::NotDecreasing,
+    gandr_kernel_term::RuleFault::DependentSlot,
 ];
 
 /// Write the parameter or field an occurrence refusal names.

@@ -1094,6 +1094,7 @@ impl fmt::Display for Checked
                 gandr_kernel_term::RuleFault::Duplicated => "its right side names a variable twice",
                 gandr_kernel_term::RuleFault::SlotMismatch => "its right side moves a variable to a field of another type",
                 gandr_kernel_term::RuleFault::NotDecreasing => "its right side is not smaller than its left",
+                gandr_kernel_term::RuleFault::DependentSlot => "it binds a variable at a field, after its constructor's first, whose type is open",
             }),
             CheckRefusal::RuleNotRespected { rule, .. } => write!(f, "the case is not shown to respect rule {} of its datatype", usize::from(rule)),
             CheckRefusal::NotApart { reason, .. } => match reason {

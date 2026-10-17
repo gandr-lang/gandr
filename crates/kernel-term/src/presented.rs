@@ -405,16 +405,19 @@ impl Presentation
     ///
     /// `table` lists each constructor's fields, in tag order, as the slots a
     /// side reads: [`RuleSlot::Own`] where the declaration's own type stands,
-    /// [`RuleSlot::Other`] with the field's classifier anywhere else.
+    /// [`RuleSlot::Dependent`] where an open classifier stands after the
+    /// constructor's first field, [`RuleSlot::Other`] with the field's
+    /// classifier anywhere else.
     ///
     /// # Specification
     /// - requires: nothing — a rule may be arbitrary producer bytes.
     /// - ensures: `Ok(())` exactly when every rule's left side is headed by a
     ///   constructor, each side's constructors exist in `table` and consume
     ///   exactly the side's nodes by their arities, every constructor stands at
-    ///   the root or at an [`RuleSlot::Own`] field, the left side's variables
-    ///   read `0, 1, 2, …` in pre-order, every right-side variable occurs on
-    ///   the left at the same slot and at most once on the right, and the right
+    ///   the root or at an [`RuleSlot::Own`] field, no variable stands at a
+    ///   [`RuleSlot::Dependent`] one, the left side's variables read in
+    ///   pre-order as `0, 1, 2, …`, every right-side variable occurs on the
+    ///   left at the same slot and at most once on the right, and the right
     ///   side holds fewer constructors than the left. Otherwise the first
     ///   failing rule and its first fault.
     /// - provides: the admission check the kernel and the checker share, and
@@ -834,7 +837,7 @@ where
                 }
             },
             (RuleSlot::Own, TermReading::Defined(body)) => pending.push((body, RuleSlot::Own)),
-            (RuleSlot::Own, TermReading::Other) | (RuleSlot::Other(_), _) => {
+            (RuleSlot::Own, TermReading::Other) | (RuleSlot::Other(_) | RuleSlot::Dependent, _) => {
                 term.push(RuleTerm::Leaf(at));
             },
         }
@@ -1739,8 +1742,9 @@ where
 ///
 /// # Specification
 /// - provides: the declaration's own type, where a constructor of the table may
-///   stand, or another classifier, where only a variable may, compared by
-///   identity.
+///   stand; another classifier, where only a variable may, compared by
+///   identity; or a classifier read only in its constructor's telescope, where
+///   neither may.
 /// - panics: none.
 /// - executable: none — data declaration; [`Presentation::validate`] reads it.
 ///
@@ -1752,8 +1756,12 @@ pub enum RuleSlot<T>
 {
     /// The declaration's own type.
     Own,
-    /// Another classifier.
+    /// Another classifier, read under the declaration's parameters alone.
     Other(T),
+    /// A field after its constructor's first whose classifier is open: it is
+    /// formed under the fields before it as well as the parameters, so a rule
+    /// variable standing there would have no classifier of its own.
+    Dependent,
 }
 
 /// A rule's position in its declaration's written order.
@@ -1824,6 +1832,9 @@ pub enum RuleFault
     /// The right side holds as many constructors as the left or more, so the
     /// rule is not seen to terminate.
     NotDecreasing,
+    /// A variable stands at a [`RuleSlot::Dependent`] field, whose classifier
+    /// is read only in its constructor's telescope.
+    DependentSlot,
 }
 
 /// The first rule of a presentation that does not present its type, and why.
@@ -2008,10 +2019,10 @@ struct SideReading<T>
 /// - requires: nothing.
 /// - ensures: the side's variables with their slots and its constructor count
 ///   when the side is one term by the table's arities, every constructor at the
-///   own type.
+///   own type and no variable at a [`RuleSlot::Dependent`] field.
 /// - provides: the per-side half of [`Presentation::validate`].
-/// - fails: [`RuleFault::UnknownConstructor`], [`RuleFault::NotOwnPosition`] or
-///   [`RuleFault::Arity`].
+/// - fails: [`RuleFault::UnknownConstructor`], [`RuleFault::NotOwnPosition`],
+///   [`RuleFault::DependentSlot`] or [`RuleFault::Arity`].
 /// - panics: none.
 ///
 /// # Errors
@@ -2025,7 +2036,7 @@ struct SideReading<T>
 /// - hypothesis: L3 — as [`Presentation::validate`].
 /// - witness: `presented::tests::validation_names_each_fault`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|reading| reading.constructors.saturating_add(reading.variables.len()) == side.len())
-    || matches!(ret, Err(RuleFault::UnknownConstructor | RuleFault::NotOwnPosition | RuleFault::Arity)))]
+    || matches!(ret, Err(RuleFault::UnknownConstructor | RuleFault::NotOwnPosition | RuleFault::DependentSlot | RuleFault::Arity)))]
 fn read_side<T>(
     side: &[RuleNode],
     table: &[Vec<RuleSlot<T>>],
@@ -2050,6 +2061,9 @@ where
                 }
                 expected.extend(fields.iter().rev().copied());
                 reading.constructors = reading.constructors.saturating_add(1);
+            },
+            RuleNode::Variable(_) if slot == RuleSlot::Dependent => {
+                return Err(RuleFault::DependentSlot);
             },
             RuleNode::Variable(variable) => reading.variables.push((variable, slot)),
         }
@@ -2207,8 +2221,9 @@ mod tests
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     struct Point;
 
-    /// `base`, `loop(x)`, `unloop(x)` and a constructor `mark(n)` over another
-    /// type, as validation reads their fields.
+    /// `base`, `loop(x)`, `unloop(x)`, a constructor `mark(n)` over another
+    /// type, and `pair(x, d)` whose second field is open in its telescope, as
+    /// validation reads their fields.
     ///
     /// # Specification
     /// trivial.
@@ -2219,6 +2234,7 @@ mod tests
             alloc::vec![RuleSlot::Own],
             alloc::vec![RuleSlot::Own],
             alloc::vec![RuleSlot::Other(Classifier::Integer)],
+            alloc::vec![RuleSlot::Own, RuleSlot::Dependent],
         ]
     }
 
@@ -2276,6 +2292,7 @@ mod tests
                 RuleFault::NotDecreasing,
             ),
             (&[c(3), v(0)], &[v(0)], RuleFault::SlotMismatch),
+            (&[c(4), v(0), v(1)], &[v(0)], RuleFault::DependentSlot),
         ] {
             assert_eq!(
                 one(left, right).validate(&table),

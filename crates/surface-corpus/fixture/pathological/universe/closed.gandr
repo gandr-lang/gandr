@@ -1,7 +1,8 @@
 // What a hand-written Tarski universe refuses. A decode that runs to a quote
 // is the quoted type, so a value of another type is refused there; a decode
 // over a binder is a type of its own, so a value at `el(c)` does not stand
-// at the decode of the arrow from `c` to `c`.
+// at the decode of the arrow from `c` to `c`; and a field read through the
+// code before it checks at that code's decode.
 
 /// Natural numbers, free: every constructor term is its own value.
 data Nat : Type {
@@ -34,3 +35,16 @@ def one = Succ(Zero) ;
 /// `el(c)`: the decode of the arrow code reads to that function type.
 @[ refuses("TypeMismatch") ]
 def idAt(c : U, v : el(c)) -> -F el(Arrow(c, c)) { v }
+
+/// A value packed with its code: the second field's type is the decode of the
+/// first.
+@[ checks ]
+data Coded : Type {
+  Pack : (c : U, v : el(c)) --> Coded;
+}
+
+/// A code packed where the natural code says a natural stands: the second
+/// field checks at `el(NatC)`, which runs to `Nat`.
+@[ refuses("TypeMismatch") ]
+def miscoded : Coded ;
+def miscoded = Pack(NatC, NatC) ;

@@ -18,9 +18,7 @@
 //! is an abstract atom or a product encoding. Type parameters are quoted codes
 //! and value indices are ordinary terms in one typed telescope. All arguments
 //! are invariant: declaration formation proves no variance property that would
-//! justify covariance. Constructor fields may use parameters and the
-//! declaration's own family, but do not bind subsequent fields, and a
-//! declaration cannot see a later declaration.
+//! justify covariance. A declaration cannot see a later declaration.
 //!
 //! **Conversion boundary.** Index equality is structural in both checkers,
 //! including under thunks, and ignores only candidate path evidence as ordinary
@@ -39,6 +37,34 @@
 //! fixpoints. There is no parser notation, description decoder or graded thunk
 //! former for them. Native declarations export as data declarations, not
 //! axioms.
+//!
+//! # The field telescope
+//!
+//! A constructor's fields form a telescope after the parameters: field `i` is
+//! scoped under the parameters, then fields `0 .. i`, the one before it
+//! innermost. A field may name a universe and a later field the code it binds
+//! (`Sup : (a : Type, f : +U (a -> -F Vinf))`), or a later field the decode of
+//! an earlier code (`Mk : (c : U, v : el(c))`). [`field_type`] instantiates
+//! the parameters beneath the earlier field binders; [`field_at`] then
+//! substitutes the values a constructor gives those fields, which is the type
+//! each field checks at; [`branch_type`] abstracts the fields in order, so a
+//! branch's later domain names the earlier binders; [`field_outside`] reads a
+//! field outside its constructor where it names none of them, as a pattern
+//! column does. Every field is scoped this way whether or not it names an
+//! earlier one, so a non-dependent field after the first reads its
+//! parameters one binder further out per field before it.
+//!
+//! **Choice.** One telescope, uniform across fields. **Alternatives.** A
+//! dependent pair packed into one field keeps every field under the
+//! parameters alone, but puts the family inside a Σ the occurrence walk reads
+//! as nested, and diverges from the surface the constructor is written in;
+//! numbering the parameters innermost keeps a non-dependent field's indices
+//! but forms each field in a context that is not a telescope, and every
+//! instantiation then permutes indices; a per-constructor flag choosing the
+//! scope is two conventions where one serves. **Reversal.** None needed for
+//! dependency itself; a rule binding a variable at an open field after the
+//! first is refused ([`slot_table`]) until a rule's slot reads its classifier
+//! in the constructor's telescope, at the pattern's earlier fields.
 //!
 //! # Apartness
 //!
@@ -92,6 +118,7 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::Apartness;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldPosition;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::RuleSlot;
 use gandr_kernel_term::TermReading;
@@ -135,19 +162,20 @@ pub fn kind_level(
 
 /// Check a parameter telescope and every constructor field before admission.
 ///
-/// Fields see the complete parameter telescope and the declaration's own
-/// family, at its admission position, but no constructor fields. The family
-/// may occur in a field only strictly positively and at its parameter
-/// variables, which the occurrence walk decides before anything forms. A
-/// refused signature leaves no binder, block or nominal entry.
+/// Fields see the complete parameter telescope, the fields before them in
+/// their constructor and the declaration's own family, at its admission
+/// position. The family may occur in a field only strictly positively and at
+/// its parameter variables, which the occurrence walk decides before anything
+/// forms. A refused signature leaves no binder, block or nominal entry.
 ///
 /// # Specification
 /// - requires: the nominal entry has not been installed in the context, and
 ///   `position` is the admission position the declaration takes.
 /// - ensures: every occurrence of the family is strictly positive and uniform;
-///   every parameter and field forms in its declared scope; fields fit the
-///   declared value universe; the original binder depth is restored and the
-///   block closed.
+///   every parameter and field forms in its declared scope, a field under the
+///   parameters and its constructor's fields before it; fields fit the declared
+///   value universe; the original binder depth is restored and the block
+///   closed.
 /// - fails: occurrence, kind, formation and field-universe refusals are
 ///   retained.
 /// - panics: none.
@@ -183,13 +211,23 @@ pub fn form_signature(
             let _formed = form_value_type(context, parameter)?;
             context.binders().open(Zone::Intuitionistic, parameter);
         }
-        for &field in signature.constructors().iter().flatten() {
-            let _formed = form_value_type(context, field)?;
-            if !bool::from(level_of(context, TypeNode::Value(field))?.lt(&upper)) {
-                return Err(CheckRefusal::DataFieldLevel {
-                    field,
-                    kind: signature.kind(),
-                });
+        for fields in signature.constructors() {
+            let below = context.depth(Zone::Intuitionistic);
+            for &field in fields {
+                let _formed = form_value_type(context, field)?;
+                if !bool::from(level_of(context, TypeNode::Value(field))?.lt(&upper)) {
+                    return Err(CheckRefusal::DataFieldLevel {
+                        field,
+                        kind: signature.kind(),
+                    });
+                }
+                context.binders().open(Zone::Intuitionistic, field);
+            }
+            while context.depth(Zone::Intuitionistic) != below {
+                let _closed = context
+                    .binders()
+                    .close(Zone::Intuitionistic)
+                    .map_err(|_cause| CheckRefusal::MachineInvariant)?;
             }
         }
         present(context, position, signature)
@@ -247,18 +285,23 @@ fn present(
 
 /// A data declaration's constructor table as a rule side reads it: a field
 /// reading as the declaration's own type where it is the family at
-/// `position`, and as its classifier elsewhere.
+/// `position`; as dependent where it follows its constructor's first field and
+/// its type is open, formed under the fields before it as well as the
+/// parameters; and as its classifier elsewhere.
 ///
 /// # Specification
 /// - requires: `signature` is the declaration's at `position`.
-/// - ensures: one row per constructor, one slot per field, as above.
+/// - ensures: one row per constructor, one slot per field, as above; a field
+///   whose reach cannot be read is dependent.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`present`], and a fold's law reads each pattern
-///   variable at its slot.
+///   variable at its slot; a rule binding the second field of a pair over a
+///   parameter is refused rather than read at the first field's scope.
 /// - witness: `native_formers::native_formers::a_misplaced_rule_is_refused_in_both_checkers`
 /// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+/// - witness: `native_formers::native_formers::a_rule_binding_a_dependent_field_is_refused_in_both_checkers`
 #[spec(ensures: |ret| ret.len() == signature.constructors().len())]
 pub fn slot_table(
     arena: &gandr_core_term::CoreArena,
@@ -272,9 +315,21 @@ pub fn slot_table(
         .map(|fields| {
             fields
                 .iter()
-                .map(|&field| match arena.value_type(field) {
+                .enumerate()
+                .map(|(index, &field)| match arena.value_type(field) {
                     Some(&ValueType::Data { declaration, .. }) if declaration == position => {
                         RuleSlot::Own
+                    },
+                    _ if index != 0
+                        && crate::code::loose_reach(
+                            arena,
+                            crate::refusal::CoreNode::Type(crate::refusal::TypeNode::Value(field)),
+                        )
+                        .map_or(true, |reach| {
+                            reach != gandr_core_term::BinderDepth::default()
+                        }) =>
+                    {
+                        RuleSlot::Dependent
                     },
                     _ => RuleSlot::Other(field),
                 })
@@ -541,6 +596,165 @@ pub fn instantiate(
     Ok(subject)
 }
 
+/// A constructor field's type at a nominal application, its parameters
+/// instantiated at the application's arguments and its `earlier` fields left
+/// bound.
+///
+/// # Specification
+/// - requires: `field` is a field type of `datatype`'s declaration at telescope
+///   position `earlier`: scoped under the parameters, then the constructor's
+///   `earlier` fields before it.
+/// - ensures: the same type scoped under the ambient context, then those
+///   `earlier` fields, each parameter replaced by its argument carried under
+///   them; zero parameters return the same node.
+/// - fails: malformed internal application references or an index ceiling.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckRefusal::MachineInvariant`] for an invalid internal application.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list's tail at its second position reads the element
+///   parameter past the head's binder, and a dependent field keeps the binder
+///   of the field it names.
+/// - witness: `former::tests::a_later_field_reads_its_parameters_past_the_earlier_fields`
+#[spec(ensures: |ret| !matches!(context.arena().value_type(datatype), Some(ValueType::Data { arguments, .. }) if arguments.is_empty()) || ret == Ok(field))]
+pub fn field_type(
+    context: &mut CheckingContext<'_>,
+    datatype: ValueTypeId,
+    field: ValueTypeId,
+    earlier: Binders,
+) -> Result<ValueTypeId, CheckRefusal>
+{
+    let count = match context.arena().value_type(datatype) {
+        Some(&ValueType::Data { ref arguments, .. }) => arguments.len(),
+        _ => return Err(CheckRefusal::MachineInvariant),
+    };
+    let mut subject = field;
+    for index in (0 .. count).rev() {
+        let argument = match context.arena().value_type(datatype) {
+            Some(&ValueType::Data { ref arguments, .. }) => arguments
+                .get(index)
+                .copied()
+                .ok_or(CheckRefusal::MachineInvariant)?,
+            _ => return Err(CheckRefusal::MachineInvariant),
+        };
+        let depth =
+            Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);
+        let argument = gandr_core_term::shift_value(context.arena_mut(), argument, depth);
+        subject = gandr_core_term::instantiate_value_type_under(
+            context.arena_mut(),
+            subject,
+            argument,
+            earlier,
+        );
+    }
+    Ok(subject)
+}
+
+/// A constructor field's type at a constructor value: its parameters
+/// instantiated at the application's arguments and its earlier fields at the
+/// values the constructor gives them.
+///
+/// # Specification
+/// - requires: `constructor` is a constructor value of `datatype`, and `field`
+///   the type of its field at `position`.
+/// - ensures: the field's type scoped in the ambient context, every parameter
+///   and earlier field replaced by its value.
+/// - provides: the type a constructor's field checks against.
+/// - fails: as [`field_type`]; [`CheckRefusal::MachineInvariant`] for a
+///   constructor holding fewer than `position` fields.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a field whose domain is the code an earlier field holds
+///   checks at the decode of that code, and a field naming no earlier field at
+///   its parameters alone.
+/// - witness: `former::tests::a_dependent_field_checks_at_the_value_of_the_field_it_names`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().value_type(id).is_some()) == ret.is_ok())]
+pub fn field_at(
+    context: &mut CheckingContext<'_>,
+    (datatype, constructor): (ValueTypeId, ValueId),
+    field: ValueTypeId,
+    position: FieldPosition,
+) -> Result<ValueTypeId, CheckRefusal>
+{
+    let position = usize::from(position);
+    let earlier =
+        Binders::from(u32::try_from(position).map_err(|_cause| CheckRefusal::MachineInvariant)?);
+    let mut subject = field_type(context, datatype, field, earlier)?;
+    for index in (0 .. position).rev() {
+        let value = match context.arena().value(constructor) {
+            Some(&Value::Constructor { ref fields, .. }) => fields
+                .get(index)
+                .copied()
+                .ok_or(CheckRefusal::MachineInvariant)?,
+            _ => return Err(CheckRefusal::MachineInvariant),
+        };
+        let depth =
+            Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);
+        let value = gandr_core_term::shift_value(context.arena_mut(), value, depth);
+        subject = gandr_core_term::instantiate_value_type(context.arena_mut(), subject, value);
+    }
+    Ok(subject)
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a constructor field's type has no reading outside its constructor.
+    pub mod outside {
+        /// The reason the field is read only in its constructor's telescope.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Its type names a field before it.
+            Dependent,
+        }
+    }
+}
+
+/// A constructor field's type at a nominal application, read outside the
+/// fields before it.
+///
+/// # Specification
+/// - requires: as [`field_type`], `position` the field's place in its
+///   constructor.
+/// - ensures: the field's type in the ambient context, its parameters at the
+///   application's arguments, when it names no field before it;
+///   [`outside::Absent::Dependent`] when it names one.
+/// - provides: the classifier a pattern column, or a rule's variable, takes at
+///   a field independent of its constructor's other fields.
+/// - fails: as [`field_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`field_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list's tail reads at the list, and a field naming the
+///   code before it is dependent.
+/// - witness: `former::tests::a_later_field_reads_its_parameters_past_the_earlier_fields`
+#[spec(ensures: |ret| usize::from(position) != 0 || matches!(ret, Ok(Maybe::Present(_)) | Err(_)))]
+pub fn field_outside(
+    context: &mut CheckingContext<'_>,
+    datatype: ValueTypeId,
+    field: ValueTypeId,
+    position: FieldPosition,
+) -> Result<Maybe<ValueTypeId, outside::Absent>, CheckRefusal>
+{
+    let earlier = Binders::from(
+        u32::try_from(usize::from(position)).map_err(|_cause| CheckRefusal::MachineInvariant)?,
+    );
+    let subject = field_type(context, datatype, field, earlier)?;
+    Ok(
+        match gandr_core_term::strengthen_value_type(context.arena_mut(), subject, earlier) {
+            Maybe::Present(lowered) => Maybe::Present(lowered),
+            Maybe::Absent(_) => Maybe::Absent(outside::Absent::Dependent),
+        },
+    )
+}
+
 /// Form the ordinary branch function's classifier.
 ///
 /// Only the motive has an implicit scrutinee binder. Branches abstract their
@@ -605,15 +819,9 @@ pub fn branch_type(
     let mut result =
         gandr_core_term::instantiate_comp_type(context.arena_mut(), shifted, constructor);
     for (index, &field) in fields.iter().enumerate().rev() {
-        let domain = instantiate(
-            context,
-            datatype,
-            field,
-            gandr_core_term::BinderDepth::from(signature.parameters().len()),
-        )?;
-        let depth =
+        let earlier =
             Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);
-        let domain = gandr_core_term::shift_value_type(context.arena_mut(), domain, depth);
+        let domain = field_type(context, datatype, field, earlier)?;
         result = match gandr_core_term::strengthen_comp_type(context.arena_mut(), result) {
             Maybe::Present(closed) => context.arena_mut().comp_type_arrow(domain, closed),
             Maybe::Absent(_) => context.arena_mut().comp_type_pi(domain, result),

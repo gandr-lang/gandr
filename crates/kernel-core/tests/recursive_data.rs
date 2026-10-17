@@ -159,7 +159,9 @@ mod recursive_data
         let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
         let parameter = arena.value_variable(DeBruijnIndex::from(0));
         let element = arena.value_type_element(parameter, Level::zero());
-        let own = arena.value_type_data(position, vec![parameter]);
+        // The tail stands past the head's binder: the parameter is one out.
+        let past_head = arena.value_variable(DeBruijnIndex::from(1));
+        let own = arena.value_type_data(position, vec![past_head]);
         let declaration = staging.data(
             LevelSignature::monomorphic(),
             vec![universe],
@@ -882,6 +884,59 @@ mod recursive_data
         for admitted in [nat, list, tree] {
             assert!(environment.audit(admitted).axioms().is_empty());
         }
+    }
+
+    /// A field may name the one before it: `Box : Type₁ { put : (a : Type₀,
+    /// x : El a) }` admits; a `put` whose second field is an element of the
+    /// code its first gives checks, and one whose second field is a code
+    /// instead is refused at that field's type.
+    #[test]
+    fn dependent_fields_are_admitted()
+    {
+        let mut environment = Environment::new();
+        let position = ConstantIndex::from(environment.entries().len());
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let small = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let one = Level::zero().succ().expect("the successor of zero");
+        let large = arena.value_type_universe(GroundSort::Value, one);
+        let code = arena.value_variable(DeBruijnIndex::from(0));
+        let element = arena.value_type_element(code, Level::zero());
+        let declaration = staging.data(
+            LevelSignature::monomorphic(),
+            vec![],
+            vec![vec![small, element]],
+            large,
+        );
+        let boxed = environment
+            .add_decl(declaration)
+            .expect("a field may name the one before it");
+        assert_eq!(boxed.position(), position);
+        assert!(environment.audit(boxed).axioms().is_empty());
+        let put = |environment: &mut Environment, quoted: bool| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let datatype = arena.value_type_data(position, vec![]);
+            let unit = arena.value_type_unit();
+            let code = arena.value_quote(unit);
+            let second = if quoted { code } else { arena.value_unit() };
+            let constructor =
+                arena.value_constructor(datatype, ConstructorTag::from(0), vec![code, second]);
+            let declaration = staging.def(LevelSignature::monomorphic(), datatype, constructor);
+            environment.add_decl(declaration).map(|_admitted| ())
+        };
+        assert_eq!(
+            put(&mut environment, false),
+            Ok(()),
+            "the unit value is an element of the unit's code"
+        );
+        assert!(
+            matches!(
+                put(&mut environment, true),
+                Err(KernelError::ValueTypeMismatch(_))
+            ),
+            "a code is no element of the unit's code"
+        );
     }
 
     #[test]

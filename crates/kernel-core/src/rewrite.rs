@@ -857,6 +857,49 @@ where
     .value_type_or(subject)
 }
 
+/// The value type `subject` with the binder at `depth` instantiated at
+/// `replacement`, the `depth` binders inside it kept.
+///
+/// # Specification
+/// - requires: `replacement` is scoped where the instantiated binder stands,
+///   outside the kept ones; memo entries belong to this arena.
+/// - ensures: indices below `depth` stay bound, index `depth` becomes the
+///   replacement carried under the kept binders, and outer indices fall by one
+///   without variable capture; at depth zero, as [`substitute_value_type`].
+/// - provides: a constructor field's parameters instantiated beneath the
+///   binders of the fields before it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list's tail instantiated past the head's binder reads
+///   the element argument; a wrong depth reads the head instead.
+/// - witness: `recursive_data::recursive_data::dependent_fields_are_admitted`
+#[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
+    matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[must_use]
+pub(crate) fn substitute_value_type_at<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    (subject, replacement): (ValueTypeId, ValueId),
+    depth: BinderDepth,
+) -> ValueTypeId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Substitute { replacement },
+        AnyNode::ValueType(subject),
+        depth,
+    )
+    .value_type_or(subject)
+}
+
 /// The value `subject` with its innermost binder instantiated at `replacement`;
 /// see [`substitute_comp_type`].
 ///

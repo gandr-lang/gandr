@@ -52,3 +52,99 @@ fn a_branch_binds_a_field_only_where_its_result_names_it()
         "a result naming the field binds it"
     );
 }
+
+#[test]
+fn a_later_field_reads_its_parameters_past_the_earlier_fields()
+{
+    // `Pair(a : Type) { mk : (x : El a, y : El a) }`, the second field's `a`
+    // one binder out, past `x`; and `Box { put : (a : Type, x : El a) }`,
+    // whose second field names the first.
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let one = Level::zero().succ().expect("the successor of zero");
+    let large = arena.value_type_universe(Sort::Ground(GroundSort::Value), one);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let code = arena.value_quote(integer);
+    let near = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let far = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let first = arena.value_type_element(near, Level::zero());
+    let second = arena.value_type_element(far, Level::zero());
+    let pair = ConstantIndex::from(0_usize);
+    let boxed = ConstantIndex::from(1_usize);
+    let pairs = Arc::new(DataSignature::new(
+        vec![kind],
+        vec![vec![first, second]],
+        kind,
+    ));
+    let boxes = Arc::new(DataSignature::new(vec![], vec![vec![kind, first]], large));
+    let at_integer = arena.value_type_data(pair, vec![code]);
+    let boxed_type = arena.value_type_data(boxed, vec![]);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    context.adopt_data(pair, pairs).expect("the pair forms");
+    context.adopt_data(boxed, boxes).expect("the box forms");
+    for (field, position) in [(first, 0_usize), (second, 1_usize)] {
+        let outside = field_outside(
+            &mut context,
+            at_integer,
+            field,
+            FieldPosition::from(position),
+        )
+        .expect("the field reads at the application");
+        assert_eq!(
+            outside,
+            Maybe::Present(integer),
+            "field {position} reads its parameter at the argument"
+        );
+    }
+    assert_eq!(
+        field_outside(
+            &mut context,
+            boxed_type,
+            first,
+            FieldPosition::from(1_usize)
+        ),
+        Ok(Maybe::Absent(outside::Absent::Dependent)),
+        "a field naming the one before it has no reading outside its constructor"
+    );
+}
+
+#[test]
+fn a_dependent_field_checks_at_the_value_of_the_field_it_names()
+{
+    // `Box { put : (a : Type, x : El a) }` at `put(⌜Integer⌝, _)`: the second
+    // field checks at `Integer`.
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let one = Level::zero().succ().expect("the successor of zero");
+    let large = arena.value_type_universe(Sort::Ground(GroundSort::Value), one);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let code = arena.value_quote(integer);
+    let near = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let element = arena.value_type_element(near, Level::zero());
+    let boxed = ConstantIndex::from(0_usize);
+    let boxes = Arc::new(DataSignature::new(vec![], vec![vec![kind, element]], large));
+    let datatype = arena.value_type_data(boxed, vec![]);
+    let put = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![code, code]);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    context.adopt_data(boxed, boxes).expect("the box forms");
+    assert_eq!(
+        field_at(
+            &mut context,
+            (datatype, put),
+            kind,
+            FieldPosition::from(0_usize)
+        ),
+        Ok(kind),
+        "the first field checks at the universe"
+    );
+    assert_eq!(
+        field_at(
+            &mut context,
+            (datatype, put),
+            element,
+            FieldPosition::from(1_usize)
+        ),
+        Ok(integer),
+        "the second checks at the decode of the code the first gives"
+    );
+}

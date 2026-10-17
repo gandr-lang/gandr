@@ -124,7 +124,10 @@ mod entries
         ("Pattern _", Standing::Owed(4)),
         ("Pattern constructor", Standing::Owed(6)),
         ("Pattern false", Standing::Owed(0)),
-        ("Pattern identifier", Standing::Owed(31)),
+        // Two of these are unused constructor-pattern parts whose field names
+        // one before it: such a part is typed in the arm's telescope, which
+        // only a use of the binder anchors (#537).
+        ("Pattern identifier", Standing::Owed(33)),
         ("Pattern number", Standing::Owed(8)),
         ("Pattern true", Standing::Owed(0)),
         ("Pattern |", Standing::Owed(0)),

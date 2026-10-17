@@ -1,0 +1,77 @@
+// Well-founded trees branching through a function, after Martin-Löf's
+// W-types. A node holds a function from a type of branches to its subtrees,
+// so the family occurs to the right of an arrow, never to its left: strictly
+// positive. A fold reaches each subtree by applying that function and recurses
+// on the result, one stage below the node it came from.
+
+/// Natural numbers, the measure the fold counts in.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// Addition by recursion on the second argument.
+@[ checks ]
+def rec plus(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => Succ(plus[<](n, p))
+  }
+}
+
+/// The two branches of a binary node.
+@[ checks ]
+data Two : Type {
+  L : Two;
+  R : Two;
+}
+
+/// Binary trees with the branching written as a function: a node picks its
+/// subtree at each branch.
+@[ checks ]
+data Tree : Type {
+  Leaf : Tree;
+  Node : (f : +U (Two -> -F Tree)) --> Tree;
+}
+
+/// The number of leaves: each subtree is reached through `f` and counted one
+/// stage below the node.
+@[ checks ]
+def rec size(t : Tree) -> -F Nat {
+  case t {
+    Leaf => Succ(Zero),
+    Node(f) => {
+      run l <- f(L);
+      run r <- f(R);
+      run a <- size[<](l);
+      run b <- size[<](r);
+      plus(a, b)
+    }
+  }
+}
+
+/// Every branch a leaf.
+@[ checks ]
+def leaves : +U (Two -> -F Tree) ;
+def leaves = thunk { fn (x) { Leaf } } ;
+
+/// A node over two leaves.
+@[ checks ]
+def cherry : Tree ;
+def cherry = Node(leaves) ;
+
+/// A node whose left branch is a cherry and whose right is a leaf.
+@[ checks ]
+def lopsided : Tree ;
+def lopsided = Node(thunk { fn (x) { case x -> -F Tree { L => cherry, R => Leaf } } }) ;
+
+/// The cherry's two leaves, counted through its function.
+@[ runs("Succ(Succ(Zero))") ]
+def counted : +U (-F Nat) ;
+def counted = thunk { size(cherry) } ;
+
+/// Three leaves, the left two reached through two functions.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def deeper : +U (-F Nat) ;
+def deeper = thunk { size(lopsided) } ;

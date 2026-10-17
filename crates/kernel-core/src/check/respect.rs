@@ -756,6 +756,8 @@ fn lawful(
                         bound_at,
                         instantiate_field(arena, &mut table, field, obliged.datatype, signature)?,
                     ),
+                    // A validated rule binds no variable at a dependent field.
+                    RuleSlot::Dependent => return Err(KernelError::ArenaFault),
                 };
                 let (domain, rest) = match arena.comp_type(at) {
                     Some(&CompType::Arrow { domain, codomain }) => (domain, codomain),

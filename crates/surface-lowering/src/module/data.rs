@@ -134,7 +134,39 @@ pub struct DataParameter
     pub classifier: Placed,
 }
 
-/// One generator of a data declaration: its name's tile and its fields' types.
+quenchant_shape::reason_enum! {
+    /// Why a constructor field binds no name.
+    pub mod field_name {
+        /// The source wrote the field's type alone.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The field is written bare, as in `Succ : Nat --> Nat`.
+            Unnamed,
+        }
+    }
+}
+
+/// One field of a generator: the name it binds, when written, and its type.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: both coordinates name nodes of the tree the declaration was read
+///   from.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a named and a bare field keep their binder and type.
+/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct FieldForm
+{
+    /// The name the field binds for the fields after it.
+    pub named: Maybe<Placed, field_name::Absent>,
+    /// The field's type.
+    pub ty: Placed,
+}
+
+/// One generator of a data declaration: its name's tile and its fields.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -151,8 +183,8 @@ pub struct GeneratorForm
 {
     /// The constructor's name.
     pub named: Placed,
-    /// Each field's type, in order.
-    pub fields: Vec<Placed>,
+    /// Each field, in order.
+    pub fields: Vec<FieldForm>,
 }
 
 /// One data declaration, as the collection pass read it.
@@ -973,10 +1005,13 @@ impl<'source> Collector<'_, 'source>
         let mut fields = Vec::new();
         let result = if let Maybe::Present(open) = cursor.tile(TileName::PAREN_OPEN) {
             loop {
+                let mut named = Maybe::Absent(field_name::Absent::Unnamed);
                 if let Maybe::Present(Piece::Tile { label, .. }) = cursor.peek()
                     && label == TileName::IDENTIFIER
                 {
-                    let _binder = cursor.tile(label);
+                    if let Maybe::Present(binder) = cursor.tile(label) {
+                        named = Maybe::Present(binder);
+                    }
                     if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
                         return Err(misplaced_in(FormName::DATA_GENERATOR, cursor.here()));
                     }
@@ -984,7 +1019,8 @@ impl<'source> Collector<'_, 'source>
                 else if let Maybe::Present(Piece::Tile { at, .. }) = cursor.peek() {
                     return Err(declined(at, FormName::GRADE));
                 }
-                fields.push(one_in(FormName::DATA_GENERATOR, cursor.operands())?);
+                let ty = one_in(FormName::DATA_GENERATOR, cursor.operands())?;
+                fields.push(FieldForm { named, ty });
                 if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
                     && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
                 {
@@ -1007,7 +1043,10 @@ impl<'source> Collector<'_, 'source>
         else {
             let side = one_in(FormName::DATA_GENERATOR, cursor.operands())?;
             if let Maybe::Present(_) = cursor.tile(TileName::GENERATOR) {
-                fields.push(side);
+                fields.push(FieldForm {
+                    named: Maybe::Absent(field_name::Absent::Unnamed),
+                    ty: side,
+                });
                 one_in(FormName::DATA_GENERATOR, cursor.operands())?
             }
             else {

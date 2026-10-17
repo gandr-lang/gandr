@@ -34,6 +34,7 @@ use super::Nesting;
 use super::Node;
 use super::Renaming;
 use super::Unenclosed;
+use super::constructor_classifier;
 use super::elaborate_nested_traced;
 use super::fill_hole;
 use super::instantiate_comp_type;
@@ -43,6 +44,7 @@ use super::rename_value_type_traced;
 use super::shift_comp_type;
 use super::shift_value_type;
 use super::strengthen_comp_type;
+use super::strengthen_value_type;
 use super::strengthening;
 use super::substitute_environment;
 use super::substitute_environment_traced;
@@ -889,6 +891,87 @@ fn strengthening_refuses_a_mention_and_lowers_the_rest()
         spelling(&arena, expected),
         spelling(&arena, lowered),
         "and its outer index lowers by one"
+    );
+}
+
+#[test]
+fn a_value_type_strengthens_unless_it_names_a_binder()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let inner = decoded(&mut arena, DeBruijnIndex::from(1));
+    assert_eq!(
+        Maybe::Present(inner),
+        strengthen_value_type(&mut arena, inner, Binders::NONE),
+        "past no binder the type is itself"
+    );
+    assert_eq!(
+        Maybe::Absent(strengthening::Absent::MentionsBinder),
+        strengthen_value_type(&mut arena, inner, Binders::from(2_u32)),
+        "a type reading the outer of two binders cannot leave both"
+    );
+    let Maybe::Present(lowered) = strengthen_value_type(&mut arena, inner, Binders::ONE)
+    else {
+        panic!("a type reading only past the innermost binder leaves it");
+    };
+    let expected = decoded(&mut arena, DeBruijnIndex::from(0));
+    let [expected, lowered] = [expected, lowered].map(|ty| arena.comp_type_returner(ty));
+    assert_eq!(
+        spelling(&arena, expected),
+        spelling(&arena, lowered),
+        "and its index lowers by one"
+    );
+    let outer = decoded(&mut arena, DeBruijnIndex::from(3));
+    let Maybe::Present(lowered) = strengthen_value_type(&mut arena, outer, Binders::from(2_u32))
+    else {
+        panic!("a type reading only past both binders leaves them");
+    };
+    let expected = decoded(&mut arena, DeBruijnIndex::from(1));
+    let [expected, lowered] = [expected, lowered].map(|ty| arena.comp_type_returner(ty));
+    assert_eq!(
+        spelling(&arena, expected),
+        spelling(&arena, lowered),
+        "and its index lowers by two"
+    );
+    assert_eq!(
+        Maybe::Present(integer),
+        strengthen_value_type(&mut arena, integer, Binders::from(2_u32)),
+        "a closed type strengthens to itself"
+    );
+}
+
+#[test]
+fn a_constructor_classifier_binds_only_the_fields_named_after_them()
+{
+    let mut arena = CoreArena::new();
+    let universe = arena.value_type_universe(
+        crate::classifier::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        Level::zero(),
+    );
+    let family = arena.value_type_base(BaseType::Integer);
+    let returner = arena.comp_type_returner(family);
+    let chain = |arena: &CoreArena, classifier: ValueTypeId| match arena.value_type(classifier) {
+        Some(&ValueType::Thunk(chain)) => spelling(arena, chain),
+        _ => panic!("a constructor's classifier is a thunk"),
+    };
+    // `(a : Type, x : El a)`: the second field names the first.
+    let element = decoded(&mut arena, DeBruijnIndex::from(0));
+    let dependent = constructor_classifier(&mut arena, family, &[universe, element]);
+    let inner = arena.comp_type_arrow(element, returner);
+    let expected = arena.comp_type_pi(universe, inner);
+    assert_eq!(
+        spelling(&arena, expected),
+        chain(&arena, dependent),
+        "a field the next names is bound, the last is a plain arrow"
+    );
+    // `(a : Type, n : Integer)`: nothing names the first.
+    let plain = constructor_classifier(&mut arena, family, &[universe, family]);
+    let inner = arena.comp_type_arrow(family, returner);
+    let expected = arena.comp_type_arrow(universe, inner);
+    assert_eq!(
+        spelling(&arena, expected),
+        chain(&arena, plain),
+        "independent fields read as plain arrows"
     );
 }
 

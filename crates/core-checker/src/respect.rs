@@ -630,6 +630,8 @@ fn lawful(
                         reached,
                         crate::former::instantiate(context, obliged.datatype, field, parameters)?,
                     ),
+                    // A validated rule binds no variable at a dependent field.
+                    RuleSlot::Dependent => return Err(CheckRefusal::MachineInvariant),
                 };
                 let arena = context.arena_mut();
                 let (domain, rest) = match arena.comp_type(at) {

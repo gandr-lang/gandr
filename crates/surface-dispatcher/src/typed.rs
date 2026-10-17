@@ -112,12 +112,14 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::constructor_classifier;
 use gandr_core_term::equal_type_reading;
-use gandr_core_term::instantiate_value_type;
+use gandr_core_term::instantiate_value_type_under;
 use gandr_core_term::pattern::Pattern;
 use gandr_core_term::pattern::PatternId;
 use gandr_core_term::shift_value;
 use gandr_core_term::shift_value_type_under;
+use gandr_core_term::strengthen_value_type;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
@@ -2634,8 +2636,22 @@ fn parts(
                 Some(_) | None => return Vec::new(),
             }
             match declared(arena, signatures, tag, ty) {
-                Maybe::Present(declared) => at(&declared, fields),
-                Maybe::Absent(named::Absent::Undeclared) => Vec::new(),
+                // A part is typed outside its constructor: a field naming one
+                // before it has no type there, and answers nothing.
+                Maybe::Present(declared) if declared.len() == fields.len() => {
+                    let mut parts = Vec::with_capacity(fields.len());
+                    let mut earlier = Binders::NONE;
+                    for (&part, &field) in fields.iter().zip(&declared) {
+                        if let Maybe::Present(outside) =
+                            strengthen_value_type(arena, field, earlier)
+                        {
+                            parts.push((part, outside));
+                        }
+                        earlier = earlier.deeper();
+                    }
+                    parts
+                },
+                Maybe::Present(_) | Maybe::Absent(named::Absent::Undeclared) => Vec::new(),
             }
         },
         Pattern::Pair(first, second) => match arena.value_type(ty) {
@@ -2672,8 +2688,9 @@ fn parts(
 /// # Specification
 /// - requires: as [`parts`].
 /// - ensures: the constructor's declared fields, in order, each with the
-///   family's arguments substituted for its parameters, outermost first, as the
-///   checker's branch types read them.
+///   family's arguments substituted for its parameters beneath the fields
+///   before it, outermost first, as the checker's branch types read them: a
+///   telescope over the context `ty` is read in.
 /// - provides: what a data constructor pattern's parts and name are typed by.
 /// - fails: never; a family the module does not declare, an argument count
 ///   other than its parameters', or a tag past its constructors answers
@@ -2717,14 +2734,16 @@ fn declared(
     };
     let arguments = arguments.clone();
     let mut declared = Vec::with_capacity(fields.len());
+    let mut earlier = Binders::NONE;
     for &field in fields {
         let mut subject = field;
         for (index, &argument) in arguments.iter().enumerate().rev() {
             let depth = Binders::from(u32::try_from(index).unwrap_or(u32::MAX));
             let argument = shift_value(arena, argument, depth);
-            subject = instantiate_value_type(arena, subject, argument);
+            subject = instantiate_value_type_under(arena, subject, argument, earlier);
         }
         declared.push(subject);
+        earlier = earlier.deeper();
     }
     Maybe::Present(declared)
 }
@@ -2736,7 +2755,7 @@ fn declared(
 /// - requires: as [`parts`].
 /// - ensures: for a constructor pattern at a data family, the family itself
 ///   when the constructor has no field, and otherwise `U (A₁ → … → F T)` over
-///   its fields' types, as a data declaration's constructor is described.
+///   its fields' telescope, as a data declaration's constructor is described.
 /// - provides: what the name of a constructor pattern answers at.
 /// - fails: never; any other pattern, or one at a type no data family
 ///   classifies, answers [`named::Absent::Undeclared`].
@@ -2768,11 +2787,7 @@ fn constructor(
     if fields.is_empty() {
         return Maybe::Present(ty);
     }
-    let mut chain = arena.comp_type_returner(ty);
-    for &field in fields.iter().rev() {
-        chain = arena.comp_type_arrow(field, chain);
-    }
-    Maybe::Present(arena.value_type_thunk(chain))
+    Maybe::Present(constructor_classifier(arena, ty, &fields))
 }
 
 #[cfg(test)]

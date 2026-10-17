@@ -1229,6 +1229,9 @@ pub struct Collected<'source>
     pub descriptions: BTreeMap<NodeIndex, crate::description::DescribedDeclaration>,
     /// Member-local diagnostics retained independently of native admission.
     pub description_diagnostics: Vec<crate::description::DescriptionDiagnostic>,
+    /// The data families the native reading owns whole, where their members
+    /// are written.
+    pub natives: Vec<crate::description::NativeFamily>,
     /// Cell stores and their independently retained member refusals.
     pub cells: crate::desc_cells::CellReport,
     /// The slots, in admission order.
@@ -1889,6 +1892,7 @@ pub fn collect<'source>(
                 .map(|entry| (entry.at.node, entry))
                 .collect(),
             description_diagnostics: described.diagnostics,
+            natives: described.natives,
             cells,
             slots: Vec::new(),
             owner,

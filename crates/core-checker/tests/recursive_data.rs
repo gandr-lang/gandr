@@ -297,7 +297,9 @@ mod recursive_data
         let nat = nat(arena);
         let element_code = var(arena, DeBruijnIndex::from(0));
         let element = arena.value_type_element(element_code, Level::zero());
-        let tail = list(arena, element_code);
+        // The tail stands past the head's binder: the element code is one out.
+        let past_head = var(arena, DeBruijnIndex::from(1));
+        let tail = list(arena, past_head);
         let tree = arena.value_type_data(ConstantIndex::from(at::TREE), vec![]);
         let into_tree = arena.comp_type_returner(tree);
         let branches = arena.comp_type_arrow(nat, into_tree);

@@ -60,6 +60,28 @@
 //! `lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`,
 //! and the description reader's declaration and refusal witnesses in
 //! `description::tests`.
+//!
+//! # A family its code cannot carry
+//!
+//! The description code is first-order: a field is a type the code names or a
+//! recursive reference to the family. A generator whose field is a universe, a
+//! function or a type naming an earlier field has no code. A family with such a
+//! generator and no `oper` or `rule` member is left whole to the native
+//! reading: the route records no description and no refusal, only a
+//! [`NativeFamily`] holding where each generator is written, so a face still
+//! answers at its constructors (`crate::described`); the family's eliminator is
+//! the native one. A family that writes an operation or a rule keeps the
+//! refusal at the field, because its members are this route's to carry and
+//! they cannot be carried without a code.
+//!
+//! **Choice.** The native reading owns what the code cannot carry. The
+//! alternatives were a higher-order code (a `Π` former over a type,
+//! Dybjer–Setzer style), which widens the levitated code and every reader of it
+//! for families that need no member, and a refusal at every such field, which
+//! refuses a family the checker admits. **Reversal.** A code former for a
+//! function or universe field, with its decoder and its readers, lets this
+//! route describe the family and lifts the rule-carrying case with it
+//! (`description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`).
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -79,6 +101,7 @@ use gandr_theory_levitation::ParamDesc;
 use gandr_theory_levitation::PrimTy;
 use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::ValueTypeRef;
+use gandr_theory_levitation::ValueTypeView;
 use gandr_theory_levitation::WfDiagnostic;
 use quenchant_shape::shape::Maybe;
 
@@ -128,6 +151,9 @@ pub enum DescriptionFault
     NonUniformResult,
     /// Function-valued fields have no first-order description code.
     HigherOrderField,
+    /// A field whose type names a field before it has no first-order
+    /// description code: the code's fields are independent.
+    DependentField,
     /// A constructor must use the generator judgment spelling.
     GeneratorJudgment,
     /// The member belongs to another declaration polarity.
@@ -144,6 +170,51 @@ pub enum DescriptionFault
     IllFormed(WfDiagnostic),
     /// A ruled signature reached an explicit surface or cell boundary.
     Signature(crate::circuit::SignatureFault),
+}
+
+/// The field refusals that mark the first-order code's limit rather than a
+/// fault of the source: the native reading admits each such field.
+const UNCODED: [DescriptionFault; 3] = [
+    DescriptionFault::HigherOrderField,
+    DescriptionFault::DependentField,
+    DescriptionFault::TypeShape,
+];
+
+/// What the route reads a declaration form as.
+enum Read
+{
+    /// A description whose members the route carries.
+    Described(alloc::boxed::Box<DescribedDeclaration>),
+    /// A data family the native reading owns whole.
+    Native(NativeFamily),
+}
+
+/// A generator judgment as read.
+struct Generator
+{
+    /// The constructor's description, or the first field its first-order code
+    /// cannot carry.
+    ctor: Result<CtorDesc<DescriptionGrade>, DescriptionDiagnostic>,
+    /// Where the judgment's name, fields and result are written.
+    written: written::WrittenConstructor,
+}
+
+/// A data family the native reading owns whole.
+///
+/// A generator of it the first-order code cannot carry, and it writes no
+/// operation or rule for a description to carry, so the route keeps only
+/// where its members are written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeFamily
+{
+    /// Its name tile.
+    pub named: Placed,
+    /// Its name.
+    pub name: Name,
+    /// The parameter binders it writes.
+    pub parameters: Vec<FamilyParameter>,
+    /// Where each of its constructors is written, in declaration order.
+    pub written: written::WrittenMembers,
 }
 
 /// A member-local refusal; siblings remain inspectable.
@@ -186,6 +257,7 @@ impl DescriptionDiagnostic
         match self.fault {
             DescriptionFault::Repaired { repaired, form } => repaired.refusal(form),
             DescriptionFault::HigherOrderField
+            | DescriptionFault::DependentField
             | DescriptionFault::TypeShape
             | DescriptionFault::NativeDecode(_)
             | DescriptionFault::Signature(
@@ -288,6 +360,8 @@ pub struct DescriptionReport
     pub declarations: Vec<DescribedDeclaration>,
     /// Every located refusal.
     pub diagnostics: Vec<DescriptionDiagnostic>,
+    /// The data families the native reading owns whole, in declaration order.
+    pub natives: Vec<NativeFamily>,
 }
 
 /// A nullary observation or a parameterized observation boundary.
@@ -512,10 +586,14 @@ pub fn elaborate_descriptions<'source>(
             )
         }
         else if run.eat(Spelling("sign")).0 {
-            reader.signature(at, &mut run, serial, &mut report.diagnostics)
+            reader
+                .signature(at, &mut run, serial, &mut report.diagnostics)
+                .map(|declaration| Read::Described(alloc::boxed::Box::new(declaration)))
         }
         else if run.eat(Spelling("oper")).0 {
-            reader.circuit_declaration(at, &mut run, serial, &mut report.diagnostics)
+            reader
+                .circuit_declaration(at, &mut run, serial, &mut report.diagnostics)
+                .map(|declaration| Read::Described(alloc::boxed::Box::new(declaration)))
         }
         else {
             continue;
@@ -537,13 +615,14 @@ pub fn elaborate_descriptions<'source>(
                     },
                 },
             });
-            if let Ok(declaration) = declaration {
-                report.declarations.push(declaration);
+            if let Ok(Read::Described(declaration)) = declaration {
+                report.declarations.push(*declaration);
             }
             continue;
         }
         match declaration {
-            Ok(declaration) => {
+            Ok(Read::Native(family)) => report.natives.push(family),
+            Ok(Read::Described(declaration)) => {
                 for diagnostic in gandr_theory_levitation::check_desc(&declaration.description) {
                     let span = match diagnostic.span {
                         Maybe::Present(position) => ByteSpan::new(
@@ -558,7 +637,7 @@ pub fn elaborate_descriptions<'source>(
                         fault: DescriptionFault::IllFormed(diagnostic),
                     });
                 }
-                report.declarations.push(declaration);
+                report.declarations.push(*declaration);
             },
             Err(diagnostic) => report.diagnostics.push(diagnostic),
         }
@@ -619,7 +698,11 @@ impl Reader<'_, '_>
     /// Read a family head and every member independently.
     ///
     /// # Specification
-    /// - ensures: preserves typed parameters, constructor order and polarity.
+    /// - ensures: preserves typed parameters, constructor order and polarity; a
+    ///   data family a generator of which the first-order code cannot carry — a
+    ///   universe, a function or a field naming one before it — is read as a
+    ///   [`NativeFamily`], every generator's written form kept, when it writes
+    ///   no operation and no rule, and keeps the generator's refusal otherwise.
     /// - fails: malformed family heads decline the declaration; malformed
     ///   members append local refusals without deleting siblings.
     /// - panics: none.
@@ -629,9 +712,14 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — member-local and family-wide failures have different
-    ///   surviving declarations.
+    ///   surviving declarations, and a W-shaped family with and without a rule
+    ///   separate the native reading from the refusal.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
-    #[spec(ensures: |result| result.as_ref().map_or(true, |entry| entry.description.polarity == polarity))]
+    /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
+    #[spec(ensures: |result| result.as_ref().map_or(true, |entry| match *entry {
+        | Read::Described(ref entry) => entry.description.polarity == polarity,
+        | Read::Native(_) => polarity == DeclPolarity::Data,
+    }))]
     fn declaration(
         &self,
         at: Placed,
@@ -639,7 +727,7 @@ impl Reader<'_, '_>
         polarity: DeclPolarity,
         serial: NominalSerial,
         diagnostics: &mut Vec<DescriptionDiagnostic>,
-    ) -> Result<DescribedDeclaration, DescriptionDiagnostic>
+    ) -> Result<Read, DescriptionDiagnostic>
     {
         let named = run.take()?;
         let family = Name::from(self.text(named).0);
@@ -674,6 +762,13 @@ impl Reader<'_, '_>
         let mut operation_spans = Vec::new();
         let mut rules = Vec::new();
         let mut written = written::WrittenMembers::default();
+        // A generator the first-order code cannot carry, held until the
+        // members are read: it refuses only a family whose operations or
+        // rules the description must carry.
+        let mut uncoded = Vec::new();
+        // Every generator as written, coded or not, for a family the native
+        // reading owns whole.
+        let mut generators = Vec::new();
         for member in split_members(run.remaining()) {
             let Some(first) = member.first()
             else {
@@ -715,9 +810,15 @@ impl Reader<'_, '_>
                     DeclPolarity::Data if member.at(Spelling("identifier")).0 => Ok(()),
                     DeclPolarity::Data => self
                         .generator(&mut member, &family, &parameters, indices)
-                        .map(|(ctor, signature)| {
-                            ctors.push(ctor);
-                            written.constructors.push(signature);
+                        .map(|generator| {
+                            generators.push(generator.written.clone());
+                            match generator.ctor {
+                                Ok(ctor) => {
+                                    ctors.push(ctor);
+                                    written.constructors.push(generator.written);
+                                },
+                                Err(diagnostic) => uncoded.push(diagnostic),
+                            }
                         }),
                     DeclPolarity::Codata => self.observation(&mut member, &family).map(
                         |observation| match observation {
@@ -733,6 +834,20 @@ impl Reader<'_, '_>
             if let Err(diagnostic) = result {
                 diagnostics.push(diagnostic);
             }
+        }
+        if !uncoded.is_empty() {
+            if operations.is_empty() && rules.is_empty() {
+                return Ok(Read::Native(NativeFamily {
+                    named,
+                    name: family,
+                    parameters,
+                    written: written::WrittenMembers {
+                        constructors: generators,
+                        ..written::WrittenMembers::default()
+                    },
+                }));
+            }
+            diagnostics.extend(uncoded);
         }
         let params: Vec<_> = parameters
             .iter()
@@ -753,16 +868,18 @@ impl Reader<'_, '_>
             polarity,
             Attrs::empty(),
         );
-        Ok(DescribedDeclaration {
-            at,
-            named,
-            description,
-            operation_spans,
-            parameters,
-            classifier: Maybe::Present(classifier),
-            presentation: Maybe::Absent(crate::model::presentation::Absent::Family),
-            written,
-        })
+        Ok(Read::Described(alloc::boxed::Box::new(
+            DescribedDeclaration {
+                at,
+                named,
+                description,
+                operation_spans,
+                parameters,
+                classifier: Maybe::Present(classifier),
+                presentation: Maybe::Absent(crate::model::presentation::Absent::Family),
+                written,
+            },
+        )))
     }
 
     /// Read a generator judgment and require a uniform result head, keeping
@@ -771,9 +888,11 @@ impl Reader<'_, '_>
     /// # Specification
     /// - ensures: each payload field keeps its type, grade and order; the
     ///   written constructor holds the name tile, one port per field, its name
-    ///   tile when written, the result's bytes and each of its arguments'.
-    /// - fails: nonuniform results, higher-order fields and incomplete
-    ///   judgments are located.
+    ///   tile when written, the result's bytes and each of its arguments'. A
+    ///   higher-order or universe field, or one whose type names a field before
+    ///   it, leaves the constructor uncoded with the first such field's
+    ///   refusal, and the judgment is still read whole.
+    /// - fails: nonuniform results and incomplete judgments are located.
     /// - panics: none.
     ///
     /// # Errors
@@ -781,17 +900,19 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — reordered or instantiated parameters cannot pass head
-    ///   uniformity.
+    ///   uniformity, and an uncoded field keeps the fields and result after it
+    ///   written.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
-    #[spec(ensures: |result| result.as_ref().map_or(true, |read| read.0.result == *family))]
+    /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
+    #[spec(ensures: |result| result.as_ref().map_or(true, |read| read.ctor.as_ref().map_or(true, |ctor| ctor.result == *family)))]
     fn generator(
         &self,
         run: &mut Run<'_>,
         family: &Name,
         parameters: &[FamilyParameter],
         indices: family::IndexArity,
-    ) -> Result<(CtorDesc<DescriptionGrade>, written::WrittenConstructor), DescriptionDiagnostic>
+    ) -> Result<Generator, DescriptionDiagnostic>
     {
         let named = run.take()?;
         if !run.eat(Spelling(":")).0 {
@@ -799,6 +920,8 @@ impl Reader<'_, '_>
         }
         let mut fields = Vec::new();
         let mut ports = Vec::new();
+        // The first field the first-order code cannot carry.
+        let mut uncoded = None;
         let port = |named: Maybe<ByteSpan, written::port_name::Absent>, sort: Placed| {
             written::WrittenPort {
                 named,
@@ -809,18 +932,27 @@ impl Reader<'_, '_>
             }
         };
         let result = if run.eat(Spelling("(")).0 {
+            let mut bound = Vec::new();
             while !run.eat(Spelling(")")).0 {
                 let grade = self.grade(run)?;
                 let first = run.take()?;
                 let (ty, label) = if run.eat(Spelling(":")).0 {
-                    (run.take()?, Maybe::Present(first.span))
+                    (run.take()?, Maybe::Present(first))
                 }
                 else {
                     (first, Maybe::Absent(written::port_name::Absent::Unnamed))
                 };
-                let field = self.field(ty, family, grade)?;
-                fields.push(field);
-                ports.push(port(label, ty));
+                match self.field(ty, family, grade, &bound) {
+                    Ok(field) => fields.push(field),
+                    Err(diagnostic) if UNCODED.contains(&diagnostic.fault) => {
+                        let _first = uncoded.get_or_insert(diagnostic);
+                    },
+                    Err(diagnostic) => return Err(diagnostic),
+                }
+                ports.push(port(label.map(|binder| binder.span), ty));
+                if let Maybe::Present(binder) = label {
+                    bound.push(binder);
+                }
                 if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
                     return Err(run.fault(DescriptionFault::Malformed));
                 }
@@ -833,8 +965,14 @@ impl Reader<'_, '_>
         else {
             let first = run.take()?;
             if run.eat(Spelling("-->")).0 {
-                let field = self.field(first, family, DescriptionGrade::Finite(Multiplicity(1)))?;
-                fields.push(field);
+                match self.field(first, family, DescriptionGrade::Finite(Multiplicity(1)), &[
+                ]) {
+                    Ok(field) => fields.push(field),
+                    Err(diagnostic) if UNCODED.contains(&diagnostic.fault) => {
+                        let _first = uncoded.get_or_insert(diagnostic);
+                    },
+                    Err(diagnostic) => return Err(diagnostic),
+                }
                 ports.push(port(
                     Maybe::Absent(written::port_name::Absent::Unnamed),
                     first,
@@ -848,20 +986,25 @@ impl Reader<'_, '_>
         let arguments = self.uniform_result(result, family, parameters, indices)?;
         let attrs = self.attrs(run)?;
         run.end()?;
-        Ok((
-            CtorDesc::new(
-                self.text(named).0,
-                Code::product_of(fields),
-                family.clone(),
-                attrs,
+        Ok(Generator {
+            ctor: uncoded.map_or_else(
+                || {
+                    Ok(CtorDesc::new(
+                        self.text(named).0,
+                        Code::product_of(fields),
+                        family.clone(),
+                        attrs,
+                    ))
+                },
+                Err,
             ),
-            written::WrittenConstructor {
+            written: written::WrittenConstructor {
                 named: named.span,
                 fields: ports,
                 result: result.span,
                 arguments,
             },
-        ))
+        })
     }
 
     /// Read a codata observation, retaining its declared input boundary.
@@ -916,7 +1059,7 @@ impl Reader<'_, '_>
             return Err(run.fault(DescriptionFault::Malformed));
         }
         let ty = run.take()?;
-        let code = self.field(ty, family, grade)?;
+        let code = self.field(ty, family, grade, &[])?;
         let attrs = self.attrs(run)?;
         run.end()?;
         Ok(Observation::Nullary(CtorDesc::new(
@@ -966,29 +1109,57 @@ impl Reader<'_, '_>
     /// Interpret a first-order field, recognizing the recursive family head.
     ///
     /// # Specification
-    /// - ensures: self references become recursive code and other fields retain
-    ///   symbolic types.
-    /// - fails: unreadable type forms return their located refusal.
+    /// - requires: `bound` holds the binders of the fields before this one.
+    /// - ensures: self references become recursive code, whatever their indices
+    ///   name, and other fields retain symbolic types.
+    /// - fails: unreadable type forms return their located refusal, and a
+    ///   symbolic type naming a binder of `bound` refuses as dependent.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `TypeShape`, `HigherOrderField` or `Malformed`.
+    /// Returns `TypeShape`, `HigherOrderField`, `DependentField` or
+    /// `Malformed`.
+    ///
+    /// # Termination
+    /// - reason: the dependency walk is a `while let` loop over an explicit
+    ///   stack, not recursion.
+    /// - measure: the reference's nodes not yet popped.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — recursive and primitive fields distinguish var from
-    ///   field.
+    ///   field, and a field naming the one before it is told from one naming a
+    ///   parameter.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
+    /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
     #[spec(ensures: |result| result.as_ref().map_or(true, |code| code.recursive_sorts().all(|sort| sort == family)))]
     fn field(
         &self,
         at: Placed,
         family: &Name,
         grade: DescriptionGrade,
+        bound: &[Placed],
     ) -> Result<Code<DescriptionGrade>, DescriptionDiagnostic>
     {
         let reference = self.type_reference(at)?;
         if &reference.head_name() == family {
             return Ok(Code::var(family.clone()));
+        }
+        let mut pending = Vec::from([reference.to_node()]);
+        while let Some(node) = pending.pop() {
+            match node.view() {
+                ValueTypeView::Param(name)
+                    if bound
+                        .iter()
+                        .any(|&binder| self.text(binder).0 == name.as_ref()) =>
+                {
+                    return Err(DescriptionDiagnostic {
+                        span: at.span,
+                        fault: DescriptionFault::DependentField,
+                    });
+                },
+                ValueTypeView::Param(_) | ValueTypeView::Prim(_) => {},
+                ValueTypeView::Ctor { args, .. } => pending.extend(args),
+            }
         }
         Ok(Code::field(reference, grade, Attrs::empty()))
     }
@@ -998,17 +1169,18 @@ impl Reader<'_, '_>
     /// # Specification
     /// - ensures: applications preserve the head and argument order without
     ///   Rust recursion.
-    /// - fails: function fields and unknown type shapes are refused at their
-    ///   written node.
+    /// - fails: function fields, universes and unknown type shapes are refused
+    ///   at their written node.
     /// - panics: none.
     ///
     /// # Errors
     /// Returns `HigherOrderField`, `TypeShape` or `Malformed`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — nested applications and function fields separate
-    ///   supported shapes and order.
+    /// - hypothesis: L3 — nested applications, universes and function fields
+    ///   separate supported shapes and order.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
+    /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     fn type_reference(
         &self,
@@ -1029,6 +1201,12 @@ impl Reader<'_, '_>
                             (_, "Boolean") => ValueTypeRef::prim(PrimTy::Boolean),
                             (_, "Unit") => ValueTypeRef::prim(PrimTy::Unit),
                             ("type_variable", _) => ValueTypeRef::param(text),
+                            ("type_identifier", "Type") => {
+                                return Err(DescriptionDiagnostic {
+                                    span: at.span,
+                                    fault: DescriptionFault::TypeShape,
+                                });
+                            },
                             ("type_identifier", _) => ValueTypeRef::ctor(text, []),
                             _ => {
                                 return Err(DescriptionDiagnostic {

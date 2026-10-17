@@ -305,3 +305,37 @@ fn a_parameterised_constructor_answers_under_its_parameters()
         "`a : Type` and `Maybe(a) : Type` share the family's universe"
     );
 }
+
+#[test]
+fn a_family_the_native_reading_owns_answers_at_its_signature()
+{
+    let source = SourceText::from(
+        "data Two : Type { L : Two; R : Two; }\ndata Tree : Type {\n  Leaf : Tree;\n  Node : (f : +U (Two -> -F Tree)) --> Tree;\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
+
+    let leaf = entry(&types, span("Leaf :", "Leaf"), DescribedRole::Name);
+    assert!(
+        matches!(ty(leaf), Some(ValueType::Data { ref arguments, .. }) if arguments.is_empty()),
+        "a constant at its family"
+    );
+    let node = entry(&types, span("Node :", "Node"), DescribedRole::Name);
+    assert!(
+        matches!(ty(node), Some(ValueType::Thunk(_))),
+        "a constructor over its function field"
+    );
+    let field = entry(&types, span("(f :", "f"), DescribedRole::Name);
+    assert!(
+        matches!(ty(field), Some(ValueType::Thunk(_))),
+        "the field at its function type"
+    );
+    let result = entry(&types, span("--> Tree", "Tree"), DescribedRole::Type);
+    assert!(
+        matches!(ty(result), Some(ValueType::Universe { .. })),
+        "the result at the family's universe"
+    );
+}
