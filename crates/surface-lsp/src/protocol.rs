@@ -836,6 +836,11 @@ impl Serialize for DocumentSymbols
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a symbol held by an earlier one, one naming itself
+    ///   and one naming a later one, written in order.
+    /// - witness: `protocol::tests::a_symbol_naming_itself_or_a_later_one_as_holder_stands_at_the_top`
     #[inline]
     fn serialize<S>(
         &self,
@@ -1208,7 +1213,11 @@ mod tests
 {
     use std::path::PathBuf;
 
+    use super::DocumentSymbol;
+    use super::DocumentSymbols;
     use super::DocumentUri;
+    use super::SymbolKind;
+    use crate::position::Range;
 
     #[test]
     fn a_file_uri_names_its_decoded_path()
@@ -1234,5 +1243,41 @@ mod tests
                 "{uri} names {path:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_symbol_naming_itself_or_a_later_one_as_holder_stands_at_the_top()
+    {
+        let symbol = |name: &str, holder| DocumentSymbol {
+            name: name.to_owned(),
+            kind: SymbolKind::FUNCTION,
+            range: Range::default(),
+            selection_range: Range::default(),
+            holder,
+        };
+        let symbols = DocumentSymbols(Vec::from([
+            symbol("outer", None),
+            symbol("inner", Some(0_usize)),
+            symbol("itself", Some(2_usize)),
+            symbol("forward", Some(4_usize)),
+            symbol("last", None),
+        ]));
+        let wire = serde_json::to_value(&symbols).expect("the symbols encode");
+        let names: Vec<&str> = wire
+            .as_array()
+            .map(|roots| {
+                roots
+                    .iter()
+                    .filter_map(|root| root.get("name").and_then(serde_json::Value::as_str))
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(names, ["outer", "itself", "forward", "last"]);
+        assert_eq!(
+            wire.pointer("/0/children/0/name")
+                .and_then(serde_json::Value::as_str),
+            Some("inner"),
+            "an earlier holder holds its symbol"
+        );
     }
 }

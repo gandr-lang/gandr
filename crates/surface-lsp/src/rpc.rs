@@ -87,6 +87,11 @@ impl AsRef<str> for Method
 }
 
 /// A JSON-RPC error code.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every named code, serialized, is compared with the number
+///   the protocol reserves, so a lost sign or digit shows.
+/// - witness: `rpc::tests::each_error_code_is_sent_as_its_reserved_number`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
@@ -457,6 +462,10 @@ mod tests
                 Json(r#"{"jsonrpc":"2.0","id":5,"method":6}"#),
                 Malformed::Invalid(RequestId(json!(5_i32))),
             ),
+            (
+                Json(r#"{"jsonrpc":"2.0","id":9}"#),
+                Malformed::Invalid(RequestId(json!(9_i32))),
+            ),
         ];
         for (json, refusal) in refusals {
             let text = json.0;
@@ -515,5 +524,26 @@ mod tests
             classified(Json("[0]")),
             Err(Malformed::Invalid(RequestId::unread()))
         );
+    }
+
+    /// Each error code goes on the wire as the number JSON-RPC and the
+    /// language server protocol reserve for it.
+    #[test]
+    fn each_error_code_is_sent_as_its_reserved_number()
+    {
+        for (code, number) in [
+            (super::ErrorCode::PARSE_ERROR, -32_700_i64),
+            (super::ErrorCode::INVALID_REQUEST, -32_600_i64),
+            (super::ErrorCode::METHOD_NOT_FOUND, -32_601_i64),
+            (super::ErrorCode::INVALID_PARAMS, -32_602_i64),
+            (super::ErrorCode::SERVER_NOT_INITIALIZED, -32_002_i64),
+            (super::ErrorCode::REQUEST_FAILED, -32_803_i64),
+        ] {
+            assert_eq!(
+                serde_json::to_value(code).expect("a code serializes"),
+                json!(number),
+                "{code:?}"
+            );
+        }
     }
 }

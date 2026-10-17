@@ -176,6 +176,11 @@ impl AsRef<str> for Snippet
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a snippet of several words and a tab stop, read back,
+    ///   differs from the empty text and from any fixed one.
+    /// - witness: `inline::tests::a_snippet_lends_the_text_it_inserts`
     #[inline]
     fn as_ref(&self) -> &str
     {
@@ -822,10 +827,13 @@ fn spelled(
 /// # Adequacy
 /// - hypothesis: L3 — the defect fixtures cut a written `}` on the cursor's
 ///   line and on the next, the totality witness cuts a written `)` after a
-///   nested pair, and the ranking golden keeps an uncut closing. Cutting at a
-///   closer of another family, or not counting nested brackets, changes them.
+///   nested pair, and the ranking golden keeps an uncut closing; a part `)`
+///   meets a written `[1])` past its nested pair, and not a written `]`.
+///   Cutting at a closer of another family, or not counting nested brackets,
+///   changes them.
 /// - witness: `inline::tests::the_defect_rows_answer_as_wanted`
 /// - witness: `inline::tests::the_ranking_is_pinned`
+/// - witness: `inline::tests::a_written_closer_pairs_only_past_the_brackets_written_before_it`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -926,8 +934,11 @@ fn subtract(
 /// # Adequacy
 /// - hypothesis: L3 — the totality witness's cursors before written operands
 ///   rank a closer below a form that fills the slot; reading the last part's
-///   kind wrongly reverses them.
+///   kind wrongly reverses them; a closer before a written operand collides,
+///   and the same closer at the end of the text, or an opener before an
+///   operand, is free.
 /// - witness: `inline::tests::the_ranking_is_pinned`
+/// - witness: `inline::tests::parts_inserted_whole_collide_only_when_they_end_closed_before_an_operand`
 #[spec(ensures: |ret| !matches!(ret, Fit::Meets) && (matches!(ret, Fit::Free) || !parts.is_empty()))]
 fn whole_fit(
     parts: &[Part],
@@ -992,8 +1003,10 @@ fn parts(
 /// # Adequacy
 /// - hypothesis: L3 — the ranking golden lists the forms the top level and a
 ///   value slot offer; a grammar-internal name such as `line_comment` or
-///   `newline`, or a lone `;`, read as typed changes it.
+///   `newline`, or a lone `;`, read as typed changes it; each separator and
+///   closer reads as unwritten, an opener as written.
 /// - witness: `inline::tests::the_ranking_is_pinned`
+/// - witness: `inline::tests::a_separator_or_a_closer_is_never_typed_as_its_own_text`
 #[spec(ensures: |ret| matches!(ret, Spelled::Unwritten) || (!tile.0.is_empty() && !matches!(tile.0, ";" | ",")))]
 fn typed(tile: TileLabel) -> Spelled
 {
@@ -1605,8 +1618,16 @@ mod tests
     use gandr_surface_render_remote::ByteOffset;
     use gandr_surface_syntax::SourceText;
 
+    use super::Fit;
     use super::Forms;
+    use super::Part;
+    use super::Spelled;
+    use super::TileLabel;
+    use super::Written;
     use super::ghost;
+    use super::subtract;
+    use super::typed;
+    use super::whole_fit;
 
     /// The built-in grammar and its forms.
     struct Tools
@@ -1650,6 +1671,74 @@ mod tests
         .into_iter()
         .map(String::from)
         .collect()
+    }
+
+    #[test]
+    fn a_separator_or_a_closer_is_never_typed_as_its_own_text()
+    {
+        for label in [";", ",", ")", "]", "}"] {
+            assert_eq!(typed(TileLabel(label)), Spelled::Unwritten, "{label:?}");
+        }
+        assert_eq!(
+            typed(TileLabel("(")),
+            Spelled::Written,
+            "an opener is typed"
+        );
+    }
+
+    #[test]
+    fn parts_inserted_whole_collide_only_when_they_end_closed_before_an_operand()
+    {
+        let tools = tools();
+        let written = |text: &'static str| {
+            Written::after(
+                &tools.grammar,
+                SourceText::from(text),
+                ByteOffset::from(0_usize),
+            )
+        };
+        let closed = [Part::Tile(TileLabel(")"))];
+        let open = [Part::Tile(TileLabel("("))];
+        assert_eq!(whole_fit(&closed, &written("1")), Fit::Collides);
+        assert_eq!(
+            whole_fit(&closed, &written("")),
+            Fit::Free,
+            "nothing written after"
+        );
+        assert_eq!(
+            whole_fit(&open, &written("1")),
+            Fit::Free,
+            "an opener before an operand"
+        );
+    }
+
+    #[test]
+    fn a_written_closer_pairs_only_past_the_brackets_written_before_it()
+    {
+        let tools = tools();
+        let mut parts = Vec::from([Part::Tile(TileLabel(")"))]);
+        let written = Written::after(
+            &tools.grammar,
+            SourceText::from("[1])"),
+            ByteOffset::from(0_usize),
+        );
+        assert_eq!(subtract(&mut parts, &written), Fit::Meets);
+        assert_eq!(
+            parts,
+            [],
+            "the written `)` closes the bracket the part would"
+        );
+        let mut parts = Vec::from([Part::Tile(TileLabel(")"))]);
+        let written = Written::after(
+            &tools.grammar,
+            SourceText::from("1]"),
+            ByteOffset::from(0_usize),
+        );
+        assert_ne!(
+            subtract(&mut parts, &written),
+            Fit::Meets,
+            "a `]` is not its pair"
+        );
     }
 
     #[test]
@@ -1757,6 +1846,28 @@ mod tests
         }
     }
 
+    /// A ghost text lends the text it inserts: the snippet a declaration's
+    /// type hole offers reads back as written.
+    #[test]
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "a snippet's tab stop is spelled `${n:name}`, which reads as a format argument"
+    )]
+    fn a_snippet_lends_the_text_it_inserts()
+    {
+        let tools = tools();
+        let ghosts = ghost(
+            &tools.grammar,
+            &tools.forms,
+            SourceText::from("def g :"),
+            ByteOffset::from(7_usize),
+        );
+        assert_eq!(
+            ghosts.as_ref().first().map(AsRef::as_ref),
+            Some(" ${1:type};")
+        );
+    }
+
     #[test]
     #[expect(
         clippy::literal_string_with_formatting_args,
@@ -1797,6 +1908,20 @@ mod tests
             ("def x = ", "answer;"),
             ("def f(x: Nat) -> -F Nat {\n  case x {", " }\n}"),
             ("data Nat : Type {\n  Zero : Nat;", "\n}"),
+            ("def x = (", ") + 1;"),
+            ("def x = (", "1 + 2)"),
+            ("def x = (", "(1))"),
+            ("def x = (", "(1), 2)"),
+            ("def x = [", "1, 2]"),
+            ("def x = thunk {", " return 1 }"),
+            ("def x = thunk { return", " 1; }"),
+            ("def x = ", "(1) 2;"),
+            ("def x = ", "def"),
+            ("def x = (", "[1])"),
+            ("def x = 1 +", ";"),
+            ("def x = 1 +", ""),
+            ("def x = (1 +", ""),
+            ("1 +", ""),
             ("", ""),
         ] {
             let _written = writeln!(rendered, "{before:?} ‸ {after:?}");
@@ -1854,6 +1979,132 @@ mod tests
               " rule ${1:value} <=> ${2:value}"
               " rule ${1:value} ~> ${2:value}"
               " ${1:constructor} [${2:identifier}]"
+            "def x = (" ‸ ") + 1;"
+              "${1:value}"
+              "- ${1:value}"
+              "${1:value} : ${2:type}"
+              "run ${1:computation}"
+              "hold ${1:value}"
+              "()"
+              "[${1:value}]"
+              "thunk { ${1:computation} \\}"
+            "def x = (" ‸ "1 + 2)"
+              "- "
+              "run "
+              "hold "
+              "pure "
+              "return "
+              "become "
+              "force "
+              "() "
+            "def x = (" ‸ "(1))"
+              "- "
+              "run "
+              "hold "
+              "pure "
+              "return "
+              "become "
+              "force "
+              "() "
+            "def x = (" ‸ "(1), 2)"
+              "- "
+              "run "
+              "hold "
+              "pure "
+              "return "
+              "become "
+              "force "
+              "() "
+            "def x = [" ‸ "1, 2]"
+              "- "
+              "run "
+              "hold "
+              "pure "
+              "return "
+              "become "
+              "force "
+              "() "
+            "def x = thunk {" ‸ " return 1 }"
+              " pure"
+              " val"
+              " return"
+              " run"
+              " become"
+              " leta ${1:identifier} ="
+              " force"
+              " hold ${1:identifier} ="
+            "def x = thunk { return" ‸ " 1; }"
+              " -"
+              " run"
+              " hold"
+              " pure"
+              " return"
+              " become"
+              " force"
+              " ()"
+            "def x = " ‸ "(1) 2;"
+              "- "
+              "run "
+              "hold "
+              "pure "
+              "return "
+              "become "
+              "force "
+              "() "
+            "def x = " ‸ "def"
+              "${1:value}; "
+              "- ${1:value}; "
+              "run ${1:computation}; "
+              "hold ${1:value}; "
+              "(); "
+              "[${1:value}]; "
+              "thunk { ${1:computation} \\}; "
+              "handle ${1:identifier} : ${2:type_identifier} { ${3:computation} \\} with { pure (${4:identifier}) => ${5:computation} \\}; "
+            "def x = (" ‸ "[1])"
+              "- "
+              "run "
+              "hold "
+              "pure "
+              "return "
+              "become "
+              "force "
+              "() "
+            "def x = 1 +" ‸ ";"
+              " ${1:value}"
+              " - ${1:value}"
+              " run ${1:computation}"
+              " hold ${1:value}"
+              " ()"
+              " [${1:value}]"
+              " thunk { ${1:computation} \\}"
+              " handle ${1:identifier} : ${2:type_identifier} { ${3:computation} \\} with { pure (${4:identifier}) => ${5:computation} \\}"
+            "def x = 1 +" ‸ ""
+              " ${1:value};"
+              " - ${1:value};"
+              " run ${1:computation};"
+              " hold ${1:value};"
+              " ();"
+              " [${1:value}];"
+              " thunk { ${1:computation} \\};"
+              " handle ${1:identifier} : ${2:type_identifier} { ${3:computation} \\} with { pure (${4:identifier}) => ${5:computation} \\};"
+            "def x = (1 +" ‸ ""
+              " ${1:value})"
+              " - ${1:value})"
+              " ${1:value} : ${2:type})"
+              " run ${1:computation})"
+              " hold ${1:value})"
+              " ())"
+              " [${1:value}])"
+              " thunk { ${1:computation} \\})"
+            "1 +" ‸ ""
+              " ${1:value}"
+              " - ${1:value}"
+              " run ${1:computation}"
+              " hold ${1:value}"
+              " ()"
+              " [${1:value}]"
+              " thunk { ${1:computation} \\}"
+              " handle ${1:identifier} : ${2:type_identifier} { ${3:computation} \\} with { pure (${4:identifier}) => ${5:computation} \\}"
             "" ‸ ""
               "def ${1:identifier} : ${2:type};"
               "data ${1:type_identifier} { \\}"

@@ -286,6 +286,7 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 ///   none, removes its socket and returns.
 /// - witness: `hub::tests::two_clients_hold_their_own_copies`
 /// - witness: `hub::tests::a_hub_left_alone_exits_after_its_linger`
+/// - witness: `hub::tests::a_hub_whose_socket_is_already_gone_exits_cleanly`
 /// - witness: `hub::tests::a_line_connection_reaches_the_second_face`
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
 #[inline]
@@ -1072,6 +1073,29 @@ mod tests
     }
 
     #[test]
+    fn a_hub_whose_socket_is_already_gone_exits_cleanly()
+    {
+        let scratch = Scratch::new(Json("gone"));
+        let socket = scratch.socket();
+        let Maybe::Present(listener) = bind(&socket).expect("the socket binds")
+        else {
+            panic!("no other hub serves a fresh socket");
+        };
+        std::fs::remove_file(&socket).expect("the socket file is removed");
+        assert!(
+            run_hub(
+                &listener,
+                &socket,
+                Duration::from_millis(10),
+                io::sink(),
+                Some(echo)
+            )
+            .is_ok(),
+            "a socket another hand removed is not a fault"
+        );
+    }
+
+    #[test]
     fn a_relay_carries_a_session_and_its_ending()
     {
         let scratch = Scratch::new(Json("relay"));
@@ -1111,6 +1135,17 @@ mod tests
             served,
             Served::Abrupt,
             "a session closed before shutdown is abrupt"
+        );
+        let served = relay(
+            io::Cursor::new(frames(&[initialize, exit]).as_ref().to_vec()),
+            &mut Vec::new(),
+            UnixStream::connect(&socket).expect("the hub accepts"),
+        )
+        .expect("the relay carries the session");
+        assert_eq!(
+            served,
+            Served::Abrupt,
+            "an exit no shutdown request preceded is abrupt"
         );
         assert!(
             matches!(
