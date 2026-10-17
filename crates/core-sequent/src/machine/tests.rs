@@ -851,6 +851,13 @@ impl HostHandler for ScriptedHost<'_>
                 request.operation.as_ref()
             )
         );
+        assert!(
+            request
+                .signature
+                .types()
+                .all(|ty| values.annotations().value_type(ty).is_some()),
+            "the offered interface's types resolve among the host's annotations"
+        );
         let actual = values
             .read_back_value(request.payload, self.core)
             .expect("closed payload reads back");
@@ -1054,6 +1061,30 @@ fn host_seam_resumes_a_single_unhandled_perform()
     let answer = integer(&mut core, Digits("42"));
     let signature = effect(&mut core, "E".into(), "op".into());
     let program = core.computation_perform(signature, "op".into(), five);
+    assert_host(
+        &mut core,
+        program,
+        [Offer {
+            signature: "E",
+            operation: "op",
+            payload: five,
+            answer: Answer::Integer(Digits("42")),
+        }],
+        ControlExpectation::Value(answer),
+    );
+}
+
+/// An exercise through a capability no handler introduced, which only the
+/// host holds, is offered to the host and resumes with its reply.
+#[test]
+fn host_seam_answers_an_exercise_through_a_capability_it_holds()
+{
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Digits("5"));
+    let held = integer(&mut core, Digits("7"));
+    let answer = integer(&mut core, Digits("42"));
+    let signature = effect(&mut core, "E".into(), "op".into());
+    let program = core.computation_exercise(held, signature, "op".into(), five);
     assert_host(
         &mut core,
         program,
@@ -2506,6 +2537,32 @@ fn transition_refusals_name_the_first_invalid_endpoint()
                 head: DestructorTag::Force
             })),
             machine.observe(value, DestructorTag::Force, &[], ContinuationMark::BASE)
+        );
+    }
+    // A suspension answers only `force`: applied, a thunk or an unfolding
+    // fixpoint is unobservable rather than run.
+    let cell = machine.store.allocate_cell().expect("room");
+    let suspensions = [
+        HeapValue::Thunk {
+            body: missing_command,
+            environment: Environment::EMPTY,
+            cell,
+        },
+        HeapValue::Fixpoint {
+            body: missing_command,
+            environment: Environment::EMPTY,
+            memo: crate::store::Memo::Unfolds,
+            evidence: gandr_kernel_term::FixpointEvidence::Partial,
+        },
+    ];
+    for suspension in suspensions {
+        let suspended = machine.store.allocate(suspension).expect("room");
+        assert_eq!(
+            Err(Stop::Stuck(Stuck::Unobservable {
+                value: suspended,
+                head: DestructorTag::Apply
+            })),
+            machine.observe(suspended, DestructorTag::Apply, &[], ContinuationMark::BASE)
         );
     }
 }

@@ -1416,6 +1416,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::hand_built_effect_cases_agree`
     /// - witness: `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`
     /// - witness: `machine::tests::an_exercise_reaches_the_scope_that_introduced_its_capability`
+    /// - witness: `machine::tests::host_seam_answers_an_exercise_through_a_capability_it_holds`
     #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|next| match *next {
         Next::Host { at: found, payload: found_payload } => found == at && found_payload == payload,
         Next::Continue(Control::Run(_, inner)) => self.store.lookup_value(inner, DeBruijnIndex::from(1_u32)) == Some(payload)

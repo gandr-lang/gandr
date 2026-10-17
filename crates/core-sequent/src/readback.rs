@@ -461,6 +461,8 @@ impl<'run> Reading<'run>
     /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
     /// - witness: `machine::tests::a_recursive_thunk_computes_through_its_own_binding`
     /// - witness: `machine::tests::a_selection_reads_the_width_of_the_value_it_meets`
+    /// - witness: `readback::tests::a_record_reads_back_only_from_one_field_per_ascending_label`
+    /// - witness: `readback::tests::a_recorded_run_reads_back_only_from_one_field_per_payload`
     #[spec(
         ensures: |ret| match ret {
             | Err(error) => self.store.value(id).is_some() || error == ReadbackRefusal::Dangling(id),

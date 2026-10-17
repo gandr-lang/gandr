@@ -1433,6 +1433,7 @@ impl CommandArena
     /// - hypothesis: L3 — imported host interfaces retain distinct payload and
     ///   reply types.
     /// - witness: `machine::tests::hand_built_effect_cases_agree`
+    /// - witness: `il::tests::minting_refuses_a_dangling_child`
     #[spec(ensures: |ret| ret.is_ok() == signature.types().all(|ty| self.annotations.value_type(ty).is_some()))]
     fn signature_resolves(
         &self,
