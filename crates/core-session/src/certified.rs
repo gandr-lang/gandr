@@ -218,6 +218,7 @@ pub fn encode(
 /// - hypothesis: L3 swapping a monitor's payload assignment or protocol cannot
 ///   reuse another protocol's certified code.
 /// - witness: `tests::certified::recorded_runs_transport_only_forward`
+/// - witness: `tests::certified::a_code_binds_only_the_graph_it_was_encoded_from`
 #[spec(ensures: |ret| match ret {
     Ok(code) => matches!(arena.value(protocol.code), Some(&Value::Quote(quoted)) if quoted == code),
     Err(TransportError::MissingPayload(identity)) => !protocol.payloads.0.contains_key(&identity),
@@ -347,6 +348,7 @@ pub fn transport(
 /// # Adequacy
 /// - hypothesis: L1 target-monitor acceptance is independent of move mapping.
 /// - witness: `tests::certified::recorded_runs_transport_only_forward`
+/// - witness: `tests::certified::a_flow_transports_only_between_the_codes_it_relates`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |output| replay(protocols.0.session, moves) == Ok(crate::Completion)
     && replay(protocols.1.session, output) == Ok(crate::Completion)))]
 fn checked_transport(
@@ -405,6 +407,7 @@ fn checked_transport(
 /// - hypothesis: L3 — a run through a widened selection moves forward; a run
 ///   through an offer the target drops refuses at that move as `WrongLabel`.
 /// - witness: `tests::certified::recorded_runs_transport_only_forward`
+/// - witness: `tests::certified::a_choice_advances_only_onto_a_choice_of_its_own_kind`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |output| replay(protocols.0, moves) == Ok(crate::Completion)
     && replay(protocols.1, output) == Ok(crate::Completion)
     && output.len() == moves.len()))]

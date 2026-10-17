@@ -455,3 +455,157 @@ fn recorded_runs_transport_only_forward()
         Convertibility::Distinct
     );
 }
+
+#[test]
+fn a_code_binds_only_the_graph_it_was_encoded_from()
+{
+    let mut arena = TermArena::new();
+    let payloads = codes(&mut arena);
+    let offer = |branches: &[(&str, usize)]| {
+        Node::Offer(
+            branches
+                .iter()
+                .map(|&(label, next)| (label.into(), NodeId(next)))
+                .collect(),
+        )
+    };
+    let select = |branches: &[(&str, usize)]| {
+        Node::Select(
+            branches
+                .iter()
+                .map(|&(label, next)| (label.into(), NodeId(next)))
+                .collect(),
+        )
+    };
+    let fork = [("keep", 1), ("stop", 2)];
+    let offered = session(vec![offer(&fork), Node::End, Node::End]);
+    let selected = session(vec![select(&fork), Node::End, Node::End]);
+    let run = [Move::Offer("keep".into()), Move::End];
+    let chosen = [Move::Select("keep".into()), Move::End];
+    for (encoded, local, moves, what) in [
+        (
+            &offered,
+            selected.clone(),
+            chosen.as_slice(),
+            "a select read as an offer",
+        ),
+        (
+            &selected,
+            offered.clone(),
+            run.as_slice(),
+            "an offer read as a select",
+        ),
+        (
+            &offered,
+            session(vec![
+                offer(&[("keep", 2), ("stop", 1)]),
+                Node::End,
+                Node::End,
+            ]),
+            run.as_slice(),
+            "a label bound to another continuation",
+        ),
+    ] {
+        let code = encode(&mut arena, encoded, &payloads).expect("the encoded graph");
+        let flow = native_flow(
+            &mut arena,
+            (code, code),
+            evidence(encoded, encoded, Relation::Subtype),
+        );
+        let honest = Protocol {
+            session: encoded,
+            code,
+            payloads: &payloads,
+        };
+        let misbound = Protocol {
+            session: &local,
+            code,
+            payloads: &payloads,
+        };
+        assert!(
+            matches!(
+                transport(
+                    &mut arena,
+                    flow,
+                    (misbound, honest),
+                    moves,
+                    ReplayBudget::DEFAULT
+                ),
+                Err(TransportError::CodeBinding)
+            ),
+            "{what} does not bind"
+        );
+    }
+}
+
+#[test]
+fn a_flow_transports_only_between_the_codes_it_relates()
+{
+    let old = seat();
+    let wide = widened();
+    let mut arena = TermArena::new();
+    let payloads = codes(&mut arena);
+    let old_code = encode(&mut arena, &old, &payloads).expect("old code");
+    let wide_code = encode(&mut arena, &wide, &payloads).expect("wide code");
+    let flow = native_flow(
+        &mut arena,
+        (old_code, wide_code),
+        evidence(&old, &wide, Relation::Subtype),
+    );
+    let old_protocol = Protocol {
+        session: &old,
+        code: old_code,
+        payloads: &payloads,
+    };
+    let run = [
+        Move::Receive(payload(DISPATCH)),
+        Move::Select("handoff".into()),
+        Move::Send(payload(HANDOFF)),
+        Move::End,
+    ];
+    assert!(
+        matches!(
+            transport(
+                &mut arena,
+                flow,
+                (old_protocol, old_protocol),
+                &run,
+                ReplayBudget::DEFAULT
+            ),
+            Err(TransportError::Direction)
+        ),
+        "a right source with a wrong target is refused"
+    );
+}
+
+#[test]
+fn a_choice_advances_only_onto_a_choice_of_its_own_kind()
+{
+    let fork = |kind: fn(alloc::collections::BTreeMap<_, NodeId>) -> Node| {
+        session(vec![kind([("keep".into(), NodeId(1))].into()), Node::End])
+    };
+    let offered = fork(Node::Offer);
+    let selected = fork(Node::Select);
+    let paired = Evidence {
+        pairs: [0, 1]
+            .map(|state| StatePair {
+                source: State(state),
+                target: State(state),
+            })
+            .into_iter()
+            .collect(),
+        payloads: Vec::new(),
+    };
+    for (source, target, choice) in [
+        (&selected, &offered, Move::Select("keep".into())),
+        (&offered, &selected, Move::Offer("keep".into())),
+    ] {
+        assert!(matches!(
+            gandr_core_session::certified::advance((source, target), &paired, &[choice, Move::End]),
+            Err(TransportError::Move {
+                at: MoveIndex(0),
+                reason: Refusal::WrongDirection
+            })
+        ));
+    }
+}
