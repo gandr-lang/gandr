@@ -238,6 +238,7 @@ fn schedule(
         return;
     }
     let mut families = Vec::new();
+    let mut definitions = Vec::new();
     let mut past_families = ConstantIndex::from(usize::from(first).saturating_add(1));
     let mut phase = Members::Families;
     let mut members = 0_usize;
@@ -262,7 +263,12 @@ fn schedule(
                     ConstantIndex::from(usize::from(member.constant()).saturating_add(1));
                 families.push((member.constant(), alloc::sync::Arc::clone(family)));
             },
-            (&crate::DeclarationContent::Value { .. }, _) => phase = Members::Definitions,
+            (&crate::DeclarationContent::Value { body, .. }, _) => {
+                phase = Members::Definitions;
+                if let Maybe::Present(body) = body {
+                    definitions.push((member.constant(), body));
+                }
+            },
             (&crate::DeclarationContent::Data(_) | &crate::DeclarationContent::Abstract(_), _) => {
                 return;
             },
@@ -274,6 +280,7 @@ fn schedule(
     context.open_mutual(
         crate::occurrence::Block::new(first, past_families, end),
         families,
+        definitions,
     );
     // Every definition's declared type forms before any is foreseen: a
     // declared type names the block's families, never its definitions.
