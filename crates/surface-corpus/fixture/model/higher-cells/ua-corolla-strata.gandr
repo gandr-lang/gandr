@@ -1,54 +1,52 @@
-sign Magma {
-  sort M : Type;
-  oper mul : (x : M, y : M) --> (z : M);
-  oper one : () --> (z : M);
-}
+// Univalence at the certified strata of a signature: `ua[n, k]` derives a
+// path between two models' degree telescopes up to degree `n` over shapes of
+// at most `k` vertices, each stage over its matching object (Shulman,
+// _Univalence for Inverse Diagrams and Homotopy Canonicity_,
+// doi:10.1017/S0960129514000565). From degree two the Segal condition
+// certifies the stages above the corollas; a degree, a bound or a table the
+// stratum does not certify is refused by name.
 
-@[ checks ]
-def exchange(b : Bool) -> -F Bool {
-  case b {
-    true => return +{.1 = unit},
-    false => return +{.0 = unit}
-  }
-}
+// The magma, the swap, the identity on the booleans and the unit's identity.
+import "./magma-base.gandr" ;
 
-@[ checks ]
-def stay(b : Bool) -> -F Bool {
-  return b
-}
-
-@[ checks ]
-def keep(e : +{Unit}) -> -F +{Unit} {
-  return e
-}
-
+/// The magma to itself by the swap, at degree two.
 @[ checks ]
 def raised = ua[2, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
 
+/// Transport along it swaps the binary corolla's boolean and carries the
+/// degree-two unit stage.
 @[ checks ]
 def lifts : Path(#{Unit, #{+{Unit}, #{Bool, Unit}}}, transport(\X. X, raised, #{unit, #{+{.0 = unit}, #{+{.0 = unit}, unit}}}), #{unit, #{+{.0 = unit}, #{+{.1 = unit}, unit}}}) ;
 def lifts = here(#{unit, #{+{.0 = unit}, #{+{.1 = unit}, unit}}}) ;
 
+/// A degree no shape of the catalogue reaches is not certified.
 @[ refuses("UncertifiedDegree") ]
 def above = ua[5, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
 
+/// A catalogue of no vertices fails the corolla condition.
 @[ refuses("UncertifiedCondition") ]
 def empty = ua[1, 0](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
 
+/// A catalogue past the one the checker enumerates is not certified.
 @[ refuses("UncertifiedAllowance") ]
 def wide = ua[1, 6](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
 
+/// The binary generator's corolla is larger than a bound of three.
 @[ refuses("PastTheBound") ]
 def short = ua[1, 3](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
 
+/// The swap and the identity are no inverse pair.
 @[ refuses("NotInverse") ]
-def lopsided = ua[1, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = stay, .one = keep}) ;
+def lopsided = ua[1, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = boolId, .one = keep}) ;
 
+/// A table missing a corolla the signature inhabits.
 @[ refuses("CorollaTables") ]
 def partial = ua[1, 4](Magma, Magma, #{.mul = exchange}, #{.mul = exchange, .one = keep}) ;
 
+/// A table naming a generator the signature does not have.
 @[ refuses("UnknownGenerator") ]
 def misspelt = ua[1, 4](Magma, Magma, #{.mul = exchange, .zero = keep}, #{.mul = exchange, .one = keep}) ;
 
+/// A signature that is not declared.
 @[ refuses("UnresolvedName") ]
 def unnamed = ua[1, 4](Monoid, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;

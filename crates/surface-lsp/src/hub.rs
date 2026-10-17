@@ -893,14 +893,21 @@ mod tests
             ))),
             "a client keeping `span`, `pre` and `code` reads the hover coloured by role"
         );
+        // At its own path, so its import of the subject's base resolves.
+        let corolla = concat!(
+            "file://",
+            env!("CARGO_MANIFEST_DIR"),
+            "/../surface-corpus/fixture/model/higher-cells/ua-corolla.gandr"
+        );
         assert_eq!(
             hovered(
-                "file:///tmp/ua-corolla.gandr",
+                corolla,
                 include_str!("../../surface-corpus/fixture/model/higher-cells/ua-corolla.gandr"),
-                (46, 4),
+                (39, 4),
             ),
             Some(serde_json::json!(format!(
-                "<pre><code>{} : {}({} {} {}, {}, {})</code></pre>",
+                "<pre><code>{} : {}({} {} {}, {}, {})</code></pre>\n\nThe swap and the swap three \
+                 times agree at every boolean.",
                 coloured("functionDef", "agree"),
                 coloured("typeBuiltin", "Path"),
                 coloured("type", "Bool"),
@@ -910,7 +917,7 @@ mod tests
                 coloured("variable", "flip"),
             ))),
             "a path type in its sugared form, each role coloured, its punctuation as the editor \
-             leaves it"
+             leaves it, then its documentation"
         );
         drop(client);
         hub.join().expect("the hub exits");

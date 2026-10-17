@@ -1,0 +1,38 @@
+// The higher-cells subject's shared declarations, written once and imported
+// by every source that reads them (`import "./magma-base.gandr" ;`): the
+// magma signature whose two corollas `ua` reads, and the translators its
+// models' tables are given by — the swap of the booleans, the identity on
+// them, and the identity on the unit's one injection. A `ua[n, k]` path is
+// derived degree by degree over the signature's matching objects (Shulman,
+// _Univalence for Inverse Diagrams and Homotopy Canonicity_,
+// doi:10.1017/S0960129514000565).
+
+/// A magma: one sort, a binary operation and a constant.
+sign Magma {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}
+
+/// The swap of the booleans, its own inverse: the binary corolla's
+/// translator.
+@[ checks ]
+def exchange(b : Bool) -> -F Bool {
+  case b {
+    true => return +{.1 = unit},
+    false => return +{.0 = unit}
+  }
+}
+
+/// The identity on the booleans, which is no inverse of the swap; named
+/// apart from the flow former `stay`.
+@[ checks ]
+def boolId(b : Bool) -> -F Bool {
+  return b
+}
+
+/// The identity on the constant corolla's one element.
+@[ checks ]
+def keep(e : +{Unit}) -> -F +{Unit} {
+  return e
+}

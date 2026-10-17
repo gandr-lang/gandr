@@ -1,0 +1,16 @@
+// A module ascribed a transparent signature, after ML's translucent sums
+// (Harper and Lillibridge, _A Type-Theoretic Approach to Higher-Order
+// Modules with Sharing_, POPL 1994, doi:10.1145/174675.176927): the
+// signature states its type's definition, so the members are read at the
+// integers outside the module.
+
+/// The integers under addition, the signature exposing its type as
+/// `Integer`.
+module NatAdd : #{ type M = Integer, zero : M, add : +U[ω] (M -> M -> -F M) } {
+  /// The unit of the sum.
+  @[ runs("0") ]
+  def zero = 0;
+  /// The sum.
+  @[ checks ]
+  def add(x: Integer, y: Integer) -> -F Integer { become x + y }
+}

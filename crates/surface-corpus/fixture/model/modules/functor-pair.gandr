@@ -1,13 +1,26 @@
+// Generative functors, after ML's generative module semantics (Rossberg,
+// Russo and Dreyer, _F-ing Modules_, doi:10.1017/S0956796814000264): a
+// functor applied twice to one argument mints a fresh abstract type at each
+// application, and each application's members run through the argument
+// they were built from.
+
+/// A counter sealed by its signature: an abstract type, its zero, a step and
+/// a reader.
 module Seed :> #{ type T, zero : T, next : +U[ﾏ云 (T -> -F T), read : +U[ﾏ云 (T -> -F Integer) } {
   type T = Integer;
+  /// The counter's zero.
   @[ runs("0") ]
   def zero = 0;
+  /// One step on.
   @[ runs("fn (a) { a + 1 }") ]
   def next(n : T) -> -F T { become n + 1 }
+  /// The count read as an integer.
   @[ runs("fn (a) { a }") ]
   def read(n : T) -> -F Integer { return n }
 }
 
+/// A functor from any counter to a sealed counter of its own: its seed,
+/// step and reader are the argument's.
 module MkCounter(S : #{ type T, zero : T, next : +U[ﾏ云 (T -> -F T), read : +U[ﾏ云 (T -> -F Integer) }) :> #{ type T, seed : T, step : +U[ﾏ云 (T -> -F T), read : +U[ﾏ云 (T -> -F Integer) } {
   type T = S.T;
   def seed = S.zero;
@@ -15,13 +28,17 @@ module MkCounter(S : #{ type T, zero : T, next : +U[ﾏ云 (T -> -F T), read : +U[ﾏ
   def read = S.read;
 }
 
+/// The functor's first application.
 module A = MkCounter(Seed) ;
+/// Its second, whose type is not the first's.
 module B = MkCounter(Seed) ;
 
+/// One step of the first application, at its own abstract type.
 @[ runs("1") ]
 def a_once : +U (-F A.T) ;
 def a_once = thunk { become A.step(A.seed) } ;
 
+/// Two steps of the second application, read back as an integer.
 @[ runs("2") ]
 def b_twice : +U (-F Integer) ;
 def b_twice = thunk { run one <- B.step(B.seed) ; run two <- B.step(one) ; become B.read(two) } ;

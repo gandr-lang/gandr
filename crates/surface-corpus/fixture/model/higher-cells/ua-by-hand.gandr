@@ -1,8 +1,13 @@
-sign Magma {
-  sort M : Type;
-  oper mul : (x : M, y : M) --> (z : M);
-  oper one : () --> (z : M);
-}
+// Univalence at the corollas of a signature written by hand: `ua[1, 4]` is
+// reflexivity at the unit for the empty shape, then one `equiv` per corolla,
+// nested to the right (Shulman, _Univalence for Inverse Diagrams and
+// Homotopy Canonicity_, doi:10.1017/S0960129514000565), and its directed twin
+// is a flow of one `forward` per corolla (Gratzer, Weinberger and Buchholtz,
+// _Directed univalence in simplicial homotopy type theory_,
+// arXiv:2407.09146).
+
+// The magma, the swap and the unit's identity.
+import "./magma-base.gandr" ;
 
 /// `ua[1, 4]` written by hand: reflexivity at the unit for the empty shape,
 /// then one `equiv` per corolla in catalogue order, the constant's before the
@@ -20,55 +25,52 @@ sign Magma {
 module ByHand {
   type Tel = #{Unit, #{+{Unit}, Bool}};
 
-  @[ checks ]
-  def exchange(b : Bool) -> -F Bool {
-    case b {
-      true => return +{.1 = unit},
-      false => return +{.0 = unit}
-    }
-  }
-
-  @[ checks ]
-  def keep(e : +{Unit}) -> -F +{Unit} {
-    return e
-  }
-
+  /// The derived path, by the swap at the binary corolla.
   @[ checks ]
   def opposite = ua[1, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
 
+  /// The same path written by hand.
   @[ checks ]
   def opposite_by_hand : Path(Type, Tel, Tel) ;
   def opposite_by_hand = pathProduct(here(Unit), pathProduct(equiv(keep, keep), equiv(exchange, exchange))) ;
 
+  /// The derived and the hand path convert.
   @[ checks ]
   def same : Path(Path(Type, Tel, Tel), opposite, opposite_by_hand) ;
   def same = here(opposite) ;
 
+  /// Transport along the hand path swaps the binary corolla's boolean.
   @[ checks ]
   def moves : Path(Tel, transport(\X. X, opposite_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
   def moves = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
 
+  /// Transport along either path gives the same telescope.
   @[ checks ]
   def alike : Path(Tel, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), transport(\X. X, opposite_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}})) ;
   def alike = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
 
+  /// The directed twin written by hand.
   @[ checks ]
   def opposite_dir_by_hand : Flow(Type, Tel, Tel) ;
   def opposite_dir_by_hand = flowProduct(stay(Unit), flowProduct(forward(keep), forward(exchange))) ;
 
+  /// A telescope ridden along the directed twin.
   @[ checks ]
   def forth(t : Tel) -> -F Tel {
     become ride(\X. X, opposite_dir_by_hand, t)
   }
 
+  /// A telescope ridden forward by a run.
   @[ runs("(unit, (+{.0 = unit}, +{.1 = unit}))") ]
   def ridden : +U (-F Tel) ;
   def ridden = thunk { become forth(#{unit, #{+{.0 = unit}, +{.0 = unit}}}) } ;
 
+  /// Riding moves the telescope as transport does.
   @[ checks ]
   def rides : Path(Tel, ride(\X. X, opposite_dir_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
   def rides = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
 
+  /// A ride that would reverse the flow reads it contravariantly, refused.
   @[ refuses("NonCovariantMotive") ]
   def reversed() -> -F Flow(Type, Tel, Tel) {
     become ride(\X. Flow(Type, X, Tel), opposite_dir_by_hand, stay(Tel))

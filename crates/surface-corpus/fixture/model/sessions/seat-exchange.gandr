@@ -1,23 +1,14 @@
-module Seat :> #{
-  type Dispatch,
-  type Report,
-  type Handoff,
-  type SeatEnd = ?Dispatch. mu turn. +{ report : !Report. &{ next : turn, retire : end }, handoff : !Handoff. end },
-  task : Dispatch,
-  progress : Report,
-  notes : Handoff
-} {
-  type Dispatch = String;
-  type Report = String;
-  type Handoff = String;
-  @[ checks ]
-  def task = "task";
-  @[ checks ]
-  def progress = "progress";
-  @[ checks ]
-  def notes = "notes";
-}
+// A seat's protocol run between two endpoints (Honda, Vasconcelos and Kubo,
+// _Language Primitives and Type Discipline for Structured
+// Communication-Based Programming_, doi:10.1007/BFb0053567): `fork` opens a
+// channel at the seat's session type, the forked side serves it, and the
+// desk drives its dual through every branch the seat may take.
 
+// The seat's protocol and its messages.
+import "./seat-base.gandr" ;
+
+/// A desk dispatching a task to a forked seat and following its reports to a
+/// retirement or a handoff.
 @[ checks ]
 def exchange() -> -F Unit {
   fork (seat : Seat.SeatEnd) {
