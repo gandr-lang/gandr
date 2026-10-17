@@ -1,3 +1,10 @@
+// An operation with two outputs, division with remainder on the naturals,
+// defined by rules over a helper that walks the dividend (Baader and Nipkow,
+// _Term Rewriting and All That_, Cambridge University Press, 1998, § 4.1):
+// a closed division normalizes to its quotient and remainder, and a run binds
+// both.
+
+/// The naturals with division and remainder, both outputs named.
 @[ normalizes("divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero))) ~> (Succ(Succ(Zero)), Succ(Zero))") ]
 data NatDiv : Type {
   Zero : NatDiv;
@@ -11,6 +18,7 @@ data NatDiv : Type {
   rule divmod(m, Succ(d)) <=> walk(m, d, d, Zero, Zero);
 }
 
+/// Five by two runs to two remainder one, both outputs bound.
 @[ runs("(Succ(Succ(Zero)), Succ(Zero))") ]
 def five_by_two : +U (-F (NatDiv * NatDiv)) ;
 def five_by_two = thunk {

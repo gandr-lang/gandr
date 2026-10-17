@@ -2,7 +2,9 @@
 // `access c as v { … }` lends it to the view `v`, which the body ends exactly
 // once: `resume(v, e)` writes `e` back, `abort(v)` leaves the held value as it
 // was and runs the access's `unwind` clause instead. The unwind runs under the
-// empty row, and an access with none unwinds by doing nothing.
+// empty row, and an access with none unwinds by doing nothing. The loan
+// follows Rust's mutable borrow, ended once (_The Rust Reference_, § Borrow
+// operators).
 
 /// The successor, a call whose type synthesises where a statement binds it.
 @[ checks ]

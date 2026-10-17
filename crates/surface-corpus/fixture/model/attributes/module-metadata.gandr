@@ -1,3 +1,9 @@
+// Package metadata written as attributes on a declaration — a name and
+// version, a dependency and a toolchain bound, after Cargo's manifest (_The
+// Cargo Book_, § The Manifest Format): the language registers none of these
+// schemas, so the block is refused by the first unknown attribute.
+
+// A unit value carrying a package's metadata.
 @[ refuses("UnknownAttribute") ]
 @[package(#{ name = "acme/parser", version = "1.4.0" })]
 @[dependency(#{ name = "acme/lexer", alias = "lexer", constraint = "^2.1" })]

@@ -1,3 +1,8 @@
+// An enumeration of three constructors read as a description (Chapman,
+// Dagand, McBride and Morris, _The Gentle Art of Levitation_,
+// doi:10.1145/1863543.1863547).
+
+/// A traffic signal: stop, go or wait.
 @[ checks ]
 data Traffic : Type {
   Stop : Traffic;

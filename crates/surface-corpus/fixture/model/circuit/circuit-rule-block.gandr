@@ -1,6 +1,8 @@
 // A circuit rule in a `sign` block: a rule whose inputs are a rewrite and two
 // data wires, and whose body wires two nodes. `Sig` codes no circuit rule yet,
-// so the rule is kept beside the block's value rather than in it.
+// so the rule is kept beside the block's value rather than in it. The wiring
+// follows Lafont's interaction nets (_Interaction Nets_, POPL 1990,
+// doi:10.1145/96709.96718).
 
 /// A data family whose constructors are written with the circuit arrow.
 @[ checks ]

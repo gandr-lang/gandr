@@ -1,3 +1,11 @@
+// Effect handlers and the exits through them, after Plotkin and Pretnar,
+// _Handling Algebraic Effects_ (doi:10.2168/LMCS-9(4:23)2013): an operation's
+// clause may resume the handled body through its continuation or discard it,
+// a body's `pure` value passes through the handler's `pure` clause, and a
+// `return` leaves the handler with its value as it stands.
+
+/// The operation's clause resumes the body, whose value passes through the
+/// `pure` clause.
 @[ runs("101") ]
 def resumed() -> -F Integer {
   handle c : Proc {
@@ -9,6 +17,8 @@ def resumed() -> -F Integer {
   }
 }
 
+/// A `return` in the handled body leaves the handler, the `pure` clause
+/// skipped.
 @[ checks ]
 def left(n : Integer) -> -F Integer {
   handle c : Proc {
@@ -20,10 +30,13 @@ def left(n : Integer) -> -F Integer {
   }
 }
 
+/// `left` at five, by a run.
 @[ runs("5") ]
 def left_run : +U (-F Integer) ;
 def left_run = thunk { become left(5) } ;
 
+/// The operation's clause discards its continuation and answers for the
+/// handler.
 @[ runs("9") ]
 def discarded() -> -F Integer {
   handle c : Proc {
@@ -35,6 +48,7 @@ def discarded() -> -F Integer {
   }
 }
 
+/// A `return` inside two handlers leaves both.
 @[ runs("4") ]
 def nested() -> -F Integer {
   handle a : Proc {
@@ -50,6 +64,7 @@ def nested() -> -F Integer {
   }
 }
 
+/// A `case` whose one arm returns and whose other arm continues the body.
 @[ checks ]
 def branch(n : Integer) -> -F Integer {
   handle c : Proc {
@@ -65,14 +80,17 @@ def branch(n : Integer) -> -F Integer {
   }
 }
 
+/// The returning arm, by a run.
 @[ runs("8") ]
 def branch_zero : +U (-F Integer) ;
 def branch_zero = thunk { become branch(0) } ;
 
+/// The continuing arm, through the operation and the `pure` clause.
 @[ runs("102") ]
 def branch_one : +U (-F Integer) ;
 def branch_one = thunk { become branch(1) } ;
 
+/// A loop's `break` gives the loop's value to the body, which continues.
 @[ runs("105") ]
 def looped() -> -F Integer {
   handle c : Proc {
@@ -86,6 +104,7 @@ def looped() -> -F Integer {
   }
 }
 
+/// A `return` inside a loop leaves the loop and the handler.
 @[ runs("2") ]
 def looped_out() -> -F Integer {
   handle c : Proc {
@@ -98,6 +117,7 @@ def looped_out() -> -F Integer {
   }
 }
 
+/// An operation clause that returns answers for the handler.
 @[ runs("9") ]
 def answered() -> -F Integer {
   handle c : Proc {

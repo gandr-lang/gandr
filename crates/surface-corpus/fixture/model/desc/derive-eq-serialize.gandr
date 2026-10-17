@@ -1,3 +1,8 @@
+// An enumeration read as a description (Chapman, Dagand, McBride and Morris,
+// _The Gentle Art of Levitation_, doi:10.1145/1863543.1863547): two nullary
+// constructors and no operation, the smallest description the route reads.
+
+/// One bit: off or on.
 @[ checks ]
 data Bit : Type {
   Off : Bit;

@@ -1,3 +1,8 @@
+// A `deprecated` attribute beside `doc` (after Rust's `#[deprecated]`, _The
+// Rust Reference_, § Diagnostic attributes): the language registers no
+// `deprecated` schema, so the block is refused by the unknown attribute.
+
+// Squaring, documented by its attribute and marked deprecated.
 @[ refuses("UnknownAttribute") ]
 @[doc("Squares its argument.")]
 @[deprecated(#{ since = "0.2", note = "use square_checked" })]

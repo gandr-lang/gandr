@@ -1,3 +1,8 @@
+// A presented type with an eliminating operation whose rule cancels its one
+// constructor (Baader and Nipkow, _Term Rewriting and All That_, Cambridge
+// University Press, 1998, § 4.1): unwrapping a wrapped term gives the term.
+
+/// A wrapper and its unwrapping, the rule cancelling the two.
 @[ checks ]
 data Wrap : Type {
   MkWrap : (n : Wrap) --> Wrap;
