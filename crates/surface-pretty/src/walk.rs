@@ -2884,7 +2884,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a redex of one and of two arguments, each argument
     ///   occurring in the reduct, observe the order the binders open in.
-    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct`
+    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct_401`
     #[spec(
         captures: [opened = self.opened.len()],
         ensures: |ref ret| ret.is_err() || self.opened.len() == opened.saturating_add(arity.0),
@@ -3012,7 +3012,7 @@ impl Walk<'_, '_>
     ///   dependent arrow; a source that becomes a cycle of thunks over
     ///   returners after its scan stays within the walk's reads.
     /// - witness: `goldens::tests::the_sugared_form_writes_every_sugar_its_shape_admits`
-    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct`
+    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct_401`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
     #[spec(
         captures: [entry = self.remaining],
@@ -3523,7 +3523,7 @@ impl Walk<'_, '_>
     /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-    /// - witness: `goldens::tests::a_scoped_capability_names_its_scope`
+    /// - witness: `goldens::tests::a_scoped_capability_names_its_scope_400`
     /// - witness: `goldens::tests::a_returner_lists_each_interface_of_its_row_between_commas`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
@@ -4164,7 +4164,7 @@ impl Walk<'_, '_>
     ///   observe the reduct and the arguments left. Longer stable spines and
     ///   arbitrary changing sources are not enumerated.
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
-    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct`
+    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct_401`
     /// - witness: `walk::tests::spine_schedules_operator_first_at_the_depth_limit`
     #[spec(
         captures: [entry = tasks.len()],
@@ -4277,7 +4277,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a thunk over an arrow into a static redex of a
     ///   returner spells as the alias over the reduct's result.
-    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct`
+    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct_401`
     #[spec(captures: [entry = tasks.len()], ensures: tasks.len() > entry)]
     fn returned<S>(
         source: &S,
@@ -5309,7 +5309,7 @@ impl Walk<'_, '_>
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-    /// - witness: `goldens::tests::a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow`
+    /// - witness: `goldens::tests::a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow_398`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk

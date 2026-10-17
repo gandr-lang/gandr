@@ -717,7 +717,7 @@ mod diagnostics
     /// source wrote, never `?`, and the declared type a frame names by the
     /// parameters the declaration writes, never fresh letters (#418).
     #[test]
-    fn a_refusal_spells_its_binders_by_name()
+    fn a_refusal_spells_its_binders_by_name_418()
     {
         let text = SourceText::from(
             "data Sig : Type {\n  Monoid : Sig;\n  Group : Sig;\n}\ndef counted_at(s : Sig) -> \

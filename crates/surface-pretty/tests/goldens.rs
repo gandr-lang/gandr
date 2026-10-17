@@ -1495,7 +1495,7 @@ mod tests
     /// does not name `x`, so it is written as that arrow; one whose codomain
     /// names its binder keeps it.
     #[test]
-    fn a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow()
+    fn a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow_398()
     {
         let names = [Name::from("a")];
         let mut core = CoreArena::new();
@@ -1712,7 +1712,7 @@ mod tests
     /// into a decoded redex of a returner takes the value-function alias over
     /// the reduct's result, as the same type written plainly does.
     #[test]
-    fn a_static_redex_prints_as_its_reduct()
+    fn a_static_redex_prints_as_its_reduct_401()
     {
         let names = [Name::from("t")];
         let mut core = CoreArena::new();
@@ -2587,7 +2587,7 @@ mod tests
         clippy::literal_string_with_formatting_args,
         reason = "a capability's authority is spelled `Cap {op}`, which reads as a format argument"
     )]
-    fn a_scoped_capability_names_its_scope()
+    fn a_scoped_capability_names_its_scope_400()
     {
         use gandr_core_term::effect::EffectName;
         use gandr_core_term::effect::EffectOp;

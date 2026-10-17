@@ -242,7 +242,7 @@ impl Spellings
     ///   parameters before it.
     /// - witness: `diagnostics::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
     /// - witness: `diagnostics::diagnostics::a_sealed_type_is_spelled_by_its_path`
-    /// - witness: `diagnostics::diagnostics::a_refusal_spells_its_binders_by_name`
+    /// - witness: `diagnostics::diagnostics::a_refusal_spells_its_binders_by_name_418`
     #[spec(ensures: |ret| ret.0.iter().all(|(node, presentation)| !presentation.as_ref().contains('\n')
         && (report.declarations().iter().any(|declaration|
             matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Checking(refusal))

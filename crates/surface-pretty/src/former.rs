@@ -1119,7 +1119,7 @@ pub trait Source
     /// - hypothesis: L3 — a capability in the region of a named scope spells
     ///   `at` that scope's name, and one past the named scopes spells without
     ///   it, approximately.
-    /// - witness: `goldens::tests::a_scoped_capability_names_its_scope`
+    /// - witness: `goldens::tests::a_scoped_capability_names_its_scope_400`
     #[inline]
     fn regions(&self) -> &[Option<Name<'_>>]
     {
