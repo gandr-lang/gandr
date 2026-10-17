@@ -143,6 +143,7 @@ pub use crate::compose::Judged;
 pub use crate::compose::Lowered;
 pub use crate::compose::Lowering;
 pub use crate::compose::LoweringCount;
+pub use crate::compose::SpellingCount;
 pub use crate::compose::adapt;
 pub use crate::compose::admitted;
 pub use crate::compose::compose;

@@ -56,6 +56,7 @@ use gandr_surface_lowering::DeclarationCount;
 
 use crate::compose::Composed;
 use crate::compose::LoweringCount;
+use crate::compose::SpellingCount;
 use crate::exercised::Exercised;
 use crate::root::SourceRoot;
 use crate::walk::Standing;
@@ -570,6 +571,8 @@ pub struct RunReport
     exercised: Exercised,
     /// The lowerings performed.
     lowerings: LoweringCount,
+    /// The spelling passes made: one per component settled.
+    spellings: SpellingCount,
     /// The declarations unsettled by their obligations alone.
     goals: DeclarationCount,
 }
@@ -619,6 +622,18 @@ impl RunReport
     pub const fn lowerings(&self) -> LoweringCount
     {
         self.lowerings
+    }
+
+    /// The spelling passes the run made: one per component the lowering read
+    /// and the checker settled, however many sources share it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn spellings(&self) -> SpellingCount
+    {
+        self.spellings
     }
 
     /// The declarations unsettled by their obligations alone.
@@ -728,6 +743,15 @@ impl RunReport
     pub(crate) const fn lowerings_mut(&mut self) -> &mut LoweringCount
     {
         &mut self.lowerings
+    }
+
+    /// The spelling passes, for a component's judgement to count into.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn spellings_mut(&mut self) -> &mut SpellingCount
+    {
+        &mut self.spellings
     }
 
     /// Count one source read under `root`, what it became and how it stands;

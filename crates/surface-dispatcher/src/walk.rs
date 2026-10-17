@@ -681,6 +681,7 @@ impl Walk
                                     (lowering, text),
                                     grant,
                                     &component.members,
+                                    self.report.spellings_mut(),
                                 ),
                                 Err(fault) => component
                                     .members

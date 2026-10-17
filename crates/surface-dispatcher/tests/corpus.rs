@@ -246,6 +246,42 @@ mod corpus
         }
     }
 
+    /// #595: the identity subject is spelled once per component — its base
+    /// and every source importing it once between them — not once per source
+    /// the component is projected onto.
+    #[test]
+    fn the_identity_base_is_spelled_once_for_its_importers_595()
+    {
+        let subject = root(Path::new("fixture/model/identity"));
+        let mut components = BTreeSet::new();
+        let ControlFlow::Continue(report) =
+            Walk::new(vec![subject]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    composed:
+                        Composed::Settled {
+                            kernel: Maybe::Present(ref kernel),
+                            ..
+                        },
+                    ..
+                } = step
+                else {
+                    panic!("each identity source is judged and admitted: {step:?}");
+                };
+                // A component's sources share its one certificate.
+                let _new = components.insert(kernel.as_ref().to_vec());
+                ControlFlow::Continue(())
+            });
+        assert!(
+            components.len() < usize::from(report.sources().read()),
+            "the subject holds a component of more than one source"
+        );
+        assert_eq!(
+            usize::from(report.spellings()),
+            components.len(),
+            "one spelling pass per component"
+        );
+    }
+
     /// Every non-directory `.gandr` entry under `corpus`, with directory
     /// links followed and each canonical directory listed once.
     ///
