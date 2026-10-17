@@ -104,9 +104,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a statement at degree one and bound four lowers to
     ///   that stratum; a resident that is a type and a single resident are
-    ///   refused by their own boundaries.
+    ///   refused by their own boundaries; a later member named `ua` is a
+    ///   forward reference at the name.
     /// - witness: `lower::ua::tests::a_statement_lowers_to_univalence_at_its_stratum`
     /// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
+    /// - witness: `lower::ua::tests::a_later_member_named_ua_is_a_forward_reference`
     #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.tree.node(head.node).is_some())]
     pub(super) fn ua_head(
         &mut self,
@@ -160,7 +162,17 @@ impl<'source> Lowerer<'_, 'source>
         if !is_name || name.as_ref() != UA {
             return unspelled;
         }
-        let at_name = Site { at: named, ..site };
+        // The name inside the instantiation is owned by no declaration until
+        // the call around it is read, so it resolves at the call's node, at
+        // its own bytes: a later member named `ua` is then a forward
+        // reference, as for the identity heads (#633).
+        let at_name = Site {
+            at: Placed {
+                node: site.at.node,
+                span: named.span,
+            },
+            ..site
+        };
         if let Maybe::Present(_shadowed) = self.resolve_name(at_name, site.reading.frame(), name)? {
             return unspelled;
         }

@@ -203,6 +203,31 @@ fn a_statement_the_syntax_cannot_read_is_refused()
     ));
 }
 
+/// #633: a module member named `ua`, declared after a statement that writes
+/// `ua[n, k]`, is a forward reference at the name, as a later `here` is.
+#[test]
+fn a_later_member_named_ua_is_a_forward_reference()
+{
+    let source = "sign S { sort M : Type; }\nmodule M { def o = ua[1, 4](S, S, #{}, #{}); def ua = 1; \
+                  }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let refused = outcome_of(&module, "o".into());
+    let DeclarationOutcome::Refused(LoweringRefusal::ForwardMemberReference { span, name, .. }) =
+        refused
+    else {
+        panic!("the statement names the later member: {refused:?}");
+    };
+    assert_eq!(
+        (
+            source.get(usize::from(span.start()) .. usize::from(span.end())),
+            name.as_ref()
+        ),
+        (Some("ua"), "ua"),
+        "the refusal stands at the name the statement writes"
+    );
+}
+
 #[test]
 fn a_description_outside_the_stratum_is_refused_at_its_name()
 {
