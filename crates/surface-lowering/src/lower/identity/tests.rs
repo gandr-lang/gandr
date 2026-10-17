@@ -1584,3 +1584,28 @@ fn a_pattern_at_a_relation_splits_its_record()
         "the right inverse runs from `Integer` to `Bool`: {report:?}"
     );
 }
+
+/// Each component a pattern at a relation writes a variable for is named by
+/// it, though the arm uses only one: the record's later fields mention the
+/// earlier ones, so a type read inside the arm names them (#665).
+#[test]
+fn a_relation_split_names_each_written_component_665()
+{
+    let source = "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { case i { #{t, k, s, r} => k } }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let mut named: Vec<&str> = module
+        .origins()
+        .components()
+        .iter()
+        .filter_map(|&(_, origin)| {
+            source.get(usize::from(origin.span().start()) .. usize::from(origin.span().end()))
+        })
+        .collect();
+    named.sort_unstable();
+    assert_eq!(
+        named,
+        ["k", "r", "s", "t"],
+        "every written component is named, the unused `t`, `s` and `r` with `k`"
+    );
+}

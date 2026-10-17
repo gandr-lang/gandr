@@ -416,6 +416,38 @@ impl From<OriginCount> for usize
     }
 }
 
+/// One component of a split, counted from the outermost: the place a
+/// pattern's part binds among the binders the split opens.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SplitComponent(usize);
+
+impl From<usize> for SplitComponent
+{
+    /// The component `component` places from the outermost.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(component: usize) -> Self
+    {
+        Self(component)
+    }
+}
+
+impl From<SplitComponent> for usize
+{
+    /// How many places from the outermost `component` stands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(component: SplitComponent) -> Self
+    {
+        component.0
+    }
+}
+
 /// Every minted core node's origin, by family, and the declaration origins.
 ///
 /// Each family is a vector of id-and-origin pairs held in mint order. Core ids
@@ -469,6 +501,10 @@ pub struct OriginTable
     /// The name each lambda or bind binds, by the computation that opens the
     /// binder, ascending by id: the syntax the binder's name was written at.
     binders: Vec<(ComputationId, Origin)>,
+    /// The name each component of a split binds, by the split and the
+    /// component, ascending: the pattern variable written for it. A split
+    /// opens several binders, so the opener alone does not name one.
+    components: Vec<((ComputationId, SplitComponent), Origin)>,
     /// The name each dependent arrow binds, by the arrow, ascending by id:
     /// the syntax its binder's name was written at, a parameter's or a
     /// telescope entry's. The core carries no name; the printer reads it
@@ -1081,6 +1117,18 @@ impl OriginTable
         &self.binders
     }
 
+    /// Every split component with the origin of the pattern variable it
+    /// binds, ascending by split and component.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn components(&self) -> &[((ComputationId, SplitComponent), Origin)]
+    {
+        &self.components
+    }
+
     /// Every value's origin, in mint order.
     ///
     /// # Specification
@@ -1322,6 +1370,50 @@ impl OriginTable
             .binary_search_by_key(&opener, |&(held, _)| held)
         {
             self.binders.insert(at, (opener, name));
+        }
+    }
+
+    /// Record the name component `component` of the split `split` binds,
+    /// written at `name` as a pattern variable, where it falls among the
+    /// components already recorded.
+    ///
+    /// A match's splits are named after the whole match is minted, as its
+    /// field lambdas are, so they arrive out of mint order and are placed.
+    ///
+    /// # Specification
+    /// - requires: nothing — a component already recorded keeps its name.
+    /// - ensures: the list holds the component, at `name` unless it held it
+    ///   before.
+    /// - intension: the pair is inserted where the binary search over the
+    ///   ascending list places it, so the list stays strictly ascending.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a relation's record split in one arm names each
+    ///   component it writes a variable for, used or not.
+    /// - witness: `lower::identity::tests::a_relation_split_names_each_written_component_665`
+    #[spec(
+        captures: [before = find(&self.components, (split, component))],
+        ensures: find(&self.components, (split, component)) == match before {
+                Maybe::Present(held) => Maybe::Present(held),
+                Maybe::Absent(_) => Maybe::Present(name),
+            },
+    )]
+    #[inline]
+    pub fn place_component(
+        &mut self,
+        split: ComputationId,
+        component: SplitComponent,
+        name: Origin,
+    )
+    {
+        let key = (split, component);
+        if let Err(at) = self
+            .components
+            .binary_search_by_key(&key, |&(held, _)| held)
+        {
+            self.components.insert(at, (key, name));
         }
     }
 

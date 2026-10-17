@@ -365,6 +365,7 @@ use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::origin::PatternReading;
 use crate::origin::PatternSpan;
+use crate::origin::SplitComponent;
 use crate::origin::scrutinised;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
@@ -5907,9 +5908,9 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::Computation(root))
     }
 
-    /// Records, for each field binder a data switch of `form`'s tree opens,
-    /// the arm variable every arm reached through it binds there, when they
-    /// agree on its name.
+    /// Records, for each field binder a data switch of `form`'s tree opens
+    /// and each component binder a split opens, the arm variable every arm
+    /// reached through it binds there, when they agree on its name.
     ///
     /// # Specification
     /// - requires: `minted` holds the tree's nodes as [`mint_test`] minted
@@ -5918,9 +5919,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   `f` under `d` tree binders is recorded as written at the arm variable
     ///   that the leaves under that branch settle at level `d + f + 1`, when at
     ///   least one leaf settles a variable there and every one that does writes
-    ///   the same name; any other binder keeps no name.
+    ///   the same name; each component `c` of a minted split under `d` tree
+    ///   binders likewise, at the variable the leaves under the split settle at
+    ///   level `d + c + 1`; any other binder keeps no name.
     /// - provides: the source's name for a pattern variable, which a type
-    ///   printed inside an arm reads its field binder by.
+    ///   printed inside an arm reads its field binder by, whether or not the
+    ///   arm uses it.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the origins it records live in the sink's table,
@@ -5928,8 +5932,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a field a single arm names, and one two arms name
-    ///   alike, each answer under the written name.
+    ///   alike, each answer under the written name; a relation's record split
+    ///   names a component its arm never uses.
     /// - witness: `lower::native::tests::a_pattern_variable_names_its_field_binder`
+    /// - witness: `lower::identity::tests::a_relation_split_names_each_written_component_665`
     fn name_fields(
         &self,
         form: &CaseForm,
@@ -5938,16 +5944,41 @@ impl<'source> Lowerer<'_, 'source>
     )
     {
         for (test, &held) in form.tests.iter().zip(minted) {
-            let (
-                &Test::Data {
+            let Maybe::Present(switch) = held
+            else {
+                continue;
+            };
+            let (depth, branches) = match *test {
+                Test::Data {
                     depth,
                     ref branches,
                     ..
+                } => (depth, branches),
+                Test::Split {
+                    depth,
+                    arity,
+                    child,
+                    ..
+                } => {
+                    for component in 0 .. arity {
+                        let level = TreeLevel(depth.0.saturating_add(component).saturating_add(1));
+                        if let Some(origin) = self.field_name(form, child, level) {
+                            sink.origins.place_component(
+                                switch,
+                                SplitComponent::from(component),
+                                origin,
+                            );
+                        }
+                    }
+                    continue;
                 },
-                Maybe::Present(switch),
-            ) = (test, held)
-            else {
-                continue;
+                Test::Pending
+                | Test::Stuck(_)
+                | Test::Leaf { .. }
+                | Test::Boolean { .. }
+                | Test::Integer { .. }
+                | Test::Record { .. }
+                | Test::Sum { .. } => continue,
             };
             let Some(&gandr_core_term::Computation::DataCase {
                 branches: ref lowered,
