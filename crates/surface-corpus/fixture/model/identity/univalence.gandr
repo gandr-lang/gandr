@@ -28,10 +28,23 @@ def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> -F a {
   transport(\X. X, back(p), y)
 }
 
+/// The transport back written out in a record's field converts, under the
+/// field's binder, with the same transport in the law's type (#650).
+@[ checks ]
+def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> -F #{
+  g : +U (b -> -F a),
+  law : (z : b) => Path(a, g(z), transport(\X. X, back(p), z))
+} {
+  return #{
+    thunk { fn (z) { transport(\X. X, back(p), z) } },
+    thunk { fn (z) { return here(transport(\X. X, back(p), z)) } }
+  }
+}
+
 /// Back after forward is the identity, by `J` on the path: at reflexivity
 /// both transports compute away. The round trips are stated over the named
-/// maps rather than the transports written out, which a field of the record
-/// does not yet convert under its binder (#650).
+/// maps rather than the transports written out, with which `univalence`'s
+/// laws do not yet replay (#695).
 @[ checks ]
 def sectAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> -F Path(
   a,

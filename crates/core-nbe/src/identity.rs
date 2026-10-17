@@ -455,7 +455,8 @@ pub enum Motives
     /// pairwise, intuitionistic zone first.
     Alike(Vec<(DomainValueId, DomainValueId)>),
     /// Different motive types, or captures of different shapes: a binder must
-    /// be opened to tell.
+    /// be opened to tell, or the two read through their captures, as the
+    /// structural walk then does.
     Unlike,
 }
 

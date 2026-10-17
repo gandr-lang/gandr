@@ -216,7 +216,7 @@ enum Rigidity
 
 /// Whether two walks found their sides alike.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum Alike
+pub enum Alike
 {
     /// Every pair matched.
     Same,
@@ -2567,6 +2567,56 @@ pub fn compare_codes(
         (Rigidity::Rigid, Rigidity::Rigid) => Ok(CodeComparison::Apart),
         (Rigidity::Rigid | Rigidity::Flexible, _) => Ok(CodeComparison::Undecided),
     }
+}
+
+/// Whether two one-binder transport motives are α-equal read through their
+/// environments: the motives' own binders crossed alike, every other variable
+/// resolved where its closure captured it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Alike::Same`] exactly when both closures hold a value type and
+///   the lockstep walk, past one binder crossed alike on both sides, finds the
+///   two α-equal; [`Alike::Different`] for any other pair.
+/// - provides: the congruence two stuck transports settle by when their motives
+///   were written apart — a call that lowers its family at each use, or two
+///   captures of different depths — which comparing the closures' bodies and
+///   environments by place leaves open.
+/// - fails: [`ConversionFault::Domain`] for a closure or a held value that does
+///   not resolve, and [`ConversionFault::MachineInvariant`] for a core node
+///   that does not.
+/// - panics: none.
+/// - executable: none — the answer is the walk's, which a predicate would run
+///   again.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two motives over different bodies and environment depths
+///   that read one family are alike, and one body over environments binding
+///   different variables is not; comparing the bodies by id, or reading the
+///   motive's own binder through the environment, changes the answer.
+/// - witness: `code::tests::motives_written_apart_are_alike_read_through_their_environments_650`
+pub fn motives_alike(
+    core: &CoreArena,
+    domain: &DomainArena,
+    left: ValueClosureId,
+    right: ValueClosureId,
+) -> Result<Alike, ConversionFault>
+{
+    let (Some(one), Some(other)) = (domain.value_closure(left), domain.value_closure(right))
+    else {
+        return Err(ConversionFault::Domain(DomainFault::Dangling));
+    };
+    let (crate::ValueBody::ValueType(left_body), crate::ValueBody::ValueType(right_body)) =
+        (one.body(), other.body())
+    else {
+        return Ok(Alike::Different);
+    };
+    let mut walk = Walk::new(core, domain, ConstantReading::Unread);
+    let (here, there) = walk.crossed(Walk::opened(left), Walk::opened(right));
+    walk.equal_atoms(Atom::Quote(left_body, here), Atom::Quote(right_body, there))
 }
 
 #[cfg(test)]

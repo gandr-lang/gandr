@@ -1584,8 +1584,19 @@ impl<'run> Walk<'run>
                         );
                         queued.push(Goal::Values(left_value, right_value, beneath));
                     },
+                    // Motives written apart, or over captures of different
+                    // depths, are one family when they read alike (#650).
                     crate::identity::Motives::Unlike => {
-                        return Ok(Local::Defer(Deferral::Binder));
+                        if crate::code::motives_alike(
+                            self.core,
+                            self.domain,
+                            left_motive,
+                            right_motive,
+                        )? == crate::code::Alike::Different
+                        {
+                            return Ok(Local::Defer(Deferral::Binder));
+                        }
+                        queued.push(Goal::Values(left_value, right_value, beneath));
                     },
                 },
                 (
