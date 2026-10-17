@@ -18,8 +18,9 @@
 //!   descend is refused by the stage order like any other call.
 //! - **A constructor stands above its fields.** [`constructor_fields`] checks a
 //!   constructor wanted at a stage with its recursive fields one step lower; a
-//!   constructor with none needs a value in scope at a stage of a data type
-//!   within the wanted one ([`room`]).
+//!   constructor with no field whose own type is its family needs a value in
+//!   scope at a stage of a data type within the wanted one ([`room`]), since a
+//!   thunked field may hold a computation that never returns (#598).
 //! - **Subsumption is the order**, decided where a synthesized type meets a
 //!   wanted one: [`unstage`] at the top, and [`subsumes`] through the thunked
 //!   arrows a function field's stage stands under, covariantly in results and
@@ -607,11 +608,13 @@ pub(super) fn stage_branch(
 ///   constructor of a data type among `families` — its [`kin`], or itself alone
 ///   — each a value check.
 /// - ensures: each goal with its field naming one of `families` one step below
-///   `wanted`; with no such field, the goals unchanged once [`room`] witnesses
-///   a value in scope at a stage of a data type within `wanted`.
+///   `wanted`; with no field whose own type is one of `families`, the goals so
+///   staged once [`room`] witnesses a value in scope at a stage of a data type
+///   within `wanted`.
 /// - fails: [`KernelError::StageNotBelow`] from the top for a constructor with
 ///   no such field and no such value: the first stage of a data type is empty,
-///   so nothing shows `wanted` holds one.
+///   so nothing shows `wanted` holds one. A thunked recursive field shows
+///   nothing: it may hold a computation that never returns (#598).
 /// - panics: none.
 ///
 /// # Errors
@@ -621,9 +624,12 @@ pub(super) fn stage_branch(
 /// - hypothesis: L3 — a nullary argument under a successor arm's field is
 ///   admitted, and the same argument under the zero arm, where the case has
 ///   minted its stage but bound nothing at it, is refused; a rose tree's node
-///   rebuilt below the stage wants its list of children below it.
+///   rebuilt below the stage wants its list of children below it; a constructor
+///   whose one recursive field is thunked is refused with nothing below the
+///   stage.
 /// - witness: `recursive_data::recursive_data::a_nullary_argument_needs_a_value_below_the_stage`
 /// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
+/// - witness: `recursive_data::recursive_data::a_thunked_field_shows_no_value_below_the_stage_598`
 #[spec(ensures: |ret| match ret {
     Ok(()) => true,
     Err(ref error) => matches!(*error, KernelError::StageNotBelow { found: Standing::Top, bound } if bound == wanted) || *error == KernelError::ArenaFault,
@@ -636,7 +642,7 @@ pub(super) fn constructor_fields(
     goals: &mut [Goal],
 ) -> Result<(), KernelError>
 {
-    let mut changed = Changed::Kept;
+    let mut holding = Holding::Nothing;
     for goal in goals.iter_mut() {
         let Goal::CheckValue(field, field_type) = *goal
         else {
@@ -647,17 +653,29 @@ pub(super) fn constructor_fields(
             staged = stage_field(arena, session, staged, family, below(wanted))?;
         }
         if staged != field_type {
-            changed = Changed::Refined;
             *goal = Goal::CheckValue(field, staged);
         }
+        if matches!(arena.value_type(staged), Some(ValueType::Staged { .. })) {
+            holding = Holding::Field;
+        }
     }
-    match (changed, room(arena, stages, context, wanted)) {
-        (Changed::Refined, _) | (Changed::Kept, Room::Witnessed) => Ok(()),
-        (Changed::Kept, Room::Unwitnessed) => Err(KernelError::StageNotBelow {
+    match (holding, room(arena, stages, context, wanted)) {
+        (Holding::Field, _) | (Holding::Nothing, Room::Witnessed) => Ok(()),
+        (Holding::Nothing, Room::Unwitnessed) => Err(KernelError::StageNotBelow {
             found: Standing::Top,
             bound: wanted,
         }),
     }
+}
+
+/// Whether a constructor's fields hold a value below its stage.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Holding
+{
+    /// A field whose own type is a family of the block does.
+    Field,
+    /// None does.
+    Nothing,
 }
 
 /// Whether a value in scope shows a stage is not the empty first one.
@@ -675,8 +693,8 @@ enum Room
 ///
 /// A data type's first stage is empty, so a hypothesis at a stage of a data
 /// type is a value there and its stage is above the first; a constructor with
-/// no recursive field stands at every stage above the first. A stage only a
-/// case minted shows nothing: an arm binding no recursive field holds no
+/// no field of its family stands at every stage above the first. A stage only
+/// a case minted shows nothing: an arm binding no recursive field holds no
 /// value at the case's stage, which may be the first.
 ///
 /// # Specification

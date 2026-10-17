@@ -185,7 +185,10 @@ impl Machine<'_, '_>
 
     /// Check a nominal constructor at a stage: its recursive fields — those
     /// naming its family or, in a mutual block, any of the block's families —
-    /// one step below the stage, its other fields at their declared types.
+    /// one step below the stage, its other fields at their declared types. A
+    /// field whose own type is such a family holds a value below the stage;
+    /// a thunked one may hold a computation that never returns and shows
+    /// nothing (#598).
     ///
     /// # Specification
     /// - requires: `term` is a constructor and `owed` what the stage it is
@@ -196,9 +199,9 @@ impl Machine<'_, '_>
     ///   declared type; the constructor checks once they have.
     /// - fails: [`CheckRefusal::TypeMismatch`] for an annotation that does not
     ///   convert with the type the stage refines;
-    ///   [`CheckRefusal::StageNotBelow`] for a constructor with no recursive
-    ///   field where no hypothesis shows the wanted stage above the first
-    ///   ([`crate::recursion::room`]); otherwise as
+    ///   [`CheckRefusal::StageNotBelow`] for a constructor with no field whose
+    ///   own type is a family of its block where no hypothesis shows the wanted
+    ///   stage above the first ([`crate::recursion::room`]); otherwise as
     ///   [`Self::native_constructor`].
     /// - panics: none.
     ///
@@ -207,11 +210,14 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a successor rebuilt two cases deep is admitted at the
-    ///   bound, one rebuilt one case deep is refused, and a zero is admitted
-    ///   under a successor's field and refused under the zero arm.
+    ///   bound, one rebuilt one case deep is refused, a zero is admitted under
+    ///   a successor's field and refused under the zero arm, and a constructor
+    ///   whose one recursive field is thunked is refused with nothing below the
+    ///   stage.
     /// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
     /// - witness: `recursion::tests::a_nullary_argument_needs_a_value_below_the_stage`
     /// - witness: `recursion::tests::a_constructor_of_plain_fields_needs_a_value_below_the_stage`
+    /// - witness: `recursion::tests::a_thunked_field_shows_no_value_below_the_stage_598`
     /// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
     pub(super) fn staged_constructor(
@@ -252,7 +258,7 @@ impl Machine<'_, '_>
         self.wait(Frame::NativeYield(Produced::Checked));
         let kin = crate::recursion::kin(self.context, datatype);
         let families = crate::recursion::families(&kin, &datatype);
-        let mut recursive = 0_usize;
+        let mut holding = 0_usize;
         for (index, &field_type) in declared.iter().enumerate().rev() {
             let declared_type = former::field_at(
                 self.context,
@@ -264,10 +270,13 @@ impl Machine<'_, '_>
             for &family in families {
                 wanted = crate::recursion::stage_field(self.context, wanted, family, owed.fields)?;
             }
-            if wanted != declared_type {
-                // A recursive field stands one step below: the constructor is
-                // above it whatever stage the field is at.
-                recursive = recursive.saturating_add(1);
+            if matches!(
+                self.context.arena().value_type(wanted),
+                Some(&ValueType::Staged { .. })
+            ) {
+                // A field of the block's family stands one step below: the
+                // constructor is above it whatever stage the field is at.
+                holding = holding.saturating_add(1);
             }
             let &Value::Constructor { ref fields, .. } = self.value(term)?
             else {
@@ -282,7 +291,7 @@ impl Machine<'_, '_>
                 direction: Direction::Check(wanted),
             }));
         }
-        if recursive == 0
+        if holding == 0
             && crate::recursion::room(self.context, owed.wanted)?
                 == crate::recursion::Room::Unwitnessed
         {

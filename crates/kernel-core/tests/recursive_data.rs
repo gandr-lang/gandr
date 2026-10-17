@@ -1141,6 +1141,82 @@ mod recursive_data
         );
     }
 
+    /// Admit `Empty` and `T = Mk (U (Empty → F T))`, then offer `fix rec. λt.
+    /// (force rec) (Mk (thunk (λx. fix y. force y)))` at `T → F T` claiming
+    /// `evidence`, the inner fixpoint partial.
+    ///
+    /// # Specification
+    /// trivial.
+    fn thunked_call(
+        environment: &mut Environment,
+        evidence: FixpointEvidence,
+    ) -> Result<CheckedId, KernelError>
+    {
+        let empty = ConstantIndex::from(environment.entries().len());
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let declaration = staging.data(LevelSignature::monomorphic(), vec![], vec![], kind);
+        let _empty = environment.add_decl(declaration)?;
+        let position = ConstantIndex::from(environment.entries().len());
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let empty_type = arena.value_type_data(empty, vec![]);
+        let own = arena.value_type_data(position, vec![]);
+        let into = arena.comp_type_returner(own);
+        let branch = arena.comp_type_arrow(empty_type, into);
+        let field = arena.value_type_thunk(branch);
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let declaration = staging.data(
+            LevelSignature::monomorphic(),
+            vec![],
+            vec![vec![field]],
+            kind,
+        );
+        let _family = environment.add_decl(declaration)?;
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let own = arena.value_type_data(position, vec![]);
+        let into = arena.comp_type_returner(own);
+        let arrow = arena.comp_type_arrow(own, into);
+        // Under λx, fix y: `y` 0.
+        let y = arena.value_variable(DeBruijnIndex::from(0));
+        let forced = arena.computation_force(y);
+        let diverging = arena.computation_fixpoint(forced, FixpointEvidence::Partial);
+        let lambda = arena.computation_lambda(diverging);
+        let thunked = arena.value_thunk(lambda);
+        let built = arena.value_constructor(own, ConstructorTag::from(0), vec![thunked]);
+        // Under λt: `t` 0, `rec` 1.
+        let called = call(arena, DeBruijnIndex::from(1), built);
+        let body = arena.computation_lambda(called);
+        let fixpoint = arena.computation_fixpoint(body, evidence);
+        let declared = arena.value_type_thunk(arrow);
+        let value = arena.value_thunk(fixpoint);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+        environment.add_decl(declaration)
+    }
+
+    #[test]
+    fn a_thunked_field_shows_no_value_below_the_stage_598()
+    {
+        // #598: `Mk`'s one recursive field is thunked, and the thunk never
+        // returns, so `Mk (…)` holds no value below the stage and nothing in
+        // scope shows the stage is above the first: `rec (Mk …)` calls itself
+        // forever.
+        let mut environment = Environment::new();
+        let root = Stage::At(StageId::from(0_usize));
+        assert_eq!(
+            thunked_call(&mut environment, FixpointEvidence::StructuralDescent).map(|_admitted| ()),
+            Err(KernelError::StageNotBelow {
+                found: Standing::Top,
+                bound: below(root),
+            })
+        );
+        let mut environment = Environment::new();
+        thunked_call(&mut environment, FixpointEvidence::Partial)
+            .expect("a fixpoint without a claim checks as partial");
+    }
+
     #[test]
     fn a_self_reference_never_stands_for_an_unstaged_function()
     {
