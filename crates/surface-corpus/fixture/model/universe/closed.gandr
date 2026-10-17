@@ -3,6 +3,7 @@
 // over a neutral code, compared by its code; the decode of a code that runs
 // to a quote is the quoted type. The arrow code decodes to the function type
 // between its two decoded sides, so a function at a decoded arrow applies. A
+// type a body quotes reads each binder where the body binds it. A
 // constructor field may read the one before it, so a value packs with its
 // code.
 
@@ -28,6 +29,11 @@ def rec el(u : U) -> -F Type {
     Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (x => y) }
   }
 }
+
+/// The arrow from a type to itself, quoted in a body past two parameters no
+/// type names: the quote reads `a`, not `v` (#540).
+@[ checks ]
+def endo(a : Type, n : Nat, v : a) -> -F Type { return (a => a) }
 
 /// One, at the decode of the natural code, which runs to `Nat`.
 @[ checks ]

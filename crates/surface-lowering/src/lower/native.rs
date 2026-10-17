@@ -5270,6 +5270,46 @@ impl<'source> Lowerer<'_, 'source>
         result
     }
 
+    /// `ty`, a computation type read under `frame` in a type's telescope,
+    /// carried into the term context of the same frame.
+    ///
+    /// # Specification
+    /// - requires: `ty` is minted under `frame`, counting only the frames that
+    ///   bind in a telescope.
+    /// - ensures: as [`Self::relocate_value_type`], for a computation type.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a computation type quoted in a body past an
+    ///   unmentioned parameter reads its binders in the term's context.
+    /// - witness: `lower::tests::a_quote_in_a_body_reads_past_an_unmentioned_parameter`
+    #[spec(ensures: |ret| sink.arena.comp_type(ret).is_some() || ret == ty)]
+    pub(super) fn relocate_comp_type(
+        &self,
+        ty: CompTypeId,
+        frame: Frame,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> CompTypeId
+    {
+        if self.scope.telescope_binders(frame).all(|binds| binds) {
+            return ty;
+        }
+        let mark = sink.arena.watermark();
+        let mut copies = Vec::new();
+        let carried = self.relocate(sink.arena, ty, frame, Binders::default(), Some(&mut copies));
+        record_copied_since(
+            sink,
+            mark,
+            origin,
+            Maybe::Absent(rooted::Absent::Classifier),
+            &copies,
+        );
+
+        carried
+    }
+
     /// The computation type `answer` states, read under its own frame: the
     /// written computation type, or the returner over a written value type
     /// the position returns.
