@@ -1310,4 +1310,35 @@ mod tests
         );
         assert_eq!(excerpt(text, [].into_iter()), Maybe::Absent(()));
     }
+
+    /// #572: a located diagnostic whose primary mark is gone leads with no
+    /// annotation; the context mark left first is not offered as the primary.
+    #[test]
+    fn a_located_diagnostic_without_its_primary_mark_has_no_primary()
+    {
+        let at = |start: usize, end: usize| {
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("ordered span")
+        };
+        let mut diagnostic = diagnose(
+            Path::new("twice.gandr"),
+            SourceText::from("def a = 1 ;\ndef a = 2 ;\n"),
+            Subject::Source(LoweringRefusal::DuplicateDefinition {
+                span: at(12, 17),
+                first: at(0, 5),
+                name: "a".into(),
+            }),
+        );
+        assert_eq!(
+            diagnostic.primary().map(|primary| primary.locus.span),
+            Maybe::Present(at(12, 17)),
+            "a located diagnostic leads with its primary mark"
+        );
+        let removed = diagnostic.annotations.remove(0);
+        assert_eq!(removed.kind, AnnotationKind::Primary);
+        assert_eq!(
+            diagnostic.primary(),
+            Maybe::Absent(report_span::Absent::OutsideText),
+            "the context mark left first is not the primary annotation"
+        );
+    }
 }
