@@ -197,6 +197,7 @@ use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::origin::Origin;
 use crate::resolve::OperandCount;
+use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
@@ -900,7 +901,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `scrutinee` is a match's scrutinee.
     /// - ensures: the written type of the binder or the declaration a name
-    ///   resolves to; nothing for any other scrutinee or an untyped name.
+    ///   resolves to; for a `run` binder written with no type, the type its
+    ///   computation returns, as [`Self::ran_type`] reads it; nothing for any
+    ///   other scrutinee or an untyped name.
     /// - fails: the name's own resolution refusals.
     /// - panics: none.
     ///
@@ -912,8 +915,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a match over a typed parameter reads its sum's arity,
-    ///   and one over an untyped name refuses a sum pattern.
+    ///   one over an untyped name refuses a sum pattern, and one over a `run`
+    ///   binder splits the record its callee returns.
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
+    /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_its_call_returns_656`
     #[spec(ensures: |ret| ret.is_ok() || !matches!(ret, Err(LoweringRefusal::MalformedForm { .. })))]
     pub(super) fn scrutinee_type(
         &mut self,
@@ -932,11 +937,100 @@ impl<'source> Lowerer<'_, 'source>
 
         Ok(
             match self.resolve_name(named, frame, self.name_at(scrutinee))? {
-                Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+                Maybe::Present(Resolved::Binder(bound)) => match bound.declared {
+                    Maybe::Absent(binder_type::Absent::Untyped) => self.ran_type(bound.binder)?,
+                    declared
+                    @ (Maybe::Present(_) | Maybe::Absent(binder_type::Absent::Operand)) => declared,
+                },
                 Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
                 Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
             },
         )
+    }
+
+    /// The type the `run` binder `binder` holds, as the function its
+    /// computation calls wrote it: `A` of the function's result `-F A`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the node of `A` when `binder` is a `run` binder written with
+    ///   no type whose computation calls a name resolving, under the frame the
+    ///   computation reads in, to a function declared with as many parameters
+    ///   as the call passes and a written result `-F A`, read through
+    ///   parentheses; the untyped absence otherwise.
+    /// - provides: the record layout of a call's result to a match on it, so a
+    ///   pattern splits the record a quasi-inverse or an equivalence
+    ///   abbreviates as it does at a parameter written with one.
+    /// - fails: the callee's resolution refusals;
+    ///   [`LoweringRefusal::BudgetExceeded`] and
+    ///   [`LoweringRefusal::UnknownMold`] reading its forms.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match over a `run` binder of a call returning a
+    ///   quasi-inverse splits its four components positionally and by label.
+    /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_its_call_returns_656`
+    #[spec(ensures: |ret| ret.is_err()
+        || matches!(ret, Ok(Maybe::Absent(binder_type::Absent::Untyped)))
+        || self.ran.contains_key(&binder))]
+    fn ran_type(
+        &mut self,
+        binder: ScopeId,
+    ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
+    {
+        let untyped = Maybe::Absent(binder_type::Absent::Untyped);
+        let Some(&(frame, bound)) = self.ran.get(&binder)
+        else {
+            return Ok(untyped);
+        };
+        let Maybe::Present(call) = self.unwrapped(bound.node)?
+        else {
+            return Ok(untyped);
+        };
+        let (Former::Call, Some((&head, arguments))) = (call.former, call.operands.split_first())
+        else {
+            return Ok(untyped);
+        };
+        let Some(tree) = self.tree.node(head)
+        else {
+            return Ok(untyped);
+        };
+        let head = Placed::of(head, tree);
+        if !matches!(self.form_at(head)?, Some((_, Former::Name))) {
+            return Ok(untyped);
+        }
+        let named = Site {
+            at: head,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let Maybe::Present(Resolved::Declaration { constant, .. }) =
+            self.resolve_name(named, frame, self.name_at(head))?
+        else {
+            return Ok(untyped);
+        };
+        let Some(function) = self.function_of(constant)
+        else {
+            return Ok(untyped);
+        };
+        let parameters = function
+            .parameters
+            .end
+            .saturating_sub(function.parameters.start);
+        let (Maybe::Present(result), true) = (function.result, parameters == arguments.len())
+        else {
+            return Ok(untyped);
+        };
+        if let Maybe::Present(returner) = self.unwrapped(result)?
+            && returner.former == Former::ReturnerType
+            && let [returned] = *returner.operands.as_slice()
+        {
+            return Ok(Maybe::Present(returned));
+        }
+        Ok(untyped)
     }
 
     /// The zone braces at a type's root are read in over `entries`: the session

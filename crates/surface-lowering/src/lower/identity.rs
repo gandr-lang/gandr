@@ -1342,10 +1342,16 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `stated` is a type's syntax node, already classified.
     /// - ensures: through the transparent plans of parentheses,
     ///   [`Layout::Isomorphism`] for `A ≅ B` or `Iso(A, B)` and
-    ///   [`Layout::Equivalence`] for `A ≃ B`; the other-former absence for a
-    ///   flow and for every other type.
-    /// - fails: never.
+    ///   [`Layout::Equivalence`] for `A ≃ B`; at a node the mint sweep has
+    ///   already spent, as an earlier declaration's signature is, the same by
+    ///   the relation's glyph, read through parentheses; the other-former
+    ///   absence for a flow and for every other type.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] and
+    ///   [`LoweringRefusal::UnknownMold`] reading a spent node's forms.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
     ///
     /// # Termination
     /// Each step follows a transparent plan to the child it stands for,
@@ -1353,27 +1359,53 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a pattern at a parameter written with each relation
-    ///   splits its record, positionally and by label.
+    ///   splits its record, positionally and by label, and so does one at a
+    ///   `run` binder whose callee's result is written with one.
     /// - witness: `lower::identity::tests::a_pattern_at_a_relation_splits_its_record`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Layout::Isomorphism | Layout::Equivalence)))]
+    /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_its_call_returns_656`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Maybe::Absent(_) | Maybe::Present(Layout::Isomorphism | Layout::Equivalence))))]
     pub(super) fn stated_relation(
-        &self,
+        &mut self,
         stated: NodeIndex,
-    ) -> Maybe<Layout, related::Absent>
+    ) -> Result<Maybe<Layout, related::Absent>, LoweringRefusal<'source>>
     {
+        let otherwise = Maybe::Absent(related::Absent::Otherwise);
         let mut at = stated;
         loop {
             match self.plans.get(usize::from(at)) {
                 Some(&Plan::Transparent(inner)) => at = inner,
                 Some(&Plan::Relation(Relation::Isomorphism, ..)) => {
-                    return Maybe::Present(Layout::Isomorphism);
+                    return Ok(Maybe::Present(Layout::Isomorphism));
                 },
                 Some(&Plan::Relation(Relation::Equivalence, ..)) => {
-                    return Maybe::Present(Layout::Equivalence);
+                    return Ok(Maybe::Present(Layout::Equivalence));
                 },
-                _ => return Maybe::Absent(related::Absent::Otherwise),
+                Some(&Plan::Unplanned) => break,
+                _ => return Ok(otherwise),
             }
         }
+        let Maybe::Present(written) = self.unwrapped(at)?
+        else {
+            return Ok(otherwise);
+        };
+        if written.former != Former::RelationType {
+            return Ok(otherwise);
+        }
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, written.node, &mut scratch);
+        let layout = scratch.pieces.iter().find_map(|piece| match *piece {
+            Piece::Tile { label, .. } if label == TileName::ISOMORPHISM => {
+                Some(Layout::Isomorphism)
+            },
+            Piece::Tile { label, .. } if label == TileName::EQUIVALENCE => {
+                Some(Layout::Equivalence)
+            },
+            Piece::Tile { .. } | Piece::Operand(_) => None,
+        });
+        self.scratch = scratch;
+        read?;
+
+        Ok(layout.map_or(otherwise, Maybe::Present))
     }
 
     /// Mint the relation `relation` over its two lowered operands: the record
@@ -2183,7 +2215,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   declaration none.
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     #[spec(ensures: |ret| ret.is_none() || usize::from(constant) < self.collected.slots.len())]
-    fn function_of(
+    pub(super) fn function_of(
         &self,
         constant: ConstantIndex,
     ) -> Option<Function>
