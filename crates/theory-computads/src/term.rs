@@ -857,23 +857,30 @@ impl CellAlphabet for TermAlphabet
     ///
     /// # Specification
     /// - ensures: a most general unifier extending `subst` on success, with the
-    ///   occurs check; `subst` is extended only on success.
+    ///   occurs check, resolved so no image holds a bound metavariable: one
+    ///   pass of it is its fixpoint, which is what [`Self::apply_subst`]
+    ///   applies (#654). `subst` is extended only on success.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — compatible distinct holes and triangular images
     ///   equate both faces; a head clash and an occurs cycle preserve prior
-    ///   bindings. Eager commits and skipped occurs checks change the result.
+    ///   bindings. Eager commits, skipped occurs checks and an unresolved chain
+    ///   change the result.
     /// - witness: `term::tests::substitution_walks_are_transactional_and_bounded`
+    /// - witness: `term::tests::a_substitution_replaces_each_variable_once_all_at_once_654`
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body clones `subst` into its staging map and walks each goal through it"
+            reason = "parity: the body clones `subst` into its staging map, walks each goal through it and resolves each image once"
         )
     )]
-    #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) { subst.apply_fully(lhs) == subst.apply_fully(rhs) } else { *subst == before })]
+    #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) {
+        subst.apply_once(lhs) == subst.apply_once(rhs)
+            && subst.0.values().all(|image| image.vars().all(|var| !subst.0.contains_key(var)))
+    } else { *subst == before })]
     fn unify_cmd(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -915,7 +922,12 @@ impl CellAlphabet for TermAlphabet
             }
             found.0.insert(var, image);
         }
-        *subst = found;
+        let resolved = found
+            .0
+            .iter()
+            .map(|(var, image)| (var.clone(), found.apply_fully(image)))
+            .collect();
+        *subst = TermSubst(resolved);
         SubstitutionDecision::from(true)
     }
 
@@ -945,7 +957,11 @@ impl CellAlphabet for TermAlphabet
         anti_unify_terms(family)
     }
 
-    /// The term with the substitution applied to its fixpoint.
+    /// The term with every bound metavariable replaced by its image, once and
+    /// all at once: an image is never read again, so a variable of the term a
+    /// match was taken from stays that term's whatever the pattern named its
+    /// own (#654), and a unifier, resolved by [`Self::unify_cmd`], needs no
+    /// second pass.
     ///
     /// # Specification
     /// trivial.
@@ -955,7 +971,7 @@ impl CellAlphabet for TermAlphabet
         cmd: &Self::Cmd,
     ) -> Self::Cmd
     {
-        subst.apply_fully(cmd)
+        subst.apply_once(cmd)
     }
 
     /// The bindings of `vars` alone.
