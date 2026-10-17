@@ -87,8 +87,8 @@ impl From<Immediate> for usize
     }
 }
 
-/// A frame stub every function shares: the code an observation's frame
-/// resumes.
+/// A frame stub every function shares: the code a frame whose second word
+/// is a value, never a window, resumes.
 ///
 /// # Specification
 /// trivial.
@@ -100,6 +100,68 @@ pub enum Stub
     /// `stencil_invoke_force_value`: a force frame resumes with the thunk in
     /// hand, which is that stencil's input.
     Force,
+    /// `stencil_argument_frame`: a fold's cell frame resumes with the folded
+    /// tail in hand and the closure answering the cell in its second word.
+    Argument,
+    /// `stencil_pop`: a reset frame passes the answer in hand on to the frame
+    /// below, and a capture to the nearest reset finds it by this code.
+    Reset,
+    /// `stencil_answer_frame`: an aborted access's answer frame passes the
+    /// answer in its second word on, the unwind's unit discarded.
+    Answer,
+}
+
+impl Stub
+{
+    /// Every stub, in the order both tiers lay them out.
+    pub const ALL: [Self; 5] = [
+        Self::Apply,
+        Self::Force,
+        Self::Argument,
+        Self::Reset,
+        Self::Answer,
+    ];
+
+    /// The stencil the stub's shared copy runs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn stencil(self) -> StencilId
+    {
+        match self {
+            Self::Apply => StencilId::ApplyFrame,
+            Self::Force => StencilId::InvokeForceValue,
+            Self::Argument => StencilId::ArgumentFrame,
+            Self::Reset => StencilId::Pop,
+            Self::Answer => StencilId::AnswerFrame,
+        }
+    }
+
+    /// The stub's entry in `table`, which holds one entry per stub in
+    /// [`Self::ALL`]'s order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn of<Entry>(
+        self,
+        table: &[Entry; Self::ALL.len()],
+    ) -> Entry
+    where
+        Entry: Copy,
+    {
+        let [apply, force, argument, reset, answer] = *table;
+        match self {
+            Self::Apply => apply,
+            Self::Force => force,
+            Self::Argument => argument,
+            Self::Reset => reset,
+            Self::Answer => answer,
+        }
+    }
 }
 
 /// What an operand hole receives.

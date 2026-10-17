@@ -9,7 +9,10 @@
 //! | object | store value |
 //! | --- | --- |
 //! | an integer | a literal |
+//! | a literal object | the literal its run's literal table holds |
 //! | a tuple, an injection, a datatype's constructor | a constructed value of the same head, the family named |
+//! | a head object | a constructed value of the head its function's head table holds |
+//! | an opaque object | the opaque constant its family names |
 //! | a closure of a thunk | a thunk over the site's body, with a fresh memo cell |
 //! | a closure of a fixpoint | a fixpoint over the site's body, its evidence and a fresh memo cell |
 //! | a closure of a copattern object | a closure over the site's producer |
@@ -33,15 +36,13 @@ use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::StoreFault;
 use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Magnitude;
-use gandr_kernel_term::Sign;
 use gandr_kernel_term::Summand;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Kind;
 use gandr_runtime_stencils::Word;
 
+use crate::host::integer_literal;
 use crate::lower::Site;
 
 /// Why an answer could not be moved into the store.
@@ -61,6 +62,24 @@ pub enum TransferRefusal
     Producer,
     /// The graph holds a cycle, which no run builds.
     Cycle(Word),
+    /// A head or literal object names no entry of its table.
+    Entry(Word),
+    /// A stack or a cell, which only the host reads, reached the answer.
+    HostObject(Word),
+}
+
+/// The tables a run's objects name by their family: the function's heads
+/// and the run's literals.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+pub struct Tables<'run>
+{
+    /// The function's heads, by family.
+    pub heads: &'run [ConstructorTag],
+    /// The run's literals, by family.
+    pub literals: &'run [Literal],
 }
 
 impl From<StoreFault> for TransferRefusal
@@ -154,7 +173,8 @@ struct Field(usize);
 /// # Specification
 /// - requires: `value` is the value register of a run that halted, over a heap
 ///   and constants still live, of a function whose closure sites `sites`
-///   indexes and whose IL is `arena`.
+///   indexes, whose heads and run's literals `tables` holds and whose IL is
+///   `arena`.
 /// - ensures: the store holds one value per object reachable from `value`, each
 ///   object's value allocated after its children's; the answer's id is
 ///   returned.
@@ -178,6 +198,7 @@ struct Field(usize);
 pub unsafe fn transfer(
     value: Word,
     sites: &Sites<'_>,
+    tables: Tables<'_>,
     arena: &CommandArena,
     store: &mut Store,
 ) -> Result<HeapValueId, TransferRefusal>
@@ -201,7 +222,7 @@ pub unsafe fn transfer(
                 if moved.contains_key(&object) {
                     continue;
                 }
-                let id = allocate(object, sites, arena, store, &moved)?;
+                let id = allocate(object, sites, tables, arena, store, &moved)?;
                 moved.insert(object, id);
             },
         }
@@ -231,8 +252,9 @@ fn children(
         .kind()
         .map_err(|unknown| TransferRefusal::Kind(unknown.0))?
     {
-        Kind::Integer => Ok(Vec::new()),
-        Kind::Tuple | Kind::Injection | Kind::Data => Ok((1 ..= arity)
+        Kind::Integer | Kind::Literal | Kind::Opaque | Kind::Capability => Ok(Vec::new()),
+        Kind::Stack | Kind::Cell => Err(TransferRefusal::HostObject(object)),
+        Kind::Tuple | Kind::Injection | Kind::Data | Kind::Head => Ok((1 ..= arity)
             .map(|offset| field(object, Field(offset)))
             .collect()),
         Kind::Closure => {
@@ -265,6 +287,7 @@ fn children(
 fn allocate(
     object: Word,
     sites: &Sites<'_>,
+    tables: Tables<'_>,
     arena: &CommandArena,
     store: &mut Store,
     moved: &BTreeMap<Word, HeapValueId>,
@@ -284,22 +307,31 @@ fn allocate(
             .collect::<Result<Box<[HeapValueId]>, TransferRefusal>>()?;
         Ok(HeapValue::Constructed { tag, fields })
     };
+    let entry = usize::try_from(header.family()).map_err(|_unnamed| TransferRefusal::Entry(object));
     let value = match header
         .kind()
         .map_err(|unknown| TransferRefusal::Kind(unknown.0))?
     {
         Kind::Integer => {
-            let integer = i64::from(field(object, Field(1)));
-            let sign = if integer < 0 {
-                Sign::Negative
-            }
-            else {
-                Sign::NonNegative
-            };
-            let magnitude = Magnitude::from_decimal_text(integer.unsigned_abs().to_string())
-                .unwrap_or_else(Magnitude::zero);
-            HeapValue::Literal(Literal::Integer(IntegerLiteral::new(sign, magnitude)))
+            HeapValue::Literal(Literal::Integer(integer_literal(field(object, Field(1)))))
         },
+        Kind::Literal => HeapValue::Literal(
+            tables
+                .literals
+                .get(entry?)
+                .cloned()
+                .ok_or(TransferRefusal::Entry(object))?,
+        ),
+        Kind::Head => constructed(
+            tables
+                .heads
+                .get(entry?)
+                .cloned()
+                .ok_or(TransferRefusal::Entry(object))?,
+        )?,
+        Kind::Opaque => HeapValue::Opaque(ConstantIndex::from(entry?)),
+        Kind::Capability => HeapValue::Capability,
+        Kind::Stack | Kind::Cell => return Err(TransferRefusal::HostObject(object)),
         Kind::Tuple => constructed(ConstructorTag::Tuple(ProducerArity::from(arity)))?,
         Kind::Injection => constructed(ConstructorTag::Injection(Summand::from(usize::from(
             header.tag(),
@@ -346,4 +378,39 @@ fn allocate(
         },
     };
     Ok(store.allocate(value)?)
+}
+
+/// The opaque constant `value` addresses, when a stuck or unmatched exit
+/// returned an opaque object as the value it observed.
+///
+/// # Specification
+/// - requires: `value` is zero or addresses a live object's header.
+/// - ensures: the constant an opaque object's header names; nothing for zero,
+///   for an object of another kind, or for a header naming no constant.
+/// - executable: none — the requirement is about memory no predicate reads.
+///
+/// # Safety
+/// - unsafe invariants: a nonzero `value` addresses a live object's header
+///   word, as every value a stuck or unmatched exit returns does.
+///
+/// # Adequacy
+/// - hypothesis: L3 — forcing, applying and casing on an owed constant name it
+///   on each tier as the machine's stuck answer does, and a sum in hand names
+///   none.
+/// - witness: `tests::agreement::an_observed_opaque_constant_is_named_on_both_executors`
+#[inline]
+#[must_use]
+pub unsafe fn observed(value: Word) -> Option<ConstantIndex>
+{
+    if value == Word::ZERO {
+        return None;
+    }
+    // SAFETY: the caller's invariant.
+    let header = Header::from_word(unsafe { value.to_pointer::<Word>().read() });
+    if !matches!(header.kind(), Ok(Kind::Opaque)) {
+        return None;
+    }
+    usize::try_from(header.family())
+        .ok()
+        .map(ConstantIndex::from)
 }

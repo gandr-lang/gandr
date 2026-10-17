@@ -1,6 +1,6 @@
-//! The exits: a run that reaches a region's limit or spends its fuel returns
-//! to its entry with the status that names why, the regions untouched past
-//! their limits.
+//! The exits: a run that reaches a region's limit, spends its fuel or
+//! observes what it cannot returns to its entry with the status that names
+//! why, the regions untouched past their limits.
 //!
 //! Each case is a hand-built executor program over regions sized to put the
 //! limit exactly where the case needs it.
@@ -9,8 +9,10 @@ use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::Family;
 use gandr_runtime_stencils::Fuel;
 use gandr_runtime_stencils::Header;
+use gandr_runtime_stencils::Host;
 use gandr_runtime_stencils::Instruction;
 use gandr_runtime_stencils::Kind;
+use gandr_runtime_stencils::Refusal;
 use gandr_runtime_stencils::Runtime;
 use gandr_runtime_stencils::Status;
 use gandr_runtime_stencils::StencilId;
@@ -50,8 +52,8 @@ struct Exit
 struct Words(usize);
 
 /// Run `program` from its first instruction over a heap of `heap` words and
-/// `frames` frame words above the sentinel, with `fuel`; the sentinel frame
-/// resumes at the program's last instruction.
+/// `frames` frame words above the sentinel, with `fuel`, its calls entering
+/// `host`; the sentinel frame resumes at the program's last instruction.
 ///
 /// # Specification
 /// trivial.
@@ -60,6 +62,7 @@ fn run(
     heap: Words,
     frames: Words,
     fuel: Fuel,
+    host: Host,
 ) -> Exit
 {
     let mut heap = vec![Word::ZERO; heap.0];
@@ -71,7 +74,7 @@ fn run(
     let heap_limit = start.wrapping_add(heap.len());
     let base = frames.as_mut_ptr().wrapping_add(2);
     let frame_limit = frames.as_mut_ptr().wrapping_add(frames.len());
-    let mut runtime = Runtime::new(start, heap_limit, frame_limit, base, fuel);
+    let mut runtime = Runtime::new(start, heap_limit, frame_limit, base, fuel, host, Word::ZERO);
     // SAFETY: the program's every instruction falls through to the next or
     // exits, and its only code word is its last instruction's address; the
     // regions live to the end of the call, the sentinel frame below the base
@@ -96,6 +99,74 @@ fn run(
         fuel: runtime.fuel(),
         answer,
     }
+}
+
+/// A host that answers every call with its first operand.
+///
+/// # Specification
+/// trivial.
+extern "C" fn answering(
+    _runtime: *mut Runtime,
+    _entry: Word,
+    first: Word,
+    _second: Word,
+) -> Word
+{
+    first
+}
+
+/// A host that refuses every call for want of heap.
+///
+/// # Specification
+/// trivial.
+extern "C" fn exhausted(
+    runtime: *mut Runtime,
+    _entry: Word,
+    _first: Word,
+    _second: Word,
+) -> Word
+{
+    // SAFETY: a call stencil passes the run's live record.
+    unsafe {
+        (*runtime).refuse(Refusal::Heap);
+    }
+    Word::ZERO
+}
+
+/// A host that refuses every call's operands.
+///
+/// # Specification
+/// trivial.
+extern "C" fn refusing(
+    runtime: *mut Runtime,
+    _entry: Word,
+    _first: Word,
+    _second: Word,
+) -> Word
+{
+    // SAFETY: a call stencil passes the run's live record.
+    unsafe {
+        (*runtime).refuse(Refusal::Operands);
+    }
+    Word::ZERO
+}
+
+/// A host that refuses every call for want of frames.
+///
+/// # Specification
+/// trivial.
+extern "C" fn crowded(
+    runtime: *mut Runtime,
+    _entry: Word,
+    _first: Word,
+    _second: Word,
+) -> Word
+{
+    // SAFETY: a call stencil passes the run's live record.
+    unsafe {
+        (*runtime).refuse(Refusal::Frames);
+    }
+    Word::ZERO
 }
 
 /// The header of a one-field tuple.
@@ -124,14 +195,14 @@ fn a_full_heap_exits_by_name()
         instruction(StencilId::Ctor1, single()),
         instruction(StencilId::Halt, Word::ZERO),
     ];
-    let short = run(&program, Words(1), Words(4), Fuel::from(4_usize));
+    let short = run(&program, Words(1), Words(4), Fuel::from(4_usize), refusing);
     assert_eq!(
         Status::HeapExhausted,
         short.status,
         "one word holds no tuple"
     );
     assert_eq!(0, short.allocated, "the exit allocates nothing");
-    let room = run(&program, Words(2), Words(4), Fuel::from(4_usize));
+    let room = run(&program, Words(2), Words(4), Fuel::from(4_usize), refusing);
     assert_eq!(Status::Halted, room.status, "two words hold the tuple");
     assert_eq!(2, room.allocated, "the header and its field");
 }
@@ -145,13 +216,13 @@ fn a_full_frame_region_exits_by_name()
         instruction(StencilId::Push, Word::ZERO),
         instruction(StencilId::Halt, Word::ZERO),
     ];
-    let full = run(&program, Words(1), Words(0), Fuel::from(4_usize));
+    let full = run(&program, Words(1), Words(0), Fuel::from(4_usize), refusing);
     assert_eq!(
         Status::FramesExhausted,
         full.status,
         "no room above the sentinel"
     );
-    let room = run(&program, Words(1), Words(1), Fuel::from(4_usize));
+    let room = run(&program, Words(1), Words(1), Fuel::from(4_usize), refusing);
     assert_eq!(Status::Halted, room.status, "one word of room");
 }
 
@@ -169,10 +240,79 @@ fn a_run_without_fuel_exits_by_name()
         instruction(StencilId::Ret, Word::ZERO),
         instruction(StencilId::Halt, Word::ZERO),
     ];
-    let spent = run(&program, Words(1), Words(1), Fuel::from(0_usize));
+    let spent = run(&program, Words(1), Words(1), Fuel::from(0_usize), refusing);
     assert_eq!(Status::FuelExhausted, spent.status, "the return is a jump");
-    let one = run(&program, Words(1), Words(1), Fuel::from(1_usize));
+    let one = run(&program, Words(1), Words(1), Fuel::from(1_usize), refusing);
     assert_eq!(Status::Halted, one.status, "one jump reaches the halt");
     assert_eq!(Fuel::from(0_usize), one.fuel, "the jump spent the unit");
     assert_eq!(address, one.answer, "the constant in hand");
+}
+
+/// Forcing a value that is no closure — an opaque constant — takes the stuck
+/// exit, the observed value in hand, rather than entering a code word the
+/// object does not hold.
+#[test]
+fn an_opaque_observation_exits_stuck()
+{
+    let opaque = [Header::new(
+        Kind::Opaque,
+        Tag::try_from(0_usize).expect("tag 0"),
+        Arity::try_from(0_usize).expect("arity 0"),
+        Family::try_from(3_usize).expect("constant 3"),
+    )
+    .word()];
+    let address = Word::from_pointer((&raw const opaque).cast::<Word>());
+    let program = [
+        instruction(StencilId::Const, address),
+        instruction(StencilId::Bind, Word::ZERO),
+        instruction(StencilId::InvokeForce, Word::ZERO),
+        instruction(StencilId::Halt, Word::ZERO),
+    ];
+    let stuck = run(&program, Words(1), Words(1), Fuel::from(4_usize), refusing);
+    assert_eq!(
+        Status::Stuck,
+        stuck.status,
+        "an opaque constant is no closure"
+    );
+    assert_eq!(address, stuck.answer, "the observed value in hand");
+}
+
+/// A host call pops its argument and continues with the host's answer in
+/// hand; a host refusing for want of heap takes the heap exit, one refusing
+/// for want of frames the frame exit, one refusing its operands the stuck
+/// exit with zero in hand, so no operand passes for an observed value.
+#[test]
+fn a_host_call_answers_or_names_its_exit()
+{
+    let constant = [Word::from(0_usize), Word::from(7_i64)];
+    let address = Word::from_pointer((&raw const constant).cast::<Word>());
+    let program = [
+        instruction(StencilId::Const, address),
+        instruction(StencilId::Push, Word::ZERO),
+        Instruction::new(
+            StencilId::Call,
+            Word::ZERO,
+            Word::from(1_usize),
+            core::ptr::null(),
+        ),
+        instruction(StencilId::Halt, Word::ZERO),
+    ];
+    let answered = run(&program, Words(1), Words(1), Fuel::from(4_usize), answering);
+    assert_eq!(Status::Halted, answered.status, "the host answered");
+    assert_eq!(address, answered.answer, "the host's answer in hand");
+    let heap = run(&program, Words(1), Words(1), Fuel::from(4_usize), exhausted);
+    assert_eq!(Status::HeapExhausted, heap.status, "the heap's refusal");
+    let stuck = run(&program, Words(1), Words(1), Fuel::from(4_usize), refusing);
+    assert_eq!(Status::Stuck, stuck.status, "the operands' refusal");
+    assert_eq!(
+        Word::ZERO,
+        stuck.answer,
+        "a refusal observed no value, so nothing in hand is blamed"
+    );
+    let frames = run(&program, Words(1), Words(1), Fuel::from(4_usize), crowded);
+    assert_eq!(
+        Status::FramesExhausted,
+        frames.status,
+        "the frame region's refusal"
+    );
 }

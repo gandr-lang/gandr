@@ -15,7 +15,7 @@ The L machine's transitions written once: the stencils copy-and-patch emits, and
 
 ## Synopsis
 
-**What.** Every transition of the L machine is one stencil: an `extern "rust-preserve-none"` function over five pinned registers — the run's record, the heap's bump pointer, the frame region's top, the current window of slots and the value in hand — that ends in a `become` to a continuation. Constants, variables, binds, constructors and their matches, closures and their entries, frames and the exits make up the set, and `StencilId` names each one.
+**What.** Every transition of the L machine is one stencil: an `extern "rust-preserve-none"` function over five pinned registers — the run's record, the heap's bump pointer, the frame region's top, the current window of slots and the value in hand — that ends in a `become` to a continuation. Constants, variables, binds, constructors and their matches, closures and their entries, frames, the host call and the exits make up the set, and `StencilId` names each one. Primitives and control — operations, captures, replays — are host calls: the host reads and writes the frame region and names where the run continues.
 
 **Why.** Two implementations of the same transitions, an interpreter and a code generator, are held together only by tests. Written once, the emitted code and the executor cannot drift, and the executor is the differential the emitted code answers to on every host.
 
@@ -33,7 +33,7 @@ The L machine's transitions written once: the stencils copy-and-patch emits, and
 - `StencilId` with `ALL`, `symbol` and `handler`: every stencil by name, the list the emitter's build script holds the object to.
 - `execute` and `enter`: the two entries from Rust, into an executor program or into emitted code.
 - `Header`, `Kind`, `Tag`, `Arity`, `Family`, `Flavour`: the heap object header and its fields, each refusing a value past its width with `FieldOverflow`.
-- `Status` and `Fuel`: why a run returned — halted, unmatched, or a region or the fuel spent — and the jumps it may take.
+- `Status` and `Fuel`: why a run returned — halted, unmatched, stuck, or a region or the fuel spent — and the jumps it may take.
 
 ## Expected features
 
@@ -43,7 +43,7 @@ The L machine's transitions written once: the stencils copy-and-patch emits, and
 
 ## Examples
 
-The witnesses run every program three ways — emitted native code where the host has a patcher, the executor, and the L machine — and compare the answers value by value: the named programs, 512 generated programs over budgets 1 to 1024, and every `runs` item of the corpus, with the lowering's refusals counted by form.
+The witnesses run every program three ways — emitted native code where the host has a patcher, the executor, and the L machine — and compare the answers value by value: the named programs, 512 generated programs over budgets 1 to 1024, and every `runs` item of the corpus, with the answers counted by engine and the lowering's refusals by form.
 
 ```sh
 cargo test -p gandr-runtime-stencils

@@ -21,6 +21,36 @@
 //!   evaluated left to right, each pushed, and the constructor pops them.
 //! - **Constants in the function's data.** A literal and a constructor of no
 //!   fields are laid out once after the code; evaluating one loads its address.
+//!   A literal no word holds — text, a numeric, an integer past 64 bits — is a
+//!   one-word object naming its entry in the function's literal table.
+//! - **Heads by identity.** A record, a native list's nil and cell, a lift and
+//!   a recorded run are compared only by their head: each distinct head is an
+//!   entry of the function's head table, which a header names by its family.
+//!   Selecting a field by label reads a table laid out per selection, by head
+//!   entry, so the labels never reach the stencils.
+//! - **A fold is a loop.** Folding a native list tests each cell in turn and,
+//!   for each, pushes a frame holding a closure over the window with the head
+//!   bound; nil runs the empty branch with its covariable at the top, and each
+//!   frame's closure answers its cell when the tail's result returns, as the L
+//!   machine's bind frames do.
+//! - **A primitive is a host call.** Its arguments are pushed as a
+//!   constructor's fields are, and `call` passes them to the host, which
+//!   evaluates the prelude row the function's callee table names.
+//! - **A delimiter is a frame; control is a host call.** A handler pushes a
+//!   frame resuming at its return clause, a reset one resuming at the shared
+//!   reset stub, an access one resuming where its view's ending is read, and
+//!   the covariable each binds falls through: delivering to it resumes whatever
+//!   frame is on top, and loading it pushes nothing. An operation, a shift, a
+//!   resume of a stack, a reified stack and every memory form call the host,
+//!   which captures and replays frames by their code words: the function's
+//!   handler table names each handler's frame code, interface, capability slot
+//!   and clauses, and its window table the slot count of every frame label's
+//!   window, which a capture copies. A clause is laid out in its handler's
+//!   window and binds the payload the host wrote and the stack in hand.
+//! - **A linear variable is a cell.** A hold binds a cell holding the value and
+//!   an access a view cell lent its value, so a write-back reaches every window
+//!   that copied the binding; reading the variable reads the cell's first
+//!   field.
 //! - **Code order is evaluation order.** A `μ`'s body is laid out before the
 //!   continuation it loaded, a match's tests before its arms; every block ends
 //!   in a delivery, so nothing falls through a label.
@@ -60,9 +90,18 @@ use gandr_core_sequent::ConsumerNode;
 use gandr_core_sequent::Definition;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::DestructorTag;
+use gandr_core_sequent::Introduces;
 use gandr_core_sequent::ProducerId;
 use gandr_core_sequent::ProducerNode;
+use gandr_core_sequent::Route;
+use gandr_core_sequent::Selector;
+use gandr_core_term::FieldLabel;
 use gandr_core_term::Zone;
+use gandr_core_term::control::StackFrame;
+use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::OperationName;
+use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::primitive::Primitive;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Sign;
@@ -77,6 +116,7 @@ use gandr_runtime_stencils::Word;
 use gandr_theory_cell_complexes::Polarity;
 
 use crate::function::Alt;
+use crate::function::Constant;
 use crate::function::Function;
 use crate::function::Immediate;
 use crate::function::Instruction;
@@ -94,45 +134,24 @@ use crate::function::Stub;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Form
 {
-    /// A control command: perform, handle, resume, reset, shift or memory.
-    Control,
-    /// A primitive operation.
-    Primitive,
-    /// A literal other than an integer.
-    NonIntegerLiteral,
-    /// An integer past 64 bits.
-    WideInteger,
-    /// A structural record.
-    Record,
-    /// A native list constructor or fold.
-    NativeList,
-    /// A lift to a level.
-    Lift,
-    /// A recorded session run.
-    RecordedRun,
-    /// A selection of a field.
-    Selection,
-    /// A declaration with no body: owed or refused.
-    OpaqueConstant,
+    /// A constant the definitions do not hold.
+    UndefinedConstant,
     /// Constants that unfold into one another past the unfolding bound.
     ConstantCycle,
-    /// A linear variable.
-    LinearVariable,
     /// A constructor with consumer fields.
     ConsumerFields,
     /// A copattern object of several arms, or of one arm neither `apply` nor
     /// `force`.
     Copattern,
     /// A destructor other than `apply` of one argument or `force`, or one of
-    /// several continuations.
+    /// several continuations, as a consumer or as a reified stack's frame.
     Destructor,
     /// A context capture used as a value.
     CaptureAsValue,
     /// A `μ` against a `μ̃` at a negative cut: the by-name capture.
     ByNameCapture,
-    /// A reified stack.
-    ReifiedStack,
-    /// A header field past its width: a tag, an arity or a family.
+    /// A header field past its width: a tag, an arity, a family or a table
+    /// entry.
     HeaderWidth,
     /// A function past the instruction bound, larger than a region holds.
     Oversized,
@@ -148,10 +167,31 @@ enum Binding
 {
     /// A producer variable.
     Producer,
-    /// A covariable.
+    /// A covariable whose slot holds its mark.
     Covariable,
+    /// A covariable a delimiter binds, delivering to whatever frame is on
+    /// top: its slot holds nothing.
+    FallThrough,
+    /// A linear variable, whose slot holds its cell.
+    Linear,
     /// A slot the lowering holds a value in, which no index names.
     Temporary,
+}
+
+impl Binding
+{
+    /// The index space the binder counts in: covariables of either kind
+    /// share one.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn space(self) -> Self
+    {
+        match self {
+            Self::FallThrough => Self::Covariable,
+            Self::Producer | Self::Covariable | Self::Linear | Self::Temporary => self,
+        }
+    }
 }
 
 /// A slot of a window.
@@ -267,6 +307,37 @@ impl Scopes
         Scope::At(self.binders.len().saturating_sub(1))
     }
 
+    /// The binder `index` binders of `binding`'s index space out from
+    /// `scope`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Unbound`] when the chain holds fewer such binders.
+    fn find(
+        &self,
+        scope: Scope,
+        binding: Binding,
+        index: Index,
+    ) -> Result<Binder, Form>
+    {
+        let mut cursor = scope;
+        let mut remaining = index.0;
+        while let Scope::At(at) = cursor {
+            let binder = *self.binders.get(at).ok_or(Form::Unbound)?;
+            if binder.binding.space() == binding.space() {
+                let Some(next) = remaining.checked_sub(1)
+                else {
+                    return Ok(binder);
+                };
+                remaining = next;
+            }
+            cursor = binder.parent;
+        }
+        Err(Form::Unbound)
+    }
+
     /// The slot of the binder `index` binders of `binding` out from `scope`.
     ///
     /// # Specification
@@ -281,20 +352,25 @@ impl Scopes
         index: Index,
     ) -> Result<Slot, Form>
     {
-        let mut cursor = scope;
-        let mut remaining = index.0;
-        while let Scope::At(at) = cursor {
-            let binder = *self.binders.get(at).ok_or(Form::Unbound)?;
-            if binder.binding == binding {
-                let Some(next) = remaining.checked_sub(1)
-                else {
-                    return Ok(binder.slot);
-                };
-                remaining = next;
-            }
-            cursor = binder.parent;
-        }
-        Err(Form::Unbound)
+        self.find(scope, binding, index).map(|binder| binder.slot)
+    }
+
+    /// The slot of the covariable `index` covariables out from `scope`, or
+    /// none for a covariable that falls through to the top frame.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Unbound`] when the chain holds fewer covariables.
+    fn covariable(
+        &self,
+        scope: Scope,
+        index: Index,
+    ) -> Result<Option<Slot>, Form>
+    {
+        let binder = self.find(scope, Binding::Covariable, index)?;
+        Ok((binder.binding == Binding::Covariable).then_some(binder.slot))
     }
 
     /// The slots of `scope`'s visible producer binders, innermost first.
@@ -339,6 +415,21 @@ enum Task
     Deliver(ConsumerId, Scope),
     /// Load a consumer as an observation's continuation.
     Load(ConsumerId, Scope),
+    /// Fold the native list in hand by a fold consumer whose continuation is
+    /// loaded.
+    Fold(ConsumerId, Scope),
+    /// Select from the value in hand by a selection consumer whose
+    /// continuation is loaded, and deliver the field to it.
+    Selected(ConsumerId),
+    /// A frame's block binding the value in hand and a covariable that falls
+    /// through: a handler's return clause, a reified stack's bind frame.
+    Bound(CommandId, Scope),
+    /// An operation clause, entered by the host with the captured stack in
+    /// hand and the payload in its slot.
+    Clause(CommandId, Scope),
+    /// An access's frame, popped with the body's answer in hand: the view's
+    /// slot and the unwind's label.
+    Ended(Slot, Label),
     /// Bind a label to the next instruction.
     Bind(Label),
     /// Append one one-way instruction.
@@ -388,7 +479,114 @@ pub struct Site
     pub captures: Vec<Slot>,
 }
 
-/// A lowered command: the function and its closure sites.
+/// How an operation finds its handler.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Reach
+{
+    /// The nearest delimiter decides; the operation's one argument is its
+    /// payload.
+    Nearest,
+    /// The handler that introduced the capability decides; the operation's
+    /// arguments are the capability and the payload.
+    Capability,
+}
+
+/// What a host call does, by its number in the function's callee table.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Callee
+{
+    /// Evaluate a primitive on its arguments.
+    Primitive(Primitive),
+    /// Perform an operation: capture to its handler and enter the clause.
+    Perform
+    {
+        /// The interface the operation belongs to.
+        signature: EffectName,
+        /// The operation.
+        operation: OperationName,
+        /// How it finds its handler.
+        reach: Reach,
+    },
+    /// Capture to the nearest reset; answers the stack.
+    Shift,
+    /// Push a stack's frames back, each window copied afresh.
+    Replay,
+    /// Hold the argument in a fresh cell; answers the cell.
+    Hold,
+    /// Lend a held cell's value through a fresh view; answers the view.
+    Access,
+    /// End a view, its value to be written back; answers the unit.
+    Resumed,
+    /// End a view with nothing written; answers the unit.
+    Aborted,
+    /// Pop an access's frame: write a resumed view back and pass the answer
+    /// on, or save the answer and continue at the unwind's label.
+    Ended
+    {
+        /// The unwind's label.
+        unwind: Label,
+    },
+    /// Build a reified stack in the window in reach: its frames innermost
+    /// first, each application's argument among the call's arguments in
+    /// order.
+    Reify(Vec<Reified>),
+}
+
+/// A frame of a reified stack.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Reified
+{
+    /// An application frame: its argument is the call's next argument.
+    Apply,
+    /// A bind frame resuming at the label, in a copy of the window.
+    Bind(Label),
+}
+
+/// An operation clause of a handler.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Clause
+{
+    /// The operation it answers.
+    pub operation: OperationName,
+    /// The clause's label, which the host continues at.
+    pub label: Label,
+    /// The slot of the handler's window the payload is written to.
+    pub payload: Slot,
+}
+
+/// A handler the function installs: what an operation's capture finds by
+/// the code of the handler's frame.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Handler
+{
+    /// The return clause's label: the handler frame's code.
+    pub label: Label,
+    /// The interface it handles.
+    pub signature: EffectName,
+    /// The slot of the frame's window holding the capability it introduced,
+    /// when it introduces one.
+    pub capability: Option<Slot>,
+    /// Its operation clauses.
+    pub clauses: Vec<Clause>,
+}
+
+/// A lowered command: the function, its closure sites and the tables its
+/// objects and calls name.
 ///
 /// # Specification
 /// trivial.
@@ -399,6 +597,17 @@ pub struct Lowered
     pub function: Function,
     /// Every closure site, in creation order.
     pub sites: Vec<Site>,
+    /// The heads a head object names by its family.
+    pub heads: Vec<ConstructorTag>,
+    /// The literals a literal constant names by its family.
+    pub literals: Vec<Literal>,
+    /// The host calls a call names by its operand A.
+    pub callees: Vec<Callee>,
+    /// The handlers the function installs.
+    pub handlers: Vec<Handler>,
+    /// Each label a frame resumes at in a window, with the window's slot
+    /// count: what a capture copies.
+    pub windows: Vec<(Label, Slots)>,
 }
 
 /// The most constant unfoldings one lowering inlines: past it a cycle among
@@ -409,69 +618,63 @@ const UNFOLDINGS: usize = 1 << 12;
 /// L machine rather than being copied into a function larger than a region.
 const INSTRUCTIONS: usize = 1 << 18;
 
-/// The header of a constructor head.
-///
-/// # Specification
-/// trivial.
-///
-/// # Errors
-/// The [`Form`] naming a head outside the lowered fragment, or
-/// [`Form::HeaderWidth`] for a field past its width.
-pub fn constructor_header(tag: &ConstructorTag) -> Result<Header, Form>
+/// Push the value in hand onto the frame region: a constructor's field or a
+/// call's argument.
+const PUSH: Task = Task::Emit(StencilId::Push, Operand::Unused, Operand::Unused);
+
+/// A position in one of a lowering's tables.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Row(usize);
+
+impl Row
 {
-    let width = |_overflow| Form::HeaderWidth;
-    match *tag {
-        ConstructorTag::Tuple(arity) => Ok(Header::new(
-            Kind::Tuple,
-            Tag::try_from(0_usize).map_err(width)?,
-            Arity::try_from(usize::from(arity)).map_err(width)?,
-            Family::UNNAMED,
-        )),
-        ConstructorTag::Injection(summand) => Ok(Header::new(
-            Kind::Injection,
-            Tag::try_from(usize::from(summand)).map_err(width)?,
-            Arity::try_from(1_usize).map_err(width)?,
-            Family::UNNAMED,
-        )),
-        ConstructorTag::Data { tag, arity, family } => Ok(Header::new(
-            Kind::Data,
-            Tag::try_from(usize::from(tag)).map_err(width)?,
-            Arity::try_from(usize::from(arity)).map_err(width)?,
-            match family {
-                Some(constant) => Family::try_from(usize::from(constant)).map_err(width)?,
-                None => Family::UNNAMED,
-            },
-        )),
-        ConstructorTag::Record(_) => Err(Form::Record),
-        ConstructorTag::ListNil | ConstructorTag::ListCons => Err(Form::NativeList),
-        ConstructorTag::Lift(_) => Err(Form::Lift),
-        ConstructorTag::Recorded(_) => Err(Form::RecordedRun),
+    /// The family field naming this row.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] past the family field's width.
+    fn family(self) -> Result<Family, Form>
+    {
+        Family::try_from(self.0).map_err(|_overflow| Form::HeaderWidth)
     }
 }
 
-/// An integer literal as a machine word.
+/// The row of `item` in `table`, appended when absent.
 ///
 /// # Specification
 /// trivial.
-///
-/// # Errors
-/// [`Form::WideInteger`] past 64 bits.
-pub fn integer_word(integer: &IntegerLiteral) -> Result<Word, Form>
+fn intern<Item>(
+    table: &mut Vec<Item>,
+    item: &Item,
+) -> Row
+where
+    Item: Clone + PartialEq,
 {
-    let magnitude: i128 = integer
-        .magnitude()
-        .as_ref()
-        .parse()
-        .map_err(|_overflow| Form::WideInteger)?;
+    if let Some(position) = table.iter().position(|held| held == item) {
+        return Row(position);
+    }
+    table.push(item.clone());
+    Row(table.len().saturating_sub(1))
+}
+
+/// An integer literal as a machine word, when 64 bits hold it.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub fn integer_word(integer: &IntegerLiteral) -> Option<Word>
+{
+    let magnitude: i128 = integer.magnitude().as_ref().parse().ok()?;
     let value = if integer.sign() == Sign::Negative {
-        magnitude.checked_neg().ok_or(Form::WideInteger)?
+        magnitude.checked_neg()?
     }
     else {
         magnitude
     };
-    i64::try_from(value)
-        .map(Word::from)
-        .map_err(|_overflow| Form::WideInteger)
+    i64::try_from(value).ok().map(Word::from)
 }
 
 /// The low 32 bits of `header` and its family field: operands A and B of a
@@ -503,14 +706,30 @@ struct Lowering<'run>
     scopes: Scopes,
     /// The worklist of the block being written.
     tasks: Vec<Task>,
-    /// Continuation blocks loaded in the current window, awaiting layout.
-    blocks: Vec<(Label, ConsumerId, Scope)>,
+    /// Continuation blocks loaded in the current window, awaiting layout:
+    /// each label and the task its block runs.
+    blocks: Vec<(Label, Task)>,
     /// Closure bodies awaiting their own windows.
     bodies: Vec<Body>,
     /// The current window's slot count so far.
     window: u32,
     /// The constant unfoldings so far.
     unfoldings: usize,
+    /// The heads a head object names, by family.
+    heads: Vec<ConstructorTag>,
+    /// The literals a literal constant names, by family.
+    literals: Vec<Literal>,
+    /// The host calls a call names.
+    callees: Vec<Callee>,
+    /// Each label selection, its table patched once every head is known.
+    selections: Vec<(Position, FieldLabel)>,
+    /// The handlers installed so far.
+    handlers: Vec<Handler>,
+    /// The frame labels of the windows already closed, with their slot
+    /// counts.
+    windows: Vec<(Label, Slots)>,
+    /// The frame labels of the current window, its slot count still open.
+    pending: Vec<Label>,
 }
 
 impl Lowering<'_>
@@ -544,14 +763,14 @@ impl Lowering<'_>
         a: Operand,
         b: Operand,
         alt: Label,
-    )
+    ) -> Position
     {
         self.function.push(Instruction {
             stencil,
             a,
             b,
             alt: Alt::At(alt),
-        });
+        })
     }
 
     /// Extend `scope` by one binder of `binding`, counting its slot in the
@@ -587,6 +806,32 @@ impl Lowering<'_>
         command: CommandId,
     ) -> Result<(), Form>
     {
+        let label = self.suspend(scope, entry, flavour, command)?;
+        self.sites.push(Site {
+            label,
+            producer,
+            captures: self.scopes.producers(scope),
+        });
+        Ok(())
+    }
+
+    /// Allocate a closure over `scope`'s slots whose body is `command`, and
+    /// queue the body; answers the body's label. A closure no site records
+    /// never reaches an answer: a fold's cell closure lives only in a frame.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] for a capture count past the arity field.
+    fn suspend(
+        &mut self,
+        scope: Scope,
+        entry: Entry,
+        flavour: Flavour,
+        command: CommandId,
+    ) -> Result<Label, Form>
+    {
         let label = self.function.label();
         let depth = self.scopes.depth(scope);
         let count = usize::try_from(depth.0).map_err(|_overflow| Form::HeaderWidth)?;
@@ -598,17 +843,476 @@ impl Lowering<'_>
         );
         let (low, _) = header_operands(header);
         self.emit(StencilId::Closure, Operand::Code(label), low);
-        self.sites.push(Site {
-            label,
-            producer,
-            captures: self.scopes.producers(scope),
-        });
         self.bodies.push(Body {
             label,
             entry,
             command,
             scope,
         });
+        Ok(label)
+    }
+
+    /// The header of a constructor head: a tuple's, an injection's and a
+    /// datatype constructor's by their fields; any other head by its row in
+    /// the head table.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] for a field past its width.
+    fn header(
+        &mut self,
+        tag: &ConstructorTag,
+    ) -> Result<Header, Form>
+    {
+        let width = |_overflow| Form::HeaderWidth;
+        match *tag {
+            ConstructorTag::Tuple(arity) => Ok(Header::new(
+                Kind::Tuple,
+                Tag::try_from(0_usize).map_err(width)?,
+                Arity::try_from(usize::from(arity)).map_err(width)?,
+                Family::UNNAMED,
+            )),
+            ConstructorTag::Injection(summand) => Ok(Header::new(
+                Kind::Injection,
+                Tag::try_from(usize::from(summand)).map_err(width)?,
+                Arity::try_from(1_usize).map_err(width)?,
+                Family::UNNAMED,
+            )),
+            ConstructorTag::Data { tag, arity, family } => Ok(Header::new(
+                Kind::Data,
+                Tag::try_from(usize::from(tag)).map_err(width)?,
+                Arity::try_from(usize::from(arity)).map_err(width)?,
+                match family {
+                    Some(constant) => Family::try_from(usize::from(constant)).map_err(width)?,
+                    None => Family::UNNAMED,
+                },
+            )),
+            ConstructorTag::Record(_)
+            | ConstructorTag::ListNil
+            | ConstructorTag::ListCons
+            | ConstructorTag::Lift(_)
+            | ConstructorTag::Recorded(_) => Ok(Header::new(
+                Kind::Head,
+                Tag::try_from(0_usize).map_err(width)?,
+                Arity::try_from(usize::from(tag.producer_arity())).map_err(width)?,
+                intern(&mut self.heads, tag).family()?,
+            )),
+        }
+    }
+
+    /// The constant holding `literal`: an integer 64 bits hold as itself,
+    /// any other literal as a one-word object naming its row in the literal
+    /// table.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] for a literal table past the family field.
+    fn literal(
+        &mut self,
+        literal: &Literal,
+    ) -> Result<Constant, Form>
+    {
+        let width = |_overflow| Form::HeaderWidth;
+        if let Literal::Integer(ref integer) = *literal
+            && let Some(value) = integer_word(integer)
+        {
+            let header = Header::new(
+                Kind::Integer,
+                Tag::try_from(0_usize).map_err(width)?,
+                Arity::try_from(1_usize).map_err(width)?,
+                Family::UNNAMED,
+            );
+            return Ok(self.function.constant(&[header.word(), value]));
+        }
+        let header = Header::new(
+            Kind::Literal,
+            Tag::try_from(0_usize).map_err(width)?,
+            Arity::try_from(0_usize).map_err(width)?,
+            intern(&mut self.literals, literal).family()?,
+        );
+        Ok(self.function.constant(&[header.word()]))
+    }
+
+    /// Select by `selector` from the value in hand: the field in hand after
+    /// the emitted instructions, the unmatched exit when the value holds no
+    /// such field.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] for a component past an immediate's width.
+    fn select(
+        &mut self,
+        selector: &Selector,
+    ) -> Result<(), Form>
+    {
+        let found = self.function.label();
+        match *selector {
+            Selector::Component(component) => {
+                let component =
+                    u32::try_from(usize::from(component)).map_err(|_overflow| Form::HeaderWidth)?;
+                self.emit_two_way(
+                    StencilId::SelectComponent,
+                    Operand::Immediate(Immediate::from(component)),
+                    Operand::Unused,
+                    found,
+                );
+            },
+            Selector::Label(ref label) => {
+                let at = self.emit_two_way(
+                    StencilId::SelectField,
+                    Operand::Unused,
+                    Operand::Unused,
+                    found,
+                );
+                self.selections.push((at, label.clone()));
+            },
+        }
+        self.emit(StencilId::Unmatched, Operand::Unused, Operand::Unused);
+        self.function.bind(found);
+        Ok(())
+    }
+
+    /// Fold the native list in hand by the fold consumer `id`, whose
+    /// continuation is loaded, in `scope`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::step`].
+    fn fold(
+        &mut self,
+        id: ConsumerId,
+        scope: Scope,
+    ) -> Result<(), Form>
+    {
+        let &ConsumerNode::ListFold {
+            on_nil, on_cons, ..
+        } = self.arena.consumer(id).ok_or(Form::Dangling)?
+        else {
+            return Err(Form::Dangling);
+        };
+        let (nil_low, nil_family) = header_operands(self.header(&ConstructorTag::ListNil)?);
+        let (cell_low, cell_family) = header_operands(self.header(&ConstructorTag::ListCons)?);
+        let test = self.function.label();
+        let empty = self.function.label();
+        let cell = self.function.label();
+        self.function.bind(test);
+        self.emit_two_way(StencilId::Match, nil_low, nil_family, empty);
+        self.emit_two_way(StencilId::Match, cell_low, cell_family, cell);
+        self.emit(StencilId::Unmatched, Operand::Unused, Operand::Unused);
+        self.function.bind(cell);
+        let (with_head, head) = self.bind(scope, Binding::Producer);
+        self.emit(StencilId::Field, head.operand(), Slot(0).operand());
+        let (with_tail, tail) = self.bind(with_head, Binding::Temporary);
+        self.emit(StencilId::Field, tail.operand(), Slot(1).operand());
+        self.suspend(with_head, Entry::Apply, Flavour::Apply, on_cons)?;
+        let (_, closure) = self.bind(with_tail, Binding::Temporary);
+        self.emit(StencilId::Bind, closure.operand(), Operand::Unused);
+        self.emit(
+            StencilId::PushApply,
+            closure.operand(),
+            Operand::Stub(Stub::Argument),
+        );
+        self.emit(StencilId::Var, tail.operand(), Operand::Unused);
+        self.emit_two_way(StencilId::Jump, Operand::Unused, Operand::Unused, test);
+        self.function.bind(empty);
+        let (inner, alpha) = self.bind(scope, Binding::Covariable);
+        self.emit(StencilId::Mark, alpha.operand(), Operand::Unused);
+        self.tasks.push(Task::Command(on_nil, inner));
+        Ok(())
+    }
+
+    /// A fresh label a frame resumes at in the current window, counted among
+    /// the labels a capture copies the window of.
+    ///
+    /// # Specification
+    /// trivial.
+    fn frame_label(&mut self) -> Label
+    {
+        let label = self.function.label();
+        self.pending.push(label);
+        label
+    }
+
+    /// The call of `callee` on `count` pushed arguments, as one instruction
+    /// to queue.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] for a callee table past an immediate's width.
+    fn call(
+        &mut self,
+        callee: &Callee,
+        count: Immediate,
+    ) -> Result<Task, Form>
+    {
+        let row = intern(&mut self.callees, callee);
+        let row = u32::try_from(row.0).map_err(|_overflow| Form::HeaderWidth)?;
+        Ok(Task::Emit(
+            StencilId::Call,
+            Operand::Immediate(Immediate::from(row)),
+            Operand::Immediate(count),
+        ))
+    }
+
+    /// Lower the control command `id` in `scope`. A handler's and a reset's
+    /// frames are pushed as frames are, and the covariable a delimiter binds
+    /// falls through to whatever frame is on top; an operation, a capture, a
+    /// replay and every memory form are host calls.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::step`].
+    fn control(
+        &mut self,
+        id: CommandId,
+        scope: Scope,
+    ) -> Result<(), Form>
+    {
+        let arena = self.arena;
+        match *arena.command(id).ok_or(Form::Dangling)? {
+            CommandNode::Cut { .. } => return Err(Form::Dangling),
+            CommandNode::Perform {
+                ref signature,
+                ref operation,
+                route,
+                payload,
+                continuation,
+            } => {
+                let (reach, count) = match route {
+                    Route::Nearest => (Reach::Nearest, Immediate::from(1_u32)),
+                    Route::Capability(_) => (Reach::Capability, Immediate::from(2_u32)),
+                };
+                let call = self.call(
+                    &Callee::Perform {
+                        signature: signature.name().clone(),
+                        operation: operation.clone(),
+                        reach,
+                    },
+                    count,
+                )?;
+                // The host continues at the clause or refuses: nothing reaches
+                // the instruction after the call.
+                self.tasks.push(Task::Emit(
+                    StencilId::Stuck,
+                    Operand::Unused,
+                    Operand::Unused,
+                ));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(Task::Producer(payload, scope));
+                if let Route::Capability(capability) = route {
+                    self.tasks.push(PUSH);
+                    self.tasks.push(Task::Producer(capability, scope));
+                }
+                self.tasks.push(Task::Load(continuation, scope));
+            },
+            CommandNode::Handle {
+                ref signature,
+                introduces,
+                subject,
+                on_return,
+                ref clauses,
+                continuation,
+            } => {
+                let returned = self.frame_label();
+                let payload = self.scopes.depth(scope);
+                let mut entries = Vec::with_capacity(clauses.len());
+                for clause in clauses.iter() {
+                    let label = self.function.label();
+                    self.blocks.push((label, Task::Clause(clause.body, scope)));
+                    entries.push(Clause {
+                        operation: clause.operation.clone(),
+                        label,
+                        payload,
+                    });
+                }
+                self.blocks.push((returned, Task::Bound(on_return, scope)));
+                let (held, capability) = match introduces {
+                    Introduces::Nothing => (scope, None),
+                    Introduces::Capability => {
+                        let (held, slot) = self.bind(scope, Binding::Producer);
+                        (held, Some(slot))
+                    },
+                };
+                self.handlers.push(Handler {
+                    label: returned,
+                    signature: signature.name().clone(),
+                    capability,
+                    clauses: entries,
+                });
+                let (inner, _) = self.bind(held, Binding::FallThrough);
+                self.tasks.push(Task::Command(subject, inner));
+                self.tasks.push(Task::Emit(
+                    StencilId::Pushf,
+                    Operand::Code(returned),
+                    Operand::Unused,
+                ));
+                if let Some(slot) = capability {
+                    // A capability is a fresh object, compared by its address.
+                    let width = |_overflow| Form::HeaderWidth;
+                    let unit = Header::new(
+                        Kind::Tuple,
+                        Tag::try_from(0_usize).map_err(width)?,
+                        Arity::try_from(0_usize).map_err(width)?,
+                        Family::UNNAMED,
+                    );
+                    let unit = self.function.constant(&[unit.word()]);
+                    let (low, family) = header_operands(Header::new(
+                        Kind::Capability,
+                        Tag::try_from(0_usize).map_err(width)?,
+                        Arity::try_from(1_usize).map_err(width)?,
+                        Family::UNNAMED,
+                    ));
+                    self.tasks
+                        .push(Task::Emit(StencilId::Bind, slot.operand(), Operand::Unused));
+                    self.tasks.push(Task::Emit(StencilId::Ctor1, low, family));
+                    self.tasks.push(PUSH);
+                    self.tasks.push(Task::Emit(
+                        StencilId::Const,
+                        Operand::Data(unit),
+                        Operand::Unused,
+                    ));
+                }
+                self.tasks.push(Task::Load(continuation, scope));
+            },
+            CommandNode::Reset { body, continuation } => {
+                let (inner, _) = self.bind(scope, Binding::FallThrough);
+                self.tasks.push(Task::Command(body, inner));
+                self.tasks.push(Task::Emit(
+                    StencilId::PushForce,
+                    Operand::Stub(Stub::Reset),
+                    Operand::Unused,
+                ));
+                self.tasks.push(Task::Load(continuation, scope));
+            },
+            CommandNode::Shift { body, continuation } => {
+                let call = self.call(&Callee::Shift, Immediate::from(0_u32))?;
+                let (held, stack) = self.bind(scope, Binding::Producer);
+                let (inner, _) = self.bind(held, Binding::FallThrough);
+                self.tasks.push(Task::Command(body, inner));
+                self.tasks.push(Task::Emit(
+                    StencilId::Bind,
+                    stack.operand(),
+                    Operand::Unused,
+                ));
+                self.tasks.push(call);
+                self.tasks.push(Task::Load(continuation, scope));
+            },
+            CommandNode::Resume {
+                stack,
+                body,
+                continuation,
+            } => {
+                let call = self.call(&Callee::Replay, Immediate::from(1_u32))?;
+                let (inner, _) = self.bind(scope, Binding::FallThrough);
+                self.tasks.push(Task::Command(body, inner));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(Task::Producer(stack, scope));
+                self.tasks.push(Task::Load(continuation, scope));
+            },
+            CommandNode::Memory {
+                ref form,
+                continuation,
+            } => self.memory(form, continuation, scope)?,
+        }
+        Ok(())
+    }
+
+    /// Lower the memory form `form` with its continuation in `scope`. A
+    /// linear binder's slot holds a cell: a hold's holds the value, an
+    /// access's view holds the value lent, how the view ended and the held
+    /// cell it writes back to.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::step`].
+    fn memory(
+        &mut self,
+        form: &MemoryForm<ProducerId, CommandId>,
+        continuation: ConsumerId,
+        scope: Scope,
+    ) -> Result<(), Form>
+    {
+        match *form {
+            MemoryForm::Hold { value, body } => {
+                let call = self.call(&Callee::Hold, Immediate::from(1_u32))?;
+                let (held, cell) = self.bind(scope, Binding::Linear);
+                let (inner, _) = self.bind(held, Binding::FallThrough);
+                self.tasks.push(Task::Command(body, inner));
+                self.tasks
+                    .push(Task::Emit(StencilId::Bind, cell.operand(), Operand::Unused));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(Task::Producer(value, scope));
+                self.tasks.push(Task::Load(continuation, scope));
+            },
+            MemoryForm::Access { held, body, unwind } => {
+                let cell = self
+                    .scopes
+                    .slot(scope, Binding::Linear, Index(u32::from(held)))?;
+                let call = self.call(&Callee::Access, Immediate::from(1_u32))?;
+                let (viewed, view) = self.bind(scope, Binding::Linear);
+                let (inner, _) = self.bind(viewed, Binding::FallThrough);
+                let ended = self.frame_label();
+                let unwinding = self.function.label();
+                let (unwound, _) = self.bind(scope, Binding::FallThrough);
+                self.blocks.push((ended, Task::Ended(view, unwinding)));
+                self.blocks
+                    .push((unwinding, Task::Command(unwind, unwound)));
+                self.tasks.push(Task::Command(body, inner));
+                self.tasks.push(Task::Emit(
+                    StencilId::Pushf,
+                    Operand::Code(ended),
+                    Operand::Unused,
+                ));
+                self.tasks
+                    .push(Task::Emit(StencilId::Bind, view.operand(), Operand::Unused));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks
+                    .push(Task::Emit(StencilId::Var, cell.operand(), Operand::Unused));
+                self.tasks.push(Task::Load(continuation, scope));
+            },
+            MemoryForm::Resume { view, value } => {
+                let cell = self
+                    .scopes
+                    .slot(scope, Binding::Linear, Index(u32::from(view)))?;
+                let call = self.call(&Callee::Resumed, Immediate::from(2_u32))?;
+                self.tasks.push(Task::Deliver(continuation, scope));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(Task::Producer(value, scope));
+                self.tasks.push(PUSH);
+                self.tasks
+                    .push(Task::Emit(StencilId::Var, cell.operand(), Operand::Unused));
+            },
+            MemoryForm::Abort { view } => {
+                let cell = self
+                    .scopes
+                    .slot(scope, Binding::Linear, Index(u32::from(view)))?;
+                let call = self.call(&Callee::Aborted, Immediate::from(1_u32))?;
+                self.tasks.push(Task::Deliver(continuation, scope));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks
+                    .push(Task::Emit(StencilId::Var, cell.operand(), Operand::Unused));
+            },
+        }
         Ok(())
     }
 
@@ -674,6 +1378,44 @@ impl Lowering<'_>
             Task::Producer(id, scope) => self.producer(id, scope),
             Task::Deliver(id, scope) => self.deliver(id, scope),
             Task::Load(id, scope) => self.load(id, scope),
+            Task::Fold(id, scope) => self.fold(id, scope),
+            Task::Selected(id) => {
+                let ConsumerNode::Select { ref selector, .. } =
+                    *self.arena.consumer(id).ok_or(Form::Dangling)?
+                else {
+                    return Err(Form::Dangling);
+                };
+                self.select(selector)?;
+                self.emit(StencilId::Pop, Operand::Unused, Operand::Unused);
+                Ok(())
+            },
+            Task::Bound(body, scope) => {
+                let (held, value) = self.bind(scope, Binding::Producer);
+                self.emit(StencilId::Bind, value.operand(), Operand::Unused);
+                let (inner, _) = self.bind(held, Binding::FallThrough);
+                self.tasks.push(Task::Command(body, inner));
+                Ok(())
+            },
+            Task::Clause(body, scope) => {
+                // The host wrote the payload's slot before entering.
+                let (with_payload, _) = self.bind(scope, Binding::Producer);
+                let (with_stack, stack) = self.bind(with_payload, Binding::Producer);
+                self.emit(StencilId::Bind, stack.operand(), Operand::Unused);
+                let (inner, _) = self.bind(with_stack, Binding::FallThrough);
+                self.tasks.push(Task::Command(body, inner));
+                Ok(())
+            },
+            Task::Ended(view, unwind) => {
+                let call = self.call(&Callee::Ended { unwind }, Immediate::from(2_u32))?;
+                self.tasks
+                    .push(Task::Emit(StencilId::Pop, Operand::Unused, Operand::Unused));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks
+                    .push(Task::Emit(StencilId::Var, view.operand(), Operand::Unused));
+                self.tasks.push(PUSH);
+                Ok(())
+            },
         }
     }
 
@@ -702,7 +1444,7 @@ impl Lowering<'_>
             | CommandNode::Resume { .. }
             | CommandNode::Reset { .. }
             | CommandNode::Shift { .. }
-            | CommandNode::Memory { .. } => return Err(Form::Control),
+            | CommandNode::Memory { .. } => return self.control(id, scope),
         };
         let &ProducerNode::Mu { body } = arena.producer(producer).ok_or(Form::Dangling)?
         else {
@@ -716,24 +1458,30 @@ impl Lowering<'_>
                 return Err(Form::ByNameCapture);
             },
             ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } => {
-                let resume = self.function.label();
+                let resume = self.frame_label();
                 self.emit(StencilId::Pushk, Operand::Code(resume), alpha.operand());
                 self.tasks.push(Task::Deliver(consumer, scope));
                 self.tasks.push(Task::Bind(resume));
                 self.tasks.push(Task::Command(body, inner));
             },
             ConsumerNode::Covariable(index) => {
-                let target =
-                    self.scopes
-                        .slot(scope, Binding::Covariable, Index(u32::from(index)))?;
-                self.emit(StencilId::Alias, alpha.operand(), target.operand());
-                self.tasks.push(Task::Command(body, inner));
+                if let Some(target) = self.scopes.covariable(scope, Index(u32::from(index)))? {
+                    self.emit(StencilId::Alias, alpha.operand(), target.operand());
+                    self.tasks.push(Task::Command(body, inner));
+                }
+                else {
+                    let (through, _) = self.bind(scope, Binding::FallThrough);
+                    self.tasks.push(Task::Command(body, through));
+                }
             },
             ConsumerNode::Top => {
                 self.emit(StencilId::AliasTop, alpha.operand(), Operand::Unused);
                 self.tasks.push(Task::Command(body, inner));
             },
-            ConsumerNode::Destructor { .. } | ConsumerNode::DataCase { .. } => {
+            ConsumerNode::Destructor { .. }
+            | ConsumerNode::DataCase { .. }
+            | ConsumerNode::Select { .. }
+            | ConsumerNode::ListFold { .. } => {
                 self.tasks.push(Task::Command(body, inner));
                 self.tasks.push(Task::Emit(
                     StencilId::Mark,
@@ -742,8 +1490,6 @@ impl Lowering<'_>
                 ));
                 self.tasks.push(Task::Load(consumer, scope));
             },
-            ConsumerNode::Select { .. } => return Err(Form::Selection),
-            ConsumerNode::ListFold { .. } => return Err(Form::NativeList),
         }
         Ok(())
     }
@@ -763,28 +1509,30 @@ impl Lowering<'_>
     {
         match *self.arena.producer(id).ok_or(Form::Dangling)? {
             ProducerNode::Literal(ref literal) => {
-                let Literal::Integer(ref integer) = *literal
-                else {
-                    return Err(Form::NonIntegerLiteral);
-                };
-                let value = integer_word(integer)?;
-                let header = Header::new(
-                    Kind::Integer,
-                    Tag::try_from(0_usize).map_err(|_overflow| Form::HeaderWidth)?,
-                    Arity::try_from(1_usize).map_err(|_overflow| Form::HeaderWidth)?,
-                    Family::UNNAMED,
-                );
-                let at = self.function.constant(&[header.word(), value]);
+                let at = self.literal(literal)?;
                 self.emit(StencilId::Const, Operand::Data(at), Operand::Unused);
             },
-            ProducerNode::Variable { zone, index } => {
-                if zone != Zone::Intuitionistic {
-                    return Err(Form::LinearVariable);
-                }
+            ProducerNode::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            } => {
                 let slot = self
                     .scopes
                     .slot(scope, Binding::Producer, Index(u32::from(index)))?;
                 self.emit(StencilId::Var, slot.operand(), Operand::Unused);
+            },
+            ProducerNode::Variable {
+                zone: Zone::Linear,
+                index,
+            } => {
+                // A linear slot holds a cell, whose first field is the value.
+                let cell = self
+                    .scopes
+                    .slot(scope, Binding::Linear, Index(u32::from(index)))?;
+                let (_, read) = self.bind(scope, Binding::Temporary);
+                self.emit(StencilId::Var, cell.operand(), Operand::Unused);
+                self.emit(StencilId::Field, read.operand(), Slot(0).operand());
+                self.emit(StencilId::Var, read.operand(), Operand::Unused);
             },
             ProducerNode::Constructor {
                 ref tag,
@@ -794,7 +1542,7 @@ impl Lowering<'_>
                 if !consumers.is_empty() {
                     return Err(Form::ConsumerFields);
                 }
-                let header = constructor_header(tag)?;
+                let header = self.header(tag)?;
                 let stencil = match producers.len() {
                     0 => {
                         let at = self.function.constant(&[header.word()]);
@@ -842,10 +1590,58 @@ impl Lowering<'_>
                     let barrier = self.scopes.barrier(scope);
                     self.tasks.push(Task::Producer(definition, barrier));
                 },
-                Some(Definition::Opaque) | None => return Err(Form::OpaqueConstant),
+                Some(Definition::Opaque) => {
+                    let width = |_overflow| Form::HeaderWidth;
+                    let header = Header::new(
+                        Kind::Opaque,
+                        Tag::try_from(0_usize).map_err(width)?,
+                        Arity::try_from(0_usize).map_err(width)?,
+                        Family::try_from(usize::from(constant)).map_err(width)?,
+                    );
+                    let at = self.function.constant(&[header.word()]);
+                    self.emit(StencilId::Const, Operand::Data(at), Operand::Unused);
+                },
+                None => return Err(Form::UndefinedConstant),
             },
-            ProducerNode::Primitive { .. } => return Err(Form::Primitive),
-            ProducerNode::Reify(_) => return Err(Form::ReifiedStack),
+            ProducerNode::Primitive {
+                primitive,
+                ref arguments,
+            } => {
+                let count =
+                    u32::try_from(arguments.len()).map_err(|_overflow| Form::HeaderWidth)?;
+                let call = self.call(&Callee::Primitive(primitive), Immediate::from(count))?;
+                self.tasks.push(call);
+                for &argument in arguments.iter().rev() {
+                    self.tasks.push(PUSH);
+                    self.tasks.push(Task::Producer(argument, scope));
+                }
+            },
+            ProducerNode::Reify(ref frames) => {
+                let mut shape = Vec::with_capacity(frames.len());
+                let mut arguments = Vec::new();
+                for frame in frames.iter() {
+                    match *frame {
+                        StackFrame::Apply(argument) => {
+                            arguments.push(argument);
+                            shape.push(Reified::Apply);
+                        },
+                        StackFrame::Bind(body) => {
+                            let label = self.frame_label();
+                            self.blocks.push((label, Task::Bound(body, scope)));
+                            shape.push(Reified::Bind(label));
+                        },
+                        StackFrame::Project(_) => return Err(Form::Destructor),
+                    }
+                }
+                let count =
+                    u32::try_from(arguments.len()).map_err(|_overflow| Form::HeaderWidth)?;
+                let call = self.call(&Callee::Reify(shape), Immediate::from(count))?;
+                self.tasks.push(call);
+                for &argument in arguments.iter().rev() {
+                    self.tasks.push(PUSH);
+                    self.tasks.push(Task::Producer(argument, scope));
+                }
+            },
         }
         Ok(())
     }
@@ -868,10 +1664,14 @@ impl Lowering<'_>
                 self.emit(StencilId::Halt, Operand::Unused, Operand::Unused);
             },
             ConsumerNode::Covariable(index) => {
-                let slot = self
-                    .scopes
-                    .slot(scope, Binding::Covariable, Index(u32::from(index)))?;
-                self.emit(StencilId::Ret, slot.operand(), Operand::Unused);
+                match self.scopes.covariable(scope, Index(u32::from(index)))? {
+                    Some(slot) => {
+                        self.emit(StencilId::Ret, slot.operand(), Operand::Unused);
+                    },
+                    None => {
+                        self.emit(StencilId::Pop, Operand::Unused, Operand::Unused);
+                    },
+                }
             },
             ConsumerNode::MuTilde { body } => {
                 let (inner, slot) = self.bind(scope, Binding::Producer);
@@ -881,7 +1681,7 @@ impl Lowering<'_>
             ConsumerNode::Case { ref arms } => {
                 let mut labels = Vec::with_capacity(arms.len());
                 for arm in arms {
-                    let (low, family) = header_operands(constructor_header(&arm.constructor)?);
+                    let (low, family) = header_operands(self.header(&arm.constructor)?);
                     let label = self.function.label();
                     self.emit_two_way(StencilId::Match, low, family, label);
                     labels.push(label);
@@ -977,8 +1777,18 @@ impl Lowering<'_>
                     _ => return Err(Form::Destructor),
                 }
             },
-            ConsumerNode::Select { .. } => return Err(Form::Selection),
-            ConsumerNode::ListFold { .. } => return Err(Form::NativeList),
+            ConsumerNode::Select { ref selector, then } => {
+                self.select(selector)?;
+                self.tasks.push(Task::Deliver(then, scope));
+            },
+            ConsumerNode::ListFold { continuation, .. } => {
+                let (held, list) = self.bind(scope, Binding::Temporary);
+                self.emit(StencilId::Bind, list.operand(), Operand::Unused);
+                self.tasks.push(Task::Fold(id, scope));
+                self.tasks
+                    .push(Task::Emit(StencilId::Var, list.operand(), Operand::Unused));
+                self.tasks.push(Task::Load(continuation, held));
+            },
         }
         Ok(())
     }
@@ -1001,17 +1811,18 @@ impl Lowering<'_>
                 self.emit(StencilId::ShrinkTop, Operand::Unused, Operand::Unused);
             },
             ConsumerNode::Covariable(index) => {
-                let slot = self
-                    .scopes
-                    .slot(scope, Binding::Covariable, Index(u32::from(index)))?;
-                self.emit(StencilId::Shrink, slot.operand(), Operand::Unused);
+                // A covariable that falls through loads nothing: its frame is
+                // already on top.
+                if let Some(slot) = self.scopes.covariable(scope, Index(u32::from(index)))? {
+                    self.emit(StencilId::Shrink, slot.operand(), Operand::Unused);
+                }
             },
             ConsumerNode::MuTilde { .. }
             | ConsumerNode::Case { .. }
             | ConsumerNode::DataCase { .. } => {
-                let label = self.function.label();
+                let label = self.frame_label();
                 self.emit(StencilId::Pushf, Operand::Code(label), Operand::Unused);
-                self.blocks.push((label, id, scope));
+                self.blocks.push((label, Task::Deliver(id, scope)));
             },
             ConsumerNode::Destructor {
                 tag,
@@ -1049,8 +1860,26 @@ impl Lowering<'_>
                     _ => return Err(Form::Destructor),
                 }
             },
-            ConsumerNode::Select { .. } => return Err(Form::Selection),
-            ConsumerNode::ListFold { .. } => return Err(Form::NativeList),
+            ConsumerNode::Select { then, .. } => {
+                let label = self.frame_label();
+                self.blocks.push((label, Task::Selected(id)));
+                self.tasks.push(Task::Emit(
+                    StencilId::Pushf,
+                    Operand::Code(label),
+                    Operand::Unused,
+                ));
+                self.tasks.push(Task::Load(then, scope));
+            },
+            ConsumerNode::ListFold { continuation, .. } => {
+                let label = self.frame_label();
+                self.blocks.push((label, Task::Fold(id, scope)));
+                self.tasks.push(Task::Emit(
+                    StencilId::Pushf,
+                    Operand::Code(label),
+                    Operand::Unused,
+                ));
+                self.tasks.push(Task::Load(continuation, scope));
+            },
         }
         Ok(())
     }
@@ -1094,15 +1923,22 @@ pub fn lower(
         bodies: Vec::new(),
         window: 0,
         unfoldings: 0,
+        heads: Vec::new(),
+        literals: Vec::new(),
+        callees: Vec::new(),
+        selections: Vec::new(),
+        handlers: Vec::new(),
+        windows: Vec::new(),
+        pending: Vec::new(),
     };
     let mut entry: Option<Position> = None;
     loop {
         while let Some(task) = lowering.tasks.pop() {
             lowering.step(task)?;
         }
-        if let Some((label, consumer, scope)) = lowering.blocks.pop() {
+        if let Some((label, task)) = lowering.blocks.pop() {
             lowering.function.bind(label);
-            lowering.tasks.push(Task::Deliver(consumer, scope));
+            lowering.tasks.push(task);
             continue;
         }
         let window = Slot(lowering.window);
@@ -1112,14 +1948,45 @@ pub fn lower(
             )),
             Some(at) => lowering.function.set_a(at, window.operand()),
         }
+        let slots = Slots(usize::try_from(window.0).map_err(|_overflow| Form::HeaderWidth)?);
+        for label in core::mem::take(&mut lowering.pending) {
+            lowering.windows.push((label, slots));
+        }
         let Some(body) = lowering.bodies.pop()
         else {
             break;
         };
         entry = Some(lowering.open(body));
     }
+    for (at, label) in core::mem::take(&mut lowering.selections) {
+        let mut table = Vec::with_capacity(lowering.heads.len().saturating_add(1));
+        table.push(Word::from(lowering.heads.len()));
+        for head in &lowering.heads {
+            let position = match *head {
+                ConstructorTag::Record(ref labels) => labels
+                    .iter()
+                    .position(|held| *held == label)
+                    .map_or(0, |position| position.saturating_add(1)),
+                ConstructorTag::Tuple(_)
+                | ConstructorTag::Injection(_)
+                | ConstructorTag::Data { .. }
+                | ConstructorTag::ListNil
+                | ConstructorTag::ListCons
+                | ConstructorTag::Lift(_)
+                | ConstructorTag::Recorded(_) => 0,
+            };
+            table.push(Word::from(position));
+        }
+        let constant = lowering.function.constant(&table);
+        lowering.function.set_a(at, Operand::Data(constant));
+    }
     Ok(Lowered {
         function: lowering.function,
         sites: lowering.sites,
+        heads: lowering.heads,
+        literals: lowering.literals,
+        callees: lowering.callees,
+        handlers: lowering.handlers,
+        windows: lowering.windows,
     })
 }
