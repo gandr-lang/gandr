@@ -915,9 +915,12 @@ impl Typer<'_>
                         self.emit(head, DescribedRole::Term, ty, stated);
                     }
                     let args: Vec<TermNode<'_>> = args.collect();
-                    let images: Vec<TermNode<'_>> = match image.map(TermNode::view) {
-                        Some(TermView::Op { args, .. }) => args.collect(),
-                        Some(_) | None => Vec::new(),
+                    // The elaboration's arguments, when it reads the node as
+                    // an application: none for a constant, `pt()`, which still
+                    // answers at its sort (#668).
+                    let images: Option<Vec<TermNode<'_>>> = match image.map(TermNode::view) {
+                        Some(TermView::Op { args, .. }) => Some(args.collect()),
+                        Some(_) | None => None,
                     };
                     let single =
                         operations
@@ -926,7 +929,7 @@ impl Typer<'_>
                                 [ref result] => Some((binders, result)),
                                 _ => None,
                             });
-                    if let (Some((binders, result)), false) = (single, images.is_empty()) {
+                    if let (Some((binders, result)), Some(images)) = (single, images.as_deref()) {
                         let owned: Vec<FreeTerm> =
                             images.iter().map(|image| image.to_term()).collect();
                         let by: BTreeMap<&Name, &FreeTerm> = binders
@@ -946,6 +949,7 @@ impl Typer<'_>
                             self.emit(written.span, DescribedRole::Term, ty, context);
                         }
                     }
+                    let images = images.unwrap_or_default();
                     let implicit = images.len().saturating_sub(args.len());
                     for (place, arg) in args.into_iter().enumerate().rev() {
                         let image = images.get(place.saturating_add(implicit)).copied();

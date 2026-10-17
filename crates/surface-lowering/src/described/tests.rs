@@ -234,6 +234,39 @@ fn a_sign_answers_at_every_member()
     );
 }
 
+/// #668: a constant applied in a law, `pt()`, answers at its sort as every
+/// other application there does.
+#[test]
+fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
+{
+    let source = SourceText::from(
+        "sign Pointed {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  rule \
+         flipPt : flip(pt()) <=> pt();\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let code = |entry: DescribedType| match arena.value_type(entry.ty) {
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
+    };
+    let applied = entry(
+        &types,
+        span("flip(pt())", "flip(pt())"),
+        DescribedRole::Term,
+    );
+    let inner = entry(&types, span("flip(pt())", "pt()"), DescribedRole::Term);
+    let right = entry(&types, span("<=> pt()", "pt()"), DescribedRole::Term);
+    assert!(code(applied).is_some(), "an application at its sort");
+    assert_eq!(code(inner), code(applied), "the argument at the same sort");
+    assert_eq!(
+        code(right),
+        code(applied),
+        "the right side at the same sort"
+    );
+}
+
 #[test]
 fn a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it()
 {
