@@ -1364,6 +1364,15 @@ mod tests
             approximate(Written("Path(Integer, x, ?)")),
             "an unnamed context binder spells `?`"
         );
+        for unprintable in ["", "x\ty"] {
+            let context = [Some(Name::from(unprintable)), None, Some(Name::from("y"))];
+            let within = CoreSource::new(&core, &names).within(&context);
+            assert_eq!(
+                spelled(&within, Root::Type(CoreNode::ValueType(unnamed))),
+                approximate(Written("Path(Integer, ?, ?)")),
+                "a context binder named {unprintable:?} spells `?`"
+            );
+        }
     }
 
     /// Each universe spells its sort and its constant level as the grammar
@@ -1556,9 +1565,70 @@ mod tests
         }
     }
 
+    /// A call collects its arguments into one list, up to `DEPTH_LIMIT` of
+    /// them; an application past the limit applies the call it heads.
+    #[test]
+    fn a_call_collects_its_arguments_up_to_the_depth_limit()
+    {
+        let limit = usize::try_from(u32::from(DEPTH_LIMIT)).expect("the limit fits a usize");
+        let names = [Name::from("kept")];
+        let mut core = CoreArena::new();
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let head = core.value_constant(ConstantIndex::from(0_usize));
+        let forced = core.computation_force(head);
+        let applied = |core: &mut CoreArena, count: usize| {
+            let mut call = forced;
+            for _ in 0 .. count {
+                call = core.computation_application(call, bound);
+            }
+            core.computation_lambda(call)
+        };
+        let twice = applied(&mut core, 2);
+        let past = applied(&mut core, limit.saturating_add(1));
+        let source = CoreSource::new(&core, &names);
+        let body = |id| Root::Computation(CoreNode::Computation(id));
+        assert_eq!(
+            spelled(&source, body(twice)),
+            faithful(Written("fn (a) { kept(a, a) }"))
+        );
+        assert_eq!(
+            spelled(&source, body(past)),
+            (
+                format!(
+                    "fn (a) {{ kept(a)({}a,\n    a, a, a, a) }}",
+                    "a, ".repeat(27)
+                ),
+                Fidelity::Faithful
+            ),
+            "the innermost application past the limit heads the call"
+        );
+    }
+
+    /// A body in braces holds a sequence bare: the braces a block writes are
+    /// the sequence's own, never doubled.
+    #[test]
+    fn a_block_body_holds_its_sequence_bare()
+    {
+        let mut core = CoreArena::new();
+        let one = integer(&mut core, Sign::NonNegative, Written("1"));
+        let pure_one = core.computation_return(one);
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = core.computation_return(bound);
+        let sequence = core.computation_bind(pure_one, returned);
+        let recursive =
+            core.computation_fixpoint(sequence, gandr_kernel_term::FixpointEvidence::Partial);
+        let source = CoreSource::new(&core, &[]);
+        assert_eq!(
+            spelled(&source, Root::Computation(CoreNode::Computation(recursive))),
+            approximate(Written("rec a { run b <- pure 1 ; b }"))
+        );
+    }
+
     /// A static redex prints as its reduct, each binder of the abstraction
     /// written as the argument it takes, in the order applied; arguments past
-    /// the abstraction's chain apply to the reduct; and a thunk over an arrow
+    /// the abstraction's chain apply to the reduct, and an abstraction given
+    /// fewer arguments than its chain keeps the binders left open; and a
+    /// thunk over an arrow
     /// into a decoded redex of a returner takes the value-function alias over
     /// the reduct's result, as the same type written plainly does.
     #[test]
@@ -1586,6 +1656,7 @@ mod tests
         let pairing = core.value_static_lambda(pairing);
         let paired = core.value_static_application(pairing, integer_code);
         let paired = core.value_static_application(paired, unit_code);
+        let half = core.value_static_application(pairing, integer_code);
 
         let element = bound(&mut core, DeBruijnIndex::from(0_u32));
         let squared = core.value_type_product(&[element, element]);
@@ -1602,6 +1673,7 @@ mod tests
             (Root::Value(CoreNode::Value(once)), "Integer"),
             (Root::Value(CoreNode::Value(past)), "t(Integer)"),
             (Root::Value(CoreNode::Value(paired)), "#{Integer, Unit}"),
+            (Root::Value(CoreNode::Value(half)), "\\a. #{Integer, a}"),
         ] {
             assert_eq!(
                 spelled(&source, root),
@@ -2213,6 +2285,139 @@ mod tests
         }
     }
 
+    /// A constructor of exactly `DEPTH_LIMIT` fields still binds its pattern:
+    /// the limit is the most fields a branch is read under, not one past it.
+    #[test]
+    fn a_constructor_at_the_depth_limit_binds_every_field()
+    {
+        let limit = usize::try_from(u32::from(DEPTH_LIMIT)).expect("the limit fits a usize");
+        let mut core = CoreArena::new();
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = core.computation_return(bound);
+        let wide = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let returns_wide = core.comp_type_returner(wide);
+        let mut branch = returned;
+        for _ in 0 .. limit {
+            branch = core.computation_lambda(branch);
+        }
+        let data_case = core.computation_data_case(bound, returns_wide, vec![branch]);
+        let matched = core.computation_lambda(data_case);
+        let names = [Name::from("Wide")];
+        let mut constructors = Constructors::default();
+        constructors.family(Name::from("Wide"), [(
+            Name::from("Wide"),
+            Arity::from(limit),
+        )]);
+        constructors.case(data_case, Name::from("Wide"));
+        let source = CoreSource::new(&core, &names).naming(&constructors);
+        let (text, fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(matched)));
+        assert_eq!(Fidelity::Faithful, fidelity, "{text}");
+        assert!(
+            text.contains("case a {\n    Wide(b, c, ") && text.contains(", f1, g1) => g1\n"),
+            "the branch binds its fields under the constructor: {text}"
+        );
+    }
+
+    /// A returner over a row of two interfaces lists them between brackets,
+    /// a comma between each and the next and none before the first.
+    #[test]
+    fn a_returner_lists_each_interface_of_its_row_between_commas()
+    {
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+
+        let mut core = CoreArena::new();
+        let unit = core.value_type_product(&[]);
+        let interface = |name: &str| {
+            EffectSig::new(EffectName::from(name), [EffectOp {
+                name: "go".into(),
+                payload: unit,
+                reply: unit,
+            }])
+            .expect("one operation is a signature")
+        };
+        let row = EffectRow::from_signatures([interface("Proc"), interface("Store")])
+            .expect("two interfaces of distinct names");
+        let returner = core.comp_type_returner_with_effects(unit, row);
+        let source = CoreSource::new(&core, &[]);
+        assert_eq!(
+            spelled(&source, Root::Type(CoreNode::CompType(returner))),
+            faithful(Written("-F [Proc, Store] Unit"))
+        );
+    }
+
+    /// Where the spelling is source a reader reads back, a parameterised
+    /// constructor is written against its family, except as a family's
+    /// argument, whose parameter states its type; a value presented alone is
+    /// never annotated.
+    #[test]
+    fn a_parameterised_constructor_is_written_against_its_family_where_source_reads_it()
+    {
+        let mut core = CoreArena::new();
+        let three = integer(&mut core, Sign::NonNegative, Written("3"));
+        let ix = core.value_type_data(ConstantIndex::from(0_usize), vec![three]);
+        let made = core.value_constructor(ix, ConstructorTag::from(0_usize), Vec::new());
+        let returned = core.computation_return(made);
+        let indexed = core.value_type_data(ConstantIndex::from(1_usize), vec![made]);
+        let quoted = core.value_quote(indexed);
+        let returns_code = core.computation_return(quoted);
+        let names = [Name::from("Ix"), Name::from("Vec")];
+        let mut constructors = Constructors::default();
+        constructors.family(Name::from("Ix"), [(
+            Name::from("MkIx"),
+            Arity::from(0_usize),
+        )]);
+        let source = CoreSource::new(&core, &names).naming(&constructors);
+        let body = |id| Root::Computation(CoreNode::Computation(id));
+        assert_eq!(
+            spelled(&source, body(returned)),
+            faithful(Written("(MkIx : Ix(3))")),
+            "a body's constructor reads back against its family"
+        );
+        assert_eq!(
+            spelled(&source, body(returns_code)),
+            faithful(Written("Vec(MkIx)")),
+            "a family's argument is classified by the family's parameter"
+        );
+        assert_eq!(
+            spelled(&source, Root::Value(CoreNode::Value(made))),
+            faithful(Written("MkIx")),
+            "a value presented alone is not source"
+        );
+    }
+
+    /// A prelude primitive the surface writes as an operator is written so: an
+    /// infix one between its operands, a prefix one before its operand.
+    #[test]
+    fn a_prelude_operator_is_written_as_its_operator()
+    {
+        let named = |name: &str| {
+            PRELUDE
+                .iter()
+                .copied()
+                .find(|primitive| <&'static str>::from(primitive.name()) == name)
+                .expect("the prelude holds the primitive")
+        };
+        let mut core = CoreArena::new();
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let added = core.computation_primitive(named("add"), Arguments::Binary([bound, bound]));
+        let adds = core.computation_lambda(added);
+        let negated = core.computation_primitive(named("neg"), Arguments::Unary(bound));
+        let negates = core.computation_lambda(negated);
+        let source = CoreSource::new(&core, &[]);
+        let body = |id| Root::Computation(CoreNode::Computation(id));
+        assert_eq!(
+            spelled(&source, body(adds)),
+            faithful(Written("fn (a) { a + a }"))
+        );
+        assert_eq!(
+            spelled(&source, body(negates)),
+            faithful(Written("fn (a) { -a }"))
+        );
+    }
+
     /// A bind of a computation ascribed a pure returner spells as the typed
     /// bind it lowered from, its value type written after the binder; an
     /// ascription anywhere else stands as its body, approximately, for the
@@ -2300,5 +2505,14 @@ mod tests
             approximate(Written("Cap {exit}")),
             "a region past the named scopes goes unwritten"
         );
+        for unwritable in ["", "c d"] {
+            let names = [Some(Name::from(unwritable))];
+            let blank = CoreSource::new(&core, &[]).scoped(&names);
+            assert_eq!(
+                spelled(&blank, ty(outer)),
+                approximate(Written("Cap {exit}")),
+                "a scope named {unwritable:?} has no name the region could be written by"
+            );
+        }
     }
 }

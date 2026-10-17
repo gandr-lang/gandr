@@ -125,6 +125,7 @@ impl Source for ContentSource<'_>
     /// - witness: `content_source::tests::comp_ty_covers_every_reachable_former`
     /// - witness: `content_source::tests::ty_dispatches_on_polarity`
     /// - witness: `content_source::tests::a_malformed_table_spells_unknown`
+    /// - witness: `content_source::tests::an_empty_tuple_or_record_reads_as_the_unit_and_a_full_one_by_its_arity`
     #[spec(ensures: |ret| match (self.nodes.get(usize::from(node)), ret) {
         (None, Former::Unreadable(reason)) => reason == Unreadable::Dangling,
         (None, _) => false,
@@ -1338,5 +1339,34 @@ mod tests
             codomain: n1,
         }]);
         assert_eq!(spelled(&cycle), approximate("?".into()));
+    }
+
+    /// An empty tuple and an empty record read as the unit; a tuple or record
+    /// with members reads as itself over its arity.
+    #[test]
+    fn an_empty_tuple_or_record_reads_as_the_unit_and_a_full_one_by_its_arity()
+    {
+        use crate::Arity;
+        use crate::Former;
+        use crate::Source as _;
+
+        let [n0, n1, n2, n3, ..] = indices();
+        let nodes = [
+            ContentNode::Tuple(Vec::new()),
+            ContentNode::Tuple(Vec::from([n0, n0])),
+            ContentNode::Record(BTreeMap::new()),
+            ContentNode::Record(BTreeMap::from([(FieldLabel::from(String::from("x")), n0)])),
+        ];
+        let source = ContentSource::from(&nodes[..]);
+        assert!(matches!(source.read(n0), Former::Unit), "the empty tuple");
+        assert!(
+            matches!(source.read(n1), Former::Tuple(arity) if arity == Arity::from(2_usize)),
+            "a pair"
+        );
+        assert!(matches!(source.read(n2), Former::Unit), "the empty record");
+        assert!(
+            matches!(source.read(n3), Former::Record(arity) if arity == Arity::from(1_usize)),
+            "a record of one field"
+        );
     }
 }

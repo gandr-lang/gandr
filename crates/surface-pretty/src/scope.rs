@@ -97,6 +97,11 @@ impl<Node: Copy> Binder<Node>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each binder of a chain names the next one out, the
+    ///   outermost none.
+    /// - witness: `scope::tests::a_variable_finds_the_binder_it_counts_out_to`
     #[inline]
     #[must_use]
     pub const fn parent(&self) -> Option<BinderIndex>
@@ -354,6 +359,15 @@ mod tests
             CoreNode::Computation(split),
             CoreNode::Computation(lambda),
         ]);
+        let parents: Vec<_> = chain
+            .iter()
+            .map(|&index| scopes.binder(index).expect("a recorded binder").parent())
+            .collect();
+        assert_eq!(
+            parents,
+            [chain.get(1).copied(), chain.get(2).copied(), None],
+            "each binder stands under the next one out, the lambda under none"
+        );
         assert_eq!(
             scopes.innermost(CoreNode::Computation(split)),
             Some(chain.last().copied()),
