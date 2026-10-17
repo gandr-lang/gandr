@@ -10,8 +10,9 @@
 //!
 //! # Every cursor has a ghost text
 //!
-//! An inline-completion request labels the text before the cursor, splits it at
-//! its predicted top-level form boundaries and molds the last form alone. The
+//! An inline-completion request reads the text's labeling, relabeled around
+//! the cursor for the text before it, splits that at its predicted top-level
+//! form boundaries and molds the last form alone. The
 //! completion query names the hole the operator nearest the cursor owes and
 //! the cheapest ways to close the innermost open form — each a path through
 //! the grammar's same-form adjacency to a tile that ends the form, from every
@@ -29,9 +30,9 @@
 //! empty range at the cursor; it is never empty, and its last resort is the
 //! placeholder of the slot at the cursor.
 //!
-//! The text after the cursor is input, never a refusal. The whole text is
-//! labeled, and the significant tokens after the cursor, up to the first
-//! closer of a bracket open at the cursor, are what is already written. A
+//! The text after the cursor is input, never a refusal. The whole text's
+//! labeling is read, and the significant tokens after the cursor, up to the
+//! first closer of a bracket open at the cursor, are what is already written. A
 //! candidate is cut where the written text takes over: at its first tile the
 //! next token spells, at its first closer that a written closer of the same
 //! family pairs with — counting brackets opened and closed on the way, by the
@@ -56,6 +57,25 @@
 //! - Reversal: a measured case where the token alignment cuts a candidate
 //!   wrongly moves the subtraction onto trial molding of the candidate and the
 //!   written text up to the form's end.
+//!
+//! # A text is labeled once for all its cursors
+//!
+//! A [`Labeled`] text holds the text and its labeling. The text before a
+//! cursor is labeled by relabeling that labeling around the cut
+//! ([`Labeling::relabel`]), which rescans only from the cursor's previous
+//! line, and the written tokens are read off the whole labeling from the
+//! cursor on. [`ghost()`] labels its text once; a caller asking at many
+//! cursors of one text, the corpus sweep among them, labels it once for all
+//! of them, so a cursor costs a rescan of its line and a molding of its form,
+//! not a labeling of the text twice.
+//!
+//! - Alternatives: labeling the text before the cursor and the whole text
+//!   afresh on every request, which costs a request two scans of the text and a
+//!   sweep over a source a number of scans quadratic in its length; a labeling
+//!   cached on the server's documents, which the editor's session does not hand
+//!   this module.
+//! - Reversal: a session that keeps each document's labeling hands it to
+//!   [`Labeled`] directly, and the server stops labeling per request.
 //!
 //! # A hole is spelled as what fills it
 //!
@@ -126,6 +146,7 @@ use gandr_surface_parser::CandidateLabel;
 use gandr_surface_parser::ClosingLimit;
 use gandr_surface_parser::Continuations;
 use gandr_surface_parser::HeadForm;
+use gandr_surface_parser::Labeling;
 use gandr_surface_parser::LeadingSlot;
 use gandr_surface_parser::Lexeme;
 use gandr_surface_parser::MeldState;
@@ -631,12 +652,13 @@ struct Written<'grammar, 'text>
 
 impl<'grammar, 'text> Written<'grammar, 'text>
 {
-    /// The significant tokens of `text` that start at or after `at`, up to and
-    /// including the first closer at the cursor's bracket depth, the whole
-    /// text labeled so a token after the cursor reads in its own lexical mode.
+    /// The significant tokens of `labeled` that start at or after `at`, up to
+    /// and including the first closer at the cursor's bracket depth, read off
+    /// the whole text's labeling so a token after the cursor reads in its own
+    /// lexical mode.
     ///
     /// # Specification
-    /// - ensures: every token of `text`'s labeling that is not layout and
+    /// - ensures: every token of `labeled`'s labeling that is not layout and
     ///   starts at or after `at`, in order, ending at the first one that closes
     ///   a bracket no earlier one of them opened; a token the cursor splits is
     ///   not among them.
@@ -656,15 +678,18 @@ impl<'grammar, 'text> Written<'grammar, 'text>
             <= ret.words.iter().filter(|word| matches!(word.punctuation, Punctuation::Opens(_))).count().saturating_add(1))]
     fn after(
         grammar: &'grammar Pbg,
-        text: SourceText<'text>,
+        labeled: &Labeled<'text>,
         at: ByteOffset,
     ) -> Self
     {
-        let whole = <&'text str>::from(text);
+        let whole = <&'text str>::from(labeled.text);
         let at = usize::from(at);
+        let tokens = labeled.labeling.tokens();
+        let first = tokens
+            .partition_point(|token| usize::try_from(token.start).is_ok_and(|start| start < at));
         let mut words = Vec::new();
         let mut depth = 0_usize;
-        for token in label(SourceFragment::from(whole)) {
+        for token in tokens.get(first ..).unwrap_or_default() {
             let (Ok(start), Ok(end)) = (usize::try_from(token.start), usize::try_from(token.end))
             else {
                 continue;
@@ -673,7 +698,7 @@ impl<'grammar, 'text> Written<'grammar, 'text>
             else {
                 continue;
             };
-            if token.lexeme == Lexeme::Space || start < at {
+            if token.lexeme == Lexeme::Space {
                 continue;
             }
             let punctuation = punctuation(token.lexeme, TokenText::from(text));
@@ -691,6 +716,92 @@ impl<'grammar, 'text> Written<'grammar, 'text>
             }
         }
         Self { grammar, words }
+    }
+}
+
+/// A text and its labeling, read once for the ghost texts at any of its
+/// cursors.
+///
+/// # Specification
+/// - requires: constructed by [`new`](Self::new) or [`cut`](Self::cut).
+/// - ensures: the labeling is [`Labeling::new`]'s of the text.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; its constructors
+///   carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every cursor of a corpus source holding comments, strings
+///   and an interpolation cuts to the labeling of the text before it and
+///   answers as that text labeled afresh; a cut that kept a token the cursor
+///   splits, or read a mode the prefix does not stand in, changes one.
+/// - witness: `inline::tests::a_cut_answers_as_its_text_labeled_afresh_594`
+#[derive(Clone, Debug)]
+pub struct Labeled<'text>
+{
+    /// The text.
+    text: SourceText<'text>,
+    /// Its labeling.
+    labeling: Labeling,
+}
+
+impl<'text> Labeled<'text>
+{
+    /// Label `text` from its start.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `text` with [`Labeling::new`]'s labeling of it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the cut witness compares every cut of a labeled
+    ///   source with the text before the cursor labeled by this constructor.
+    /// - witness: `inline::tests::a_cut_answers_as_its_text_labeled_afresh_594`
+    #[must_use]
+    #[spec(ensures: |ret| ret.text == text)]
+    pub fn new(text: SourceText<'text>) -> Self
+    {
+        Self {
+            text,
+            labeling: Labeling::new(SourceFragment::from(<&str>::from(text))),
+        }
+    }
+
+    /// The text before byte `at`, its labeling relabeled from this one around
+    /// the cut.
+    ///
+    /// # Specification
+    /// - requires: any offset, one past the text or inside a character read as
+    ///   the nearest character boundary at or before it.
+    /// - ensures: the text before that boundary, labeled as [`new`](Self::new)
+    ///   labels it.
+    /// - panics: none.
+    /// - economy: copies the tokens and rescans from the cut's previous line
+    ///   ([`Labeling::relabel`]), never the whole text.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every cursor of a corpus source holding comments,
+    ///   strings and an interpolation cuts to the labeling of the text before
+    ///   it; a cut that kept the token the cursor splits changes one.
+    /// - witness: `inline::tests::a_cut_answers_as_its_text_labeled_afresh_594`
+    #[must_use]
+    #[spec(ensures: |ret| <&str>::from(self.text).starts_with(<&str>::from(ret.text)))]
+    pub fn cut(
+        &self,
+        at: ByteOffset,
+    ) -> Self
+    {
+        let whole = <&'text str>::from(self.text);
+        let before = whole
+            .get(.. whole.floor_char_boundary(usize::from(at)))
+            .unwrap_or_default();
+        Self {
+            text: SourceText::from(before),
+            labeling: self
+                .labeling
+                .clone()
+                .relabel(SourceFragment::from(whole), SourceFragment::from(before)),
+        }
     }
 }
 
@@ -1363,38 +1474,123 @@ fn lead(
     }
 }
 
+impl Labeled<'_>
+{
+    /// The ghost texts `grammar`, whose forms are `forms`, offers at byte `at`
+    /// of this text, best first.
+    ///
+    /// # Specification
+    /// - requires: `forms` is [`Forms::new`] of `grammar`; any offset, one past
+    ///   the text or inside a character read as the nearest character boundary
+    ///   at or before it.
+    /// - ensures: between one and eight snippets, none holding a `?` tab stop:
+    ///   the candidates of the top-level form the cursor ends, molded alone up
+    ///   to the cursor, cut against the significant tokens after the cursor and
+    ///   ordered by [`rank`], each spelled once as [`spell`] states; the
+    ///   placeholder of the slot at the cursor when no candidate remains.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one relabeling of the text before the cursor from this
+    ///   labeling, which rescans from the cursor's previous line, one molding
+    ///   of the form the cursor ends, one bounded walk of its open form, and
+    ///   grammar reads only for the words a candidate is cut against; the
+    ///   written tokens are read off this labeling and the forms the slot can
+    ///   open off `forms`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the defect rows, one cursor per category, comments
+    ///   and the ranking golden assert exact answers, and every cursor of a
+    ///   corpus source cut from its labeled text answers as the text before it
+    ///   labeled afresh; L2 — every cursor of every corpus source, with and
+    ///   without the text after it, answers at least one snippet and none with
+    ///   `?`. Refusing a continued line, spelling a hole as `?`, repeating a
+    ///   written closer or answering nothing changes one of them.
+    /// - witness: `inline::tests::the_defect_rows_answer_as_wanted`
+    /// - witness: `inline::tests::each_category_is_named_where_its_hole_stands`
+    /// - witness: `inline::tests::a_comment_is_closed_before_code_follows`
+    /// - witness: `inline::tests::the_ranking_is_pinned`
+    /// - witness: `inline::tests::a_cut_answers_as_its_text_labeled_afresh_594`
+    /// - witness: `inline::tests::sweeps::every_corpus_cursor_has_a_ghost_text`
+    #[must_use]
+    #[spec(ensures: |ret| (1 ..= SHOWN).contains(&ret.0.len()) && ret.0.iter().all(|snippet| !snippet.0.contains(":?}")))]
+    pub fn ghost(
+        &self,
+        grammar: &Pbg,
+        forms: &Forms,
+        at: ByteOffset,
+    ) -> Ghosts
+    {
+        let whole = <&str>::from(self.text);
+        let at = whole.floor_char_boundary(usize::from(at));
+        let cut;
+        let before = if at == whole.len() {
+            self
+        }
+        else {
+            cut = self.cut(ByteOffset::from(at));
+            &cut
+        };
+        let tokens = before.labeling.tokens();
+        let source = before.text;
+        let after = SourceText::from(whole.get(at ..).unwrap_or_default());
+        let lead = lead(source, tokens);
+        let mut molder = Molder::new(grammar);
+        let mut state = MeldState::new(grammar);
+        if let Some(&form) = molder.form_runs(tokens, source).last() {
+            molder.mold_run(&mut state, tokens, form, source);
+        }
+        let written = Written::after(grammar, self, ByteOffset::from(at));
+        let menu = state.continuations(ClosingLimit::from(CLOSINGS));
+        let (mut found, slot) = candidates(grammar, forms, &menu, &written);
+        found.sort_by_key(|candidate| rank(candidate, slot));
+        let mut shown: Vec<Snippet> = Vec::with_capacity(SHOWN);
+        // A candidate that differs from a better one only by separators — a
+        // trailing `,` or `;` — adds nothing an author asks for.
+        let mut skeletons: Vec<Vec<Part>> = Vec::with_capacity(SHOWN);
+        for candidate in &found {
+            let skeleton = skeleton(&candidate.parts);
+            if skeletons.contains(&skeleton) {
+                continue;
+            }
+            let snippet = spell(&candidate.parts, lead, source, after);
+            if !shown.contains(&snippet) {
+                shown.push(snippet);
+                skeletons.push(skeleton);
+            }
+            if shown.len() == SHOWN {
+                break;
+            }
+        }
+        if shown.is_empty() {
+            let category = match (slot, menu.head()) {
+                (Slot::Open(category), _) => category,
+                (Slot::Filled, HeadForm::Open { mold, .. }) => {
+                    Category::of_hole(grammar, state.expected_operand_sort(), mold)
+                },
+                (Slot::Filled, HeadForm::Closed) => Category::Item,
+            };
+            shown.push(spell(&[Part::Hole(category)], lead, source, after));
+        }
+        Ghosts(shown)
+    }
+}
+
 /// The ghost texts `grammar`, whose forms are `forms`, offers at byte `at` of
 /// `text`, best first.
 ///
 /// # Specification
-/// - requires: `forms` is [`Forms::new`] of `grammar`; any offset, one past the
-///   text or inside a character read as the nearest character boundary at or
-///   before it.
-/// - ensures: between one and eight snippets, none holding a `?` tab stop: the
-///   candidates of the top-level form the cursor ends, molded alone up to the
-///   cursor, cut against the significant tokens after the cursor and ordered by
-///   [`rank`], each spelled once as [`spell`] states; the placeholder of the
-///   slot at the cursor when no candidate remains.
+/// - requires: `forms` is [`Forms::new`] of `grammar`.
+/// - ensures: [`Labeled::ghost`]'s answer at `at` of `text` labeled once.
 /// - provides: the answer to `textDocument/inlineCompletion`.
 /// - fails: never.
 /// - panics: none.
-/// - intension: one labelling of the text before the cursor and one of the
-///   whole text, one molding of the form the cursor ends, one bounded walk of
-///   its open form, and grammar reads only for the words a candidate is cut
-///   against; the forms the slot can open are read off `forms`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the defect rows, one cursor per category, comments and
-///   the ranking golden assert exact answers; L2 — every cursor of every corpus
-///   source, with and without the text after it, answers at least one snippet
-///   and none with `?`. Refusing a continued line, spelling a hole as `?`,
-///   repeating a written closer or answering nothing changes one of them.
+///   the ranking golden assert this function's exact answers.
 /// - witness: `inline::tests::the_defect_rows_answer_as_wanted`
-/// - witness: `inline::tests::each_category_is_named_where_its_hole_stands`
-/// - witness: `inline::tests::a_comment_is_closed_before_code_follows`
 /// - witness: `inline::tests::the_ranking_is_pinned`
-/// - witness: `inline::tests::sweeps::every_corpus_cursor_has_a_ghost_text`
-#[spec(ensures: |ret| (1 ..= SHOWN).contains(&ret.0.len()) && ret.0.iter().all(|snippet| !snippet.0.contains(":?}")))]
+#[spec(ensures: |ret| (1 ..= SHOWN).contains(&ret.0.len()))]
 pub fn ghost(
     grammar: &Pbg,
     forms: &Forms,
@@ -1402,51 +1598,7 @@ pub fn ghost(
     at: ByteOffset,
 ) -> Ghosts
 {
-    let whole = <&str>::from(text);
-    let at = whole.floor_char_boundary(usize::from(at));
-    let before = whole.get(.. at).unwrap_or_default();
-    let tokens = label(SourceFragment::from(before));
-    let source = SourceText::from(before);
-    let after = SourceText::from(whole.get(at ..).unwrap_or_default());
-    let lead = lead(source, &tokens);
-    let mut molder = Molder::new(grammar);
-    let mut state = MeldState::new(grammar);
-    if let Some(&form) = molder.form_runs(&tokens, source).last() {
-        molder.mold_run(&mut state, &tokens, form, source);
-    }
-    let written = Written::after(grammar, text, ByteOffset::from(at));
-    let menu = state.continuations(ClosingLimit::from(CLOSINGS));
-    let (mut found, slot) = candidates(grammar, forms, &menu, &written);
-    found.sort_by_key(|candidate| rank(candidate, slot));
-    let mut shown: Vec<Snippet> = Vec::with_capacity(SHOWN);
-    // A candidate that differs from a better one only by separators — a
-    // trailing `,` or `;` — adds nothing an author asks for.
-    let mut skeletons: Vec<Vec<Part>> = Vec::with_capacity(SHOWN);
-    for candidate in &found {
-        let skeleton = skeleton(&candidate.parts);
-        if skeletons.contains(&skeleton) {
-            continue;
-        }
-        let snippet = spell(&candidate.parts, lead, source, after);
-        if !shown.contains(&snippet) {
-            shown.push(snippet);
-            skeletons.push(skeleton);
-        }
-        if shown.len() == SHOWN {
-            break;
-        }
-    }
-    if shown.is_empty() {
-        let category = match (slot, menu.head()) {
-            (Slot::Open(category), _) => category,
-            (Slot::Filled, HeadForm::Open { mold, .. }) => {
-                Category::of_hole(grammar, state.expected_operand_sort(), mold)
-            },
-            (Slot::Filled, HeadForm::Closed) => Category::Item,
-        };
-        shown.push(spell(&[Part::Hole(category)], lead, source, after));
-    }
-    Ghosts(shown)
+    Labeled::new(text).ghost(grammar, forms, at)
 }
 
 /// `parts` spelled as a snippet to insert between `before` and `after`,
@@ -1620,6 +1772,7 @@ mod tests
 
     use super::Fit;
     use super::Forms;
+    use super::Labeled;
     use super::Part;
     use super::Spelled;
     use super::TileLabel;
@@ -1693,7 +1846,7 @@ mod tests
         let written = |text: &'static str| {
             Written::after(
                 &tools.grammar,
-                SourceText::from(text),
+                &Labeled::new(SourceText::from(text)),
                 ByteOffset::from(0_usize),
             )
         };
@@ -1719,7 +1872,7 @@ mod tests
         let mut parts = Vec::from([Part::Tile(TileLabel(")"))]);
         let written = Written::after(
             &tools.grammar,
-            SourceText::from("[1])"),
+            &Labeled::new(SourceText::from("[1])")),
             ByteOffset::from(0_usize),
         );
         assert_eq!(subtract(&mut parts, &written), Fit::Meets);
@@ -1731,7 +1884,7 @@ mod tests
         let mut parts = Vec::from([Part::Tile(TileLabel(")"))]);
         let written = Written::after(
             &tools.grammar,
-            SourceText::from("1]"),
+            &Labeled::new(SourceText::from("1]")),
             ByteOffset::from(0_usize),
         );
         assert_ne!(
@@ -1842,6 +1995,38 @@ mod tests
                 found.first().map(String::as_str),
                 Some(first),
                 "{before:?} ‸ {after:?}: {found:?}"
+            );
+        }
+    }
+
+    /// #594: a cut of a labeled text is the text before the cursor labeled
+    /// afresh, at every byte of a source whose lexical modes nest — a doc
+    /// comment, a block comment over two lines, a string with an escape and
+    /// interpolations, a character wider than a byte and a block comment left
+    /// open — so a ghost text read off the cut answers as before.
+    #[test]
+    fn a_cut_answers_as_its_text_labeled_afresh_594()
+    {
+        let text = concat!(
+            "/// A doc line.\n",
+            "def greet(name: String) -> -F String {\n",
+            "  /* a block\n",
+            "     comment */ return \"hello ${name}, \\\"quoted\\\" ${ { 1 } }\";\n",
+            "}\n",
+            "def g : Integer ⇝ Integer; // a trailing comment\n",
+            "def x = (1 + [2, 3]) /* open",
+        );
+        let whole = Labeled::new(SourceText::from(text));
+        for at in 0 ..= text.len() {
+            let before = text
+                .get(.. text.floor_char_boundary(at))
+                .expect("a floor is a character boundary");
+            let cut = whole.cut(ByteOffset::from(at));
+            assert_eq!(cut.text, SourceText::from(before), "{at}");
+            assert_eq!(
+                cut.labeling,
+                Labeled::new(SourceText::from(before)).labeling,
+                "{at}: the cut relabels as the text before it labels"
             );
         }
     }
@@ -2119,7 +2304,7 @@ mod tests
     }
 
     /// The ghost-text sweep: every cursor of each corpus source, in the whole
-    /// text and in the prefix before it.
+    /// text and in the prefix before it, each source labeled once.
     mod sweeps
     {
         use gandr_surface_render_remote::ByteOffset;
@@ -2130,7 +2315,7 @@ mod tests
         use gandr_workflow_sweep::Sweep;
         use gandr_workflow_sweep::corpus;
 
-        use super::super::ghost;
+        use super::super::Labeled;
         use super::tools;
 
         /// The sample: twenty-four sources, ranked by their BLAKE3 digest under
@@ -2161,16 +2346,13 @@ mod tests
             );
             for source in sources {
                 let text = std::fs::read_to_string(&source.path).expect("a corpus source reads");
+                let whole = Labeled::new(SourceText::from(text.as_str()));
                 let cursors = text.char_indices().map(|(at, _)| at).chain([text.len()]);
                 for at in cursors.step_by(CURSOR_STRIDE) {
-                    let prefix = text.get(.. at).expect("a cursor is a character boundary");
-                    for whole in [text.as_str(), prefix] {
-                        let found = ghost(
-                            &tools.grammar,
-                            &tools.forms,
-                            SourceText::from(whole),
-                            ByteOffset::from(at),
-                        );
+                    let at = ByteOffset::from(at);
+                    let prefix = whole.cut(at);
+                    for labeled in [&whole, &prefix] {
+                        let found = labeled.ghost(&tools.grammar, &tools.forms, at);
                         let found = found.as_ref();
                         assert!(
                             !found.is_empty() && found.len() <= 8,
