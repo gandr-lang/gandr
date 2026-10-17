@@ -893,6 +893,54 @@ mod tests
     }
 
     #[test]
+    fn const_equality_is_equality()
+    {
+        use crate::ConstEquality;
+
+        for (left, right) in [
+            ("", ""),
+            ("ab", "ab"),
+            ("ab", "ac"),
+            ("ab", "abc"),
+            ("xy", "yx"),
+        ] {
+            assert_eq!(
+                matches!(
+                    SourceText::from(left).const_eq(SourceText::from(right)),
+                    ConstEquality::Equal
+                ),
+                left == right,
+                "{left:?} against {right:?}"
+            );
+        }
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        for (left, right) in [
+            (at(2, 4), at(2, 4)),
+            (at(2, 4), at(2, 5)),
+            (at(2, 4), at(3, 4)),
+        ] {
+            assert_eq!(
+                matches!(left.const_eq(right), ConstEquality::Equal),
+                left == right,
+                "{left:?} against {right:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn texts_and_fragments_read_back_as_written()
+    {
+        let source = SourceText::from("def name");
+        let text: &str = source.as_ref();
+        assert_eq!(text, "def name");
+        let fragment = source
+            .fragment(span(ByteOffset::from(4_usize), ByteOffset::from(8_usize)))
+            .unwrap();
+        let read: &str = fragment.as_ref();
+        assert_eq!(read, "name");
+    }
+
+    #[test]
     fn formatters_preserve_text_and_numeric_options()
     {
         for text in ["", "é\n\"", "source"] {
