@@ -544,6 +544,27 @@ mod tests
         ]);
     }
 
+    /// A refused `:type` expression is reported under its probe's name: `it`
+    /// while nothing accepted is named so, then the first free `it1`.
+    #[test]
+    fn a_refused_type_probe_is_reported_under_the_first_free_probe_name()
+    {
+        let mut repl = repl();
+        let refused_as = |repl: &mut SessionLoop, probe: &str| {
+            let answer = block(repl, ":type nope");
+            assert!(
+                matches!(answer.lines.as_slice(), [(OutKind::Diag, text)]
+                    if text.contains(&format!("def {probe} = nope ;"))
+                        && text.contains(&format!("`{probe}` is expected to check"))),
+                "{probe}: {:?}",
+                answer.lines
+            );
+        };
+        refused_as(&mut repl, "it");
+        drop(lines(&mut repl, "def it = 1 ;"));
+        refused_as(&mut repl, "it1");
+    }
+
     /// `:load` submits a file as one chunk, every declaration answering a
     /// type line and a value line, and a file that cannot be read answers why.
     #[test]
@@ -654,7 +675,8 @@ mod tests
         }
     }
 
-    /// A buffer still open at the end of input is submitted, not dropped.
+    /// A buffer still open at the end of input is submitted, not dropped, and
+    /// its repair is a warning line naming the code and the repaired bytes.
     #[test]
     fn an_incomplete_buffer_is_submitted_at_end_of_input()
     {
@@ -666,7 +688,10 @@ mod tests
         };
         assert_eq!(block.source, "def a = (");
         assert!(
-            block.lines.iter().any(|&(kind, _)| kind == OutKind::Diag),
+            block.lines.contains(&(
+                OutKind::Diag,
+                "warning[W0012]: parse repaired: a missing delimiter at 6..7".to_owned()
+            )),
             "{:?}",
             block.lines
         );
