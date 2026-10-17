@@ -6143,14 +6143,17 @@ struct Refined
 ///   is the answer in the term context of its own frame, `gap` the binders the
 ///   case's frame adds to it.
 /// - ensures: one entry per node. The root answers `base` under `gap` more
-///   binders; a data case's and a dependent split's motive is its answer with
-///   its scrutinee abstracted, as [`abstracted`] reads it. A data case's
-///   branches answer its motive at the constructor over their fields when the
-///   motive reads its binder and the bare family classifies the constructor,
-///   and its answer under their fields otherwise; a dependent split's child
-///   answers its motive at the pair of its two components; every other node
-///   passes its answer to its children under the binders it opens. Nodes other
-///   than data cases and dependent splits answer nothing.
+///   binders; a data case's motive over a bare family and a dependent split's
+///   motive is its answer with its scrutinee abstracted, as [`abstracted`]
+///   reads it, and a data case's motive over any other family is its answer
+///   under one binder more, reading none of it, since [`refinements`] reads no
+///   leaf of it at a constructor (#616). A data case's branches answer its
+///   motive at the constructor over their fields when the motive reads its
+///   binder and the bare family classifies the constructor, and its answer
+///   under their fields otherwise; a dependent split's child answers its motive
+///   at the pair of its two components; every other node passes its answer to
+///   its children under the binders it opens. Nodes other than data cases and
+///   dependent splits answer nothing.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -6199,9 +6202,14 @@ fn tracked_motives(
                 family,
                 ref branches,
             } => {
-                let scrutinee = level_value(arena, scrutinised, depth, level);
-                let context = Depth(scrutinised.outer.0.saturating_add(depth.0));
-                let motive = abstracted(arena, here, scrutinee, context);
+                let motive = match family {
+                    Maybe::Present(_) => {
+                        let scrutinee = level_value(arena, scrutinised, depth, level);
+                        let context = Depth(scrutinised.outer.0.saturating_add(depth.0));
+                        abstracted(arena, here, scrutinee, context)
+                    },
+                    Maybe::Absent(_) => gandr_core_term::shift_comp_type(arena, here, Binders::ONE),
+                };
                 if let Some(slot) = motives.get_mut(position) {
                     *slot = Maybe::Present(motive);
                 }
