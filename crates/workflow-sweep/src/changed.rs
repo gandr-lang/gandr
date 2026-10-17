@@ -130,19 +130,33 @@ impl Changed
     /// - hypothesis: L3 — as [`Changed::asked`].
     /// - witness: `changed::tests::a_change_lists_its_modified_and_untracked_sources_and_a_missing_base_is_refused`
     /// - witness: `changed::tests::a_layout_alone_is_no_change_492`
+    /// - witness: `changed::tests::an_added_source_is_a_change_683`
     #[inline]
     pub fn against(
         corpus: &Path,
         base: Revision<'_>,
     ) -> Result<Self, SweepError>
     {
-        let differing = git(
+        let added = git(
             corpus,
             GitArgs(&[
                 "diff",
                 "--name-only",
                 "--no-renames",
-                "--diff-filter=AM",
+                "--diff-filter=A",
+                "--relative",
+                base.0,
+                "--",
+                ".",
+            ]),
+        )?;
+        let modified = git(
+            corpus,
+            GitArgs(&[
+                "diff",
+                "--name-only",
+                "--no-renames",
+                "--diff-filter=M",
                 "--relative",
                 base.0,
                 "--",
@@ -161,8 +175,9 @@ impl Changed
                 .extension()
                 .is_some_and(|extension| extension == "gandr")
         };
-        let mut names = BTreeSet::new();
-        for name in differing.lines().filter(source) {
+        let mut names: BTreeSet<CorpusName> =
+            added.lines().filter(source).map(CorpusName::from).collect();
+        for name in modified.lines().filter(source) {
             let shown = format!("{}:./{name}", base.0);
             let before = git(corpus, GitArgs(&["show", &shown]))?;
             let after = std::fs::read_to_string(corpus.join(name)).ok();
@@ -381,6 +396,40 @@ mod tests
             changed.expect("HEAD resolves").names().collect::<Vec<_>>(),
             [&CorpusName::from("fixture/model/edited.gandr")],
             "the layout leaves the change, the edit stays"
+        );
+    }
+
+    /// #683: a source the change commits and the base lacks is in the change —
+    /// there is no base text to lay out, and the sweep must not ask Git for
+    /// one.
+    #[test]
+    fn an_added_source_is_a_change_683()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-sweep-added-{}", std::process::id()));
+        let corpus = scratch.join("crates").join("surface-corpus");
+        std::fs::create_dir_all(corpus.join("fixture/model")).expect("the scratch corpus is made");
+        run(&scratch, GitArgs(&["init", "--quiet"]));
+        std::fs::write(corpus.join("fixture/model/kept.gandr"), "def a = 1 ;\n")
+            .expect("a source is written");
+        run(&scratch, GitArgs(&["add", "."]));
+        run(&scratch, GitArgs(&["commit", "--quiet", "-m", "base"]));
+        std::fs::write(corpus.join("fixture/model/added.gandr"), "def b = 1 ;\n")
+            .expect("a new source is written");
+        run(&scratch, GitArgs(&["add", "."]));
+        run(
+            &scratch,
+            GitArgs(&["commit", "--quiet", "-m", "adds a source"]),
+        );
+        let changed = Changed::against(&corpus, Revision::from("HEAD^"));
+        std::fs::remove_dir_all(&scratch).expect("the scratch repository is removed");
+        assert_eq!(
+            changed
+                .expect("the base resolves")
+                .names()
+                .collect::<Vec<_>>(),
+            [&CorpusName::from("fixture/model/added.gandr")],
+            "the committed addition is the change"
         );
     }
 }
