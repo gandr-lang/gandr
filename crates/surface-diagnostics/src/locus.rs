@@ -1087,6 +1087,7 @@ impl fmt::Display for Checked
     /// - witness: `locus::tests::former_titles_distinguish_subjects_not_node_addresses`
     /// - witness: `locus::tests::checker_titles_preserve_numeric_roles`
     /// - witness: `locus::tests::session_refusals_point_at_the_fork_and_name_the_action`
+    /// - witness: `locus::tests::a_corolla_condition_failing_at_degree_one_names_the_catalogue_and_above_it_the_shape`
     /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
     #[inline]
     fn fmt(
@@ -2091,6 +2092,35 @@ mod tests
                 "semantic payload order, without node ids: {title}"
             );
         }
+    }
+
+    #[test]
+    fn a_corolla_condition_failing_at_degree_one_names_the_catalogue_and_above_it_the_shape()
+    {
+        use gandr_core_checker::ua::StratumDefect;
+        use gandr_theory_sites::Degree;
+
+        let mut arena = CoreArena::new();
+        let at = arena.value_unit();
+        let title = |degree: usize| {
+            Checked(CheckRefusal::UaUncertified {
+                at,
+                stratum: StratumDefect::Condition {
+                    degree: Degree::from(degree),
+                },
+            })
+            .to_string()
+        };
+        assert_eq!(
+            title(1_usize),
+            "univalence needs a catalogue of size 1 or more, whose site satisfies the corolla \
+             condition"
+        );
+        assert_eq!(
+            title(2_usize),
+            "univalence above degree 1 needs every shape up to its degree to be the colimit of \
+             its corollas; a shape of degree 2 is not"
+        );
     }
 
     #[test]
