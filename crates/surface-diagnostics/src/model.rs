@@ -706,18 +706,25 @@ impl Diagnostic
     /// - requires: nothing.
     /// - ensures: the first annotation of kind [`AnnotationKind::Primary`];
     ///   absent, with the reason [`Diagnostic::span`] gives, when the
-    ///   diagnostic is unlocated.
+    ///   diagnostic is unlocated; absent as outside the text when it is located
+    ///   but its first annotation is not the primary.
     /// - provides: the lead range an editor publishes.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a located refusal's primary annotation is its span;
-    ///   an unlocated one has none.
+    ///   an unlocated one has none; a located one whose primary mark was
+    ///   removed offers its context mark as none.
     /// - witness: `diagnostics::diagnostics::an_unlocated_report_claims_no_span`
+    /// - witness: `report::tests::a_located_diagnostic_without_its_primary_mark_has_no_primary`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(annotation) => self.span == Maybe::Present(annotation.locus.span),
-        Maybe::Absent(_) => matches!(self.span, Maybe::Absent(_)),
+        Maybe::Absent(reason) => match self.span {
+            Maybe::Absent(held) => reason == held,
+            Maybe::Present(_) => reason == report_span::Absent::OutsideText
+                && self.annotations.first().is_none_or(|first| first.kind != AnnotationKind::Primary),
+        },
     })]
     #[inline]
     pub fn primary(&self) -> Maybe<&DiagnosticAnnotation, report_span::Absent>
