@@ -80,11 +80,13 @@
 //! computation type its loop arm does not answer.
 //!
 //! `kernel_export::kernel_open_fold_readmission::a_step_case_read_through_a_swapped_fold_is_refused_by_name`
-//! readmits `fixture/model/identity/open-fold.gandr`, whose `unfolded` relates
-//! `wind(Loop(x))` to `S(wind(x))` at a variable: the kernel reads the `Loop`
-//! arm's bind over the stuck `wind(x)` itself. A twin whose fold swaps its two
-//! loop arms still respects the circle's rules and readmits, and is refused at
-//! `unfolded`, naming the endpoint the point no longer reaches.
+//! readmits `fixture/model/identity/open-fold.gandr`, whose `wind_unfolded`
+//! relates `windWords(Loop(x))` to `S(windWords(x))` at a variable: the kernel
+//! reads the `Loop` arm's bind over the stuck `windWords(x)` itself. A twin
+//! whose fold swaps its two loop arms still respects the words' rules and
+//! readmits, and, replayed up to the fold and then the step case alone, is
+//! refused at `wind_unfolded`, naming the endpoint the point no longer
+//! reaches.
 //!
 //! `kernel_export::kernel_presented_readmission::a_loop_readmits_as_its_words_and_dropped_cancellations_are_refused_by_name`
 //! readmits `fixture/model/identity/circle.gandr`, whose `loop : Base <-> Base`
@@ -1995,7 +1997,7 @@ mod kernel_open_fold_readmission
         let declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
-            .expect("open-fold readmits, `unfolded` by the bind its endpoint reads through");
+            .expect("open-fold readmits, `wind_unfolded` by the bind its endpoint reads through");
         let position = |name: &str| {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
             let named = StructuredName::from(vec![segment]);
@@ -2004,8 +2006,8 @@ mod kernel_open_fold_readmission
                 .position(|marked| *marked.declaration().name() == named)
                 .unwrap_or_else(|| panic!("`{name}` crossed"))
         };
-        let wind = position("wind");
-        let unfolded = position("unfolded");
+        let wind = position("windWords");
+        let unfolded = position("wind_unfolded");
         let marked = &declarations[wind];
         let DeclarationContent::Def { declared, body } = *marked.declaration().content()
         else {
@@ -2035,8 +2037,8 @@ mod kernel_open_fold_readmission
             panic!("`wind` cases on its argument");
         };
         // The twin's `Loop` arm returns `P(n)` and its `Unloop` arm `S(n)`: it
-        // still respects both cancellations, but `wind(Loop(x))` now reads as
-        // `P(wind(x))`, which `unfolded`'s dialogue does not meet.
+        // still respects both cancellations, but `windWords(Loop(x))` now
+        // reads as `P(windWords(x))`, which `wind_unfolded` does not meet.
         let swapped = vec![branches[0], branches[2], branches[1]];
         let case = arena.computation_data_case(scrutinee, motive, swapped);
         let lambda = arena.computation_lambda(case);
@@ -2045,11 +2047,20 @@ mod kernel_open_fold_readmission
         let twin_declaration = DeclarationBuilder::new(&mut arena)
             .def(marked.declaration().levels().clone(), declared, body)
             .named(marked.declaration().name().clone());
-        let mut twin = declarations.clone();
+        // The twin replays the declarations up to the fold, then the step case
+        // alone: the loop space's closed runs of the fold that stand between
+        // them (`wound_twice` first) would refuse the swap at a closed word,
+        // before the reading at a variable is reached.
+        let mut twin = declarations[..= wind].to_vec();
         twin[wind] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        twin.push(declarations[unfolded].clone());
         let refusal = Environment::replay(arena, &twin)
-            .expect_err("the swapped fold reads `wind(Loop(x))` as a predecessor");
-        assert_eq!(usize::from(refusal.position()), unfolded);
+            .expect_err("the swapped fold reads `windWords(Loop(x))` as a predecessor");
+        assert_eq!(
+            usize::from(refusal.position()),
+            wind + 1,
+            "the step case refuses"
+        );
         assert!(
             matches!(
                 refusal.error(),
