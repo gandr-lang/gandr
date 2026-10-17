@@ -1,87 +1,53 @@
 // A recursive call at a variable converts through the arm that waits on it.
-// `wind(Loop(x))` runs to the `Loop` arm, whose `run` waits on `wind(x)`,
-// stuck at the variable; an endpoint's computation is pure, so the bind reads
-// as the arm's constructor over the held call, `S(wind(x))`, and the kernel
-// replays the reading by forcing it. An arm that cases on the call before it
-// returns keeps the call stuck, and a path stating a value for it is refused.
+// `windWords(Loop(x))` runs to the `Loop` arm, whose `run` waits on
+// `windWords(x)`, stuck at the variable; an endpoint's computation is pure, so
+// the bind reads as the arm's constructor over the held call,
+// `S(windWords(x))`, and the kernel replays the reading by forcing it. An arm
+// that cases on the call before it returns keeps the call stuck, and a path
+// stating a value for it is refused. Conversion is definitional equality by
+// computation (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
 
-/// The circle presented by a base point and a loop with its inverse, which
-/// cancel each other.
-@[ normalizes("Loop(Unloop(Base)) ~> Base") ]
-data Circle : Type {
-  Base : Circle;
-  Loop : (x : Circle) --> Circle;
-  Unloop : (x : Circle) --> Circle;
-  rule Loop(Unloop(x)) <=> x;
-  rule Unloop(Loop(x)) <=> x;
-}
+// The presented integers and the free naturals.
+import "./circle-base.gandr" ;
+// The loop's words.
+import "./loop-words.gandr" ;
+// The winding number into the integers.
+import "./loop-winding.gandr" ;
+// Spinning back.
+import "./loop-space.gandr" ;
 
-/// The integers presented by zero, a successor and a predecessor, which
-/// cancel each other.
-@[ normalizes("S(P(Z)) ~> Z") ]
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
-}
-
-/// The winding number: each arm returns a constructor over the call on the
-/// smaller circle.
-def rec wind(c : Circle) -> -F Int {
-  case c {
-    Base => return Z,
-    Loop(x) => { run n <- wind[<](x); return S(n) },
-    Unloop(x) => { run n <- wind[<](x); return P(n) }
-  }
-}
-
-/// Unwinding an integer onto the circle, arm by arm.
-def rec spin(n : Int) -> -F Circle {
-  case n {
-    Z => return Base,
-    S(x) => { run c <- spin[<](x); return Loop(c) },
-    P(x) => { run c <- spin[<](x); return Unloop(c) }
-  }
-}
-
-/// The step case at a variable: the `Loop` arm's bind over `wind(x)` reads
-/// as `S` over the held call.
+/// The step case at a variable: the `Loop` arm's bind over `windWords(x)`
+/// reads as `S` over the held call.
 @[ checks ]
-def unfolded(x : Circle) -> -F Path(Int, wind(Loop(x)), S(wind(x))) {
-  return here(S(wind(x)))
+def wind_unfolded(x : Words) -> -F Path(Int, windWords(Loop(x)), S(windWords(x))) {
+  return here(S(windWords(x)))
 }
 
 /// Two loops read through two binds, the inner call's first.
 @[ checks ]
-def wound_twice(x : Circle) -> -F Path(Int, wind(Loop(Loop(x))), S(S(wind(x)))) {
-  return here(S(S(wind(x))))
+def twice_unfolded(x : Words) -> -F Path(Int, windWords(Loop(Loop(x))), S(S(windWords(x)))) {
+  return here(S(S(windWords(x))))
 }
 
-/// The round trip's step case: `spin` waits on the read `S(wind(x))`, runs
-/// its `S` arm, and that arm's bind over `spin(wind(x))` reads as `Loop`.
+/// The round trip's step case: `spinWords` waits on the read
+/// `S(windWords(x))`, runs its `S` arm, and that arm's bind over
+/// `spinWords(windWords(x))` reads as `Loop`.
 @[ checks ]
-def round_unfolded(x : Circle) -> -F Path(Circle, spin(wind(Loop(x))), Loop(spin(wind(x)))) {
-  return here(Loop(spin(wind(x))))
+def round_unfolded(x : Words) -> -F Path(Words, spinWords(windWords(Loop(x))), Loop(spinWords(windWords(x)))) {
+  return here(Loop(spinWords(windWords(x))))
 }
 
 /// The round trip's base case, closed: every call runs to its value.
 @[ checks ]
-def base_case() -> -F Path(Circle, spin(wind(Base)), Base) {
-  return here(Base)
+def base_case() -> -F Path(Words, spinWords(windWords(Nil)), Nil) {
+  return here(Nil)
 }
 
-/// Natural numbers, free. A case on the presented `Int` is refused before
-/// conversion as one its rules do not admit, so the twin that cases on its
-/// call counts here.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
-}
-
-/// Parity by structural recursion: the successor arm cases on the parity of
-/// the predecessor before it returns.
+/// Parity by structural recursion over the free naturals: the successor arm
+/// cases on the parity of the predecessor before it returns. A case on the
+/// presented `Int` is refused before conversion as one its rules do not
+/// admit, so the twin that cases on its call counts here.
+@[ checks ]
 def rec parity(n : Nat) -> -F Nat {
   case n {
     Zero => return Zero,
@@ -99,6 +65,6 @@ def rec parity(n : Nat) -> -F Nat {
 /// the variable, so the endpoint stays the bind over the call and is not
 /// read as a constructor over it.
 @[ refuses("EndpointMismatch") ]
-def flipped(n : Nat) -> -F Path(Nat, parity(Succ(n)), Succ(parity(n))) {
+def parity_stuck(n : Nat) -> -F Path(Nat, parity(Succ(n)), Succ(parity(n))) {
   return here(Succ(parity(n)))
 }
