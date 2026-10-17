@@ -107,6 +107,34 @@ fn recorded_answer_references_participate_in_value_invalidation()
         };
         assert_eq!(touches(&input, support), expected);
     }
+    // With no earlier item to answer, a recorded absence stands and a
+    // recorded type falls.
+    let no_change = BTreeSet::new();
+    let input = AdoptionInput {
+        candidate: &candidate,
+        item: &item,
+        footprint: &footprint,
+        declaration: program.items()[0].declaration(),
+        layout: program.layout(),
+        supplied: &[],
+        ordinal: ItemOrdinal::from(0_usize),
+        value_changed: &no_change,
+    };
+    for (answer, expected) in [
+        (Answer::Untyped, Standing::Stands),
+        (Answer::Data(None), Standing::Stands),
+        (
+            Answer::Typed(TypeContent::from_nodes(vec![ContentNode::Product(
+                Vec::new(),
+            )])),
+            Standing::Falls,
+        ),
+    ] {
+        assert_eq!(
+            super::support_holds(&input, &[Answered::new(Reference::Unoccupied, answer)]),
+            expected
+        );
+    }
 }
 
 #[test]

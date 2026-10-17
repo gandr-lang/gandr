@@ -96,6 +96,285 @@ fn holes_marks_and_the_unknown_types_round_trip()
     );
 }
 
+#[test]
+#[expect(
+    clippy::many_single_char_names,
+    reason = "the five child nodes are placeholders each former's slots are filled from"
+)]
+fn every_node_former_round_trips_under_its_own_frame()
+{
+    use alloc::collections::BTreeMap;
+
+    use gandr_core_term::Component;
+    use gandr_core_term::ComponentCount;
+    use gandr_core_term::FieldLabel;
+    use gandr_core_term::control::StackFrame;
+    use gandr_core_term::memory::MemoryForm;
+    use gandr_core_term::session::RecordedMove;
+    use gandr_core_term::session::SessionRelation;
+
+    use super::DeBruijnIndex;
+    use super::Level;
+    use super::Side;
+    use super::Summand;
+    use super::Zone;
+
+    let [a, b, c, d, e] = [1_usize, 2, 3, 4, 5].map(NodeIndex::from);
+    let label = |text: &str| FieldLabel::from(alloc::string::String::from(text));
+    let fields = BTreeMap::from([(label("x"), a), (label("y"), b)]);
+    let slot = DeBruijnIndex::from(2_u32);
+    let reference = Reference::Item {
+        key: ItemKey::from([4].as_slice()),
+        occurrence: Occurrence::from(1_usize),
+    };
+    let level = Level::zero();
+    let mut nodes = vec![
+        ContentNode::Data {
+            declaration: reference.clone(),
+            arguments: vec![a, b],
+        },
+        ContentNode::RecordType(fields.clone()),
+        ContentNode::Constructor {
+            datatype: a,
+            tag: gandr_core_term::ConstructorTag::from(1_usize),
+            fields: vec![b, c],
+        },
+        ContentNode::Record(fields),
+        ContentNode::DataCase {
+            scrutinee: a,
+            motive: b,
+            branches: vec![c, d],
+        },
+        ContentNode::RecordProjection(a, label("x")),
+        ContentNode::TupleProjection(a, Component::from(1_usize)),
+        ContentNode::Reify(alloc::sync::Arc::from([
+            StackFrame::Apply(a),
+            StackFrame::Bind(b),
+            StackFrame::Project(Side::Left),
+            StackFrame::Project(Side::Right),
+        ])),
+        ContentNode::Stack {
+            input: a,
+            output: b,
+        },
+        ContentNode::WithType(a, b),
+        ContentNode::Resume(a, b),
+        ContentNode::Split(a, ComponentCount::from(2_usize), b),
+        ContentNode::DependentSplit {
+            scrutinee: a,
+            arity: ComponentCount::from(2_usize),
+            motive: b,
+            body: c,
+        },
+        ContentNode::Reset(a),
+        ContentNode::Shift(a),
+        ContentNode::With(a, b),
+        ContentNode::Ascribe { body: a, ty: b },
+        ContentNode::Project(Side::Left, a),
+        ContentNode::Project(Side::Right, a),
+        ContentNode::PathUniverse(a, b),
+        ContentNode::PathRefl(a),
+        ContentNode::PathProduct(a, b),
+        ContentNode::Funext(a, b),
+        ContentNode::Equiv(a, b),
+        ContentNode::Transport(a, b),
+        ContentNode::PathType {
+            carrier: a,
+            left: b,
+            right: c,
+        },
+        ContentNode::Here(a),
+        ContentNode::Returned(a),
+        ContentNode::Nested(a),
+        ContentNode::Run(a),
+        ContentNode::ElementTransport {
+            motive: a,
+            path: b,
+            value: c,
+        },
+        ContentNode::TelescopeTransport {
+            motive: a,
+            path: b,
+            start: c,
+            over: d,
+            value: e,
+        },
+        ContentNode::Stay(a),
+        ContentNode::Then(a, b),
+        ContentNode::Forward(a),
+        ContentNode::FunctionFlow(a, b),
+        ContentNode::FlowProduct(a, b),
+        ContentNode::Recorded(alloc::sync::Arc::from([
+            RecordedMove::Sent(a),
+            RecordedMove::Received(b),
+            RecordedMove::Selected(label("go")),
+            RecordedMove::Offered(label("stop")),
+            RecordedMove::Closed,
+        ])),
+        ContentNode::Ride {
+            motive: a,
+            flow: b,
+            value: c,
+        },
+        ContentNode::FlowType {
+            carrier: a,
+            source: b,
+            target: c,
+        },
+        ContentNode::RunType(a),
+        ContentNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: slot,
+        },
+        ContentNode::Variable {
+            zone: Zone::Linear,
+            index: slot,
+        },
+        ContentNode::Constant(reference.clone()),
+        ContentNode::Tuple(vec![a, b]),
+        ContentNode::ListNil,
+        ContentNode::ListCons(a, b),
+        ContentNode::Injection(Summand::from(1_usize), a),
+        ContentNode::Thunk(a),
+        ContentNode::ValueLift {
+            target: level.clone(),
+            body: a,
+        },
+        ContentNode::Quote(a),
+        ContentNode::QuoteComputation(a),
+        ContentNode::StaticLambda(a),
+        ContentNode::StaticApplication(a, b),
+        ContentNode::Lambda(a),
+        ContentNode::Application(a, b),
+        ContentNode::Return(a),
+        ContentNode::Bind(a, b),
+        ContentNode::Force(a),
+        ContentNode::Case {
+            scrutinee: a,
+            branches: vec![b, c],
+        },
+        ContentNode::ListFold {
+            element: a,
+            result: b,
+            list: c,
+            on_nil: d,
+            on_cons: e,
+        },
+        ContentNode::Base(BaseType::Integer),
+        ContentNode::Product(vec![a, b]),
+        ContentNode::Sum(vec![a, b]),
+        ContentNode::List(a),
+        ContentNode::ThunkType(a),
+        ContentNode::TypeLift {
+            inner: a,
+            target: level.clone(),
+        },
+        ContentNode::Element {
+            code: a,
+            target: level.clone(),
+        },
+        ContentNode::StaticPi {
+            domain: a,
+            codomain: b,
+        },
+        ContentNode::Sigma {
+            first: a,
+            second: b,
+        },
+        ContentNode::Abstract(reference),
+        ContentNode::Arrow {
+            domain: a,
+            codomain: b,
+        },
+        ContentNode::Pi {
+            domain: a,
+            codomain: b,
+        },
+        ContentNode::ComputationElement {
+            code: a,
+            target: level,
+        },
+    ];
+    nodes.extend(
+        [SessionRelation::Equivalence, SessionRelation::Subtyping].map(|relation| {
+            ContentNode::SessionRelated {
+                relation,
+                source: a,
+                target: b,
+            }
+        }),
+    );
+    nodes.extend(
+        [
+            MemoryForm::Hold { value: a, body: b },
+            MemoryForm::Access {
+                held: slot,
+                body: a,
+                unwind: b,
+            },
+            MemoryForm::Resume {
+                view: slot,
+                value: a,
+            },
+            MemoryForm::Abort { view: slot },
+        ]
+        .map(ContentNode::Memory),
+    );
+    let mut encodings = BTreeSet::new();
+    for node in nodes {
+        let mut bytes = CheckpointBytes::default();
+        super::write_node(&mut Writer { sink: &mut bytes }, &node).expect("a portable node");
+        assert!(
+            encodings.insert(bytes.as_ref().to_vec()),
+            "{node:?} keeps its own encoding"
+        );
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(super::read_node(&mut reader), Ok(node));
+        assert_eq!(reader.finish(), Ok(()));
+    }
+}
+
+#[test]
+fn every_footprint_stance_and_answer_round_trips()
+{
+    use super::Answer;
+    use super::Footprint;
+    use super::HoleMark;
+    use super::Opacity;
+
+    let mut encodings = BTreeSet::new();
+    for opacity in [Opacity::Transparent, Opacity::Opaque] {
+        for hole in [HoleMark::Filled, HoleMark::Hole] {
+            let footprint = Footprint::from_parts(BTreeSet::new(), BTreeSet::new(), opacity, hole);
+            let mut bytes = CheckpointBytes::default();
+            super::write_footprint(&mut Writer { sink: &mut bytes }, &footprint)
+                .expect("a portable footprint");
+            assert!(encodings.insert(bytes.as_ref().to_vec()));
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(super::read_footprint(&mut reader), Ok(footprint));
+            assert_eq!(reader.finish(), Ok(()));
+        }
+    }
+    let ty = TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
+    for answer in [Answer::Untyped, Answer::Typed(ty), Answer::Data(None)] {
+        let mut bytes = CheckpointBytes::default();
+        super::write_answer(&mut Writer { sink: &mut bytes }, &answer).expect("a portable answer");
+        assert!(encodings.insert(bytes.as_ref().to_vec()));
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(super::read_answer(&mut reader), Ok(answer));
+        assert_eq!(reader.finish(), Ok(()));
+    }
+}
+
 use gandr_kernel_term::BaseType;
 
 use super::Answer;
@@ -718,6 +997,7 @@ fn an_absurd_case_s_refusal_round_trips_with_its_reason()
     let at = Site::Node(NodeIndex::from(3_usize));
     let mut encodings = alloc::collections::BTreeSet::new();
     for reason in [
+        Apartness::Apart,
         Apartness::Agree,
         Apartness::Open,
         Apartness::Leaf,
@@ -1626,5 +1906,371 @@ fn a_type_of_words_round_trips_its_cells()
         bytes.as_ref(),
         bare.as_ref(),
         "and so is whether the rules were minted from cells"
+    );
+}
+
+/// One refusal of every kind, and of every nested reason a kind carries:
+/// each form, zone, access defect, run fault, occurrence site, stratum and
+/// translator defect.
+///
+/// # Specification
+/// trivial.
+fn every_refusal() -> Vec<Refusal>
+{
+    use gandr_core_checker::ComponentOrdinal;
+    use gandr_core_checker::LoopRespect;
+    use gandr_core_checker::SealSite;
+    use gandr_core_checker::SealingSite;
+    use gandr_core_checker::ua::StratumDefect;
+    use gandr_core_checker::ua::UaDefect;
+    use gandr_core_checker::ua::Way;
+    use gandr_kernel_term::Apartness;
+    use gandr_kernel_term::CellIndex;
+    use gandr_kernel_term::RuleIndex;
+    use gandr_kernel_term::RuleRefusal;
+    use gandr_theory_sites::ElementIndex;
+    use gandr_theory_sites::ShapeIndex;
+
+    use super::AccessDefect;
+    use super::ArgumentPosition;
+    use super::BinderDepth;
+    use super::CheckBudget;
+    use super::ConstructorTag;
+    use super::DeBruijnIndex;
+    use super::FieldPosition;
+    use super::Form;
+    use super::OccurrenceSite;
+    use super::ParameterPosition;
+    use super::RunFault;
+    use super::RunStep;
+    use super::StaticArity;
+    use super::Zone;
+
+    let at = Site::Node(NodeIndex::from(3_usize));
+    let other = Site::Node(NodeIndex::from(5_usize));
+    let ty = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
+    let reference = Reference::Item {
+        key: ItemKey::from([1].as_slice()),
+        occurrence: Occurrence::from(0_usize),
+    };
+    let rule = RuleIndex::from(1_usize);
+    let cell = CellIndex::from(2_usize);
+    let mut refusals = vec![
+        Refusal::NotADataType(reference.clone()),
+        Refusal::DataKindNotUniverse(at),
+        Refusal::DataFieldLevel {
+            field: at,
+            kind: ty(),
+        },
+        Refusal::RuleNotPresentable {
+            kind: at,
+            refusal: RuleRefusal {
+                rule,
+                fault: super::RULE_FAULTS[1],
+            },
+        },
+        Refusal::RuleNotRespected { at, rule },
+        Refusal::NotApart {
+            at,
+            reason: Apartness::Agree,
+        },
+        Refusal::LoopNotRespected {
+            at,
+            cell,
+            reason: LoopRespect::Apart,
+        },
+        Refusal::LoopUndecided { at, cell },
+        Refusal::DataArgumentArity(at),
+        Refusal::UnknownConstructor {
+            at,
+            tag: ConstructorTag::from(2_usize),
+        },
+        Refusal::ConstructorArity(at),
+        Refusal::NonExhaustiveDataCase(at),
+        Refusal::AbsentRecordField(at),
+        Refusal::AbsentTupleComponent(at),
+        Refusal::MissingRecordField { at, expected: ty() },
+        Refusal::AbstractKindNotUniverse(at),
+        Refusal::RepresentationAboveKind {
+            representation: at,
+            kind: ty(),
+        },
+        Refusal::NotAnAbstractType(reference.clone()),
+        Refusal::SealSiteRepeated(SealSite::new(
+            SealingSite::from(1_usize),
+            ComponentOrdinal::from(2_usize),
+        )),
+        Refusal::TypeMismatch {
+            at,
+            synthesised: ty(),
+            expected: ty(),
+        },
+        Refusal::ShapeMismatch {
+            at,
+            wanted: super::SHAPES[2],
+            found: ty(),
+        },
+        Refusal::UnknownConstant {
+            at,
+            constant: reference.clone(),
+        },
+        Refusal::OutOfFragment {
+            at,
+            former: super::FORMERS[3],
+        },
+        Refusal::BudgetExceeded {
+            budget: CheckBudget::from(9_usize),
+        },
+        Refusal::DanglingNode { at },
+        Refusal::AdmissionOrder,
+        Refusal::MachineInvariant,
+        Refusal::SortMismatch {
+            at,
+            synthesised: ty(),
+            expected: ty(),
+        },
+        Refusal::LevelMismatch {
+            at,
+            synthesised: ty(),
+            expected: ty(),
+        },
+        Refusal::DependentBind {
+            at,
+            synthesised: ty(),
+        },
+        Refusal::Undecided { at },
+        Refusal::FamilyArity {
+            at,
+            expected: StaticArity::from(1_u32),
+            actual: StaticArity::from(2_u32),
+        },
+        Refusal::FamilyArgumentClassifier {
+            at,
+            position: ArgumentPosition::from(1_u32),
+            synthesised: ty(),
+            expected: ty(),
+        },
+        Refusal::StaticLambdaArgument { at },
+        Refusal::StaticClassifierExpected { at, found: ty() },
+        Refusal::PathCode(at),
+        Refusal::EndpointMismatch {
+            at,
+            left: Site::Unreached,
+            right: other,
+        },
+        Refusal::CompoundEndpoint {
+            at,
+            synthesised: ty(),
+        },
+        Refusal::FunextUnsupported {
+            at,
+            classifier: ty(),
+        },
+        Refusal::PointwiseDistinct(at),
+        Refusal::EquivUnsupported {
+            at,
+            classifier: ty(),
+        },
+        Refusal::UncertifiedStratum { at, code: ty() },
+        Refusal::RoundTripDistinct(at),
+        Refusal::NotOver {
+            at,
+            synthesised: ty(),
+            expected: ty(),
+        },
+        Refusal::UnenclosedRun { at },
+        Refusal::CapabilityForged { at, expected: ty() },
+        Refusal::CapabilityAmplified {
+            at,
+            synthesised: ty(),
+            expected: ty(),
+        },
+        Refusal::CapabilityOutsideAuthority {
+            at,
+            capability: ty(),
+        },
+        Refusal::CapabilityEscaped { at, found: ty() },
+        Refusal::CapabilityConsumable(at),
+        Refusal::CapabilityUngranted(at),
+        Refusal::SessionNotEquivalent(at),
+        Refusal::SessionNotSubtype(at),
+        Refusal::SessionCodeExpected(at),
+        Refusal::NonCovariantMotive(at),
+        Refusal::RideUnsupported(at),
+        Refusal::ForwardUnsupported(at),
+        Refusal::Boundary(at),
+        Refusal::EffectSignatureConflict {
+            at,
+            first: ty(),
+            second: ty(),
+        },
+        Refusal::UnknownOperation { at },
+        Refusal::HandlerCoverage { at },
+        Refusal::ShiftWithoutReset { at },
+        Refusal::DependentStack {
+            at,
+            synthesised: ty(),
+        },
+    ];
+    refusals.extend(
+        [
+            Form::Thunk(at),
+            Form::Lambda(at),
+            Form::Return(at),
+            Form::Hole,
+            Form::StaticLambda(at),
+            Form::Injection(at),
+            Form::Case(at),
+            Form::Fixpoint(at),
+            Form::List(at),
+            Form::Reify(at),
+            Form::Handle(at),
+            Form::Reset(at),
+            Form::Shift(at),
+            Form::With(at),
+            Form::Split(at),
+            Form::Nested(at),
+            Form::Offer(at),
+            Form::Scope(at),
+            Form::Run(at),
+        ]
+        .map(|form| Refusal::NotSynthesisable { form }),
+    );
+    refusals.extend(
+        [Zone::Intuitionistic, Zone::Linear].map(|zone| Refusal::UnboundIndex {
+            at,
+            zone,
+            index: DeBruijnIndex::from(4_u32),
+            depth: BinderDepth::from(2_usize),
+        }),
+    );
+    refusals.extend(
+        [
+            AccessDefect::NotHeld,
+            AccessDefect::Lent,
+            AccessDefect::HeldCaptured {
+                by: super::CAPTURES[1],
+            },
+            AccessDefect::Escaped {
+                by: super::CAPTURES[2],
+            },
+            AccessDefect::Unended,
+            AccessDefect::Spent,
+            AccessDefect::NotAView,
+            AccessDefect::UnwindEffect,
+        ]
+        .map(|defect| Refusal::Access { at, defect }),
+    );
+    let step = RunStep::from(2_u32);
+    refusals.extend(
+        [
+            RunFault::WrongDirection(step),
+            RunFault::WrongLabel(step),
+            RunFault::ResumeAfterEnd(step),
+            RunFault::Incomplete(step),
+            RunFault::OfferNarrowed,
+        ]
+        .map(|fault| Refusal::RunNotAdmitted { at, fault }),
+    );
+    for site in [
+        OccurrenceSite::Parameter(ParameterPosition::from(1_usize)),
+        OccurrenceSite::Field {
+            tag: ConstructorTag::from(1_usize),
+            field: FieldPosition::from(0_usize),
+        },
+    ] {
+        refusals.extend([
+            Refusal::NegativeOccurrence(site),
+            Refusal::NestedOccurrence(site),
+            Refusal::IndexOccurrence(site),
+            Refusal::NonUniformOccurrence(site),
+            Refusal::CrossBlockReference {
+                site,
+                index: reference.clone(),
+            },
+        ]);
+    }
+    refusals.extend(
+        [
+            StratumDefect::Degree {
+                degree: gandr_theory_sites::Degree::from(1_usize),
+            },
+            StratumDefect::Condition {
+                degree: gandr_theory_sites::Degree::from(2_usize),
+            },
+            StratumDefect::Allowance {
+                bound: gandr_theory_sites::ShapeSize::from(3_usize),
+            },
+        ]
+        .map(|stratum| Refusal::UaUncertified { at, stratum }),
+    );
+    let corolla = ShapeIndex::from(1_usize);
+    let element = ElementIndex::from(2_usize);
+    refusals.extend(
+        [
+            UaDefect::UnknownGenerator { way: Way::Forward },
+            UaDefect::UnknownGenerator { way: Way::Backward },
+            UaDefect::PastTheBound {
+                profile: gandr_theory_sites::Profile {
+                    inputs: gandr_theory_sites::PortCount::from(1_usize),
+                    outputs: gandr_theory_sites::PortCount::from(2_usize),
+                },
+            },
+            UaDefect::Cardinality { corolla },
+            UaDefect::Tables { corolla },
+            UaDefect::NotInverse { corolla, element },
+            UaDefect::NotNatural { corolla, element },
+            UaDefect::Stuck { corolla, element },
+        ]
+        .map(|defect| Refusal::UaInequivalent { at, defect }),
+    );
+    refusals
+}
+
+#[test]
+fn every_refusal_round_trips_under_its_own_encoding()
+{
+    let mut encodings = alloc::collections::BTreeSet::new();
+    for refusal in every_refusal() {
+        let mut bytes = CheckpointBytes::default();
+        super::write_refusal(&mut Writer { sink: &mut bytes }, &refusal).expect("portable refusal");
+        assert!(
+            encodings.insert(bytes.as_ref().to_vec()),
+            "{refusal:?} keeps its own encoding"
+        );
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
+        assert_eq!(reader.finish(), Ok(()));
+    }
+}
+
+#[test]
+fn an_offer_narrowed_fault_is_read_only_at_step_zero()
+{
+    let refusal = Refusal::RunNotAdmitted {
+        at: Site::Unreached,
+        fault: super::RunFault::OfferNarrowed,
+    };
+    let mut bytes = CheckpointBytes::default();
+    super::write_refusal(&mut Writer { sink: &mut bytes }, &refusal).expect("portable refusal");
+    let mut stepped = bytes.as_ref().to_vec();
+    // The step is the frame's last word, written little-endian.
+    let low = stepped
+        .len()
+        .checked_sub(8)
+        .and_then(|start| stepped.get_mut(start))
+        .expect("a step word ends the frame");
+    assert_eq!(0, *low, "the fault is written at step zero");
+    *low = 1;
+    let mut reader = Reader {
+        bytes: &stepped,
+        cursor: 0,
+    };
+    assert_eq!(
+        super::read_refusal(&mut reader),
+        Err(CodecError::NonCanonical)
     );
 }

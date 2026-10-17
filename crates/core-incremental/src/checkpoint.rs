@@ -2103,6 +2103,7 @@ fn adopt(
 ///   references and answers directly rather than the layout lookup map.
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
 /// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
+/// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
 #[spec(
     requires: input.supplied.len() == usize::from(input.ordinal),
     ensures: |ret| {
