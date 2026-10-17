@@ -7,19 +7,8 @@
 // before it and never the link itself. What refuses is in
 // `../../pathological/data/curry.gandr`.
 
-/// Natural numbers, the measure the length counts in.
-@[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
-}
-
-/// The two answers a test gives.
-@[ checks ]
-data Two : Type {
-  L : Two;
-  R : Two;
-}
+// The naturals the length counts in, and the two answers a test gives.
+import "./data-base.gandr" ;
 
 /// Chains whose every link holds the chain before it and a test of chains:
 /// `Chain` stands to the left of the test's arrow, below the link.
@@ -51,10 +40,10 @@ def judge(c : Chain) -> -F Two {
 
 /// The links of a chain, by recursion one stage below each link.
 @[ checks ]
-def rec length(c : Chain) -> -F Nat {
+def rec chainLength(c : Chain) -> -F Nat {
   case c {
     Start => Zero,
-    Link(prev, test) => { run n <- length[<](prev); Succ(n) }
+    Link(prev, test) => { run n <- chainLength[<](prev); Succ(n) }
   }
 }
 
@@ -66,4 +55,4 @@ def judged = thunk { judge(twice) } ;
 /// The chain's two links.
 @[ runs("Succ(Succ(Zero))") ]
 def measured : +U (-F Nat) ;
-def measured = thunk { length(twice) } ;
+def measured = thunk { chainLength(twice) } ;

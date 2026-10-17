@@ -2,30 +2,11 @@
 // W-types. A node holds a function from a type of branches to its subtrees,
 // so the family occurs to the right of an arrow, never to its left: strictly
 // positive. A fold reaches each subtree by applying that function and recurses
-// on the result, one stage below the node it came from.
+// on the result, one stage below the node it came from (Martin-Löf,
+// _Constructive mathematics and computer programming_, 1982).
 
-/// Natural numbers, the measure the fold counts in.
-@[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
-}
-
-/// Addition by recursion on the second argument.
-@[ checks ]
-def rec plus(n : Nat, m : Nat) -> -F Nat {
-  case m {
-    Zero => n,
-    Succ(p) => Succ(plus[<](n, p))
-  }
-}
-
-/// The two branches of a binary node.
-@[ checks ]
-data Two : Type {
-  L : Two;
-  R : Two;
-}
+// The naturals the fold counts in, their addition, and the two branches.
+import "./data-base.gandr" ;
 
 /// Binary trees with the branching written as a function: a node picks its
 /// subtree at each branch.
@@ -68,8 +49,8 @@ def lopsided = Node(thunk { fn (x) { case x -> -F Tree { L => cherry, R => Leaf 
 
 /// The cherry's two leaves, counted through its function.
 @[ runs("Succ(Succ(Zero))") ]
-def counted : +U (-F Nat) ;
-def counted = thunk { size(cherry) } ;
+def cherry_leaves : +U (-F Nat) ;
+def cherry_leaves = thunk { size(cherry) } ;
 
 /// Three leaves, the left two reached through two functions.
 @[ runs("Succ(Succ(Succ(Zero)))") ]

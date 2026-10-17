@@ -1,3 +1,9 @@
+// Dependent pairs: a record whose later entry's type reads an earlier one,
+// split by a match or selected by label or position, and a path between two
+// pairs as a path between the first components and, over it, one between
+// the second (the HoTT book, §2.7).
+
+/// A family indexed by an integer, with one element at each index.
 @[ checks ]
 data Ix(n : Integer) : Type {
   MkIx : Ix(n);
@@ -8,6 +14,7 @@ data Ix(n : Integer) : Type {
 def tagged : #{n : Integer, w : Ix(n)} ;
 def tagged = #{3, (MkIx : Ix(3))} ;
 
+/// The first component of a dependent pair, by a match.
 @[ checks ]
 def tag_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
   case p {
@@ -15,19 +22,23 @@ def tag_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
   }
 }
 
+/// The tag of `tagged`.
 @[ runs("3") ]
 def tag : +U (-F Integer) ;
 def tag = thunk { become tag_of(tagged) } ;
 
+/// The first component of a dependent pair, selected by its label.
 @[ checks ]
 def index_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
   return p.n
 }
 
+/// The index of `tagged`.
 @[ runs("3") ]
 def index : +U (-F Integer) ;
 def index = thunk { become index_of(tagged) } ;
 
+/// A pair whose second component is a loop at its first.
 @[ checks ]
 def ring : #{n : Integer, v : Path(Integer, n, n)} ;
 def ring = #{2, here(2)} ;
@@ -79,10 +90,12 @@ def both = #{here(2), here(here(2))} ;
 def ring_around : Path(#{n : Integer, v : Path(Integer, n, n)}, ring, ring) ;
 def ring_around = #{here(2), here(here(2))} ;
 
+/// The constant path at `tagged`, the second component's over the first's.
 @[ checks ]
 def tagged_around : Path(#{n : Integer, w : Ix(n)}, tagged, tagged) ;
 def tagged_around = #{here(3), here((MkIx : Ix(3)))} ;
 
+/// Five, carried along `both` through the constant family.
 @[ checks ]
 def moved : +U (-F Integer) ;
 def moved = thunk { transport(\s. Integer, both, 5) } ;
