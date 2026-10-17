@@ -1423,8 +1423,7 @@ pub(super) fn label_replaced(
                     sink.arena.computation(replaced),
                     Some(&Computation::Session(_))
                 ) {
-                    sink.origins
-                        .relabel(&Labelled::Endpoint(replaced), &Labelled::Endpoint(standing));
+                    sink.origins.relabel_action(replaced, standing);
                 }
             },
             Carried::CompType(..) => {},
