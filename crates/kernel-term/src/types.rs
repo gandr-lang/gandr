@@ -28,12 +28,12 @@
 //! tags, and the numbering that gives the dependent former its tag is settled
 //! in [`crate::tags`] together with the reserved stored-sharing block.
 //!
-//! Nothing a codomain can mention is a term at this vocabulary, so a `Pi` whose
-//! codomain ignores its binder denotes what the `Arrow` over the same children
-//! denotes. The two remain distinct types at the kernel's definitional
-//! equality, and the producer's obligation is the one that keeps that from
-//! being an incompleteness: the dependent former is emitted only where the
-//! codomain is genuinely scoped.
+//! A `Pi` whose codomain ignores its binder denotes what the `Arrow` over the
+//! same children denotes. The two stay distinct nodes; conversion identifies
+//! them, weakening the plain codomain past the dependent binder (#577), since
+//! no producer can keep the dependent former to codomains that name their
+//! binder when a family applied at the binder reads to a constant type only
+//! once its code is read. The decision is in `gandr-kernel-core`'s `conv`.
 //!
 //! # Universe families and quotes
 //!
