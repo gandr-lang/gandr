@@ -52,7 +52,10 @@
 //!   its signature and definition forms, so a face holding either form finds
 //!   the one declaration both halves make. A `data` family's operation is
 //!   declared from the family's own form, so the family's key stays the
-//!   family's.
+//!   family's. A declaration refused for binding again a name an unqualified
+//!   import binds answers at none of its sites: every name it writes reads as
+//!   the import's, so a type naming its own family would print as the type it
+//!   hides.
 //! - **A described member** — a `sign` block's sorts, operations, laws and
 //!   circuits, a `data` family's constructors, operations and rules, each port
 //!   and each node of a rule's sides — is spelled at the type its member states
@@ -134,6 +137,7 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::Insertion;
 use gandr_surface_lowering::Labelled;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::PatternReading;
 use gandr_surface_lowering::Provenance;
@@ -1034,9 +1038,11 @@ impl TypeTable
     ///   bytes, so the table answers offsets into the last source's own text;
     ///   the last source's declarations are keyed by their forms' keys in that
     ///   source's own tree, which no offset moves, and a sibling's — even one
-    ///   writing the same form byte for byte (#596) — are not kept. The table
-    ///   keeps the unit, which every reading back lowers in again. Unchanged at
-    ///   offset zero over [`Unit::single`].
+    ///   writing the same form byte for byte (#596) — are not kept. A
+    ///   declaration refused for binding again a name an unqualified import
+    ///   binds answers at none of its sites (#677). The table keeps the unit,
+    ///   which every reading back lowers in again. Unchanged at offset zero
+    ///   over [`Unit::single`].
     /// - provides: what an editor answers inside a document that imports a
     ///   sibling: an imported name types as its declaration does.
     /// - fails: as [`of`](Self::of).
@@ -1047,8 +1053,10 @@ impl TypeTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a name a sibling declares types at its use in the
-    ///   importer, at the importer's own offset.
+    ///   importer, at the importer's own offset; a declaration the import
+    ///   shadows answers nowhere and the importer's others still read back.
     /// - witness: `typed::tests::an_imported_name_types_at_its_use`
+    /// - witness: `typed::tests::a_declaration_refused_as_shadowing_answers_at_no_site_677`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.entries.iter().all(|entry|
         usize::from(entry.span.end())
             <= <&str>::from(source).len().saturating_sub(usize::from(base))))
@@ -1488,6 +1496,31 @@ impl TypeTable
                 standing: Standing::Named(NamedContext(usize::from(entry.context))),
             });
         }
+        // A declaration refused for binding again a name an unqualified import
+        // binds answers at none of its sites (#677): every name it writes reads
+        // as the import's, so a type naming its own family would print a
+        // spelling that reads back as the type it hides.
+        let hidden: Vec<ByteSpan> = module
+            .declarations()
+            .iter()
+            .filter(|declaration| {
+                matches!(
+                    declaration.outcome(),
+                    DeclarationOutcome::Refused(LoweringRefusal::ImportShadows { .. })
+                )
+            })
+            .filter_map(
+                |declaration| match origins.declaration(declaration.origin()) {
+                    Maybe::Present(origin) => Some(origin.span()),
+                    Maybe::Absent(_) => None,
+                },
+            )
+            .collect();
+        entries.retain(|entry| {
+            !hidden
+                .iter()
+                .any(|form| form.start() <= entry.span.start() && entry.span.end() <= form.end())
+        });
         let own_source = unit.source_at(base);
         let mut declared = BTreeMap::new();
         for declaration in module.declarations() {
@@ -4078,5 +4111,52 @@ mod tests
                 "{reason}"
             );
         }
+    }
+
+    /// #677: a declaration refused for binding again a name an unqualified
+    /// import binds answers at none of its sites. Its constructor's name was
+    /// answered at the refused family, which prints as the name the import
+    /// binds, so the spelling read back as the imported family.
+    #[test]
+    fn a_declaration_refused_as_shadowing_answers_at_no_site_677()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        let sibling = "data Point : Type {\n  Here : Point;\n}";
+        let importer = "import \"./point.gandr\" ;\ndata Point : Type {\n  Here : Point;\n}\ndef \
+                        here : Point ;\ndef here = Here ;";
+        let laid = format!("{sibling}\n{importer}");
+        let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ])
+        .expect("the unit's sources start in order");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+            .expect("the unit parses");
+        let refused = importer.find("data").zip(importer.find("def"));
+        assert!(
+            table
+                .entries
+                .iter()
+                .all(|entry| refused.is_some_and(|(start, end)| {
+                    usize::from(entry.span.end()) <= start || usize::from(entry.span.start()) >= end
+                })),
+            "no site of the refused declaration answers: {:?}",
+            table.entries
+        );
+        let trips: Vec<(String, RoundTrip)> = table
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        assert!(
+            !trips.is_empty() && trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
+            "the importer's other declarations still read back: {trips:?}"
+        );
     }
 }
