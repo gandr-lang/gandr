@@ -107,8 +107,9 @@ def spinDown(n : Int) -> -F Path(Path(Circle, Base, Base), spin(P(n)), back(loop
 /// induction on the second summand. `spin` puts its new loop first where
 /// cubical's `intLoop` puts it last, so the law composes the spins the other
 /// way round, as the words compute: `(loop ∷ p) then q` is
-/// `loop ∷ (p then q)`. At zero `spin(Z)` is a call that returns the empty
-/// word, and the composite over it runs that call first.
+/// `loop ∷ (p then q)` (#422). At zero `spin(Z)` is a call that returns the
+/// empty word, and the composite over it runs that call first (#473); the
+/// composites the arms carry convert through their definitions (#440).
 @[ checks ]
 def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus(a, b)), spin(b) then spin(a)) {
   case b {
@@ -122,7 +123,9 @@ def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus
 /// induction on the first loop, written last because a recursion descends
 /// its last parameter, and summed with `wind(q)` first because the sum
 /// descends its second summand: `here(wind(q))` on the empty word, and the
-/// recursive call carried along `up` or `down`.
+/// recursive call carried along `up` or `down`. The composite in its type is
+/// read off the parameters' written types (#423), and the kernel reads its
+/// endpoint `plus(wind(q), wind(p))` as the call it returns (#424).
 @[ checks ]
 def rec windHom(q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) -> -F Path(Int, wind(p then q), plus(wind(q), wind(p))) {
   case p {
@@ -165,7 +168,7 @@ def rec plusZ(b : Int) -> -F Path(Int, plus(Z, b), b) {
 }
 
 /// The sum commutes (cubical's `+Comm`), as `int-sum.gandr` proves it: `Int`
-/// is a set, so the case respects its rules by their endpoints alone.
+/// is a set, so the case respects its rules by their endpoints alone (#427).
 @[ checks ]
 def rec plusComm(a : Int, b : Int) -> -F Path(Int, plus(a, b), plus(b, a)) {
   case b {
@@ -177,7 +180,8 @@ def rec plusComm(a : Int, b : Int) -> -F Path(Int, plus(a, b), plus(b, a)) {
 
 /// The loops commute (cubical's `comm-ΩS¹`): each composite is the spin of
 /// its winding by `sect`, the windings sum by `windHom`, and the sums commute
-/// by `plusComm`.
+/// by `plusComm`. Each lemma is read at its written result (#423), and the
+/// calls in the types stand as what they return (#426).
 @[ checks ]
 def comm(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p then q, q then p) {
   back(sect(p then q)) then cong(spin, windHom(q, p)) then cong(spin, plusComm(wind(q), wind(p))) then back(cong(spin, windHom(p, q))) then sect(q then p)

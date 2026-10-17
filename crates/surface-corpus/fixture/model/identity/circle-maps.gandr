@@ -98,7 +98,7 @@ def mul(a : Circle, b : Circle) -> -F Circle {
 }
 
 /// The point is a right unit. The obligation unfolds `mul`'s loop arm through
-/// its call of `selfloop`, and the transport computes.
+/// its call of `selfloop`, and the transport computes (#425).
 @[ checks ]
 def unitRight(b : Circle) -> -F Path(Circle, mul(b, Base), b) {
   case b {

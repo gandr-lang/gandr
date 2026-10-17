@@ -16,7 +16,7 @@ def comp(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(
   p then q
 }
 
-/// Reflexivity is the composite's left unit.
+/// Reflexivity is the composite's left unit (#422).
 @[ checks ]
 def leftUnit(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), here(Base) then p, p) {
   here(p)
@@ -28,7 +28,8 @@ def leftUnitComp(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Bas
   here(p)
 }
 
-/// A letter before the empty word stays before a path composed after it.
+/// A letter before the empty word stays before a path composed after it
+/// (#422).
 @[ checks ]
 def letterFirst(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(loop ∷ here(Base), p), loop ∷ p) {
   here(loop ∷ p)
@@ -53,13 +54,13 @@ def flip(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(
 }
 
 /// Both names unfold to one transport stuck on `q`, whose motives close over
-/// two definitions' environments and read the binder alone.
+/// two definitions' environments and read the binder alone (#440).
 @[ checks ]
 def sameComposite(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(p, q), other(p, q)) {
   here(comp(p, q))
 }
 
-/// So the two composites agree after a letter.
+/// So the two composites agree after a letter (#440).
 @[ checks ]
 def sameAfterLetter(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), loop ∷ comp(p, q), loop ∷ other(p, q)) {
   here(loop ∷ comp(p, q))
