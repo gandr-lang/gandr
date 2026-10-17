@@ -135,6 +135,7 @@ pub use gandr_core_term::effect::OperationName;
 pub use gandr_core_term::effect::host::AuthorityError;
 
 pub use crate::component::Laid;
+pub use crate::component::ParsedBytes;
 pub use crate::component::laid;
 pub use crate::component::lay_out;
 pub use crate::compose::Admission;
