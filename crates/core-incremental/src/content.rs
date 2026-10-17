@@ -1,37 +1,75 @@
-//! Canonical content: an item's or a type's nodes as a table numbered by
-//! discovery, free of arena ids and admission positions.
+//! Canonical content: an item's or a type's nodes as a co-de Bruijn table,
+//! numbered by discovery, free of arena ids and admission positions.
 //!
-//! # One table per item, numbered by discovery
+//! # One minimal-scope table per item
 //!
-//! An item's content is every node reachable from its signature and its body,
-//! each listed once, numbered in the order a breadth-first walk from the two
-//! roots first discovers it, children left to right. A child is named by its
-//! number, a constant by the [`Reference`] its position resolves to. Two
-//! items built in two arenas, with different ids, have equal tables exactly
-//! when their node graphs are the same graph with the same sharing: sharing
-//! that differs makes the tables differ, which costs a reuse and never a wrong
-//! answer. The walk visits each node once, so the table is linear in the
-//! item's distinct nodes whatever its sharing, and it needs no stack: the
-//! queue holds the frontier, and a node is written when it leaves the queue,
-//! by which time every child already has its number.
+//! The encoder lists every node reachable from an item's roots as a de
+//! Bruijn table; `support::factor` then rebuilds it bottom-up as the
+//! carrier of `gandr_core_term::support` lays it out. Each entry is a
+//! [`SupportedNode`]: a compact former whose own variable, endpoint or slot,
+//! if it has one, is a rank in its scope; the scope itself, as wide in each
+//! zone as the variables free beneath the node; and a cover, one thinning
+//! per child, saying where each of the child's free variables sits in the
+//! node's scope or among the binders the child's slot crosses. Each root
+//! keeps its own thinning into the item's empty scope. A child is named by
+//! its number, a constant by the [`Reference`] its position resolves to.
+//!
+//! Equal compact nodes are one entry: the table is hash-consed by former,
+//! cover and scope, so two equal subterms share whether the arena allocated
+//! them once or twice, and a subterm under different unused binders is the
+//! same entry because unused binders never reach its scope. Different
+//! variable wiring stays distinct, because the cover records it. The arena's
+//! own sharing is therefore no part of the content: two items built in two
+//! arenas have equal tables exactly when their terms are equal.
+//!
+//! The table is numbered in the order a breadth-first walk from the roots
+//! first discovers each entry, children left to right, so the numbering is a
+//! function of the content. Factoring and numbering are iterative; the work
+//! is linear in the de Bruijn table plus the sizes of the covers and the
+//! reference sets.
+//!
+//! # References read off the roots
+//!
+//! Every entry carries the references beneath it, apart by position: those
+//! in term positions and those beneath a signature or a type former, built
+//! from its children's when it is factored and rebuilt by the reader of a
+//! persisted table, which never trusts a stored set. An item's footprint is
+//! the union over its roots (`footprint_of`); no walk of the table is needed.
+//! The references are syntactic and over-approximate what the judgement
+//! reads, as the footprint always has; they never decide a strengthening.
+//!
+//! # The de Bruijn projection
+//!
+//! [`TypeContent::debruijn`] and [`ItemContent::debruijn`] expand a root
+//! back into a de Bruijn table under its root thinning: what minting a seat,
+//! printing a type or any reader that counts binders consumes. A root
+//! thinning whose index passes `u32` beneath a binder is reported as
+//! `PlacementError::IndexOverflow`, never saturated.
+//!
+//! **Choice.** The compact former is [`ContentNode`] itself, its own
+//! occurrence rewritten to its rank, rather than a former generic over its
+//! index type: session actions and memory forms carry their endpoints and
+//! slots as kernel indices inside shared syntax, and one former type keeps
+//! the codec, the minting path and the printer on one vocabulary.
+//! **Reversal.** A consumer that must tell a rank from an ambient index by
+//! type, not by the table it came from, makes the generic former worth its
+//! second spelling.
 //!
 //! # An id the arena does not hold
 //!
 //! An id that resolves to nothing is a fact about another arena. It is listed
 //! as [`ContentNode::Unresolved`] with its sort, so encoding stays total, and
-//! a table holding one is opaque: its item is never adopted and never
-//! persisted.
+//! a table holding one beneath a root is opaque: its item is never adopted,
+//! never persisted, and a reader of everything once anything changes. A
+//! child of a de Bruijn table out of its range, or one closing a cycle, is
+//! factored the same way.
 //!
 //! # Content, not ids
 //!
-//! An item's content is its reference, declaration category and every node
-//! reachable from its `DeclarationRoots`. Value roots retain the signature and
-//! body; Data roots retain the kind, parameter telescope and constructor field
-//! types. A breadth-first walk numbers each reachable node once and needs no
-//! stack. Sharing is part of the content: different sharing costs a reuse,
-//! never a wrong answer. An unresolved arena id is listed by sort and makes the
-//! item opaque: never recalled, never persisted, and a reader of everything
-//! once anything changes.
+//! An item's content is its reference, declaration category, the table of
+//! every node reachable from its `DeclarationRoots` and each root's
+//! thinning. Value roots retain the signature and body; Data roots retain
+//! the kind, parameter telescope and constructor field types.
 //!
 //! # Native universe-path content
 //!
@@ -49,7 +87,7 @@
 //! signature content refuses term-bearing path
 //! classifiers just as it refuses quotes and decodes.
 //!
-//! Checkpoint sets use `GCKPT\0\0\x0b`; programs use `GPROG\0\0\x07`. Their
+//! Checkpoint sets use `GCKPT\0\0\x0c`; programs use `GPROG\0\0\x08`. Their
 //! identities bind the checker, native declaration categories, effect and
 //! control content, support queries and refusal vocabulary. Identities of
 //! another version are rejected rather than reusing answers from a different
@@ -159,7 +197,9 @@
 //! | `0x7C` | Capability scope |
 //! | `0x7D` | Capability classifier |
 //!
-//! A handler retains source clause order and branch-local de Bruijn indices.
+//! A handler retains source clause order; its branches' binders are
+//! crossings of their slots, and the projection restores their de Bruijn
+//! indices.
 //! Stack frames retain execution order and projection side. Fixed children
 //! precede interface type edges, which precede clause bodies; frames contribute
 //! their Apply and Bind children in order. Unknown-operation, coverage,
@@ -216,6 +256,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
+use gandr_core_term::BinderDepth;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
@@ -230,6 +271,9 @@ use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::MarkIndex;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
+use gandr_core_term::support::Crossing;
+use gandr_core_term::support::PlacementError;
+use gandr_core_term::support::Thinning;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
@@ -243,6 +287,7 @@ use crate::boundary::NodeIndex;
 use crate::region::Layout;
 use crate::region::Program;
 use crate::region::Reference;
+use crate::support::SupportedNode;
 
 quenchant_shape::reason_enum! {
     /// Why a type table could not be minted back into an arena.
@@ -262,6 +307,9 @@ quenchant_shape::reason_enum! {
             /// The type holds a term — the code of an element type — and a
             /// seat mints types alone.
             Unseatable,
+            /// The type's de Bruijn projection places an index past the
+            /// index space, or an edge past its node's support.
+            Unplaceable,
         }
     }
 }
@@ -286,6 +334,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The node is neither a constant nor an abstract type.
             NotAReference,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a content node names no variable occurrence of its own.
+    pub mod occurring {
+        /// The reason no occurrence is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The node is no variable, endpoint use or memory slot use.
+            Unnamed,
         }
     }
 }
@@ -828,7 +888,13 @@ pub enum ContentNode
     Unresolved(Sort),
 }
 
-/// The children of one content node, each with the sort it must have.
+/// A fixed child slot of a former, counted from zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ChildSlot(pub usize);
+
+/// The children of one content node, each with the sort it must have and the
+/// binders it stands under.
 ///
 /// # Specification
 /// - executable: none — the active-prefix representation is maintained by
@@ -837,15 +903,19 @@ pub enum ContentNode
 /// # Adequacy
 /// - hypothesis: L2 — sharing and interleaved roots exercise active child
 ///   slots; the persistence corpus covers selected multi-sort formers, not
-///   every graph.
+///   every graph. Every binding former's crossings are checked by projecting
+///   its cover back to de Bruijn indices.
 /// - witness: `content::tests::a_shared_node_is_listed_once`
 /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `content::tests::covers_preserve_every_binding_former`
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Children<'node>
 {
     /// The children in order; slots past `count` are unused.
     slots: [(NodeIndex, Sort); 5],
+    /// The binders each fixed child stands under, slot for slot.
+    crossings: [Crossing; 5],
     /// How many slots hold a child.
     count: usize,
     /// A variadic suffix, borrowed without per-node allocation.
@@ -854,13 +924,17 @@ pub struct Children<'node>
     fields: Option<&'node BTreeMap<gandr_core_term::FieldLabel, NodeIndex>>,
     /// The common sort of the suffix or fields.
     tail_sort: Sort,
+    /// The binders every suffix child or field stands under.
+    tail_crossing: Crossing,
     /// Additional operation-type edges borrowed from a returner's row.
     effects: Option<&'node gandr_core_term::effect::EffectRow<NodeIndex>>,
     /// Inline operation types, after fixed children.
     signature: Option<&'node gandr_core_term::effect::EffectSig<NodeIndex>>,
-    /// Named branch bodies, after interface types.
+    /// Named branch bodies, after interface types, each under its payload
+    /// and resumption binders.
     clauses: &'node [gandr_core_term::control::EffectClause<NodeIndex>],
-    /// Literal stack edges, retaining frame order and omitting projections.
+    /// Literal stack edges, retaining frame order and omitting projections;
+    /// a bind frame's body stands under its binder.
     frames: &'node [gandr_core_term::control::StackFrame<NodeIndex, NodeIndex>],
     /// Recorded moves, contributing their payload values in order.
     moves: &'node [gandr_core_term::session::RecordedMove<NodeIndex>],
@@ -931,42 +1005,125 @@ impl<'node> Children<'node>
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
     pub(crate) fn iter(self) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort)> + Clone + 'node
     {
-        let sort = self.tail_sort;
-        self.slots
-            .into_iter()
-            .take(self.count)
-            .chain(self.suffix.iter().map(move |&child| (child, sort)))
-            .chain(
-                self.fields
-                    .into_iter()
-                    .flat_map(|fields| fields.values())
-                    .map(move |&child| (child, sort)),
-            )
-            .chain(
-                self.effects
-                    .into_iter()
-                    .flat_map(|row| row.types().map(|ty| (ty, Sort::ValueType))),
-            )
-            .chain(
-                self.signature
-                    .into_iter()
-                    .flat_map(|signature| signature.types().map(|ty| (ty, Sort::ValueType))),
-            )
-            .chain(
-                self.clauses
-                    .iter()
-                    .map(|clause| (clause.body, Sort::Computation)),
-            )
-            .chain(self.frames.iter().filter_map(|frame| match *frame {
-                gandr_core_term::control::StackFrame::Apply(value) => Some((value, Sort::Value)),
-                gandr_core_term::control::StackFrame::Bind(body) => Some((body, Sort::Computation)),
-                gandr_core_term::control::StackFrame::Project(_) => None,
-            }))
-            .chain(self.moves.iter().filter_map(|step| match step.payload() {
-                Maybe::Present(payload) => Some((payload, Sort::Value)),
-                Maybe::Absent(_) => None,
-            }))
+        self.crossed().map(|(child, sort, _)| (child, sort))
     }
+
+    /// The children, in order, each beside the binders of either zone the
+    /// node opens over it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the children of [`Children::iter`], in its order; a fixed
+    ///   slot carries the crossing its former set, a suffix child or field the
+    ///   tail crossing, a clause body two intuitionistic binders, a bind
+    ///   frame's body one, every other child none.
+    /// - executable: none — anodized 0.7 emits an invalid closure return type
+    ///   for this opaque iterator, including for preconditions alone.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every binding former, in both zones, projected back
+    ///   from its cover recovers its original de Bruijn indices; a crossing on
+    ///   the wrong slot or zone shifts an index. Interface types, clause bodies
+    ///   and recorded payloads are walked whenever the former carries them,
+    ///   checked against `map_children`'s independent enumeration.
+    /// - witness: `content::tests::covers_preserve_every_binding_former`
+    /// - witness: `content::tests::projection_keeps_every_variadic_child`
+    pub(crate) fn crossed(
+        self
+    ) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort, Crossing)> + Clone + 'node
+    {
+        let sort = self.tail_sort;
+        let tail = self.tail_crossing;
+        let none = Crossing::default();
+        let clause = Crossing::of(Zone::Intuitionistic, BinderDepth::from(2_usize));
+        let frame = Crossing::of(Zone::Intuitionistic, BinderDepth::from(1_usize));
+        let fixed = self
+            .slots
+            .into_iter()
+            .zip(self.crossings)
+            .take(self.count)
+            .map(|((child, sort), crossing)| (child, sort, crossing));
+        // Most formers have only fixed slots: their walk skips the seven
+        // empty variadic iterators a full chain would step through.
+        let variadic = !self.suffix.is_empty()
+            || self.fields.is_some()
+            || self.effects.is_some()
+            || self.signature.is_some()
+            || !self.clauses.is_empty()
+            || !self.frames.is_empty()
+            || !self.moves.is_empty();
+        let rest =
+            variadic.then(move || {
+                self.suffix
+                    .iter()
+                    .map(move |&child| (child, sort, tail))
+                    .chain(
+                        self.fields
+                            .into_iter()
+                            .flat_map(|fields| fields.values())
+                            .map(move |&child| (child, sort, tail)),
+                    )
+                    .chain(self.effects.into_iter().flat_map(move |row| {
+                        row.types().map(move |ty| (ty, Sort::ValueType, none))
+                    }))
+                    .chain(self.signature.into_iter().flat_map(move |signature| {
+                        signature.types().map(move |ty| (ty, Sort::ValueType, none))
+                    }))
+                    .chain(
+                        self.clauses
+                            .iter()
+                            .map(move |clause_body| (clause_body.body, Sort::Computation, clause)),
+                    )
+                    .chain(self.frames.iter().filter_map(move |step| match *step {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
+                            Some((value, Sort::Value, none))
+                        },
+                        gandr_core_term::control::StackFrame::Bind(body) => {
+                            Some((body, Sort::Computation, frame))
+                        },
+                        gandr_core_term::control::StackFrame::Project(_) => None,
+                    }))
+                    .chain(
+                        self.moves
+                            .iter()
+                            .filter_map(move |step| match step.payload() {
+                                Maybe::Present(payload) => Some((payload, Sort::Value, none)),
+                                Maybe::Absent(_) => None,
+                            }),
+                    )
+            });
+        fixed.chain(rest.into_iter().flatten())
+    }
+
+    /// Stand the fixed child at `slot` under `crossing`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn binding(
+        mut self,
+        slot: ChildSlot,
+        crossing: Crossing,
+    ) -> Self
+    {
+        if let Some(target) = self.crossings.get_mut(slot.0) {
+            *target = crossing;
+        }
+        self
+    }
+
+    /// Stand every suffix child or field under `crossing`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn tail_binding(
+        mut self,
+        crossing: Crossing,
+    ) -> Self
+    {
+        self.tail_crossing = crossing;
+        self
+    }
+
     /// Append a borrowed variadic child suffix.
     ///
     /// # Specification
@@ -1355,6 +1512,12 @@ impl ContentNode
         use Sort::Computation as M;
         use Sort::Value as V;
         use Sort::ValueType as A;
+        let one = Crossing::of(Zone::Intuitionistic, BinderDepth::from(1_usize));
+        let two = Crossing::of(Zone::Intuitionistic, BinderDepth::from(2_usize));
+        let linear = Crossing::of(Zone::Linear, BinderDepth::from(1_usize));
+        let split = |arity: gandr_core_term::ComponentCount| {
+            Crossing::of(Zone::Intuitionistic, BinderDepth::from(usize::from(arity)))
+        };
         match *self {
             Self::Data { ref arguments, .. } => Children::default().followed_by(arguments, V),
             Self::RecordType(ref fields) => Children::fields(fields, A),
@@ -1368,7 +1531,9 @@ impl ContentNode
                 scrutinee,
                 motive,
                 ref branches,
-            } => Children::of(&[(scrutinee, V), (motive, C)]).followed_by(branches, M),
+            } => Children::of(&[(scrutinee, V), (motive, C)])
+                .binding(ChildSlot(1), one)
+                .followed_by(branches, M),
             Self::RecordProjection(record, _) | Self::TupleProjection(record, _) => {
                 Children::of(&[(record, V)])
             },
@@ -1391,8 +1556,12 @@ impl ContentNode
                 on_return,
                 ref signature,
                 ref clauses,
-            }
-            | Self::Scope {
+            } => Children {
+                signature: Some(signature),
+                clauses,
+                ..Children::of(&[(subject, M), (on_return, M)]).binding(ChildSlot(1), one)
+            },
+            Self::Scope {
                 subject,
                 on_return,
                 ref signature,
@@ -1401,6 +1570,8 @@ impl ContentNode
                 signature: Some(signature),
                 clauses,
                 ..Children::of(&[(subject, M), (on_return, M)])
+                    .binding(ChildSlot(0), one)
+                    .binding(ChildSlot(1), one)
             },
             Self::Exercise {
                 capability,
@@ -1415,18 +1586,19 @@ impl ContentNode
                 effects: Some(authority),
                 ..Children::default()
             },
-            Self::Resume(stack, body) | Self::Split(stack, _, body) => {
-                Children::of(&[(stack, V), (body, M)])
+            Self::Resume(stack, body) => Children::of(&[(stack, V), (body, M)]),
+            Self::Split(stack, arity, body) => {
+                Children::of(&[(stack, V), (body, M)]).binding(ChildSlot(1), split(arity))
             },
             Self::DependentSplit {
                 scrutinee,
                 motive,
                 body,
-                ..
-            } => Children::of(&[(scrutinee, V), (motive, C), (body, M)]),
-            Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => {
-                Children::of(&[(body, M)])
-            },
+                arity,
+            } => Children::of(&[(scrutinee, V), (motive, C), (body, M)])
+                .binding(ChildSlot(1), one)
+                .binding(ChildSlot(2), split(arity)),
+            Self::Shift(body) => Children::of(&[(body, M)]).binding(ChildSlot(0), one),
             Self::With(first, second) => Children::of(&[(first, M), (second, M)]),
             Self::Ascribe { body, ty } => Children::of(&[(body, M), (ty, C)]),
             Self::Session(ref action) => match *action {
@@ -1436,14 +1608,20 @@ impl ContentNode
                     protocol,
                     child,
                     parent,
-                } => Children::of(&[(protocol, A), (child, M), (parent, M)]),
+                } => Children::of(&[(protocol, A), (child, M), (parent, M)])
+                    .binding(ChildSlot(1), linear)
+                    .binding(ChildSlot(2), linear),
                 SessionAction::Receive { .. }
                 | SessionAction::Select { .. }
                 | SessionAction::Close { .. } => Children::default(),
             },
             Self::Memory(ref form) => match *form {
-                MemoryForm::Hold { value, body } => Children::of(&[(value, V), (body, M)]),
-                MemoryForm::Access { body, unwind, .. } => Children::of(&[(body, M), (unwind, M)]),
+                MemoryForm::Hold { value, body } => {
+                    Children::of(&[(value, V), (body, M)]).binding(ChildSlot(1), linear)
+                },
+                MemoryForm::Access { body, unwind, .. } => {
+                    Children::of(&[(body, M), (unwind, M)]).binding(ChildSlot(0), linear)
+                },
                 MemoryForm::Resume { value, .. } => Children::of(&[(value, V)]),
                 MemoryForm::Abort { .. } => Children::default(),
             },
@@ -1483,7 +1661,7 @@ impl ContentNode
                 motive,
                 flow: path,
                 value,
-            } => Children::of(&[(motive, A), (path, V), (value, V)]),
+            } => Children::of(&[(motive, A), (path, V), (value, V)]).binding(ChildSlot(0), one),
             Self::Recorded(ref moves) => Children {
                 moves,
                 ..Children::default()
@@ -1529,12 +1707,12 @@ impl ContentNode
             | Self::FunctionFlow(first, second)
             | Self::ListCons(first, second)
             | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
+            Self::StaticLambda(body) => Children::of(&[(body, V)]).binding(ChildSlot(0), one),
             Self::PathRefl(body)
             | Self::Here(body)
             | Self::Stay(body)
             | Self::Forward(body)
             | Self::RunType(body)
-            | Self::StaticLambda(body)
             | Self::Injection(_, body)
             | Self::ValueLift { body, .. }
             | Self::Return(body)
@@ -1545,10 +1723,15 @@ impl ContentNode
             | Self::Returned(body)
             | Self::Nested(body)
             | Self::Run(body)
-            | Self::Lambda(body)
-            | Self::Fixpoint { body, .. } => Children::of(&[(body, M)]),
+            | Self::Reset(body)
+            | Self::Project(_, body) => Children::of(&[(body, M)]),
+            Self::Lambda(body) | Self::Fixpoint { body, .. } => {
+                Children::of(&[(body, M)]).binding(ChildSlot(0), one)
+            },
             Self::Application(head, argument) => Children::of(&[(head, M), (argument, V)]),
-            Self::Bind(bound, rest) => Children::of(&[(bound, M), (rest, M)]),
+            Self::Bind(bound, rest) => {
+                Children::of(&[(bound, M), (rest, M)]).binding(ChildSlot(1), one)
+            },
             Self::ListFold {
                 element,
                 result,
@@ -1561,19 +1744,24 @@ impl ContentNode
                 (list, V),
                 (on_nil, M),
                 (on_cons, M),
-            ]),
+            ])
+            .binding(ChildSlot(4), two),
             Self::Case {
                 scrutinee,
                 ref branches,
-            } => Children::of(&[(scrutinee, V)]).followed_by(branches, M),
+            } => Children::of(&[(scrutinee, V)])
+                .followed_by(branches, M)
+                .tail_binding(one),
             Self::Product(ref parts) | Self::Sum(ref parts) => {
                 Children::default().followed_by(parts, A)
             },
             Self::StaticPi {
                 domain: first,
                 codomain: second,
-            }
-            | Self::Sigma { first, second } => Children::of(&[(first, A), (second, A)]),
+            } => Children::of(&[(first, A), (second, A)]),
+            Self::Sigma { first, second } => {
+                Children::of(&[(first, A), (second, A)]).binding(ChildSlot(1), one)
+            },
             Self::ThunkType(body) => Children::of(&[(body, C)]),
             Self::List(element) => Children::of(&[(element, A)]),
             Self::Returner {
@@ -1590,8 +1778,9 @@ impl ContentNode
             },
             Self::Quote(quoted) => Children::of(&[(quoted, A)]),
             Self::QuoteComputation(quoted) => Children::of(&[(quoted, C)]),
-            Self::Arrow { domain, codomain } | Self::Pi { domain, codomain } => {
-                Children::of(&[(domain, A), (codomain, C)])
+            Self::Arrow { domain, codomain } => Children::of(&[(domain, A), (codomain, C)]),
+            Self::Pi { domain, codomain } => {
+                Children::of(&[(domain, A), (codomain, C)]).binding(ChildSlot(1), one)
             },
         }
     }
@@ -1718,6 +1907,111 @@ impl ContentNode
             | Self::UnknownComputationType => Maybe::Absent(referencing::Absent::NotAReference),
         }
     }
+
+    /// The variable occurrence the node names itself, beside its zone: a
+    /// variable's index, a session action's endpoint, an access's slot, a
+    /// resume's or an abort's view.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the zone and index of a variable; the linear endpoint of a
+    ///   send, receive, select, offer or close; the linear slot of an access
+    ///   and the linear view of a resume or abort; `Unnamed` for every other
+    ///   former, a fork and a hold included.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every occurrence-bearing former under binders of both
+    ///   zones is projected back from its compact form to its original index; a
+    ///   missed occurrence keeps a stale index.
+    /// - witness: `content::tests::covers_preserve_every_binding_former`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present((zone, index)) => matches!(*self, Self::Variable { zone: own, index: named } if own == zone && named == index)
+            || matches!(*self, Self::Session(ref action) if zone == Zone::Linear && action.endpoint() == Maybe::Present(index))
+            || matches!(*self, Self::Memory(ref form) if zone == Zone::Linear && form.resident() == Maybe::Present(index)),
+        Maybe::Absent(occurring::Absent::Unnamed) => !matches!(*self, Self::Variable { .. })
+            && !matches!(*self, Self::Session(ref action) if matches!(action.endpoint(), Maybe::Present(_)))
+            && !matches!(*self, Self::Memory(ref form) if matches!(form.resident(), Maybe::Present(_))),
+    })]
+    pub(crate) fn occurrence(&self) -> Maybe<(Zone, DeBruijnIndex), occurring::Absent>
+    {
+        if let Self::Variable { zone, index } = *self {
+            return Maybe::Present((zone, index));
+        }
+        if let Self::Session(ref action) = *self
+            && let Maybe::Present(endpoint) = action.endpoint()
+        {
+            return Maybe::Present((Zone::Linear, endpoint));
+        }
+        if let Self::Memory(ref form) = *self
+            && let Maybe::Present(slot) = form.resident()
+        {
+            return Maybe::Present((Zone::Linear, slot));
+        }
+        Maybe::Absent(occurring::Absent::Unnamed)
+    }
+
+    /// The node with the occurrence it names itself replaced by `index`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the node, its former, children and every other payload
+    ///   unchanged, its own occurrence — as [`ContentNode::occurrence`] reads
+    ///   it — now `index`; a node naming none is returned unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ContentNode::occurrence`]: the compact form of
+    ///   every occurrence-bearing former carries its rank, and its projection
+    ///   its ambient index.
+    /// - witness: `content::tests::covers_preserve_every_binding_former`
+    #[spec(
+        captures: [named = self.occurrence()],
+        ensures: |ret| match named {
+            Maybe::Present((zone, _)) => ret.occurrence() == Maybe::Present((zone, index)),
+            Maybe::Absent(_) => ret.occurrence() == named,
+        },
+    )]
+    pub(crate) fn relocated(
+        mut self,
+        index: DeBruijnIndex,
+    ) -> Self
+    {
+        if let Self::Variable {
+            index: ref mut held,
+            ..
+        } = self
+        {
+            *held = index;
+        }
+        else if let Self::Session(ref mut action) = self {
+            match *action {
+                SessionAction::Send {
+                    ref mut endpoint, ..
+                }
+                | SessionAction::Receive { ref mut endpoint }
+                | SessionAction::Select {
+                    ref mut endpoint, ..
+                }
+                | SessionAction::Offer {
+                    ref mut endpoint, ..
+                }
+                | SessionAction::Close { ref mut endpoint } => *endpoint = index,
+                SessionAction::Fork { .. } => {},
+            }
+        }
+        else if let Self::Memory(ref mut form) = self {
+            match *form {
+                MemoryForm::Access { ref mut held, .. }
+                | MemoryForm::Resume {
+                    view: ref mut held, ..
+                }
+                | MemoryForm::Abort { view: ref mut held } => *held = index,
+                MemoryForm::Hold { .. } => {},
+            }
+        }
+        self
+    }
 }
 
 /// Where an arena node sits in the table of the item that reached it.
@@ -1766,8 +2060,9 @@ impl Sites
 /// Whether a table holds an id another arena minted.
 ///
 /// # Specification
-/// - executable: none — the tag contains no table; `opacity_of` establishes its
-///   correspondence.
+/// - executable: none — the tag contains no table; each [`SupportedNode`]
+///   carries the tag of its subterm, and [`ItemContent::opacity`] reads it off
+///   the roots.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — a foreign unresolved value makes content opaque; the
@@ -1836,8 +2131,9 @@ impl DataRoots
     ///
     /// # Adequacy
     /// - hypothesis: L3 — native checkpoint round trips preserve each signature
-    ///   slot.
+    ///   slot; a signature whose fields are open keeps one support per root.
     /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    /// - witness: `content::tests::open_roots_project_under_their_own_supports`
     pub(crate) fn iter(&self) -> impl Iterator<Item = NodeIndex> + Clone + '_
     {
         self.parameters
@@ -1942,6 +2238,194 @@ impl DeclarationRoots
                 .map(|root| (root, Sort::ValueType)),
         )
     }
+
+    /// The roots with every root index replaced by its image under `image`,
+    /// every other field unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same category, laws and payloads; each root, in
+    ///   [`DeclarationRoots::iter`] order, replaced by its image.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native checkpoints round-trip every root slot of a
+    ///   value, a data and an abstract declaration through renumbering; roots
+    ///   that move under renumbering still name their own nodes.
+    /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    /// - witness: `content::tests::open_roots_project_under_their_own_supports`
+    #[spec(ensures: |ret| ret.iter().map(|(_, sort)| sort).eq(self.iter().map(|(_, sort)| sort))
+        && ret.iter().map(|(root, _)| root).eq(self.iter().map(|(root, _)| image(root))))]
+    pub(crate) fn renumbered<Image>(
+        &self,
+        image: Image,
+    ) -> Self
+    where
+        Image: Fn(NodeIndex) -> NodeIndex,
+    {
+        match *self {
+            Self::Value {
+                ref signature,
+                ref body,
+                ref laws,
+            } => Self::Value {
+                signature: signature.map(&image),
+                body: body.map(&image),
+                laws: laws.clone(),
+            },
+            Self::Data(ref roots) => Self::Data(roots.renumbered(&image)),
+            Self::Abstract(roots) => Self::Abstract(AbstractRoots {
+                kind: image(roots.kind),
+                representation: image(roots.representation),
+                ..roots
+            }),
+            Self::World => Self::World,
+        }
+    }
+}
+
+impl DataRoots
+{
+    /// The roots with every index replaced by its image under `image`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same shape and presentation, each root replaced by its
+    ///   image in [`DataRoots::iter`] order; the predicate checks the kind's
+    ///   image and the shape's widths, and the witness the per-root images,
+    ///   since comparing them walks every root.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`DeclarationRoots::renumbered`].
+    /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    #[spec(ensures: |ret| ret.kind == image(self.kind)
+        && ret.parameters.len() == self.parameters.len()
+        && ret.constructors.len() == self.constructors.len()
+        && ret.presentation == self.presentation)]
+    pub(crate) fn renumbered<Image>(
+        &self,
+        image: Image,
+    ) -> Self
+    where
+        Image: Fn(NodeIndex) -> NodeIndex,
+    {
+        Self {
+            parameters: self.parameters.iter().map(|&root| image(root)).collect(),
+            constructors: self
+                .constructors
+                .iter()
+                .map(|fields| fields.iter().map(|&root| image(root)).collect())
+                .collect(),
+            kind: image(self.kind),
+            presentation: self.presentation.clone(),
+        }
+    }
+}
+
+/// A de Bruijn table factored into supported nodes and numbered from its
+/// roots.
+///
+/// # Specification
+/// - executable: none — a data declaration; [`tabled`] establishes it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`tabled`].
+/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+pub struct Tabled
+{
+    /// The supported nodes, numbered by discovery from the roots.
+    pub nodes: Vec<SupportedNode>,
+    /// Where each de Bruijn entry landed in the factored table.
+    placed: Vec<crate::support::Placement>,
+    /// The number each factored node took.
+    numbers: Vec<Option<NodeIndex>>,
+}
+
+impl Tabled
+{
+    /// The supported node the de Bruijn entry `raw` became.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn of(
+        &self,
+        raw: NodeIndex,
+    ) -> NodeIndex
+    {
+        self.placed.get(usize::from(raw)).map_or(raw, |placed| {
+            self.numbers
+                .get(usize::from(placed.node))
+                .copied()
+                .flatten()
+                .unwrap_or(placed.node)
+        })
+    }
+
+    /// The support of the de Bruijn entry `raw` in its ambient scope.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn support(
+        &self,
+        raw: NodeIndex,
+    ) -> Thinning
+    {
+        self.placed
+            .get(usize::from(raw))
+            .map_or_else(Thinning::empty, |placed| placed.support.clone())
+    }
+
+    /// The supports of the de Bruijn entries `roots`, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn supports(
+        &self,
+        roots: &[NodeIndex],
+    ) -> Vec<Thinning>
+    {
+        roots.iter().map(|&root| self.support(root)).collect()
+    }
+}
+
+/// Factor the de Bruijn table `raw` and number it from `roots`.
+///
+/// # Specification
+/// - requires: every root is an entry of `raw`, as the encoder hands them out.
+/// - ensures: the supported table of every node reachable from the roots,
+///   numbered breadth-first from them in order; the numbered image and the
+///   support of every entry.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an item's signature renumbered from its table equals its
+///   type encoded alone; a shared subterm is one node.
+/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `content::tests::a_shared_node_is_listed_once`
+#[spec(ensures: |ret| ret.placed.len() == raw.len())]
+pub fn tabled(
+    raw: &[ContentNode],
+    roots: &[NodeIndex],
+) -> Tabled
+{
+    let factored = crate::support::factor(raw);
+    let placed = factored.placements;
+    let mut owned: Vec<Option<SupportedNode>> = factored.nodes.into_iter().map(Some).collect();
+    let numbered = crate::support::number(
+        NodeIndex::from(owned.len()),
+        roots.iter().map(|&root| {
+            placed
+                .get(usize::from(root))
+                .map_or(root, |placement| placement.node)
+        }),
+        |old| owned.get_mut(usize::from(old)).and_then(Option::take),
+    );
+    Tabled {
+        nodes: numbered.nodes,
+        placed,
+        numbers: numbered.numbers,
+    }
 }
 
 /// A complete nominal signature in arena-independent coordinates.
@@ -1951,7 +2435,10 @@ pub struct DataContent
     /// The parameter, constructor and kind roots.
     roots: DataRoots,
     /// The complete shared table of reachable nodes.
-    nodes: Vec<ContentNode>,
+    nodes: Vec<SupportedNode>,
+    /// Each root's support in its ambient scope, in [`DataRoots::iter`]
+    /// order.
+    placements: Vec<Thinning>,
 }
 
 impl DataContent
@@ -1973,21 +2460,58 @@ impl DataContent
     /// trivial.
     #[must_use]
     #[inline]
-    pub fn nodes(&self) -> &[ContentNode]
+    pub fn nodes(&self) -> &[SupportedNode]
     {
         &self.nodes
     }
 
-    /// Reassemble raw parts; the wire reader validates their graph separately.
+    /// Each root's support in its ambient scope, in [`DataRoots::iter`]
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn placements(&self) -> &[Thinning]
+    {
+        &self.placements
+    }
+
+    /// Every reference beneath a root, ascending and once each.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the union of every root's value and type reads.
+    /// - executable: none — the return is an opaque iterator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a data answer whose constructor names a changed
+    ///   definition invalidates its reader.
+    /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+    pub(crate) fn reads(&self) -> alloc::collections::BTreeSet<&Reference>
+    {
+        self.roots
+            .iter()
+            .filter_map(|root| self.nodes.get(usize::from(root)))
+            .flat_map(|node| node.value_reads().chain(node.type_reads()))
+            .collect()
+    }
+
+    /// Reassemble decoded parts, which the reader validated.
     ///
     /// # Specification
     /// trivial.
     pub(crate) const fn from_parts(
         roots: DataRoots,
-        nodes: Vec<ContentNode>,
+        nodes: Vec<SupportedNode>,
+        placements: Vec<Thinning>,
     ) -> Self
     {
-        Self { roots, nodes }
+        Self {
+            roots,
+            nodes,
+            placements,
+        }
     }
 
     /// Encode every constructor signature, not merely its universe kind.
@@ -1995,7 +2519,7 @@ impl DataContent
     /// # Specification
     /// - requires: nothing; unresolved nodes retain their sort.
     /// - ensures: every signature root is represented in the canonical shared
-    ///   table.
+    ///   table, with its support.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2004,7 +2528,8 @@ impl DataContent
     /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
     #[spec(ensures: |ret| ret.roots.parameters.len() == signature.parameters().len()
         && ret.roots.constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len))
-        && ret.roots.iter().all(|root| usize::from(root) < ret.nodes.len()))]
+        && ret.roots.iter().all(|root| usize::from(root) < ret.nodes.len())
+        && ret.placements.len() == ret.roots.iter().count())]
     pub(crate) fn of(
         arena: &CoreArena,
         layout: &Layout,
@@ -2014,9 +2539,33 @@ impl DataContent
         let mut encoder = Encoder::new(arena, layout);
         let roots = encoder.data_roots(signature);
         encoder.drain();
+        Self::tabulated(&roots, &encoder.nodes)
+    }
+
+    /// The signature whose roots `roots` index the de Bruijn table `raw`,
+    /// factored and numbered from those roots.
+    ///
+    /// # Specification
+    /// - requires: every root is an entry of `raw`.
+    /// - ensures: the roots renumbered into the supported table of every node
+    ///   reachable from them, with one support per root.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`DataContent::of`], which builds through it.
+    /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    #[spec(ensures: |ret| ret.placements.len() == ret.roots.iter().count())]
+    pub(crate) fn tabulated(
+        roots: &DataRoots,
+        raw: &[ContentNode],
+    ) -> Self
+    {
+        let raw_roots: Vec<NodeIndex> = roots.iter().collect();
+        let tabled = tabled(raw, &raw_roots);
         Self {
-            roots,
-            nodes: encoder.nodes,
+            roots: roots.renumbered(|raw| tabled.of(raw)),
+            placements: tabled.supports(&raw_roots),
+            nodes: tabled.nodes,
         }
     }
 }
@@ -2043,7 +2592,10 @@ pub struct ItemContent
     /// The value or nominal declaration's roots.
     declaration: DeclarationRoots,
     /// Every node reachable from the roots, numbered by discovery.
-    nodes: Vec<ContentNode>,
+    nodes: Vec<SupportedNode>,
+    /// Each root's support in the item's empty scope, in
+    /// [`DeclarationRoots::iter`] order: empty for a closed root.
+    placements: Vec<Thinning>,
     /// Whether the item belongs to a located program.
     locus: Locus,
 }
@@ -2078,9 +2630,62 @@ impl ItemContent
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn nodes(&self) -> &[ContentNode]
+    pub fn nodes(&self) -> &[SupportedNode]
     {
         &self.nodes
+    }
+
+    /// Each root's support in the item's empty scope, in
+    /// [`DeclarationRoots::iter`] order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn placements(&self) -> &[Thinning]
+    {
+        &self.placements
+    }
+
+    /// The de Bruijn table of the node `root`, the root first, placed by the
+    /// support of the first declaration root naming it: the projection a
+    /// printer reads a signature or a kind from.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as `support::expand` from `root` under its root support; a
+    ///   node no root names is placed under the empty support.
+    /// - fails: [`PlacementError::OutOfScope`] for a node with free indices
+    ///   that no root names; [`PlacementError::IndexOverflow`] when a binder
+    ///   raises an index past `u32`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`PlacementError`]: as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a signature projects to the table of its type encoded
+    ///   alone; every binding former of both zones projects back to its
+    ///   indices; each open root projects under its own support.
+    /// - witness: `content::tests::covers_preserve_every_binding_former`
+    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `content::tests::open_roots_project_under_their_own_supports`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || self.nodes.get(usize::from(root)).is_none_or(|node|
+        ret.as_ref().is_ok_and(|table| table.first().map(ContentNode::sort) == Some(node.sort()))))]
+    #[inline]
+    pub fn debruijn(
+        &self,
+        root: NodeIndex,
+    ) -> Result<Vec<ContentNode>, PlacementError>
+    {
+        let empty = Thinning::empty();
+        let placement = self
+            .declaration
+            .iter()
+            .zip(&self.placements)
+            .find_map(|((named, _), placement)| (named == root).then_some(placement))
+            .unwrap_or(&empty);
+        crate::support::expand(&self.nodes, root, placement)
     }
 
     /// Whether the item belongs to a located program.
@@ -2102,13 +2707,15 @@ impl ItemContent
     pub(crate) const fn from_parts(
         reference: Reference,
         declaration: DeclarationRoots,
-        nodes: Vec<ContentNode>,
+        nodes: Vec<SupportedNode>,
+        placements: Vec<Thinning>,
     ) -> Self
     {
         Self {
             reference,
             declaration,
             nodes,
+            placements,
             locus: Locus::Unlocated,
         }
     }
@@ -2117,21 +2724,35 @@ impl ItemContent
     /// an unlocated program.
     ///
     /// # Specification
-    /// - ensures: [`Opacity::Opaque`] for a located item, else as
-    ///   [`opacity_of`] its nodes.
+    /// - ensures: [`Opacity::Opaque`] for a located item, else opaque exactly
+    ///   when a root carries an unresolved node beneath it.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Locus`].
+    /// - hypothesis: L3 — as [`Locus`], and an unresolved id beneath the body
+    ///   makes its item opaque.
     /// - witness: `content::tests::an_item_of_a_located_program_is_opaque`
-    #[spec(ensures: |ret| self.locus == Locus::Unlocated || ret == Opacity::Opaque)]
+    /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+    #[spec(ensures: |ret| (self.locus == Locus::Unlocated || ret == Opacity::Opaque)
+        && (self.locus == Locus::Located || (ret == Opacity::Opaque) == self.declaration.iter().any(|(root, _)|
+            self.nodes.get(usize::from(root)).is_some_and(|node| node.opacity() == Opacity::Opaque))))]
     #[inline]
     #[must_use]
     pub fn opacity(&self) -> Opacity
     {
-        match self.locus {
-            Locus::Located => Opacity::Opaque,
-            Locus::Unlocated => opacity_of(&self.nodes),
+        let opaque = match self.locus {
+            Locus::Located => true,
+            Locus::Unlocated => self.declaration.iter().any(|(root, _)| {
+                self.nodes
+                    .get(usize::from(root))
+                    .is_some_and(|node| node.opacity() == Opacity::Opaque)
+            }),
+        };
+        if opaque {
+            Opacity::Opaque
+        }
+        else {
+            Opacity::Transparent
         }
     }
 
@@ -2140,31 +2761,38 @@ impl ItemContent
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the table of every node reachable from the signature root,
-    ///   renumbered by discovery from that root alone, so it equals the table
-    ///   [`TypeContent::of_value_type`] gives the signature in its arena.
+    ///   renumbered by discovery from that root alone, with the root's support,
+    ///   so it equals the content [`TypeContent::of_value_type`] gives the
+    ///   signature in its arena.
     /// - provides: None for an unsigned value or a nominal declaration.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — an interleaved signature is compared with
-    ///   independently encoding its root. Raw malformed roots are not covered
-    ///   by that witness.
+    ///   independently encoding its root.
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-    #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (&self.declaration,ret.as_ref());
-if let DeclarationRoots::Value { signature:Maybe::Present(ref root),.. } = *matched_left_value && let Some(content) = matched_right_value { self.nodes.get(usize::from(*root)).map_or_else(
-            || content.nodes == [ContentNode::Unresolved(Sort::Value)],
-            |node| content.nodes.first().is_some_and(|first| first.sort() == node.sort())) }
- else { matches!(*matched_left_value, DeclarationRoots::Value { signature:Maybe::Absent(_),.. } | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_) | DeclarationRoots::World) && matched_right_value.is_none() }
-})]
+    #[spec(ensures: |ret| match (&self.declaration, ret.as_ref()) {
+        (&DeclarationRoots::Value { signature: Maybe::Present(root), .. }, Some(content)) =>
+            content.nodes.first().map(SupportedNode::sort) == self.nodes.get(usize::from(root)).map(SupportedNode::sort),
+        (&DeclarationRoots::Value { signature: Maybe::Present(_), .. }, None) => false,
+        (&(DeclarationRoots::Value { signature: Maybe::Absent(_), .. } | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_) | DeclarationRoots::World), found) => found.is_none(),
+    })]
     pub(crate) fn signature_type(&self) -> Option<TypeContent>
     {
         match self.declaration {
             DeclarationRoots::Value {
                 signature: Maybe::Present(root),
                 ..
-            } => Some(TypeContent {
-                nodes: renumber(&self.nodes, root),
-            }),
+            } => {
+                let numbered =
+                    crate::support::number(NodeIndex::from(self.nodes.len()), [root], |old| {
+                        self.nodes.get(usize::from(old)).cloned()
+                    });
+                Some(TypeContent {
+                    nodes: numbered.nodes,
+                    root: self.placements.first().cloned().unwrap_or_default(),
+                })
+            },
             DeclarationRoots::Value {
                 signature: Maybe::Absent(_),
                 ..
@@ -2177,23 +2805,26 @@ if let DeclarationRoots::Value { signature:Maybe::Present(ref root),.. } = *matc
 }
 
 /// A type's canonical content: every node reachable from it, numbered by
-/// discovery, the type itself first.
+/// discovery, the type itself first, and the type's support in the scope it
+/// stands in.
 ///
 /// # Specification
-/// - executable: none — the raw table constructor admits malformed graphs;
-///   canonicality is a producer or decoder obligation.
+/// - executable: none — a data declaration; [`TypeContent::of`] and the reader
+///   establish that the table is supported and the root support has the root's
+///   widths.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — independent type encoding and minting preserve a shared
-///   arrow; a finite malformed corpus separates the five named mint refusals.
+///   arrow; a finite malformed corpus separates the named mint refusals.
 /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
 /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
-#[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TypeContent
 {
     /// The nodes; the root is the first.
-    nodes: Vec<ContentNode>,
+    nodes: Vec<SupportedNode>,
+    /// The root's support in the scope the type stands in.
+    root: Thinning,
 }
 
 impl TypeContent
@@ -2204,18 +2835,84 @@ impl TypeContent
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn nodes(&self) -> &[ContentNode]
+    pub fn nodes(&self) -> &[SupportedNode]
     {
         &self.nodes
     }
 
-    /// The content of these nodes, as the decoder reassembles it.
+    /// The root's support in the scope the type stands in: the de Bruijn
+    /// indices it reads there.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn from_nodes(nodes: Vec<ContentNode>) -> Self
+    #[inline]
+    #[must_use]
+    pub const fn root(&self) -> &Thinning
     {
-        Self { nodes }
+        &self.root
+    }
+
+    /// The type's de Bruijn table, the root first: the projection a reader
+    /// that prints ambient binders reads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as `support::expand` from the first node under the root's
+    ///   support; an empty table projects to no node.
+    /// - fails: [`PlacementError::IndexOverflow`] when an ambient index under a
+    ///   binder passes `u32`; [`PlacementError::OutOfScope`] for a support
+    ///   narrower than its node.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`PlacementError`]: as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every binding former of both zones projects back to
+    ///   its indices, and a root support at the index ceiling under a binder
+    ///   reports overflow.
+    /// - witness: `content::tests::covers_preserve_every_binding_former`
+    /// - witness: `content::tests::debruijn_projection_reports_index_overflow`
+    #[spec(ensures: |ret| self.nodes.is_empty() || ret.as_ref().is_err() || ret.as_ref().is_ok_and(|table|
+        table.first().map(ContentNode::sort) == self.nodes.first().map(SupportedNode::sort)))]
+    #[inline]
+    pub fn debruijn(&self) -> Result<Vec<ContentNode>, PlacementError>
+    {
+        if self.nodes.is_empty() {
+            return Ok(Vec::new());
+        }
+        crate::support::expand(&self.nodes, NodeIndex::from(0_usize), &self.root)
+    }
+
+    /// Every reference beneath the type, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the root's value and type reads; nothing for an empty table.
+    /// - executable: none — the return is an opaque iterator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recorded answer naming a changed definition in a
+    ///   type position, an abstract type or a code invalidates its reader.
+    /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+    pub(crate) fn reads(&self) -> impl Iterator<Item = &Reference>
+    {
+        self.nodes
+            .first()
+            .into_iter()
+            .flat_map(|root| root.value_reads().chain(root.type_reads()))
+    }
+
+    /// The content of these parts, as the decoder reassembles it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn from_parts(
+        nodes: Vec<SupportedNode>,
+        root: Thinning,
+    ) -> Self
+    {
+        Self { nodes, root }
     }
 
     /// The content of the value type `ty` of `program`'s arena.
@@ -2237,9 +2934,9 @@ impl TypeContent
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
     #[spec(ensures: |ret| match program.arena().value_type(ty) {
             | Some(_) => ret.nodes.first().is_some_and(|node| {
-                node.sort() == Sort::ValueType && !matches!(*node, ContentNode::Unresolved(_))
+                node.sort() == Sort::ValueType && !matches!(*node.former(), ContentNode::Unresolved(_))
             }),
-            | None => ret.nodes == [ContentNode::Unresolved(Sort::ValueType)],
+            | None => ret.nodes.first().map(SupportedNode::former) == Some(&ContentNode::Unresolved(Sort::ValueType)),
         })]
     #[inline]
     #[must_use]
@@ -2256,8 +2953,8 @@ impl TypeContent
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the discovery-numbered table of every node reachable from
-    ///   `root`, `root` first.
+    /// - ensures: the discovery-numbered supported table of every node
+    ///   reachable from `root`, `root` first, with its support.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2276,7 +2973,7 @@ impl TypeContent
                         | ArenaNode::CompType(_) => Sort::CompType,
                     }
             }) && ret.nodes.iter().all(|node| {
-                node.children()
+                node.former().children()
                     .iter()
                     .all(|(child, _)| usize::from(child) < ret.nodes.len())
             })
@@ -2288,30 +2985,64 @@ impl TypeContent
     ) -> Self
     {
         let mut encoder = Encoder::new(arena, layout);
-        let _root = encoder.discover(root);
+        let raw = encoder.discover(root);
         encoder.drain();
+        Self::tabulated(&encoder.nodes, raw)
+    }
+
+    /// The type rooted at `root` of the de Bruijn table `raw`, factored and
+    /// numbered from it.
+    ///
+    /// # Specification
+    /// - requires: `root` is an entry of `raw`.
+    /// - ensures: the supported table of every node reachable from `root`,
+    ///   `root` first, with its support in `raw`'s ambient scope.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`TypeContent::of`], which builds through it; a
+    ///   table read back through [`TypeContent::debruijn`] is the table
+    ///   factored.
+    /// - witness: `content::tests::covers_preserve_every_binding_former`
+    #[spec(ensures: |ret| ret.nodes.iter().all(|node| node.former().children()
+        .iter()
+        .all(|(child, _)| usize::from(child) < ret.nodes.len())))]
+    pub(crate) fn tabulated(
+        raw: &[ContentNode],
+        root: NodeIndex,
+    ) -> Self
+    {
+        let tabled = tabled(raw, &[root]);
         Self {
-            nodes: encoder.nodes,
+            root: tabled.support(root),
+            nodes: tabled.nodes,
         }
     }
 
     /// Mint the type into `arena`, constants placed through `layout`.
     ///
+    /// A table whose every node is closed is already its own de Bruijn
+    /// table: each node is its former over the empty scope, and the
+    /// projection would number and share it exactly as it stands. Only a
+    /// table with an open node is projected first.
+    ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success a value type of `arena` whose content is this
-    ///   table, its shared nodes minted once.
+    ///   table, each distinct placed node minted once.
     /// - provides: the seat an adopted synthesised type is read from.
-    /// - fails: `seating::Absent` naming why: an unresolved node, a cycle, a
-    ///   reference the program does not hold, a table that is no value type, or
-    ///   a former holding a term. A term-bearing inferred type is rechecked
-    ///   rather than adopted when it cannot be seated.
+    /// - fails: `seating::Absent` naming why: an index the projection cannot
+    ///   place, an unresolved node, a reference the program does not hold, a
+    ///   table that is no value type, or a former holding a term. A
+    ///   term-bearing inferred type is rechecked rather than adopted when it
+    ///   cannot be seated.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a shared arrow is minted back into a noisy arena; one
-    ///   table for each of the five refusal reasons bounds error evidence. The
-    ///   predicate checks successful seat resolution, not a second encoding.
+    ///   table for each refusal reason bounds error evidence, closed and open
+    ///   alike. The predicate checks successful seat resolution, not a second
+    ///   encoding.
     /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
     /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
     #[spec(ensures: |ret| match ret {
@@ -2324,11 +3055,73 @@ impl TypeContent
         layout: &Layout,
     ) -> Maybe<ValueTypeId, seating::Absent>
     {
-        match mint_table(&self.nodes, arena, layout) {
+        let minted = if self
+            .nodes
+            .iter()
+            .all(|node| node.scope() == gandr_core_term::support::Scope::default())
+        {
+            mint_table(&self.nodes, arena, layout)
+        }
+        else {
+            let Ok(table) = self.debruijn()
+            else {
+                return Maybe::Absent(seating::Absent::Unplaceable);
+            };
+            mint_table(&table, arena, layout)
+        };
+        match minted {
             Maybe::Present(Minted::ValueType(id)) => Maybe::Present(id),
             Maybe::Present(Minted::CompType(_)) => Maybe::Absent(seating::Absent::IllSorted),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         }
+    }
+}
+
+/// The type tables one judgement pass has encoded, by the arena type each
+/// encodes. Within a pass the arena only grows and the program's layout is
+/// fixed, so an arena type's table never changes: the pass encodes each type
+/// it answers or projects once, however many items consult it.
+///
+/// # Specification
+/// - executable: none — a cache; [`TypeMemo::content`] checks every answer
+///   against a fresh encoding.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the incremental differential compares every judged item's
+///   answers and typings with a from-scratch pass.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+#[repr(transparent)]
+#[derive(Debug, Default)]
+pub struct TypeMemo(core::cell::RefCell<BTreeMap<ArenaNode, TypeContent>>);
+
+impl TypeMemo
+{
+    /// The table of the arena type `node`, encoded on its first request in
+    /// the pass.
+    ///
+    /// # Specification
+    /// - requires: since the memo's first entry, `arena` has only grown and
+    ///   `layout` is the one every entry was encoded through.
+    /// - ensures: the table [`TypeContent::of`] encodes for `node`.
+    /// - panics: none; the memo is never borrowed across an encoding.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`TypeMemo`].
+    /// - witness: `tests::incremental::incremental_equals_from_scratch`
+    #[spec(ensures: |ret| ret == TypeContent::of(arena, layout, node))]
+    pub(crate) fn content(
+        &self,
+        arena: &CoreArena,
+        layout: &Layout,
+        node: ArenaNode,
+    ) -> TypeContent
+    {
+        if let Some(found) = self.0.borrow().get(&node) {
+            return found.clone();
+        }
+        let content = TypeContent::of(arena, layout, node);
+        let _replaced = self.0.borrow_mut().insert(node, content.clone());
+        content
     }
 }
 
@@ -2356,14 +3149,16 @@ pub struct Encoded
 /// # Specification
 /// - requires: nothing; an ordinal outside `layout` encodes an empty unsigned
 ///   hole under an unoccupied reference.
-/// - ensures: the item's reference, complete declaration roots and shared
-///   discovery-numbered table; nominal roots follow parameter and constructor
-///   order; the program's locus.
+/// - ensures: the item's reference, complete declaration roots, the shared
+///   supported table numbered by discovery from them and each root's support;
+///   nominal roots follow parameter and constructor order; the program's locus.
+///   Every arena node the walk reached has a site, the supported node it
+///   became.
 /// - provides: the item's identity, the sites its verdict is projected through,
-///   and the table its footprint is read from — one walk for all three.
+///   and the roots its footprint is read from — one walk for all three.
 /// - panics: none.
-/// - intension: reads each reachable node once and allocates one table entry
-///   per distinct node.
+/// - intension: reads each reachable node once, factors each de Bruijn entry
+///   once and allocates one table entry per distinct supported node.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the surfaces are the discovery order, the sharing and the
@@ -2373,8 +3168,8 @@ pub struct Encoded
 /// - witness: `content::tests::content_is_free_of_arena_ids`
 /// - witness: `content::tests::a_shared_node_is_listed_once`
 /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
-#[spec(ensures: |ret| ret.sites.0.len() == ret.content.nodes.len()
-    && ret.sites.0.values().all(|index| usize::from(*index) < ret.content.nodes.len())
+#[spec(ensures: |ret| ret.sites.0.values().all(|index| usize::from(*index) < ret.content.nodes.len())
+    && ret.content.placements.len() == ret.content.declaration.iter().count()
     && match layout.items.get(usize::from(ordinal)) {
         Some(item) => layout.references.get(usize::from(ordinal)) == Some(&ret.content.reference)
             && { let (matched_left_value, matched_right_value) = (item.declaration().content(),&ret.content.declaration);
@@ -2448,41 +3243,21 @@ pub fn encode_item(
         },
     );
     encoder.drain();
+    let raw_roots: Vec<NodeIndex> = declaration.iter().map(|(root, _)| root).collect();
+    let tabled = tabled(&encoder.nodes, &raw_roots);
+    let mut sites = encoder.seen;
+    for raw in sites.values_mut() {
+        *raw = tabled.of(*raw);
+    }
     Encoded {
         content: ItemContent {
             reference,
-            declaration,
-            nodes: encoder.nodes,
+            declaration: declaration.renumbered(|raw| tabled.of(raw)),
+            placements: tabled.supports(&raw_roots),
+            nodes: tabled.nodes,
             locus: layout.locus(),
         },
-        sites: Sites(encoder.seen),
-    }
-}
-
-/// Whether `nodes` holds an unresolved node.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: Opaque exactly when any entry is Unresolved.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L2 — unresolved foreign content and the supported persistence
-///   corpus separate opaque and resolving tables.
-/// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-#[spec(ensures: |ret| (ret == Opacity::Opaque)
-    == nodes.iter().any(|node| matches!(*node, ContentNode::Unresolved(_))))]
-pub fn opacity_of(nodes: &[ContentNode]) -> Opacity
-{
-    if nodes
-        .iter()
-        .any(|node| matches!(*node, ContentNode::Unresolved(_)))
-    {
-        Opacity::Opaque
-    }
-    else {
-        Opacity::Transparent
+        sites: Sites(sites),
     }
 }
 
@@ -3395,59 +4170,6 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     }
 }
 
-/// The table of every node reachable from `root` in `nodes`, renumbered by
-/// discovery from `root`.
-///
-/// # Specification
-/// - requires: nothing — an out-of-range child is listed as unresolved.
-/// - ensures: the table a walk from `root` alone would have written.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — an interleaved signature is compared with independent
-///   encoding; cyclic, dangling, leaf and absent roots are checked against
-///   explicit discovery-numbered tables.
-/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-/// - witness: `content::tests::renumbering_closes_dangling_and_cyclic_tables`
-#[spec(ensures: |ret| {
-        nodes.get(usize::from(root)).map_or_else(
-            || ret == [ContentNode::Unresolved(Sort::Value)],
-            |node| ret.first().is_some_and(|first| first.sort() == node.sort()),
-        ) && ret.iter().all(|node| {
-            node.children()
-                .iter()
-                .all(|(child, _)| usize::from(child) < ret.len())
-        })
-    })]
-pub fn renumber(
-    nodes: &[ContentNode],
-    root: NodeIndex,
-) -> Vec<ContentNode>
-{
-    let mut numbers: BTreeMap<NodeIndex, NodeIndex> = BTreeMap::new();
-    let mut queue = VecDeque::new();
-    let mut table = Vec::new();
-    let _root = numbers.insert(root, NodeIndex::from(0_usize));
-    queue.push_back(root);
-    while let Some(old) = queue.pop_front() {
-        let Some(node) = nodes.get(usize::from(old))
-        else {
-            table.push(ContentNode::Unresolved(Sort::Value));
-            continue;
-        };
-        let mut discover = |child: NodeIndex| {
-            let next = NodeIndex::from(numbers.len());
-            let number = *numbers.entry(child).or_insert(next);
-            if number == next {
-                queue.push_back(child);
-            }
-            number
-        };
-        table.push(map_children(node, &mut discover));
-    }
-    table
-}
-
 /// `node` with every child index replaced by its image under `image`, applied
 /// left to right.
 ///
@@ -3463,7 +4185,7 @@ pub fn renumber(
 ///   malformed-table witness checks cycles, dangling children and root
 ///   selection.
 /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-/// - witness: `content::tests::renumbering_closes_dangling_and_cyclic_tables`
+/// - witness: `content::tests::factoring_closes_dangling_and_cyclic_tables`
 /// - witness: `content::tests::renumbering_carries_every_frame_and_clause_body_to_its_image`
 #[spec(ensures: |ret| {
         core::mem::discriminant(&ret) == core::mem::discriminant(node)
@@ -4038,6 +4760,41 @@ enum MintFrame
     Exit(NodeIndex),
 }
 
+/// An entry of a table a mint reads: a de Bruijn former, or a closed node of
+/// a supported table, which is its own former.
+trait MintEntry
+{
+    /// The former the entry mints.
+    ///
+    /// # Specification
+    /// trivial.
+    fn minted_former(&self) -> &ContentNode;
+}
+
+impl MintEntry for ContentNode
+{
+    /// The former itself.
+    ///
+    /// # Specification
+    /// trivial.
+    fn minted_former(&self) -> &ContentNode
+    {
+        self
+    }
+}
+
+impl MintEntry for SupportedNode
+{
+    /// The node's former.
+    ///
+    /// # Specification
+    /// trivial.
+    fn minted_former(&self) -> &ContentNode
+    {
+        self.former()
+    }
+}
+
 /// Mint the type table `nodes`, rooted at its first entry, into `arena`.
 ///
 /// # Specification
@@ -4057,16 +4814,18 @@ enum MintFrame
 /// - witness: `content::tests::malformed_type_tables_fail_by_structure`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(Minted::ValueType(id)) => arena.value_type(id).is_some()
-        && nodes.first().is_some_and(|node| node.sort() == Sort::ValueType),
+        && nodes.first().is_some_and(|node| node.minted_former().sort() == Sort::ValueType),
     Maybe::Present(Minted::CompType(id)) => arena.comp_type(id).is_some()
-        && nodes.first().is_some_and(|node| node.sort() == Sort::CompType),
+        && nodes.first().is_some_and(|node| node.minted_former().sort() == Sort::CompType),
     Maybe::Absent(reason) => !nodes.is_empty() || reason == seating::Absent::IllSorted,
 })]
-fn mint_table(
-    nodes: &[ContentNode],
+fn mint_table<Entry>(
+    nodes: &[Entry],
     arena: &mut CoreArena,
     layout: &Layout,
 ) -> Maybe<Minted, seating::Absent>
+where
+    Entry: MintEntry,
 {
     let mut states = alloc::vec![MintState::Fresh; nodes.len()];
     let mut frames = alloc::vec![MintFrame::Enter(NodeIndex::from(0_usize))];
@@ -4086,7 +4845,7 @@ fn mint_table(
                     MintState::Fresh => {
                         *state = MintState::Open;
                         frames.push(MintFrame::Exit(index));
-                        let children = node.children();
+                        let children = node.minted_former().children();
                         let first = frames.len();
                         frames.extend(children.iter().map(|(child, _)| MintFrame::Enter(child)));
                         if let Some(pushed) = frames.get_mut(first ..) {
@@ -4100,7 +4859,7 @@ fn mint_table(
                 else {
                     return Maybe::Absent(seating::Absent::IllSorted);
                 };
-                let minted = match mint_node(node, &states, arena, layout) {
+                let minted = match mint_node(node.minted_former(), &states, arena, layout) {
                     Maybe::Present(minted) => minted,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
                 };

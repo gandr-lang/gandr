@@ -45,6 +45,7 @@ use crate::boundary::NodeIndex;
 use crate::content::ArenaNode;
 use crate::content::Sites;
 use crate::content::TypeContent;
+use crate::content::TypeMemo;
 use crate::content::encode_item;
 use crate::region::Layout;
 use crate::region::Program;
@@ -892,24 +893,26 @@ pub enum Typing
 }
 
 /// What a projection reads beside the verdict: the arena its ids resolve in,
-/// the program its positions resolve through, and the item's sites.
+/// the program its positions resolve through, the item's sites, and the
+/// pass's encoded types.
 ///
 /// # Specification
 /// - requires: arena ids, layout positions and sites refer to the same
-///   judgement context; the arena may include nodes minted by checking.
+///   judgement context; the arena may include nodes minted by checking; the
+///   memo belongs to the pass judging in that arena and layout.
 /// - ensures: projection reads that context without retaining arena ids or
 ///   admission positions in its results; absent sites remain unreached.
 /// - executable: none — this declaration has no call boundary, and ownership
-///   correspondence between its three borrowed inputs has no retained proof.
+///   correspondence between its borrowed inputs has no retained proof.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — projection over a noisy arena and a fixed item graph
 ///   distinguishes arena indices, item indices and type-table indices. Actual
 ///   checking witnesses include types minted after item encoding. These
-///   observations assume the three inputs share their stated context.
+///   observations assume the inputs share their stated context.
 /// - witness: `typing::tests::each_verdict_projects_to_its_typing`
 /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
-pub struct Projection<'arena, 'layout, 'sites>
+pub struct Projection<'arena, 'layout, 'sites, 'types>
 {
     /// The arena the verdict's ids resolve in.
     pub arena: &'arena CoreArena,
@@ -917,9 +920,11 @@ pub struct Projection<'arena, 'layout, 'sites>
     pub layout: &'layout Layout,
     /// The item's table indices of its arena nodes.
     pub sites: &'sites Sites,
+    /// The pass's encoded types.
+    pub types: &'types TypeMemo,
 }
 
-impl Projection<'_, '_, '_>
+impl Projection<'_, '_, '_, '_>
 {
     /// The projected typing of `verdict`.
     ///
@@ -980,7 +985,8 @@ impl Projection<'_, '_, '_>
         ty: gandr_core_term::ValueTypeId,
     ) -> TypeContent
     {
-        TypeContent::of(self.arena, self.layout, ArenaNode::ValueType(ty))
+        self.types
+            .content(self.arena, self.layout, ArenaNode::ValueType(ty))
     }
 
     /// The content of a type node.
@@ -995,7 +1001,8 @@ impl Projection<'_, '_, '_>
         match node {
             TypeNode::Value(ty) => self.value_type(ty),
             TypeNode::Computation(ty) => {
-                TypeContent::of(self.arena, self.layout, ArenaNode::CompType(ty))
+                self.types
+                    .content(self.arena, self.layout, ArenaNode::CompType(ty))
             },
         }
     }
@@ -1822,6 +1829,7 @@ pub fn project(
         arena,
         layout: program.layout(),
         sites: &encoded.sites,
+        types: &TypeMemo::default(),
     }
     .typing(verdict)
 }

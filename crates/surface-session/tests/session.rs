@@ -100,36 +100,35 @@ fn checks() -> Outcome
     Outcome::Checks(gandr_core_checker::ObligationCount::from(0_usize))
 }
 
-/// The nodes of the type an unsigned body synthesised; none for any other
-/// typing.
+/// The de Bruijn table of the type an unsigned body synthesised; none for
+/// any other typing.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: returns the original produced node slice for synthesized typing,
-///   and an empty slice for checked, native, owed, or refused typing.
+/// - ensures: returns the produced type's projection for synthesised typing,
+///   and no node for checked, native, owed or refused typing, or for a
+///   projection the type cannot make.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — integer and string literal typings and a later reference
-///   compare exact base-type nodes. The predicate preserves the borrowed slice
-///   and excludes nodes from nonsynthesizing variants; the concrete witnesses
-///   cover synthesized outputs, not every typing variant.
+///   compare exact base-type nodes. The predicate excludes nodes from
+///   nonsynthesizing variants; the concrete witnesses cover synthesized
+///   outputs, not every typing variant.
 /// - witness: `tests::session::scalar_literals_carry_their_types`
 /// - witness: `tests::session::definitions_carry_across_lines`
 /// - witness: `tests::session::integer_literal_types_and_evaluates`
 #[spec(
     ensures: |ret| match *typing {
-    Typing::Synthesised { ref produced, .. } => {
-        core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(produced.nodes()))
-    }
+    Typing::Synthesised { ref produced, .. } => produced.debruijn().map_or(ret.is_empty(), |table| *ret == table),
     Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => ret.is_empty(),
 },
 )]
-fn produced(typing: &Typing) -> &[ContentNode]
+fn produced(typing: &Typing) -> Vec<ContentNode>
 {
     match *typing {
-        Typing::Synthesised { ref produced, .. } => produced.nodes(),
-        Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => &[],
+        Typing::Synthesised { ref produced, .. } => produced.debruijn().unwrap_or_default(),
+        Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => Vec::new(),
     }
 }
 

@@ -104,6 +104,7 @@ fn judged(
         arena: context.arena(),
         layout,
         sites: &encoded.sites,
+        types: &crate::content::TypeMemo::default(),
     };
     let typing = projection.typing(&verdict);
     (verdict, typing)
@@ -115,7 +116,7 @@ fn judged(
 /// trivial.
 fn base(base: BaseType) -> TypeContent
 {
-    TypeContent::from_nodes(vec![ContentNode::Base(base)])
+    crate::fixture::type_content(&[ContentNode::Base(base)])
 }
 
 /// The integer literal zero.
@@ -336,6 +337,7 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
         arena: program.arena(),
         layout: program.layout(),
         sites: &encoded.sites,
+        types: &crate::content::TypeMemo::default(),
     };
     // The specified breadth-first walk is pair, quote, thunk, thunk type,
     // return, returner, unit value, unit type. Arena noise is not a site.
@@ -343,9 +345,9 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
     let computation_site = Site::Node(NodeIndex::from(4_usize));
     let type_site = Site::Node(NodeIndex::from(7_usize));
     let comp_type_site = Site::Node(NodeIndex::from(5_usize));
-    let unit_content = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
+    let unit_content = || crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
     let returner_content = || {
-        TypeContent::from_nodes(vec![
+        crate::fixture::type_content(&[
             ContentNode::Returner {
                 result: NodeIndex::from(1_usize),
                 effects: gandr_core_term::effect::EffectRow::EMPTY,
@@ -383,7 +385,7 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
             Refusal::TypeMismatch {
                 at: computation_site,
                 synthesised: returner_content(),
-                expected: TypeContent::from_nodes(vec![
+                expected: crate::fixture::type_content(&[
                     ContentNode::Returner {
                         result: NodeIndex::from(1_usize),
                         effects: gandr_core_term::effect::EffectRow::EMPTY,
@@ -617,12 +619,12 @@ fn session_refusals_project_their_endpoints_and_states()
     );
     assert_eq!(side, ForkSide::Child, "the child left it open");
     assert_eq!(
-        state.nodes(),
-        [ContentNode::SessionType(
+        state.debruijn(),
+        Ok(vec![ContentNode::SessionType(
             ended
                 .try_relocate(|_| Ok::<NodeIndex, core::convert::Infallible>(NodeIndex::default()))
                 .unwrap_or_else(|never| match never {})
-        )],
+        )]),
         "the state is its own type table"
     );
 
@@ -768,6 +770,7 @@ fn a_located_refusal_projects_its_worlds_and_types()
                 arena: context.arena(),
                 layout,
                 sites: &encoded.sites,
+                types: &crate::content::TypeMemo::default(),
             }
             .typing(&verdict)
         })
@@ -799,6 +802,7 @@ fn a_located_refusal_projects_its_worlds_and_types()
                         arena: context.arena(),
                         layout,
                         sites: &encoded[2].sites,
+                        types: &crate::content::TypeMemo::default(),
                     }
                     .value_type(thunk),
                     predicate: Predicate::Mobile,

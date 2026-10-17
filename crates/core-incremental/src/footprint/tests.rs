@@ -58,7 +58,7 @@ fn named(key: &ItemKey) -> Reference
 /// - witness: `footprint::tests::hole_sets_has_hole`
 /// - witness: `footprint::tests::shadowed_binder_is_not_a_read`
 /// - witness: `footprint::tests::free_occurrence_under_binders_is_read`
-/// - witness: `footprint::tests::a_term_visit_does_not_suppress_a_later_type_visit`
+/// - witness: `footprint::tests::a_term_position_does_not_suppress_a_type_position`
 #[spec(ensures: |ret| ret.opacity == Opacity::Transparent
         && ret.type_reads.is_subset(&ret.reads)
         && ret.hole == match body {
@@ -238,7 +238,7 @@ fn type_support_holds_only_type_positions()
 }
 
 #[test]
-fn a_term_visit_does_not_suppress_a_later_type_visit()
+fn a_term_position_does_not_suppress_a_type_position()
 {
     let mut arena = CoreArena::new();
     let a = arena.value_constant(ConstantIndex::from(0_usize));
@@ -275,58 +275,40 @@ fn a_quoted_abstract_type_reads_its_own_reference_in_type_position()
 fn bounded_tables_separate_reachability_opacity_and_holes()
 {
     let key = ItemKey::from("reachable");
-    let cyclic = super::ItemContent::from_parts(
-        Reference::Unoccupied,
-        crate::content::DeclarationRoots::Value {
-            signature: Maybe::Absent(signature::Absent::Unsigned),
-            body: Maybe::Present(crate::boundary::NodeIndex::from(0_usize)),
-            laws: Vec::new(),
-        },
-        vec![
-            crate::content::ContentNode::Tuple(vec![
-                crate::boundary::NodeIndex::from(0_usize),
-                crate::boundary::NodeIndex::from(1_usize),
-            ]),
-            crate::content::ContentNode::Constant(named(&key)),
-            crate::content::ContentNode::Constant(named(&ItemKey::from("unreachable"))),
-            crate::content::ContentNode::Unresolved(super::Sort::Value),
-        ],
-    );
+    let filled = crate::content::DeclarationRoots::Value {
+        signature: Maybe::Absent(signature::Absent::Unsigned),
+        body: Maybe::Present(crate::boundary::NodeIndex::from(0_usize)),
+        laws: Vec::new(),
+    };
+    let cyclic = crate::fixture::item_content(Reference::Unoccupied, &filled, &[
+        crate::content::ContentNode::Tuple(vec![
+            crate::boundary::NodeIndex::from(0_usize),
+            crate::boundary::NodeIndex::from(1_usize),
+        ]),
+        crate::content::ContentNode::Constant(named(&key)),
+        crate::content::ContentNode::Constant(named(&ItemKey::from("unreachable"))),
+    ]);
     let footprint = footprint_of(&cyclic);
-    assert_eq!(footprint.reads, BTreeSet::from([named(&key)]));
+    assert_eq!(
+        footprint.reads,
+        BTreeSet::from([named(&key)]),
+        "an entry the roots do not reach is not read"
+    );
     assert_eq!(footprint.type_reads, BTreeSet::new());
     assert_eq!(
         (footprint.opacity, footprint.hole),
-        (Opacity::Opaque, HoleMark::Filled)
+        (Opacity::Opaque, HoleMark::Filled),
+        "the edge closing the cycle is an unresolved leaf beneath the body"
     );
 
-    let dangling = super::ItemContent::from_parts(
+    let empty = crate::fixture::item_content(
         Reference::Unoccupied,
-        crate::content::DeclarationRoots::Value {
-            signature: Maybe::Present(crate::boundary::NodeIndex::from(usize::MAX)),
-            body: Maybe::Present(crate::boundary::NodeIndex::from(usize::MAX)),
-            laws: Vec::new(),
-        },
-        vec![crate::content::ContentNode::Unresolved(super::Sort::Value)],
-    );
-    let footprint = footprint_of(&dangling);
-    assert_eq!(
-        (footprint.reads, footprint.type_reads),
-        (BTreeSet::new(), BTreeSet::new())
-    );
-    assert_eq!(
-        (footprint.opacity, footprint.hole),
-        (Opacity::Opaque, HoleMark::Filled)
-    );
-
-    let empty = super::ItemContent::from_parts(
-        Reference::Unoccupied,
-        crate::content::DeclarationRoots::Value {
+        &crate::content::DeclarationRoots::Value {
             signature: Maybe::Absent(signature::Absent::Unsigned),
             body: Maybe::Absent(body::Absent::Hole),
             laws: Vec::new(),
         },
-        vec![],
+        &[],
     );
     let footprint = footprint_of(&empty);
     assert_eq!(

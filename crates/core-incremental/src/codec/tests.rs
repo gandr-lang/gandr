@@ -361,7 +361,7 @@ fn every_footprint_stance_and_answer_round_trips()
             assert_eq!(reader.finish(), Ok(()));
         }
     }
-    let ty = TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
+    let ty = crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
     for answer in [Answer::Untyped, Answer::Typed(ty), Answer::Data(None)] {
         let mut bytes = CheckpointBytes::default();
         super::write_answer(&mut Writer { sink: &mut bytes }, &answer).expect("a portable answer");
@@ -391,7 +391,6 @@ use super::Count;
 use super::Footprint;
 use super::HoleMark;
 use super::ItemCheckpoint;
-use super::ItemContent;
 use super::ItemKey;
 use super::Maybe;
 use super::NodeIndex;
@@ -420,7 +419,6 @@ use super::reference_bytes;
 use super::root_of_sort;
 use super::signature;
 use super::write_listed;
-use super::write_nodes;
 use super::write_program;
 
 #[test]
@@ -508,7 +506,7 @@ fn effect_rows_persist_operation_types_and_canonical_identity()
             .expect("distinct operations"),
         ])
         .expect("distinct interfaces");
-        super::TypeContent::from_nodes(vec![
+        crate::fixture::type_content(&[
             ContentNode::Returner {
                 result: index(1_usize),
                 effects,
@@ -715,7 +713,7 @@ fn control_nodes_persist_names_frames_and_branch_order()
         assert_eq!(reader.finish(), Ok(()));
     }
     let at = super::Site::Node(index(7_usize));
-    let typed = super::TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
+    let typed = crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
     for refusal in [
         super::Refusal::UnknownOperation { at },
         super::Refusal::HandlerCoverage { at },
@@ -914,7 +912,7 @@ fn session_refusals_round_trip_with_their_endpoints()
         side: ForkSide::Parent,
         ..child
     };
-    let state = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
+    let state = || crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
     let mut refusals = vec![
         Refusal::SessionMismatch {
             at,
@@ -1007,12 +1005,9 @@ fn located_refusals_round_trip_with_their_worlds()
         key: ItemKey::from([6].as_slice()),
         occurrence: Occurrence::from(0_usize),
     };
-    let thunk = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
-    let integer = || {
-        TypeContent::from_nodes(vec![ContentNode::Base(
-            gandr_kernel_term::BaseType::Integer,
-        )])
-    };
+    let thunk = || crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
+    let integer =
+        || crate::fixture::type_content(&[ContentNode::Base(gandr_kernel_term::BaseType::Integer)]);
     let mut defects = Vec::new();
     for crossed in [Crossed::Result, Crossed::Constant] {
         for predicate in [Predicate::Mobile, Predicate::Open] {
@@ -1339,23 +1334,51 @@ fn reference_frames_preserve_binary_keys_and_occurrences()
     assert_eq!(unknown.cursor, 1);
 }
 
+/// Write `formers` as a closed supported table: every scope empty, so no
+/// edge has an index to write. Child extents and sorts are left as given, so
+/// a malformed table reaches the reader.
+///
+/// # Specification
+/// trivial.
+fn write_closed(
+    bytes: &mut CheckpointBytes,
+    formers: &[ContentNode],
+)
+{
+    let closed = super::Scope::new(
+        gandr_core_term::BinderDepth::from(0_usize),
+        gandr_core_term::BinderDepth::from(0_usize),
+    );
+    let mut writer = Writer { sink: bytes };
+    writer.count(Count(formers.len())).expect("count");
+    for former in formers {
+        super::write_node(&mut writer, former).expect("former");
+        super::write_scope(&mut writer, closed).expect("scope");
+    }
+}
+
 #[test]
-fn discovery_accepts_cycles_repeated_roots_and_empty_tables()
+fn discovery_accepts_repeated_roots_and_empty_tables()
 {
     assert_eq!(check_discovery(&[], core::iter::empty()), Ok(()));
-    let nodes = [
-        ContentNode::Product(vec![NodeIndex::from(0_usize), NodeIndex::from(1_usize)]),
+    let ty = crate::fixture::type_content(&[
+        ContentNode::Product(vec![NodeIndex::from(1_usize), NodeIndex::from(1_usize)]),
         ContentNode::Product(Vec::new()),
-    ];
+    ]);
     assert_eq!(
         check_discovery(
-            &nodes,
+            ty.nodes(),
             [NodeIndex::from(0_usize), NodeIndex::from(0_usize)].into_iter()
         ),
         Ok(())
     );
     assert_eq!(
-        check_discovery(&nodes, [NodeIndex::from(usize::MAX)].into_iter()),
+        check_discovery(ty.nodes(), [NodeIndex::from(1_usize)].into_iter()),
+        Err(CodecError::NonCanonical),
+        "a table numbered from another root is refused"
+    );
+    assert_eq!(
+        check_discovery(ty.nodes(), [NodeIndex::from(usize::MAX)].into_iter()),
         Err(CodecError::Corrupt)
     );
 }
@@ -1363,47 +1386,52 @@ fn discovery_accepts_cycles_repeated_roots_and_empty_tables()
 #[test]
 fn type_tables_validate_roots_child_extents_and_sorts()
 {
-    let nodes = [ContentNode::Product(Vec::new())];
+    let ty = crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
     assert_eq!(
-        root_of_sort(&nodes, NodeIndex::from(0_usize), Sort::ValueType),
+        root_of_sort(ty.nodes(), NodeIndex::from(0_usize), Sort::ValueType),
         Ok(())
     );
     assert_eq!(
-        root_of_sort(&nodes, NodeIndex::from(0_usize), Sort::Value),
+        root_of_sort(ty.nodes(), NodeIndex::from(0_usize), Sort::Value),
         Err(CodecError::Corrupt)
     );
     assert_eq!(
-        root_of_sort(&nodes, NodeIndex::from(usize::MAX), Sort::ValueType),
+        root_of_sort(ty.nodes(), NodeIndex::from(usize::MAX), Sort::ValueType),
         Err(CodecError::Corrupt)
     );
-    let decode = |nodes: Vec<ContentNode>| {
+    let decode = |formers: &[ContentNode]| {
         let mut bytes = CheckpointBytes::default();
-        write_nodes(&mut Writer { sink: &mut bytes }, &nodes).expect("raw table encodes");
+        write_closed(&mut bytes, formers);
         read_type(&mut Reader {
             bytes: bytes.as_ref(),
             cursor: 0,
         })
     };
-    assert_eq!(decode(vec![]), Err(CodecError::Corrupt));
+    assert_eq!(decode(&[]), Err(CodecError::Corrupt));
     assert_eq!(
-        decode(vec![ContentNode::Tuple(Vec::new())]),
+        decode(&[ContentNode::Tuple(Vec::new())]),
         Err(CodecError::Corrupt)
     );
     assert_eq!(
-        decode(vec![ContentNode::Product(vec![
+        decode(&[ContentNode::Product(vec![
             NodeIndex::from(1_usize),
             NodeIndex::from(0_usize)
-        ]),]),
+        ])]),
         Err(CodecError::Corrupt)
     );
     assert_eq!(
-        decode(vec![
+        decode(&[
             ContentNode::Product(vec![NodeIndex::from(1_usize), NodeIndex::from(1_usize)]),
             ContentNode::Tuple(Vec::new()),
         ]),
         Err(CodecError::Corrupt)
     );
-    let computation = decode(vec![
+    assert_eq!(
+        decode(&[ContentNode::Product(vec![NodeIndex::from(0_usize)])]),
+        Err(CodecError::Corrupt),
+        "a cycle is refused"
+    );
+    let computation = decode(&[
         ContentNode::Returner {
             result: NodeIndex::from(1_usize),
             effects: gandr_core_term::effect::EffectRow::EMPTY,
@@ -1412,7 +1440,10 @@ fn type_tables_validate_roots_child_extents_and_sorts()
     ])
     .expect("closed computation type");
     assert_eq!(
-        computation.nodes().first().map(ContentNode::sort),
+        computation
+            .nodes()
+            .first()
+            .map(crate::support::SupportedNode::sort),
         Some(Sort::CompType)
     );
 }
@@ -1469,7 +1500,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
 {
     let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
     let expected = [
-        b'G', b'C', b'K', b'P', b'T', 0, 0, 11, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'G', b'C', b'K', b'P', b'T', 0, 0, 12, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq!(
         encode_checkpoints(&checkpoints)
@@ -1479,14 +1510,14 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
     );
     assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
     let mut wrong_version = expected;
-    *wrong_version.get_mut(7).expect("version byte") = 10;
+    *wrong_version.get_mut(7).expect("version byte") = 11;
     assert_eq!(
         decode_checkpoints(Bytes(&wrong_version)),
         Err(CodecError::Corrupt)
     );
     let mut program = CheckpointBytes::default();
     write_program(&mut program, &[]).expect("empty program");
-    assert_eq!(program.as_ref(), b"GPROG\0\0\x07\0\0\0\0\0\0\0\0");
+    assert_eq!(program.as_ref(), b"GPROG\0\0\x08\0\0\0\0\0\0\0\0");
     assert_eq!(
         decode_checkpoints(Bytes(program.as_ref())),
         Err(CodecError::Corrupt)
@@ -1496,7 +1527,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
 #[test]
 fn checkpoint_encoding_reports_the_first_unresolved_plane()
 {
-    let unresolved = |sort| TypeContent::from_nodes(vec![ContentNode::Unresolved(sort)]);
+    let unresolved = |sort| crate::fixture::type_content(&[ContentNode::Unresolved(sort)]);
     let mismatch = |synthesised, expected| {
         Typing::Refused(Refusal::TypeMismatch {
             at: Site::Unreached,
@@ -1505,14 +1536,14 @@ fn checkpoint_encoding_reports_the_first_unresolved_plane()
         })
     };
     let encode = |nodes: Vec<ContentNode>, answer, typing| {
-        let content = ItemContent::from_parts(
+        let content = crate::fixture::item_content(
             Reference::Unoccupied,
-            crate::content::DeclarationRoots::Value {
+            &crate::content::DeclarationRoots::Value {
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws: Vec::new(),
             },
-            nodes,
+            &nodes,
         );
         let footprint = Footprint::from_parts(
             BTreeSet::new(),
@@ -1583,7 +1614,7 @@ fn checkpoint_encoding_reports_the_first_unresolved_plane()
             vec![ContentNode::Tuple(Vec::new())],
             Answer::Untyped,
             mismatch(
-                TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]),
+                crate::fixture::type_content(&[ContentNode::Product(Vec::new())]),
                 unresolved(Sort::Computation)
             ),
         ),
@@ -1678,7 +1709,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
         level = level.succ().expect("representable offset");
     }
     let unit = || vec![ContentNode::Tuple(Vec::new())];
-    let valid_type = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
+    let valid_type = || crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
     let at = Site::Unreached;
     let cases = [
         (
@@ -1694,7 +1725,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
         ),
         (
             unit(),
-            Answer::Typed(TypeContent::from_nodes(vec![
+            Answer::Typed(crate::fixture::type_content(&[
                 ContentNode::TypeLift {
                     inner: NodeIndex::from(1_usize),
                     target: level.clone(),
@@ -1704,7 +1735,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
             Typing::Owed,
         ),
         (unit(), Answer::Untyped, Typing::Synthesised {
-            produced: TypeContent::from_nodes(vec![
+            produced: crate::fixture::type_content(&[
                 ContentNode::Element {
                     code: NodeIndex::from(1_usize),
                     target: level.clone(),
@@ -1718,7 +1749,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
             Answer::Untyped,
             Typing::Refused(Refusal::TypeMismatch {
                 at,
-                synthesised: TypeContent::from_nodes(vec![ContentNode::Universe {
+                synthesised: crate::fixture::type_content(&[ContentNode::Universe {
                     sort: super::TypeSort::Ground(super::GroundSort::Value),
                     level: level.clone(),
                 }]),
@@ -1731,7 +1762,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
             Typing::Refused(Refusal::TypeMismatch {
                 at,
                 synthesised: valid_type(),
-                expected: TypeContent::from_nodes(vec![
+                expected: crate::fixture::type_content(&[
                     ContentNode::ComputationElement {
                         code: NodeIndex::from(1_usize),
                         target: level,
@@ -1742,14 +1773,14 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
         ),
     ];
     for (nodes, answer, typing) in cases {
-        let content = ItemContent::from_parts(
+        let content = crate::fixture::item_content(
             Reference::Unoccupied,
-            crate::content::DeclarationRoots::Value {
+            &crate::content::DeclarationRoots::Value {
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws: Vec::new(),
             },
-            nodes,
+            &nodes,
         );
         let item = ItemCheckpoint::new(
             content,
@@ -1781,12 +1812,12 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
         level = level.succ().expect("representable offset");
     }
     let capped = || {
-        TypeContent::from_nodes(vec![ContentNode::Universe {
+        crate::fixture::type_content(&[ContentNode::Universe {
             sort: super::TypeSort::Ground(super::GroundSort::Value),
             level: level.clone(),
         }])
     };
-    let valid = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
+    let valid = || crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
     let at = Site::Unreached;
     let mismatches: [Mismatch; 4] = [
         |synthesised, expected| Refusal::TypeMismatch {
@@ -1851,14 +1882,14 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
         ));
     }
     for (answer, typing) in cases {
-        let content = ItemContent::from_parts(
+        let content = crate::fixture::item_content(
             Reference::Unoccupied,
-            crate::content::DeclarationRoots::Value {
+            &crate::content::DeclarationRoots::Value {
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws: Vec::new(),
             },
-            vec![ContentNode::Tuple(Vec::new())],
+            &[ContentNode::Tuple(Vec::new())],
         );
         let item = ItemCheckpoint::new(
             content,
@@ -1889,14 +1920,14 @@ fn a_lawful_value_root_round_trips_and_its_law_order_is_content()
         occurrence: Occurrence::from(0_usize),
     };
     let checkpoints = |laws: Vec<Reference>| {
-        let content = ItemContent::from_parts(
+        let content = crate::fixture::item_content(
             Reference::Unoccupied,
-            crate::content::DeclarationRoots::Value {
+            &crate::content::DeclarationRoots::Value {
                 signature: Maybe::Absent(signature::Absent::Unsigned),
                 body: Maybe::Present(NodeIndex::from(0_usize)),
                 laws,
             },
-            vec![ContentNode::Tuple(Vec::new())],
+            &[ContentNode::Tuple(Vec::new())],
         );
         let item = ItemCheckpoint::new(
             content,
@@ -1946,9 +1977,9 @@ fn a_type_of_words_round_trips_its_cells()
         [RuleNode::Constructor(ConstructorTag::from(tag))].into()
     };
     let checkpoints = |presentation: gandr_core_term::Presentation| {
-        let content = ItemContent::from_parts(
+        let content = crate::fixture::item_content(
             Reference::Unoccupied,
-            crate::content::DeclarationRoots::Data(crate::content::DataRoots {
+            &crate::content::DeclarationRoots::Data(crate::content::DataRoots {
                 parameters: Vec::new(),
                 constructors: vec![Vec::new(), vec![NodeIndex::from(0_usize)], vec![
                     NodeIndex::from(0_usize),
@@ -1956,7 +1987,7 @@ fn a_type_of_words_round_trips_its_cells()
                 kind: NodeIndex::from(0_usize),
                 presentation,
             }),
-            vec![ContentNode::Product(Vec::new())],
+            &[ContentNode::Product(Vec::new())],
         );
         let item = ItemCheckpoint::new(
             content,
@@ -2042,7 +2073,7 @@ fn every_refusal() -> Vec<Refusal>
 
     let at = Site::Node(NodeIndex::from(3_usize));
     let other = Site::Node(NodeIndex::from(5_usize));
-    let ty = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
+    let ty = || crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
     let reference = Reference::Item {
         key: ItemKey::from([1].as_slice()),
         occurrence: Occurrence::from(0_usize),
@@ -2366,5 +2397,269 @@ fn an_offer_narrowed_fault_is_read_only_at_step_zero()
     assert_eq!(
         super::read_refusal(&mut reader),
         Err(CodecError::NonCanonical)
+    );
+}
+
+/// Read `bytes` as a supported table.
+///
+/// # Specification
+/// trivial.
+fn read_table(bytes: &CheckpointBytes) -> Result<Vec<crate::support::SupportedNode>, CodecError>
+{
+    super::read_nodes(&mut Reader {
+        bytes: bytes.as_ref(),
+        cursor: 0,
+    })
+}
+
+/// Write `parts` as a table, each former with the scope and cover given,
+/// whatever they claim: the formers and scopes, then every edge's indices.
+///
+/// # Specification
+/// trivial.
+fn write_parts(parts: &[(ContentNode, super::Scope, Vec<super::Thinning>)]) -> CheckpointBytes
+{
+    let mut bytes = CheckpointBytes::default();
+    let mut writer = Writer { sink: &mut bytes };
+    writer.count(Count(parts.len())).expect("count");
+    for &(ref former, scope, _) in parts {
+        super::write_node(&mut writer, former).expect("former");
+        super::write_scope(&mut writer, scope).expect("scope");
+    }
+    for &(_, _, ref cover) in parts {
+        for edge in cover {
+            super::write_selection(&mut writer, edge);
+        }
+    }
+    bytes
+}
+
+#[test]
+fn supported_tables_round_trip_and_reject_forged_support()
+{
+    use gandr_core_term::BinderDepth;
+    use gandr_core_term::Zone;
+    use gandr_kernel_term::DeBruijnIndex;
+
+    use super::Scope;
+    use super::Thinning;
+    let index = NodeIndex::from;
+    let named = Reference::Item {
+        key: ItemKey::from("named"),
+        occurrence: Occurrence::from(0_usize),
+    };
+    // El (λx. (x, named, v1, v2, ℓ0)): the lambda's free variables sit in
+    // both zones, two of them intuitionistic, and its tuple reads a constant.
+    let ty = crate::fixture::type_content(&[
+        ContentNode::Element {
+            code: index(1_usize),
+            target: super::Level::zero(),
+        },
+        ContentNode::StaticLambda(index(2_usize)),
+        ContentNode::Tuple(vec![
+            index(3_usize),
+            index(4_usize),
+            index(5_usize),
+            index(6_usize),
+            index(7_usize),
+        ]),
+        ContentNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        },
+        ContentNode::Constant(named.clone()),
+        ContentNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(2_u32),
+        },
+        ContentNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(3_u32),
+        },
+        ContentNode::Variable {
+            zone: Zone::Linear,
+            index: DeBruijnIndex::from(0_u32),
+        },
+    ]);
+    let mut bytes = CheckpointBytes::default();
+    super::write_type(&mut Writer { sink: &mut bytes }, &ty).expect("a resolved type");
+    let read = read_type(&mut Reader {
+        bytes: bytes.as_ref(),
+        cursor: 0,
+    })
+    .expect("the written type reads back");
+    assert_eq!(
+        read, ty,
+        "covers, scopes, the root support and the rebuilt reads survive"
+    );
+    assert!(
+        read.nodes()
+            .first()
+            .is_some_and(|root| root.type_reads().eq([&named])),
+        "the reader rebuilds the references no byte carries"
+    );
+
+    // A signature whose field is scoped under its parameter: the field's root
+    // support selects the parameter, so the placements carry bytes.
+    let data = crate::content::DataContent::tabulated(
+        &crate::content::DataRoots {
+            parameters: vec![index(1_usize)],
+            constructors: vec![vec![index(2_usize)]],
+            kind: index(4_usize),
+            presentation: gandr_core_term::Presentation::new(Vec::new()),
+        },
+        &[
+            ContentNode::Base(BaseType::String),
+            ContentNode::Base(BaseType::Integer),
+            ContentNode::Element {
+                code: index(3_usize),
+                target: super::Level::zero(),
+            },
+            ContentNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+            },
+            ContentNode::Product(Vec::new()),
+        ],
+    );
+    assert!(
+        data.placements()
+            .iter()
+            .any(|support| !support.indices(Zone::Intuitionistic).is_empty()),
+        "the field's support is not empty"
+    );
+    let mut bytes = CheckpointBytes::default();
+    super::write_data_content(&mut Writer { sink: &mut bytes }, &data)
+        .expect("a resolved signature");
+    assert_eq!(
+        super::read_data_content(&mut Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        }),
+        Ok(data),
+        "a signature's root supports survive"
+    );
+
+    let width = |intuitionistic: usize, linear: usize| {
+        Scope::new(BinderDepth::from(intuitionistic), BinderDepth::from(linear))
+    };
+    let select = |indices: &[u32]| {
+        Thinning::from_ascending(
+            indices.iter().copied().map(DeBruijnIndex::from).collect(),
+            Vec::new(),
+        )
+        .expect("ascending")
+    };
+    let variable = ContentNode::Variable {
+        zone: Zone::Intuitionistic,
+        index: DeBruijnIndex::from(0_u32),
+    };
+    // λx. x over a free v0 beside it: the lambda's scope is one wide and
+    // its edge keeps the bound slot and the free one.
+    let tuple = ContentNode::Tuple(vec![index(2_usize), index(2_usize)]);
+    let honest = [
+        (
+            ContentNode::StaticLambda(index(1_usize)),
+            width(1, 0),
+            vec![select(&[0, 1])],
+        ),
+        (tuple, width(2, 0), vec![select(&[0]), select(&[1])]),
+        (variable.clone(), width(1, 0), Vec::new()),
+    ];
+    assert!(
+        read_table(&write_parts(&honest)).is_ok(),
+        "the honest table the forgeries alter is admitted"
+    );
+    let forged = |at: usize, part: (ContentNode, Scope, Vec<Thinning>)| {
+        let mut parts = honest.to_vec();
+        if let Some(slot) = parts.get_mut(at) {
+            *slot = part;
+        }
+        read_table(&write_parts(&parts))
+    };
+    for (case, outcome) in [
+        (
+            "a widened scope leaves a slot unused",
+            forged(
+                0,
+                (
+                    ContentNode::StaticLambda(index(1_usize)),
+                    width(2, 0),
+                    vec![select(&[0, 1])],
+                ),
+            ),
+        ),
+        (
+            "an edge past its node's scope",
+            forged(
+                0,
+                (
+                    ContentNode::StaticLambda(index(1_usize)),
+                    width(1, 0),
+                    vec![select(&[0, 5])],
+                ),
+            ),
+        ),
+        (
+            "a cycle",
+            forged(
+                0,
+                (
+                    ContentNode::StaticLambda(index(0_usize)),
+                    width(1, 0),
+                    vec![select(&[1])],
+                ),
+            ),
+        ),
+    ] {
+        assert_eq!(outcome, Err(CodecError::Corrupt), "{case}");
+    }
+    let mut duplicated = honest.to_vec();
+    duplicated.push((variable, width(1, 0), Vec::new()));
+    assert_eq!(
+        read_table(&write_parts(&duplicated)),
+        Err(CodecError::NonCanonical),
+        "a node listed twice"
+    );
+    let root_support = |words: [u64; 2]| {
+        let mut typed = CheckpointBytes::default();
+        let mut writer = Writer { sink: &mut typed };
+        super::write_nodes(&mut writer, ty.nodes()).expect("a resolved table");
+        for word in words {
+            writer.word(Word(word));
+        }
+        writer.word(Word(0_u64));
+        read_type(&mut Reader {
+            bytes: typed.as_ref(),
+            cursor: 0,
+        })
+    };
+    assert_eq!(
+        ty.root().indices(Zone::Intuitionistic),
+        [DeBruijnIndex::from(1_u32), DeBruijnIndex::from(2_u32)],
+        "the root support the forgeries reorder"
+    );
+    assert!(root_support([1, 2]).is_ok(), "the honest root support");
+    assert_eq!(
+        root_support([2, 1]),
+        Err(CodecError::Corrupt),
+        "a root support out of order"
+    );
+    assert_eq!(
+        root_support([1, u64::from(u32::MAX) + 1]),
+        Err(CodecError::Corrupt),
+        "a root support index past u32"
+    );
+
+    let checkpoints =
+        crate::fixture::checked(&mut crate::fixture::every_former(crate::fixture::Noise(0)));
+    let bytes = encode_checkpoints(&checkpoints).expect("a complete fixture");
+    assert_eq!(decode_checkpoints(Bytes(bytes.as_ref())), Ok(checkpoints));
+    let mut previous = bytes.as_ref().to_vec();
+    *previous.get_mut(7).expect("version byte") = 11;
+    assert_eq!(
+        decode_checkpoints(Bytes(&previous)),
+        Err(CodecError::Corrupt),
+        "the previous version is refused, not reinterpreted"
     );
 }

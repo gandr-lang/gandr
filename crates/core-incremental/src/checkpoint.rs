@@ -233,16 +233,51 @@ impl Answer
         }
     }
 
-    /// Every node retained by this answer, or no nodes for an absence.
+    /// The answer's table, or an empty one for an absence.
     ///
     /// # Specification
-    /// trivial.
-    pub(crate) fn nodes(&self) -> &[crate::content::ContentNode]
+    /// - ensures: a typed answer's type table, a data answer's signature table,
+    ///   empty for an absence.
+    /// - panics: none.
+    /// - executable: none — the result is a field borrow chosen by variant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — persisted typed and data answers are written from
+    ///   this table.
+    /// - witness: `codec::tests::every_footprint_stance_and_answer_round_trips`
+    pub(crate) fn nodes(&self) -> &[crate::support::SupportedNode]
     {
         match *(self) {
             Self::Untyped | Self::Data(None) => &[],
             Self::Typed(ref ty) => ty.nodes(),
             Self::Data(Some(ref signature)) => signature.nodes(),
+        }
+    }
+
+    /// Every reference beneath the answer's roots, or none for an absence.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a typed answer's root reads, a data answer's reads over its
+    ///   roots, nothing for an absence; ascending, each once.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — recorded answers naming a changed definition in a
+    ///   type position, an abstract type or a code invalidate their reader; an
+    ///   untyped answer does not.
+    /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+    #[spec(ensures: |ret| match *self {
+        Self::Untyped | Self::Data(None) => ret.is_empty(),
+        Self::Typed(ref ty) => ty.reads().all(|read| ret.contains(read)),
+        Self::Data(Some(ref signature)) => ret.eq(&signature.reads()),
+    })]
+    pub(crate) fn reads(&self) -> alloc::collections::BTreeSet<&Reference>
+    {
+        match *(self) {
+            Self::Untyped | Self::Data(None) => alloc::collections::BTreeSet::new(),
+            Self::Typed(ref ty) => ty.reads().collect(),
+            Self::Data(Some(ref signature)) => signature.reads(),
         }
     }
 }
@@ -1680,6 +1715,9 @@ where
     let mut supplied: Vec<Answer> = Vec::with_capacity(encoded.len());
     let (arena, layout) = edited.parts_mut();
     let mut context = CheckingContext::new(arena, budget);
+    // The arena only grows within the pass, so each type it answers or
+    // projects is encoded once.
+    let types = crate::content::TypeMemo::default();
     for (index, (item, footprint)) in encoded.iter().zip(footprints).enumerate() {
         let ordinal = ItemOrdinal::from(index);
         let Some(declaration) = layout
@@ -1731,13 +1769,17 @@ where
                     arena,
                     layout,
                     sites: &item.sites,
+                    types: &types,
                 };
                 let typing = projection.typing(&supported.verdict());
-                let support = answered(supported.support(), arena, layout);
+                let support = answered(supported.support(), arena, layout, &types);
                 let answer = match *(declaration.content()) {
-                    gandr_core_checker::DeclarationContent::Value { .. } => {
-                        answer_of(context.signature(declaration.constant()), arena, layout)
-                    },
+                    gandr_core_checker::DeclarationContent::Value { .. } => answer_of(
+                        context.signature(declaration.constant()),
+                        arena,
+                        layout,
+                        &types,
+                    ),
                     gandr_core_checker::DeclarationContent::Data(_) => {
                         Answer::Data(context.data_signatures().get(&declaration.constant()).map(
                             |signature| crate::content::DataContent::of(arena, layout, signature),
@@ -2181,11 +2223,7 @@ fn support_holds(
                 .footprint
                 .type_reads()
                 .any(|reference| input.value_changed.contains(reference))
-                || support.iter().any(|answered| answered.answer.nodes().iter().any(|node| match *node {
-                    crate::content::ContentNode::Constant(ref reference) | crate::content::ContentNode::Abstract(ref reference)
-                    | crate::content::ContentNode::Data { declaration:ref reference,.. } => input.value_changed.contains(reference),
-                    crate::content::ContentNode::RecordType(_) | crate::content::ContentNode::Constructor { .. } | crate::content::ContentNode::Record(_) | crate::content::ContentNode::DataCase { .. } | crate::content::ContentNode::RecordProjection(..) | crate::content::ContentNode::TupleProjection(..) | crate::content::ContentNode::Reify(_) | crate::content::ContentNode::Stack { .. } | crate::content::ContentNode::WithType(..) | crate::content::ContentNode::Perform { .. } | crate::content::ContentNode::Handle { .. } | crate::content::ContentNode::Exercise { .. } | crate::content::ContentNode::Scope { .. } | crate::content::ContentNode::Capability { .. } | crate::content::ContentNode::Resume(..) | crate::content::ContentNode::Split(..) | crate::content::ContentNode::DependentSplit { .. } | crate::content::ContentNode::Reset(_) | crate::content::ContentNode::Shift(_) | crate::content::ContentNode::With(..) | crate::content::ContentNode::Ascribe { .. } | crate::content::ContentNode::Project(..) | crate::content::ContentNode::PrimitiveValue(_) | crate::content::ContentNode::Primitive(..) | crate::content::ContentNode::PathUniverse(..) | crate::content::ContentNode::PathRefl(_) | crate::content::ContentNode::PathProduct(..) | crate::content::ContentNode::Funext(..) | crate::content::ContentNode::Equiv(..) | crate::content::ContentNode::Ua { .. } | crate::content::ContentNode::PathEquiv { .. } | crate::content::ContentNode::Transport(..) | crate::content::ContentNode::PathType { .. } | crate::content::ContentNode::Here(_) | crate::content::ContentNode::Returned(_) | crate::content::ContentNode::Nested(_) | crate::content::ContentNode::Run(_) | crate::content::ContentNode::ElementTransport { .. } | crate::content::ContentNode::TelescopeTransport { .. } | crate::content::ContentNode::SessionRelated { .. } | crate::content::ContentNode::Stay(_) | crate::content::ContentNode::Then(..) | crate::content::ContentNode::Forward(_) | crate::content::ContentNode::FunctionFlow(..) | crate::content::ContentNode::FlowProduct(..) | crate::content::ContentNode::Recorded(_) | crate::content::ContentNode::Ride { .. } | crate::content::ContentNode::FlowType { .. } | crate::content::ContentNode::RunType(_) | crate::content::ContentNode::Variable { .. } | crate::content::ContentNode::Literal(_) | crate::content::ContentNode::Tuple(_) | crate::content::ContentNode::ListNil | crate::content::ContentNode::ListCons(..) | crate::content::ContentNode::Injection(..) | crate::content::ContentNode::Thunk(_) | crate::content::ContentNode::ValueLift { .. } | crate::content::ContentNode::Quote(_) | crate::content::ContentNode::QuoteComputation(_) | crate::content::ContentNode::StaticLambda(_) | crate::content::ContentNode::StaticApplication(..) | crate::content::ContentNode::Hole(_) | crate::content::ContentNode::ValueMark { .. } | crate::content::ContentNode::Lambda(_) | crate::content::ContentNode::Application(..) | crate::content::ContentNode::Return(_) | crate::content::ContentNode::Bind(..) | crate::content::ContentNode::Force(_) | crate::content::ContentNode::Case { .. } | crate::content::ContentNode::ComputationHole(_) | crate::content::ContentNode::ComputationMark { .. } | crate::content::ContentNode::Fixpoint { .. } | crate::content::ContentNode::ListFold { .. } | crate::content::ContentNode::Session(_) | crate::content::ContentNode::Memory(_) | crate::content::ContentNode::Base(_) | crate::content::ContentNode::Product(_) | crate::content::ContentNode::Sum(_) | crate::content::ContentNode::List(_) | crate::content::ContentNode::ThunkType(_) | crate::content::ContentNode::Universe { .. } | crate::content::ContentNode::TypeLift { .. } | crate::content::ContentNode::Element { .. } | crate::content::ContentNode::StaticPi { .. } | crate::content::ContentNode::Sigma { .. } | crate::content::ContentNode::SessionType(_) | crate::content::ContentNode::UnknownType | crate::content::ContentNode::Returner { .. } | crate::content::ContentNode::Arrow { .. } | crate::content::ContentNode::Pi { .. } | crate::content::ContentNode::ComputationElement { .. } | crate::content::ContentNode::UnknownComputationType | crate::content::ContentNode::Unresolved(_) => false,
-                })))
+                || support.iter().any(|answered| answered.answer.reads().into_iter().any(|reference| input.value_changed.contains(reference))))
     },
 )]
 fn touches(
@@ -2195,16 +2233,9 @@ fn touches(
 {
     let changed = |reference: &Reference| input.value_changed.contains(reference);
     let touched = input.footprint.type_reads().any(changed)
-        || support.iter().any(|answered| {
-            answered
-                .answer
-                .nodes()
-                .iter()
-                .any(|node| match node.reference() {
-                    Maybe::Present(reference) => changed(reference),
-                    Maybe::Absent(_) => false,
-                })
-        });
+        || support
+            .iter()
+            .any(|answered| answered.answer.reads().into_iter().any(changed));
     if touched {
         Standing::Falls
     }
@@ -2243,6 +2274,7 @@ fn answered(
     support: &Support,
     arena: &CoreArena,
     layout: &Layout,
+    types: &crate::content::TypeMemo,
 ) -> Vec<Answered>
 {
     let mut answers: Vec<Answered> = support
@@ -2250,7 +2282,7 @@ fn answered(
         .iter()
         .map(|consulted| Answered {
             reference: layout.resolve(consulted.constant()),
-            answer: answer_of(consulted.answer(), arena, layout),
+            answer: answer_of(consulted.answer(), arena, layout, types),
         })
         .collect();
     answers.extend(support.data_consulted().iter().map(|consulted| {
@@ -2335,14 +2367,13 @@ fn answer_of(
     answer: Maybe<FormedValueType, signature_table::Absent>,
     arena: &CoreArena,
     layout: &Layout,
+    types: &crate::content::TypeMemo,
 ) -> Answer
 {
     match answer {
-        Maybe::Present(formed) => Answer::Typed(TypeContent::of(
-            arena,
-            layout,
-            ArenaNode::ValueType(formed.id()),
-        )),
+        Maybe::Present(formed) => {
+            Answer::Typed(types.content(arena, layout, ArenaNode::ValueType(formed.id())))
+        },
         Maybe::Absent(_) => Answer::Untyped,
     }
 }

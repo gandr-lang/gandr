@@ -32,6 +32,19 @@ use crate::region::ItemKey;
 use crate::region::Program;
 use crate::region::Reference;
 
+/// The formers of `nodes`, in table order.
+///
+/// # Specification
+/// trivial.
+fn formers(nodes: &[crate::support::SupportedNode]) -> Vec<ContentNode>
+{
+    nodes
+        .iter()
+        .map(crate::support::SupportedNode::former)
+        .cloned()
+        .collect()
+}
+
 /// The program of one item `it` at position 0 with `signature` and `body`.
 ///
 /// # Specification
@@ -155,7 +168,7 @@ fn control_graphs_preserve_scopes_and_signature_edges()
         !original
             .nodes()
             .iter()
-            .any(|node| matches!(node, ContentNode::Unresolved(_)))
+            .any(|node| matches!(*node.former(), ContentNode::Unresolved(_)))
     );
     let content = TypeContent::of_value_type(&source, ty);
     let mut target = CoreArena::new();
@@ -443,7 +456,7 @@ fn a_data_type_mints_only_unapplied()
         Maybe::Absent(body::Absent::Hole),
     );
     let (arena, layout) = program.parts_mut();
-    let bare = TypeContent::from_nodes(vec![ContentNode::Data {
+    let bare = crate::fixture::type_content(&[ContentNode::Data {
         declaration: it(),
         arguments: Vec::new(),
     }]);
@@ -451,7 +464,7 @@ fn a_data_type_mints_only_unapplied()
         matches!(bare.mint(arena, layout), Maybe::Present(_)),
         "a data type of no arguments seats at its declaration"
     );
-    let applied = TypeContent::from_nodes(vec![
+    let applied = crate::fixture::type_content(&[
         ContentNode::Data {
             declaration: it(),
             arguments: vec![NodeIndex::from(1_usize)],
@@ -554,7 +567,10 @@ fn effect_rows_round_trip_without_losing_operation_types()
     let Some(&ContentNode::Returner {
         result,
         ref effects,
-    }) = content.nodes().get(1)
+    }) = content
+        .nodes()
+        .get(1)
+        .map(crate::support::SupportedNode::former)
     else {
         panic!("thunk's returner");
     };
@@ -579,16 +595,17 @@ fn effect_rows_round_trip_without_losing_operation_types()
         3, 2, 2, 4, 4, 5
     ]);
     assert_eq!(
-        content.nodes().get(2 ..),
-        Some(
-            [
-                ContentNode::Product(Vec::new()),
-                ContentNode::Base(BaseType::String),
-                ContentNode::List(NodeIndex::from(3_usize)),
-                ContentNode::Base(BaseType::Integer)
-            ]
-            .as_slice()
-        )
+        content.nodes().get(2 ..).map(|nodes| nodes
+            .iter()
+            .map(crate::support::SupportedNode::former)
+            .cloned()
+            .collect::<Vec<_>>()),
+        Some(vec![
+            ContentNode::Product(Vec::new()),
+            ContentNode::Base(BaseType::String),
+            ContentNode::List(NodeIndex::from(3_usize)),
+            ContentNode::Base(BaseType::Integer)
+        ])
     );
     let mut target = CoreArena::new();
     for _ in 0_u32 .. 7_u32 {
@@ -615,13 +632,6 @@ fn an_unmintable_table_is_refused_by_name()
                 ContentNode::Product(Vec::new()),
             ],
             seating::Absent::Unseatable,
-        ),
-        (
-            vec![ContentNode::Product(vec![
-                NodeIndex::from(0_usize),
-                NodeIndex::from(0_usize),
-            ])],
-            seating::Absent::Cyclic,
         ),
         (
             vec![ContentNode::Unresolved(Sort::ValueType)],
@@ -654,6 +664,20 @@ fn an_unmintable_table_is_refused_by_name()
             ],
             seating::Absent::Unseatable,
         ),
+        // An open table is projected before it is minted, and refused alike.
+        (
+            vec![
+                ContentNode::Element {
+                    code: NodeIndex::from(1_usize),
+                    target: Level::zero(),
+                },
+                ContentNode::Variable {
+                    zone: gandr_core_term::Zone::Intuitionistic,
+                    index: gandr_kernel_term::DeBruijnIndex::from(0_u32),
+                },
+            ],
+            seating::Absent::Unseatable,
+        ),
     ];
     for (nodes, expected) in cases {
         let mut program = single(
@@ -663,11 +687,33 @@ fn an_unmintable_table_is_refused_by_name()
         );
         let (arena, layout) = program.parts_mut();
         assert_eq!(
-            TypeContent::from_nodes(nodes).mint(arena, layout),
+            crate::fixture::type_content(&nodes).mint(arena, layout),
             Maybe::Absent(expected),
             "each unmintable table names its reason"
         );
     }
+    let cyclic = [ContentNode::Product(vec![
+        NodeIndex::from(0_usize),
+        NodeIndex::from(0_usize),
+    ])];
+    let mut program = single(
+        CoreArena::new(),
+        Maybe::Absent(signature::Absent::Unsigned),
+        Maybe::Absent(body::Absent::Hole),
+    );
+    let (arena, layout) = program.parts_mut();
+    assert!(
+        matches!(
+            super::mint_table(&cyclic, arena, layout),
+            Maybe::Absent(seating::Absent::Cyclic)
+        ),
+        "a de Bruijn table no arena can mint child before parent"
+    );
+    assert_eq!(
+        crate::fixture::type_content(&cyclic).mint(arena, layout),
+        Maybe::Absent(seating::Absent::Unresolved),
+        "factoring closes the cycle with an unresolved leaf"
+    );
 }
 
 #[test]
@@ -692,7 +738,7 @@ fn content_is_free_of_arena_ids()
     let plain = build(0_usize);
     assert_eq!(plain, build(5_usize), "ids differ, content does not");
     assert_eq!(
-        plain.nodes(),
+        formers(plain.nodes()),
         [
             ContentNode::Base(BaseType::Integer),
             ContentNode::Literal(zero())
@@ -722,7 +768,7 @@ fn a_shared_node_is_listed_once()
     );
     let shared = encode_item(shared.arena(), shared.layout(), ItemOrdinal::from(0_usize)).content;
     assert_eq!(
-        shared.nodes(),
+        formers(shared.nodes()),
         [
             ContentNode::Tuple(vec![NodeIndex::from(1_usize), NodeIndex::from(1_usize)]),
             ContentNode::Literal(zero()),
@@ -739,8 +785,10 @@ fn a_shared_node_is_listed_once()
         Maybe::Present(pair),
     );
     let apart = encode_item(apart.arena(), apart.layout(), ItemOrdinal::from(0_usize)).content;
-    assert_eq!(apart.nodes().len(), 3_usize, "two literals, two entries");
-    assert_ne!(shared, apart, "sharing is part of the content");
+    assert_eq!(
+        shared, apart,
+        "two equal literals are one entry: the arena's sharing is not content"
+    );
 }
 
 #[test]
@@ -761,7 +809,7 @@ fn an_unresolved_id_makes_the_item_opaque()
     )
     .content;
     assert_eq!(
-        content.nodes(),
+        formers(content.nodes()),
         [ContentNode::Unresolved(Sort::Value)],
         "the id is listed by its sort"
     );
@@ -837,7 +885,11 @@ fn a_signature_renumbers_to_its_own_type_content()
         ItemOrdinal::from(0_usize),
     )
     .content;
-    let interleaved: Vec<&ContentNode> = content.nodes().iter().collect();
+    let interleaved: Vec<&ContentNode> = content
+        .nodes()
+        .iter()
+        .map(crate::support::SupportedNode::former)
+        .collect();
     assert!(
         matches!(interleaved.get(1), Some(&&ContentNode::Thunk(_))),
         "the body's root is discovered before the signature's children"
@@ -847,10 +899,16 @@ fn a_signature_renumbers_to_its_own_type_content()
         Some(TypeContent::of_value_type(&program, ty)),
         "the signature renumbered from its root is the type encoded alone"
     );
+    let signature = NodeIndex::from(0_usize);
+    assert_eq!(
+        content.debruijn(signature),
+        TypeContent::of_value_type(&program, ty).debruijn(),
+        "and its projection is the type's"
+    );
 }
 
 #[test]
-fn renumbering_closes_dangling_and_cyclic_tables()
+fn factoring_closes_dangling_and_cyclic_tables()
 {
     let index = NodeIndex::from;
     let nodes = [
@@ -863,31 +921,40 @@ fn renumbering_closes_dangling_and_cyclic_tables()
             effects: gandr_core_term::effect::EffectRow::EMPTY,
         },
     ];
-    assert_eq!(super::renumber(&nodes, index(1_usize)), [
-        ContentNode::Product(vec![index(1_usize), index(1_usize)]),
-        ContentNode::ThunkType(index(2_usize)),
-        ContentNode::Returner {
-            result: index(0_usize),
-            effects: gandr_core_term::effect::EffectRow::EMPTY
-        },
-    ]);
-    assert_eq!(super::renumber(&nodes, index(2_usize)), [
-        ContentNode::Abstract(Reference::Unoccupied),
-    ]);
+    assert_eq!(
+        formers(TypeContent::tabulated(&nodes, index(1_usize)).nodes()),
+        [
+            ContentNode::Product(vec![index(1_usize), index(1_usize)]),
+            ContentNode::ThunkType(index(2_usize)),
+            ContentNode::Returner {
+                result: index(3_usize),
+                effects: gandr_core_term::effect::EffectRow::EMPTY
+            },
+            ContentNode::Unresolved(Sort::ValueType),
+        ],
+        "the edge closing the cycle becomes an unresolved leaf of its sort"
+    );
+    assert_eq!(
+        formers(TypeContent::tabulated(&nodes, index(2_usize)).nodes()),
+        [ContentNode::Abstract(Reference::Unoccupied)],
+        "only what the root reaches is listed"
+    );
     let dangling = [ContentNode::Case {
         scrutinee: index(usize::MAX),
         branches: vec![index(0_usize), index(usize::MAX)],
     }];
-    assert_eq!(super::renumber(&dangling, index(0_usize)), [
-        ContentNode::Case {
-            scrutinee: index(1_usize),
-            branches: vec![index(0_usize), index(1_usize)],
-        },
-        ContentNode::Unresolved(Sort::Value),
-    ]);
-    assert_eq!(super::renumber(&nodes, index(usize::MAX)), [
-        ContentNode::Unresolved(Sort::Value),
-    ]);
+    assert_eq!(
+        formers(TypeContent::tabulated(&dangling, index(0_usize)).nodes()),
+        [
+            ContentNode::Case {
+                scrutinee: index(1_usize),
+                branches: vec![index(2_usize), index(1_usize)],
+            },
+            ContentNode::Unresolved(Sort::Value),
+            ContentNode::Unresolved(Sort::Computation),
+        ],
+        "an out-of-range child and a self-loop each become one unresolved leaf"
+    );
 }
 
 #[test]
@@ -895,28 +962,37 @@ fn malformed_type_tables_fail_by_structure()
 {
     let index = NodeIndex::from;
     let cases = [
-        vec![],
-        vec![
-            ContentNode::Product(vec![index(1_usize), index(usize::MAX)]),
-            ContentNode::Product(Vec::new()),
-        ],
-        vec![
-            ContentNode::Product(vec![index(1_usize), index(2_usize)]),
-            ContentNode::Returner {
-                result: index(2_usize),
-                effects: gandr_core_term::effect::EffectRow::EMPTY,
-            },
-            ContentNode::Product(Vec::new()),
-        ],
-        vec![
-            ContentNode::Arrow {
-                domain: index(1_usize),
-                codomain: index(1_usize),
-            },
-            ContentNode::Product(Vec::new()),
-        ],
+        (vec![], seating::Absent::IllSorted),
+        (
+            vec![
+                ContentNode::Product(vec![index(1_usize), index(usize::MAX)]),
+                ContentNode::Product(Vec::new()),
+            ],
+            seating::Absent::Unresolved,
+        ),
+        (
+            vec![
+                ContentNode::Product(vec![index(1_usize), index(2_usize)]),
+                ContentNode::Returner {
+                    result: index(2_usize),
+                    effects: gandr_core_term::effect::EffectRow::EMPTY,
+                },
+                ContentNode::Product(Vec::new()),
+            ],
+            seating::Absent::IllSorted,
+        ),
+        (
+            vec![
+                ContentNode::Arrow {
+                    domain: index(1_usize),
+                    codomain: index(1_usize),
+                },
+                ContentNode::Product(Vec::new()),
+            ],
+            seating::Absent::IllSorted,
+        ),
     ];
-    for nodes in cases {
+    for (nodes, expected) in cases {
         let mut program = single(
             CoreArena::new(),
             Maybe::Absent(signature::Absent::Unsigned),
@@ -924,8 +1000,8 @@ fn malformed_type_tables_fail_by_structure()
         );
         let (arena, layout) = program.parts_mut();
         assert_eq!(
-            TypeContent::from_nodes(nodes).mint(arena, layout),
-            Maybe::Absent(seating::Absent::IllSorted)
+            crate::fixture::type_content(&nodes).mint(arena, layout),
+            Maybe::Absent(expected)
         );
     }
 }
@@ -952,7 +1028,7 @@ fn abstract_types_relocate_by_key_and_occurrence()
         key: ItemKey::from("repeated"),
         occurrence: Occurrence::from(1_usize),
     };
-    let content = TypeContent::from_nodes(vec![ContentNode::Abstract(named)]);
+    let content = crate::fixture::type_content(&[ContentNode::Abstract(named)]);
     let minted = {
         let (arena, layout) = program.parts_mut();
         content.mint(arena, layout)
@@ -968,7 +1044,7 @@ fn abstract_types_relocate_by_key_and_occurrence()
         )))
     );
     assert_eq!(TypeContent::of_value_type(&program, id), content);
-    let absent = TypeContent::from_nodes(vec![ContentNode::Abstract(Reference::Item {
+    let absent = crate::fixture::type_content(&[ContentNode::Abstract(Reference::Item {
         key: ItemKey::from("repeated"),
         occurrence: Occurrence::from(2_usize),
     })]);
@@ -976,5 +1052,783 @@ fn abstract_types_relocate_by_key_and_occurrence()
     assert_eq!(
         absent.mint(arena, layout),
         Maybe::Absent(seating::Absent::Unplaced)
+    );
+}
+
+/// The variables a probe names under a former's binders: intuitionistic
+/// indices, then linear ones.
+type Selection = (&'static [u32], &'static [u32]);
+
+/// The tree a de Bruijn table spells from its first entry, in pre-order,
+/// each former with its child wiring erased: two tables spell one tree
+/// exactly when they differ only in numbering and sharing. Children are
+/// enumerated by `map_children`, not by `ContentNode::children`, so a child
+/// the supports' walk omits still shows; a wiring that loops stops the walk
+/// with an unresolved leaf rather than spelling forever.
+///
+/// # Specification
+/// trivial.
+fn unfolded(table: &[ContentNode]) -> Vec<ContentNode>
+{
+    /// The longest spelling a probe table can have.
+    const BOUND: usize = 4096;
+    let mut spelled = Vec::new();
+    let mut pending = vec![NodeIndex::from(0_usize)];
+    while let Some(index) = pending.pop() {
+        let Some(node) = table
+            .get(usize::from(index))
+            .filter(|_| spelled.len() < BOUND)
+        else {
+            spelled.push(ContentNode::Unresolved(Sort::Value));
+            continue;
+        };
+        let first = pending.len();
+        spelled.push(super::map_children(node, &mut |child| {
+            pending.push(child);
+            NodeIndex::default()
+        }));
+        pending
+            .get_mut(first ..)
+            .into_iter()
+            .for_each(<[NodeIndex]>::reverse);
+    }
+    spelled
+}
+
+/// The de Bruijn table rooted at `former` whose every child is a probe of
+/// its slot's sort naming every variable the slot binds, the intuitionistic
+/// variable one past them and the linear variable just past them: ambient
+/// `v1` and `ℓ0` wherever the probe stands. The children are the ones
+/// `map_children` names; each slot's sort and binders are read from the
+/// former's crossed children, and a child those omit is probed with a closed
+/// leaf no other probe spells, so the omission shows in the projection.
+///
+/// # Specification
+/// - requires: `former`'s children are distinct placeholders.
+/// - ensures: the root is `former` with each placeholder replaced by its probe;
+///   probes follow the root.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a crossing one short or one long in either zone moves a
+///   probe's variables out of or into the root's support; a child the crossed
+///   walk omits keeps a wiring the projection cannot place.
+/// - witness: `content::tests::covers_preserve_every_binding_former`
+/// - witness: `content::tests::projection_keeps_every_variadic_child`
+#[spec(ensures: |ret| ret.len() > 1 || former.children().iter().next().is_none())]
+fn probed(former: &ContentNode) -> Vec<ContentNode>
+{
+    use gandr_core_term::Zone;
+    use gandr_core_term::support::Crossing;
+    use gandr_kernel_term::DeBruijnIndex;
+    let mut table = vec![former.clone()];
+    let mut images: Vec<(NodeIndex, NodeIndex)> = Vec::new();
+    let push = |table: &mut Vec<ContentNode>, node: ContentNode| {
+        table.push(node);
+        NodeIndex::from(table.len().saturating_sub(1))
+    };
+    let crossed: Vec<(NodeIndex, Sort, Crossing)> = former.children().crossed().collect();
+    let mut placeholders = Vec::new();
+    let _named = super::map_children(former, &mut |child| {
+        placeholders.push(child);
+        child
+    });
+    for placeholder in placeholders {
+        let Some(&(_, sort, crossing)) = crossed.iter().find(|&&(child, ..)| child == placeholder)
+        else {
+            // A child the crossed walk omits: a closed leaf no probe spells,
+            // so wherever the projection wires it instead shows.
+            images.push((
+                placeholder,
+                push(&mut table, ContentNode::Base(BaseType::String)),
+            ));
+            continue;
+        };
+        let depth =
+            |zone| u32::try_from(usize::from(crossing.depth(zone))).expect("a small crossing");
+        let bound = depth(Zone::Intuitionistic);
+        let mut variables: Vec<NodeIndex> = (0 .. bound)
+            .chain([bound.saturating_add(1)])
+            .map(|index| {
+                push(&mut table, ContentNode::Variable {
+                    zone: Zone::Intuitionistic,
+                    index: DeBruijnIndex::from(index),
+                })
+            })
+            .collect();
+        variables.extend((0 ..= depth(Zone::Linear)).map(|index| {
+            push(&mut table, ContentNode::Variable {
+                zone: Zone::Linear,
+                index: DeBruijnIndex::from(index),
+            })
+        }));
+        let tuple = push(&mut table, ContentNode::Tuple(variables));
+        let probe = match sort {
+            Sort::Value => tuple,
+            Sort::Computation => push(&mut table, ContentNode::Return(tuple)),
+            Sort::ValueType => push(&mut table, ContentNode::Element {
+                code: tuple,
+                target: Level::zero(),
+            }),
+            Sort::CompType => push(&mut table, ContentNode::ComputationElement {
+                code: tuple,
+                target: Level::zero(),
+            }),
+        };
+        images.push((placeholder, probe));
+    }
+    let root = super::map_children(former, &mut |placeholder| {
+        images
+            .iter()
+            .find(|&&(seen, _)| seen == placeholder)
+            .map_or(placeholder, |&(_, probe)| probe)
+    });
+    if let Some(slot) = table.first_mut() {
+        *slot = root;
+    }
+    table
+}
+
+#[test]
+fn covers_preserve_every_binding_former()
+{
+    use alloc::collections::BTreeMap;
+    use alloc::sync::Arc;
+
+    use gandr_core_term::ComponentCount;
+    use gandr_core_term::FieldLabel;
+    use gandr_core_term::Zone;
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::OperationName;
+    use gandr_core_term::memory::MemoryForm;
+    use gandr_core_term::session::SessionAction;
+    use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::FixpointEvidence;
+
+    let index = NodeIndex::from;
+    let at = DeBruijnIndex::from;
+    let signature = probe_signature;
+    let clauses = || {
+        Arc::from([EffectClause {
+            operation: OperationName::from("ask"),
+            body: index(3_usize),
+        }])
+    };
+    let label = |text: &str| FieldLabel::from(alloc::string::String::from(text));
+    let both: Selection = (&[1], &[0]);
+    let linear: Selection = (&[], &[0]);
+    let cases: Vec<(&str, ContentNode, Selection)> = vec![
+        (
+            "static lambda",
+            ContentNode::StaticLambda(index(1_usize)),
+            both,
+        ),
+        ("lambda", ContentNode::Lambda(index(1_usize)), both),
+        (
+            "fixpoint",
+            ContentNode::Fixpoint {
+                body: index(1_usize),
+                evidence: FixpointEvidence::Partial,
+            },
+            both,
+        ),
+        (
+            "bind",
+            ContentNode::Bind(index(1_usize), index(2_usize)),
+            both,
+        ),
+        (
+            "case",
+            ContentNode::Case {
+                scrutinee: index(1_usize),
+                branches: vec![index(2_usize), index(3_usize)],
+            },
+            both,
+        ),
+        (
+            "data case",
+            ContentNode::DataCase {
+                scrutinee: index(1_usize),
+                motive: index(2_usize),
+                branches: vec![index(3_usize)],
+            },
+            both,
+        ),
+        (
+            "split",
+            ContentNode::Split(
+                index(1_usize),
+                ComponentCount::from(3_usize),
+                index(2_usize),
+            ),
+            both,
+        ),
+        (
+            "dependent split",
+            ContentNode::DependentSplit {
+                scrutinee: index(1_usize),
+                arity: ComponentCount::from(2_usize),
+                motive: index(2_usize),
+                body: index(3_usize),
+            },
+            both,
+        ),
+        ("shift", ContentNode::Shift(index(1_usize)), both),
+        (
+            "handle",
+            ContentNode::Handle {
+                signature: signature(),
+                subject: index(1_usize),
+                on_return: index(2_usize),
+                clauses: clauses(),
+            },
+            both,
+        ),
+        (
+            "scope",
+            ContentNode::Scope {
+                signature: signature(),
+                subject: index(1_usize),
+                on_return: index(2_usize),
+                clauses: clauses(),
+            },
+            both,
+        ),
+        (
+            "list fold",
+            ContentNode::ListFold {
+                element: index(1_usize),
+                result: index(2_usize),
+                list: index(3_usize),
+                on_nil: index(4_usize),
+                on_cons: index(5_usize),
+            },
+            both,
+        ),
+        (
+            "element transport",
+            ContentNode::ElementTransport {
+                motive: index(1_usize),
+                path: index(2_usize),
+                value: index(3_usize),
+            },
+            both,
+        ),
+        (
+            "ride",
+            ContentNode::Ride {
+                motive: index(1_usize),
+                flow: index(2_usize),
+                value: index(3_usize),
+            },
+            both,
+        ),
+        (
+            "sigma",
+            ContentNode::Sigma {
+                first: index(1_usize),
+                second: index(2_usize),
+            },
+            both,
+        ),
+        (
+            "pi",
+            ContentNode::Pi {
+                domain: index(1_usize),
+                codomain: index(2_usize),
+            },
+            both,
+        ),
+        (
+            "fork",
+            ContentNode::Session(SessionAction::Fork {
+                protocol: index(1_usize),
+                child: index(2_usize),
+                parent: index(3_usize),
+            }),
+            both,
+        ),
+        (
+            "hold",
+            ContentNode::Memory(MemoryForm::Hold {
+                value: index(1_usize),
+                body: index(2_usize),
+            }),
+            both,
+        ),
+        (
+            "access",
+            ContentNode::Memory(MemoryForm::Access {
+                held: at(0_u32),
+                body: index(1_usize),
+                unwind: index(2_usize),
+            }),
+            both,
+        ),
+        (
+            "intuitionistic variable",
+            ContentNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: at(1_u32),
+            },
+            (&[1], &[]),
+        ),
+        (
+            "linear variable",
+            ContentNode::Variable {
+                zone: Zone::Linear,
+                index: at(0_u32),
+            },
+            linear,
+        ),
+        (
+            "send",
+            ContentNode::Session(SessionAction::Send {
+                endpoint: at(0_u32),
+                payload: index(1_usize),
+            }),
+            both,
+        ),
+        (
+            "receive",
+            ContentNode::Session(SessionAction::Receive {
+                endpoint: at(0_u32),
+            }),
+            linear,
+        ),
+        (
+            "select",
+            ContentNode::Session(SessionAction::Select {
+                endpoint: at(0_u32),
+                label: label("a"),
+            }),
+            linear,
+        ),
+        (
+            "offer",
+            ContentNode::Session(SessionAction::Offer {
+                endpoint: at(0_u32),
+                arms: BTreeMap::from([(label("a"), index(1_usize)), (label("b"), index(2_usize))]),
+            }),
+            both,
+        ),
+        (
+            "close",
+            ContentNode::Session(SessionAction::Close {
+                endpoint: at(0_u32),
+            }),
+            linear,
+        ),
+        (
+            "resume",
+            ContentNode::Memory(MemoryForm::Resume {
+                view: at(0_u32),
+                value: index(1_usize),
+            }),
+            both,
+        ),
+        (
+            "abort",
+            ContentNode::Memory(MemoryForm::Abort { view: at(0_u32) }),
+            linear,
+        ),
+    ];
+    assert_projects_back(
+        cases
+            .into_iter()
+            .map(|(name, former, selection)| ProjectionCase(name, former, selection)),
+    );
+}
+
+/// The interface the effect formers' probes carry: one operation whose
+/// payload and reply types are the placeholders `4` and `5`.
+///
+/// # Specification
+/// trivial.
+fn probe_signature() -> gandr_core_term::effect::EffectSig<NodeIndex>
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    EffectSig::new(EffectName::from("Probe"), [EffectOp {
+        name: OperationName::from("ask"),
+        payload: NodeIndex::from(4_usize),
+        reply: NodeIndex::from(5_usize),
+    }])
+    .expect("one operation")
+}
+
+/// One projection case: its name in a failure message, the former probed and
+/// the ambient variables its root selects.
+struct ProjectionCase(&'static str, ContentNode, Selection);
+
+/// Probe each former, tabulate it and project it back: the projection spells
+/// the probe table's tree, and the root selects exactly the case's ambient
+/// variables.
+///
+/// # Specification
+/// trivial.
+fn assert_projects_back(cases: impl IntoIterator<Item = ProjectionCase>)
+{
+    use gandr_core_term::Zone;
+    use gandr_kernel_term::DeBruijnIndex;
+    let at = DeBruijnIndex::from;
+    for ProjectionCase(name, former, (intuitionistic, linear)) in cases {
+        let table = probed(&former);
+        let content = TypeContent::tabulated(&table, NodeIndex::from(0_usize));
+        let projected = content.debruijn().expect("every index is in range");
+        assert_eq!(
+            unfolded(&projected),
+            unfolded(&table),
+            "{name}: every index projects back to itself"
+        );
+        assert_eq!(
+            content.root().indices(Zone::Intuitionistic),
+            intuitionistic.iter().copied().map(at).collect::<Vec<_>>(),
+            "{name}: only the ambient intuitionistic variable is free"
+        );
+        assert_eq!(
+            content.root().indices(Zone::Linear),
+            linear.iter().copied().map(at).collect::<Vec<_>>(),
+            "{name}: only the ambient linear variable is free"
+        );
+    }
+}
+
+#[test]
+fn projection_keeps_every_variadic_child()
+{
+    use alloc::sync::Arc;
+
+    use gandr_core_term::effect::OperationName;
+    use gandr_core_term::session::RecordedMove;
+
+    let index = NodeIndex::from;
+    let both: Selection = (&[1], &[0]);
+    // Interface types, a handler with no clause and recorded payloads sit
+    // in variadic slots, walked only when the former carries them.
+    let cases: Vec<(&str, ContentNode, Selection)> = vec![
+        (
+            "perform",
+            ContentNode::Perform {
+                signature: probe_signature(),
+                operation: OperationName::from("ask"),
+                payload: index(1_usize),
+            },
+            both,
+        ),
+        (
+            "exercise",
+            ContentNode::Exercise {
+                capability: index(1_usize),
+                signature: probe_signature(),
+                operation: OperationName::from("ask"),
+                payload: index(2_usize),
+            },
+            both,
+        ),
+        (
+            "handle without clauses",
+            ContentNode::Handle {
+                signature: probe_signature(),
+                subject: index(1_usize),
+                on_return: index(2_usize),
+                clauses: Arc::from([]),
+            },
+            both,
+        ),
+        (
+            "recorded",
+            ContentNode::Recorded(Arc::from([
+                RecordedMove::Sent(index(1_usize)),
+                RecordedMove::Closed,
+                RecordedMove::Received(index(2_usize)),
+            ])),
+            both,
+        ),
+    ];
+    assert_projects_back(
+        cases
+            .into_iter()
+            .map(|(name, former, selection)| ProjectionCase(name, former, selection)),
+    );
+}
+
+#[test]
+fn unused_binder_interleavings_share_one_node()
+{
+    use gandr_core_term::Zone;
+    use gandr_kernel_term::DeBruijnIndex;
+    let mut arena = CoreArena::new();
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    // (v0, v2) under three binders and (v1, v3) under four name the same
+    // two ambient variables, interleaved with different unused binders.
+    let a0 = variable(&mut arena, 0);
+    let a2 = variable(&mut arena, 2);
+    let first = arena.value_tuple(&[a0, a2]);
+    let b1 = variable(&mut arena, 1);
+    let b3 = variable(&mut arena, 3);
+    let second = arena.value_tuple(&[b1, b3]);
+    let reversed = arena.value_tuple(&[a2, a0]);
+    let repeated = arena.value_tuple(&[a0, a0]);
+    let mut left = first;
+    for _ in 0_usize .. 3_usize {
+        left = arena.value_static_lambda(left);
+    }
+    let mut right = second;
+    for _ in 0_usize .. 4_usize {
+        right = arena.value_static_lambda(right);
+    }
+    let alternatives = arena.value_tuple(&[reversed, repeated]);
+    let placed = arena.value_tuple(&[left, right]);
+    let root = arena.value_tuple(&[placed, alternatives]);
+    let program = single(
+        arena,
+        Maybe::Absent(signature::Absent::Unsigned),
+        Maybe::Present(root),
+    );
+    let encoded = encode_item(
+        program.arena(),
+        program.layout(),
+        ItemOrdinal::from(0_usize),
+    );
+    let site = |node| encoded.sites.of(super::ArenaNode::Value(node));
+    assert_eq!(
+        site(first),
+        site(second),
+        "the two interleavings are one compact pair"
+    );
+    assert_ne!(site(first), site(reversed), "the cover keeps the wiring");
+    assert_ne!(
+        site(first),
+        site(repeated),
+        "one variable twice is not two variables"
+    );
+    let Maybe::Present(shared) = site(first)
+    else {
+        panic!("the pair is reached");
+    };
+    let node = encoded
+        .content
+        .nodes()
+        .get(usize::from(shared))
+        .expect("the compact pair");
+    assert_eq!(
+        (
+            usize::from(node.scope().width(Zone::Intuitionistic)),
+            usize::from(node.scope().width(Zone::Linear))
+        ),
+        (2, 0),
+        "the pair is scoped by its two variables alone"
+    );
+    assert_eq!(
+        node.cover()
+            .iter()
+            .map(|edge| edge.indices(Zone::Intuitionistic).to_vec())
+            .collect::<Vec<_>>(),
+        [vec![DeBruijnIndex::from(0_u32)], vec![DeBruijnIndex::from(
+            1_u32
+        )]]
+    );
+    for subterm in [left, right, reversed, repeated] {
+        let mut encoder = super::Encoder::new(program.arena(), program.layout());
+        let _root = encoder.discover(super::ArenaNode::Value(subterm));
+        encoder.drain();
+        let content = TypeContent::of(
+            program.arena(),
+            program.layout(),
+            super::ArenaNode::Value(subterm),
+        );
+        assert_eq!(
+            content.debruijn().map(|table| unfolded(&table)),
+            Ok(unfolded(&encoder.nodes)),
+            "every ambient index is recovered"
+        );
+    }
+    // The same two interleavings behind twenty distinct literals: the table
+    // has outgrown the interner's linear search when the pairs arrive, so
+    // they meet through its hashed index.
+    let mut arena = CoreArena::new();
+    let literals: Vec<ValueId> = (1_usize ..= 20_usize)
+        .map(|n| {
+            arena.value_literal(Literal::Integer(IntegerLiteral::new(
+                Sign::NonNegative,
+                Magnitude::from_decimal_text(alloc::format!("{n}")).expect("decimal digits"),
+            )))
+        })
+        .collect();
+    let padding = arena.value_tuple(&literals);
+    let a0 = variable(&mut arena, 0);
+    let a2 = variable(&mut arena, 2);
+    let first = arena.value_tuple(&[a0, a2]);
+    let b1 = variable(&mut arena, 1);
+    let b3 = variable(&mut arena, 3);
+    let second = arena.value_tuple(&[b1, b3]);
+    let left = arena.value_static_lambda(first);
+    let right = arena.value_static_lambda(second);
+    let right = arena.value_static_lambda(right);
+    let root = arena.value_tuple(&[padding, left, right]);
+    let program = single(
+        arena,
+        Maybe::Absent(signature::Absent::Unsigned),
+        Maybe::Present(root),
+    );
+    let encoded = encode_item(
+        program.arena(),
+        program.layout(),
+        ItemOrdinal::from(0_usize),
+    );
+    assert!(
+        encoded.content.nodes().len() > 20,
+        "the padding fills the table first"
+    );
+    assert_eq!(
+        encoded.sites.of(super::ArenaNode::Value(first)),
+        encoded.sites.of(super::ArenaNode::Value(second)),
+        "past the linear search, the two interleavings are still one pair"
+    );
+}
+
+#[test]
+fn open_roots_project_under_their_own_supports()
+{
+    use gandr_core_term::Zone;
+    use gandr_kernel_term::DeBruijnIndex;
+
+    use super::AbstractRoots;
+    use super::DataContent;
+    use super::DataRoots;
+    use super::DeclarationRoots;
+
+    let index = NodeIndex::from;
+    let variable = |at: u32| ContentNode::Variable {
+        zone: Zone::Intuitionistic,
+        index: DeBruijnIndex::from(at),
+    };
+    let element = |code: usize| ContentNode::Element {
+        code: index(code),
+        target: Level::zero(),
+    };
+    // `T (A : Integer) = c (x : El A) (y : El (x, A))`: the fields are scoped
+    // under the parameter and the fields before them, so `x` selects `v0`
+    // and `y` selects `v0` and `v1`. An unreached entry comes first, so no
+    // root keeps its raw index.
+    let raw = [
+        ContentNode::Base(BaseType::String),
+        element(5),
+        element(6),
+        ContentNode::Base(BaseType::Integer),
+        ContentNode::Product(Vec::new()),
+        variable(0),
+        ContentNode::Tuple(vec![index(5_usize), index(7_usize)]),
+        variable(1),
+    ];
+    let data = DataRoots {
+        parameters: vec![index(3_usize)],
+        constructors: vec![vec![index(1_usize), index(2_usize)]],
+        kind: index(4_usize),
+        presentation: gandr_core_term::Presentation::new(Vec::new()),
+    };
+    let selected = |content: &[gandr_core_term::support::Thinning]| {
+        content
+            .iter()
+            .map(|support| support.indices(Zone::Intuitionistic).to_vec())
+            .collect::<Vec<_>>()
+    };
+    let expected = vec![
+        vec![],
+        vec![DeBruijnIndex::from(0_u32)],
+        vec![DeBruijnIndex::from(0_u32), DeBruijnIndex::from(1_u32)],
+        vec![],
+    ];
+    assert_eq!(
+        selected(DataContent::tabulated(&data, &raw).placements()),
+        expected,
+        "a signature keeps each root's support, parameter, fields, then kind"
+    );
+    let item =
+        crate::fixture::item_content(Reference::Unoccupied, &DeclarationRoots::Data(data), &raw);
+    assert_eq!(
+        selected(item.placements()),
+        expected,
+        "and so does its item"
+    );
+    let spelled: Vec<_> = item
+        .declaration()
+        .iter()
+        .map(|(root, _)| item.debruijn(root))
+        .collect();
+    assert_eq!(
+        spelled,
+        [
+            Ok(vec![ContentNode::Base(BaseType::Integer)]),
+            Ok(vec![element(1), variable(0)]),
+            Ok(vec![
+                element(1),
+                ContentNode::Tuple(vec![index(2_usize), index(3_usize)]),
+                variable(0),
+                variable(1),
+            ]),
+            Ok(vec![ContentNode::Product(Vec::new())]),
+        ],
+        "each root projects under its own support"
+    );
+    let sealed = crate::fixture::item_content(
+        Reference::Unoccupied,
+        &DeclarationRoots::Abstract(AbstractRoots {
+            kind: index(4_usize),
+            representation: index(3_usize),
+            extent: gandr_kernel_term::SealExtent::from(0_usize),
+            site: gandr_core_checker::SealSite::new(
+                gandr_core_checker::SealingSite::from(0_usize),
+                gandr_core_checker::ComponentOrdinal::from(0_usize),
+            ),
+            mobility: gandr_core_checker::worlds::Mobility::Immobile,
+        }),
+        &raw,
+    );
+    let DeclarationRoots::Abstract(roots) = *sealed.declaration()
+    else {
+        panic!("an abstract declaration stays abstract");
+    };
+    assert_eq!(
+        [
+            sealed.debruijn(roots.kind),
+            sealed.debruijn(roots.representation)
+        ],
+        [
+            Ok(vec![ContentNode::Product(Vec::new())]),
+            Ok(vec![ContentNode::Base(BaseType::Integer)]),
+        ],
+        "an abstract type's renumbered roots name its kind and representation"
+    );
+}
+
+#[test]
+fn debruijn_projection_reports_index_overflow()
+{
+    use gandr_core_term::Zone;
+    use gandr_core_term::support::PlacementError;
+    use gandr_core_term::support::Thinning;
+    use gandr_kernel_term::DeBruijnIndex;
+    let ceiling = ContentNode::Variable {
+        zone: Zone::Intuitionistic,
+        index: DeBruijnIndex::from(u32::MAX),
+    };
+    let raw = [ContentNode::StaticLambda(NodeIndex::from(1_usize)), ceiling];
+    let mut content = TypeContent::tabulated(&raw, NodeIndex::from(0_usize));
+    assert_eq!(
+        content.debruijn(),
+        Ok(raw.to_vec()),
+        "the ceiling under a binder is representable"
+    );
+    content.root = Thinning::from_ascending(vec![DeBruijnIndex::from(u32::MAX)], Vec::new())
+        .expect("one index");
+    assert_eq!(
+        content.debruijn(),
+        Err(PlacementError::IndexOverflow),
+        "a support at the ceiling under a binder overflows rather than saturating"
     );
 }

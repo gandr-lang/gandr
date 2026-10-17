@@ -21,7 +21,6 @@ use crate::boundary::ItemOrdinal;
 use crate::boundary::NodeIndex;
 use crate::boundary::Occurrence;
 use crate::content::ContentNode;
-use crate::content::TypeContent;
 use crate::content::encode_item;
 use crate::content::seating;
 use crate::footprint::footprint_of;
@@ -60,7 +59,7 @@ fn recorded_answer_references_participate_in_value_invalidation()
         key: ItemKey::from("code"),
         occurrence: Occurrence::from(0_usize),
     };
-    let table = TypeContent::from_nodes(vec![
+    let table = crate::fixture::type_content(&[
         ContentNode::Product(vec![NodeIndex::from(1_usize), NodeIndex::from(2_usize)]),
         ContentNode::Abstract(abstract_name.clone()),
         ContentNode::Element {
@@ -124,7 +123,7 @@ fn recorded_answer_references_participate_in_value_invalidation()
         (Answer::Untyped, Standing::Stands),
         (Answer::Data(None), Standing::Stands),
         (
-            Answer::Typed(TypeContent::from_nodes(vec![ContentNode::Product(
+            Answer::Typed(crate::fixture::type_content(&[ContentNode::Product(
                 Vec::new(),
             )])),
             Standing::Falls,
@@ -162,7 +161,7 @@ fn support_canonicalization_keeps_the_first_answer()
         key: ItemKey::from("b"),
         occurrence: Occurrence::from(0_usize),
     };
-    let typed = Answer::Typed(TypeContent::from_nodes(vec![ContentNode::Product(
+    let typed = Answer::Typed(crate::fixture::type_content(&[ContentNode::Product(
         Vec::new(),
     )]));
     let mut support = vec![

@@ -473,6 +473,7 @@ name = "gandr-core-incremental"
 version = "0.0.0"
 dependencies = [
  "blake3",
+ "foldhash 0.2.0",
  "gandr-core-checker",
  "gandr-core-term",
  "gandr-kernel-check-memo",
@@ -481,6 +482,7 @@ dependencies = [
  "gandr-theory-levitation",
  "gandr-theory-orders",
  "gandr-theory-sites",
+ "hashbrown 0.17.1",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",

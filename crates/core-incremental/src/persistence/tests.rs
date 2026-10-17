@@ -43,7 +43,6 @@ use crate::codec::CheckpointBytes;
 use crate::codec::UnsupportedPersistence;
 use crate::codec::reference_bytes;
 use crate::content::ContentNode;
-use crate::content::ItemContent;
 use crate::content::Sort;
 use crate::fixture::Digits;
 use crate::fixture::Key;
@@ -189,7 +188,7 @@ fn pair() -> Program
                 .content()
                 .nodes()
                 .iter()
-                .all(|node| !matches!(node, &ContentNode::Unresolved(_)))
+                .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_)))
         }),
     )]
 fn bytes_of(checkpoints: &Checkpoints) -> CheckpointBytes
@@ -206,16 +205,20 @@ fn decoded(bytes: &CheckpointBytes) -> Result<Checkpoints, CheckpointStoreError>
     decode_checkpoints(bytes)
 }
 
-/// A one-item set whose content is `nodes` under a body root of 0.
+/// A one-item set whose content is the closed formers `nodes`, listed in the
+/// given order under a body root of 0.
 ///
 /// # Specification
+/// - requires: `nodes` is closed and acyclic, every child in range and of its
+///   sort, no two entries equal.
 /// - ensures: one unsigned, owed item named hand, with body root zero and
-///   exactly the supplied node table; structural validity is not required.
+///   exactly the supplied formers in the supplied order, every scope and edge
+///   empty; discovery order and reachability are not required.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — reversed discovery, unreachable entries and malformed
-///   root tables reach the decoder. The predicate checks node count and fixed
-///   metadata without cloning the moved node vector or certifying its graph.
+/// - hypothesis: L3 — reversed discovery and unreachable entries reach the
+///   decoder. The predicate checks node count and fixed metadata without
+///   cloning the moved node vector or certifying its graph.
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
 #[spec(
@@ -241,7 +244,19 @@ fn decoded(bytes: &CheckpointBytes) -> Result<Checkpoints, CheckpointStoreError>
     )]
 fn hand_made(nodes: Vec<ContentNode>) -> Checkpoints
 {
-    let content = ItemContent::from_parts(
+    let parts = nodes
+        .into_iter()
+        .map(|former| {
+            let edges = former.children().iter().count();
+            crate::support::NodeParts {
+                former,
+                cover: vec![gandr_core_term::support::Thinning::empty(); edges],
+                scope: gandr_core_term::support::Scope::default(),
+            }
+        })
+        .collect();
+    let nodes = crate::support::assemble(parts).expect("a closed acyclic table");
+    let content = crate::content::ItemContent::from_parts(
         Reference::Item {
             key: ItemKey::from("hand"),
             occurrence: Occurrence::from(0_usize),
@@ -252,6 +267,7 @@ fn hand_made(nodes: Vec<ContentNode>) -> Checkpoints
             laws: Vec::new(),
         },
         nodes,
+        vec![gandr_core_term::support::Thinning::empty()],
     );
     let footprint = footprint_of(&content);
     Checkpoints::new(CheckBudget::DEFAULT, vec![ItemCheckpoint::new(
@@ -669,7 +685,15 @@ fn universe_sorts_and_levels_round_trip()
     let tables: Vec<Vec<ContentNode>> = checkpoints
         .items()
         .iter()
-        .map(|checkpoint| checkpoint.content().nodes().to_vec())
+        .map(|checkpoint| {
+            checkpoint
+                .content()
+                .nodes()
+                .iter()
+                .map(crate::support::SupportedNode::former)
+                .cloned()
+                .collect()
+        })
         .collect();
     let expected: Vec<Vec<ContentNode>> = sorts
         .into_iter()

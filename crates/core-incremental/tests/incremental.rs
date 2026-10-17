@@ -68,10 +68,10 @@ use crate::generate::program_and_edits;
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
 #[spec(
     ensures: |ret| {
-        ret.nodes()
-            == [gandr_core_incremental::ContentNode::Base(
+        ret.debruijn()
+            == Ok(vec![gandr_core_incremental::ContentNode::Base(
                 gandr_kernel_term::BaseType::String,
-            )]
+            )])
     },
 )]
 fn string_type() -> TypeContent
