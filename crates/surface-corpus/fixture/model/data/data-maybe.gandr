@@ -11,3 +11,13 @@ def unwrap_or_zero() -> -F Integer {
     Some(x) => return x
   }
 }
+
+/// A match over a family of parameters whose answer names its scrutinee:
+/// each arm answers the type as written, `m` read as itself (#616).
+@[ checks ]
+def kept(m : Maybe(Integer)) -> -F Path(Maybe(Integer), m, m) {
+  case m {
+    None => return here(m),
+    Some(x) => return here(m)
+  }
+}
