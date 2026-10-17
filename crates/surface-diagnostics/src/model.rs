@@ -661,6 +661,48 @@ impl SourceStart
             .map_or(0_usize, |before| before.matches('\n').count());
         Self { base, lines }
     }
+
+    /// `span` measured from the source's first byte.
+    ///
+    /// # Specification
+    /// - requires: `span` is of the text this start was taken of.
+    /// - ensures: both ends moved back by the bytes before the source; absent
+    ///   as outside the text when `span` starts before the source.
+    /// - provides: the bytes a face names in the source's own file.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an importer laid after its sibling reports its
+    ///   refusal at bytes of its own file.
+    /// - witness: `diagnostics::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
+    #[inline]
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(own) => usize::from(own.start()).checked_add(usize::from(self.base))
+            == Some(usize::from(span.start()))
+            && own.length() == span.length(),
+        Maybe::Absent(reason) => reason == report_span::Absent::OutsideText
+            && usize::from(span.start()) < usize::from(self.base),
+    })]
+    pub fn measure(
+        self,
+        span: ByteSpan,
+    ) -> Maybe<ByteSpan, report_span::Absent>
+    {
+        let base = usize::from(self.base);
+        match (
+            usize::from(span.start()).checked_sub(base),
+            usize::from(span.end()).checked_sub(base),
+        ) {
+            (Some(start), Some(end)) => {
+                ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).map_or(
+                    Maybe::Absent(report_span::Absent::OutsideText),
+                    Maybe::Present,
+                )
+            },
+            _ => Maybe::Absent(report_span::Absent::OutsideText),
+        }
+    }
 }
 
 /// One diagnostic: a refusal, an unsettled declaration, a goal, a warning, a
@@ -774,10 +816,9 @@ impl Diagnostic
         if usize::from(base) == 0_usize {
             return self;
         }
-        let shifted = |span: ByteSpan| {
-            let start = usize::from(span.start()).checked_sub(usize::from(base))?;
-            let end = usize::from(span.end()).checked_sub(usize::from(base))?;
-            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
+        let shifted = |span: ByteSpan| match start.measure(span) {
+            Maybe::Present(own) => Some(own),
+            Maybe::Absent(_) => None,
         };
         let moved = |locus: Locus| {
             Some(Locus {
@@ -787,10 +828,7 @@ impl Diagnostic
             })
         };
         self.span = match self.span {
-            Maybe::Present(span) => shifted(span).map_or(
-                Maybe::Absent(report_span::Absent::OutsideText),
-                Maybe::Present,
-            ),
+            Maybe::Present(span) => start.measure(span),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
         self.annotations = core::mem::take(&mut self.annotations)

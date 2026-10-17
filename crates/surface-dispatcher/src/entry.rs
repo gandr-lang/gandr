@@ -47,6 +47,7 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -86,37 +87,46 @@ enum Line<'step>
 
 impl Line<'_>
 {
-    /// The line as a ledger diagnostic of the source at `path`.
+    /// The line as a ledger diagnostic of the source at `path`, which starts
+    /// at `start` in `text`.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: `start` was taken of `text`.
     /// - ensures: a [`Severity::Ledger`] diagnostic whose message is the
     ///   settled fixture's report, the pending refusal with the bytes it stands
-    ///   at, or the note that a pending source belongs under the fixture root;
-    ///   the fixture and the located refusal are annotated at their bytes.
+    ///   at, or the note that a pending source belongs under the fixture root,
+    ///   each byte range in the message measured from `start`; the fixture and
+    ///   the located refusal are annotated at their bytes in `text`.
     /// - provides: the ledger representation beside located diagnostics.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — fixture and pending-source lines expose their record
-    ///   category and span through real walks.
+    ///   category and span through real walks, and an importer's fixture line
+    ///   names bytes inside its own file.
     /// - witness: `entry::tests::each_verb_prints_its_entries`
+    /// - witness: `entry::tests::an_importer_s_ledger_line_names_its_own_bytes`
     #[spec(ensures: |ref ret| ret.severity == Severity::Ledger)]
     fn diagnostic(
         self,
         path: &Path,
         text: SourceText<'_>,
+        start: SourceStart,
     ) -> Diagnostic
     {
+        let own = |span: ByteSpan| match start.measure(span) {
+            Maybe::Present(own) => own,
+            Maybe::Absent(_) => span,
+        };
         let (line, at) = match self {
             Line::Fixture(declaration) => (
-                alloc::format!("{declaration}"),
+                alloc::format!("{}", declaration.at(own(declaration.span()))),
                 Maybe::Present(declaration.span()),
             ),
             Line::Pending(refusal) => match refusal.span() {
                 Maybe::Present(span) => (
-                    alloc::format!("pending: {refusal} at {span}"),
+                    alloc::format!("pending: {refusal} at {}", own(span)),
                     Maybe::Present(span),
                 ),
                 Maybe::Absent(_) => (
@@ -641,7 +651,7 @@ impl<'step> Entries<'step>
     ) -> Diagnostic
     {
         match printed {
-            Printed::Line(line) => line.diagnostic(self.path, self.text),
+            Printed::Line(line) => line.diagnostic(self.path, self.text, self.start),
             Printed::Subject(subject) => diagnose(self.path, self.text, subject),
         }
     }
@@ -722,19 +732,19 @@ impl Entries<'_>
         match core::mem::replace(&mut self.cursor, Cursor::Done) {
             Cursor::Done => None,
             Cursor::Last(Last::Line(refusal)) => {
-                Some(Line::Pending(refusal).diagnostic(self.path, self.text))
+                Some(Line::Pending(refusal).diagnostic(self.path, self.text, self.start))
             },
             Cursor::Last(Last::Source(refusal)) => {
                 Some(diagnose(self.path, self.text, Subject::Source(refusal)))
             },
             Cursor::Lowered(held) => {
                 self.cursor = Cursor::Declarations(held);
-                Some(Line::Lowered.diagnostic(self.path, self.text))
+                Some(Line::Lowered.diagnostic(self.path, self.text, self.start))
             },
             Cursor::Pending { mut unstatable } => {
                 let line = unstatable.next().map(|&refusal| Line::Pending(refusal));
                 self.cursor = Cursor::Pending { unstatable };
-                line.map(|line| line.diagnostic(self.path, self.text))
+                line.map(|line| line.diagnostic(self.path, self.text, self.start))
             },
             Cursor::Declarations(mut held) => {
                 if let Some(warned) = held.shadowed.next() {
@@ -785,6 +795,8 @@ impl Entries<'_>
 #[cfg(test)]
 mod tests
 {
+    use core::convert::Infallible;
+    use core::ops::ControlFlow;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -807,7 +819,9 @@ mod tests
     use crate::Step;
     use crate::Verb;
     use crate::Walk;
+    use crate::Width;
     use crate::compose;
+    use crate::walk::tests::Scratch;
 
     /// The step a source at `path` under `root` with `standing` makes.
     ///
@@ -923,6 +937,51 @@ mod tests
                 .first()
                 .is_some_and(|line| line.1.starts_with("unsettled: a pending source")),
             "{ledger:?}"
+        );
+    }
+
+    /// #582: a source laid after its import prints its fixture line at bytes
+    /// of its own file, the bytes its diagnostic is located at.
+    #[test]
+    fn an_importer_s_ledger_line_names_its_own_bytes()
+    {
+        let scratch = Scratch::new(Path::new("ledger-own-bytes"));
+        scratch.file(
+            Path::new("corpus/fixture/base.gandr"),
+            SourceText::from("def one = 1 ;\n"),
+        );
+        let importer =
+            "import \"./base.gandr\" ;\n@[ refuses(\"UnresolvedName\") ] def bad = missing ;\n";
+        scratch.file(
+            Path::new("corpus/fixture/importer.gandr"),
+            SourceText::from(importer),
+        );
+        let start = importer.find("def bad").expect("the declaration");
+        let end = start + "def bad = missing ;".len();
+        let own = ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("ordered");
+
+        let mut printed = Vec::new();
+        let ControlFlow::Continue(_report) =
+            Walk::new(vec![scratch.root().join("corpus/fixture/importer.gandr")]).visit(
+                Width::SERIAL,
+                |step| -> ControlFlow<Infallible> {
+                    printed.extend(
+                        entries(&step, Verb::Test)
+                            .map(|diagnostic| (diagnostic.message.text, diagnostic.span)),
+                    );
+                    ControlFlow::Continue(())
+                },
+            );
+        assert_eq!(
+            printed,
+            [(
+                format!(
+                    "settled `bad` at {start}..{end}: states refuses UnresolvedName; produced \
+                     refuses UnresolvedName (malformed source)"
+                ),
+                Maybe::Present(own)
+            )],
+            "the line names the bytes of the importer's own file, where its diagnostic stands"
         );
     }
 
