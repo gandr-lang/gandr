@@ -158,6 +158,31 @@
 //! more node visits than one presentation makes — a cycle — is written `?`,
 //! and every layout failure is a [`PresentationError`].
 //!
+//! # Answers checked at compile time
+//!
+//! The corpus census above is the runtime half of the contract; the lint
+//! wall holds its static half (quenchant's `answer_totality` group, whose
+//! tables the workspace's `check:dylint` task configures):
+//!
+//! - every `?` the printer can build — a [`Former::Unreadable`], an
+//!   [`Unspelled`] reason, the unknown node kind, a `"?"` or a `'?'` — is built
+//!   only under an `expect` whose reason says why no spelling exists;
+//! - the walk's `visit` and `form` name every [`Former`] variant;
+//! - each arm that writes a grammar rule names it, `writes(Production("rule"),
+//!   …)`, and the rules named equal the rules the grammar builds, but for those
+//!   the configuration lists as unproduced, each with its reason: the
+//!   declarations, patterns and shell syntax no core node carries, and the
+//!   sugar the lowering elaborates away.
+//!
+//! The marker is read only by the lint; at run time `writes` is the identity.
+//!
+//! - **Alternatives.** The census alone, which finds a missing production only
+//!   when the corpus happens to print one; a lint level without `expect`'s
+//!   reason, which would let a residue stand unexplained; a production table
+//!   beside the walk, which would drift from the arms that write.
+//! - **Reversal.** A grammar built from data the lint cannot read, at which
+//!   point the production set returns to the census alone.
+//!
 //! # Tests and their limits
 //!
 //! The golden fixtures cover exact grammar spellings and their narrow and wide
@@ -688,6 +713,14 @@ where
                 fidelity,
                 unspelled,
             } => (doc, fidelity, unspelled),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a source taking more visits than one presentation makes, a cycle, \
+                              has no finite spelling"
+                )
+            )]
             Walked::OverBudget => (
                 composer.text(Glyphs("?"))?,
                 Fidelity::Approximate,

@@ -151,8 +151,24 @@ impl Source for ContentSource<'_>
     {
         let Some(content) = self.nodes.get(usize::from(node))
         else {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "an index past the table names no node: a malformed source, with no \
+                              term to spell"
+                )
+            )]
             return Former::Unreadable(Unreadable::Dangling);
         };
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                answer_totality,
+                reason = "a reference the table holds no key for: a malformed naming table, with \
+                          no name to write"
+            )
+        )]
         let unnamed = Former::Unreadable(Unreadable::Unnamed);
         match *content {
             ContentNode::Reify(_) => Former::Reify,
@@ -520,6 +536,14 @@ impl Source for ContentSource<'_>
             ContentNode::Thunk(body) => Former::Thunk(body),
             ContentNode::Nested(body) => Former::Nested(body),
             ContentNode::Run(body) => Former::Run(body),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a universe lift: the core's explicit cumulativity, which the \
+                              surface grammar has no syntax for"
+                )
+            )]
             ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => {
                 Former::Unreadable(Unreadable::Lift)
             },
@@ -593,13 +617,45 @@ impl Source for ContentSource<'_>
                         .count(),
                 ),
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "an unresolved node names no term: a malformed table, with nothing to \
+                              spell"
+                )
+            )]
             ContentNode::Unresolved(_) => Former::Unreadable(Unreadable::Dangling),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a hole, a term the author has not written: the walk writes it as \
+                              the grammar's hole `?`"
+                )
+            )]
             ContentNode::Hole(_) | ContentNode::ComputationHole(_) => {
                 Former::Unreadable(Unreadable::Hole)
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a mark, a term the elaborator could not type: the grammar has no \
+                              spelling for a mark"
+                )
+            )]
             ContentNode::ValueMark { .. } | ContentNode::ComputationMark { .. } => {
                 Former::Unreadable(Unreadable::Mark)
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the unknown type a hole or a mark synthesises: the walk writes it as \
+                              the grammar's `unknown_type` where a type is read"
+                )
+            )]
             ContentNode::UnknownType | ContentNode::UnknownComputationType => {
                 Former::Unreadable(Unreadable::UnknownType)
             },

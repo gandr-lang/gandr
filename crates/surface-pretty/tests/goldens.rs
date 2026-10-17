@@ -2206,6 +2206,36 @@ mod tests
         assert_eq!(rendered.fidelity(), Fidelity::Faithful);
     }
 
+    /// A flow composite spells infix, `f then g`, as the surface writes it and
+    /// the lowering reads it back (#631); a composite operand stands in
+    /// parentheses.
+    #[test]
+    fn a_composite_of_flows_spells_infix()
+    {
+        let mut core = CoreArena::new();
+        let keep = core.value_constant(ConstantIndex::from(0_usize));
+        let exchange = core.value_constant(ConstantIndex::from(1_usize));
+        let kept = core.value_forward(keep);
+        let exchanged = core.value_forward(exchange);
+        let composite = core.value_then(kept, exchanged);
+        let nested = core.value_then(composite, kept);
+        let names = [Name::from("keep"), Name::from("exchange")];
+        let source = CoreSource::new(&core, &names);
+        for (root, expected) in [
+            (composite, "forward(keep) then forward(exchange)"),
+            (
+                nested,
+                "(forward(keep) then forward(exchange)) then forward(keep)",
+            ),
+        ] {
+            let rendered = presented(&source, Root::Value(CoreNode::Value(root)), wide());
+            assert_eq!(
+                (rendered.as_ref(), rendered.fidelity()),
+                (expected, Fidelity::Faithful)
+            );
+        }
+    }
+
     /// An elaborated body spells as the grammar writes it, its exits elided:
     /// a returner at the end of a block bare, a call by its head, a thunk in
     /// a body spelled; a case binds its summand's payload, a split its
@@ -2268,6 +2298,11 @@ mod tests
         let motive = core.value_type_run(motive_point);
         let ride = core.computation_ride(motive, bound, bound);
         let riding = core.computation_lambda(ride);
+        // A lazy pair is the positional copattern block the lowering reads
+        // back as that pair, nested to the right (#630).
+        let pure_two = core.computation_return(two);
+        let paired = core.computation_with(pure_one, pure_two);
+        let chained = core.computation_with(pure_one, paired);
         let names = [Name::from("kept"), Name::from("Nat")];
         let mut constructors = Constructors::default();
         constructors.family(Name::from("Nat"), [
@@ -2307,6 +2342,16 @@ mod tests
             (
                 body(riding),
                 "fn (a) { ride(\\b. Run(b), a, a) }",
+                Fidelity::Faithful,
+            ),
+            (
+                body(paired),
+                "&{.0 => pure 1, .1 => pure 2}",
+                Fidelity::Faithful,
+            ),
+            (
+                body(chained),
+                "&{.0 => pure 1, .1 => &{.0 => pure 1, .1 => pure 2}}",
                 Fidelity::Faithful,
             ),
         ] {
@@ -2349,6 +2394,8 @@ mod tests
             projected,
             primitive_call,
             riding,
+            paired,
+            chained,
             sequenced,
         ] {
             let root = CoreNode::Computation(id);

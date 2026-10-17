@@ -475,7 +475,7 @@ pub enum Former<'source, Node>
     SessionRelated(gandr_core_term::session::SessionRelation, Node, Node),
     /// Directed reflexivity `stay(a)`.
     Stay(Node),
-    /// Directed composition `then(f, g)`.
+    /// Directed composition, `f then g`.
     Then(Node, Node),
     /// The product of two universe flows, `flowProduct(p, q)`.
     FlowProduct(Node, Node),

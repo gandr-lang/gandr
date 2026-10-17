@@ -72,9 +72,124 @@ env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified 
 # configuration, so the lint state and the records never disagree; it adds no
 # measurable time to a full run of the wall. The directory sits beside the
 # rustdoc JSON the obligations report joins it with.
+# The `answer_totality` group (deny by default) reads the tables below: the
+# printer's and the hover's unknown answers, each built only under an
+# `expect` that says why; the printer's presenters, which name every former;
+# and the printer's productions, which equal the grammar's rules but for the
+# `unproduced` ones, each with the reason no printer writes it.
 env.DYLINT_TOML = '''
 [quenchant-dylints]
 evidence_directory = "{{ config_root }}/target/evidence/records"
+dishonest_constructors = [
+  "gandr_surface_pretty::former::Former::Unreadable",
+  "gandr_surface_pretty::former::Unspelled",
+  "gandr_surface_pretty::walk::Kind::Unknown",
+  "gandr_surface_lsp::hover::hovered::Absent::Unknown",
+]
+dishonest_spellings = [{ text = "?", crates = ["gandr_surface_pretty", "gandr_surface_lsp"] }]
+presenters = [
+  { enum = "gandr_surface_pretty::former::Former", functions = ["gandr_surface_pretty::walk::Walk::visit", "gandr_surface_pretty::walk::Walk::form"] },
+]
+
+[quenchant-dylints.productions]
+marker = "gandr_surface_pretty::walk::Production"
+argument = 0
+rule_constructor = "RuleName"
+rule_sources = [
+  "crates/surface-grammar/src/surface.rs",
+  "crates/surface-grammar/src/surface/term.rs",
+  "crates/surface-grammar/src/surface/type_shell.rs",
+  "crates/surface-grammar/src/surface/circuit.rs",
+]
+unproduced = [
+  { rule = "acquire_statement", reason = "reserved: the lowering refuses it (`FragmentBoundary::Reserved`), so no core term carries it" },
+  { rule = "and_expression", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "as_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "attribute_block", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "attributed_module_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "become_expression", reason = "an exit: the lowering elaborates it into the returner or call it leaves with, written as `pure_expression` or `call_expression`; core keeps no exit" },
+  { rule = "binary_expression.add.concat", reason = "the prelude has no `++` primitive, so the lowering refuses it (`Lower::operator`) and no core term carries it" },
+  { rule = "block", reason = "the lowering inlines a block's statements into the form that opens it; the printer writes the braces as that form's own tiles (`thunk {`, `fn (a) {`)" },
+  { rule = "block_comment", reason = "trivia: no core node carries it" },
+  { rule = "boolean.expression", reason = "core has no boolean literal: the lowering names no former for `true` or `false` in a term" },
+  { rule = "boolean.pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "break_expression", reason = "a loop form: core has no loop, and the lowering elaborates it away" },
+  { rule = "break_value_expression", reason = "a loop form: core has no loop, and the lowering elaborates it away" },
+  { rule = "character", reason = "core's literals are integers, numerics and text: the lowering names no former for a character" },
+  { rule = "circuit_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "co_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
+  { rule = "codata_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "command_substitution", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "cons_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "continue_expression", reason = "a loop form: core has no loop, and the lowering elaborates it away" },
+  { rule = "data_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "def_value", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "double_quoted_string", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "drop_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
+  { rule = "dup_expression", reason = "reserved: the lowering refuses it (`FragmentBoundary::Reserved`), so no core term carries it" },
+  { rule = "environment_assignment", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "escape_sequence", reason = "a bare escape atom: the printer writes an escape only as a tile inside `string.expression`" },
+  { rule = "expression_statement", reason = "the lowering admits `e ;` only as an exit or a loop's statement, both elaborated away; core keeps no statement" },
+  { rule = "extern_block", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "file_descriptor", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "for_expression", reason = "a loop form: core has no loop, and the lowering elaborates it away" },
+  { rule = "forall_type", reason = "the lowering names no former for this type (`former_of` is `Unadmitted`), so no core type carries it" },
+  { rule = "fork_shared_statement", reason = "reserved: the lowering refuses it (`FragmentBoundary::Reserved`), so no core term carries it" },
+  { rule = "glob_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
+  { rule = "hole.pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "host_escape", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "if_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
+  { rule = "import_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "instantiation.direction.descent", reason = "a recursive call's claim: the lowering consumes it into the recursion check, and core's call keeps no claim" },
+  { rule = "instantiation.direction.productivity", reason = "a recursive call's claim: the lowering consumes it into the recursion check, and core's call keeps no claim" },
+  { rule = "instantiation.explicit", reason = "a recursive call's claim: the lowering consumes it into the recursion check, and core's call keeps no claim" },
+  { rule = "instantiation.named_measure", reason = "a recursive call's claim: the lowering consumes it into the recursion check, and core's call keeps no claim" },
+  { rule = "instantiation.tail", reason = "a recursive call's claim: the lowering consumes it into the recursion check, and core's call keeps no claim" },
+  { rule = "intersection_type", reason = "the lowering names no former for this type (`former_of` is `Unadmitted`), so no core type carries it" },
+  { rule = "line_comment", reason = "trivia: no core node carries it" },
+  { rule = "list_expression", reason = "the lowering does not admit the list literal (#206, `nested_list_value_stays_grouped`); the printer writes a list as `cons(…, nil)`" },
+  { rule = "list_operator", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "list_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "literal_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "loop_expression", reason = "a loop form: core has no loop, and the lowering elaborates it away" },
+  { rule = "module_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "module_definition_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "module_type_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "negation", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "nested_module_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "number.pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "operator_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "or_expression", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "or_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "pack_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
+  { rule = "package_type", reason = "the lowering names no former for this type (`former_of` is `Unadmitted`), so no core type carries it" },
+  { rule = "pipeline.pipe", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "pipeline.pipe_both", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "rec_block", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "redirection_operator", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "release_statement", reason = "reserved: the lowering refuses it (`FragmentBoundary::Reserved`), so no core term carries it" },
+  { rule = "rest_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "return_expression", reason = "an exit: the lowering elaborates it into the returner or call it leaves with, written as `pure_expression` or `call_expression`; core keeps no exit" },
+  { rule = "shebang", reason = "trivia: no core node carries it" },
+  { rule = "shell_block", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "shell_list", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "shell_word", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "sign_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "single_quoted_string", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "string.pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "subshell", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "tuple_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "typed_number.expression", reason = "core's literal keeps no type suffix: the lowering names no former for a typed numeral" },
+  { rule = "typed_number.pattern", reason = "core's literal keeps no type suffix, and core keeps no pattern" },
+  { rule = "union_type", reason = "the lowering names no former for this type (`former_of` is `Unadmitted`), so no core type carries it" },
+  { rule = "unpack_statement", reason = "the lowering refuses it (`FragmentBoundary::Unadmitted`), so no core term carries it" },
+  { rule = "val_statement", reason = "the lowering refuses it (`FragmentBoundary::Unadmitted`), so no core term carries it" },
+  { rule = "variable_expansion", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "variable_name", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "while_expression", reason = "a loop form: core has no loop, and the lowering elaborates it away" },
+  { rule = "wildcard", reason = "the lowering reads `_` as an unnamed binder, and the printer names every binder it opens" },
+  { rule = "world_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+]
 '''
 run = "cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets"
 
