@@ -1126,6 +1126,18 @@ mod tests
     use crate::poset::PosetEvidenceError;
 
     #[test]
+    fn an_entailment_answer_negates_to_its_opposite()
+    {
+        for answer in [false, true] {
+            assert_eq!(
+                bool::from(!super::EntailmentHolds::from(answer)),
+                !answer,
+                "{answer} negates"
+            );
+        }
+    }
+
+    #[test]
     fn countermodel_assignment_boundaries()
     {
         let poset = empty_poset();

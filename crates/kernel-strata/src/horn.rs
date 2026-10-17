@@ -1291,6 +1291,7 @@ pub fn saturate(
 ///   or an extra round by exact optional logs and concluded atoms.
 /// - witness: `horn::tests::derivation_respects_zero_and_exact_round_limits`
 /// - witness: `horn::tests::derive_targets_extracts_a_checkable_log`
+/// - witness: `horn::tests::a_firing_that_only_restates_a_value_is_not_logged`
 /// - witness: `poset::tests::paper_loop_variant_returns_a_validating_loop_witness`
 /// - witness: `poset::tests::self_successor_equality_loops`
 #[spec(requires: seed.values().all(|value| matches!(*value, ModelValue::Finite(_))))]
@@ -1997,6 +1998,39 @@ mod tests
             outcome.is_none(),
             "a fixpoint below the target reports non-derivability"
         );
+    }
+
+    #[test]
+    fn a_firing_that_only_restates_a_value_is_not_logged()
+    {
+        // `x implies y` fires y at the 0 it already holds; `y implies x+1`
+        // then raises x. Only the second firing is a step.
+        let clauses = vec![
+            HornClause::new(
+                &[HornAtom::new(v0(), HornOffset::from(0_u128))],
+                HornAtom::new(v1(), HornOffset::from(0_u128)),
+            )
+            .expect("a single-atom body is nonempty"),
+            HornClause::new(
+                &[HornAtom::new(v1(), HornOffset::from(0_u128))],
+                HornAtom::new(v0(), HornOffset::from(1_u128)),
+            )
+            .expect("a single-atom body is nonempty"),
+        ];
+        let system = ClauseSystem {
+            clauses,
+            min_shift: HornShift::ZERO,
+        };
+        let seed: BTreeMap<HVar, ModelValue> = [v0(), v1()]
+            .map(|variable| (variable, ModelValue::Finite(HornOffset::from(0_u128))))
+            .into_iter()
+            .collect();
+        let targets = [HornAtom::new(v0(), HornOffset::from(1_u128))];
+        let log = derive_targets(&system, seed, &targets, DerivationRoundLimit::from(4_u128))
+            .expect("derivation does not overflow")
+            .expect("the target is derivable");
+        let clauses: Vec<ClauseIndex> = log.iter().map(|step| step.clause()).collect();
+        assert_eq!(clauses, vec![ClauseIndex::from(1_usize)]);
     }
 
     #[test]
