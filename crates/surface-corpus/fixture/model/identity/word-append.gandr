@@ -9,69 +9,106 @@ import "./circle-base.gandr" ;
 
 /// The composite of two loops at the point.
 @[ checks ]
-def comp(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+def comp(
+  p : Path(Circle, Base, Base),
+  q : Path(Circle, Base, Base)
+) -> -F Path(Circle, Base, Base) {
   p then q
 }
 
 /// Reflexivity is the composite's left unit (#422).
 @[ checks ]
-def leftUnit(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), here(Base) then p, p) {
+def leftUnit(p : Path(Circle, Base, Base)) -> -F Path(
+  Path(Circle, Base, Base),
+  here(Base) then p,
+  p
+) {
   here(p)
 }
 
 /// So it is through the composite's definition.
 @[ checks ]
-def leftUnitComp(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(here(Base), p), p) {
+def leftUnitComp(p : Path(Circle, Base, Base)) -> -F Path(
+  Path(Circle, Base, Base),
+  comp(here(Base), p),
+  p
+) {
   here(p)
 }
 
 /// A letter before the empty word stays before a path composed after it
 /// (#422).
 @[ checks ]
-def letterFirst(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(loop ∷ here(Base), p), loop ∷ p) {
+def letterFirst(p : Path(Circle, Base, Base)) -> -F Path(
+  Path(Circle, Base, Base),
+  comp(loop ∷ here(Base), p),
+  loop ∷ p
+) {
   here(loop ∷ p)
 }
 
 /// And no letter is dropped: the loop composed with `p` is not `p`.
 @[ refuses("EndpointMismatch") ]
-def letterKept(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(loop ∷ here(Base), p), p) {
+def letterKept(p : Path(Circle, Base, Base)) -> -F Path(
+  Path(Circle, Base, Base),
+  comp(loop ∷ here(Base), p),
+  p
+) {
   here(p)
 }
 
 /// The composite again, under another name.
 @[ checks ]
-def other(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+def other(
+  p : Path(Circle, Base, Base),
+  q : Path(Circle, Base, Base)
+) -> -F Path(Circle, Base, Base) {
   p then q
 }
 
 /// The composite with its two paths swapped.
 @[ checks ]
-def compSwapped(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+def compSwapped(
+  p : Path(Circle, Base, Base),
+  q : Path(Circle, Base, Base)
+) -> -F Path(Circle, Base, Base) {
   q then p
 }
 
 /// Both names unfold to one transport stuck on `q`, whose motives close over
 /// two definitions' environments and read the binder alone (#440).
 @[ checks ]
-def sameComposite(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(p, q), other(p, q)) {
+def sameComposite(
+  p : Path(Circle, Base, Base),
+  q : Path(Circle, Base, Base)
+) -> -F Path(Path(Circle, Base, Base), comp(p, q), other(p, q)) {
   here(comp(p, q))
 }
 
 /// So the two composites agree after a letter (#440).
 @[ checks ]
-def sameAfterLetter(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), loop ∷ comp(p, q), loop ∷ other(p, q)) {
+def sameAfterLetter(
+  p : Path(Circle, Base, Base),
+  q : Path(Circle, Base, Base)
+) -> -F Path(Path(Circle, Base, Base), loop ∷ comp(p, q), loop ∷ other(p, q)) {
   here(loop ∷ comp(p, q))
 }
 
 /// And a letter before `p` comes first through either name.
 @[ checks ]
-def letterThroughNames(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(loop ∷ p, q), loop ∷ other(p, q)) {
+def letterThroughNames(
+  p : Path(Circle, Base, Base),
+  q : Path(Circle, Base, Base)
+) -> -F Path(Path(Circle, Base, Base), comp(loop ∷ p, q), loop ∷ other(p, q)) {
   here(loop ∷ comp(p, q))
 }
 
 /// The transports along `p` and along `q` are not one: the swapped composite
 /// is another path.
 @[ refuses("EndpointMismatch") ]
-def swapped(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(p, q), compSwapped(p, q)) {
+def swapped(
+  p : Path(Circle, Base, Base),
+  q : Path(Circle, Base, Base)
+) -> -F Path(Path(Circle, Base, Base), comp(p, q), compSwapped(p, q)) {
   here(comp(p, q))
 }

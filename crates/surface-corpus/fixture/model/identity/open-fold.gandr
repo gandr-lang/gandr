@@ -33,7 +33,11 @@ def twice_unfolded(x : Words) -> -F Path(Int, windWords(Loop(Loop(x))), S(S(wind
 /// `S(windWords(x))`, runs its `S` arm, and that arm's bind over
 /// `spinWords(windWords(x))` reads as `Loop`.
 @[ checks ]
-def round_unfolded(x : Words) -> -F Path(Words, spinWords(windWords(Loop(x))), Loop(spinWords(windWords(x)))) {
+def round_unfolded(x : Words) -> -F Path(
+  Words,
+  spinWords(windWords(Loop(x))),
+  Loop(spinWords(windWords(x)))
+) {
   return here(Loop(spinWords(windWords(x))))
 }
 

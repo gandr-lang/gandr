@@ -9,14 +9,30 @@ import "./circle-base.gandr" ;
 
 /// Transport along reflexivity at zero returns the element given.
 @[ checks ]
-def reduced : Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero));
+def reduced : Path(
+  Nat,
+  transport(
+    +U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat),
+    here(Zero),
+    here(Zero),
+    here(here(Zero)),
+    Succ(Zero)
+  ),
+  Succ(Zero)
+);
 def reduced = here(Succ(Zero));
 
 /// A path reversed by transport in the family of paths back to its start,
 /// reflexivity at the start carried to the end.
 @[ checks ]
 def reversed(a: Nat, b: Nat, q: Path(Nat, a, b)) -> -F Path(Nat, b, a) {
-  become transport(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a)), q, here(a), here(q), here(a))
+  become transport(
+    +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a)),
+    q,
+    here(a),
+    here(q),
+    here(a)
+  )
 }
 
 /// A lift whose path is not over `q` is refused.

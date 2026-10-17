@@ -8,7 +8,13 @@ import "./back.gandr" ;
 /// Two paths between integers, the second leaving where the first arrives,
 /// composed.
 @[ checks ]
-def join(a: Integer, b: Integer, c: Integer, q: Path(Integer, a, b), r: Path(Integer, b, c)) -> -F Path(Integer, a, c) {
+def join(
+  a: Integer,
+  b: Integer,
+  c: Integer,
+  q: Path(Integer, a, b),
+  r: Path(Integer, b, c)
+) -> -F Path(Integer, a, c) {
   become q then r
 }
 

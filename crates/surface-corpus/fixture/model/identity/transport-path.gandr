@@ -5,7 +5,11 @@
 
 /// A reflexive transport at a path-type motive returns a path.
 @[ checks ]
-def moved_end : Path(Path(Integer, 2, 2), transport(\x. Path(Integer, x, x), here(2), here(2)), here(2)) ;
+def moved_end : Path(
+  Path(Integer, 2, 2),
+  transport(\x. Path(Integer, x, x), here(2), here(2)),
+  here(2)
+) ;
 def moved_end = here(here(2)) ;
 
 /// A transported unit is no path between integers.
@@ -16,6 +20,9 @@ def unit_end = here(here(2)) ;
 /// Transport along the path a reflexive transport returns, in the universe,
 /// is the identity: the inner transport runs to `here(a)` first (#649).
 @[ checks ]
-def along_returned(a : Type, x : a) -> -F Path(a, transport(\X. X, transport(\c. Path(Type, c, a), here(a), here(a)), x), x) {
+def along_returned(
+  a : Type,
+  x : a
+) -> -F Path(a, transport(\X. X, transport(\c. Path(Type, c, a), here(a), here(a)), x), x) {
   return here(x)
 }
