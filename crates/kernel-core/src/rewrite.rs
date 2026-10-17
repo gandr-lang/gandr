@@ -71,6 +71,7 @@ use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -220,6 +221,8 @@ pub enum RewritePlane
     Shift,
     /// The substitution machine.
     Substitute,
+    /// The abstraction machine.
+    Abstract,
 }
 
 /// What one rewrite step produced: the node it rewrote to, in its own family.
@@ -398,6 +401,7 @@ impl RewriteSupport
     #[spec(ensures: |ret| ret.plane == match goal {
         RewriteGoal::Shift { .. } => RewritePlane::Shift,
         RewriteGoal::Substitute { .. } => RewritePlane::Substitute,
+        RewriteGoal::Abstract { .. } => RewritePlane::Abstract,
     })]
     #[must_use]
     fn build(
@@ -409,6 +413,7 @@ impl RewriteSupport
         let plane = match goal {
             RewriteGoal::Shift { .. } => RewritePlane::Shift,
             RewriteGoal::Substitute { .. } => RewritePlane::Substitute,
+            RewriteGoal::Abstract { .. } => RewritePlane::Abstract,
         };
         let encoding = encode_rewrite(table, arena, goal);
         let digest = encoding.digest();
@@ -512,6 +517,15 @@ enum Rewrite
         /// The replacement value, in the context outside the binder.
         replacement: ValueId,
     },
+    /// Replace every occurrence of `constant` by the variable `index` counted
+    /// from the root, raised under every binder crossed.
+    Abstract
+    {
+        /// The constant replaced.
+        constant: ConstantIndex,
+        /// The variable it reads as at the root.
+        index: DeBruijnIndex,
+    },
 }
 
 impl Rewrite
@@ -538,6 +552,12 @@ impl Rewrite
                 subject,
                 depth,
                 replacement,
+            },
+            Self::Abstract { constant, index } => RewriteGoal::Abstract {
+                subject,
+                depth,
+                constant,
+                index,
             },
         }
     }
@@ -814,6 +834,52 @@ where
         BinderDepth::NONE,
     )
     .comp_type_or(subject)
+}
+
+/// The value type `subject` with every occurrence of `constant` read as the
+/// variable `index`: the variable at the root, raised by every binder the walk
+/// crosses to reach the occurrence.
+///
+/// # Specification
+/// - requires: `table` is this session's; `memo` holds only entries this
+///   session recorded against this arena; `index` names a binder in scope at
+///   the root.
+/// - ensures: the same type with each `Value::Constant(constant)` under `d`
+///   binders replaced by `Value::Variable(index + d)`, clamped at the index
+///   ceiling, and every other node as it was; an unreadable or constant-free
+///   type answers itself.
+/// - provides: how a definition's own constant is identified with its
+///   fixpoint's self binder where a family its block admits names it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the constant at the root, under one binder and beside
+///   another constant, each asserted exactly.
+/// - witness: `rewrite::tests::an_abstraction_replaces_its_constant_by_a_variable_under_binders`
+#[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
+    arena.value_type(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[must_use]
+pub(crate) fn abstract_constant_value_type<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    subject: ValueTypeId,
+    (constant, index): (ConstantIndex, DeBruijnIndex),
+) -> ValueTypeId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Abstract { constant, index },
+        AnyNode::ValueType(subject),
+        BinderDepth::NONE,
+    )
+    .value_type_or(subject)
 }
 
 /// The value type `subject` with its innermost binder instantiated at
@@ -1223,6 +1289,7 @@ where
                     },
                     Maybe::Absent(
                         carrying::Absent::Shift
+                        | carrying::Absent::Abstraction
                         | carrying::Absent::NoCrossedBinders
                         | carrying::Absent::DifferentOccurrence
                         | carrying::Absent::UnreadableValue,
@@ -1263,6 +1330,8 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// Shifting substitutes no replacement.
             Shift,
+            /// Abstracting a constant substitutes no replacement.
+            Abstraction,
             /// A replacement at depth zero crosses no binders.
             NoCrossedBinders,
             /// The node is not the variable occurrence being substituted.
@@ -1307,6 +1376,7 @@ quenchant_shape::reason_enum! {
 /// [`Absent`]: carrying::Absent
 #[spec(ensures: |ret| match rewrite {
     Rewrite::Shift { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Shift)),
+    Rewrite::Abstract { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Abstraction)),
     Rewrite::Substitute { replacement } => {
         if depth.0 == 0 {
             matches!(ret, Maybe::Absent(carrying::Absent::NoCrossedBinders))
@@ -1330,9 +1400,10 @@ fn carried_occurrence(
     depth: BinderDepth,
 ) -> Maybe<ValueId, carrying::Absent>
 {
-    let Rewrite::Substitute { replacement } = rewrite
-    else {
-        return Maybe::Absent(carrying::Absent::Shift);
+    let replacement = match rewrite {
+        Rewrite::Substitute { replacement } => replacement,
+        Rewrite::Shift { .. } => return Maybe::Absent(carrying::Absent::Shift),
+        Rewrite::Abstract { .. } => return Maybe::Absent(carrying::Absent::Abstraction),
     };
     if depth == BinderDepth::NONE {
         return Maybe::Absent(carrying::Absent::NoCrossedBinders);
@@ -2081,6 +2152,10 @@ Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => 
     ensures: |ret| results.len() == before.saturating_sub(arity) && match arena.value(id) {
         None => ret == id,
         Some(&Value::Variable(_)) => true,
+        Some(&Value::Constant(found)) => match rewrite {
+            Rewrite::Abstract { constant, .. } if constant == found => matches!(arena.value(ret), Some(&Value::Variable(_))),
+            Rewrite::Abstract { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } => ret == id,
+        },
         Some(node) => arena.value(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten)),
     },
 )]
@@ -2384,7 +2459,18 @@ fn close_value(
             }
         },
         Value::Variable(index) => rewrite_variable(arena, rewrite, id, index, depth),
-        Value::ListNil | Value::Constant(_) | Value::Literal(_) => id,
+        Value::Constant(found) => match rewrite {
+            Rewrite::Abstract { constant, index } if constant == found => {
+                // reason: an index past the ceiling clamps, as a shift's does.
+                let raised = u32::from(arith::saturating_add(
+                    arith::Int::from(u32::from(index)),
+                    arith::Int::from(depth.0),
+                ));
+                arena.value_variable(DeBruijnIndex::from(raised))
+            },
+            Rewrite::Abstract { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } => id,
+        },
+        Value::ListNil | Value::Literal(_) => id,
         Value::Tuple(ref components) => {
             // Results are popped in reverse wire order: children were scheduled
             // so that they close left to right, so the last one to close is the
@@ -2504,6 +2590,7 @@ fn close_value(
     requires: matches!(arena.value(id), Some(&Value::Variable(actual)) if actual == index),
     requires: !matches!(rewrite, Rewrite::Substitute { .. }) || depth.0 == 0 || u32::from(index) != depth.0,
     ensures: |ret| match rewrite {
+        Rewrite::Abstract { .. } => ret == id,
         Rewrite::Shift { cutoff, amount } => {
             if u32::from(index) < cutoff.0.saturating_add(depth.0)
                 || u32::from(index).saturating_add(amount.0) == u32::from(index) {
@@ -2529,6 +2616,7 @@ fn rewrite_variable(
 {
     let index = BinderDepth::from(u32::from(index));
     match rewrite {
+        Rewrite::Abstract { .. } => id,
         Rewrite::Shift { cutoff, amount } => {
             // reason: a cutoff beyond the index range uses its conservative ceiling.
             let effective = BinderDepth(u32::from(arith::saturating_add(

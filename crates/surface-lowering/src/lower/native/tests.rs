@@ -629,6 +629,180 @@ fn a_recursive_function_closes_a_fixpoint_over_its_last_parameter()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A rose tree's node and forest, one block, measured by two functions that
+/// call each other: each member is one fixpoint over the sum of both domains,
+/// read at its own summand, and a call through a sibling injects its argument
+/// at the sibling's.
+#[test]
+fn a_mutual_blocks_recursive_functions_share_one_fixpoint()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}rec {{\n  data Rose : Type {{ Node : (kids : Forest) --> Rose; }}\n  data Forest : Type {{ Empty : Forest; More : (head : Rose, tail : Forest) --> Forest; }}\n  def rec size(t : Rose) -> -F Nat {{ case t {{ Node(kids) => {{ run s <- sizes[<](kids); return Succ(s) }} }} }}\n  def rec sizes(ts : Forest) -> -F Nat {{ case ts {{ Empty => return Zero, More(t, rest) => {{ run a <- size[<](t); sizes[<](rest) }} }} }}\n}}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    // The joint a member applies, and the summand it injects its parameter at.
+    let joint = |name: &'static str| {
+        let Some(&Value::Thunk(lambda)) = arena.value(body_named(&module, SurfaceName::from(name)))
+        else {
+            panic!("`{name}` lowers to a thunk");
+        };
+        let Some(&Computation::Lambda(applied)) = arena.computation(lambda)
+        else {
+            panic!("`{name}` binds its parameter");
+        };
+        let Some(&Computation::Application(joint, injected)) = arena.computation(applied)
+        else {
+            panic!("`{name}` applies the joint");
+        };
+        let Some(&Value::Injection(summand, own)) = arena.value(injected)
+        else {
+            panic!("`{name}` injects its parameter");
+        };
+        assert_eq!(
+            arena.value(own),
+            Some(&variable(DeBruijnIndex::from(0_u32)))
+        );
+        (joint, usize::from(summand))
+    };
+    let (sized, at) = joint("size");
+    assert_eq!(at, 0_usize, "the node's measure is the first summand");
+    let (forested, at) = joint("sizes");
+    assert_eq!(
+        (forested, at),
+        (sized, 1_usize),
+        "the forest's measure is the same joint at the second"
+    );
+    let Some(&Computation::Ascribe { body: fixpoint, ty }) = arena.computation(sized)
+    else {
+        panic!("the joint is ascribed its type");
+    };
+    let Some(&gandr_core_term::CompType::Arrow { domain, .. }) = arena.comp_type(ty)
+    else {
+        panic!("the joint is a function");
+    };
+    assert!(
+        matches!(arena.value_type(domain), Some(ValueType::Sum(summands)) if summands.len() == 2),
+        "over the sum of both domains"
+    );
+    let Some(&Computation::Fixpoint {
+        body,
+        evidence: FixpointEvidence::StructuralDescent,
+    }) = arena.computation(fixpoint)
+    else {
+        panic!("one fixpoint claims descent");
+    };
+    let Some(&Computation::Lambda(cased)) = arena.computation(body)
+    else {
+        panic!("the fixpoint closes the sum's lambda");
+    };
+    let Some(&Computation::Case { ref branches, .. }) = arena.computation(cased)
+    else {
+        panic!("the joint cases on the summand");
+    };
+    let [node, _] = **branches
+    else {
+        panic!("one branch per member");
+    };
+    // The node's measure calls the forest's: the self binder, past the
+    // field, the summand the case bound and the sum's parameter, applied to
+    // the field injected at the forest's summand.
+    let calls: Vec<ComputationId> = reachable(&arena, node)
+        .into_iter()
+        .filter(|&at| matches!(arena.computation(at), Some(&Computation::Application(..))))
+        .collect();
+    let [call] = *calls
+    else {
+        panic!("one sibling call: {calls:?}");
+    };
+    let Some(&Computation::Application(head, argument)) = arena.computation(call)
+    else {
+        panic!("the call is an application");
+    };
+    assert!(
+        matches!(arena.computation(head), Some(&Computation::Force(forced)) if arena.value(forced) == Some(&variable(DeBruijnIndex::from(3_u32)))),
+        "the head forces the joint's own binder"
+    );
+    assert!(
+        matches!(arena.value(argument), Some(&Value::Injection(summand, field)) if usize::from(summand) == 1 && arena.value(field) == Some(&variable(DeBruijnIndex::from(0_u32)))),
+        "the field is injected at the forest's summand"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint()
+{
+    let mut arena = CoreArena::new();
+    let source = "rec {\n  data U : Type { NatC : U; PiC : (a : U, b : +U (el(a) -> -F U)) --> U; }\n  def rec el(u : U) -> -F Type { case u { NatC => return Integer, PiC(a, b) => return (+U ((x : el[<](a)) -> -F Integer)) } }\n}\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    let Some(&Value::Thunk(fixpoint)) = arena.value(body_named(&module, SurfaceName::from("el")))
+    else {
+        panic!("the decoder lowers to a thunk");
+    };
+    let Some(&Computation::Fixpoint { body, .. }) = arena.computation(fixpoint)
+    else {
+        panic!("the thunk closes the decoder's fixpoint");
+    };
+    let Some(&Computation::Lambda(cased)) = arena.computation(body)
+    else {
+        panic!("the fixpoint closes the decoded code's lambda");
+    };
+    let Some(&Computation::DataCase { ref branches, .. }) = arena.computation(cased)
+    else {
+        panic!("the decoder cases on its code");
+    };
+    let [_, pi] = **branches
+    else {
+        panic!("one branch per constructor");
+    };
+    let returned: Vec<ValueId> = reachable(&arena, pi)
+        .into_iter()
+        .filter_map(|at| match arena.computation(at) {
+            Some(&Computation::Return(value)) => Some(value),
+            _ => None,
+        })
+        .collect();
+    let [code] = *returned
+    else {
+        panic!("the arm returns one code: {returned:?}");
+    };
+    let Some(&Value::Quote(quoted)) = arena.value(code)
+    else {
+        panic!("the arm returns a quoted type: {:?}", arena.value(code));
+    };
+    let Some(&ValueType::Thunk(arrow)) = arena.value_type(quoted)
+    else {
+        panic!("the quoted type is a thunk");
+    };
+    // The codomain names no `x`: a plain arrow.
+    let Some(&gandr_core_term::CompType::Arrow { domain, .. }) = arena.comp_type(arrow)
+    else {
+        panic!("of an arrow: {:?}", arena.comp_type(arrow));
+    };
+    let Some(&ValueType::Element { code: decoded, .. }) = arena.value_type(domain)
+    else {
+        panic!("whose domain decodes: {:?}", arena.value_type(domain));
+    };
+    let Some(&Value::Returned(call)) = arena.value(decoded)
+    else {
+        panic!("what the descent returns");
+    };
+    let Some(&Computation::Application(forced, argument)) = arena.computation(call)
+    else {
+        panic!("the descent is an application");
+    };
+    assert!(
+        matches!(arena.computation(forced), Some(&Computation::Force(head)) if arena.value(head) == Some(&variable(DeBruijnIndex::from(3_u32)))),
+        "the head forces the fixpoint's own binder, past the two fields and the code"
+    );
+    assert_eq!(
+        arena.value(argument),
+        Some(&variable(DeBruijnIndex::from(1_u32))),
+        "the descent applies the field it names"
+    );
+}
+
 #[test]
 fn an_unmarked_self_reference_is_refused_with_its_claim()
 {

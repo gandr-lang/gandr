@@ -6,7 +6,6 @@ use anodized::spec;
 use gandr_core_term::ValueType;
 
 use super::AnyNode;
-use super::Block;
 use super::Computation;
 use super::CoreNode;
 use super::Erasure;
@@ -400,14 +399,12 @@ impl Erasure<'_, '_>
                         ref declaration,
                         ref arguments,
                     } => {
-                        let crossing = match self.block {
-                            Block::Open { source, kernel } if source == *declaration => {
-                                Some(kernel)
-                            },
-                            Block::Open { .. } | Block::Closed => {
-                                self.positions.admitted.get(declaration).copied()
-                            },
-                        };
+                        let crossing = self
+                            .crossing
+                            .iter()
+                            .find(|&&(member, _)| member == *declaration)
+                            .map(|&(_, kernel)| kernel)
+                            .or_else(|| self.positions.admitted.get(declaration).copied());
                         let position = crossing.ok_or(Refusal::WithheldData {
                             at,
                             constant: *declaration,

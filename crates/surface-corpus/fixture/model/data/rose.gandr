@@ -1,0 +1,78 @@
+// Rose trees: a node holds a forest of children, and a forest is empty or a
+// tree before a forest. The two families name each other, so they are one
+// block, admitted as one and sharing one stage; and the two measures name
+// each other, so they are one fixpoint over the sum of their domains, each
+// measure that fixpoint at its own summand. A call through either stands one
+// stage below the node or forest it was read from. #393 is where the direct
+// form, the children a `List(Rose)` kept and typed by stage, supersedes this
+// block and the example is revisited.
+
+/// Natural numbers, the measure the fold counts in.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// Addition by recursion on the second argument.
+@[ checks ]
+def rec plus(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => Succ(plus[<](n, p))
+  }
+}
+
+/// The tree and its forest, one block: each family names the other, and
+/// the two measures recurse through each other.
+rec {
+  /// A node over its forest of children.
+  @[ checks ]
+  data Rose : Type {
+    Node : (kids : Forest) --> Rose;
+  }
+
+  /// The children of a node, in order.
+  @[ checks ]
+  data Forest : Type {
+    Empty : Forest;
+    More : (head : Rose, tail : Forest) --> Forest;
+  }
+
+  /// The nodes of a tree: its own and its children's.
+  @[ checks ]
+  def rec size(t : Rose) -> -F Nat {
+    case t {
+      Node(kids) => { run s <- sizes[<](kids); return Succ(s) }
+    }
+  }
+
+  /// The nodes of a forest: each tree's, summed.
+  @[ checks ]
+  def rec sizes(ts : Forest) -> -F Nat {
+    case ts {
+      Empty => return Zero,
+      More(t, rest) => { run a <- size[<](t); run b <- sizes[<](rest); plus(a, b) }
+    }
+  }
+}
+
+/// A node without children.
+@[ checks ]
+def leaf : Rose ;
+def leaf = Node(Empty) ;
+
+/// A node over two leaves.
+@[ checks ]
+def cherry : Rose ;
+def cherry = Node(More(leaf, More(leaf, Empty))) ;
+
+/// The cherry's three nodes.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def counted : +U (-F Nat) ;
+def counted = thunk { size(cherry) } ;
+
+/// A forest of a cherry and a leaf: four nodes.
+@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
+def forested : +U (-F Nat) ;
+def forested = thunk { sizes(More(cherry, More(leaf, Empty))) } ;

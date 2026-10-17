@@ -262,6 +262,8 @@ impl FormName
     /// A data block's generator member `C : (x : A) --> T(a)`, inlined into
     /// the declaration.
     pub const DATA_GENERATOR: Self = Self("data_generator");
+    /// The mutual block `rec { … }`, whose members are items.
+    pub const MUTUAL: Self = Self("rec_block");
     /// The declined constructor member `C(fields) : T`, inlined into the data
     /// block so it is declined by name.
     pub const CONSTRUCTOR_BLOCK_MEMBER: Self = Self("constructor_block_member");
@@ -758,6 +760,9 @@ pub enum Former
     Module,
     /// The nominal data declaration `data T(a : A) : U { C : … ; … }`.
     Data,
+    /// The mutual block `rec { … }`: its data declarations and definitions,
+    /// each read as one at the root is, admitted as one block.
+    Mutual,
     /// The instantiation `e[i, …]`: a recursive definition's descent claim
     /// `f[<]` at the head of its own call, and nothing else.
     Instantiation,
@@ -799,7 +804,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 60_usize] = [
+    pub const ALL: [Self; 61_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -853,6 +858,7 @@ impl Former
         Self::Import,
         Self::Module,
         Self::Data,
+        Self::Mutual,
         Self::Instantiation,
         Self::SessionType,
         Self::Action,
@@ -882,7 +888,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 72_usize] = [
+pub const FORMERS: [(&str, Former); 73_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -942,6 +948,7 @@ pub const FORMERS: [(&str, Former); 72_usize] = [
     ("import_declaration", Former::Import),
     ("module_declaration", Former::Module),
     ("data_declaration", Former::Data),
+    ("rec_block", Former::Mutual),
     ("instantiation_expression", Former::Instantiation),
     ("send_session_type", Former::SessionType),
     ("receive_session_type", Former::SessionType),

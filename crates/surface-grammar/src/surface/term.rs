@@ -457,10 +457,12 @@ fn declarations(
     ));
     out.push(operator);
 
-    // --- mutual-recursion `rec { … }` block (reserved) -
-    // Cheap once `rec` is a keyword. Form-first `rec {` is distinct from
-    // the `def rec` tail (where `rec` is a `≐`-successor of `def`), so the two
-    // `rec` uses never tie at a fresh item slot.
+    // --- mutual-recursion `rec { … }` block -
+    // Form-first `rec {` is distinct from the `def` tail's `rec` (where `rec`
+    // is a `≐`-successor of `def`), so the two `rec` uses never tie at a fresh
+    // item slot. Each member is an item hole: a data declaration, a
+    // definition or an attribute block, read by the module as it reads one at
+    // the root.
     let mut rec_block = r(
         RuleName("rec_block"),
         Provenance("rec_block"),
@@ -469,14 +471,14 @@ fn declarations(
         seq([
             t(TileLabel("rec")),
             t(TileLabel("{")),
-            repeat(rec_member()),
+            repeat(h(Sort::Item)),
             t(TileLabel("}")),
         ]),
     );
     rec_block.adaptations.push(Adaptation::new(
         RuleName("rec_block"),
         SurfaceForm("rec_block"),
-        AdaptationReason("reserved parse-and-decline: a `rec { def … ; def … }` mutual-recursion block; members are inline value / function defs, distinct-rctx from the top-level `def` family"),
+        AdaptationReason("a `rec { … }` mutual block: its members are items — data declarations, definitions and their attribute blocks — admitted as one block"),
     ));
     out.push(rec_block);
 }
@@ -1229,37 +1231,6 @@ fn fixity_class() -> Regex
         t(TileLabel("infix")),
         t(TileLabel("prefix")),
         t(TileLabel("postfix")),
-    ])
-}
-
-/// Build one inline `rec { … }` member: a value or function definition.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: one def/name prefix followed by the value-or-function tail menu.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
-///   role observations catch changed discriminators, delimiters and hole sorts.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted.
-/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "def")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_)))))]
-fn rec_member() -> Regex
-{
-    seq([
-        t(TileLabel("def")),
-        t(TileLabel("identifier")),
-        alt([
-            seq([t(TileLabel("=")), h(Sort::Expression), t(TileLabel(";"))]),
-            seq([
-                params(),
-                opt(seq([t(TileLabel("->")), h(Sort::Type)])),
-                block(),
-            ]),
-        ]),
     ])
 }
 

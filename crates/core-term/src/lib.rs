@@ -191,6 +191,7 @@ pub use crate::rewrite::Carried;
 pub use crate::rewrite::Nesting;
 pub use crate::rewrite::Renaming;
 pub use crate::rewrite::Unenclosed;
+pub use crate::rewrite::abstract_constant_value_type;
 pub use crate::rewrite::constructor_classifier;
 pub use crate::rewrite::elaborate_nested_traced;
 pub use crate::rewrite::fill_hole;

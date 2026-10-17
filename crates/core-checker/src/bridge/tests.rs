@@ -1187,6 +1187,114 @@ fn an_open_decode_crosses_read_and_a_forged_one_is_refused()
     }
 }
 
+/// A closed decode whose run returns a quote holding a call on the quote's
+/// own binder: `arrows(unit)` runs to `⌜U ((x : Integer) -> F El(⟨pick
+/// x⟩))⌝`, and the machine cannot relate that quote to its reduct, whose
+/// decode has run to `Integer`, because its code walk compares the held call
+/// by place. The checker certifies the step as a reading, the kernel
+/// re-derives it, and a forged reduct is refused by name.
+#[test]
+fn a_closed_decode_holding_a_call_under_its_quote_crosses_read()
+{
+    // def pick : U (Integer -> F Type) = thunk λ_. return ⌜Integer⌝ ;
+    // def arrows : U (Unit -> F Type) =
+    //     thunk λ_. return ⌜U ((x : Integer) -> F El(⟨pick x⟩))⌝ ;
+    // def same : El(⟨arrows unit⟩) = thunk λx. return x ;
+    let mut arena = CoreArena::new();
+    let small = small(&mut arena);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let returns_code = arena.comp_type_returner(small);
+    let picking = arena.comp_type_arrow(integer, returns_code);
+    let picking = arena.value_type_thunk(picking);
+    let integer_code = arena.value_quote(integer);
+    let picked = arena.computation_return(integer_code);
+    let pick = arena.computation_lambda(picked);
+    let pick = arena.value_thunk(pick);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let call = |arena: &mut CoreArena, constant: usize, argument: ValueId| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let forced = arena.computation_force(head);
+        let applied = arena.computation_application(forced, argument);
+        arena.value_returned(applied)
+    };
+    let held_call = call(&mut arena, 0_usize, bound);
+    let decoded = arena.value_type_element(held_call, Level::zero());
+    let returns_decoded = arena.comp_type_returner(decoded);
+    let function = arena.comp_type_pi(integer, returns_decoded);
+    let function = arena.value_type_thunk(function);
+    let quoted = arena.value_quote(function);
+    let returned = arena.computation_return(quoted);
+    let arrows = arena.computation_lambda(returned);
+    let arrows = arena.value_thunk(arrows);
+    let arrowing = arena.comp_type_arrow(unit_type, returns_code);
+    let arrowing = arena.value_type_thunk(arrowing);
+    let unit = arena.value_unit();
+    let closed_call = call(&mut arena, 1_usize, unit);
+    let at_arrows = arena.value_type_element(closed_call, Level::zero());
+    let kept = arena.computation_return(bound);
+    let same = arena.computation_lambda(kept);
+    let same = arena.value_thunk(same);
+    let forged = arena.value_quote(unit_type);
+    let module = [
+        declaration(At(0), Maybe::Present(picking), Maybe::Present(pick)),
+        declaration(At(1), Maybe::Present(arrowing), Maybe::Present(arrows)),
+        declaration(At(2), Maybe::Present(at_arrows), Maybe::Present(same)),
+    ];
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &module)
+    };
+    for judged in report.judged() {
+        assert!(
+            matches!(judged.verdict(), Verdict::Checked { .. }),
+            "the decode runs to the function type, where the identity checks: {:?}",
+            judged.verdict()
+        );
+    }
+    let read = |certificate: crate::code::Certificate| {
+        if let Unfolded::Returned(_) = certificate.unfolded() {
+            assert_eq!(
+                certificate.derivation(),
+                crate::code::Derivation::Reading,
+                "the machine declines the pair, so the closed step is a reading"
+            );
+        }
+        certificate
+    };
+    let readmission = readmit_with(&mut arena, &report, read);
+    let same_entry = &readmission.readmitted()[2];
+    assert!(
+        matches!(*same_entry.outcome(), Outcome::Defined { .. }),
+        "the kernel reads the closed decode to the function type: {:?}",
+        same_entry.outcome()
+    );
+    assert_eq!(
+        steps(same_entry),
+        [(Unfolded::Returned(closed_call), KernelVerdict::Convertible)],
+        "one closed run, read once"
+    );
+    let forgery = readmit_with(&mut arena, &report, |certificate| {
+        if certificate.redex() == closed_call {
+            certificate.with_reduct(forged)
+        }
+        else {
+            certificate
+        }
+    });
+    assert!(
+        matches!(
+            forgery.readmitted()[2].outcome(),
+            Outcome::Refused(Refusal::CertificateDeclined {
+                unfolded: Unfolded::Returned(stepped),
+                ..
+            }) if *stepped == closed_call
+        ),
+        "a decode forged to the unit quote is refused: {:?}",
+        forgery.readmitted()[2].outcome()
+    );
+}
+
 #[test]
 fn a_declining_certificate_faults_the_declaration()
 {

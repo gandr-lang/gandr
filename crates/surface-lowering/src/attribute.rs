@@ -788,6 +788,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Import
         | Former::Module
         | Former::Data
+        | Former::Mutual
         | Former::SessionType
         | Former::Action
         | Former::Offer

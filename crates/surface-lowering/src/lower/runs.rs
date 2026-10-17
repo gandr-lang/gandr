@@ -384,6 +384,7 @@ fn operand_of(
         | Former::Import
         | Former::Module
         | Former::Data
+        | Former::Mutual
         | Former::SessionType
         | Former::Action
         | Former::Offer

@@ -1,0 +1,63 @@
+// An inductive-recursive universe, after Dybjer and Setzer: the codes and
+// their decoder are one block, because a code's field names the decoder. The
+// dependent function code carries a domain code and, for each element of
+// that domain's decode, a codomain code, so its second field's type decodes
+// its first. The block is one admission: the codes form with the decoder's
+// declared type in scope, then the decoder is checked against the codes just
+// formed, and inside the decoder's own fixpoint a field type naming the
+// decoder reads the fixpoint's binder, so the decode a field holds stands
+// below the code it came from. Nothing about induction-recursion is new to
+// the kernel: the decoder is a function into the universe, and a decode is
+// the type the code it returns quotes.
+
+/// Natural numbers, free: every constructor term is its own value.
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// The universe and its decoder, one block: a code's field names the
+/// decoder, and the decoder recurses on the codes.
+rec {
+  /// The codes: the naturals, and the dependent functions from a coded
+  /// domain to a family of codes over that domain's decode.
+  @[ checks ]
+  data U : Type {
+    NatC : U;
+    PiC : (a : U, b : +U (el(a) -> -F U)) --> U;
+  }
+
+  /// The decoder. The function code's arm decodes its domain and, under a
+  /// binder at that decode, the codomain its family picks; each decode
+  /// recurses below the code.
+  @[ checks ]
+  def rec el(u : U) -> -F Type {
+    case u {
+      NatC => return Nat,
+      PiC(a, b) => return (+U ((x : el[<](a)) -> -F el[<](b(x))))
+    }
+  }
+}
+
+/// The family that picks the natural code at every natural.
+@[ checks ]
+def toNat : +U (Nat -> -F U) ;
+def toNat = thunk { fn (x) { return NatC } } ;
+
+/// The identity at the decode of the function code from naturals to
+/// naturals, which runs to the dependent arrow between them.
+@[ checks ]
+def idAt : el(PiC(NatC, toNat)) ;
+def idAt = thunk { fn (x) { return x } } ;
+
+/// The identity applied at its decoded type.
+@[ runs("Succ(Zero)") ]
+def applied : +U (-F Nat) ;
+def applied = thunk { idAt(Succ(Zero)) } ;
+
+/// The same identity where the plain arrow between naturals is expected: the
+/// decode is a dependent arrow whose codomain, `el(toNat(x))`, runs to `Nat`
+/// and so ignores its binder, which makes it the plain arrow (#577).
+@[ checks ]
+def idNat : +U (Nat -> -F Nat) ;
+def idNat = idAt ;

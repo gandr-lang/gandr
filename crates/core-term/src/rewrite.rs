@@ -299,6 +299,9 @@ enum Rewrite
     /// Replace every constant and every atom the engine's renaming names by
     /// what it names for it.
     Rename,
+    /// Replace every occurrence of the constant by the intuitionistic
+    /// variable counting past the depth to the index.
+    Abstract(ConstantIndex, DeBruijnIndex),
     /// Raise every free index by the count, as a shift does, and answer each
     /// run the engine's slots name by the variable of the bind its region
     /// mints for it.
@@ -545,6 +548,23 @@ impl<'arena> Engine<'arena>
             self.results.push(renamed);
             return;
         }
+        if let (Rewrite::Abstract(constant, index), Node::Value(id)) = (rewrite, node)
+            && self.arena.value(id) == Some(&Value::Constant(constant))
+        {
+            // reason: an index and a depth stay far below the u32 ceiling; a
+            // saturating step keeps the walk total.
+            let raised = u32::from(arith::saturating_add(
+                arith::Int::from(u32::from(index)),
+                arith::Int::from(depth.0),
+            ));
+            let abstracted = Node::Value(
+                self.arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(raised)),
+            );
+            let _previous = self.memo.insert((node, depth, rewrite), abstracted);
+            self.results.push(abstracted);
+            return;
+        }
         if let Node::Value(id) = node
             && let Some(&Value::Variable {
                 zone: Zone::Intuitionistic,
@@ -729,7 +749,8 @@ impl<'arena> Engine<'arena>
             | Rewrite::Fill(..)
             | Rewrite::Wrap
             | Rewrite::Environment
-            | Rewrite::Rename => Maybe::Absent(()),
+            | Rewrite::Rename
+            | Rewrite::Abstract(..) => Maybe::Absent(()),
         }
     }
 
@@ -931,7 +952,7 @@ impl<'arena> Engine<'arena>
                         Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                             if u32::from(*actual).checked_add(1) == Some(u32::from(index)))),
             },
-            | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename => {
+            | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) => {
                 self.mention == mentioned && ret == Occurrence::Answered(id)
             },
             | Rewrite::Environment => self.mention == mentioned
@@ -980,9 +1001,11 @@ impl<'arena> Engine<'arena>
                 },
                 core::cmp::Ordering::Greater => Occurrence::Answered(self.lowered(position)),
             },
-            Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename => {
-                Occurrence::Answered(id)
-            },
+            Rewrite::Fill(..)
+            | Rewrite::Wrap
+            | Rewrite::Elaborate
+            | Rewrite::Rename
+            | Rewrite::Abstract(..) => Occurrence::Answered(id),
             Rewrite::Environment => {
                 if position < depth {
                     return Occurrence::Answered(id);
@@ -3239,6 +3262,46 @@ pub fn shift_value_type(
         Node::ValueType(subject),
         Binders::NONE,
         Rewrite::Shift(amount),
+    ) {
+        Node::ValueType(id) => id,
+        Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
+    }
+}
+
+/// Abstract the constant `constant` out of the value type `subject` as the
+/// variable `index`: every occurrence becomes the intuitionistic variable
+/// counting past the binders it stands under to `index`.
+///
+/// # Specification
+/// - requires: `subject` names a value type of `arena`, and `index` is free in
+///   the context `subject` is read in.
+/// - ensures: `subject` with every `constant` replaced by that variable, every
+///   other node kept, and `subject` itself when it names no `constant`.
+/// - provides: the identification a mutual block's definition reads its
+///   families' fields by inside its own fixpoint: its constant there is its
+///   self binder.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constant under no binder and under one become the
+///   variable at the index and one past it, and a type naming another constant
+///   is kept.
+/// - witness: `rewrite::tests::an_abstraction_replaces_its_constant_by_a_variable_under_binders`
+#[spec(ensures: |ret| ret == subject || arena.value_type(ret).is_some())]
+#[inline]
+#[must_use]
+pub fn abstract_constant_value_type(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+    constant: ConstantIndex,
+    index: DeBruijnIndex,
+) -> ValueTypeId
+{
+    match Engine::new(arena).run(
+        Node::ValueType(subject),
+        Binders::NONE,
+        Rewrite::Abstract(constant, index),
     ) {
         Node::ValueType(id) => id,
         Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,

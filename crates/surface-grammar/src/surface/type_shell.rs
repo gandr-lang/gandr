@@ -407,7 +407,12 @@ fn add_type_rules(
     // A type application's head is a type name or a type variable: a
     // declaration's name is lowercase, so a type operator a declaration binds
     // is applied under the spelling a type position reads it by, `small` or
-    // `pair_of(A)`, as a static abstraction binds either spelling.
+    // `pair_of(A)`, as a static abstraction binds either spelling. A
+    // lowercase head, a definition's name, may carry the descent `[<]`, so a
+    // decoder's arm writes its own recursion in the type it returns,
+    // `el[<](a)`, as its body writes it; the lowering reads it there and
+    // refuses it anywhere else. A capitalised head never carries it, so a
+    // generator's result keeps the `[` its attribute slot opens.
     rules.push(rule(
         RuleName("type_application"),
         ty,
@@ -415,7 +420,14 @@ fn add_type_rules(
         Regex::seq([
             Regex::alt([
                 tile(TileLabel("type_identifier")),
-                tile(TileLabel("type_variable")),
+                Regex::seq([
+                    tile(TileLabel("type_variable")),
+                    Regex::optional(Regex::seq([
+                        tile(TileLabel("[")),
+                        tile(TileLabel("<")),
+                        tile(TileLabel("]")),
+                    ])),
+                ]),
             ]),
             tile(TileLabel("(")),
             comma1(Regex::sort(ty)),

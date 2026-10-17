@@ -1290,4 +1290,287 @@ mod recursive_data
             KernelVerdict::Convertible
         );
     }
+
+    /// Where the second constructor of a universe names its decoder.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Decoded
+    {
+        /// `PiC : (a : U, b : U (El(el a) → F U))`: at the field before, one
+        /// stage below the decoder's.
+        Below,
+        /// `Odd : (b : U (El(el base) → F U))`, `base : U` a definition after
+        /// the decoder: at a code no case put below the decoder's stage.
+        Level,
+        /// `Neg : (b : U (U → F 1))`: no decoder, the family under a domain.
+        Negative,
+    }
+
+    /// Offer a universe `U` — `NatC`, and a second constructor `decoded`
+    /// names — and its decoder `el : U (U → F Type)`, `fix self. λu. case u
+    /// of { NatC ↦ return ⌜1⌝; _ ↦ λ…. return ⌜1⌝ }`, as one block; for
+    /// [`Decoded::Level`], with `base = NatC` after the decoder.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the kernel's verdict on the block, which leaves the
+    ///   environment as it was on a refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The kernel's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the three blocks differ only in the second
+    ///   constructor's fields, so each verdict is that field's.
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole`
+    #[spec(captures: before = environment.entries().len(), ensures: |ret| ret.as_ref().map_or_else(
+        |_| environment.entries().len() == before,
+        |ids| ids.len() >= 2 && environment.entries().len() == before.saturating_add(ids.len()),
+    ))]
+    fn universe(
+        environment: &mut Environment,
+        decoded: Decoded,
+    ) -> Result<Vec<CheckedId>, KernelError>
+    {
+        let family = ConstantIndex::from(environment.entries().len());
+        let decoder = ConstantIndex::from(usize::from(family).saturating_add(1));
+        let base = ConstantIndex::from(usize::from(family).saturating_add(2));
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let own = arena.value_type_data(family, vec![]);
+        let returner = arena.comp_type_returner(own);
+        let named = arena.value_constant(decoder);
+        let forced = arena.computation_force(named);
+        let decoding = |arena: &mut TermArena, argument: ValueId| {
+            let call = arena.computation_application(forced, argument);
+            let code = arena.value_returned(call);
+            let decoded = arena.value_type_element(code, Level::zero());
+            let arrow = arena.comp_type_arrow(decoded, returner);
+            arena.value_type_thunk(arrow)
+        };
+        let fields = match decoded {
+            Decoded::Below => {
+                let earlier = arena.value_variable(DeBruijnIndex::from(0));
+                vec![own, decoding(arena, earlier)]
+            },
+            Decoded::Level => {
+                let named = arena.value_constant(base);
+                vec![decoding(arena, named)]
+            },
+            Decoded::Negative => {
+                let unit = arena.value_type_unit();
+                let into = arena.comp_type_returner(unit);
+                let arrow = arena.comp_type_arrow(own, into);
+                vec![arena.value_type_thunk(arrow)]
+            },
+        };
+        let arity = fields.len();
+        let universe = staging.data(
+            LevelSignature::monomorphic(),
+            vec![],
+            vec![vec![], fields],
+            kind,
+        );
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let own = arena.value_type_data(family, vec![]);
+        let types = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let returns = arena.comp_type_returner(types);
+        let classifier = arena.comp_type_arrow(own, returns);
+        let declared = arena.value_type_thunk(classifier);
+        let unit = arena.value_type_unit();
+        let code = arena.value_quote(unit);
+        let answer = arena.computation_return(code);
+        let mut arm = answer;
+        for _field in 0 .. arity {
+            arm = arena.computation_lambda(arm);
+        }
+        let body = case_on_argument(arena, returns, answer, arm);
+        let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+        let value = arena.value_thunk(fixpoint);
+        let decoding = staging.def(LevelSignature::monomorphic(), declared, value);
+        let mut members = vec![universe, decoding];
+        if decoded == Decoded::Level {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let own = arena.value_type_data(family, vec![]);
+            let nat_code = arena.value_constructor(own, ConstructorTag::from(0), vec![]);
+            members.push(staging.def(LevelSignature::monomorphic(), own, nat_code));
+        }
+        environment.add_block(members)
+    }
+
+    /// A universe whose constructor names its decoder at the field before is
+    /// admitted with the decoder as one block, the decoder's case reading its
+    /// own constant in the field as its self binder; an artifact of the block
+    /// replays.
+    #[test]
+    fn a_mutual_block_is_admitted()
+    {
+        let mut environment = Environment::new();
+        let admitted = universe(&mut environment, Decoded::Below).expect("the block is admitted");
+        assert_eq!(
+            admitted
+                .iter()
+                .map(|id| usize::from(id.position()))
+                .collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        let marked = environment
+            .entries()
+            .iter()
+            .map(|entry| {
+                gandr_kernel_term::MarkedDeclaration::new(
+                    gandr_kernel_term::AdmissionMark::Checked,
+                    entry.declaration().clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let replayed = Environment::replay(environment.arena().clone(), &marked)
+            .expect("the block replays as one");
+        assert_eq!(replayed.entries().len(), 2);
+    }
+
+    /// A block one member of which is refused is refused whole, the
+    /// environment unchanged: the decoder at a place that does not descend
+    /// below its own stage, and the family under a function's domain.
+    #[test]
+    fn a_mutual_block_is_refused_whole()
+    {
+        let mut environment = Environment::new();
+        let level = universe(&mut environment, Decoded::Level);
+        assert!(
+            matches!(level, Err(KernelError::StageNotBelow { .. })),
+            "{level:?}"
+        );
+        let negative = universe(&mut environment, Decoded::Negative);
+        assert!(
+            matches!(negative, Err(KernelError::NegativeOccurrence(_))),
+            "{negative:?}"
+        );
+        assert!(environment.entries().is_empty());
+    }
+
+    /// Where a rose tree's recursion over its block's two families calls
+    /// itself.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Rose
+    {
+        /// At the node's list of children, and a list's head and tail: each a
+        /// field one stage below its scrutinee.
+        Below,
+        /// At the node itself: the scrutinee, at the fixpoint's own stage.
+        Level,
+    }
+
+    /// Admit `Rose`, `Node : (kids : Forest) → Rose`, and `Forest`, `Nil`
+    /// and `Cons : (head : Rose, tail : Forest) → Forest`, as one block; then
+    /// offer the recursion over both, `fix self. λx. case x of { t ↦ case t of
+    /// { Node ↦ λkids. self (inr kids) }; ts ↦ case ts of { Nil ↦ return ();
+    /// Cons ↦ λhead tail. _ ← self (inl head); self (inr tail) } }`, at
+    /// `U (Rose + Forest → F 1)`, `rose` naming where the node's arm calls.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the kernel's verdict on the block, then on the recursion,
+    ///   admitted at the position after the block's two families.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The kernel's refusal of the block or of the recursion.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the two recursions differ only in the node arm's
+    ///   argument, so each verdict is that argument's stage.
+    /// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(|_| true, |id| usize::from(id.position()) == 2))]
+    fn forest(rose: Rose) -> Result<CheckedId, KernelError>
+    {
+        let mut environment = Environment::new();
+        let tree = ConstantIndex::from(0_usize);
+        let forest = ConstantIndex::from(1_usize);
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let forests = arena.value_type_data(forest, vec![]);
+        let node = staging.data(
+            LevelSignature::monomorphic(),
+            vec![],
+            vec![vec![forests]],
+            kind,
+        );
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let trees = arena.value_type_data(tree, vec![]);
+        let forests = arena.value_type_data(forest, vec![]);
+        let list = staging.data(
+            LevelSignature::monomorphic(),
+            vec![],
+            vec![vec![], vec![trees, forests]],
+            kind,
+        );
+        let _block = environment.add_block(vec![node, list])?;
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let trees = arena.value_type_data(tree, vec![]);
+        let forests = arena.value_type_data(forest, vec![]);
+        let unit = arena.value_type_unit();
+        let returns = arena.comp_type_returner(unit);
+        // `force self (inj v)`, `self` the variable at `own`.
+        let call = |arena: &mut TermArena, own: u32, summand: usize, argument: u32| {
+            let head = arena.value_variable(DeBruijnIndex::from(own));
+            let forced = arena.computation_force(head);
+            let argument = arena.value_variable(DeBruijnIndex::from(argument));
+            let injected =
+                arena.value_injection(gandr_kernel_term::Summand::from(summand), argument);
+            arena.computation_application(forced, injected)
+        };
+        // Under `self, x, t, kids`: the children, or the node `t` itself.
+        let node_arm = match rose {
+            Rose::Below => call(arena, 3, 1, 0),
+            Rose::Level => call(arena, 3, 0, 1),
+        };
+        let node_arm = arena.computation_lambda(node_arm);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let on_tree = arena.computation_data_case(scrutinee, returns, vec![node_arm]);
+        let unit_value = arena.value_unit();
+        let on_nil = arena.computation_return(unit_value);
+        // Under `self, x, ts, head, tail`, then the bind's binder.
+        let on_head = call(arena, 4, 0, 1);
+        let on_tail = call(arena, 5, 1, 1);
+        let on_cons = arena.computation_bind(on_head, on_tail);
+        let on_cons = arena.computation_lambda(on_cons);
+        let on_cons = arena.computation_lambda(on_cons);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let on_forest = arena.computation_data_case(scrutinee, returns, vec![on_nil, on_cons]);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let cased = arena.computation_case(scrutinee, &[on_tree, on_forest]);
+        let body = arena.computation_lambda(cased);
+        let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+        let value = arena.value_thunk(fixpoint);
+        let both = arena.value_type_sum(&[trees, forests]);
+        let arrow = arena.comp_type_arrow(both, returns);
+        let declared = arena.value_type_thunk(arrow);
+        let size = staging.def(LevelSignature::monomorphic(), declared, value);
+        environment.add_decl(size)
+    }
+
+    /// A recursion at the sum of a mutual block's two families opens one
+    /// stage for both: a node's children and a list's head and tail each
+    /// stand one stage below their scrutinee, so the calls on them are
+    /// admitted, and a call on the node itself is refused.
+    #[test]
+    fn a_mutual_recursion_descends_through_its_block_s_families()
+    {
+        let below = forest(Rose::Below);
+        assert!(below.is_ok(), "{below:?}");
+        let level = forest(Rose::Level);
+        assert!(
+            matches!(level, Err(KernelError::StageNotBelow { .. })),
+            "{level:?}"
+        );
+    }
 }

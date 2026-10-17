@@ -315,6 +315,7 @@ use crate::rewrite::shift_value_type;
 use crate::rewrite::substitute_comp_type;
 use crate::rewrite::substitute_value_type;
 use crate::seal;
+use crate::stage_order::StageOrder;
 use crate::support::LooseDepth;
 use crate::support::NodeOutcome;
 use crate::support::NodeSupport;
@@ -567,15 +568,19 @@ pub struct Judgement<'session>
     /// The laws the declaration's folds rest on, one per rule of the folded
     /// type: empty but for a lawful definition.
     laws: &'session [ConstantIndex],
-    /// The block in scope at its own position, while a data declaration's
-    /// fields form.
+    /// The block in scope beside the admitted prefix: a data declaration's own
+    /// signature while its fields form, or a mutual block's members while its
+    /// families form.
     block: Block<'session>,
     /// The presented types among the entries, whose terms conversion
     /// rewrites.
     presentations: &'session crate::presented::Presentations,
+    /// The structural fixpoint a definition's body thunks: its own, whose
+    /// self binder its constant reads as in a case's field types.
+    own: Maybe<ComputationId, recursion::Unowned>,
 }
 
-/// The data block a judgement may name at its own admission position.
+/// The block a judgement may name past the admitted prefix.
 #[derive(Clone, Copy, Debug)]
 enum Block<'session>
 {
@@ -589,6 +594,15 @@ enum Block<'session>
         position: ConstantIndex,
         /// The declaration's own telescope and constructor table.
         signature: former::Signature<'session>,
+    },
+    /// A mutual block whose families are forming: every family in scope at
+    /// its signature, and every definition at its declared type.
+    Mutual
+    {
+        /// The block's extent.
+        block: occurrence::Block,
+        /// Its members, in order from the block's first position.
+        members: &'session [Declaration],
     },
 }
 
@@ -613,6 +627,24 @@ impl<'session> Judgement<'session>
             laws: &[],
             block: Block::Outside,
             presentations: &crate::presented::FREE,
+            own: Maybe::Absent(recursion::Unowned::Outside),
+        }
+    }
+
+    /// The same judgement with `fixpoint` as the definition's own.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    const fn owning(
+        self,
+        fixpoint: ComputationId,
+    ) -> Self
+    {
+        Self {
+            own: Maybe::Present(fixpoint),
+            ..self
         }
     }
 
@@ -700,6 +732,99 @@ impl<'session> Judgement<'session>
             ..self
         }
     }
+
+    /// The same judgement with the members of a mutual block in scope while
+    /// its families form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn within_mutual(
+        self,
+        block: occurrence::Block,
+        members: &'session [Declaration],
+    ) -> Self
+    {
+        Self {
+            block: Block::Mutual { block, members },
+            ..self
+        }
+    }
+
+    /// The same judgement with the whole of its mutual block in scope, as
+    /// the block's families formed: a family's field read inside a
+    /// definition may name a later definition of the block at its declared
+    /// type, which the families foresaw.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: inside a mutual block, the block reaching past its last
+    ///   member; every other judgement unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a universe whose field decodes a later definition of
+    ///   its block reaches the decoder's stage check rather than an unbound
+    ///   constant.
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole`
+    #[spec(ensures: |ret| match (self.block, ret.block) {
+        (Block::Mutual { members, .. }, Block::Mutual { members: kept, .. }) => members.len() == kept.len(),
+        _ => true,
+    })]
+    #[must_use]
+    fn foreseeing(self) -> Self
+    {
+        let Block::Mutual { block, members } = self.block
+        else {
+            return self;
+        };
+        let end = ConstantIndex::from(usize::from(block.first()).saturating_add(members.len()));
+        self.within_mutual(
+            occurrence::Block::new(block.first(), block.families(), end),
+            members,
+        )
+    }
+
+    /// The member of the mutual block in scope at `index`, with what it is in
+    /// the block.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a member exactly when a mutual block is in scope and holds
+    ///   `index`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a universe's family and its decoder each resolve in
+    ///   the block, and the position past it does not.
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present((_, membership)) => membership != occurrence::Membership::Other,
+        Maybe::Absent(_) => true,
+    })]
+    fn member(
+        self,
+        index: ConstantIndex,
+    ) -> Maybe<(&'session Declaration, occurrence::Membership), constant_type::Absent>
+    {
+        let Block::Mutual { block, members } = self.block
+        else {
+            return Maybe::Absent(constant_type::Absent::Unadmitted);
+        };
+        let membership = block.membership(index);
+        if membership == occurrence::Membership::Other {
+            return Maybe::Absent(constant_type::Absent::Unadmitted);
+        }
+        usize::from(index)
+            .checked_sub(usize::from(block.first()))
+            .and_then(|offset| members.get(offset))
+            .map_or(Maybe::Absent(constant_type::Absent::Unadmitted), |member| {
+                Maybe::Present((member, membership))
+            })
+    }
 }
 
 /// The mutable state one declaration's check threads through both machines:
@@ -757,6 +882,16 @@ impl TypeLevelGoal
 /// call it would make the two mutually recursive — the shape the recursion ban
 /// exists to forbid. Instead formation records what it owes, the driver drains
 /// the record through the checking machine, and neither walk reaches the other.
+///
+/// **An obligation is drained where it was owed.** It carries the typing
+/// telescope it stood in and the stages the recording run had minted by the
+/// time it returned, so a code a structural fixpoint's body names — a call to
+/// the fixpoint's own self binder at a field a case opened, decoded in a type
+/// — stands below the stage that case put its fields at, as it did where the
+/// formation walk met it. Formation outside a run owes under no stage. The
+/// decoder of `fixture/model/universe/inductive-recursive.gandr` in the
+/// surface corpus, whose arm returns `+U ((x : el[<](a)) -> -F el[<](b(x)))`,
+/// is the witness on readmission.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum CodeObligation
 {
@@ -771,6 +906,10 @@ enum CodeObligation
         level: Level,
         /// Ambient typing telescope.
         context: Vec<ValueTypeId>,
+        /// The stages the recording run had minted.
+        stages: StageOrder,
+        /// The mutual block it was owed inside.
+        scope: Owing,
     },
     /// Declaration-directed argument checks deferred by nominal formation.
     Data
@@ -779,6 +918,10 @@ enum CodeObligation
         datatype: ValueTypeId,
         /// Ambient typing telescope.
         context: Vec<ValueTypeId>,
+        /// The stages the recording run had minted.
+        stages: StageOrder,
+        /// The mutual block it was owed inside.
+        scope: Owing,
     },
     /// Endpoint checks deferred by identity formation.
     Endpoints
@@ -791,7 +934,69 @@ enum CodeObligation
         right: ValueId,
         /// Ambient typing telescope.
         context: Vec<ValueTypeId>,
+        /// The stages the recording run had minted.
+        stages: StageOrder,
+        /// The mutual block it was owed inside.
+        scope: Owing,
     },
+}
+
+/// The mutual block an obligation was owed inside, which its drain reads it
+/// in: a field a definition reads inside its own fixpoint names the block's
+/// later definitions, as its family did, and the codes it owes are checked
+/// with them in scope.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the extent of the block the owing judgement held, or that it held
+///   none.
+/// - provides: the scope a drained obligation is judged in.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a universe whose field decodes a later definition of its
+///   block reaches the decoder's stage check on the drained code.
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Owing
+{
+    /// Outside a mutual block.
+    Alone,
+    /// Inside a mutual block, to the extent the owing judgement read.
+    Mutual(occurrence::Block),
+}
+
+impl Owing
+{
+    /// The scope `judgement` reads.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn of(judgement: Judgement<'_>) -> Self
+    {
+        match judgement.block {
+            Block::Mutual { block, .. } => Self::Mutual(block),
+            Block::Outside | Block::Inside { .. } => Self::Alone,
+        }
+    }
+
+    /// `judgement`, reading this scope's block when it holds the members.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reading(
+        self,
+        judgement: Judgement<'_>,
+    ) -> Judgement<'_>
+    {
+        match (self, judgement.block) {
+            (Self::Mutual(block), Block::Mutual { members, .. }) => {
+                judgement.within_mutual(block, members)
+            },
+            _ => judgement,
+        }
+    }
 }
 
 /// The ceiling on how many code obligations one declaration's check may drain.
@@ -969,6 +1174,8 @@ where
                                 owed.push(CodeObligation::Data {
                                     datatype: id,
                                     context: context.clone(),
+                                    stages: StageOrder::default(),
+                                    scope: Owing::of(judgement),
                                 });
                             }
                             level
@@ -1037,6 +1244,8 @@ where
                                 left,
                                 right,
                                 context: context.clone(),
+                                stages: StageOrder::default(),
+                                scope: Owing::of(judgement),
                             });
                             goal = TypeLevelGoal::Value(domain);
                             continue 'expand;
@@ -1069,6 +1278,8 @@ where
                                 sort: GroundSort::Value,
                                 level: target.clone(),
                                 context: context.clone(),
+                                stages: StageOrder::default(),
+                                scope: Owing::of(judgement),
                             });
                             target.clone()
                         },
@@ -1158,6 +1369,8 @@ where
                                 sort: GroundSort::Computation,
                                 level: target.clone(),
                                 context: context.clone(),
+                                stages: StageOrder::default(),
+                                scope: Owing::of(judgement),
                             });
                             target.clone()
                         },
@@ -2082,43 +2295,51 @@ fn strengthened(
     Ok(lowered)
 }
 
-/// The declared value type of a prior admitted declaration.
+/// The declared value type of a prior admitted declaration, or of a
+/// definition of the mutual block whose families are forming.
 ///
 /// # Specification
-/// - requires: `entries` is the environment's admission log, in admission
-///   order.
-/// - ensures: the declared value-type root of the declaration at `index`, and
-///   nothing for a position the log does not hold — which is what makes a
-///   forward reference into the append-only log a refusal rather than a
-///   resolution.
+/// - requires: the judgement's entries are the environment's admission log, in
+///   admission order.
+/// - ensures: the declared value-type root of the declaration at `index` the
+///   log holds; else, while a mutual block's families form, the declared type
+///   of the block's definition at `index`; and nothing otherwise — which is
+///   what makes any other forward reference into the append-only log a refusal
+///   rather than a resolution.
 /// - provides: the declared type or [`Absent::Unadmitted`] when the index names
-///   no prior admitted declaration.
+///   no prior admitted declaration and no foreseen definition.
 /// - fails: never — an unresolved position is the absence, which the caller
 ///   refuses on.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a prior declaration supplies its type; a forward
-///   reference refuses instead of resolving an unrelated entry.
+///   reference refuses instead of resolving an unrelated entry; a universe's
+///   field names its decoder at the decoder's declared type.
 /// - witness: `env::tests::a_definition_referencing_a_prior_one_checks`
 /// - witness: `env::tests::a_forward_constant_reference_is_unbound`
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
 ///
 /// [`Absent::Unadmitted`]: constant_type::Absent::Unadmitted
-#[spec(ensures: |ret| entries.get(usize::from(index)).map_or_else(
-    || matches!(&ret, Maybe::Absent(constant_type::Absent::Unadmitted)),
+#[spec(ensures: |ret| judgement.entries.get(usize::from(index)).is_none_or(
     |entry| matches!(&ret, Maybe::Present(found) if *found == entry.declared_id()),
 ))]
 #[inline]
 fn resolve_constant(
-    entries: &[AdmittedDeclaration],
+    judgement: Judgement<'_>,
     index: ConstantIndex,
 ) -> Maybe<ValueTypeId, constant_type::Absent>
 {
-    entries
-        .get(usize::from(index))
-        .map_or(Maybe::Absent(constant_type::Absent::Unadmitted), |entry| {
-            Maybe::Present(entry.declared_id())
-        })
+    if let Some(entry) = judgement.entries.get(usize::from(index)) {
+        return Maybe::Present(entry.declared_id());
+    }
+    match judgement.member(index) {
+        Maybe::Present((member, occurrence::Membership::Definition)) => {
+            Maybe::Present(member.declared_id())
+        },
+        Maybe::Present((_, occurrence::Membership::Family | occurrence::Membership::Other))
+        | Maybe::Absent(_) => Maybe::Absent(constant_type::Absent::Unadmitted),
+    }
 }
 
 /// The δ-rules the admission log offers a replay: each definition's body at
@@ -2177,15 +2398,17 @@ fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 /// # Specification
 /// - requires: `context` is the initial typing context, empty for a
 ///   declaration's body; its types and the admission log belong to this arena.
-///   The memo and session hold only this call's history.
+///   `stages` is the order the goal was owed under, empty unless the goal is a
+///   drained obligation. The memo and session hold only this call's history.
 /// - ensures: `Ok(produced)` — a synthesized type for a synthesis goal, or the
 ///   checked answer for a checking goal — exactly when the term checks or
 ///   synthesizes under this subset's rules. The walk is iterative over a heap
 ///   frame stack and an explicit context stack, so it is total on any term
 ///   depth. Synthesized types are appended to `arena` as readable intermediates
 ///   of the goal's family, for the caller to truncate after the verdict. A
-///   successful run can defer code obligations; the declaration driver drains
-///   them and can refuse at its occurrence-based operational ceiling.
+///   successful run can defer code obligations, each carrying the stages the
+///   run minted; the declaration driver drains them and can refuse at its
+///   occurrence-based operational ceiling.
 /// - provides: the shared checking and synthesis engine. The predicate checks
 ///   result polarity, readable synthesized roots and preservation of the arena
 ///   prefix. Typing and provenance require the rule derivation; final verdict
@@ -2231,6 +2454,7 @@ fn run<M>(
     judgement: Judgement<'_>,
     mut context: Vec<ValueTypeId>,
     initial: Goal,
+    mut stages: StageOrder,
     recording: Recording<'_, M>,
 ) -> Result<Produced, KernelError>
 where
@@ -2242,6 +2466,7 @@ where
         census,
         owed,
     } = recording;
+    let first_owed = owed.len();
     let mut frames: Vec<Frame> = Vec::new();
     let mut goal = initial;
     // The case a structural fixpoint opens with, read as that fixpoint against
@@ -2252,13 +2477,19 @@ where
     // not.
     let mut root: Maybe<(ComputationId, respect::Reading), respect::root::Absent> =
         Maybe::Absent(respect::root::Absent::Unmarked);
-    // The stages this run's structural fixpoints and their cases mint, and how
-    // many fixpoint bodies the current goal stands under. A goal under one is
-    // neither recalled nor memoized: whether a constructor with no recursive
-    // field stands below a stage depends on every value in scope, beyond the
-    // binders its support reaches, and a stage is this run's own.
-    let mut stages = crate::stage_order::StageOrder::default();
-    let mut staged_bodies = 0_usize;
+    // The stages this run's structural fixpoints and their cases mint, from
+    // those the goal was owed under, and how many fixpoint bodies the current
+    // goal stands under. A goal under one is neither recalled nor memoized:
+    // whether a constructor with no recursive field stands below a stage
+    // depends on every value in scope, beyond the binders its support reaches,
+    // and a stage is this run's own. A goal owed under a stage stands under
+    // the body that minted it.
+    let mut staged_bodies = usize::from(stages != StageOrder::default());
+    // The context slot and type of the self binder of the declaration's own
+    // structural fixpoint, the one its body thunks, while it is in scope:
+    // its constant in a case's field types reads as that binder.
+    let mut own_fixpoint: Maybe<(usize, ValueTypeId), recursion::Unowned> =
+        Maybe::Absent(recursion::Unowned::Outside);
     'expand: loop {
         // Consult the memo for this goal's support before reading the node.
         // When the memo is inactive this whole block — the support
@@ -2547,7 +2778,7 @@ where
                         Produced::ValueType(synthesized)
                     },
                     Value::Constant(index) => {
-                        let declared = match resolve_constant(judgement.entries, index) {
+                        let declared = match resolve_constant(judgement, index) {
                             Maybe::Present(declared) => declared,
                             Maybe::Absent(constant_type::Absent::Unadmitted) => {
                                 return Err(KernelError::UnboundConstant { index });
@@ -2768,10 +2999,13 @@ where
                             owed,
                         },
                     )?;
+                    // A mutual block's families share the stage: a field of
+                    // any of them stands one step below.
+                    let kin = recursion::kin(arena, judgement.entries, datatype);
                     recursion::constructor_fields(
                         arena,
                         (session, &stages, context.as_slice()),
-                        datatype,
+                        recursion::families(&kin, &datatype),
                         stage,
                         &mut goals,
                     )?;
@@ -3281,6 +3515,11 @@ where
                         };
                         let recursive = arena.value_type_thunk(own);
                         let scoped = weakened(arena, session, inside);
+                        if position.is_some()
+                            && matches!(judgement.own, Maybe::Present(root) if root == id)
+                        {
+                            own_fixpoint = Maybe::Present((context.len(), recursive));
+                        }
                         context.push(recursive);
                         frames.push(Frame::ScopeExit);
                         goal = Goal::CheckComp(body, scoped);
@@ -3358,6 +3597,26 @@ where
         loop {
             let Some(frame) = frames.pop()
             else {
+                // Every code this run owed is drained under the stages it was
+                // owed below. The order only grows, so the one the run ends
+                // with keeps every fit the formation walk saw.
+                if stages != StageOrder::default() {
+                    for obligation in owed.iter_mut().skip(first_owed) {
+                        let &mut (CodeObligation::Universe {
+                            stages: ref mut under,
+                            ..
+                        }
+                        | CodeObligation::Data {
+                            stages: ref mut under,
+                            ..
+                        }
+                        | CodeObligation::Endpoints {
+                            stages: ref mut under,
+                            ..
+                        }) = obligation;
+                        under.clone_from(&stages);
+                    }
+                }
                 return Ok(produced);
             };
             match frame {
@@ -3497,13 +3756,69 @@ where
                         produced = Produced::CompType(result);
                     }
                     else {
-                        let (result, mut goals, looped) = former::case(
+                        // Inside the declaration's own fixpoint, its constant
+                        // in a field type reads as the self binder, at the
+                        // binder's index in the case's context.
+                        let own_constant = match own_fixpoint {
+                            Maybe::Present((slot, binder))
+                                if context.get(slot) == Some(&binder) =>
+                            {
+                                context
+                                    .len()
+                                    .checked_sub(slot.saturating_add(1))
+                                    .and_then(|index| u32::try_from(index).ok())
+                                    .map_or(Maybe::Absent(recursion::Unowned::Outside), |index| {
+                                        Maybe::Present((
+                                            ConstantIndex::from(judgement.entries.len()),
+                                            DeBruijnIndex::from(index),
+                                        ))
+                                    })
+                            },
+                            Maybe::Present(_) | Maybe::Absent(_) => {
+                                Maybe::Absent(recursion::Unowned::Outside)
+                            },
+                        };
+                        let (result, mut goals, looped, reads) = former::case(
                             arena,
                             (judgement.entries, judgement.presentations),
                             session,
                             case,
-                            (datatype, opened),
+                            (datatype, opened, own_constant),
                         )?;
+                        // A field domain that named the constant is formed as
+                        // read, under the branch's fields before it at their
+                        // stage, so a decode at a place that does not descend
+                        // is refused by the stage order; the field may name a
+                        // later definition of the block, as its family did.
+                        for read in reads {
+                            let Some(&Goal::CheckComp(_, mut telescope)) =
+                                goals.get(usize::from(read.tag))
+                            else {
+                                return Err(KernelError::ArenaFault);
+                            };
+                            let mut under = context.clone();
+                            for _before in 0 .. usize::from(read.field) {
+                                let Some(&CompType::Pi { domain, codomain }) =
+                                    arena.comp_type(telescope)
+                                else {
+                                    return Err(KernelError::ArenaFault);
+                                };
+                                under.push(domain);
+                                telescope = codomain;
+                            }
+                            let _level = type_level(
+                                arena,
+                                judgement.foreseeing(),
+                                TypeLevelGoal::Value(read.domain),
+                                under,
+                                Recording {
+                                    memo,
+                                    session,
+                                    census,
+                                    owed,
+                                },
+                            )?;
+                        }
                         if looped == former::Looped::Owed {
                             frames.push(Frame::Loops(case, datatype));
                         }
@@ -4749,6 +5064,11 @@ where
                 },
                 Frame::ScopeExit => {
                     let _popped = context.pop();
+                    if let Maybe::Present((slot, _)) = own_fixpoint
+                        && slot >= context.len()
+                    {
+                        own_fixpoint = Maybe::Absent(recursion::Unowned::Outside);
+                    }
                 },
                 Frame::StageExit => staged_bodies = staged_bodies.saturating_sub(1),
                 Frame::Strengthen => {
@@ -4896,6 +5216,55 @@ pub fn check_declaration(
     )
 }
 
+/// Form a mutual block definition's declared type before its block's
+/// families are admitted: the first step of the block's schedule.
+///
+/// # Specification
+/// - requires: `judgement` holds the block's families in scope and none of its
+///   definitions; `declared` was minted into `arena`.
+/// - ensures: `Ok(())` when the type forms and every code it owes checks, as a
+///   lone declaration's declared type does; intermediates are appended for the
+///   caller to truncate.
+/// - provides: the foresight a family's fields rest on when they name the
+///   definition at this type.
+/// - fails: any [`KernelError`] the formation surfaces.
+/// - panics: none.
+///
+/// # Errors
+/// Any [`KernelError`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decoder's type over its universe forms in the block.
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+#[spec(captures: entry_mark = arena.watermark(), ensures:
+    entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark)]
+pub(crate) fn form_declared(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    declared: ValueTypeId,
+) -> Result<(), KernelError>
+{
+    let mut memo: DefaultMemo = DefaultMemo::new();
+    let mut session = SupportContext::new();
+    let mut census = ExpansionCensus::new();
+    let presentations = crate::presented::Presentations::of(judgement.entries);
+    let judgement = judgement.presenting(&presentations);
+    let mut owed: Vec<CodeObligation> = Vec::new();
+    let _level = type_level(
+        arena,
+        judgement,
+        TypeLevelGoal::Value(declared),
+        Vec::new(),
+        Recording {
+            memo: &mut memo,
+            session: &mut session,
+            census: &mut census,
+            owed: &mut owed,
+        },
+    )?;
+    drain_code_obligations(arena, judgement, &mut memo, &mut session, &mut census, owed)
+}
+
 /// Check a declaration against a caller-supplied memo — the **opt-in** entry.
 ///
 /// # This entry admits nothing, and that is the seam
@@ -4993,21 +5362,34 @@ where
         .presenting(&presentations);
     // A data declaration's own position names its block while it is checked:
     // the occurrence walk refuses every non-strictly-positive or non-uniform
-    // self occurrence by name first, and formation then reads the self
-    // occurrence through the block's own signature.
+    // occurrence of a family of the block by name first, and formation then
+    // reads it through the block's signatures. Alone, the block is the
+    // declaration's own; in a mutual block, the block in scope already holds
+    // it.
     let judgement = match *declaration.content() {
         DeclarationContent::Data {
             kind,
             ref parameters,
             ref constructors,
-        } => {
-            let position = ConstantIndex::from(judgement.entries.len());
-            occurrence::occurrences(arena, position, parameters, constructors)?;
-            judgement.within_block(position, former::Signature {
-                parameters,
-                constructors,
-                kind,
-            })
+        } => match judgement.block {
+            Block::Mutual { block, .. } => {
+                occurrence::occurrences(arena, block, parameters, constructors)?;
+                judgement
+            },
+            Block::Outside | Block::Inside { .. } => {
+                let position = ConstantIndex::from(judgement.entries.len());
+                occurrence::occurrences(
+                    arena,
+                    occurrence::Block::lone(position),
+                    parameters,
+                    constructors,
+                )?;
+                judgement.within_block(position, former::Signature {
+                    parameters,
+                    constructors,
+                    kind,
+                })
+            },
         },
         DeclarationContent::Def { .. }
         | DeclarationContent::Axiom { .. }
@@ -5095,11 +5477,23 @@ where
             // the atom.
             let unsealed = seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
             let context: Vec<ValueTypeId> = Vec::new();
+            // A block's definition whose body thunks a fixpoint is that
+            // fixpoint: inside it, the definition's own constant — which only
+            // the block's families name — reads as the self binder.
+            let owning = match (judgement.block, arena.value(body)) {
+                (Block::Mutual { .. }, Some(&Value::Thunk(root)))
+                    if matches!(arena.computation(root), Some(&Computation::Fixpoint { .. })) =>
+                {
+                    judgement.owning(root)
+                },
+                (Block::Outside | Block::Inside { .. } | Block::Mutual { .. }, _) => judgement,
+            };
             let _checked = run(
                 arena,
-                judgement,
+                owning,
                 context,
                 Goal::CheckValue(body, unsealed),
+                StageOrder::default(),
                 Recording {
                     memo,
                     session,
@@ -5278,13 +5672,16 @@ where
                 sort,
                 level,
                 context,
+                stages,
+                scope,
             } => {
                 let universe = arena.value_type_universe(sort, level);
                 let _checked = run(
                     arena,
-                    judgement,
+                    scope.reading(judgement),
                     context,
                     Goal::CheckValue(code, universe),
+                    stages,
                     Recording {
                         memo,
                         session,
@@ -5298,13 +5695,16 @@ where
                 left,
                 right,
                 context,
+                stages,
+                scope,
             } => {
                 for endpoint in [left, right] {
                     let _checked = run(
                         arena,
-                        judgement,
+                        scope.reading(judgement),
                         context.clone(),
                         Goal::CheckValue(endpoint, domain),
+                        stages.clone(),
                         Recording {
                             memo,
                             session,
@@ -5314,7 +5714,12 @@ where
                     )?;
                 }
             },
-            CodeObligation::Data { datatype, context } => {
+            CodeObligation::Data {
+                datatype,
+                context,
+                stages,
+                scope,
+            } => {
                 let Some(matched_native_node) = arena.value_type(datatype)
                 else {
                     return Err(KernelError::ArenaFault);
@@ -5326,6 +5731,7 @@ where
                 else {
                     return Err(KernelError::ArenaFault);
                 };
+                let judgement = scope.reading(judgement);
                 let signature = former::resolve(judgement, *declaration)?;
                 if signature.parameters.len() != arguments.len() {
                     return Err(KernelError::DataArgumentArity);
@@ -5350,6 +5756,7 @@ where
                         judgement,
                         context.clone(),
                         Goal::CheckValue(argument, expected),
+                        stages.clone(),
                         Recording {
                             memo,
                             session,
@@ -5411,6 +5818,7 @@ pub(crate) fn check_closed_value(
         judgement,
         Vec::new(),
         Goal::CheckValue(value, expected),
+        StageOrder::default(),
         Recording {
             memo: &mut memo,
             session: &mut session,
@@ -5462,6 +5870,7 @@ pub(crate) fn synth_closed_value(
         judgement,
         Vec::new(),
         Goal::SynthValue(value),
+        StageOrder::default(),
         Recording {
             memo: &mut memo,
             session: &mut session,
@@ -5519,6 +5928,7 @@ mod tests
     use crate::error::RegisterFault;
     use crate::error::ValueTypeHead;
     use crate::levels::LevelContext;
+    use crate::stage_order::StageOrder;
     use crate::support::SupportContext;
 
     #[test]
@@ -5742,6 +6152,7 @@ mod tests
             Judgement::new(&entries, &context_levels),
             context,
             Goal::SynthValue(value),
+            StageOrder::default(),
             Recording {
                 memo: &mut memo,
                 session: &mut session,
@@ -5786,6 +6197,7 @@ mod tests
             Judgement::new(&entries, &context_levels),
             context,
             Goal::CheckValue(value, expected),
+            StageOrder::default(),
             Recording {
                 memo: &mut memo,
                 session: &mut session,
@@ -5835,6 +6247,7 @@ mod tests
             Judgement::new(&entries, &context_levels),
             context,
             Goal::SynthComp(computation),
+            StageOrder::default(),
             Recording {
                 memo: &mut memo,
                 session: &mut session,
@@ -6502,6 +6915,7 @@ mod tests
             Judgement::new(&entries, &context_levels),
             Vec::new(),
             Goal::CheckComp(lambda, identity),
+            StageOrder::default(),
             Recording {
                 memo: &mut memo,
                 session: &mut session,
@@ -7231,4 +7645,4 @@ mod recursion;
 
 mod respect;
 
-mod occurrence;
+pub(crate) mod occurrence;

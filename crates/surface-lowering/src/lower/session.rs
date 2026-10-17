@@ -440,6 +440,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Import
                 | Former::Module
                 | Former::Data
+                | Former::Mutual
                 | Former::Instantiation
                 | Former::SessionType
                 | Former::Action
@@ -543,6 +544,7 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::Import
                         | Former::Module
                         | Former::Data
+                        | Former::Mutual
                         | Former::Instantiation
                         | Former::Action
                         | Former::Offer
@@ -601,6 +603,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Import
                 | Former::Module
                 | Former::Data
+                | Former::Mutual
                 | Former::Instantiation
                 | Former::Action
                 | Former::Offer

@@ -991,11 +991,11 @@ pending/surface/data-operation-members.gandr:NatRule:ca84167396cd4384
 pending/surface/desc-declined-metadata.gandr:<file>
 pending/surface/desc-declined-metadata.gandr:Declared:bccb2c605027275a
 pending/surface/operator-and-rec-block.gandr:<file>
-pending/surface/operator-and-rec-block.gandr:even:b67318f85e59b573
 pending/surface/operator-and-rec-block.gandr:operator_declaration:492e4d553a0576bb
 pending/surface/operator-and-rec-block.gandr:operator_declaration:7bcf4c2dea344f9b
 pending/surface/operator-and-rec-block.gandr:operator_declaration:c51ea1ea5010150e
 pending/surface/operator-and-rec-block.gandr:operator_declaration:deacc52ef2dce8de
+pending/surface/operator-and-rec-block.gandr:rec_block:b67318f85e59b573
 pending/surface/shell-double-quoting.gandr:<file>
 pending/surface/shell-double-quoting.gandr:shell_block:2275a603038a40c0
 pending/surface/shell-double-quoting.gandr:shell_block:b66709808aab00b1

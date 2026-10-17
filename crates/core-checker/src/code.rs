@@ -84,10 +84,15 @@
 //! kernel re-derives it by its own reading of the run. The quote such a run
 //! returns holds the calls its arms make on the binders, and the machine's
 //! code walk compares those returned endpoints by place, never by what they
-//! run to, so no dialogue of it relates the two sides. The alternative was a
-//! dialogue over that walk, which needs it to decide returned endpoints under
-//! quotes; the choice reverses with the reversal above, when the machine
-//! decides codes under quotes.
+//! run to, so no dialogue of it relates the two sides. A closed run can
+//! return such a quote too, its call on a binder the quote itself opens: a
+//! decoder's arm `pi(a, b) => return (+U ((x : el[<](a)) -> -F
+//! el[<](b(x))))` steps `el(pi(nat, k))` to a quote holding `el(k(x))`, and
+//! the machine declines the pair for its undecided codes. That step is a
+//! reading as well; a closed step the machine decides keeps its dialogue. The
+//! alternative was a dialogue over that walk, which needs it to decide
+//! returned endpoints under quotes; the choice reverses with the reversal
+//! above, when the machine decides codes under quotes.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -1067,12 +1072,15 @@ impl CodeDefinitions
     ///   certified as [`Derivation::Reading`], with no dialogue: its quote
     ///   holds the calls its arms make on the binders, which the machine
     ///   compares by place, and the kernel re-derives the step by its own
-    ///   reading.
+    ///   reading. So is a closed run whose dialogue the machine declines for
+    ///   its undecided codes: its quote holds a call on a binder the quote
+    ///   itself opens, as `pi(a, b)` decodes to `(x : el(a)) -> -F el(b(x))`.
     /// - provides: the one route by which a code position reduces, and the
     ///   derivation the kernel re-derives.
     /// - fails: [`CheckRefusal::Undecided`] at `redex` when either side does
     ///   not evaluate, the machine faults, or its verdict is anything but
-    ///   convertible.
+    ///   convertible or, for a closed returned code, a decline for undecided
+    ///   codes.
     /// - panics: none.
     ///
     /// # Errors
@@ -1095,6 +1103,7 @@ impl CodeDefinitions
     /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
     /// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
     /// - witness: `bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
+    /// - witness: `bridge::tests::a_closed_decode_holding_a_call_under_its_quote_crosses_read`
     #[inline]
     #[spec(ensures: |ret| match ret {
         | Ok(ref certificate) => {
@@ -1115,30 +1124,30 @@ impl CodeDefinitions
     {
         let undecided = CheckRefusal::Undecided { at: step.redex };
         if let Unfolded::Returned(_) = step.unfolded {
+            let reading = Certificate {
+                unfolded: step.unfolded,
+                redex: step.redex,
+                reduct: step.reduct,
+                verdict: MachineVerdict::Convertible,
+                derivation: Derivation::Reading,
+                decisions: Vec::new(),
+            };
             if usize::from(loose_reach(
                 core,
                 CoreNode::Term(TermNode::Value(step.redex)),
             )?) != 0
             {
-                return Ok(Certificate {
-                    unfolded: step.unfolded,
-                    redex: step.redex,
-                    reduct: step.reduct,
-                    verdict: MachineVerdict::Convertible,
-                    derivation: Derivation::Reading,
-                    decisions: Vec::new(),
-                });
+                return Ok(reading);
             }
-            return match self.relate_terms(core, step.redex, step.reduct)? {
-                Maybe::Present(decisions) => Ok(Certificate {
-                    unfolded: step.unfolded,
-                    redex: step.redex,
-                    reduct: step.reduct,
-                    verdict: MachineVerdict::Convertible,
+            let (verdict, decisions) = self.relation(core, step.redex, step.reduct)?;
+            return match verdict {
+                MachineVerdict::Convertible => Ok(Certificate {
                     derivation: Derivation::Dialogue,
                     decisions,
+                    ..reading
                 }),
-                Maybe::Absent(_) => Err(undecided),
+                MachineVerdict::Declined(DeclineReason::UndecidedCodes) => Ok(reading),
+                MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => Err(undecided),
             };
         }
         let definitions =
@@ -1293,6 +1302,46 @@ impl CodeDefinitions
         endpoint: ValueId,
     ) -> Result<Maybe<Vec<ConversionDecision<TraceNode>>, converted::Absent>, CheckRefusal>
     {
+        let (verdict, decisions) = self.relation(core, point, endpoint)?;
+        Ok(match verdict {
+            MachineVerdict::Convertible => Maybe::Present(decisions),
+            MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => {
+                Maybe::Absent(converted::Absent::Apart)
+            },
+        })
+    }
+
+    /// The machine's verdict on `point` against `endpoint`, each evaluated as
+    /// [`Self::relate_terms`] evaluates them, and the dialogue it recorded.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::relate_terms`].
+    /// - ensures: the verdict the machine reached, with the decisions its
+    ///   recording sink kept; a decline keeps its reason.
+    /// - provides: [`Self::relate_terms`]'s answer, and the reason a returned
+    ///   step's dialogue was declined, which [`Self::certify`] reads.
+    /// - fails: as [`Self::relate_terms`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`], [`CheckRefusal::DanglingNode`] — as
+    ///   [`Self::relate_terms`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::relate_terms`], and a decode whose run
+    ///   returns a quote holding a call on the quote's own binder declined for
+    ///   its undecided codes.
+    /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+    /// - witness: `bridge::tests::a_closed_decode_holding_a_call_under_its_quote_crosses_read`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == point)
+        || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+    fn relation(
+        &self,
+        core: &CoreArena,
+        point: ValueId,
+        endpoint: ValueId,
+    ) -> Result<(MachineVerdict, Vec<ConversionDecision<TraceNode>>), CheckRefusal>
+    {
         let undecided = CheckRefusal::Undecided { at: point };
         let definitions =
             Definitions::new(&self.lowered, &self.environment, self.environment.root())
@@ -1309,12 +1358,8 @@ impl CodeDefinitions
             &mut log,
         )
         .map_err(|_fault| undecided)?;
-        Ok(match report.verdict() {
-            MachineVerdict::Convertible => Maybe::Present(log.decisions().copied().collect()),
-            MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => {
-                Maybe::Absent(converted::Absent::Apart)
-            },
-        })
+
+        Ok((report.verdict(), log.decisions().copied().collect()))
     }
 
     /// Decide that two computations standing under `open` binders convert,

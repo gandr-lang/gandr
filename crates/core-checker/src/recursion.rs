@@ -95,6 +95,90 @@ pub struct Owed
     pub fields: Stage,
 }
 
+/// Why a type has no kin past itself.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Kinless
+{
+    /// It is no family of a mutual block of several.
+    Lone,
+}
+
+/// The families a case on `datatype`, or a constructor of it wanted at a
+/// stage, refines at that stage: one mutual block's families share one
+/// stage, as the kernel's do.
+///
+/// # Specification
+/// - ensures: [`Kinless::Lone`] unless `datatype` is a family a block of
+///   several families opened; then each of those families in scope taking as
+///   many parameters as `datatype` has arguments, at `datatype`'s arguments, in
+///   block order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rose tree's node and its list of children, one block,
+///   recurse through each other at one stage.
+/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(ref families) => families.len() >= 2,
+    Maybe::Absent(_) => true,
+})]
+pub fn kin(
+    context: &mut CheckingContext<'_>,
+    datatype: ValueTypeId,
+) -> Maybe<Vec<ValueTypeId>, Kinless>
+{
+    let Some(&ValueType::Data { declaration, .. }) = context.arena().value_type(datatype)
+    else {
+        return Maybe::Absent(Kinless::Lone);
+    };
+    let Maybe::Present(block) = context.kin_of(declaration)
+    else {
+        return Maybe::Absent(Kinless::Lone);
+    };
+    let Some(&ValueType::Data { ref arguments, .. }) = context.arena().value_type(datatype)
+    else {
+        return Maybe::Absent(Kinless::Lone);
+    };
+    let arguments = arguments.clone();
+    let (first, past) = (usize::from(block.first()), usize::from(block.families()));
+    let mut families = Vec::with_capacity(past.saturating_sub(first));
+    for position in first .. past {
+        let position = gandr_kernel_term::ConstantIndex::from(position);
+        if position == declaration {
+            families.push(datatype);
+        }
+        else if let Maybe::Present(signature) = context.data_in_scope(position)
+            && signature.parameters().len() == arguments.len()
+        {
+            families.push(
+                context
+                    .arena_mut()
+                    .value_type_data(position, arguments.clone()),
+            );
+        }
+    }
+    if families.len() < 2 {
+        return Maybe::Absent(Kinless::Lone);
+    }
+    Maybe::Present(families)
+}
+
+/// The families [`kin`] found, or `datatype` alone.
+///
+/// # Specification
+/// trivial.
+pub fn families<'kin>(
+    kin: &'kin Maybe<Vec<ValueTypeId>, Kinless>,
+    datatype: &'kin ValueTypeId,
+) -> &'kin [ValueTypeId]
+{
+    match *kin {
+        Maybe::Present(ref families) => families.as_slice(),
+        Maybe::Absent(_) => core::slice::from_ref(datatype),
+    }
+}
+
 /// Open the stage of the fixpoint `at` checked at `expected`, recursing on
 /// the parameter at `position`.
 ///
@@ -102,9 +186,12 @@ pub struct Owed
 /// - requires: `expected` is formed.
 /// - ensures: over a telescope with an arrow at `position`, a root stage `ι`
 ///   minted, the body's type the telescope with that arrow's domain at `A^ι`,
-///   and the self binder's the same telescope with it at `A^{<ι}`; every other
-///   arrow, and the codomain past `position`, as `expected` holds them. The
-///   unknown type, anywhere down the telescope, opens nothing.
+///   and the self binder's the same telescope with it at `A^{<ι}`; for `A` a
+///   sum of data types, `A^ι` is the sum of each summand at `ι` — a mutual
+///   block's recursion, its families' sum at one stage — and `A^{<ι}` the same
+///   below it; every other arrow, and the codomain past `position`, as
+///   `expected` holds them. The unknown type, anywhere down the telescope,
+///   opens nothing.
 /// - fails: [`CheckRefusal::ShapeMismatch`] wanting an arrow when the telescope
 ///   ends, in a returner, a lazy product or a rigid decode, before `position`;
 ///   a fixpoint at such a type is never checked unstaged, since a fixpoint
@@ -117,9 +204,11 @@ pub struct Owed
 /// # Adequacy
 /// - hypothesis: L3 — a first-parameter recursion opens the first arrow, a
 ///   recursion two parameters deep opens the second, and a fixpoint at a
-///   returner is refused.
+///   returner is refused; a recursion at the sum of a rose tree's two families
+///   stages each summand.
 /// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
 /// - witness: `recursion::tests::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
+/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
 #[spec(ensures: |ret| match ret {
     Ok(Maybe::Present(opened)) => context.arena().comp_type(opened.own).is_some() && context.arena().comp_type(opened.inside).is_some(),
     Ok(Maybe::Absent(reason)) => reason == Unstaged::Unknown,
@@ -161,8 +250,27 @@ pub fn open_fixpoint(
     };
     let root = context.stages_mut().mint_root();
     let arena = context.arena_mut();
-    let inside_domain = arena.value_type_staged(domain, Stage::At(root));
-    let own_domain = arena.value_type_staged(domain, below(Stage::At(root)));
+    let (inside_domain, own_domain) = match arena.value_type(domain) {
+        Some(&ValueType::Sum(ref summands))
+            if !summands.is_empty()
+                && summands.iter().all(|&summand| {
+                    matches!(arena.value_type(summand), Some(&ValueType::Data { .. }))
+                }) =>
+        {
+            let summands = summands.clone();
+            let mut inside = Vec::with_capacity(summands.len());
+            let mut own = Vec::with_capacity(summands.len());
+            for &summand in &summands {
+                inside.push(arena.value_type_staged(summand, Stage::At(root)));
+                own.push(arena.value_type_staged(summand, below(Stage::At(root))));
+            }
+            (arena.value_type_sum(&inside), arena.value_type_sum(&own))
+        },
+        Some(_) | None => (
+            arena.value_type_staged(domain, Stage::At(root)),
+            arena.value_type_staged(domain, below(Stage::At(root))),
+        ),
+    };
     let mut own = dependence.former(arena, own_domain, codomain);
     let mut inside = dependence.former(arena, inside_domain, codomain);
     while let Some((outer, dependence)) = spine.pop() {
@@ -370,14 +478,29 @@ enum Changed
 }
 
 /// A case branch's type with its recursive fields at the stage the case
-/// opened.
+/// opened, and, inside the declaration's own fixpoint, its constant in the
+/// fields read as its self binder.
+///
+/// The identification is the one a mutual block's definition needs: a
+/// universe's field `b : +U (el(a) -> -F U)` names the decoder `el` being
+/// admitted, and inside `el`'s own fixpoint the arm opening that field reads
+/// `el(a)` as the self call `el[<](a)` on a field one stage below — the type
+/// the arm's own staged decode `el[<](a)` has. It is not a new rule: the
+/// field is the constructor's, the self binder the fixpoint's, and the
+/// identified telescope is formed again before the branch checks at it, so a
+/// field that applies the decoder where the stage does not descend is refused
+/// `StageNotBelow` there.
 ///
 /// # Specification
 /// - requires: `branch` is the telescope over one binder per entry of `fields`
 ///   that [`crate::former::branch_type`] built over `datatype`: a Π where the
 ///   rest names the field, a plain arrow otherwise.
 /// - ensures: the same telescope, each field under the same former, with each
-///   recursive field domain at `child`.
+///   field domain naming `datatype` — or any family of its mutual block, its
+///   [`kin`] — at `child`; inside the declaration's own fixpoint, every
+///   occurrence of its constant in a field domain replaced by its self binder,
+///   and [`Identified::Read`] exactly when one was, the telescope then owed its
+///   formation in the block's foresight.
 /// - fails: [`CheckRefusal::MachineInvariant`] for a telescope shorter than
 ///   `fields`; the conversion's refusal.
 /// - panics: none.
@@ -389,16 +512,20 @@ enum Changed
 /// - hypothesis: L3 — the successor's field moves to the case's stage and a
 ///   call on it is admitted, while the zero branch binds nothing; a rose tree's
 ///   node, whose result names none of its fields, stages its children under the
-///   plain arrows `branch_type` builds there.
+///   plain arrows `branch_type` builds there; a decoder's arm reads its
+///   universe's field through its self binder, and a field decoding the
+///   constructor's own result is refused.
 /// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
 /// - witness: `recursion::tests::a_rose_tree_recurses_through_map_at_its_children_s_stage`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| context.arena().comp_type(staged).is_some()))]
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(staged, _)| context.arena().comp_type(staged).is_some()))]
 pub fn stage_branch(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
     branch: CompTypeId,
     (fields, child): (&[ValueTypeId], StageId),
-) -> Result<CompTypeId, CheckRefusal>
+) -> Result<(CompTypeId, Identified), CheckRefusal>
 {
     let mut domains = Vec::with_capacity(fields.len());
     let mut focus = branch;
@@ -417,13 +544,37 @@ pub fn stage_branch(
         domains.push((domain, dependence));
         focus = codomain;
     }
+    let own = context.own_fixpoint();
+    let kin = kin(context, datatype);
+    let families = families(&kin, &datatype);
+    let mut identified = Identified::Kept;
     // A field stands under the Π binders before it, and only those: a plain
     // arrow's rest was strengthened past its field.
     let mut depth = 0_u32;
     for &mut (ref mut domain, dependence) in &mut domains {
-        let recursive =
-            gandr_core_term::shift_value_type(context.arena_mut(), datatype, Binders::from(depth));
-        *domain = stage_field(context, *domain, recursive, Stage::At(child))?;
+        for &family in families {
+            let recursive = gandr_core_term::shift_value_type(
+                context.arena_mut(),
+                family,
+                Binders::from(depth),
+            );
+            *domain = stage_field(context, *domain, recursive, Stage::At(child))?;
+        }
+        if let Maybe::Present((constant, index)) = own {
+            let past = u32::from(index)
+                .checked_add(depth)
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            let read = gandr_core_term::abstract_constant_value_type(
+                context.arena_mut(),
+                *domain,
+                constant,
+                DeBruijnIndex::from(past),
+            );
+            if read != *domain {
+                *domain = read;
+                identified = Identified::Read;
+            }
+        }
         if dependence == Dependence::Dependent {
             depth = depth.checked_add(1).ok_or(CheckRefusal::MachineInvariant)?;
         }
@@ -431,7 +582,17 @@ pub fn stage_branch(
     for &(domain, dependence) in domains.iter().rev() {
         focus = dependence.former(context.arena_mut(), domain, focus);
     }
-    Ok(focus)
+    Ok((focus, identified))
+}
+
+/// Whether a branch read the declaration's constant as its self binder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Identified
+{
+    /// No field named it.
+    Kept,
+    /// Some field did: the telescope forms again in the block's foresight.
+    Read,
 }
 
 /// What a constructor checked at `expected` owes, when `expected` is staged.

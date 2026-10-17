@@ -145,8 +145,12 @@ quenchant_shape::reason_enum! {
         /// The binder was written without `: T`.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// A lambda's binder, a statement's, or a parameter written untyped.
+            /// A lambda's binder, a statement's, a pattern's field, or a
+            /// parameter written untyped.
             Untyped,
+            /// A static lambda's binder: an operand of a type operator,
+            /// which an application of it applies statically.
+            Operand,
         }
     }
 }
@@ -746,6 +750,53 @@ impl<'source> Scope<'source>
             parent,
             name,
             Maybe::Absent(binder_type::Absent::Untyped),
+            site,
+            Zone::Intuitionistic,
+        )
+    }
+
+    /// The frame that extends `parent` with a static lambda's binder for
+    /// `name` written at `site`.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::extend`].
+    /// - ensures: as [`Self::extend`], the new binder answering the operand
+    ///   absence for its written type.
+    /// - provides: the binder of a type operator's operand, whose application
+    ///   is static where a dynamic function's would be a call.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator's binder applied where a computation type
+    ///   is read decodes its static application rather than a call's return.
+    /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+    #[spec(
+        requires: match parent {
+            | Frame::Outermost => true,
+            | Frame::Inner(id) => id.0 < self.frames.len(),
+        },
+        captures: before = self.frames.len(),
+        ensures: |ret| {
+            ret.0 == before
+                && self.frames.get(ret.0).is_some_and(|entry| {
+                    entry.parent == parent
+                        && entry.declared == Maybe::Absent(binder_type::Absent::Operand)
+                })
+        },
+    )]
+    #[inline]
+    pub fn extend_operand(
+        &mut self,
+        parent: Frame,
+        name: SurfaceName<'source>,
+        site: Maybe<ByteSpan, binder_site::Absent>,
+    ) -> ScopeId
+    {
+        self.push(
+            parent,
+            name,
+            Maybe::Absent(binder_type::Absent::Operand),
             site,
             Zone::Intuitionistic,
         )

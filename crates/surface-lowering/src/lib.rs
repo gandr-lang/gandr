@@ -32,7 +32,8 @@
 //! **A module is collected by name and resolved by position.** A signature
 //! pairs with its definition wherever the two sit, so the
 //! signature-then-definition form stays spellable; references still resolve by
-//! admission position, so self-reference and mutual reference are refused.
+//! admission position, so self-reference and mutual reference are refused
+//! outside a `rec { }` block, whose members are admitted as one.
 //!
 //! **A module declaration flattens to named members.** Each member of
 //! `module M { … }`, at every depth, is one declaration admitted in source

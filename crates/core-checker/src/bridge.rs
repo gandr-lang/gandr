@@ -1212,7 +1212,10 @@ where
         natives: report.natives(),
         definitions: report.definitions(),
     };
-    for judged in report.judged() {
+    let judged_all = report.judged();
+    let mut index = 0_usize;
+    while let Some(judged) = judged_all.get(index) {
+        index = index.saturating_add(1);
         if let Err(ref error) = seeded {
             readmitted.push(Readmitted {
                 constant: judged.constant(),
@@ -1223,6 +1226,49 @@ where
             continue;
         }
         let constant = judged.constant();
+        // A data declaration whose fields name later declarations leads the
+        // mutual block they reach, which crosses whole.
+        let block = block_offers(
+            arena,
+            report,
+            source,
+            judged_all
+                .get(index.saturating_sub(1) ..)
+                .unwrap_or_default(),
+        );
+        if !block.is_empty() {
+            let crossed = cross_block(
+                &mut environment,
+                arena,
+                source,
+                &mut positions,
+                &block,
+                &vouch,
+            );
+            for (member, (outcome, certificates)) in judged_all
+                .get(index.saturating_sub(1) ..)
+                .unwrap_or_default()
+                .iter()
+                .zip(crossed)
+            {
+                readmitted.push(Readmitted {
+                    constant: member.constant(),
+                    origin: member.origin(),
+                    outcome,
+                    certificates,
+                });
+            }
+            index = index.saturating_sub(1).saturating_add(block.len());
+            if let Some(last) = judged_all.get(index.saturating_sub(1)) {
+                close_seals(
+                    &mut environment,
+                    &mut positions,
+                    &mut readmitted,
+                    last.constant(),
+                );
+            }
+            continue;
+        }
         let definition = match judged.verdict() {
             Verdict::Checked { declared, body, .. } => Some((declared.id(), body)),
             Verdict::Synthesised { body, synthesised } => Some((synthesised.produced().id(), body)),
@@ -1331,6 +1377,105 @@ where
         audit,
         admitted: positions.exports,
     }
+}
+
+/// The offers of the mutual block the first of `run`, the judged declarations
+/// from it on, leads: its run of data declarations and the definitions after
+/// them, up to the furthest position the run's fields reach, when that is past
+/// the leader and every member crosses; nothing otherwise.
+///
+/// # Specification
+/// - requires: `run` is a suffix of `report`'s judged declarations, which are
+///   in module order.
+/// - ensures: empty unless the first of `run` is data whose fields reach a
+///   later position; then one offer per position from it to the reached end,
+///   each data declaration of the leading run offered at its signature and each
+///   later member a crossing definition — and empty when any member is not one,
+///   so the declarations cross one by one and the kernel withholds what names a
+///   later one.
+/// - provides: the measurement the bridge crosses a block by, the checker's
+///   schedule's and the kernel replay's.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lone family offers nothing, and a universe naming its
+///   decoder offers the two.
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+#[spec(ensures: |ret| ret.is_empty() || ret.len() >= 2)]
+fn block_offers<'report>(
+    arena: &CoreArena,
+    report: &'report ModuleReport,
+    source: Source<'report>,
+    run: &'report [crate::module::Judged],
+) -> Vec<(ConstantIndex, Offer<'report>)>
+{
+    let Some(leader) = run.first()
+    else {
+        return Vec::new();
+    };
+    let first = usize::from(leader.constant());
+    let mut end = first.saturating_add(1);
+    let mut families = true;
+    let mut members = Vec::new();
+    for member in run {
+        let constant = member.constant();
+        if usize::from(constant) >= end {
+            break;
+        }
+        let offer = match (member.verdict(), report.data_signatures().get(&constant)) {
+            (Verdict::Data, Some(signature)) if families => {
+                end = end.max(usize::from(crate::occurrence::reach(
+                    arena, constant, signature,
+                )));
+                Offer::Data(signature)
+            },
+            (Verdict::Checked { declared, body, .. }, _)
+                if !matches!(
+                    value_type_view(arena, declared.id()),
+                    Ok(ValueTypeView::StaticPi { .. })
+                ) =>
+            {
+                families = false;
+                Offer::Definition {
+                    declared: declared.id(),
+                    body,
+                    relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
+                    laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
+                }
+            },
+            (Verdict::Synthesised { body, synthesised }, _)
+                if !matches!(
+                    value_type_view(arena, synthesised.produced().id()),
+                    Ok(ValueTypeView::StaticPi { .. })
+                ) =>
+            {
+                families = false;
+                Offer::Definition {
+                    declared: synthesised.produced().id(),
+                    body,
+                    relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
+                    laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
+                }
+            },
+            (
+                Verdict::Data
+                | Verdict::Checked { .. }
+                | Verdict::Synthesised { .. }
+                | Verdict::Owed(_)
+                | Verdict::Refused(_),
+                _,
+            ) => return Vec::new(),
+        };
+        if usize::from(constant) != first.saturating_add(members.len()) {
+            return Vec::new();
+        }
+        members.push((constant, offer));
+    }
+    if members.len() < 2 || members.len() != end.saturating_sub(first) {
+        return Vec::new();
+    }
+    members
 }
 
 /// An atom the kernel admitted with its seal open, and where the seal ends.
@@ -1562,14 +1707,100 @@ fn cross<Vouch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
-    let base = ConstantIndex::from(environment.entries().len().saturating_add(1));
+    let next = ConstantIndex::from(environment.entries().len());
+    let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+    let own = [(constant, next)];
+    let crossing: &[(ConstantIndex, ConstantIndex)] = match offer {
+        Offer::Data(_) => &own,
+        Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => &[],
+    };
+    let staged = match stage(
+        environment,
+        arena,
+        (source, &*positions),
+        offer,
+        vouch,
+        (crossing, base),
+    ) {
+        Ok(staged) => staged,
+        Err(refused) => return refused,
+    };
+    let staged_as = staged.declaration.declaration().clone();
+    let admitted = match environment.add_decl(staged.declaration) {
+        Ok(admitted) => admitted,
+        Err(error) => return (Outcome::Rejected(error), staged.replayed),
+    };
+    let outcome = settle(
+        environment,
+        source,
+        positions,
+        (constant, offer, staged.image),
+        (staged_as, admitted),
+    );
+    (outcome, staged.replayed)
+}
+
+/// One offer erased and staged, not yet admitted.
+struct Staged
+{
+    /// The staged declaration.
+    declaration: gandr_kernel_core::StagedDeclaration,
+    /// A definition's body image.
+    image: Maybe<gandr_kernel_term::ValueId, staged::Absent>,
+    /// The replayed verdicts of its certificates.
+    replayed: Vec<Replayed>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a staged offer carries no body image.
+    mod staged {
+        /// The offer is no definition.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// A nominal declaration or an axiom has no body.
+            Bodiless,
+        }
+    }
+}
+
+/// Erase `offer`, the declaration at `constant`, into a staging session of
+/// `environment` and replay its certificates, beside the members of
+/// `crossing`, numbering static operators from `base`.
+///
+/// # Specification
+/// - requires: as [`cross`]; `crossing` names each member crossing with this
+///   one at the kernel position it is about to take, and `base` is past all of
+///   them.
+/// - ensures: the staged declaration, its body's image and the replayed
+///   verdicts when the erasure and every certificate succeed; otherwise the
+///   session discarded and the refusal with the verdicts replayed so far.
+/// - fails: never; a refusal is returned as its outcome.
+/// - panics: none.
+///
+/// # Errors
+/// The refused outcome, with the verdicts replayed before it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`cross`] and [`cross_block`].
+/// - witness: `bridge::tests::a_lowered_value_definition_admits`
+/// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+#[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refused| matches!(refused.0, Outcome::Refused(_))))]
+fn stage<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    (source, positions): (Source<'_>, &Positions),
+    offer: Offer<'_>,
+    vouch: &Vouch,
+    (crossing, base): (&[(ConstantIndex, ConstantIndex)], ConstantIndex),
+) -> Result<Staged, (Outcome, Vec<Replayed>)>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
     let next = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let erased = {
-        let mut erasure = Erasure::new(arena, source, positions, base);
-        if let Offer::Data(_) = offer {
-            erasure = erasure.crossing_block(constant, next);
-        }
+        let mut erasure = Erasure::new(arena, source, positions, base).crossing_block(crossing);
         erasure
             .offer(staging.arena(), offer)
             .map_err(|refusal| (refusal, Vec::new()))
@@ -1583,14 +1814,16 @@ where
         Ok(crossing) => crossing,
         Err((refusal, replayed)) => {
             staging.discard();
-            return (Outcome::Refused(refusal), replayed);
+            return Err((Outcome::Refused(refusal), replayed));
         },
     };
-    let defined_image = match erased {
-        Erased::Definition { ref body, .. } => Some(*body),
-        Erased::Data { .. } | Erased::Axiom { .. } | Erased::Abstract { .. } => None,
+    let image = match erased {
+        Erased::Definition { ref body, .. } => Maybe::Present(*body),
+        Erased::Data { .. } | Erased::Axiom { .. } | Erased::Abstract { .. } => {
+            Maybe::Absent(staged::Absent::Bodiless)
+        },
     };
-    let staged = match erased {
+    let declaration = match erased {
         Erased::Data {
             parameters,
             constructors,
@@ -1610,8 +1843,9 @@ where
             match offer {
                 Offer::Data(signature) => {
                     let presentation = signature.presentation();
-                    staged.presented(match presentation.cells() {
-                        Some(cells) => {
+                    staged.presented(presentation.cells().map_or_else(
+                        || presentation.clone(),
+                        |cells| {
                             let sort = positions
                                 .admitted
                                 .get(&cells.sort())
@@ -1623,8 +1857,7 @@ where
                                     cells.cells().to_vec(),
                                 ))
                         },
-                        None => presentation.clone(),
-                    })
+                    ))
                 },
                 Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => staged,
             }
@@ -1649,18 +1882,50 @@ where
             SealScope::Open,
         ),
     };
-    let staged_as = staged.declaration().clone();
-    let admitted = match environment.add_decl(staged) {
-        Ok(admitted) => admitted,
-        Err(error) => return (Outcome::Rejected(error), replayed),
-    };
+    Ok(Staged {
+        declaration,
+        image,
+        replayed,
+    })
+}
+
+/// Record an offer the kernel admitted: its export, its position and, for a
+/// definition, its bodies on either side.
+///
+/// # Specification
+/// - requires: `admitted` is the kernel's receipt for `staged_as`, the
+///   declaration `offer` staged at `constant`.
+/// - ensures: the export appended, the position declared or defined, and the
+///   outcome naming the receipt and its audit: [`Outcome::Defined`] for a
+///   definition, [`Outcome::Data`] for a nominal declaration and
+///   [`Outcome::Assumed`] otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`cross`].
+/// - witness: `bridge::tests::a_lowered_value_definition_admits`
+/// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+#[spec(ensures: |ret| matches!(ret, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))]
+fn settle(
+    environment: &Environment,
+    source: Source<'_>,
+    positions: &mut Positions,
+    (constant, offer, image): (
+        ConstantIndex,
+        Offer<'_>,
+        Maybe<gandr_kernel_term::ValueId, staged::Absent>,
+    ),
+    (staged_as, admitted): (KernelDeclaration, CheckedId),
+) -> Outcome
+{
     positions.exports.push(staged_as);
     let audit = environment.audit(admitted);
-    match (offer, defined_image) {
-        (Offer::Definition { body, .. }, Some(image)) => {
+    match (offer, image) {
+        (Offer::Definition { body, .. }, Maybe::Present(image)) => {
             let defined = source.definitions.get(&constant).copied().unwrap_or(body);
             positions.define(constant, admitted, defined, image);
-            (Outcome::Defined { admitted, audit }, replayed)
+            Outcome::Defined { admitted, audit }
         },
         (Offer::Data(signature), _) => {
             positions.declare(constant, admitted);
@@ -1668,16 +1933,125 @@ where
             if !signature.presentation().rules().is_empty() {
                 positions.presentations = Presentations::of(environment.entries());
             }
-            (Outcome::Data { admitted, audit }, replayed)
+            Outcome::Data { admitted, audit }
         },
         (Offer::Abstract(_), _) => {
             positions.declare(constant, admitted);
-            (Outcome::Data { admitted, audit }, replayed)
+            Outcome::Data { admitted, audit }
         },
         (Offer::Axiom { .. } | Offer::Definition { .. }, _) => {
             positions.declare(constant, admitted);
-            (Outcome::Assumed { admitted, audit }, replayed)
+            Outcome::Assumed { admitted, audit }
         },
+    }
+}
+
+/// Erase the members of a mutual block, each at the kernel position it is
+/// about to take, replay their certificates, and admit them as one block.
+///
+/// # Specification
+/// - requires: as [`cross`]; `members` are the block's offers in order, every
+///   one crossing.
+/// - ensures: one outcome per member, in order: each admitted as [`cross`]
+///   records an admission when the kernel admits the block, and otherwise every
+///   member sharing the refusal or rejection of the member that failed, the
+///   environment as it was.
+/// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
+///   [`Outcome::Rejected`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a universe and its decoder cross and are admitted
+///   together; a block one member of which is refused crosses nothing.
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+#[spec(captures: entries = environment.entries().len(), ensures: |ret| ret.len() == members.len()
+    && (ret.iter().all(|crossed| matches!(crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
+        || environment.entries().len() == entries))]
+fn cross_block<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    source: Source<'_>,
+    positions: &mut Positions,
+    members: &[(ConstantIndex, Offer<'_>)],
+    vouch: &Vouch,
+) -> Vec<(Outcome, Vec<Replayed>)>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let next = environment.entries().len();
+    let crossing = members
+        .iter()
+        .enumerate()
+        .map(|(offset, &(constant, _))| {
+            (constant, ConstantIndex::from(next.saturating_add(offset)))
+        })
+        .collect::<Vec<_>>();
+    let base = ConstantIndex::from(next.saturating_add(members.len()));
+    let mut staged: Vec<Staged> = Vec::with_capacity(members.len());
+    for &(constant, offer) in members {
+        match stage(
+            environment,
+            arena,
+            (source, &*positions),
+            offer,
+            vouch,
+            (&crossing, base),
+        ) {
+            Ok(member) => staged.push(member),
+            Err((outcome, replayed)) => {
+                // The block crosses whole or not at all: what staged is
+                // abandoned, latest first, and every member shares the
+                // refusal.
+                for member in staged.into_iter().rev() {
+                    environment.abandon(member.declaration);
+                }
+                return members
+                    .iter()
+                    .map(|&(member, _)| {
+                        if member == constant {
+                            (outcome.clone(), replayed.clone())
+                        }
+                        else {
+                            (outcome.clone(), Vec::new())
+                        }
+                    })
+                    .collect();
+            },
+        }
+    }
+    let exported = staged
+        .iter()
+        .map(|member| member.declaration.declaration().clone())
+        .collect::<Vec<_>>();
+    let mut images = Vec::with_capacity(staged.len());
+    let mut declarations = Vec::with_capacity(staged.len());
+    for member in staged {
+        images.push((member.image, member.replayed));
+        declarations.push(member.declaration);
+    }
+    match environment.add_block(declarations) {
+        Ok(admitted) => members
+            .iter()
+            .zip(exported)
+            .zip(admitted)
+            .zip(images)
+            .map(
+                |(((&(constant, offer), staged_as), admitted), (image, replayed))| {
+                    let outcome = settle(
+                        environment,
+                        source,
+                        positions,
+                        (constant, offer, image),
+                        (staged_as, admitted),
+                    );
+                    (outcome, replayed)
+                },
+            )
+            .collect(),
+        Err(error) => images
+            .into_iter()
+            .map(|(_, replayed)| (Outcome::Rejected(error.clone()), replayed))
+            .collect(),
     }
 }
 
@@ -2809,26 +3183,11 @@ struct Erasure<'source, 'positions>
     pending: Vec<(ConstantIndex, ValueId, u32)>,
     /// The replay's entry at each operator position whose body is erased.
     bodies: BTreeMap<ConstantIndex, Unfoldable>,
-    /// The data declaration whose own signature this erasure crosses.
-    block: Block,
-}
-
-/// The data declaration whose signature an erasure crosses: its fields name
-/// it at the kernel position it is about to take, which no crossed
-/// declaration holds yet.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Block
-{
-    /// No data declaration is crossing.
-    Closed,
-    /// The data declaration at `source` is crossing to `kernel`.
-    Open
-    {
-        /// Its module position.
-        source: ConstantIndex,
-        /// The kernel position it will take.
-        kernel: ConstantIndex,
-    },
+    /// The declarations crossing with this one, ascending: each module
+    /// position and the kernel position it is about to take, which no crossed
+    /// declaration holds yet — a data declaration's own, or every member of
+    /// its mutual block.
+    crossing: &'positions [(ConstantIndex, ConstantIndex)],
 }
 
 impl<'source, 'positions> Erasure<'source, 'positions>
@@ -2859,22 +3218,22 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             operators: BTreeMap::new(),
             pending: Vec::new(),
             bodies: BTreeMap::new(),
-            block: Block::Closed,
+            crossing: &[],
         }
     }
 
-    /// The same erasure, crossing the data declaration at `source` to the
-    /// kernel position `kernel`, so its fields' self references resolve.
+    /// The same erasure crossing beside `crossing`, ascending by module
+    /// position: each member's module position resolves to the kernel position
+    /// it is about to take, so the block's members name each other.
     ///
     /// # Specification
     /// trivial.
     const fn crossing_block(
         mut self,
-        source: ConstantIndex,
-        kernel: ConstantIndex,
+        crossing: &'positions [(ConstantIndex, ConstantIndex)],
     ) -> Self
     {
-        self.block = Block::Open { source, kernel };
+        self.crossing = crossing;
         self
     }
 
@@ -3347,26 +3706,31 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     }
 
     /// The kernel position the constant `at` names in the current mode: the
-    /// position its declaration crossed at, or, read verbatim, the static
-    /// operator a static definition is numbered at.
+    /// position its declaration crossed at, the one a member of the crossing
+    /// block is about to take, or, read verbatim, the static operator a
+    /// static definition is numbered at.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as above.
     /// - fails: [`Refusal::Withheld`] at `at` for a constant that neither
-    ///   crossed nor, read verbatim, names a static definition.
+    ///   crossed, nor crosses in this block, nor, read verbatim, names a static
+    ///   definition.
     /// - panics: none.
     ///
     /// # Errors
     /// - [`Refusal::Withheld`], or [`Self::operator`]'s refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — three arms, separated by a crossed constant, a static
-    ///   definition read verbatim, and one read normalizing, withheld.
+    /// - hypothesis: L3 — four arms, separated by a crossed constant, a decoder
+    ///   its universe's fields name in their block, a static definition read
+    ///   verbatim, and one read normalizing, withheld.
     /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
     #[spec(ensures: |ret| ret.is_err()
         || self.positions.admitted.get(&constant).copied() == ret.ok()
+        || self.crossing.binary_search_by_key(&constant, |&(member, _)| member).is_ok_and(|found| self.crossing.get(found).map(|&(_, kernel)| kernel) == ret.as_ref().ok().copied())
         || (self.mode == Mode::Verbatim
             && self.operators.get(&Unfolded::Definition(constant)).copied() == ret.ok()))]
     fn constant_position(
@@ -3377,6 +3741,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     {
         if let Some(&position) = self.positions.admitted.get(&constant) {
             return Ok(position);
+        }
+        if let Ok(found) = self
+            .crossing
+            .binary_search_by_key(&constant, |&(member, _)| member)
+            && let Some(&(_, kernel)) = self.crossing.get(found)
+        {
+            return Ok(kernel);
         }
         match (self.mode, self.positions.definitions.body(constant)) {
             (Mode::Verbatim, Maybe::Present(body)) => {

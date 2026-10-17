@@ -368,6 +368,60 @@
 //! `kernel_export::kernel_presented_readmission::an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name`
 //! in the surface corpus.
 //!
+//! # Mutual blocks
+//!
+//! A universe and the decoder that reads it name each other: `U`'s `PiC`
+//! takes `b : U (el(a) → F U)`, and `el` cases on `U`. No admission order
+//! admits either alone, so [`Environment::add_block`] admits them as one
+//! block, on the schedule the checker keeps:
+//!
+//! 1. each definition's declared type forms with the block's families in scope
+//!    at their signatures, and no definition;
+//! 2. each family passes the occurrence walk over the block — a family is a
+//!    self occurrence, a definition is a term — and its fields form with every
+//!    definition of the block at its declared type;
+//! 3. each definition is checked as a lone one is, every family admitted before
+//!    it.
+//!
+//! Inside the structural fixpoint a definition's body thunks, its own
+//! constant in a case's field types reads as the fixpoint's self binder
+//! ([`check`]'s recursion core, `stage_branch`): `b : U (el(a) → F U)` is
+//! bound as `b : U (self(a) → F U)`, and a branch so read is formed, so a
+//! decoder named at a place that does not descend — `el(Bad(a))` — is
+//! refused `StageNotBelow` by the stage order like any other call. Nothing
+//! is a new node or judgement: each step is one a lone declaration takes, in
+//! an order a block fixes. A block is measured, never declared: the run of
+//! data declarations at its head reaches its end through the positions its
+//! fields name, and [`Environment::replay`] groups an artifact by the same
+//! measurement, so the artifact format is unchanged.
+//!
+//! A block of several families — a rose tree's node and its forest — shares
+//! one stage: a case on any of its families, and a constructor of any, moves
+//! every field naming one of the block's families to the stage below
+//! ([`check`]'s `recursion::kin`), so a recursion walking a node into its
+//! forest descends. Such a recursion is one fixpoint over the sum of the
+//! block's families, `U (Rose + Forest → C)`, and a fixpoint over a sum of
+//! one block's families opens that one stage over every summand; the
+//! surface's mutually recursive functions lower to it, each at its summand.
+//! A field a definition reads inside its own fixpoint is formed with the
+//! whole block in scope, as its family's fields were, so a field naming a
+//! later definition of the block meets the stage order, not an unbound
+//! constant. Witness:
+//! `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`.
+//!
+//! **Choice.** Induction-recursion read as a mutual block of nominal
+//! declarations over the stage order: a universe with Π over decoded
+//! positions, which the levitated codes cannot express — their code is
+//! first order, takes no σ over a decoded position and no function field.
+//! **Alternatives.** Induction-recursion as a kernel notion of its own,
+//! with an eliminator over the pair, which the recorded design declines;
+//! the levitated codes alone, which leave the three gaps above.
+//! **Reversal.** A staged decode that is not induction-recursion — the
+//! decoder a function the codes compute — would retire the identification.
+//! The witnesses are
+//! `recursive_data::recursive_data::a_mutual_block_is_admitted`
+//! and `recursive_data::recursive_data::a_mutual_block_is_refused_whole`.
+//!
 //! # Contract boundaries
 //!
 //! The source `# Specification` is authoritative; `#[spec(...)]` checks

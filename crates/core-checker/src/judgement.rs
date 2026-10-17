@@ -1237,6 +1237,11 @@ enum Frame
         /// Its scrutinee classifier.
         datatype: ValueTypeId,
     },
+    /// Form a branch's identified telescope with the open mutual block's
+    /// definitions foreseen, before the branch checks at it.
+    NativeForesee(CompTypeId),
+    /// Close the foresight a branch's telescope formed in.
+    NativeForget(crate::context::Foresight),
     /// Await a dependent split scrutinee's classifier, which must be a
     /// dependent pair.
     SigmaSplitScrutinee(ComputationId),
@@ -2080,7 +2085,10 @@ impl Frame
     const fn role(self) -> FrameRole
     {
         match self {
-            Self::NativeNext(_) => FrameRole::NativeNext,
+            // A foresight's open and close continue the case's premises.
+            Self::NativeNext(_) | Self::NativeForesee(_) | Self::NativeForget(_) => {
+                FrameRole::NativeNext
+            },
             Self::NativeYield(_) => FrameRole::NativeYield,
             Self::NativeCollect => FrameRole::NativeCollect,
             Self::NativeDiscard => FrameRole::NativeDiscard,
@@ -2237,6 +2245,8 @@ impl Frame
             | Self::NativeCase(_)
             | Self::NativeRespect { .. }
             | Self::NativeLoops { .. }
+            | Self::NativeForesee(_)
+            | Self::NativeForget(_)
             | Self::SigmaSplitScrutinee(_)
             | Self::NativeProjection(_)
             | Self::Ascription { .. }
@@ -2648,6 +2658,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | Frame::NativeMotive { .. }
                     | Frame::NativeRespect { .. }
                     | Frame::NativeLoops { .. }
+                    | Frame::NativeForesee(_)
+                    | Frame::NativeForget(_)
                     | Frame::SigmaSplitScrutinee(_)
                     | Frame::SigmaSplitMotive { .. }
                     | Frame::NativeProjection(_)
@@ -3275,7 +3287,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: nothing.
     /// - ensures: on success the result the goal's rule produced, the crossings
     ///   made and the refusals marked, none in a strict run; on success and on
-    ///   refusal alike, the binders stand where they stood at entry.
+    ///   refusal alike, the binders stand where they stood at entry, and the
+    ///   foresights a mutual block's branches opened are closed.
     /// - fails: in a strict run, the first refusal a rule gives; in a total
     ///   run, the first engine fault; in both, [`CheckRefusal::BudgetExceeded`]
     ///   when the allowance runs out. The failure holds the frames pending,
@@ -3315,6 +3328,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<(Produced, ConversionCount, Vec<MarkEntry>), Failure>
     {
         let entry = context.binders().depth(Zone::Intuitionistic);
+        let foresight = context.foresight();
         let remaining = usize::from(context.budget());
         let base = context.depth(Zone::Linear);
         let mut machine = Machine {
@@ -3336,6 +3350,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Err(halt) => {
                 let failure = machine.failure(halt, entry);
                 machine.unwind(entry);
+                machine.context.forget_foresight(foresight);
                 machine.close_sessions(scope);
                 Err(failure)
             },
@@ -4989,6 +5004,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let arena = self.context.arena_mut();
                 let recursive = arena.value_type_thunk(own);
                 let scoped = shift_comp_type(arena, inside, Binders::from(1_u32));
+                // A structural fixpoint is the definition's own when its body
+                // thunks it: inside it, a case reads the definition's
+                // constant in its family's fields as this binder.
+                if position.is_some() {
+                    self.context.open_own(term, recursive);
+                }
                 self.context.binders().open(Zone::Intuitionistic, recursive);
                 self.wait(Frame::LambdaBody);
                 Ok(Step::Descend(Goal::Computation {
@@ -6320,6 +6341,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }
                 Ok(Step::Ascend(Produced::Checked))
             },
+            // The identified telescope forms in the block's foresight, which
+            // closes before the branch checks at it.
+            (Frame::NativeForesee(telescope), Produced::Checked) => {
+                let foresight = self.context.foresee_hindsight();
+                self.wait(Frame::NativeForget(foresight));
+                Ok(Step::Descend(Goal::Form(TypeNode::Computation(telescope))))
+            },
+            (Frame::NativeForget(foresight), Produced::Checked) => {
+                self.context.forget_foresight(foresight);
+                Ok(Step::Ascend(Produced::Checked))
+            },
             (Frame::SigmaSplitScrutinee(term), Produced::ValueType(classifier)) => {
                 self.sigma_split(term, classifier)
             },
@@ -6340,6 +6372,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::NativeMotive { .. }
                 | Frame::NativeRespect { .. }
                 | Frame::NativeLoops { .. }
+                | Frame::NativeForesee(_)
+                | Frame::NativeForget(_)
                 | Frame::SigmaSplitScrutinee(_)
                 | Frame::SigmaSplitMotive { .. }
                 | Frame::NativeProjection(_),

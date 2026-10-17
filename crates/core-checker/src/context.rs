@@ -81,6 +81,8 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
 use gandr_core_term::Context;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
@@ -141,13 +143,27 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
-    /// Why no data declaration's signature is forming.
-    mod forming {
+    /// Why no mutual block is open.
+    mod mutual {
         /// The reason no block is open.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// No data signature is being formed.
-            Idle,
+            /// Each declaration judged is admitted alone.
+            Lone,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why no fixpoint of the declaration under way is its own.
+    pub mod own {
+        /// The reason none is.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The declaration under way opened no fixpoint.
+            Unopened,
+            /// The fixpoint it opened has closed.
+            Closed,
         }
     }
 }
@@ -256,6 +272,16 @@ struct Sealed
     level: Level,
 }
 
+/// How many definitions the open foresights had foreseen when one opened:
+/// what [`CheckingContext::forget_foresight`] returns the signature table to.
+///
+/// A foresight opens and closes on the judgement machine's frame stack, so
+/// a case's branch forms its identified telescope without the machine calling
+/// back into itself.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Foresight(usize);
+
 /// The core context wrapped with the signature table, the admission position,
 /// the atoms, the code definitions, the sealed abstract types, the lifts and
 /// the step allowance.
@@ -320,14 +346,24 @@ pub struct CheckingContext<'arena>
     budget: CheckBudget,
     /// The answers the running supported judgement consulted, when one runs.
     support: SupportLog,
-    /// The data declaration whose signature is forming, which names itself.
-    forming: Maybe<
-        (
-            ConstantIndex,
-            alloc::sync::Arc<gandr_core_term::DataSignature>,
-        ),
-        forming::Absent,
-    >,
+    /// The data declarations whose signatures are forming, each naming
+    /// itself and the others: one alone, or the families of a mutual block.
+    forming: Vec<(
+        ConstantIndex,
+        alloc::sync::Arc<gandr_core_term::DataSignature>,
+    )>,
+    /// The mutual block being admitted, while one is.
+    mutual: Maybe<crate::occurrence::Block, mutual::Absent>,
+    /// Every mutual block of several families opened so far: its families
+    /// share one stage.
+    kin: Vec<crate::occurrence::Block>,
+    /// The declared types the open mutual block foresaw for its definitions
+    /// not yet admitted, ascending: a family's field read inside a definition
+    /// names them, as the family did.
+    hindsight: Vec<(ConstantIndex, FormedValueType)>,
+    /// The definitions the open foresights foresaw from hindsight, in the
+    /// order they were foreseen: what each closes again.
+    foreseen: Vec<ConstantIndex>,
     /// The authority the host grants the module's held capabilities.
     grants: crate::capability::Grants,
     /// The term judgements and type formations a typed run finished, in the
@@ -339,6 +375,13 @@ pub struct CheckingContext<'arena>
     /// The stages the recursion typing minted since the declaration under way
     /// began.
     stages: gandr_kernel_core::stage_order::StageOrder,
+    /// The fixpoint the definition under way thunks as its body — its own —
+    /// and, while that fixpoint is open, the depth below its self binder and
+    /// that binder's type.
+    own: (
+        Maybe<ComputationId, own::Absent>,
+        Maybe<(BinderDepth, ValueTypeId), own::Absent>,
+    ),
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -457,11 +500,19 @@ impl<'arena> CheckingContext<'arena>
             seals: SealTable::new(),
             budget,
             support: SupportLog::Off,
-            forming: Maybe::Absent(forming::Absent::Idle),
+            forming: Vec::new(),
+            mutual: Maybe::Absent(mutual::Absent::Lone),
+            kin: Vec::new(),
+            hindsight: Vec::new(),
+            foreseen: Vec::new(),
             grants: crate::capability::Grants::Unbounded,
             typings: None,
             formations: Wanted::All,
             stages: gandr_kernel_core::stage_order::StageOrder::default(),
+            own: (
+                Maybe::Absent(own::Absent::Unopened),
+                Maybe::Absent(own::Absent::Unopened),
+            ),
         }
     }
 
@@ -800,10 +851,11 @@ impl<'arena> CheckingContext<'arena>
 
     /// Open the block of the data declaration at `position` for its
     /// signature's formation: until the block closes, a nominal lookup of
-    /// `position` answers `signature`.
+    /// `position` answers `signature`. The other families of its mutual block
+    /// stay in scope beside it.
     ///
     /// # Specification
-    /// - requires: nothing; a block already open is replaced.
+    /// - requires: nothing; a block already open at `position` is replaced.
     /// - ensures: [`Self::data_in_scope`] answers `signature` at `position`.
     /// - provides: the one scope a data declaration's fields name it in.
     /// - panics: none.
@@ -820,16 +872,123 @@ impl<'arena> CheckingContext<'arena>
         signature: alloc::sync::Arc<gandr_core_term::DataSignature>,
     )
     {
-        self.forming = Maybe::Present((position, signature));
+        self.forming.retain(|&(held, _)| held != position);
+        self.forming.push((position, signature));
     }
 
-    /// Close the forming block.
+    /// Close the forming block at `position`; the other families of its
+    /// mutual block stay in scope until their own close.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn close_block(&mut self)
+    pub(crate) fn close_block(
+        &mut self,
+        position: ConstantIndex,
+    )
     {
-        self.forming = Maybe::Absent(forming::Absent::Idle);
+        self.forming.retain(|&(held, _)| held != position);
+    }
+
+    /// Open the mutual block `block` over the signatures of its families:
+    /// each is in scope until its own formation closes it, and the block is
+    /// what each family's occurrences are walked by.
+    ///
+    /// # Specification
+    /// - requires: `families` are the block's data declarations, in order.
+    /// - ensures: [`Self::data_in_scope`] answers each family's signature, and
+    ///   [`Self::block_of`] answers `block` for each of its members.
+    /// - provides: the scope a mutual block's definitions' declared types form
+    ///   in before any family's constructors do.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a universe and its decoder admitted as one block.
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    #[spec(ensures: self.mutual == Maybe::Present(block))]
+    pub(crate) fn open_mutual(
+        &mut self,
+        block: crate::occurrence::Block,
+        families: impl IntoIterator<
+            Item = (
+                ConstantIndex,
+                alloc::sync::Arc<gandr_core_term::DataSignature>,
+            ),
+        >,
+    )
+    {
+        self.mutual = Maybe::Present(block);
+        if usize::from(block.families()).saturating_sub(usize::from(block.first())) >= 2 {
+            self.kin.push(block);
+        }
+        self.forming.extend(families);
+    }
+
+    /// Close the mutual block: every family left forming leaves scope.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn close_mutual(&mut self)
+    {
+        self.mutual = Maybe::Absent(mutual::Absent::Lone);
+        self.forming.clear();
+        self.hindsight.clear();
+    }
+
+    /// The mutual block of several families the family at `position` was
+    /// opened in.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn kin_of(
+        &self,
+        position: ConstantIndex,
+    ) -> Maybe<crate::occurrence::Block, mutual::Absent>
+    {
+        self.kin
+            .iter()
+            .rev()
+            .find(|block| block.first() <= position && position < block.families())
+            .map_or(Maybe::Absent(mutual::Absent::Lone), |&block| {
+                Maybe::Present(block)
+            })
+    }
+
+    /// The block the data declaration at `position` is admitted in: the open
+    /// mutual block when it holds `position`, else `position` alone.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn block_of(
+        &self,
+        position: ConstantIndex,
+    ) -> crate::occurrence::Block
+    {
+        match self.mutual {
+            Maybe::Present(block)
+                if block.holds(position) == crate::occurrence::Membership::Family =>
+            {
+                block
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => crate::occurrence::Block::lone(position),
+        }
+    }
+
+    /// The signature forming at `constant`, if one is.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: walks the families forming, one for a lone declaration and at
+    ///   most its mutual block's family count otherwise.
+    fn forming_at(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<&alloc::sync::Arc<gandr_core_term::DataSignature>>
+    {
+        self.forming
+            .iter()
+            .find_map(|&(held, ref signature)| (held == constant).then_some(signature))
     }
 
     /// The nominal signature in scope at `constant`, without logging: the
@@ -837,15 +996,16 @@ impl<'arena> CheckingContext<'arena>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: [`Self::forming_at`]'s walk, then one ordered-map lookup.
     #[inline]
     pub fn data_in_scope(
         &self,
         constant: ConstantIndex,
     ) -> Maybe<alloc::sync::Arc<gandr_core_term::DataSignature>, data_scope::Absent>
     {
-        if let Maybe::Present((position, ref signature)) = self.forming
-            && position == constant
-        {
+        if let Some(signature) = self.forming_at(constant) {
             return Maybe::Present(alloc::sync::Arc::clone(signature));
         }
         self.data_signatures
@@ -859,7 +1019,7 @@ impl<'arena> CheckingContext<'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the forming block's signature at its own position, unlogged;
+    /// - ensures: a forming block's signature at its own position, unlogged;
     ///   otherwise the exact stored table, and a supported judgment logs its
     ///   identity and table, rather than only its universe.
     /// - panics: none.
@@ -871,9 +1031,9 @@ impl<'arena> CheckingContext<'arena>
     ///   run can disagree with.
     /// - witness: `native_formers::native_formers::native_signature_support_and_adoption`
     /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
-    #[spec(ensures: |ret| match self.forming {
-Maybe::Present((position, ref signature)) if position == constant => ret.as_ref() == Some(signature),
-Maybe::Present(_) | Maybe::Absent(_) => ret.as_ref() == self.data_signatures.get(&constant) && match self.support {
+    #[spec(ensures: |ret| match self.forming_at(constant) {
+Some(signature) => ret.as_ref() == Some(signature),
+None => ret.as_ref() == self.data_signatures.get(&constant) && match self.support {
 SupportLog::Off => true,
 SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.constant() == constant && entry.signature() == ret.as_deref()),
 },
@@ -883,9 +1043,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         constant: ConstantIndex,
     ) -> Option<alloc::sync::Arc<gandr_core_term::DataSignature>>
     {
-        if let Maybe::Present((position, ref signature)) = self.forming
-            && position == constant
-        {
+        if let Some(signature) = self.forming_at(constant) {
             return Some(alloc::sync::Arc::clone(signature));
         }
         let answer = self
@@ -2370,14 +2528,107 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         &mut self.stages
     }
 
-    /// Forget every stage minted: a declaration's stages are its own, so the
-    /// stages a refusal names do not depend on the declarations before it.
+    /// Forget every stage minted and the fixpoint opened: a declaration's
+    /// stages are its own, so the stages a refusal names do not depend on the
+    /// declarations before it.
     ///
     /// # Specification
     /// trivial.
     pub(crate) fn forget_stages(&mut self)
     {
         self.stages = gandr_kernel_core::stage_order::StageOrder::default();
+        self.own = (
+            Maybe::Absent(own::Absent::Unopened),
+            Maybe::Absent(own::Absent::Unopened),
+        );
+    }
+
+    /// Take `body`, the definition under way's body, as its own fixpoint's
+    /// when the definition is a mutual block's and its body thunks one, with
+    /// none open yet: only a block's families name its definitions.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn own_body(
+        &mut self,
+        body: ValueId,
+    )
+    {
+        let root = match (&self.mutual, self.arena.value(body)) {
+            (&Maybe::Present(_), Some(&Value::Thunk(root)))
+                if matches!(
+                    self.arena.computation(root),
+                    Some(&Computation::Fixpoint { .. })
+                ) =>
+            {
+                Maybe::Present(root)
+            },
+            (&(Maybe::Present(_) | Maybe::Absent(_)), Some(_) | None) => {
+                Maybe::Absent(own::Absent::Unopened)
+            },
+        };
+        self.own = (root, Maybe::Absent(own::Absent::Unopened));
+    }
+
+    /// Open `fixpoint`, whose self binder of type `binder` is about to be
+    /// bound at the current depth, as the definition's own when it is the
+    /// fixpoint its body thunks.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn open_own(
+        &mut self,
+        fixpoint: ComputationId,
+        binder: ValueTypeId,
+    )
+    {
+        if matches!(self.own.0, Maybe::Present(root) if root == fixpoint) {
+            self.own.1 = Maybe::Present((self.depth(Zone::Intuitionistic), binder));
+        }
+    }
+
+    /// The declaration's own constant and the index of its self binder, while
+    /// its own fixpoint is open and that binder is in scope.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: present exactly when the declaration under way opened its own
+    ///   fixpoint and the binder at the index past the depth it was opened at
+    ///   still has the type it was opened with.
+    /// - provides: what a case inside a mutual block's definition identifies
+    ///   that definition's constant with.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decoder's arm reads its family's field through its
+    ///   self binder.
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present((constant, index)) => {
+            self.admitted == Maybe::Present(constant) && self.hypothesis(index).is_ok()
+        },
+        Maybe::Absent(_) => true,
+    })]
+    pub(crate) fn own_fixpoint(
+        &self
+    ) -> Maybe<(ConstantIndex, gandr_kernel_term::DeBruijnIndex), own::Absent>
+    {
+        let (Maybe::Present((below, binder)), Maybe::Present(constant)) =
+            (self.own.1, self.admitted)
+        else {
+            return Maybe::Absent(own::Absent::Unopened);
+        };
+        let distance = usize::from(self.depth(Zone::Intuitionistic))
+            .checked_sub(usize::from(below))
+            .and_then(|past| past.checked_sub(1))
+            .and_then(|distance| u32::try_from(distance).ok())
+            .map(gandr_kernel_term::DeBruijnIndex::from);
+        match distance {
+            Some(index) if self.hypothesis(index) == Ok(binder) => {
+                Maybe::Present((constant, index))
+            },
+            Some(_) | None => Maybe::Absent(own::Absent::Closed),
+        }
     }
 
     /// The type of the intuitionistic hypothesis `index` binders out.
@@ -2466,23 +2717,24 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// Record the type the admitted declaration at `constant` supplied.
     ///
     /// # Specification
-    /// - requires: `constant` is the position admitted last and no type has yet
-    ///   been recorded there, so the table stays strictly ascending.
-    /// - ensures: [`Self::signature`] answers `declared` for `constant`.
+    /// - requires: `constant` is the position admitted last, and every type
+    ///   recorded at a later position was foreseen, so the table stays strictly
+    ///   ascending.
+    /// - ensures: [`Self::signature`] answers `declared` for `constant`; a type
+    ///   foreseen there is replaced, and nothing else changes.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — later declarations read earlier supplied types,
     ///   including a refused signed body; absent types remain absent. These
-    ///   cases separate omitted or mispositioned records in ordered modules.
+    ///   cases separate omitted or mispositioned records in ordered modules; a
+    ///   mutual block's decoder records over the type it foresaw.
     /// - witness: `module::tests::a_later_declaration_reads_an_earlier_type`
     /// - witness: `module::tests::a_refused_signed_body_still_supplies_its_type`
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
     #[spec(
-        requires: self.admitted == Maybe::Present(constant)
-            && self.signatures.last().is_none_or(|&(previous, _)| previous < constant),
-        captures: before = self.signatures.len(),
-        ensures: self.signatures.len().checked_sub(1) == Some(before)
-            && self.signatures.last() == Some(&(constant, declared)),
+        requires: self.admitted == Maybe::Present(constant),
+        ensures: self.signature(constant) == Maybe::Present(declared),
     )]
     pub(crate) fn record(
         &mut self,
@@ -2490,7 +2742,151 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         declared: FormedValueType,
     )
     {
-        self.signatures.push((constant, declared));
+        self.foresee(constant, declared);
+    }
+
+    /// Record the type the declaration at `constant`, a later member of the
+    /// mutual block being admitted, declares, before it is admitted.
+    ///
+    /// # Specification
+    /// - requires: nothing — a position already recorded is replaced.
+    /// - ensures: [`Self::signature`] answers `declared` for `constant`, the
+    ///   table stays strictly ascending, and every other entry is unchanged.
+    /// - provides: the step of a mutual block's admission schedule between its
+    ///   families' formation and their constructors': the constructors name its
+    ///   definitions at the types they declare.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a universe's constructor naming its decoder forms at
+    ///   the decoder's declared type before the decoder is admitted.
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    #[spec(ensures: self.signature(constant) == Maybe::Present(declared))]
+    pub(crate) fn foresee(
+        &mut self,
+        constant: ConstantIndex,
+        declared: FormedValueType,
+    )
+    {
+        match self
+            .signatures
+            .binary_search_by_key(&constant, |&(held, _)| held)
+        {
+            Ok(found) => {
+                if let Some(entry) = self.signatures.get_mut(found) {
+                    entry.1 = declared;
+                }
+            },
+            Err(slot) => self.signatures.insert(slot, (constant, declared)),
+        }
+    }
+
+    /// Forget the declared types recorded at and past `from`: what a mutual
+    /// block foresaw for its families' fields, once its definitions are
+    /// judged. The forgotten types stay in hindsight, which
+    /// [`Self::foresee_hindsight`] reads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Self::signature`] answers nothing at and past `from`, and
+    ///   every entry before it is unchanged; the hindsight holds what was
+    ///   foreseen at and past `from`, ascending.
+    /// - provides: the step of a mutual block's schedule that judges each
+    ///   definition as a lone one is judged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decoder whose body names a later definition of its
+    ///   block is refused as a forward reference.
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    #[spec(ensures: self.signatures.last().is_none_or(|&(last, _)| last < from)
+        && self.hindsight.first().is_none_or(|&(held, _)| held >= from))]
+    pub(crate) fn unforesee(
+        &mut self,
+        from: ConstantIndex,
+    )
+    {
+        let kept = self.signatures.partition_point(|&(held, _)| held < from);
+        let forgotten = self.signatures.split_off(kept);
+        self.hindsight.retain(|&(held, _)| held >= from);
+        self.hindsight.extend(forgotten);
+        self.hindsight.sort_by_key(|&(held, _)| held);
+        self.hindsight.dedup_by_key(|&mut (held, _)| held);
+    }
+
+    /// Foresee the open mutual block's definitions not yet admitted again at
+    /// their declared types, as the block's families formed: a family's field
+    /// read inside a definition may name them. The foresight lasts until
+    /// [`Self::forget_foresight`] is given the mark returned.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Self::signature`] answers each type in hindsight, every
+    ///   position it did not answer before recorded as foreseen; the mark is
+    ///   the foreseen count before the call.
+    /// - provides: the scope a definition's identified field is formed in.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a universe whose field decodes a later definition of
+    ///   its block reaches the decoder's stage check rather than an unknown
+    ///   constant.
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    #[spec(
+        captures: before = self.foreseen.len(),
+        ensures: |ret| ret == Foresight(before) && self.foreseen.len() >= before,
+    )]
+    pub(crate) fn foresee_hindsight(&mut self) -> Foresight
+    {
+        let mark = self.foresight();
+        let held = core::mem::take(&mut self.hindsight);
+        for &(constant, declared) in &held {
+            if let Maybe::Absent(_) = self.signature(constant) {
+                self.foresee(constant, declared);
+                self.foreseen.push(constant);
+            }
+        }
+        self.hindsight = held;
+        mark
+    }
+
+    /// The mark of the foresights open now: what a judgement that refuses
+    /// part-way returns the signature table to.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn foresight(&self) -> Foresight
+    {
+        Foresight(self.foreseen.len())
+    }
+
+    /// Close the foresights opened since `mark`: every definition they
+    /// foresaw leaves [`Self::signature`] again.
+    ///
+    /// # Specification
+    /// - requires: nothing; a mark past what is open closes nothing.
+    /// - ensures: the foreseen count is at most the mark's, and the signature
+    ///   table holds no more entries than before.
+    /// - provides: the close of [`Self::foresee_hindsight`], on the frame stack
+    ///   or on a refusal's unwinding.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decoder's arm formed in foresight, and its body
+    ///   after it naming a later definition refused as a forward reference.
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    #[spec(
+        captures: before = self.signatures.len(),
+        ensures: self.foreseen.len() <= mark.0 && self.signatures.len() <= before,
+    )]
+    pub(crate) fn forget_foresight(
+        &mut self,
+        mark: Foresight,
+    )
+    {
+        let forgotten = self.foreseen.split_off(mark.0.min(self.foreseen.len()));
+        self.signatures
+            .retain(|&(held, _)| !forgotten.contains(&held));
     }
 }
 
