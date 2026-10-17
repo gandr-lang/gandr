@@ -29,7 +29,7 @@ def undone(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
   back(p) then p
 }
 
-/// A parameter composed in a type, and reflexivity at it.
+/// A parameter composed in a type, and reflexivity at it (#423).
 @[ checks ]
 def stated(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p then loop, p then loop) {
   here(p then loop)
@@ -47,7 +47,7 @@ def untwice(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
   back(twice(p)) then loop
 }
 
-/// A call composed in a type.
+/// A call composed in a type (#423).
 @[ checks ]
 def thrice(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), twice(p) then p, twice(p) then p) {
   here(twice(p) then p)

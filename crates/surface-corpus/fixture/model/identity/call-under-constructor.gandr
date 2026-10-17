@@ -34,7 +34,7 @@ def down(n : Int) -> -F Int {
 }
 
 /// At `P(x)` the endpoint `S(plus(Z, P(x)))` is `S(P(plus(Z, x)))`, which the
-/// first rule reads as the call `plus(Z, x)` itself.
+/// first rule reads as the call `plus(Z, x)` itself (#424).
 @[ checks ]
 def rec underSuccessor(b : Int) -> -F Path(Int, S(plus(Z, b)), S(b)) {
   case b {

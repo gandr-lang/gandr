@@ -29,7 +29,7 @@ def loopImage(f : +U[ω] (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {
 }
 
 /// A map out of the circle as a point and a loop there: the second
-/// component's type reads the first, the call `f(Base)`.
+/// component's type reads the first, the call `f(Base)` (#426).
 @[ checks ]
 def toLoop(f : +U[ω] (Circle -> -F Int)) -> -F (#{point : Int, around : Path(Int, point, point)}) {
   #{f(Base), loopImage(f)}
@@ -48,7 +48,8 @@ def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> -F Int {
 }
 
 /// A record's projections as the arguments of that map: the second
-/// parameter's type reads the first argument, the projection `r.point`.
+/// parameter's type reads the first argument, the projection `r.point`
+/// (#426).
 @[ checks ]
 def fromRecord(r : #{point : Int, around : Path(Int, point, point)}, c : Circle) -> -F Int {
   fromLoopAt(r.point, r.around, c)

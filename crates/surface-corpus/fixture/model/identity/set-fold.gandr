@@ -105,7 +105,7 @@ def downAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> -F Pat
 
 /// Addition commutes. At `S(P(x))` the arms compute a chain through
 /// `flipP` and `flipS` against the call at `x`; both are paths in the
-/// integers between the same two sums, so they are one path.
+/// integers between the same two sums, so they are one path (#427).
 @[ checks ]
 def rec plusComm(a : Int, b : Int) -> -F Path(Int, plus(a, b), plus(b, a)) {
   case b {
