@@ -413,4 +413,40 @@ mod tests
             );
         }
     }
+
+    #[test]
+    fn const_equality_is_equality_over_every_variant_and_field()
+    {
+        use alloc::vec::Vec;
+
+        let mut labels = Vec::from(every_variant());
+        labels.extend([
+            NodeLabel::Meld(MoldId::from(4_u32)),
+            NodeLabel::Grout {
+                sort: GroutSort::from(2_u16),
+                shape: GroutShape::Convex,
+            },
+            NodeLabel::Grout {
+                sort: GroutSort::from(1_u16),
+                shape: GroutShape::Infix,
+            },
+            NodeLabel::GhostClose {
+                sort: GroutSort::from(2_u16),
+                class: ClosingClass::Brace,
+            },
+            NodeLabel::GhostClose {
+                sort: GroutSort::from(1_u16),
+                class: ClosingClass::Paren,
+            },
+        ]);
+        for &left in &labels {
+            for &right in &labels {
+                assert_eq!(
+                    matches!(left.const_eq(right), crate::ConstEquality::Equal),
+                    left == right,
+                    "{left:?} against {right:?}"
+                );
+            }
+        }
+    }
 }
