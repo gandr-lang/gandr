@@ -2,8 +2,8 @@
 // operand is when its form does not spell one: a parameter by the type its
 // binder writes, a call by the result its declaration writes, a recursive
 // call by its own function's result, and `cong` over a parameter function by
-// that function's written result. In a body and in a type alike, none of
-// these needs a stated type (#423).
+// that function's written result, which may read the parameters before it.
+// In a body and in a type alike, none of these needs a stated type (#423).
 
 /// The circle: a point and a loop at it.
 data Circle : Type {
@@ -83,6 +83,19 @@ def rec still(b : Nat) -> -F Path(Nat, b, b) {
 @[ checks ]
 def mapped(f : +U[ω] (Circle -> -F Nat)) -> -F Path(Nat, f(Base), f(Base)) {
   back(cong(f, loop))
+}
+
+/// `cong` at a parameter map whose type reads an earlier parameter, the type
+/// it maps from: its result read where the operation stands (#546).
+@[ checks ]
+def mappedOver(b : Type, g : +U (b -> -F Nat), u : b, v : b, q : Path(b, u, v)) -> -F Path(Nat, g(v), g(u)) {
+  back(cong(g, q))
+}
+
+/// The same map into a type it reads, in a type and in a body (#546).
+@[ checks ]
+def mappedInto(a : Type, b : Type, g : +U (b -> -F a), u : b, v : b, q : Path(b, u, v)) -> -F Path(Path(a, g(u), g(v)), cong(g, q), cong(g, q)) {
+  here(cong(g, q))
 }
 
 /// A parameter of no path type gives no path to read.
