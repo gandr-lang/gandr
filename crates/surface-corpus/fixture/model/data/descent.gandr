@@ -5,15 +5,10 @@
 // long as it stands below the parameter the match took apart. The parameters
 // before the staged one are passed unchanged; descent on two parameters at
 // once is the sized rung's (#392). What refuses is in
-// `../../pathological/data/descent.gandr`. `Nat` is shared with
-// `data-recursive.gandr`.
+// `../../pathological/data/descent.gandr`.
 
-/// Natural numbers, the data every definition here descends on.
-@[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
-}
+// The naturals and the numerals two and three.
+import "./data-base.gandr" ;
 
 /// Addition by recursion on the first argument, the second an accumulator
 /// each call grows: `plus(Succ(p), n) = plus(p, Succ(n))`.
@@ -51,16 +46,6 @@ def rec fib(n : Nat) -> -F Nat {
   }
 }
 
-/// Two.
-@[ runs("Succ(Succ(Zero))") ]
-def two : Nat ;
-def two = Succ(Succ(Zero)) ;
-
-/// Three.
-@[ runs("Succ(Succ(Succ(Zero)))") ]
-def three : Nat ;
-def three = Succ(two) ;
-
 /// Four.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
 def four : Nat ;
@@ -68,8 +53,8 @@ def four = Succ(three) ;
 
 /// Two and three by the accumulator: five.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
-def five : +U (-F Nat) ;
-def five = thunk { plusFirst(two, three) } ;
+def five_accumulated : +U (-F Nat) ;
+def five_accumulated = thunk { plusFirst(two, three) } ;
 
 /// Half of four.
 @[ runs("Succ(Succ(Zero))") ]
