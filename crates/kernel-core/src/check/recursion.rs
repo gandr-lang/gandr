@@ -31,9 +31,16 @@
 //!   the components of records, products, sums, lists, Σ types and `&`, and
 //!   contravariantly in domains; invariant conversion compares a stage as
 //!   itself.
+//! - **A type parameter instantiates at a staged code.** [`instantiation`]
+//!   reads the code an application hands a type parameter at the stage of the
+//!   first later variable argument whose parameter's type holds it — as `El a`
+//!   or as a data type's argument — when the stage's base converts with the
+//!   written code's type, so the plain code the wire carries re-derives the
+//!   staged one the checker held.
 //!
 //! No stage reaches the wire and none is presented: formation refuses a stage
-//! in a presented type, so every stage this module reads is one it minted.
+//! in a presented type, so every stage this module reads is one it minted, the
+//! ones [`instantiation`] carries into a code included.
 
 use alloc::vec::Vec;
 
@@ -50,6 +57,7 @@ use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::Standing;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
+use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 use quenchant_shape::shape::Maybe;
@@ -1099,6 +1107,169 @@ pub(super) fn subsumes(
         }
     }
     Ok(())
+}
+
+/// The code a type parameter is instantiated at, when the code on the wire is
+/// plain and a later argument holds it at a stage: that staged code,
+/// re-derived.
+///
+/// No stage crosses the wire, so a type argument is its plain code `⌜T⌝`. The
+/// kernel re-derives the stage the checker read: from the first later argument
+/// of the application's spine that is a variable whose type — the case that
+/// bound it staged it — holds `T` at a stage where its own domain names the
+/// parameter: the parameter itself (`El a` against `T^s`), or an argument of a
+/// data type (`D(…, a, …)` against `D(…, ⌜T^s⌝, …)`). Every argument of the
+/// spine is then checked at `⌜T^s⌝`, so a function handed on with it must take
+/// values at `s`, and a claim that does not descend is refused by the order.
+///
+/// # Specification
+/// - requires: `codomain` is the codomain under the binder of the dependent
+///   arrow `code` is applied to, `context` the machine's typing context, and
+///   `spine` the arguments applied after `code`, in order.
+/// - ensures: for `code` the quote of a type `T`, the first variable of
+///   `spine`, walked down `codomain`'s arrows, whose type is `T^s` where its
+///   domain is the binder's decode, or a data type holding `⌜T^s⌝` where its
+///   domain, the same data type, holds the binder: the code `⌜T^s⌝`, with
+///   `T^s`'s base convertible with `T`; [`Unstaged::Plain`] when no argument
+///   holds one, or for a `code` that is no quote.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rose tree's children handed to `map` instantiate its
+///   element at their stage, and the claim handed beside them is admitted; the
+///   node itself in a one-element list instantiates nothing and the claim is
+///   refused; a value of a stage handed to a generic `apply` instantiates its
+///   parameter at that stage.
+/// - witness: `recursive_data::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+/// - witness: `recursive_data::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(staged) => matches!(arena.value(staged), Some(&Value::Quote(quoted))
+        if matches!(arena.value_type(quoted), Some(ValueType::Staged { .. }))),
+    Maybe::Absent(Unstaged::Plain) => true,
+})]
+pub(super) fn instantiation<Spine>(
+    arena: &mut TermArena,
+    (session, context): (&mut SupportContext, &[ValueTypeId]),
+    (code, codomain): (ValueId, CompTypeId),
+    spine: Spine,
+) -> Maybe<ValueId, Unstaged>
+where
+    Spine: IntoIterator<Item = ValueId>,
+{
+    let Some(&Value::Quote(written)) = arena.value(code)
+    else {
+        return Maybe::Absent(Unstaged::Plain);
+    };
+    let mut telescope = codomain;
+    let mut binder = 0_u32;
+    for argument in spine {
+        let (domain, rest, binds) = match arena.comp_type(telescope) {
+            Some(&CompType::Pi { domain, codomain }) => (domain, codomain, Dependence::Dependent),
+            Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, Dependence::Ambient),
+            Some(_) | None => break,
+        };
+        if let Some(&Value::Variable(index)) = arena.value(argument)
+            && let Maybe::Present(found) = super::lookup(arena, session, context, index)
+            && let Maybe::Present((base, held)) =
+                held_at(arena, (domain, DeBruijnIndex::from(binder)), found)
+            && crate::conv::convertible_value_types(arena, base, written)
+                == crate::conv::Convertibility::Convertible
+        {
+            return Maybe::Present(match held {
+                Held::Itself => arena.value_quote(found),
+                Held::Argument(staged) => staged,
+            });
+        }
+        if binds == Dependence::Dependent {
+            let Some(next) = binder.checked_add(1)
+            else {
+                break;
+            };
+            binder = next;
+        }
+        telescope = rest;
+    }
+    Maybe::Absent(Unstaged::Plain)
+}
+
+/// Where a variable's type holds a staged code for a type parameter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Held
+{
+    /// The variable's type is itself the staged type.
+    Itself,
+    /// The variable's type holds the staged code as a data type's argument.
+    Argument(ValueId),
+}
+
+/// The base of the staged type `found` holds where `domain` names `binder`,
+/// and where it holds it.
+///
+/// # Specification
+/// - ensures: for `domain` the decode of the variable `binder` and `found` a
+///   staged type, its base and [`Held::Itself`]; for `domain` a data type with
+///   an argument the variable `binder` and `found` — read through its own stage
+///   — the same data type whose argument there is the quote of a staged type,
+///   that type's base and [`Held::Argument`] of the quote, the first such
+///   argument's; [`Unstaged::Plain`] otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `map`'s list parameter meets a rose tree's children at
+///   their stage, and `apply`'s decoded parameter a predecessor at its stage; a
+///   list built around the scrutinee holds no stage.
+/// - witness: `recursive_data::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+/// - witness: `recursive_data::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present((base, Held::Itself)) => matches!(arena.value_type(found),
+        Some(&ValueType::Staged { base: inner, .. }) if inner == base),
+    Maybe::Present((base, Held::Argument(quote))) => matches!(arena.value(quote), Some(&Value::Quote(quoted))
+        if matches!(arena.value_type(quoted), Some(&ValueType::Staged { base: inner, .. }) if inner == base)),
+    Maybe::Absent(Unstaged::Plain) => true,
+})]
+fn held_at(
+    arena: &TermArena,
+    (domain, binder): (ValueTypeId, DeBruijnIndex),
+    found: ValueTypeId,
+) -> Maybe<(ValueTypeId, Held), Unstaged>
+{
+    let names = |value: ValueId| matches!(arena.value(value), Some(&Value::Variable(index)) if index == binder);
+    let staged = |value: ValueId| match arena.value(value) {
+        Some(&Value::Quote(quoted)) => match arena.value_type(quoted) {
+            Some(&ValueType::Staged { base, .. }) => Maybe::Present(base),
+            Some(_) | None => Maybe::Absent(Unstaged::Plain),
+        },
+        Some(_) | None => Maybe::Absent(Unstaged::Plain),
+    };
+    let unstaged = match arena.value_type(found) {
+        Some(&ValueType::Staged { base, .. }) => base,
+        Some(_) | None => found,
+    };
+    match (arena.value_type(domain), arena.value_type(unstaged)) {
+        (Some(&ValueType::Element { code, .. }), Some(_)) if names(code) && unstaged != found => {
+            Maybe::Present((unstaged, Held::Itself))
+        },
+        (
+            Some(&ValueType::Data {
+                declaration: wanted,
+                arguments: ref parameters,
+            }),
+            Some(&ValueType::Data {
+                declaration,
+                ref arguments,
+            }),
+        ) if wanted == declaration && parameters.len() == arguments.len() => parameters
+            .iter()
+            .zip(arguments)
+            .find_map(
+                |(&parameter, &argument)| match (names(parameter), staged(argument)) {
+                    (true, Maybe::Present(base)) => Some((base, Held::Argument(argument))),
+                    (true | false, Maybe::Present(_) | Maybe::Absent(_)) => None,
+                },
+            )
+            .map_or(Maybe::Absent(Unstaged::Plain), Maybe::Present),
+        (Some(_) | None, Some(_) | None) => Maybe::Absent(Unstaged::Plain),
+    }
 }
 
 #[cfg(test)]

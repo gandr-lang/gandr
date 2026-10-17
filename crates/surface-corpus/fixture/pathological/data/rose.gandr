@@ -2,10 +2,10 @@
 // stands below its node only through a parameter the other family holds
 // strictly positively, as `List` holds its elements (#517); a parameter its
 // family consumes, standing to the left of an arrow in its own field, places
-// nothing below the node, and a node over it is a nested occurrence. The
-// direct form's measure through a list's map refuses until a call infers its
-// instantiation at the children's stage (#393, #392). Shared with
-// `../../model/data/rose.gandr`.
+// nothing below the node, and a node over it is a nested occurrence. A measure
+// through a list's map takes its children at their stage (#393), and the node
+// itself at none: handed to `map` in a list of its own, it is not below the
+// node's stage. Shared with `../../model/data/rose.gandr`.
 
 /// The two answers a test gives.
 @[ checks ]
@@ -76,13 +76,13 @@ def rec sum(xs : List(Nat)) -> -F Nat {
   }
 }
 
-/// The nodes of a tree, its children's measured through `map`: `size[<]`
-/// takes only nodes below the node's stage, while `map` instantiated at `Bush`
-/// may hand it any node. Admitted once the call infers `map`'s instantiation
-/// at the children's staged type (#393), the sized rung's (#392).
+/// The nodes of a tree, forged: the node itself handed to `map` in a list of
+/// its own. The list holds the node at no stage below its own, so `map`'s
+/// element is the node's plain type, and `forged[<]` takes only nodes below
+/// the node's stage (#393).
 @[ refuses("StageNotBelow") ]
-def rec size(t : Bush) -> -F Nat {
+def rec forged(t : Bush) -> -F Nat {
   case t {
-    Sprout(kids) => Succ(sum(map(Bush, Nat, size[<], kids)))
+    Sprout(kids) => Succ(sum(map(Bush, Nat, forged[<], (Cons(t, (Nil : List(Bush))) : List(Bush)))))
   }
 }

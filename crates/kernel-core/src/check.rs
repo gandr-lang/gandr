@@ -4830,11 +4830,30 @@ where
                         // two eliminations: a codomain that mentions its binder
                         // through a code names the argument after this step, and
                         // a codomain that mentions nothing is handed back
-                        // unchanged at no cost.
+                        // unchanged at no cost. A plain code a later argument of
+                        // the spine holds at a stage instantiates at that staged
+                        // code, re-derived as the checker read it.
                         Some(&CompType::Pi { domain, codomain }) => {
+                            let spine = frames.iter().rev().map_while(|frame| {
+                                if let Frame::SynthApply(later) = *frame {
+                                    Some(later)
+                                }
+                                else {
+                                    None
+                                }
+                            });
+                            let instance = match recursion::instantiation(
+                                arena,
+                                (session, context.as_slice()),
+                                (argument, codomain),
+                                spine,
+                            ) {
+                                Maybe::Present(staged) => staged,
+                                Maybe::Absent(recursion::Unstaged::Plain) => argument,
+                            };
                             let (table, rewrites) = session.rewrite_parts();
                             let instantiated =
-                                substitute_comp_type(arena, table, rewrites, codomain, argument);
+                                substitute_comp_type(arena, table, rewrites, codomain, instance);
                             frames.push(Frame::ProduceComp(instantiated));
                             goal = Goal::CheckValue(argument, domain);
                             continue 'expand;

@@ -1,19 +1,23 @@
 // Rose trees: a node holds its children, in two forms. Written directly, a
 // node holds a `List` of nodes: the list's parameter is strictly positive, so
-// each child stands below the node and the family declares (#517). Written as
-// a block, a node holds a forest and a forest is empty or a tree before a
-// forest: the two families name each other, so they are one block, admitted
-// as one and sharing one stage; and the two measures name each other, so they
-// are one fixpoint over the sum of their domains, each measure that fixpoint
-// at its own summand. A call through either stands one stage below the node or
-// forest it was read from (Abel, _Termination checking with types_,
-// doi:10.1051/ita:2004015). The direct form's measure, recursing through a
-// list's map at its children's stage, is refused in
-// `../../pathological/data/rose.gandr` until #393.
+// each child stands below the node and the family declares (#517); a measure
+// recurses through the list's `map`, which a call instantiates at the
+// children's stage (#393), and its run waits on the machine taking a type code
+// as an argument (#452). Written as a block, a node holds a forest and a forest
+// is empty or a tree before a forest: the two families name each other, so
+// they are one block, admitted as one and sharing one stage; and the two
+// measures name each other, so they are one fixpoint over the sum of their
+// domains, each measure that fixpoint at its own summand. A call through
+// either stands one stage below the node or forest it was read from (Abel,
+// _Termination checking with types_, doi:10.1051/ita:2004015). What the direct
+// form refuses is in `../../pathological/data/rose.gandr`.
 
 // The naturals the measures count in, their addition, and the lists the
 // direct form nests through.
 import "./data-base.gandr" ;
+
+// The lists' `map`, which the direct form's measures recurse through.
+import "./recursive-lists.gandr" ;
 
 /// The direct form: a node over a list of nodes, nested through `List`'s
 /// strictly positive parameter (#517).
@@ -31,6 +35,34 @@ def sprig = Sprout((Nil : List(Bush))) ;
 @[ checks ]
 def shrub : Bush ;
 def shrub = Sprout((Cons(sprig, (Cons(sprig, (Nil : List(Bush))) : List(Bush))) : List(Bush))) ;
+
+/// A list of numbers, summed.
+@[ checks ]
+def rec sum(xs : List(Nat)) -> -F Nat {
+  case xs {
+    Nil => Zero,
+    Cons(x, rest) => plus(x, sum[<](rest))
+  }
+}
+
+/// The nodes of a bush, its children's measured through `map`: the call
+/// instantiates `map`'s element at the children's stage, below the node's,
+/// so `nodes[<]` takes each child (#393).
+@[ checks ]
+def rec nodes(t : Bush) -> -F Nat {
+  case t {
+    Sprout(kids) => Succ(sum(map(Bush, Nat, nodes[<], kids)))
+  }
+}
+
+/// A map over the tree: every node gains a childless node beside its
+/// children, each child grown through `map` at its stage.
+@[ checks ]
+def rec grow(t : Bush) -> -F Bush {
+  case t {
+    Sprout(kids) => Sprout((Cons(sprig, map(Bush, Bush, grow[<], kids)) : List(Bush)))
+  }
+}
 
 /// The tree and its forest, one block: each family names the other, and
 /// the two measures recurse through each other.

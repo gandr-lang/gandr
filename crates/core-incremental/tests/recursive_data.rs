@@ -330,3 +330,173 @@ fn recursive_data_checkpoints_round_trip_and_resume()
         unchanged.adoptions()
     );
 }
+
+/// `(force head) arguments…`, applied left to right.
+///
+/// # Specification
+/// trivial.
+fn applied(
+    arena: &mut CoreArena,
+    head: ValueId,
+    arguments: &[ValueId],
+) -> gandr_core_term::ComputationId
+{
+    let forced = arena.computation_force(head);
+    arguments.iter().fold(forced, |applied, &argument| {
+        arena.computation_application(applied, argument)
+    })
+}
+
+/// `Nat`, `List`, `Rose` over `List ⌜Rose⌝`, `map`, and `size` handing its
+/// node's children and its own claim to `map` at the plain code `⌜Rose⌝`.
+///
+/// # Specification
+/// - ensures: five items at ascending positions.
+/// - panics: only if the program container refuses the fixture.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the one item whose check instantiates a type parameter at
+///   a staged code.
+/// - witness: `tests::recursive_data::a_staged_instantiation_reaches_no_checkpoint`
+#[spec(ensures: |ret| ret.items().len() == 5)]
+fn rose_program() -> Program
+{
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let nat = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let nat_data = data(
+        ConstantIndex::from(0_usize),
+        DataSignature::new(vec![], vec![vec![], vec![nat]], kind),
+    );
+    let list_data = {
+        let code = var(&mut arena, DeBruijnIndex::from(0));
+        let head = arena.value_type_element(code, Level::zero());
+        let past_head = var(&mut arena, DeBruijnIndex::from(1));
+        let tail = arena.value_type_data(ConstantIndex::from(1_usize), vec![past_head]);
+        data(
+            ConstantIndex::from(1_usize),
+            DataSignature::new(vec![kind], vec![vec![], vec![head, tail]], kind),
+        )
+    };
+    let rose = arena.value_type_data(ConstantIndex::from(2_usize), vec![]);
+    let rose_code = arena.value_quote(rose);
+    let kids = arena.value_type_data(ConstantIndex::from(1_usize), vec![rose_code]);
+    let rose_data = data(
+        ConstantIndex::from(2_usize),
+        DataSignature::new(vec![], vec![vec![kids]], kind),
+    );
+    let map = {
+        // Under Π a Π b: `a` 1, `b` 0.
+        let a = var(&mut arena, DeBruijnIndex::from(1));
+        let b = var(&mut arena, DeBruijnIndex::from(0));
+        let source = arena.value_type_element(a, Level::zero());
+        let target = arena.value_type_element(b, Level::zero());
+        let into = arena.comp_type_returner(target);
+        let step = arena.comp_type_arrow(source, into);
+        let step = arena.value_type_thunk(step);
+        let from = arena.value_type_data(ConstantIndex::from(1_usize), vec![a]);
+        let to = arena.value_type_data(ConstantIndex::from(1_usize), vec![b]);
+        let into_list = arena.comp_type_returner(to);
+        let last = arena.comp_type_arrow(from, into_list);
+        let middle = arena.comp_type_arrow(step, last);
+        let inner = arena.comp_type_pi(kind, middle);
+        let outer = arena.comp_type_pi(kind, inner);
+        let declared = arena.value_type_thunk(outer);
+        // Under λxs: `xs` 0, `m` 1, `g` 2, `b` 3; the motive binds the
+        // scrutinee once more.
+        let element = var(&mut arena, DeBruijnIndex::from(4));
+        let to = arena.value_type_data(ConstantIndex::from(1_usize), vec![element]);
+        let motive = arena.comp_type_returner(to);
+        let element = var(&mut arena, DeBruijnIndex::from(3));
+        let to = arena.value_type_data(ConstantIndex::from(1_usize), vec![element]);
+        let nil = arena.value_constructor(to, ConstructorTag::from(0_usize), vec![]);
+        let on_nil = arena.computation_return(nil);
+        // Under λx λrest: `rest` 0, `x` 1, `m` 3, `g` 4; under `y`, `rest`
+        // 1 and `m` 4; under `r`, `r` 0, `y` 1 and `b` 7.
+        let function = var(&mut arena, DeBruijnIndex::from(4));
+        let head = var(&mut arena, DeBruijnIndex::from(1));
+        let mapped = applied(&mut arena, function, &[head]);
+        let recursive = var(&mut arena, DeBruijnIndex::from(4));
+        let rest = var(&mut arena, DeBruijnIndex::from(1));
+        let recursed = applied(&mut arena, recursive, &[rest]);
+        let element = var(&mut arena, DeBruijnIndex::from(7));
+        let to = arena.value_type_data(ConstantIndex::from(1_usize), vec![element]);
+        let image = var(&mut arena, DeBruijnIndex::from(1));
+        let images = var(&mut arena, DeBruijnIndex::from(0));
+        let cons = arena.value_constructor(to, ConstructorTag::from(1_usize), vec![image, images]);
+        let returned = arena.computation_return(cons);
+        let inner = arena.computation_bind(recursed, returned);
+        let outer = arena.computation_bind(mapped, inner);
+        let rest_lambda = arena.computation_lambda(outer);
+        let on_cons = arena.computation_lambda(rest_lambda);
+        let xs = var(&mut arena, DeBruijnIndex::from(0));
+        let case = arena.computation_data_case(xs, motive, vec![on_nil, on_cons]);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+        let body = (0_u8 .. 3).fold(fixpoint, |body, _binder| arena.computation_lambda(body));
+        let body = arena.value_thunk(body);
+        definition(ConstantIndex::from(3_usize), declared, body)
+    };
+    let size = {
+        let returner = arena.comp_type_returner(nat);
+        let classifier = arena.comp_type_arrow(rose, returner);
+        let declared = arena.value_type_thunk(classifier);
+        let nat_code = arena.value_quote(nat);
+        let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
+        let one = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![zero]);
+        let counted = arena.computation_return(one);
+        // The node's arm under `kids` 0, `t` 1, `s` 2.
+        let helper = arena.value_constant(ConstantIndex::from(3_usize));
+        let claim = var(&mut arena, DeBruijnIndex::from(2));
+        let children = var(&mut arena, DeBruijnIndex::from(0));
+        let mapped = applied(&mut arena, helper, &[rose_code, nat_code, claim, children]);
+        let on_node = arena.computation_bind(mapped, counted);
+        let on_node = arena.computation_lambda(on_node);
+        let t = var(&mut arena, DeBruijnIndex::from(0));
+        let case = arena.computation_data_case(t, returner, vec![on_node]);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+        let body = arena.value_thunk(fixpoint);
+        definition(ConstantIndex::from(4_usize), declared, body)
+    };
+    Program::new(arena, vec![
+        Item::new(ItemKey::from("Nat"), nat_data),
+        Item::new(ItemKey::from("List"), list_data),
+        Item::new(ItemKey::from("Rose"), rose_data),
+        Item::new(ItemKey::from("map"), map),
+        Item::new(ItemKey::from("size"), size),
+    ])
+    .expect("fixture positions ascend")
+}
+
+#[test]
+fn a_staged_instantiation_reaches_no_checkpoint()
+{
+    // `size` checks only by instantiating `map`'s element at its children's
+    // stage; that instantiation lives in the judgement, never in the item, so
+    // the checkpoint holds no stage — a staged type would persist as an
+    // unresolved node and refuse to encode — and resumes unchanged.
+    let original = check_program(&mut rose_program(), CheckBudget::DEFAULT)
+        .expect("the initial pass succeeds");
+    let checkpoints = original.checkpoints();
+    let typings: Vec<&Typing> = checkpoints
+        .items()
+        .iter()
+        .map(gandr_core_incremental::ItemCheckpoint::typing)
+        .collect();
+    assert!(matches!(typings[3], Typing::Checked { .. }), "{typings:?}");
+    assert!(matches!(typings[4], Typing::Checked { .. }), "{typings:?}");
+    let encoded = encode_checkpoints(checkpoints).expect("no stage reaches a checkpoint");
+    let restored = decode_checkpoints(&encoded).expect("they decode");
+    assert_eq!(&restored, checkpoints);
+    let unchanged = resume_from(&restored, &mut rose_program()).expect("the program is adopted");
+    assert_eq!(unchanged.checkpoints(), checkpoints);
+    assert!(
+        unchanged
+            .adoptions()
+            .iter()
+            .all(|adoption| *adoption == Adoption::Adopted),
+        "{:?}",
+        unchanged.adoptions()
+    );
+}

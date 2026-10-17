@@ -1249,14 +1249,25 @@ mod recursive_data
         }
     }
 
-    /// `Rose`, `node : (kids : List ⌜Rose⌝)`, nests the family through
-    /// `List`'s strictly positive parameter: the block declares, and a node
-    /// with no children is a rose.
-    #[test]
-    fn a_nested_occurrence_through_a_strictly_positive_parameter_declares()
+    /// Admit `Rose`, `node : (kids : List ⌜Rose⌝)`: the family nested through
+    /// `List`'s strictly positive parameter.
+    ///
+    /// # Specification
+    /// - requires: `list` names the admitted `List`.
+    /// - ensures: the returned identifier names a checked data declaration at
+    ///   the environment's next position.
+    /// - panics: if the block is refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family nested through a strictly positive parameter
+    ///   declares.
+    /// - witness: `recursive_data::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
+    #[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+    fn rose(
+        environment: &mut Environment,
+        list: ConstantIndex,
+    ) -> CheckedId
     {
-        let mut environment = Environment::new();
-        let list = list(&mut environment).position();
         let rose = ConstantIndex::from(environment.entries().len());
         let mut staging = environment.stage();
         let arena = staging.arena();
@@ -1270,8 +1281,20 @@ mod recursive_data
             vec![vec![kids]],
             kind,
         );
-        let declared = environment.add_decl(declaration);
-        assert!(declared.is_ok(), "{declared:?}");
+        environment
+            .add_decl(declaration)
+            .expect("Rose nests through a strictly positive parameter")
+    }
+
+    /// `Rose`, `node : (kids : List ⌜Rose⌝)`, nests the family through
+    /// `List`'s strictly positive parameter: the block declares, and a node
+    /// with no children is a rose.
+    #[test]
+    fn a_nested_occurrence_through_a_strictly_positive_parameter_declares()
+    {
+        let mut environment = Environment::new();
+        let list = list(&mut environment).position();
+        let rose = rose(&mut environment, list).position();
         let mut staging = environment.stage();
         let arena = staging.arena();
         let own = arena.value_type_data(rose, vec![]);
@@ -1282,6 +1305,317 @@ mod recursive_data
         let declaration = staging.def(LevelSignature::monomorphic(), own, sprig);
         let defined = environment.add_decl(declaration);
         assert!(defined.is_ok(), "{defined:?}");
+    }
+
+    /// `(force head) arguments…`, applied left to right.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spine(
+        arena: &mut TermArena,
+        head: ValueId,
+        arguments: &[ValueId],
+    ) -> ComputationId
+    {
+        let forced = arena.computation_force(head);
+        arguments.iter().fold(forced, |applied, &argument| {
+            arena.computation_application(applied, argument)
+        })
+    }
+
+    /// Admit `map : U (Π a. Π b. U (El a → F (El b)) → List a → F (List b))`,
+    /// `λa λb λg. fix m. λxs. case xs { nil ↦ return nil; cons ↦ λx λrest. y ←
+    /// (force g) x; r ← (force m) rest; return (cons y r) }`.
+    ///
+    /// # Specification
+    /// - requires: `list` names the admitted `List`.
+    /// - ensures: the returned identifier names the admitted definition.
+    /// - panics: if the kernel refuses it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the generic map a rose tree's measure recurses
+    ///   through.
+    /// - witness: `recursive_data::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+    #[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+    fn map(
+        environment: &mut Environment,
+        list: ConstantIndex,
+    ) -> CheckedId
+    {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let declared = {
+            // Under Π a Π b: `a` 1, `b` 0.
+            let a = arena.value_variable(DeBruijnIndex::from(1));
+            let b = arena.value_variable(DeBruijnIndex::from(0));
+            let source = arena.value_type_element(a, Level::zero());
+            let target = arena.value_type_element(b, Level::zero());
+            let into = arena.comp_type_returner(target);
+            let step = arena.comp_type_arrow(source, into);
+            let step = arena.value_type_thunk(step);
+            let from = arena.value_type_data(list, vec![a]);
+            let to = arena.value_type_data(list, vec![b]);
+            let into_list = arena.comp_type_returner(to);
+            let last = arena.comp_type_arrow(from, into_list);
+            let middle = arena.comp_type_arrow(step, last);
+            let inner = arena.comp_type_pi(kind, middle);
+            let outer = arena.comp_type_pi(kind, inner);
+            arena.value_type_thunk(outer)
+        };
+        // Under λxs: `xs` 0, `m` 1, `g` 2, `b` 3, `a` 4; the motive binds the
+        // scrutinee once more.
+        let motive = {
+            let b = arena.value_variable(DeBruijnIndex::from(4));
+            let to = arena.value_type_data(list, vec![b]);
+            arena.comp_type_returner(to)
+        };
+        let on_nil = {
+            let b = arena.value_variable(DeBruijnIndex::from(3));
+            let to = arena.value_type_data(list, vec![b]);
+            let nil = arena.value_constructor(to, ConstructorTag::from(0), vec![]);
+            arena.computation_return(nil)
+        };
+        let on_cons = {
+            // Under λx λrest: `rest` 0, `x` 1, `m` 3, `g` 4.
+            let head = arena.value_variable(DeBruijnIndex::from(1));
+            let mapped = call(arena, DeBruijnIndex::from(4), head);
+            // Under `y`: `rest` 1, `m` 4.
+            let rest = arena.value_variable(DeBruijnIndex::from(1));
+            let recursed = call(arena, DeBruijnIndex::from(4), rest);
+            // Under `r`: `r` 0, `y` 1, `b` 7.
+            let element = arena.value_variable(DeBruijnIndex::from(7));
+            let to = arena.value_type_data(list, vec![element]);
+            let image = arena.value_variable(DeBruijnIndex::from(1));
+            let images = arena.value_variable(DeBruijnIndex::from(0));
+            let cons = arena.value_constructor(to, ConstructorTag::from(1), vec![image, images]);
+            let returned = arena.computation_return(cons);
+            let inner = arena.computation_bind(recursed, returned);
+            let outer = arena.computation_bind(mapped, inner);
+            let rest_lambda = arena.computation_lambda(outer);
+            arena.computation_lambda(rest_lambda)
+        };
+        let xs = arena.value_variable(DeBruijnIndex::from(0));
+        let case = arena.computation_data_case(xs, motive, vec![on_nil, on_cons]);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+        let g_lambda = arena.computation_lambda(fixpoint);
+        let b_lambda = arena.computation_lambda(g_lambda);
+        let a_lambda = arena.computation_lambda(b_lambda);
+        let value = arena.value_thunk(a_lambda);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+        environment
+            .add_decl(declaration)
+            .expect("map descends on its list")
+    }
+
+    /// What a rose tree's measure hands `map` beside its own claim.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Children
+    {
+        /// The node's own field, at the stage the case bound it.
+        Field,
+        /// A one-element list of the node itself, at the plain `List ⌜Rose⌝`.
+        Forged,
+    }
+
+    /// Offer `size : U (Rose → F Nat)`, `fix s. λt. case t { node ↦ λkids. _ ←
+    /// (force map) ⌜Rose⌝ ⌜Nat⌝ s children; return 1 }`: the claim handed to
+    /// `map` is the self binder, as a source's unapplied claim lowers, and the
+    /// codes the plain ones a source writes.
+    ///
+    /// # Specification
+    /// - requires: `nat`, `list`, `rose` and `map` name the admitted
+    ///   declarations of those names.
+    /// - ensures: admitted exactly for the node's own field.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The kernel's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the field and the forged list differ in the one
+    ///   argument whose type stages `map`'s element.
+    /// - witness: `recursive_data::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+    /// - witness: `recursive_data::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`
+    #[spec(ensures: |ret| ret.is_ok() == (children == Children::Field))]
+    fn size(
+        environment: &mut Environment,
+        (nat, list, rose, map): (ConstantIndex, ConstantIndex, ConstantIndex, ConstantIndex),
+        children: Children,
+    ) -> Result<CheckedId, KernelError>
+    {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let nat_type = arena.value_type_data(nat, vec![]);
+        let rose_type = arena.value_type_data(rose, vec![]);
+        let returner = arena.comp_type_returner(nat_type);
+        let classifier = arena.comp_type_arrow(rose_type, returner);
+        let rose_code = arena.value_quote(rose_type);
+        let nat_code = arena.value_quote(nat_type);
+        let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+        let one = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![zero]);
+        let counted = arena.computation_return(one);
+        // The node's arm under `kids` 0, `t` 1, `s` 2.
+        let listed = match children {
+            Children::Field => arena.value_variable(DeBruijnIndex::from(0)),
+            Children::Forged => {
+                let kids = arena.value_type_data(list, vec![rose_code]);
+                let nil = arena.value_constructor(kids, ConstructorTag::from(0), vec![]);
+                let node = arena.value_variable(DeBruijnIndex::from(1));
+                arena.value_constructor(kids, ConstructorTag::from(1), vec![node, nil])
+            },
+        };
+        let claim = arena.value_variable(DeBruijnIndex::from(2));
+        let head = arena.value_constant(map);
+        let mapped = spine(arena, head, &[rose_code, nat_code, claim, listed]);
+        let on_node = arena.computation_bind(mapped, counted);
+        let on_node = arena.computation_lambda(on_node);
+        let node = arena.value_variable(DeBruijnIndex::from(0));
+        let case = arena.computation_data_case(node, returner, vec![on_node]);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+        let declared = arena.value_type_thunk(classifier);
+        let value = arena.value_thunk(fixpoint);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+        environment.add_decl(declaration)
+    }
+
+    /// Admit `apply_at : U (Π a. Π b. U (El a → F (El b)) → El a → F (El b))`,
+    /// `λa λb λf λx. (force f) x`: a function applied at one type parameter.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the returned identifier names the admitted definition.
+    /// - panics: if the kernel refuses it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the generic helper a recursion hands its claim and
+    ///   its argument to.
+    /// - witness: `recursive_data::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+    #[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position)]
+    fn apply_at(environment: &mut Environment) -> CheckedId
+    {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        // Under Π a Π b: `a` 1, `b` 0.
+        let a = arena.value_variable(DeBruijnIndex::from(1));
+        let b = arena.value_variable(DeBruijnIndex::from(0));
+        let source = arena.value_type_element(a, Level::zero());
+        let target = arena.value_type_element(b, Level::zero());
+        let into = arena.comp_type_returner(target);
+        let function = arena.comp_type_arrow(source, into);
+        let thunked = arena.value_type_thunk(function);
+        let applying = arena.comp_type_arrow(thunked, function);
+        let inner = arena.comp_type_pi(kind, applying);
+        let outer = arena.comp_type_pi(kind, inner);
+        let declared = arena.value_type_thunk(outer);
+        // Under λa λb λf λx: `x` 0, `f` 1.
+        let argument = arena.value_variable(DeBruijnIndex::from(0));
+        let called = call(arena, DeBruijnIndex::from(1), argument);
+        let value = (0_u8 .. 4).fold(called, |body, _binder| arena.computation_lambda(body));
+        let value = arena.value_thunk(value);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+        environment
+            .add_decl(declaration)
+            .expect("apply_at checks without a fixpoint")
+    }
+
+    /// Offer `count : U (Nat → F Nat)`, `fix c. λn. case n { zero ↦ return
+    /// zero; succ ↦ λp. (force apply_at) ⌜Nat⌝ ⌜Nat⌝ c v }`, `v` the variable
+    /// `handed` under `p` 0, `n` 1, `c` 2.
+    ///
+    /// # Specification
+    /// - requires: `nat` and `apply_at` name the admitted declarations of those
+    ///   names.
+    /// - ensures: admitted exactly for the predecessor `p`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The kernel's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the predecessor and the parameter differ in the stage
+    ///   they instantiate `apply_at`'s parameter at.
+    /// - witness: `recursive_data::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+    /// - witness: `recursive_data::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`
+    #[spec(ensures: |ret| ret.is_ok() == (handed == DeBruijnIndex::from(0)))]
+    fn count(
+        environment: &mut Environment,
+        (nat, apply_at): (ConstantIndex, ConstantIndex),
+        handed: DeBruijnIndex,
+    ) -> Result<CheckedId, KernelError>
+    {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let nat_type = arena.value_type_data(nat, vec![]);
+        let returner = arena.comp_type_returner(nat_type);
+        let classifier = arena.comp_type_arrow(nat_type, returner);
+        let nat_code = arena.value_quote(nat_type);
+        let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+        let returned = arena.computation_return(zero);
+        let claim = arena.value_variable(DeBruijnIndex::from(2));
+        let handed = arena.value_variable(handed);
+        let head = arena.value_constant(apply_at);
+        let counted = spine(arena, head, &[nat_code, nat_code, claim, handed]);
+        let on_successor = arena.computation_lambda(counted);
+        let body = case_on_argument(arena, returner, returned, on_successor);
+        let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+        let declared = arena.value_type_thunk(classifier);
+        let value = arena.value_thunk(fixpoint);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+        environment.add_decl(declaration)
+    }
+
+    /// A type argument is the plain code on the wire, and the kernel
+    /// re-derives its stage from the argument that holds it: a rose tree's
+    /// children instantiate `map`'s element at their stage, and a predecessor
+    /// `apply_at`'s parameter at its own, so the claim handed beside them takes
+    /// them (#393).
+    #[test]
+    fn a_type_parameter_instantiates_at_a_staged_code()
+    {
+        let mut environment = Environment::new();
+        let nat = nat(&mut environment).position();
+        let list = list(&mut environment).position();
+        let rose = rose(&mut environment, list).position();
+        let map = map(&mut environment, list).position();
+        let sized = size(&mut environment, (nat, list, rose, map), Children::Field);
+        assert!(sized.is_ok(), "{sized:?}");
+        let apply_at = apply_at(&mut environment).position();
+        let counted = count(&mut environment, (nat, apply_at), DeBruijnIndex::from(0));
+        assert!(counted.is_ok(), "{counted:?}");
+    }
+
+    /// The node itself in a list of its own holds it at no stage, so `map`'s
+    /// element stays the plain code and the claim refuses at the top; the
+    /// parameter itself handed to `apply_at` instantiates it at the parameter's
+    /// own stage, which the claim's bound does not reach.
+    #[test]
+    fn a_claim_at_the_scrutinee_through_map_is_refused()
+    {
+        let mut environment = Environment::new();
+        let nat = nat(&mut environment).position();
+        let list = list(&mut environment).position();
+        let rose = rose(&mut environment, list).position();
+        let map = map(&mut environment, list).position();
+        let root = Stage::At(StageId::from(0_usize));
+        assert_eq!(
+            size(&mut environment, (nat, list, rose, map), Children::Forged).map(drop),
+            Err(KernelError::StageNotBelow {
+                found: Standing::Top,
+                bound: below(root),
+            })
+        );
+        let apply_at = apply_at(&mut environment).position();
+        assert_eq!(
+            count(&mut environment, (nat, apply_at), DeBruijnIndex::from(1)).map(drop),
+            Err(KernelError::StageNotBelow {
+                found: Standing::Staged(root),
+                bound: below(root),
+            })
+        );
     }
 
     #[test]

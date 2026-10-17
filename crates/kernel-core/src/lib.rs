@@ -406,6 +406,26 @@
 //! reading admits that a model of the stage order rejects, would return the
 //! walk to positivity by position.
 //!
+//! A recursion through a function polymorphic in its element re-derives the
+//! stage it passes on: an application handing a type parameter a plain code
+//! reads the code at the stage of the first later variable argument whose type
+//! holds the parameter ([`check`]'s recursion core, `instantiation`). A size
+//! through `map(⌜Rose⌝, ⌜Nat⌝, size, kids)`, with `kids` bound by a case below
+//! the node, takes `size` at `Rose^{s'} → F Nat`; a list of the node itself
+//! stands at no stage and the call is refused `StageNotBelow`. Witnesses:
+//! `recursive_data::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+//! and `recursive_data::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`.
+//!
+//! **Choice.** A staged type is a classifier the judgement instantiates a type
+//! parameter at, erased to its plain code on the wire and re-derived here from
+//! the argument that holds it, so a stage never enters a node's identity or a
+//! content key. **Alternatives.** The staged code written on the wire, which
+//! the kernel would compare instead of re-derive at the price of a stage in
+//! every such node; a stage as a decoration instantiation passes over, which
+//! keeps `map` at the plain `Rose` and refuses the size. **Reversal.** An
+//! instantiation no argument determines — a stage a solver chooses — crosses
+//! as a stage binder of the signature.
+//!
 //! # Mutual blocks
 //!
 //! A universe and the decoder that reads it name each other: `U`'s `PiC`
