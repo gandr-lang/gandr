@@ -43,6 +43,47 @@
 //! cycle. A sibling that does not parse is unresolved too, and lowered apart;
 //! a sibling the lowering refuses as a whole refuses its component whole with
 //! its refusal.
+//!
+//! # A walk parses each importer once
+//!
+//! **Choice.** [`group`] under [`Reading::ImportForms`] reads an importer's
+//! path imports from its import forms alone: each `import` that opens a line
+//! is taken through the `;` after it, and those forms are parsed together and
+//! read as [`paths_written`] reads a whole parse. The component is then parsed
+//! once, whole, for its lowering, and that parse confirms the reading
+//! ([`Component::confirms`]): its root reads, and the import forms in each
+//! source's own bytes write exactly the paths read for it. A component its
+//! parse does not confirm — a root the parse repaired, an import inside a
+//! module, an import form that does not open its line — is grouped again
+//! under [`Reading::Whole`], each importer parsed alone as [`lay_out`] parses
+//! it, and its sources lowered as that grouping lays them out. A sibling an
+//! import names is still parsed alone, to find whether it parses. [`lay_out`],
+//! which the session calls on every edit of a document, reads whole: it
+//! parses the document once already.
+//!
+//! **Why.** Under [`Reading::Whole`] every importer is parsed twice, alone to
+//! read its imports and again inside its component, and that second parse was
+//! the whole of what an import cost its importer (#617). On a 7 KB source
+//! importing a one-declaration sibling, the import reading cost 23 M of the
+//! importer's 152 M instructions, while the lowering, the check, the settle and
+//! the kernel admission each stayed within 1 % of the flat source's: the
+//! admission placed 3907 contents where the flat source placed 3906, and
+//! offered 44 declarations where it offered 43. Read from its forms, the
+//! importer costs 129 M against the flat source's 127 M, and the model corpus
+//! 8 % less.
+//!
+//! **Alternatives.** Parking the forms the import reading molds and taking
+//! them up in the component's parse keeps every importer's parse exact, but
+//! labels and commits each importer twice and parks and resumes every form;
+//! measured, it saved 9 M of the 23 M on the source above and 0.2 % of the
+//! model corpus. Labeling the importer to find its `import` keywords, rather
+//! than scanning its lines, reads the same forms for 2 M more. Lowering a
+//! forest — one tree per source into one arena — would take each source's own
+//! parse up whole; the lowering reads one tree.
+//!
+//! **Reversal.** A lowering that reads a forest drops the second parse
+//! without a prediction: each source is parsed once, alone, and lowered from
+//! that tree.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -61,6 +102,7 @@ use gandr_surface_lowering::written_imports;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::root::SourceRoot;
@@ -69,6 +111,90 @@ use crate::walk::read_source;
 /// The keyword every import is written with: a source whose text never
 /// spells it imports nothing, and is not parsed to find out.
 const IMPORT: &str = "import";
+
+/// The punctuation that ends an import form.
+const END: &str = ";";
+
+/// How [`group`] reads the path imports a source writes.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Reading
+{
+    /// The source parsed whole, its root's import forms read, as [`lay_out`]
+    /// reads them.
+    #[default]
+    Whole,
+    /// The source's import forms alone, parsed together, for its
+    /// component's parse to confirm.
+    ImportForms,
+}
+
+/// Whether a component's parse reads its sources' imports as [`group`] read
+/// them.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Confirmation
+{
+    /// The parse reads them so: the component is lowered from it.
+    Confirmed,
+    /// It does not: the component is grouped again under [`Reading::Whole`].
+    Unconfirmed,
+}
+
+/// How many bytes of source text a run has parsed.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ParsedBytes(usize);
+
+impl From<usize> for ParsedBytes
+{
+    /// The count of `bytes` bytes parsed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: usize) -> Self
+    {
+        Self(bytes)
+    }
+}
+
+impl From<ParsedBytes> for usize
+{
+    /// The number of bytes `parsed` records.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(parsed: ParsedBytes) -> Self
+    {
+        parsed.0
+    }
+}
+
+impl ParsedBytes
+{
+    /// Count `other`'s bytes into these, saturating.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the sum of both counts, saturated at the maximum count.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a walk over an importer and its sibling parses the
+    ///   importer's bytes once, within 2 % of the same source flat; a lost or
+    ///   doubled count moves that ratio.
+    /// - witness: `walk::tests::an_import_parses_its_importer_once_617`
+    #[inline]
+    #[spec(captures: [before = self.0], ensures: |_| self.0 == before.saturating_add(other.0))]
+    pub(crate) fn absorb(
+        &mut self,
+        other: Self,
+    )
+    {
+        self.0 = self.0.saturating_add(other.0);
+    }
+}
 
 /// A source's import closure laid out as one unit.
 ///
@@ -131,7 +257,9 @@ pub struct Given
 /// - ensures: `text` is the component's sources in admission order, one newline
 ///   apart, each after every source it imports; `unit` says where each starts
 ///   and what each of its path imports resolved to; `members` holds the bytes
-///   each source's own text covers in `text`, by its position in the unit.
+///   each source's own text covers in `text`, and `sources` each source's path,
+///   root and the path imports read for it, by its position in the unit;
+///   `reading` is how those imports were read.
 /// - panics: none.
 /// - executable: none — a data type; [`group`] carries the clauses.
 ///
@@ -148,6 +276,35 @@ pub struct Component
     pub unit: Unit,
     /// Each source's own bytes in `text`, in admission order.
     pub members: Vec<Member>,
+    /// Each source's path, root and imports read, in admission order.
+    pub sources: Vec<MemberSource>,
+    /// How the sources' imports were read.
+    pub reading: Reading,
+}
+
+/// Where one source of a component was read from, and what it was read to
+/// import.
+///
+/// # Specification
+/// - requires: constructed by [`group`].
+/// - ensures: `path` and `root` are the source's own; `written` holds the path
+///   imports its reading found, in source order, each address as written with
+///   escapes decoded — none for a source never read for its imports.
+/// - panics: none.
+/// - executable: none — a data type; [`group`] carries the clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`group`].
+/// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemberSource
+{
+    /// Its canonical path.
+    pub path: PathBuf,
+    /// The root its canonical path sits under.
+    pub root: SourceRoot,
+    /// The path imports its reading found.
+    pub written: Vec<String>,
 }
 
 /// The bytes one source's own text covers in its unit's text.
@@ -201,6 +358,9 @@ pub struct Grouped
     pub components: Vec<Component>,
     /// Where each given source stands, in the order the sources were given.
     pub placed: Vec<Placed>,
+    /// The bytes parsed to group the sources: each source read whole for its
+    /// imports or to find whether it parses, and the import forms read alone.
+    pub parsed: ParsedBytes,
 }
 
 /// One source read into the import graph.
@@ -215,6 +375,8 @@ struct Read
     text: String,
     /// What each of its path imports, in source order, came to.
     edges: Vec<Edge>,
+    /// The path imports its reading found, in source order.
+    written: Vec<String>,
     /// Whether it parses.
     parse: Parse,
 }
@@ -267,6 +429,10 @@ struct Graph
     read: Vec<Read>,
     /// The position of each canonical path read.
     index: BTreeMap<PathBuf, Position>,
+    /// How each source's imports are read.
+    reading: Reading,
+    /// The bytes parsed reading the graph.
+    parsed: ParsedBytes,
 }
 
 /// One component's sources, by position in the graph, in admission order.
@@ -357,7 +523,8 @@ pub fn lay_out(
 }
 
 /// The sources `given`, in the order given, grouped into the import-connected
-/// components they and the sources they reach make.
+/// components they and the sources they reach make, each source's imports
+/// read as `reading` says.
 ///
 /// # Specification
 /// - requires: each source's path is canonical and its root is that path's.
@@ -370,31 +537,43 @@ pub fn lay_out(
 ///   lays a closure out — its sources in dependency order, one newline apart,
 ///   each import's target recorded — the depth-first walk starting at its
 ///   sources in the order they were given; a component of one source keeps that
-///   source's text as it was read.
+///   source's text as it was read. Under [`Reading::Whole`] each importer's
+///   imports are those [`lay_out`] reads; under [`Reading::ImportForms`] they
+///   are those its import forms alone write, an importer whose forms write a
+///   path import taken to parse, which [`Component::confirms`] checks.
 /// - provides: the units a walk lowers, each once.
 /// - fails: never.
 /// - panics: none.
 /// - intension: a source whose text does not spell `import` and that no import
-///   names is not parsed here; every other source is parsed once here, to read
-///   its imports or to find whether it parses; recursion-free.
+///   names is not parsed here; under [`Reading::Whole`] every other source is
+///   parsed once here, to read its imports or to find whether it parses; under
+///   [`Reading::ImportForms`] an importer is scanned once and only its import
+///   forms parsed; recursion-free.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a diamond and a source beside it make two components, the
-///   diamond's base laid out once, before every source that imports it.
+///   diamond's base laid out once, before every source that imports it, under
+///   either reading.
 /// - witness: `component::tests::a_component_lays_each_source_once`
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 #[spec(
     captures: [offered = given.len()],
     ensures: |ref ret| ret.placed.len() == offered
         && ret.placed.iter().all(|placed| ret.components.get(placed.component)
-            .is_some_and(|component| placed.member < component.members.len())),
+            .is_some_and(|component| placed.member < component.members.len()
+                && component.sources.len() == component.members.len()
+                && component.reading == reading)),
 )]
 pub fn group(
     grammar: &Pbg,
     given: Vec<Given>,
+    reading: Reading,
 ) -> Grouped
 {
-    let mut graph = Graph::default();
+    let mut graph = Graph {
+        reading,
+        ..Graph::default()
+    };
     let positions: Vec<Position> = given
         .into_iter()
         .map(|source| graph.admit(source.path, source.root, source.text))
@@ -433,7 +612,11 @@ pub fn group(
             })
         })
         .collect();
-    Grouped { components, placed }
+    Grouped {
+        components,
+        placed,
+        parsed: graph.parsed,
+    }
 }
 
 impl Graph
@@ -470,6 +653,7 @@ impl Graph
             root,
             text,
             edges: Vec::new(),
+            written: Vec::new(),
             parse: Parse::Unchecked,
         });
         position
@@ -481,21 +665,25 @@ impl Graph
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each source whose text spells `import` is parsed and its path
-    ///   imports resolved in the order it writes them, [`Parse::Parsed`] with
-    ///   its edges, or [`Parse::Unparsed`] with none; each source an edge names
-    ///   is [`Parse::Parsed`] or [`Parse::Unparsed`]; every other source stays
+    /// - ensures: each source whose text spells `import` is read for its path
+    ///   imports as the graph's [`Reading`] says and its imports resolved in
+    ///   the order it writes them. Read whole, it is [`Parse::Parsed`] with its
+    ///   edges, or [`Parse::Unparsed`] with none; read by its import forms, it
+    ///   is [`Parse::Parsed`] with its edges when they write a path import and
+    ///   stays [`Parse::Unchecked`] otherwise. Each source an edge names is
+    ///   [`Parse::Parsed`] or [`Parse::Unparsed`]; every other source stays
     ///   [`Parse::Unchecked`].
     /// - fails: never.
     /// - panics: none.
     /// - intension: one breadth-first pass over the sources as they are read;
-    ///   each source parsed at most once; recursion-free.
+    ///   each source parsed whole at most once; recursion-free.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a closure read through two imports of one sibling, a
     ///   cycle and a missing path.
     /// - witness: `component::tests::an_importer_is_laid_after_what_it_imports`
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
+    /// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
     #[spec(captures: [admitted = self.read.len()], ensures: self.read.len() >= admitted)]
     fn expand(
         &mut self,
@@ -514,11 +702,28 @@ impl Graph
                 .map(Path::to_path_buf)
                 .unwrap_or_default();
             let root = source.root;
-            let (parse, written) =
-                match paths_written(grammar, SourceText::from(source.text.as_str())) {
-                    Maybe::Present(written) => (Parse::Parsed, written),
-                    Maybe::Absent(_) => (Parse::Unparsed, Vec::new()),
-                };
+            let text = SourceText::from(source.text.as_str());
+            let mut parsed = ParsedBytes::default();
+            let (parse, written) = match self.reading {
+                Reading::Whole => {
+                    parsed = ParsedBytes::from(source.text.len());
+                    match paths_written(grammar, text) {
+                        Maybe::Present(written) => (Parse::Parsed, written),
+                        Maybe::Absent(_) => (Parse::Unparsed, Vec::new()),
+                    }
+                },
+                Reading::ImportForms => {
+                    let written = paths_formed(grammar, text, &mut parsed);
+                    let parse = if written.is_empty() {
+                        Parse::Unchecked
+                    }
+                    else {
+                        Parse::Parsed
+                    };
+                    (parse, written)
+                },
+            };
+            self.parsed.absorb(parsed);
             let edges: Vec<Edge> = written
                 .iter()
                 .map(|address| self.resolve(&directory.join(address), root))
@@ -526,6 +731,7 @@ impl Graph
             if let Some(reading) = self.read.get_mut(next) {
                 reading.parse = parse;
                 reading.edges = edges;
+                reading.written = written;
             }
             next = next.saturating_add(1);
         }
@@ -542,6 +748,7 @@ impl Graph
             if let Some(reading) = self.read.get_mut(to.0)
                 && reading.parse == Parse::Unchecked
             {
+                self.parsed.absorb(ParsedBytes::from(reading.text.len()));
                 reading.parse = if parse(grammar, SourceText::from(reading.text.as_str())).is_ok() {
                     Parse::Parsed
                 }
@@ -833,6 +1040,7 @@ impl Graph
             .collect();
         let mut sources = Vec::with_capacity(laying.0.len());
         let mut members = Vec::with_capacity(laying.0.len());
+        let mut origins = Vec::with_capacity(laying.0.len());
         let mut text = String::new();
         for &position in &laying.0 {
             let targets = self.read.get(position.0).map_or_else(Vec::new, |read| {
@@ -867,13 +1075,21 @@ impl Graph
                 start,
                 end: ByteOffset::from(text.len()),
             });
+            origins.push(MemberSource {
+                path: read.path.clone(),
+                root: read.root,
+                written: core::mem::take(&mut read.written),
+            });
             sources.push(UnitSource::new(start, targets));
         }
+        let reading = self.reading;
         Unit::new(sources).map_or(Maybe::Absent(laid::Absent::Alone), |unit| {
             Maybe::Present(Component {
                 text,
                 unit,
                 members,
+                sources: origins,
+                reading,
             })
         })
     }
@@ -898,8 +1114,8 @@ impl Graph
         position: Position,
     ) -> Component
     {
-        let (text, imports) = self.read.get_mut(position.0).map_or_else(
-            || (String::new(), Vec::new()),
+        let (text, imports, origin) = self.read.get_mut(position.0).map_or_else(
+            || (String::new(), Vec::new(), Vec::new()),
             |read| {
                 (
                     core::mem::take(&mut read.text),
@@ -907,6 +1123,11 @@ impl Graph
                         .iter()
                         .map(|_| ImportTarget::Unresolved)
                         .collect(),
+                    Vec::from([MemberSource {
+                        path: read.path.clone(),
+                        root: read.root,
+                        written: core::mem::take(&mut read.written),
+                    }]),
                 )
             },
         );
@@ -916,8 +1137,147 @@ impl Graph
             unit: Unit::new(Vec::from([UnitSource::new(start, imports)])).unwrap_or_default(),
             members: Vec::from([Member { start, end }]),
             text,
+            sources: origin,
+            reading: self.reading,
         }
     }
+}
+
+impl Component
+{
+    /// Whether `tree`, the component's text parsed whole, reads each source's
+    /// path imports as [`group`] read them.
+    ///
+    /// # Specification
+    /// - requires: `tree` is [`Component::text`] parsed under `grammar`.
+    /// - ensures: [`Confirmation::Confirmed`] under [`Reading::Whole`], whose
+    ///   reading is each source's own parse, and for a text that never spells
+    ///   `import`, which writes no import under either reading; otherwise
+    ///   confirmed exactly when the tree's root reads and the path imports it
+    ///   writes within each member's bytes are, in order, the paths read for
+    ///   that member.
+    /// - provides: the check that lets a walk parse each importer once.
+    /// - fails: never; a root the parse repaired, or an import form that does
+    ///   not read, is [`Confirmation::Unconfirmed`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a component of an importer and its sibling confirms;
+    ///   a source whose import sits inside a module, laid beside the base the
+    ///   import names, does not.
+    /// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
+    #[must_use]
+    #[inline]
+    #[spec(ensures: |ret| ret == Confirmation::Confirmed || self.reading == Reading::ImportForms)]
+    pub fn confirms(
+        &self,
+        grammar: &Pbg,
+        tree: &SyntaxTree<'_>,
+    ) -> Confirmation
+    {
+        if self.reading == Reading::Whole || !self.text.contains(IMPORT) {
+            return Confirmation::Confirmed;
+        }
+        let Ok(written) = written_imports(grammar, tree)
+        else {
+            return Confirmation::Unconfirmed;
+        };
+        let mut found: Vec<Vec<String>> = vec![Vec::new(); self.members.len()];
+        for import in written {
+            if import.address != Address::Path {
+                continue;
+            }
+            let at = import.span.start();
+            let Some(member) = self
+                .members
+                .iter()
+                .position(|member| member.start <= at && at < member.end)
+                .and_then(|position| found.get_mut(position))
+            else {
+                return Confirmation::Unconfirmed;
+            };
+            member.push(String::from(import.uri.as_ref()));
+        }
+        let confirmed = found
+            .iter()
+            .zip(&self.sources)
+            .all(|(paths, source)| *paths == source.written);
+        if confirmed {
+            Confirmation::Confirmed
+        }
+        else {
+            Confirmation::Unconfirmed
+        }
+    }
+}
+
+/// The path addresses `text`'s import forms write, read from those forms
+/// alone, in source order, the bytes parsed counted into `parsed`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each `import` that opens a line, past its indentation, and is
+///   followed by a space or a quote is taken through the first `;` after it, or
+///   through the text's end; the forms taken are parsed together, one per line,
+///   and read as [`paths_written`] reads a whole parse: each import whose
+///   address has no scheme, its address as written with escapes decoded. Forms
+///   that do not parse, or whose root does not read, write none. `parsed` grows
+///   by the bytes of the forms parsed.
+/// - provides: the reading [`Reading::ImportForms`] names: for a source whose
+///   root reads and whose root imports each open a line, it is
+///   [`paths_written`]'s; any other reading its component's parse refuses to
+///   confirm ([`Component::confirms`]).
+/// - fails: never.
+/// - panics: none.
+/// - intension: one scan of the text; only its import forms parsed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an importer's forms read the paths its parse reads, a
+///   scheme import and a documentation line naming imports beside them read as
+///   none; an import inside a module is read, and its component's parse refuses
+///   to confirm it.
+/// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
+#[spec(ensures: |ref ret| ret.len() <= text.as_ref().matches(IMPORT).count())]
+fn paths_formed(
+    grammar: &Pbg,
+    text: SourceText<'_>,
+    parsed: &mut ParsedBytes,
+) -> Vec<String>
+{
+    let source = text.as_ref();
+    let mut forms = String::new();
+    for (at, _) in source.match_indices(IMPORT) {
+        let before = source.get(.. at).unwrap_or_default();
+        let indent = before.rsplit('\n').next().unwrap_or_default();
+        let after = source.get(at ..).unwrap_or_default();
+        let spaced = after
+            .get(IMPORT.len() ..)
+            .and_then(|rest| rest.chars().next())
+            .is_some_and(|next| next.is_whitespace() || next == '"');
+        if !indent.trim().is_empty() || !spaced {
+            continue;
+        }
+        let end = after
+            .find(END)
+            .map_or(after.len(), |end| end.saturating_add(END.len()));
+        forms.push_str(after.get(.. end).unwrap_or_default());
+        forms.push('\n');
+    }
+    parsed.absorb(ParsedBytes::from(forms.len()));
+    let Ok(read) = parse(grammar, SourceText::from(forms.as_str()))
+    else {
+        return Vec::new();
+    };
+    written_imports(grammar, read.tree()).map_or_else(
+        |_| Vec::new(),
+        |written| {
+            written
+                .into_iter()
+                .filter(|import| import.address == Address::Path)
+                .map(|import| String::from(import.uri.as_ref()))
+                .collect()
+        },
+    )
 }
 
 /// The path addresses `text`'s imports write, in source order.
@@ -1005,12 +1365,16 @@ mod tests
     use gandr_surface_lowering::ImportTarget;
     use gandr_surface_lowering::PathImportOrdinal;
     use gandr_surface_lowering::SourceIndex;
+    use gandr_surface_parser::parse;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Confirmation;
     use super::Given;
+    use super::ParsedBytes;
     use super::Placed;
+    use super::Reading;
     use super::group;
     use super::lay_out;
     use crate::root::SourceRoot;
@@ -1161,18 +1525,21 @@ mod tests
             (ImportTarget::Cycle, ImportTarget::Unresolved),
             "the edge of the cycle and the missing path"
         );
-        let grouped = group(
-            &grammar,
-            Vec::from([
-                tree.given(Path::new("first.gandr")),
-                tree.given(Path::new("second.gandr")),
-            ]),
-        );
-        assert_eq!(
-            grouped.components.len(),
-            2_usize,
-            "each source of a cycle is lowered apart"
-        );
+        for reading in [Reading::Whole, Reading::ImportForms] {
+            let grouped = group(
+                &grammar,
+                Vec::from([
+                    tree.given(Path::new("first.gandr")),
+                    tree.given(Path::new("second.gandr")),
+                ]),
+                reading,
+            );
+            assert_eq!(
+                grouped.components.len(),
+                2_usize,
+                "{reading:?}: each source of a cycle is lowered apart"
+            );
+        }
     }
 
     #[test]
@@ -1209,56 +1576,131 @@ mod tests
             (Path::new("right.gandr"), SourceText::from(right)),
             (Path::new("top.gandr"), SourceText::from(top)),
         ]);
-        // The walk's order, the base given twice: once by name, once again
-        // through a second path to it.
-        let grouped = group(
-            &grammar,
-            Vec::from([
-                tree.given(Path::new("apart.gandr")),
-                tree.given(Path::new("left.gandr")),
-                tree.given(Path::new("base.gandr")),
-                tree.given(Path::new("top.gandr")),
-                tree.given(Path::new("right.gandr")),
-                tree.given(Path::new("base.gandr")),
-            ]),
-        );
+        for reading in [Reading::Whole, Reading::ImportForms] {
+            // The walk's order, the base given twice: once by name, once
+            // again through a second path to it.
+            let grouped = group(
+                &grammar,
+                Vec::from([
+                    tree.given(Path::new("apart.gandr")),
+                    tree.given(Path::new("left.gandr")),
+                    tree.given(Path::new("base.gandr")),
+                    tree.given(Path::new("top.gandr")),
+                    tree.given(Path::new("right.gandr")),
+                    tree.given(Path::new("base.gandr")),
+                ]),
+                reading,
+            );
 
-        let [ref alone, ref diamond] = *grouped.components.as_slice()
-        else {
-            panic!("two components: {:?}", grouped.components);
-        };
-        assert_eq!(alone.text, apart, "a source no import joins stands alone");
-        assert_eq!(
-            diamond.text,
-            format!("{base}\n{left}\n{right}\n{top}"),
-            "the base laid once, before both sides, the top after both"
-        );
-        let own: Vec<&str> = diamond
-            .members
-            .iter()
-            .map(|member| {
+            let [ref alone, ref diamond] = *grouped.components.as_slice()
+            else {
+                panic!("{reading:?}: two components: {:?}", grouped.components);
+            };
+            assert_eq!(alone.text, apart, "a source no import joins stands alone");
+            assert_eq!(
+                diamond.text,
+                format!("{base}\n{left}\n{right}\n{top}"),
+                "{reading:?}: the base laid once, before both sides, the top after both"
+            );
+            let own: Vec<&str> = diamond
+                .members
+                .iter()
+                .map(|member| {
+                    diamond
+                        .text
+                        .get(usize::from(member.start) .. usize::from(member.end))
+                        .unwrap_or_default()
+                })
+                .collect();
+            assert_eq!(own, [base, left, right, top], "each member's own bytes");
+            let place = |component: usize, member: usize| Placed { component, member };
+            assert_eq!(grouped.placed, [
+                place(0, 0),
+                place(1, 1),
+                place(1, 0),
+                place(1, 3),
+                place(1, 2),
+                place(1, 0),
+            ]);
+            assert_eq!(
                 diamond
-                    .text
-                    .get(usize::from(member.start) .. usize::from(member.end))
-                    .unwrap_or_default()
-            })
-            .collect();
-        assert_eq!(own, [base, left, right, top], "each member's own bytes");
-        let place = |component: usize, member: usize| Placed { component, member };
-        assert_eq!(grouped.placed, [
-            place(0, 0),
-            place(1, 1),
-            place(1, 0),
-            place(1, 3),
-            place(1, 2),
-            place(1, 0),
+                    .unit
+                    .target(SourceIndex::from(3_usize), PathImportOrdinal::from(1_usize)),
+                ImportTarget::Source(SourceIndex::from(2_usize)),
+                "{reading:?}: the top's second import names the right side's place"
+            );
+        }
+    }
+
+    #[test]
+    fn an_importer_s_forms_are_read_as_its_parse_reads_them()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let base = "def one : Integer ;\ndef one = 1 ;";
+        let importer = "/// Imports the base.\nimport \"./base.gandr\" ;\nimport \
+                        \"file:///far.gandr\" as far ;\ndef two : Integer ;\ndef two = one ;";
+        // An import inside a module is no import of the source's root: read
+        // from its forms alone it names the base, and the source's parse
+        // does not.
+        let nested = "module inner {\n  import \"./base.gandr\" ;\n}\ndef three : Integer ;\ndef \
+                      three = 3 ;";
+        let tree = Scratch::new(Path::new("formed"), &[
+            (Path::new("base.gandr"), SourceText::from(base)),
+            (Path::new("importer.gandr"), SourceText::from(importer)),
+            (Path::new("nested.gandr"), SourceText::from(nested)),
         ]);
         assert_eq!(
-            diamond
-                .unit
-                .target(SourceIndex::from(3_usize), PathImportOrdinal::from(1_usize)),
-            ImportTarget::Source(SourceIndex::from(2_usize)),
-            "the top's second import names the right side's place in the unit"
+            super::paths_formed(
+                &grammar,
+                SourceText::from(importer),
+                &mut ParsedBytes::default()
+            ),
+            ["./base.gandr"],
+            "the path import, the scheme import read as none"
+        );
+        assert_eq!(
+            super::paths_written(&grammar, SourceText::from(importer)),
+            Maybe::Present(Vec::from([String::from("./base.gandr")])),
+            "as the importer's own parse reads it"
+        );
+        let confirmation = |given: &str| {
+            let grouped = group(
+                &grammar,
+                Vec::from([tree.given(Path::new(given))]),
+                Reading::ImportForms,
+            );
+            let [ref component] = *grouped.components.as_slice()
+            else {
+                panic!("one component: {:?}", grouped.components);
+            };
+            assert_eq!(
+                component.members.len(),
+                2_usize,
+                "{given} is laid after the base"
+            );
+            let parsed = parse(&grammar, SourceText::from(component.text.as_str()))
+                .expect("the component parses");
+            component.confirms(&grammar, parsed.tree())
+        };
+        assert_eq!(confirmation("importer.gandr"), Confirmation::Confirmed);
+        assert_eq!(
+            confirmation("nested.gandr"),
+            Confirmation::Unconfirmed,
+            "the component's root imports nothing in the nested source's bytes"
+        );
+        let whole = group(
+            &grammar,
+            Vec::from([tree.given(Path::new("nested.gandr"))]),
+            Reading::Whole,
+        );
+        assert_eq!(
+            whole
+                .components
+                .iter()
+                .map(|component| component.text.as_str())
+                .collect::<Vec<_>>(),
+            [nested],
+            "read whole, the nested source imports nothing and stands alone"
         );
     }
 }

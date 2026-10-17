@@ -23,7 +23,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 - `Invocation`, `Outcome`, `StatusReport` and `dispatch`: routing.
 - `Width` and `Threads`: how many threads a walk lowers its sources on, the host's physical performance cores by default.
-- `compose`, `Composed`, `ComposeFault` and `LoweringCount`: the composition.
+- `compose`, `Composed`, `ComposeFault`, `LoweringCount` and `ParsedBytes`: the composition.
 - `lower_source`, `lower_parsed`, `Lowering`, `Lowered` and `judge_module`: the composition's two halves, for a caller that keeps the lowered module beside the verdicts; `lower_parsed` lowers a parse the caller made.
 - `lay_out`, `Laid`, `laid::Absent`, `lower_unit_source`, `lower_parsed_unit` and `judge_member`: one source composed over its import closure, the component it makes when given alone.
 - `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`, for a caller that renders the report before the kernel is offered the module.

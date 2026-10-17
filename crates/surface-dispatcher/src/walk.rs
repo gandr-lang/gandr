@@ -77,6 +77,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map;
+use core::cell::OnceCell;
 use core::cmp::Reverse;
 use core::ops::ControlFlow;
 use core::sync::atomic::AtomicUsize;
@@ -87,22 +88,29 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_core_checker::HostGrant;
+use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
+use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::component::Component;
+use crate::component::Confirmation;
 use crate::component::Given;
+use crate::component::Grouped;
+use crate::component::ParsedBytes;
+use crate::component::Reading;
 use crate::component::group;
 use crate::compose::ComposeFault;
 use crate::compose::Composed;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
 use crate::compose::judge_component;
+use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
 use crate::report::RunReport;
 use crate::root::SourceRoot;
@@ -380,10 +388,28 @@ enum Slot
 #[derive(Debug)]
 struct Job<'text>
 {
-    /// What parsing and lowering the component came to.
-    lowering: Result<Lowering<'text>, ComposeFault<'text>>,
-    /// The sources lowered: the component's, unless its parse failed.
+    /// What parsing and lowering the component came to; `None` when its parse
+    /// does not confirm how [`group`] read its imports
+    /// ([`Component::confirms`]), and it is grouped again ([`regroup`]).
+    lowering: Option<Result<Lowering<'text>, ComposeFault<'text>>>,
+    /// The sources lowered: the component's, unless its parse failed or did
+    /// not confirm its reading.
     lowerings: LoweringCount,
+    /// The bytes parsed: the component's text.
+    parsed: ParsedBytes,
+}
+
+/// One source's composition, held until the last step standing at it is
+/// handed over.
+#[derive(Clone, Debug)]
+struct Held<'text>
+{
+    /// What the source composed to.
+    composed: Result<Composed<'text>, ComposeFault<'text>>,
+    /// Its unit's text, up to the source's own end.
+    text: SourceText<'text>,
+    /// Where the source's own bytes start in `text`.
+    start: ByteOffset,
 }
 
 impl Walk
@@ -561,7 +587,12 @@ impl Walk
             },
         };
         let grant = &self.grant;
-        let grouped = group(grammar, given);
+        let grouped = group(grammar, given, Reading::ImportForms);
+        self.report.parsed_mut().absorb(grouped.parsed);
+        // Each component its parse did not confirm, grouped again once its
+        // turn comes.
+        let regrouped: Vec<OnceCell<Grouped>> =
+            grouped.components.iter().map(|_| OnceCell::new()).collect();
         // How many steps still to come stand at each source of each
         // component: its compositions are held until the last is handed over.
         let mut owed: Vec<Vec<usize>> = grouped
@@ -617,8 +648,7 @@ impl Walk
             let mut early = BTreeMap::new();
             // Each judged component's compositions, by source, taken as the
             // last step standing at each is handed over.
-            let mut judged: BTreeMap<usize, Vec<Option<Result<Composed<'_>, ComposeFault<'_>>>>> =
-                BTreeMap::new();
+            let mut judged: BTreeMap<usize, Vec<Option<Held<'_>>>> = BTreeMap::new();
             for (path, slot) in paths.iter().zip(slots) {
                 let step = match slot {
                     Slot::NoSource => {
@@ -674,34 +704,43 @@ impl Walk
                                 }
                             };
                             self.report.lowerings_mut().absorb(job.lowerings);
-                            let text = SourceText::from(component.text.as_str());
-                            let composed = match job.lowering {
-                                Ok(lowering) => judge_component(
-                                    root.corpus_root(),
-                                    (lowering, text),
-                                    grant,
-                                    &component.members,
-                                    self.report.spellings_mut(),
-                                ),
-                                Err(fault) => component
-                                    .members
-                                    .iter()
-                                    .map(|_| Err(fault.clone()))
-                                    .collect(),
+                            self.report.parsed_mut().absorb(job.parsed);
+                            let held = if let Some(lowering) = job.lowering {
+                                judge(
+                                    &mut self.report,
+                                    (root.corpus_root(), grant),
+                                    component,
+                                    lowering,
+                                )
+                                .into_iter()
+                                .map(Some)
+                                .collect()
+                            }
+                            else {
+                                let Some(again) = regrouped
+                                    .get(placed.component)
+                                    .map(|cell| cell.get_or_init(|| regroup(grammar, component)))
+                                else {
+                                    continue;
+                                };
+                                judge_regrouped(
+                                    &mut self.report,
+                                    grammar,
+                                    (root.corpus_root(), grant),
+                                    again,
+                                )
                             };
-                            unjudged.insert(composed.into_iter().map(Some).collect());
+                            unjudged.insert(held);
                         }
-                        let (Some(&member), Some(remaining)) = (
-                            component.members.get(placed.member),
-                            owed.get_mut(placed.component)
-                                .and_then(|members| members.get_mut(placed.member)),
-                        )
+                        let Some(remaining) = owed
+                            .get_mut(placed.component)
+                            .and_then(|members| members.get_mut(placed.member))
                         else {
                             continue;
                         };
                         *remaining = remaining.saturating_sub(1);
                         let last = *remaining == 0;
-                        let composed = judged
+                        let held = judged
                             .get_mut(&placed.component)
                             .and_then(|held| held.get_mut(placed.member))
                             .and_then(|held| if last { held.take() } else { held.clone() });
@@ -711,17 +750,17 @@ impl Walk
                         {
                             let _handed = judged.remove(&placed.component);
                         }
-                        let Some(composed) = composed
+                        let Some(held) = held
                         else {
                             continue;
                         };
-                        let text = SourceText::from(
-                            component
-                                .text
-                                .get(.. usize::from(member.end))
-                                .unwrap_or_default(),
-                        );
-                        settled(&mut self.report, path, root, (text, member.start), composed)
+                        settled(
+                            &mut self.report,
+                            path,
+                            root,
+                            (held.text, held.start),
+                            held.composed,
+                        )
                     },
                 };
                 if let ControlFlow::Break(stop) = visitor(step) {
@@ -986,34 +1025,204 @@ fn settled<'step>(
 ///
 /// # Specification
 /// - requires: `component` was laid out by `component::group`.
-/// - ensures: what [`lower_unit_source`] makes of the component's text and
-///   unit, and the sources it lowered: every source of the component, or none
-///   when the text does not parse.
+/// - ensures: when the component's text parses and its tree confirms how its
+///   imports were read ([`Component::confirms`]), what [`lower_parsed_unit`]
+///   makes of that tree and the unit, and every source of the component
+///   lowered. A text read [`Reading::Whole`] that does not parse is its
+///   [`ComposeFault::Parse`], no source lowered; under
+///   [`Reading::ImportForms`], a text that does not parse or does not confirm
+///   comes to no lowering, no source lowered, for the walk to group again. The
+///   component's text is counted parsed either way.
 /// - fails: never; a fault is carried in the answer.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the corpus at several widths composes equal to the serial
-///   visit source by source; a diamond's base is lowered once.
+///   visit source by source; a diamond's base is lowered once; an import its
+///   component's parse does not read is judged as each source's own parse reads
+///   it; an importer is parsed whole once.
 /// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
-#[spec(ensures: |ref ret| usize::from(ret.lowerings) <= component.members.len())]
+/// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
+/// - witness: `walk::tests::an_import_parses_its_importer_once_617`
+#[spec(ensures: |ref ret| usize::from(ret.lowerings) <= component.members.len()
+    && usize::from(ret.parsed) == component.text.len())]
 fn lower<'text>(
     grammar: &Pbg,
     component: &'text Component,
 ) -> Job<'text>
 {
     let mut lowerings = LoweringCount::default();
-    let lowering = lower_unit_source(
-        grammar,
-        SourceText::from(component.text.as_str()),
-        &component.unit,
-        &mut lowerings,
-    );
+    let lowering = match parse(grammar, SourceText::from(component.text.as_str())) {
+        Ok(parsed) if component.confirms(grammar, parsed.tree()) == Confirmation::Confirmed => {
+            Some(lower_parsed_unit(
+                grammar,
+                parsed,
+                &component.unit,
+                &mut lowerings,
+            ))
+        },
+        Ok(_) => None,
+        Err(_) if component.reading == Reading::ImportForms => None,
+        Err(error) => Some(Err(ComposeFault::Parse(error))),
+    };
     Job {
         lowering,
         lowerings,
+        parsed: ParsedBytes::from(component.text.len()),
     }
+}
+
+/// Judge `component` from what lowering it came to, under `root` and
+/// `grant`: each source's composition beside its unit's text up to the
+/// source's own end and where its bytes start.
+///
+/// # Specification
+/// - requires: `lowering` is what [`lower`] or [`lower_unit_source`] made of
+///   `component`.
+/// - ensures: one held composition per member, in member order: what
+///   [`judge_component`] makes of a lowering, or the lowering's fault at every
+///   source; `report`'s spellings advance as [`judge_component`] says.
+/// - fails: never; a fault is carried in the answer.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`lower`].
+/// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+/// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
+#[spec(ensures: |ref ret| ret.len() == component.members.len())]
+fn judge<'text>(
+    report: &mut RunReport,
+    (root, grant): (CorpusRoot, &HostGrant),
+    component: &'text Component,
+    lowering: Result<Lowering<'text>, ComposeFault<'text>>,
+) -> Vec<Held<'text>>
+{
+    let composed = match lowering {
+        Ok(lowering) => judge_component(
+            root,
+            (lowering, SourceText::from(component.text.as_str())),
+            grant,
+            &component.members,
+            report.spellings_mut(),
+        ),
+        Err(fault) => component
+            .members
+            .iter()
+            .map(|_| Err(fault.clone()))
+            .collect(),
+    };
+    composed
+        .into_iter()
+        .zip(&component.members)
+        .map(|(composed, member)| Held {
+            composed,
+            text: SourceText::from(
+                component
+                    .text
+                    .get(.. usize::from(member.end))
+                    .unwrap_or_default(),
+            ),
+            start: member.start,
+        })
+        .collect()
+}
+
+/// Lower and judge each component of `again`, under `root` and `grant`, and
+/// hand back each given source's held composition in the order given.
+///
+/// # Specification
+/// - requires: `again` is what [`regroup`] made of one component.
+/// - ensures: each component of `again` parsed and lowered once with
+///   [`lower_unit_source`] and judged with [`judge`], its sources counted
+///   lowered and its text and `again`'s grouping counted parsed into `report`;
+///   one held composition per given source, in the order given, none for a
+///   source no component holds.
+/// - fails: never; a fault is carried in the answer.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`regroup`].
+/// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
+#[spec(ensures: |ref ret| ret.len() == again.placed.len())]
+fn judge_regrouped<'text>(
+    report: &mut RunReport,
+    grammar: &Pbg,
+    (root, grant): (CorpusRoot, &HostGrant),
+    again: &'text Grouped,
+) -> Vec<Option<Held<'text>>>
+{
+    report.parsed_mut().absorb(again.parsed);
+    let mut parts: Vec<Vec<Option<Held<'text>>>> = Vec::with_capacity(again.components.len());
+    for part in &again.components {
+        let mut lowerings = LoweringCount::default();
+        let lowering = lower_unit_source(
+            grammar,
+            SourceText::from(part.text.as_str()),
+            &part.unit,
+            &mut lowerings,
+        );
+        report.lowerings_mut().absorb(lowerings);
+        report
+            .parsed_mut()
+            .absorb(ParsedBytes::from(part.text.len()));
+        parts.push(
+            judge(report, (root, grant), part, lowering)
+                .into_iter()
+                .map(Some)
+                .collect(),
+        );
+    }
+    again
+        .placed
+        .iter()
+        .map(|at| {
+            parts
+                .get_mut(at.component)
+                .and_then(|members| members.get_mut(at.member))
+                .and_then(Option::take)
+        })
+        .collect()
+}
+
+/// `component`'s sources grouped again, each importer's imports read from
+/// its own whole parse.
+///
+/// # Specification
+/// - requires: `component` was laid out by `component::group`.
+/// - ensures: [`group`] under [`Reading::Whole`] of the component's sources, in
+///   member order, each with its path, root and own text; `placed` holds each
+///   member's place, in member order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source whose import sits inside a module, read from its
+///   forms beside the base it names, is laid out alone, as [`Reading::Whole`]
+///   lays it out.
+/// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
+#[spec(ensures: |ref ret| ret.placed.len() == component.members.len())]
+fn regroup(
+    grammar: &Pbg,
+    component: &Component,
+) -> Grouped
+{
+    let given = component
+        .sources
+        .iter()
+        .zip(&component.members)
+        .map(|(source, member)| Given {
+            path: source.path.clone(),
+            root: source.root,
+            text: String::from(
+                component
+                    .text
+                    .get(usize::from(member.start) .. usize::from(member.end))
+                    .unwrap_or_default(),
+            ),
+        })
+        .collect();
+    group(grammar, given, Reading::Whole)
 }
 
 /// Classify the source at `path` by its canonical path and read it, as a
@@ -1117,6 +1326,7 @@ fn entry_path(entry: &Entry) -> &Path
 pub mod tests
 {
     use core::convert::Infallible;
+    use core::fmt::Write as _;
     use core::num::NonZeroUsize;
     use core::ops::ControlFlow;
     use std::io;
@@ -1931,6 +2141,108 @@ pub mod tests
                 "a source joined to no other is judged alone"
             );
             assert!(!apart.contains("data Point"));
+        }
+    }
+
+    /// #617: an import made its importer dearer to judge by a second parse of
+    /// the importer — once alone to read its imports, again inside its
+    /// component — which cost 23 M of a 7 KB importer's 152 M instructions
+    /// while every later phase stayed within 1 %. Two rows: a source of that
+    /// size with a one-declaration sibling's text laid in front of it, and the
+    /// same source importing that sibling. The importing walk parses within
+    /// 2 % of the flat one's bytes; read whole, it parsed twice as many.
+    #[test]
+    fn an_import_parses_its_importer_once_617()
+    {
+        let scratch = Scratch::new(Path::new("parsed-once"));
+        let floor = "/// One.\n@[ checks ]\ndata One : Type {\n  It : One;\n}\n";
+        let body = (0_usize .. 150_usize).fold(String::new(), |mut body, n| {
+            let _written = write!(
+                body,
+                "\n@[ checks ]\ndef n{n} : Integer ;\ndef n{n} = {n} ;\n"
+            );
+            body
+        });
+        scratch.file(
+            Path::new("fixture/flat/flat.gandr"),
+            SourceText::from(format!("{floor}\n{body}").as_str()),
+        );
+        scratch.file(
+            Path::new("fixture/import/floor.gandr"),
+            SourceText::from(floor),
+        );
+        scratch.file(
+            Path::new("fixture/import/importer.gandr"),
+            SourceText::from(format!("import \"./floor.gandr\" ;\n{body}").as_str()),
+        );
+        let parsed = |directory: &str| {
+            let ControlFlow::Continue(report) =
+                Walk::new(vec![scratch.0.join("fixture").join(directory)])
+                    .visit(Width::SERIAL, |_| -> ControlFlow<Infallible> {
+                        ControlFlow::Continue(())
+                    });
+            usize::from(report.parsed())
+        };
+        let (flat, importing) = (parsed("flat"), parsed("import"));
+        assert!(
+            flat > 7000_usize,
+            "the source is the size of the issue's: {flat} bytes"
+        );
+        assert!(
+            importing.saturating_mul(100) <= flat.saturating_mul(102),
+            "the importing walk parses {importing} bytes against the flat walk's {flat}"
+        );
+    }
+
+    /// #617: a walk reads an importer's imports from its import forms and
+    /// confirms them on its component's parse. An import inside a module is
+    /// read from the forms but written by no root: the component's parse does
+    /// not confirm it, and the walk lays the sources out again as each one's
+    /// own parse reads it — the nested source alone, judged over its own bytes.
+    #[test]
+    fn an_import_its_parse_does_not_read_is_grouped_again()
+    {
+        let scratch = Scratch::new(Path::new("regrouped"));
+        let base = "@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n";
+        let nested = "module inner {\n  import \"./base.gandr\" ;\n}\n\n@[ checks ]\ndef three : \
+                      Integer ;\ndef three = 3 ;\n";
+        scratch.file(Path::new("fixture/base.gandr"), SourceText::from(base));
+        scratch.file(Path::new("fixture/nested.gandr"), SourceText::from(nested));
+        for width in widths() {
+            let mut walked = Vec::new();
+            let ControlFlow::Continue(report) = Walk::new(vec![scratch.0.join("fixture")]).visit(
+                width,
+                |step| -> ControlFlow<Infallible> {
+                    let Step::Source {
+                        path, text, base, ..
+                    } = step
+                    else {
+                        panic!("each source is judged: {step:?}");
+                    };
+                    walked.push((
+                        path.file_name()
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        <&str>::from(text).to_owned(),
+                        usize::from(base),
+                    ));
+                    ControlFlow::Continue(())
+                },
+            );
+            assert_eq!(
+                walked,
+                [
+                    (String::from("base.gandr"), String::from(base), 0_usize),
+                    (String::from("nested.gandr"), String::from(nested), 0_usize),
+                ],
+                "at {width:?}, each source is judged over its own bytes alone"
+            );
+            assert_eq!(
+                usize::from(report.lowerings()),
+                2_usize,
+                "at {width:?}, each source is lowered once, in the grouping its own \
+                 parse reads"
+            );
         }
     }
 

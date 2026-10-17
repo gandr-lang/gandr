@@ -54,6 +54,7 @@ use gandr_surface_diagnostics::Lint;
 use gandr_surface_lowering::AskedRuns;
 use gandr_surface_lowering::DeclarationCount;
 
+use crate::component::ParsedBytes;
 use crate::compose::Composed;
 use crate::compose::LoweringCount;
 use crate::compose::SpellingCount;
@@ -571,6 +572,9 @@ pub struct RunReport
     exercised: Exercised,
     /// The lowerings performed.
     lowerings: LoweringCount,
+    /// The bytes of source text parsed: to group the sources and to lower
+    /// each component.
+    parsed: ParsedBytes,
     /// The spelling passes made: one per component settled.
     spellings: SpellingCount,
     /// The declarations unsettled by their obligations alone.
@@ -622,6 +626,19 @@ impl RunReport
     pub const fn lowerings(&self) -> LoweringCount
     {
         self.lowerings
+    }
+
+    /// The bytes of source text the run parsed: each component's text once
+    /// for its lowering, beside what grouping the sources into components
+    /// parsed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn parsed(&self) -> ParsedBytes
+    {
+        self.parsed
     }
 
     /// The spelling passes the run made: one per component the lowering read
@@ -743,6 +760,15 @@ impl RunReport
     pub(crate) const fn lowerings_mut(&mut self) -> &mut LoweringCount
     {
         &mut self.lowerings
+    }
+
+    /// The bytes parsed, for the walk to count its parses into.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn parsed_mut(&mut self) -> &mut ParsedBytes
+    {
+        &mut self.parsed
     }
 
     /// The spelling passes, for a component's judgement to count into.
