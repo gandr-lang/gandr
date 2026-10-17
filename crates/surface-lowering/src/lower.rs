@@ -633,6 +633,7 @@ use crate::resolve::type_former;
 use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
 use crate::unit::Unit;
+use crate::unit::UnitKey;
 
 mod access;
 
@@ -12443,9 +12444,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )]
     fn document(
         &mut self
-    ) -> Result<BTreeMap<NodeKey, Documentation<'source>>, LoweringRefusal<'source>>
+    ) -> Result<BTreeMap<UnitKey, Documentation<'source>>, LoweringRefusal<'source>>
     {
-        let mut filed: BTreeMap<NodeKey, Documentation<'source>> = BTreeMap::new();
+        let mut filed: BTreeMap<UnitKey, Documentation<'source>> = BTreeMap::new();
         let mut slots = core::mem::take(&mut self.collected.slots);
         let outcome = self.document_slots(&mut slots, &mut filed);
         self.collected.slots = slots;
@@ -12487,7 +12488,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn document_slots(
         &mut self,
         slots: &mut [DeclarationSlot<'source>],
-        filed: &mut BTreeMap<NodeKey, Documentation<'source>>,
+        filed: &mut BTreeMap<UnitKey, Documentation<'source>>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         for slot in slots.iter_mut() {
@@ -12750,38 +12751,55 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(payload_form(former))
     }
 
-    /// The cross-tree key of the node at `position`: its top-level form's
-    /// digest and its rank there.
+    /// The key of the node at `position` in its unit: the source holding it,
+    /// then its top-level form's digest and its rank there.
     ///
     /// # Specification
     /// - requires: positions are interpreted in this source tree.
-    /// - ensures: a node with a key yields it; any other position yields the
-    ///   all-zero key.
-    /// - provides: declaration keys for attribute and documentation filing.
+    /// - ensures: a node with a tree key yields it beside the source of the
+    ///   unit whose text holds the node; any other position yields the all-zero
+    ///   key in the first source.
+    /// - provides: declaration keys for attribute and documentation filing,
+    ///   apart for one form written in two sources of the unit (#596).
     /// - fails: the fallback does not distinguish a keyless position from an
     ///   equal key.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — filed attributes use the decorated declaration's key,
-    ///   including declarations already refused for an unrelated source error.
+    ///   including declarations already refused for an unrelated source error;
+    ///   one attributed form in two members of a component settles each under
+    ///   its own expectation.
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
+    /// - witness: `namespace::namespace::one_form_in_two_sources_files_its_attributes_apart_596`
     #[spec(
         ensures: |ret| {
-            ret == self.tree.key(position).unwrap_or_else(|| {
-                NodeKey::new(NodeDigest::from([0_u8; 32_usize]), FormRank::default())
-            })
+            ret == match (self.tree.key(position), self.tree.node(position)) {
+                (Some(key), Some(node)) => {
+                    UnitKey::new(self.collected.unit.source_at(node.span().start()), key)
+                },
+                _ => UnitKey::new(
+                    SourceIndex::default(),
+                    NodeKey::new(NodeDigest::from([0_u8; 32_usize]), FormRank::default()),
+                ),
+            }
         },
     )]
     fn key_at(
         &self,
         position: NodeIndex,
-    ) -> NodeKey
+    ) -> UnitKey
     {
-        self.tree.key(position).unwrap_or_else(|| {
-            NodeKey::new(NodeDigest::from([0_u8; 32_usize]), FormRank::default())
-        })
+        match (self.tree.key(position), self.tree.node(position)) {
+            (Some(key), Some(node)) => {
+                UnitKey::new(self.collected.unit.source_at(node.span().start()), key)
+            },
+            _ => UnitKey::new(
+                SourceIndex::default(),
+                NodeKey::new(NodeDigest::from([0_u8; 32_usize]), FormRank::default()),
+            ),
+        }
     }
 
     /// The key of the form that wrote a half of `slot`'s name a second time,
@@ -12802,7 +12820,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn duplicate_key(
         &self,
         slot: &DeclarationSlot<'source>,
-    ) -> Maybe<NodeKey, declaration_half::Absent>
+    ) -> Maybe<UnitKey, declaration_half::Absent>
     {
         match slot.refusal {
             Maybe::Present((
@@ -19053,6 +19071,7 @@ mod tests
             .map(gandr_surface_syntax::NodeIndex::from)
             .map_while(|at| tree.node(at).map(|_| at))
             .filter_map(|at| tree.key(at))
+            .map(|key| crate::unit::UnitKey::new(crate::unit::SourceIndex::default(), key))
             .filter(|&key| module.attributes().laws(key) == [p.constant()])
             .count();
         assert_eq!(

@@ -1933,4 +1933,74 @@ pub mod tests
             assert!(!apart.contains("data Point"));
         }
     }
+
+    /// #596: two members of one component that write one attributed form
+    /// byte for byte — their documentation apart, which no key reads — each
+    /// settle under their own expectation. Keyed by content alone, the two
+    /// forms shared a key, each declaration read both `checks`, and both
+    /// stated no verdict.
+    #[test]
+    fn one_form_in_two_members_keeps_its_own_expectation_596()
+    {
+        let scratch = Scratch::new(Path::new("one-form-two-members"));
+        scratch.file(
+            Path::new("fixture/base.gandr"),
+            SourceText::from("@[ checks ]\ndata One : Type {\n  Pt : One;\n}\n"),
+        );
+        for (side, documentation) in [("left", "The left two."), ("right", "The right two.")] {
+            scratch.file(
+                Path::new(&format!("fixture/{side}.gandr")),
+                SourceText::from(
+                    format!(
+                        "import \"./base.gandr\" ;\n\n/// {documentation}\n@[ checks ]\ndata Two \
+                         : Type {{\n  L : Two;\n  R : Two;\n}}\n"
+                    )
+                    .as_str(),
+                ),
+            );
+        }
+        for width in widths() {
+            let mut judged = Vec::new();
+            let ControlFlow::Continue(report) = Walk::new(vec![scratch.0.join("fixture")]).visit(
+                width,
+                |step| -> ControlFlow<Infallible> {
+                    let Step::Source {
+                        path,
+                        composed: crate::compose::Composed::Settled { ref report, .. },
+                        standing,
+                        ..
+                    } = step
+                    else {
+                        panic!("each source is judged: {step:?}");
+                    };
+                    let name = path
+                        .file_stem()
+                        .map(|stem| stem.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    let settlements: Vec<(String, gandr_surface_corpus::Settlement)> = report
+                        .declarations()
+                        .iter()
+                        .map(|declaration| {
+                            (declaration.name().to_string(), declaration.settlement())
+                        })
+                        .collect();
+                    judged.push((name, standing, settlements));
+                    ControlFlow::Continue(())
+                },
+            );
+            judged.sort();
+            let settled =
+                |name: &str| vec![(name.to_owned(), gandr_surface_corpus::Settlement::Settled)];
+            assert_eq!(
+                judged,
+                [
+                    ("base".to_owned(), Standing::Settled, settled("One")),
+                    ("left".to_owned(), Standing::Settled, settled("Two")),
+                    ("right".to_owned(), Standing::Settled, settled("Two")),
+                ],
+                "at {width:?}, each member's `Two` settles under its own `checks`"
+            );
+            assert_eq!(usize::from(report.lowerings()), 3_usize);
+        }
+    }
 }

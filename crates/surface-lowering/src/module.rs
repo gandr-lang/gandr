@@ -263,7 +263,6 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
-use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
@@ -312,6 +311,7 @@ use crate::unit::ImportTarget;
 use crate::unit::PathImportOrdinal;
 use crate::unit::SourceIndex;
 use crate::unit::Unit;
+use crate::unit::UnitKey;
 
 mod data;
 
@@ -6968,13 +6968,13 @@ pub struct DeclarationParts<'source>
     pub span: ByteSpan,
     /// The opaque handle a checker echoes back in place of that span.
     pub origin: OriginToken,
-    /// The cross-tree key of this name's signature form.
-    pub signature: Maybe<NodeKey, declaration_half::Absent>,
-    /// The cross-tree key of this name's definition form.
-    pub definition: Maybe<NodeKey, declaration_half::Absent>,
-    /// The cross-tree key of the form that wrote a half of this name a second
-    /// time, when that repetition is the name's refusal.
-    pub duplicate: Maybe<NodeKey, declaration_half::Absent>,
+    /// The unit key of this name's signature form.
+    pub signature: Maybe<UnitKey, declaration_half::Absent>,
+    /// The unit key of this name's definition form.
+    pub definition: Maybe<UnitKey, declaration_half::Absent>,
+    /// The unit key of the form that wrote a half of this name a second time,
+    /// when that repetition is the name's refusal.
+    pub duplicate: Maybe<UnitKey, declaration_half::Absent>,
     /// What the name's declarations amount to.
     pub outcome: DeclarationOutcome<'source>,
 }
@@ -7089,36 +7089,36 @@ impl<'source> LoweredDeclaration<'source>
         self.parts.origin
     }
 
-    /// The cross-tree key of this name's signature form, which its attributes
-    /// are filed under.
+    /// The unit key of this name's signature form, which its attributes are
+    /// filed under.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn signature(&self) -> Maybe<NodeKey, declaration_half::Absent>
+    pub const fn signature(&self) -> Maybe<UnitKey, declaration_half::Absent>
     {
         self.parts.signature
     }
 
-    /// The cross-tree key of this name's definition form, which its attributes
-    /// are filed under.
+    /// The unit key of this name's definition form, which its attributes are
+    /// filed under.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn definition(&self) -> Maybe<NodeKey, declaration_half::Absent>
+    pub const fn definition(&self) -> Maybe<UnitKey, declaration_half::Absent>
     {
         self.parts.definition
     }
 
-    /// The cross-tree key of the form that wrote a half of this name a second
+    /// The unit key of the form that wrote a half of this name a second
     /// time, when that repetition is the name's refusal: the form no other
     /// key reaches, which answers at that refusal.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn duplicate(&self) -> Maybe<NodeKey, declaration_half::Absent>
+    pub const fn duplicate(&self) -> Maybe<UnitKey, declaration_half::Absent>
     {
         self.parts.duplicate
     }
@@ -7416,9 +7416,9 @@ pub struct LoweredModule<'source>
     structures: Vec<LoweredStructure<'source>>,
     /// The attribute side table, keyed by declaration content identity.
     attributes: AttributeTable,
-    /// Each documented declaration form's documentation, keyed by its
-    /// cross-tree key.
-    documentation: BTreeMap<NodeKey, Documentation<'source>>,
+    /// Each documented declaration form's documentation, keyed by its unit
+    /// key.
+    documentation: BTreeMap<UnitKey, Documentation<'source>>,
     /// Every exit the lowering inferred where a path through a body ends in a
     /// form that is no exit, in source order.
     inferred_exits: Vec<InferredExit>,
@@ -7495,7 +7495,7 @@ impl<'source> LoweredModule<'source>
     #[must_use]
     pub fn with_documentation(
         mut self,
-        documentation: BTreeMap<NodeKey, Documentation<'source>>,
+        documentation: BTreeMap<UnitKey, Documentation<'source>>,
     ) -> Self
     {
         self.documentation = documentation;
@@ -8043,7 +8043,7 @@ impl<'source> LoweredModule<'source>
     #[inline]
     pub fn documentation(
         &self,
-        key: NodeKey,
+        key: UnitKey,
     ) -> Maybe<&Documentation<'source>, crate::doc::documentation::Absent>
     {
         self.documentation.get(&key).map_or(
@@ -8052,13 +8052,13 @@ impl<'source> LoweredModule<'source>
         )
     }
 
-    /// Every declaration form's documentation, by the form's cross-tree key.
+    /// Every declaration form's documentation, by the form's unit key.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn documentations(&self) -> &BTreeMap<NodeKey, Documentation<'source>>
+    pub const fn documentations(&self) -> &BTreeMap<UnitKey, Documentation<'source>>
     {
         &self.documentation
     }

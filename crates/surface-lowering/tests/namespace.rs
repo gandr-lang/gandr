@@ -1653,6 +1653,76 @@ mod namespace
         );
     }
 
+    /// #596: one attributed form written byte for byte in two sources of a
+    /// unit — its documentation apart, which no key reads — is keyed apart by
+    /// its source, so each declaration reads its own attribute and its own
+    /// documentation.
+    #[test]
+    fn one_form_in_two_sources_files_its_attributes_apart_596()
+    {
+        let pbg = grammar();
+        let (text, unit) = laid(&[
+            (SourceText::from("def zero : Integer ;\ndef zero = 0 ;"), &[
+            ]),
+            (
+                SourceText::from(
+                    "import \"./base.gandr\" ;\n/// The left two.\n@[ checks ]\ndef two : \
+                     Integer ;\ndef two = 2 ;",
+                ),
+                &[ImportTarget::Source(SourceIndex::from(0_usize))],
+            ),
+            (
+                SourceText::from(
+                    "import \"./base.gandr\" ;\n/// The right two.\n@[ checks ]\ndef two : \
+                     Integer ;\ndef two = 2 ;",
+                ),
+                &[ImportTarget::Source(SourceIndex::from(0_usize))],
+            ),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+
+        let keys: Vec<_> = module
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.name().as_ref() == "two")
+            .filter_map(|declaration| match declaration.signature() {
+                Maybe::Present(key) => Some(key),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        let &[left, right] = keys.as_slice()
+        else {
+            panic!("each source declares its own `two`: {keys:?}");
+        };
+        assert_eq!(
+            left.form(),
+            right.form(),
+            "the two forms are one form byte for byte"
+        );
+        assert_eq!(
+            (left.source(), right.source()),
+            (SourceIndex::from(1_usize), SourceIndex::from(2_usize)),
+            "each key names the source holding its form"
+        );
+        for key in [left, right] {
+            assert_eq!(
+                module.attributes().entries(key).len(),
+                1_usize,
+                "each declaration reads its own `checks` alone"
+            );
+        }
+        let documented = |key| match module.documentation(key) {
+            Maybe::Present(documentation) => format!("{documentation:?}"),
+            Maybe::Absent(_) => String::new(),
+        };
+        assert!(
+            documented(left).contains("The left two.")
+                && documented(right).contains("The right two."),
+            "each declaration keeps its own documentation"
+        );
+    }
+
     /// The unit text of `sources` laid end to end, one newline apart, and the
     /// unit that says where each starts and what its path imports name.
     ///

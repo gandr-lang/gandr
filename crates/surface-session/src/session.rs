@@ -1679,7 +1679,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 (
                     Imports::of(&module, SourceIndex::from(0_usize)),
                     Snapshot::of(&program, module.origins()),
-                    documentation_of(&module),
+                    documentation_of(&module, SourceIndex::from(0_usize)),
                     restored,
                 )
             },
@@ -2076,7 +2076,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         // whole-module judgement and this copy with it.
         let mut items = program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
         let imports = Imports::of(&module, own);
-        let documentation = documentation_of(&module);
+        let documentation = documentation_of(&module, own);
         let snapshot = Snapshot::of(&items, module.origins());
         let (settled, admission) = judge_member(
             self.root.corpus_root(),
@@ -2845,17 +2845,22 @@ const fn unrestored(reason: restored::Absent) -> reopened::Absent
     }
 }
 
-/// The text of each documentation `module` filed, by the documented form's
-/// content identity.
+/// The text of each documentation `module` filed in the source at `own`, by
+/// the documented form's key in that source's own tree: a sibling's, even one
+/// documenting the same form byte for byte (#596), is not the document's.
 ///
 /// # Specification
 /// trivial.
-fn documentation_of(module: &LoweredModule<'_>) -> BTreeMap<NodeKey, DocumentationText>
+fn documentation_of(
+    module: &LoweredModule<'_>,
+    own: SourceIndex,
+) -> BTreeMap<NodeKey, DocumentationText>
 {
     module
         .documentations()
         .iter()
-        .map(|(&key, documented)| (key, documented.text().clone()))
+        .filter(|&(key, _)| key.source() == own)
+        .map(|(key, documented)| (key.form(), documented.text().clone()))
         .collect()
 }
 
