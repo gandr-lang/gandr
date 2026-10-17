@@ -1,0 +1,26 @@
+// What a dependent arrow whose codomain names its binder refuses: it is no
+// plain arrow (#577). A family that reads to a type over its argument stays
+// a dependent codomain once it is read, so a function over it does not stand
+// at the arrow to any one type.
+
+/// Natural numbers, free: every constructor term is its own value.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// A family that reads its argument: the naturals at zero, and the functions
+/// on them at every successor.
+@[ checks ]
+def pick(n : Nat) -> -F Type {
+  case n {
+    Zero => return Nat,
+    Succ(m) => return (Nat => Nat)
+  }
+}
+
+/// A function over `pick` is no function to the naturals: `pick(x)` names
+/// `x`, so the dependent arrow is not the plain one.
+@[ refuses("TypeMismatch") ]
+def notArrow(f : +U ((x : Nat) -> -F pick(x))) -> -F +U (Nat -> -F Nat) { return f }

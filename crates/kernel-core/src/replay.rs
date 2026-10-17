@@ -325,15 +325,17 @@ use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 
+use crate::conv::Codomains;
 use crate::conv::ConversionGoal;
 use crate::conv::Convertibility;
 use crate::conv::SetAside;
 use crate::conv::convert_values;
-use crate::conv::equal_computations;
 use crate::conv::equal_values;
+use crate::conv::equal_weakened;
 use crate::conv::pending_endpoints;
 use crate::encoding::ContentTable;
 use crate::rewrite::BinderDepth;
+use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_computation;
 use crate::rewrite::shift_value;
 use crate::rewrite::substitute_computation;
@@ -1061,12 +1063,14 @@ pub(crate) enum EndpointReading
     Apart,
 }
 
-/// What `pending` comes to once its returned endpoints and decodes are read:
-/// each side of a value pair normalized as [`Replay::normalize_returned`]
-/// gives it and the normal forms converted by [`convert_values`], the
-/// kernel's one conversion; a decode's code normalized to the quote it
-/// returns, and the type it quotes compared with the other side by the same
-/// structural walk, whose own set-aside pairs are read in turn.
+/// What `pending` comes to once its returned endpoints, decodes and codomains
+/// are read: each side of a value pair normalized as
+/// [`Replay::normalize_returned`] gives it and the normal forms converted by
+/// [`convert_values`], the kernel's one conversion; a decode's code normalized
+/// to the quote it returns, and the type it quotes compared with the other
+/// side by the same structural walk, whose own set-aside pairs are read in
+/// turn; a dependent arrow's codomain compared by that walk with a plain
+/// arrow's weakened past the dependent binder (#577).
 ///
 /// # Specification
 /// - requires: every pair's values and types, and every body in `unfoldings`,
@@ -1076,10 +1080,11 @@ pub(crate) enum EndpointReading
 ///   when both are quotes, their quoted types converge under the walk with
 ///   every pair it sets aside read the same way — and every decode's code
 ///   normalizes to a quote whose quoted type converges with the other side the
-///   same way. A normalization that stops short of a value — budget, a partial
-///   fixpoint, an unreadable node — leaves its pair apart, and so does a decode
-///   whose code reads to no quote and a pair whose normal forms do not convert.
-///   `arena` holds what it held on entry.
+///   same way, and every dependent codomain converges the same way with its
+///   plain codomain weakened by one binder. A normalization that stops short of
+///   a value — budget, a partial fixpoint, an unreadable node — leaves its pair
+///   apart, and so does a decode whose code reads to no quote and a pair whose
+///   normal forms do not convert. `arena` holds what it held on entry.
 /// - provides: the checker's reading of a returned endpoint, and of the type a
 ///   returned code denotes, at a mode switch.
 /// - fails: never — a normalization that stops is an apart answer.
@@ -1089,18 +1094,21 @@ pub(crate) enum EndpointReading
 /// - reason: the `while let` loop over a worklist of set-aside pairs, not
 ///   recursion.
 /// - measure: the budget left. A pair adds to the worklist only after reading a
-///   returned code, which charges the budget at least one step, and the walk
-///   over one quoted type adds finitely many pairs.
+///   returned code or weakening a codomain, each of which charges the budget at
+///   least one step, and the walk over one type adds finitely many pairs.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint returning its value through a definition
 ///   converts, a stuck endpoint converts only with an equal one, and an
 ///   endpoint returning a different value stays apart; a decode whose code
 ///   returns the other side's quote converts, one whose code returns another
-///   quote or stays stuck does not; the arena's watermark is restored.
+///   quote or stays stuck does not; a dependent codomain that ignores its
+///   binder converts with the plain one and one that names it does not; the
+///   arena's watermark is restored.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
 /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
+/// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
 #[must_use]
 pub(crate) fn read_endpoints(
@@ -1126,7 +1134,7 @@ pub(crate) fn read_endpoints(
     let mut reading = EndpointReading::Converts;
     let mut worklist = pending.to_vec();
     while let Some(set_aside) = worklist.pop() {
-        let quoted = match set_aside {
+        let goal = match set_aside {
             SetAside::Values(left, right) => {
                 let (Ok(left_normal), Ok(right_normal)) =
                     (run.normalize_returned(left), run.normalize_returned(right))
@@ -1164,11 +1172,27 @@ pub(crate) fn read_endpoints(
                 };
                 ConversionGoal::ValueType(quoted, other)
             },
+            SetAside::Codomains(Codomains { dependent, plain }) => {
+                let Ok(()) = run.charge()
+                else {
+                    reading = EndpointReading::Apart;
+                    break;
+                };
+                let weakened = shift_comp_type(
+                    run.arena,
+                    &mut run.table,
+                    &mut run.memo,
+                    plain,
+                    BinderDepth::NONE,
+                    BinderDepth::from(1_u32),
+                );
+                ConversionGoal::CompType(dependent, weakened)
+            },
         };
         if pending_endpoints(
             run.arena,
             run.unfoldings.presentations(),
-            quoted,
+            goal,
             &mut worklist,
         ) != Convertibility::Convertible
         {
@@ -3913,11 +3937,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             },
             // A code's children are types, which no value premise can carry,
             // so a pair of codes closes here as the shared comparison would:
-            // α-equal codes convert, rigid α-distinct codes are apart, and a
-            // pair neither settles is refused rather than guessed at.
+            // α-equal codes convert — a dependent arrow whose codomain ignores
+            // its binder being the plain arrow (#577) — rigid α-distinct codes
+            // are apart, and a pair neither settles is refused rather than
+            // guessed at.
             (&Value::Quote(_), &Value::Quote(_))
             | (&Value::QuoteComputation(_), &Value::QuoteComputation(_)) => {
-                if equal_values(self.arena, left, right) == Convertibility::Convertible {
+                if equal_weakened(self.arena, ConversionGoal::Value(left, right))
+                    == Convertibility::Convertible
+                {
                     Structure::Leaf(Expect::Convertible)
                 }
                 else if matches!(
@@ -3958,9 +3986,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Compared::Equal`] when the sides are α-equal,
-    ///   [`Compared::Separated`] when both are rigid and α-distinct,
-    ///   [`Compared::Open`] otherwise.
+    /// - ensures: [`Compared::Equal`] when the sides are α-equal under
+    ///   [`equal_weakened`], [`Compared::Separated`] when both are rigid and
+    ///   not, [`Compared::Open`] otherwise.
     /// - provides: the replay of a closing on two shared nodes.
     /// - fails: [`ReplayRefusal::Unreadable`] on sides of two polarities.
     /// - panics: none.
@@ -3983,14 +4011,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         _ => ret.is_ok(),
     })]
     fn compared(
-        &self,
+        &mut self,
         goal: &Goal,
     ) -> Result<Compared, Stop>
     {
         let equality = match (goal.left, goal.right) {
-            (Term::Value(left), Term::Value(right)) => equal_values(self.arena, left, right),
+            (Term::Value(left), Term::Value(right)) => {
+                equal_weakened(self.arena, ConversionGoal::Value(left, right))
+            },
             (Term::Computation(left), Term::Computation(right)) => {
-                equal_computations(self.arena, left, right)
+                equal_weakened(self.arena, ConversionGoal::Computation(left, right))
             },
             (Term::Value(_), Term::Computation(_)) | (Term::Computation(_), Term::Value(_)) => {
                 return Err(unreadable());

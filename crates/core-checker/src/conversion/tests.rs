@@ -218,7 +218,6 @@ fn differing_trees_are_apart_in_either_order()
     let thunk_integer = arena.value_type_thunk(returns_integer);
     let thunk_string = arena.value_type_thunk(returns_string);
     let arrow = arena.comp_type_arrow(unit, returns_integer);
-    let pi = arena.comp_type_pi(unit, returns_integer);
     let one = Level::constant(LevelConstant::from(1_u64));
     let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let large = arena.value_type_universe(Sort::Ground(GroundSort::Value), one.clone());
@@ -236,7 +235,6 @@ fn differing_trees_are_apart_in_either_order()
         Pairing::Values(unit, thunk_integer),
         Pairing::Values(thunk_integer, thunk_string),
         Pairing::Comps(returns_integer, arrow),
-        Pairing::Comps(arrow, pi),
         Pairing::Values(small, large),
         Pairing::Values(small, negative),
         Pairing::Values(lifted_once, lifted_twice),
@@ -267,6 +265,59 @@ fn differing_trees_are_apart_in_either_order()
             Ok(Agreement::Apart),
             "{swapped:?} differ in the other order too"
         );
+    }
+}
+
+#[test]
+fn a_vacuous_dependent_arrow_is_the_plain_arrow_577()
+{
+    // #577: `Π(_ : Unit). F Integer` is `Unit -> F Integer`, and
+    // `Π(_ : Unit). F El(#1)` — the ambient `#0` seen past the binder — is
+    // `Unit -> F El(#0)`, in either order and under subtyping. A dependent
+    // codomain naming its binder, `Π(_ : Unit). F El(#0)`, is apart from
+    // `Unit -> F El(#0)`, and a differing domain still separates.
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let returns_integer = arena.comp_type_returner(integer);
+    let named = |arena: &mut CoreArena, index: u32| {
+        let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        let decoded = arena.value_type_element(code, Level::zero());
+        arena.comp_type_returner(decoded)
+    };
+    let (inner, outer) = (named(&mut arena, 0), named(&mut arena, 1));
+    let cases = [
+        (
+            arena.comp_type_pi(unit, returns_integer),
+            arena.comp_type_arrow(unit, returns_integer),
+            Agreement::Convertible,
+        ),
+        (
+            arena.comp_type_pi(unit, outer),
+            arena.comp_type_arrow(unit, inner),
+            Agreement::Convertible,
+        ),
+        (
+            arena.comp_type_pi(unit, inner),
+            arena.comp_type_arrow(unit, inner),
+            Agreement::Apart,
+        ),
+        (
+            arena.comp_type_pi(integer, returns_integer),
+            arena.comp_type_arrow(unit, returns_integer),
+            Agreement::Apart,
+        ),
+    ];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (dependent, plain, expected) in cases {
+        for pairing in [
+            Pairing::Comps(dependent, plain),
+            Pairing::Comps(plain, dependent),
+            Pairing::SubComps(dependent, plain),
+            Pairing::SubComps(plain, dependent),
+        ] {
+            assert_eq!(convert(&mut context, pairing), Ok(expected), "{pairing:?}");
+        }
     }
 }
 

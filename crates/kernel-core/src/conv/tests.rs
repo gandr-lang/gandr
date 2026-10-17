@@ -10,6 +10,7 @@ use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
 
+use super::ConversionGoal;
 use super::Convertibility;
 use super::convert_comp_type;
 use super::convert_value_type;
@@ -352,15 +353,16 @@ fn an_arrow_separates_on_either_child()
     );
 }
 
-/// The two arrows separate on their head, and the dependent one still
-/// compares child for child with itself.
+/// The structural walk separates the two arrows on their head, and the
+/// dependent one still compares child for child with itself.
 ///
-/// The separation is the load-bearing half: the two formers hold the *same*
-/// two children here, so anything but a head comparison would have
-/// converted them and silently equated a codomain in the ambient
-/// context with one under a binder.
+/// The two formers hold the *same* two children here, so comparing their
+/// children as they stand would have equated a codomain in the ambient context
+/// with one under a binder; the walk mints nothing to weaken the plain one,
+/// so it keeps them apart and leaves the pair to the readers that do
+/// (`a_vacuous_dependent_arrow_is_the_plain_arrow_577`).
 #[test]
-fn the_two_arrows_never_convert_across()
+fn the_structural_walk_keeps_the_two_arrows_apart()
 {
     let mut arena = TermArena::new();
     let unit = arena.value_type_unit();
@@ -391,6 +393,126 @@ fn the_two_arrows_never_convert_across()
         Convertibility::Distinct,
         convertible_comp_types(&arena, dependent, other_codomain),
         "and the codomain compared too"
+    );
+}
+
+/// #577: a dependent arrow whose codomain ignores its binder is the plain
+/// arrow, in either order, once the plain codomain is weakened past the
+/// binder; one whose codomain names its binder is not, and neither is one
+/// whose domain differs.
+///
+/// The naming pair is the one that pins the weakening: both codomains read
+/// `F El(#0)`, so comparing them as they stand would convert two types that
+/// name different variables, and the dependent codomain `F El(#1)` — the
+/// ambient `#0` seen under the binder — converts with the plain one.
+#[test]
+fn a_vacuous_dependent_arrow_is_the_plain_arrow_577()
+{
+    use gandr_kernel_term::CompType;
+
+    use super::Codomains;
+    use super::SetAside;
+    use crate::replay::EndpointReading;
+    use crate::replay::ReplayBudget;
+    use crate::replay::Unfoldings;
+
+    let mut arena = TermArena::new();
+    let unit = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let closed = arena.comp_type_returner(unit);
+    let naming = |arena: &mut TermArena, index: u32| {
+        let code = arena.value_variable(DeBruijnIndex::from(index));
+        let decoded = arena.value_type_element(code, Level::zero());
+        arena.comp_type_returner(decoded)
+    };
+    let (inner, outer) = (naming(&mut arena, 0), naming(&mut arena, 1));
+    let pair = |arena: &mut TermArena, domain, dependent, plain| {
+        (
+            arena.comp_type_pi(domain, dependent),
+            arena.comp_type_arrow(unit, plain),
+        )
+    };
+    let cases = [
+        (
+            pair(&mut arena, unit, closed, closed),
+            Convertibility::Convertible,
+            EndpointReading::Converts,
+            "a closed codomain ignores the binder",
+        ),
+        (
+            pair(&mut arena, unit, outer, inner),
+            Convertibility::Convertible,
+            EndpointReading::Converts,
+            "a codomain naming the ambient variable past the binder ignores it",
+        ),
+        (
+            pair(&mut arena, unit, inner, inner),
+            Convertibility::Distinct,
+            EndpointReading::Apart,
+            "a codomain naming the binder does not ignore it",
+        ),
+    ];
+    for ((dependent, plain), verdict, reading, what) in cases {
+        for goal in [
+            ConversionGoal::CompType(dependent, plain),
+            ConversionGoal::CompType(plain, dependent),
+        ] {
+            let before = arena.watermark();
+            assert_eq!(super::equal_weakened(&mut arena, goal), verdict, "{what}");
+            assert_eq!(arena.watermark(), before, "{what}: nothing is kept");
+            let mut pending = alloc::vec::Vec::new();
+            assert_eq!(
+                super::pending_endpoints(&arena, &crate::presented::FREE, goal, &mut pending),
+                Convertibility::Convertible,
+                "{what}: the codomains wait to be read"
+            );
+            let Some(&CompType::Pi { codomain, .. }) = arena.comp_type(dependent)
+            else {
+                panic!("{what}: the dependent side is a dependent arrow");
+            };
+            let Some(&CompType::Arrow {
+                codomain: plain_codomain,
+                ..
+            }) = arena.comp_type(plain)
+            else {
+                panic!("{what}: the plain side is a plain arrow");
+            };
+            assert_eq!(pending, [SetAside::Codomains(Codomains {
+                dependent: codomain,
+                plain: plain_codomain
+            })]);
+            assert_eq!(
+                crate::replay::read_endpoints(
+                    &mut arena,
+                    &Unfoldings::default(),
+                    &pending,
+                    ReplayBudget::DEFAULT
+                ),
+                reading,
+                "{what}: read at a mode switch"
+            );
+        }
+        assert_eq!(
+            convertible_comp_types(&arena, dependent, plain),
+            Convertibility::Distinct,
+            "{what}: the structural walk keeps the two apart"
+        );
+    }
+    let (dependent, plain) = pair(&mut arena, integer, closed, closed);
+    let mut pending = alloc::vec::Vec::new();
+    assert_eq!(
+        super::pending_endpoints(
+            &arena,
+            &crate::presented::FREE,
+            ConversionGoal::CompType(dependent, plain),
+            &mut pending
+        ),
+        Convertibility::Distinct,
+        "a differing domain still separates"
+    );
+    assert_eq!(
+        super::equal_weakened(&mut arena, ConversionGoal::CompType(dependent, plain)),
+        Convertibility::Distinct
     );
 }
 
@@ -575,10 +697,22 @@ fn identity_requires_a_readable_root_in_every_family()
             super::equal_values(&arena, stale_value, live_value),
         ]),
         ("computation", [
-            super::equal_computations(&arena, live_computation, live_computation),
-            super::equal_computations(&arena, stale_computation, stale_computation),
-            super::equal_computations(&arena, live_computation, stale_computation),
-            super::equal_computations(&arena, stale_computation, live_computation),
+            super::equal_weakened(
+                &mut arena,
+                ConversionGoal::Computation(live_computation, live_computation),
+            ),
+            super::equal_weakened(
+                &mut arena,
+                ConversionGoal::Computation(stale_computation, stale_computation),
+            ),
+            super::equal_weakened(
+                &mut arena,
+                ConversionGoal::Computation(live_computation, stale_computation),
+            ),
+            super::equal_weakened(
+                &mut arena,
+                ConversionGoal::Computation(stale_computation, live_computation),
+            ),
         ]),
     ];
     for (family, observed) in cases {
@@ -684,8 +818,8 @@ fn a_former_compares_its_children_only_where_its_shape_agrees()
     use gandr_kernel_term::session::Node;
     use gandr_kernel_term::session::State;
 
-    use super::equal_computations;
     use super::equal_values;
+    use super::equal_weakened;
 
     let mut arena = TermArena::new();
     let label = |name: &str| FieldLabel::from(String::from(name));
@@ -893,7 +1027,7 @@ fn a_former_compares_its_children_only_where_its_shape_agrees()
     ];
     for (left, right, what) in computations {
         assert_eq!(
-            equal_computations(&arena, left, right),
+            equal_weakened(&mut arena, ConversionGoal::Computation(left, right)),
             Convertibility::Distinct,
             "{what} differ"
         );

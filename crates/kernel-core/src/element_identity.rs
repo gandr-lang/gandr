@@ -712,7 +712,7 @@ pub(crate) fn related_endpoints(
     for set_aside in pairs {
         let (left, right) = match set_aside {
             crate::conv::SetAside::Values(left, right) => (left, right),
-            crate::conv::SetAside::Decoded { .. } => {
+            crate::conv::SetAside::Decoded { .. } | crate::conv::SetAside::Codomains(_) => {
                 if crate::replay::read_endpoints(
                     arena,
                     unfoldings,

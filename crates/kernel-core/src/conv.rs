@@ -17,13 +17,11 @@
 //!   nameless; the dependent arrow binds, and binding costs nothing here for
 //!   the same reason — de Bruijn indices make two codomains under one binder
 //!   each comparable directly;
-//! - **head separation between the two arrows.** A non-dependent arrow and a
-//!   dependent one never convert, and the reason is a context disagreement
-//!   rather than a taste: their codomains are written against contexts
-//!   differing by one binder, so comparing them would compare two indices
-//!   counting different things. The producer's obligation is the other half —
-//!   the dependent former is emitted only where the codomain is genuinely
-//!   scoped, so the separation costs no completeness on a well-formed artifact;
+//! - **head separation between the two arrows, in the structural walk.** A
+//!   non-dependent arrow and a dependent one never convert here: their
+//!   codomains are written against contexts differing by one binder, so
+//!   comparing them as they stand would compare two indices counting different
+//!   things, and the walk mints nothing to bring them into one context;
 //! - canonical level equality at the universe and lift formers, the level
 //!   type's own equality being the level-equality oracle;
 //! - nominal equality at the sealed atom, which is the whole rule for it: two
@@ -57,6 +55,39 @@
 //! reduces nothing: the pairs it sets aside are the only place a reading
 //! enters, and every other pair is decided as before.
 //!
+//! # A dependent arrow whose codomain ignores its binder is the plain arrow
+//!
+//! The two arrows denote one type when the dependent codomain does not use its
+//! binder: `(x : A) -> B` with `x` absent from `B` is `A -> B` (#577). The
+//! recorded design kept them apart and made it the producer's obligation to
+//! emit the dependent former only where the codomain is genuinely scoped. That
+//! promise could not be kept: a family applied at its binder (`always(x)`)
+//! is a dependent former until its code is evaluated, and evaluation can show
+//! the codomain ignores `x` — so the separation refused a well-typed program.
+//!
+//! The change: every walk but the structural one sets a dependent arrow met
+//! against a plain one aside as a [`Codomains`] pair after comparing their
+//! domains, and its reader weakens the plain codomain past the dependent
+//! binder and compares the two there — [`crate::replay::read_endpoints`] at a
+//! mode switch, [`equal_weakened`] where the replay closes a comparison by
+//! α-equality. Weakening the plain side is total and needs no occurrence
+//! test: the result converts exactly when the dependent codomain would have
+//! strengthened to it. The rule is syntax-directed by the two heads, so no
+//! decision of the dialogue names it.
+//!
+//! Declined: canonicalising a vacuous dependent arrow to the plain one where it
+//! is read back, which moves the obligation rather than discharging it (a
+//! codomain whose vacuity shows only after an endpoint is read is still a
+//! dependent former here); an occurrence flag on the dependent node, which
+//! every producer would have to keep true; strengthening the dependent side,
+//! which needs an occurrence test and fails where weakening simply compares;
+//! threading a mutable arena through the structural faces, which the kernel's
+//! own specification predicates call and which must stay pure; and counting
+//! binders inside the walk, which would be a second statement of where the
+//! term language binds beside [`crate::rewrite`]. Reversal: if the structural
+//! faces are ever asked to relate the two arrows, binder counting in the walk
+//! is the next candidate.
+//!
 //! # Fail-closed on an unreadable id
 //!
 //! A child id resolves under the arena's minting invariant. Every examined
@@ -75,6 +106,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
@@ -85,9 +117,12 @@ use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
+use crate::encoding::ContentTable;
 use crate::error::CompTypeMismatch;
 use crate::error::KernelError;
 use crate::error::ValueTypeMismatch;
+use crate::rewrite::BinderDepth;
+use crate::rewrite::shift_comp_type;
 use crate::witness::comp_type_witness;
 use crate::witness::value_type_witness;
 
@@ -132,10 +167,12 @@ pub(crate) enum ConversionGoal
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a returned endpoint, a decode of a returned code against
-///   another former and a path type's endpoint pair are each set aside as the
-///   variant that reads them.
+///   another former, a path type's endpoint pair and the codomains of a
+///   dependent arrow against a plain one are each set aside as the variant that
+///   reads them.
 /// - witness: `conv::tests::related_pairs_set_aside_path_endpoints`
 /// - witness: `conv::tests::a_decode_of_a_returned_code_is_set_aside_against_another_former`
+/// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SetAside
 {
@@ -152,21 +189,59 @@ pub(crate) enum SetAside
         /// The value type on the other side.
         other: ValueTypeId,
     },
+    /// The codomains of a dependent arrow and a plain one whose domains the
+    /// walk compares: read in one context, as [`Codomains`] says.
+    Codomains(Codomains),
+}
+
+/// The codomains of a dependent arrow and a plain one, set aside to be
+/// compared under the dependent arrow's binder.
+///
+/// The dependent codomain stands under one binder more than the plain one, so
+/// the walk cannot compare the two as they stand: an index would count
+/// different binders on each side. The reader weakens the plain codomain past
+/// that binder — it cannot name it — and compares the two there, so the pair
+/// converts exactly when the dependent codomain does not use its binder
+/// (#577).
+///
+/// # Specification
+/// - requires: `dependent` is a dependent arrow's codomain and `plain` a plain
+///   arrow's, in one arena, the arrows met at one position of a walk.
+/// - ensures: nothing as a data value.
+/// - provides: the pair every reader of a set-aside list weakens.
+/// - fails: none as a data value.
+/// - panics: none as a data value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a dependent arrow whose codomain ignores its binder
+///   converts with the plain arrow in either order, and one whose codomain
+///   names it does not.
+/// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct Codomains
+{
+    /// The dependent arrow's codomain, under its binder.
+    pub dependent: CompTypeId,
+    /// The plain arrow's codomain, in the ambient context.
+    pub plain: CompTypeId,
 }
 
 /// What the walk does with a value pair one of whose sides is a returned
-/// endpoint or a presented type's constructor, and with a value type decoded
-/// from a returned code against a value type of another former.
+/// endpoint or a presented type's constructor, with a value type decoded from
+/// a returned code against a value type of another former, and with a
+/// dependent arrow against a plain one.
 #[derive(Debug)]
 enum Endpoints<'pending>
 {
     /// Decide it as every other pair: two returned endpoints by their
     /// computations, a returned endpoint against any other former apart, two
     /// constructors by their tags and fields, a decode against another former
-    /// apart.
+    /// apart, a dependent arrow against a plain one apart.
     Structural,
     /// Set it aside, unread, for the caller to read; a presented type's
-    /// constructor is read by the types `presentations` names.
+    /// constructor is read by the types `presentations` names, and the
+    /// codomains of a dependent arrow against a plain one are set aside as
+    /// [`SetAside::Codomains`].
     Deferred
     {
         /// The pairs set aside.
@@ -182,6 +257,14 @@ enum Endpoints<'pending>
         pending: &'pending mut Vec<SetAside>,
         /// The presented types whose constructors are set aside.
         presentations: &'pending crate::presented::Presentations,
+    },
+    /// Decide every pair as [`Endpoints::Structural`] does, except the
+    /// codomains of a dependent arrow against a plain one, which are set aside
+    /// for the caller to compare under the binder.
+    Weakening
+    {
+        /// The codomain pairs set aside.
+        codomains: &'pending mut Vec<Codomains>,
     },
 }
 
@@ -259,7 +342,7 @@ pub fn convertible_value_types(
 ///   not exhaust computation graphs.
 /// - witness: `conv::tests::computation_type_conversion_is_reflexive`
 /// - witness: `conv::tests::an_arrow_separates_on_either_child`
-/// - witness: `conv::tests::the_two_arrows_never_convert_across`
+/// - witness: `conv::tests::the_structural_walk_keeps_the_two_arrows_apart`
 /// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
 #[inline]
 #[must_use]
@@ -329,45 +412,6 @@ pub(crate) fn equal_values(
     )
 }
 
-/// Decide structural equality of two computations; see [`equal_values`].
-///
-/// # Specification
-/// - requires: as [`equal_values`].
-/// - ensures: as [`equal_values`], over the computation family.
-/// - provides: as [`equal_values`].
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L1/L3 — the four-family witness covers readable identity and
-///   unreadability on either side; replay closures cover representative
-///   alpha-equality and rigid separation, not every computation graph.
-/// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
-/// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
-#[inline]
-#[must_use]
-#[spec(ensures: |ret| match (arena.computation(left), arena.computation(right)) {
-    (Some(one), Some(other)) => if left == right {
-        ret == Convertibility::Convertible
-    } else {
-        ret == Convertibility::Distinct
-            || core::mem::discriminant(one) == core::mem::discriminant(other)
-    },
-    _ => ret == Convertibility::Distinct,
-})]
-pub(crate) fn equal_computations(
-    arena: &TermArena,
-    left: ComputationId,
-    right: ComputationId,
-) -> Convertibility
-{
-    converge(
-        arena,
-        ConversionGoal::Computation(left, right),
-        Endpoints::Structural,
-    )
-}
-
 /// The kernel's term equality on two values: α-equality first, then the
 /// rules a conversion is forced to fire, a presented type's terms rewritten
 /// by `presentations` among them.
@@ -420,8 +464,9 @@ pub(crate) fn convert_values(
 
 /// Compare `goal` structurally, setting aside into `pending` every value pair
 /// one of whose sides is a returned endpoint or a constructor of a type
-/// `presentations` presents, and every value type decoded from a returned
-/// code against a value type of another former.
+/// `presentations` presents, every value type decoded from a returned code
+/// against a value type of another former, and the codomains of every
+/// dependent arrow met against a plain one.
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id fails closed.
@@ -432,9 +477,9 @@ pub(crate) fn convert_values(
 ///   whatever was set aside before the separating pair.
 /// - provides: where the checker's endpoint reading looks: the type
 ///   conversion's own structural walk, finding the returned endpoints, the
-///   decodes of returned codes and the presented terms it would otherwise
-///   compare by syntax. Each is then read by [`crate::replay::read_endpoints`],
-///   never compared here.
+///   decodes of returned codes, the presented terms and the dependent arrows
+///   met against plain ones that it would otherwise compare by syntax. Each is
+///   then read by [`crate::replay::read_endpoints`], never compared here.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -443,17 +488,20 @@ pub(crate) fn convert_values(
 ///   its domain still separates, so the reading is asked only the pairs
 ///   structure leaves open; a circle word is set aside for its normal form; a
 ///   decode of a returned code is set aside against a type of another former,
-///   and against a decode compares its code.
+///   and against a decode compares its code; a dependent arrow against a plain
+///   one sets its codomains aside while its domains still separate.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_stuck_returned_endpoint_compares_structurally`
 /// - witness: `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`
 /// - witness: `conv::tests::a_decode_of_a_returned_code_is_set_aside_against_another_former`
 /// - witness: `conv::tests::a_presented_constructor_is_set_aside_on_either_side`
+/// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 #[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before
     && (ret == Convertibility::Distinct || pending.get(before ..).is_some_and(|set_aside| set_aside.iter().all(|pair| match *pair {
         SetAside::Values(left, right) => [left, right].iter().any(|&side| matches!(arena.value(side), Some(&(Value::Returned(_) | Value::Constructor { .. })))),
         SetAside::Decoded { code, other } => matches!(arena.value(code), Some(&Value::Returned(_)))
             && !matches!(arena.value_type(other), Some(&ValueType::Element { .. }) | None),
+        SetAside::Codomains(Codomains { dependent, plain }) => arena.comp_type(dependent).is_some() && arena.comp_type(plain).is_some(),
     }))))]
 pub(crate) fn pending_endpoints(
     arena: &TermArena,
@@ -469,8 +517,9 @@ pub(crate) fn pending_endpoints(
 }
 
 /// Compare `goal` structurally, setting aside into `pending` every pair of
-/// path endpoints and every value pair one of whose sides is a returned
-/// endpoint or a constructor of a type `presentations` presents.
+/// path endpoints, every value pair one of whose sides is a returned endpoint
+/// or a constructor of a type `presentations` presents, and the codomains of
+/// every dependent arrow met against a plain one.
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id fails closed.
@@ -504,6 +553,85 @@ pub(crate) fn related_pairs(
         pending,
         presentations,
     })
+}
+
+/// The kernel's α-equality, with a dependent arrow whose codomain ignores its
+/// binder read as the plain arrow (#577).
+///
+/// # Specification
+/// - requires: nothing — an unreadable id is admissible input and fails closed.
+/// - ensures: [`Convertibility::Convertible`] exactly when the structural walk
+///   relates `goal` with every dependent arrow it meets against a plain one
+///   compared by domain, and by the dependent codomain against the plain
+///   codomain weakened past the dependent binder; [`Convertibility::Distinct`]
+///   otherwise. `arena` holds what it held on entry.
+/// - provides: the equality the replay closes a shared comparison and a quote
+///   by, so it agrees with the checking machine's comparison of codes, which
+///   reads the same rule. The weakened codomain is minted and discarded: no
+///   decision of the dialogue names it, since the rule has no choice in it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `loop` reads one set-aside codomain pair per iteration, not
+///   recursion.
+/// - measure: the dependent codomains left to read; each walk sets aside only
+///   codomains strictly inside the dependent side it compares, and a pair read
+///   once is not read again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a dependent arrow whose codomain ignores its binder
+///   converts with the plain arrow in either order and under a further binder,
+///   and one whose codomain names its binder does not; weakening the dependent
+///   side instead, or comparing the codomains unweakened, changes one of them.
+///   Elsewhere it is the structural walk: readable identity, unreadability on
+///   either side, and the replay's closing on α-equality or rigid separation.
+/// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
+/// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
+/// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before && (ret == Convertibility::Distinct || match goal {
+        ConversionGoal::ValueType(left, right) => arena.value_type(left).is_some() && arena.value_type(right).is_some(),
+        ConversionGoal::CompType(left, right) => arena.comp_type(left).is_some() && arena.comp_type(right).is_some(),
+        ConversionGoal::Value(left, right) => arena.value(left).is_some() && arena.value(right).is_some(),
+        ConversionGoal::Computation(left, right) => arena.computation(left).is_some() && arena.computation(right).is_some(),
+    }),
+)]
+pub(crate) fn equal_weakened(
+    arena: &mut TermArena,
+    goal: ConversionGoal,
+) -> Convertibility
+{
+    let watermark = arena.watermark();
+    let mut table = ContentTable::new();
+    let mut codomains = Vec::new();
+    let mut read = BTreeSet::new();
+    let mut current = goal;
+    let verdict = loop {
+        if converge(arena, current, Endpoints::Weakening {
+            codomains: &mut codomains,
+        }) == Convertibility::Distinct
+        {
+            break Convertibility::Distinct;
+        }
+        let Some(Codomains { dependent, plain }) =
+            core::iter::from_fn(|| codomains.pop()).find(|pair| read.insert(*pair))
+        else {
+            break Convertibility::Convertible;
+        };
+        let weakened = shift_comp_type(
+            arena,
+            &mut table,
+            &mut NullMemo,
+            plain,
+            BinderDepth::NONE,
+            BinderDepth::from(1_u32),
+        );
+        current = ConversionGoal::CompType(dependent, weakened);
+    };
+    arena.truncate_to(watermark);
+    verdict
 }
 
 /// Convert a synthesized value type against an expected one, building the
@@ -632,8 +760,11 @@ pub(crate) fn case_branch_mismatch(
 ///   to the list unexamined and close, and a type of words converts with the
 ///   path type at the point its cells loop at
 ///   ([`crate::presented::Presentations::words`]); under [`Endpoints::Related`]
-///   so does each, and every pair of path endpoints is appended too. The
-///   iterative heap stack does not impose a host-stack depth limit.
+///   so does each, and every pair of path endpoints is appended too. Under
+///   every mode but [`Endpoints::Structural`] a dependent arrow against a plain
+///   one compares its domains and appends its codomains, unexamined, as a
+///   [`Codomains`]; under [`Endpoints::Structural`] it is apart. The iterative
+///   heap stack does not impose a host-stack depth limit.
 /// - provides: the shared engine of the conversion and term-equality faces. The
 ///   predicate checks the initial roots' readability, identity and head
 ///   separation; the graph judgement and termination argument are not replayed
@@ -676,7 +807,7 @@ pub(crate) fn case_branch_mismatch(
 /// - witness: `conv::tests::an_unreadable_id_fails_closed`
 /// - witness: `conv::tests::a_shared_composite_converts_without_expanding`
 /// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
-#[spec(captures: deferring = matches!(endpoints, Endpoints::Deferred { .. } | Endpoints::Related { .. }), ensures: |ret| match initial {
+#[spec(captures: [deferring = matches!(endpoints, Endpoints::Deferred { .. } | Endpoints::Related { .. }), weakening = !matches!(endpoints, Endpoints::Structural)], ensures: |ret| match initial {
     ConversionGoal::ValueType(left, right) => match (arena.value_type(left), arena.value_type(right)) {
     (Some(one), Some(other)) => if left == right {
         ret == Convertibility::Convertible
@@ -693,6 +824,7 @@ pub(crate) fn case_branch_mismatch(
     } else {
         ret == Convertibility::Distinct
             || core::mem::discriminant(one) == core::mem::discriminant(other)
+            || weakening && matches!((one, other), (&CompType::Pi { .. }, &CompType::Arrow { .. }) | (&CompType::Arrow { .. }, &CompType::Pi { .. }))
     },
     _ => ret == Convertibility::Distinct,
 },
@@ -819,7 +951,9 @@ fn converge(
                         let presentations = match endpoints {
                             Endpoints::Deferred { presentations, .. }
                             | Endpoints::Related { presentations, .. } => presentations,
-                            Endpoints::Structural => return Convertibility::Distinct,
+                            Endpoints::Structural | Endpoints::Weakening { .. } => {
+                                return Convertibility::Distinct;
+                            },
                         };
                         let at =
                             |sides| presentations.words(arena, domain, sides) == Some(declaration);
@@ -1067,13 +1201,8 @@ fn converge(
                     (&CompType::Returner(one), &CompType::Returner(other)) => {
                         stack.push(ConversionGoal::ValueType(one, other));
                     },
-                    // The two arrows compare alike child for child and never
-                    // across: an arrow's codomain stands in the ambient context
-                    // and a dependent codomain stands under one more binder, so
-                    // a cross pair compares two codomains written against two
-                    // different contexts. Refusing that pair is what makes the
-                    // structural walk's reading of a de Bruijn index the same on
-                    // both sides.
+                    // Two arrows of one kind compare child for child: both
+                    // codomains stand in one context.
                     (
                         &CompType::Arrow {
                             domain: one_domain,
@@ -1096,6 +1225,47 @@ fn converge(
                     ) => {
                         stack.push(ConversionGoal::ValueType(one_domain, other_domain));
                         stack.push(ConversionGoal::CompType(one_codomain, other_codomain));
+                    },
+                    // A dependent arrow against a plain one: the dependent
+                    // codomain stands under one binder more than the plain
+                    // one, so the walk compares the domains and leaves the
+                    // codomains to a reader that weakens the plain one past
+                    // that binder (#577); the structural walk, which mints
+                    // nothing, keeps the two apart.
+                    (
+                        &CompType::Pi {
+                            domain: one_domain,
+                            codomain: dependent,
+                        },
+                        &CompType::Arrow {
+                            domain: other_domain,
+                            codomain: plain,
+                        },
+                    )
+                    | (
+                        &CompType::Arrow {
+                            domain: one_domain,
+                            codomain: plain,
+                        },
+                        &CompType::Pi {
+                            domain: other_domain,
+                            codomain: dependent,
+                        },
+                    ) => {
+                        let codomains = Codomains { dependent, plain };
+                        match endpoints {
+                            Endpoints::Structural => return Convertibility::Distinct,
+                            Endpoints::Deferred {
+                                ref mut pending, ..
+                            }
+                            | Endpoints::Related {
+                                ref mut pending, ..
+                            } => pending.push(SetAside::Codomains(codomains)),
+                            Endpoints::Weakening {
+                                codomains: ref mut set_aside,
+                            } => set_aside.push(codomains),
+                        }
+                        stack.push(ConversionGoal::ValueType(one_domain, other_domain));
                     },
                     (
                         &CompType::Element {
@@ -1151,7 +1321,7 @@ fn converge(
                             Some(&ValueType::Data { declaration, .. })
                                 if presentations.presented(declaration).is_some()
                         ),
-                        Endpoints::Structural => false,
+                        Endpoints::Structural | Endpoints::Weakening { .. } => false,
                     },
                     Value::Record(_)
                     | Value::SessionPath { .. }

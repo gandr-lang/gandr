@@ -1,0 +1,37 @@
+// A dependent arrow whose codomain ignores its binder is the plain arrow
+// (#577). A family applied at its binder is a dependent codomain until the
+// family is read; a family that reads to one type at every argument makes
+// the function type over it the arrow to that type, in both directions.
+
+/// Natural numbers, free: every constructor term is its own value.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// The constant family: the naturals at every natural.
+@[ checks ]
+def always(n : Nat) -> -F Type { return Nat }
+
+/// The identity over the constant family, at a dependent arrow whose codomain
+/// is the family applied at its binder.
+@[ checks ]
+def idAt : +U ((x : Nat) -> -F always(x)) ;
+def idAt = thunk { fn (x) { return x } } ;
+
+/// The same function at the plain arrow: `always(x)` reads to `Nat`, which
+/// ignores `x`, so the dependent arrow is the arrow to `Nat` (#577).
+@[ checks ]
+def viaArrow : +U (Nat -> -F Nat) ;
+def viaArrow = idAt ;
+
+/// And back: the plain arrow stands where the dependent arrow is expected.
+@[ checks ]
+def viaFamily : +U ((x : Nat) -> -F always(x)) ;
+def viaFamily = viaArrow ;
+
+/// The function read at the plain arrow applies there.
+@[ runs("Succ(Zero)") ]
+def applied : +U (-F Nat) ;
+def applied = thunk { viaArrow(Succ(Zero)) } ;
