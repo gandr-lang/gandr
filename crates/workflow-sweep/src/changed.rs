@@ -192,7 +192,7 @@ impl Changed
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the text [`format`] returns at the default options when `text`
+/// - ensures: the text [`format()`] returns at the default options when `text`
 ///   parses and formats; none otherwise, so a text that does not lay out is
 ///   alike to nothing and stays in the change.
 /// - provides: the layout-only test of [`Changed::against`]: two texts laid out
