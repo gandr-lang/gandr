@@ -7,10 +7,12 @@
 // that ends it — and the messages a seat exchanges.
 
 /// A seat: its message types sealed behind the interface, the protocol it
-/// serves, and one message of each type.
+/// serves, and one message of each type. A report is marked `mobile`: its
+/// representation may cross from the seat's world back to the one that
+/// dispatched it (`../worlds/seat-and-operator.gandr`).
 module Seat :> #{
   type Dispatch,
-  type Report,
+  mobile type Report,
   type Handoff,
   type SeatEnd = ?Dispatch. mu turn. +{ report : !Report. &{ next : turn, retire : end }, handoff : !Handoff. end },
   task : Dispatch,

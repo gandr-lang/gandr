@@ -990,6 +990,100 @@ fn session_refusals_round_trip_with_their_endpoints()
 }
 
 #[test]
+fn located_refusals_round_trip_with_their_worlds()
+{
+    use gandr_core_checker::session::Capture;
+    use gandr_core_checker::worlds::Crossed;
+    use gandr_core_checker::worlds::Predicate;
+
+    use super::Located;
+    use super::Place;
+    let at = Site::Node(NodeIndex::from(3_usize));
+    let seat = Reference::Item {
+        key: ItemKey::from([5].as_slice()),
+        occurrence: Occurrence::from(0_usize),
+    };
+    let operator = Reference::Item {
+        key: ItemKey::from([6].as_slice()),
+        occurrence: Occurrence::from(0_usize),
+    };
+    let thunk = || TypeContent::from_nodes(vec![ContentNode::Product(Vec::new())]);
+    let integer = || {
+        TypeContent::from_nodes(vec![ContentNode::Base(
+            gandr_kernel_term::BaseType::Integer,
+        )])
+    };
+    let mut defects = Vec::new();
+    for crossed in [Crossed::Result, Crossed::Constant] {
+        for predicate in [Predicate::Mobile, Predicate::Open] {
+            defects.push(Located::Immobile {
+                crossed,
+                ty: thunk(),
+                former: integer(),
+                predicate,
+            });
+        }
+    }
+    for world in [
+        Place::Host,
+        Place::Declared(seat.clone()),
+        Place::Declared(operator),
+    ] {
+        defects.extend([
+            Located::CapabilityMissing {
+                world: world.clone(),
+            },
+            Located::CapabilityCaptured {
+                world: world.clone(),
+                by: Capture::Thunk,
+            },
+            Located::Elsewhere {
+                bound: world.clone(),
+            },
+            Located::HoldElsewhere { wanted: world },
+        ]);
+    }
+    defects.extend([
+        Located::CapabilityCaptured {
+            world: Place::Host,
+            by: Capture::Continuation,
+        },
+        Located::Unlocated,
+        Located::UndeclaredWorld {
+            world: seat.clone(),
+        },
+        Located::HostWorldUndeclared,
+        Located::MarkUnfounded {
+            atom: seat.clone(),
+            former: thunk(),
+            predicate: Predicate::Open,
+        },
+        Located::EntryNamed {
+            constant: seat.clone(),
+        },
+        Located::EntryUngranted { constant: seat },
+        Located::NotAHandle { found: integer() },
+    ]);
+    let mut encodings = alloc::collections::BTreeSet::new();
+    for defect in defects {
+        let refusal = Refusal::Located { at, defect };
+        let mut bytes = CheckpointBytes::default();
+        super::write_refusal(&mut Writer { sink: &mut bytes }, &refusal)
+            .expect("portable located refusal");
+        assert!(
+            encodings.insert(bytes.as_ref().to_vec()),
+            "each defect, world, crossing and predicate keeps its own encoding: {refusal:?}"
+        );
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
+        assert_eq!(reader.finish(), Ok(()));
+    }
+}
+
+#[test]
 fn an_absurd_case_s_refusal_round_trips_with_its_reason()
 {
     use gandr_kernel_term::Apartness;
@@ -1375,7 +1469,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
 {
     let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
     let expected = [
-        b'G', b'C', b'K', b'P', b'T', 0, 0, 10, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'G', b'C', b'K', b'P', b'T', 0, 0, 11, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq!(
         encode_checkpoints(&checkpoints)
@@ -1385,7 +1479,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
     );
     assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
     let mut wrong_version = expected;
-    *wrong_version.get_mut(7).expect("version byte") = 9;
+    *wrong_version.get_mut(7).expect("version byte") = 10;
     assert_eq!(
         decode_checkpoints(Bytes(&wrong_version)),
         Err(CodecError::Corrupt)

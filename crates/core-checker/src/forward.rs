@@ -384,6 +384,7 @@ fn first_order(
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
+            | ValueTypeView::World(_)
             | ValueTypeView::Unknown => return Err(CheckRefusal::ForwardUnsupported { at }),
         }
     }
@@ -468,6 +469,7 @@ fn leaves(
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
+            | ValueTypeView::World(_)
             | ValueTypeView::Unknown => return Err(CheckRefusal::ForwardUnsupported { at }),
         };
         let Some(&Value::Variable {
@@ -580,6 +582,7 @@ fn natural(
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
+            | ValueTypeView::World(_)
             | ValueTypeView::Unknown => return Err(unsupported),
         };
         let Some(&Value::Variable {

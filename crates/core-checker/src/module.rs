@@ -126,6 +126,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::ValueId;
+use gandr_core_term::world::World;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -164,6 +165,8 @@ use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
 use crate::seal::SealTable;
 use crate::support::Supported;
+use crate::worlds::Entry;
+use crate::worlds::Spending;
 
 quenchant_shape::reason_enum! {
     /// Why no mutual block is open in a module run.
@@ -269,7 +272,12 @@ fn schedule(
                     definitions.push((member.constant(), body));
                 }
             },
-            (&crate::DeclarationContent::Data(_) | &crate::DeclarationContent::Abstract(_), _) => {
+            (
+                &crate::DeclarationContent::Data(_)
+                | &crate::DeclarationContent::Abstract(_)
+                | &crate::DeclarationContent::World,
+                _,
+            ) => {
                 return;
             },
         }
@@ -506,6 +514,8 @@ pub struct ModuleReport
     nested_elaborations: BTreeMap<ConstantIndex, NestedElaboration>,
     /// The sealing sites the run minted atoms for, in minting order.
     seal_table: SealTable,
+    /// The world declarations admitted, by position.
+    worlds: alloc::collections::BTreeSet<ConstantIndex>,
 }
 
 impl ModuleReport
@@ -532,6 +542,18 @@ impl ModuleReport
     pub const fn abstract_types(&self) -> &BTreeMap<ConstantIndex, AbstractType>
     {
         &self.abstract_types
+    }
+
+    /// The world declarations admitted, by position: positions no kernel
+    /// term carries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn worlds(&self) -> &alloc::collections::BTreeSet<ConstantIndex>
+    {
+        &self.worlds
     }
 
     /// The sealing sites the run minted atoms for, in minting order: the
@@ -811,7 +833,7 @@ enum Run
     ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth && match ret {
         | Verdict::Data => match *declaration.content() {
             | crate::DeclarationContent::Data(ref signature) => context.data_signatures().get(&declaration.constant()) == Some(signature),
-            | crate::DeclarationContent::Abstract(_) => true,
+            | crate::DeclarationContent::Abstract(_) | crate::DeclarationContent::World => true,
             | crate::DeclarationContent::Value { .. } => false,
         },
         | Verdict::Checked { declared, body, .. } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Present(value) } if *ty == declared.id() && *value <= body)
@@ -947,16 +969,52 @@ fn decide(
         },
         crate::DeclarationContent::Abstract(declared) => {
             let verdict = crate::former::form_abstract(context, declared)
+                .and_then(|level| founded(context, constant, declared).map(|()| level))
                 .and_then(|level| context.seal_abstract(constant, declared, level))
                 .map(|_atom| ());
             let signed = finish(context, outer);
             return formed(verdict, kept(signed));
+        },
+        crate::DeclarationContent::World => {
+            context.worlds_mut().declare(constant);
+            let signed = finish(context, outer);
+            return formed(Ok(()), kept(signed));
         },
         crate::DeclarationContent::Value {
             ref signature,
             ref body,
         } => (*signature, *body),
     };
+    // A declaration with neither half is refused by the hole rule before its
+    // entry matters.
+    let resolved = match (body, signature) {
+        (Maybe::Present(body), _) => context
+            .worlds()
+            .resolve(constant, declaration.entry())
+            .map_err(|defect| (CoreNode::Term(TermNode::Value(body)), defect)),
+        (Maybe::Absent(_), Maybe::Present(declared)) => context
+            .worlds()
+            .resolve(constant, declaration.entry())
+            .map_err(|defect| {
+                (
+                    CoreNode::Type(crate::refusal::TypeNode::Value(declared)),
+                    defect,
+                )
+            }),
+        (Maybe::Absent(_), Maybe::Absent(_)) => Ok(Entry::default()),
+    };
+    let entry = match resolved {
+        Ok(entry) => entry,
+        Err((at, defect)) => {
+            let signed = finish(context, outer);
+            return Decision {
+                typings: kept(signed),
+                ..unrun(CheckRefusal::Located { at, defect })
+            };
+        },
+    };
+    let home = entry.home();
+    let _host = context.binders().relocate(home);
     let direction = match signature {
         Maybe::Present(declared) => form_value_type(context, declared)
             .and_then(|formed| crate::session::unrestricted(context, formed.id()).map(|()| formed))
@@ -967,12 +1025,14 @@ fn decide(
     let direction = match direction {
         Ok(direction) => direction,
         Err(refusal) => {
+            let _home = context.binders().relocate(World::Host);
             return Decision {
                 typings: kept(signed),
                 ..unrun(refusal)
             };
         },
     };
+    let mut spending = Spending::Unspent;
     let mut typings = Maybe::Absent(untyped);
     let mut elaboration = Maybe::Absent(elaborated::Absent::Unnested);
     let mut relating = Vec::new();
@@ -980,6 +1040,7 @@ fn decide(
         Maybe::Present(body) => {
             let _stale = context.take_nesting();
             context.own_body(body);
+            context.worlds_mut().enter(entry);
             let first = judge(context, body, direction);
             let decisions = context.take_nesting();
             let judged = match first {
@@ -1011,6 +1072,7 @@ fn decide(
                     Maybe::Present(Typings::after(signed, type_value(context, body, direction)));
                 let _typed = context.take_nesting();
             }
+            spending = context.worlds_mut().leave();
             match judged {
                 Ok(verdict) => (verdict, Maybe::Absent(kept::Absent::Accepted)),
                 Err(failure) => (Verdict::Refused(failure.refusal()), Maybe::Present(failure)),
@@ -1057,11 +1119,56 @@ fn decide(
             Verdict::Data | Verdict::Checked { .. } | Verdict::Owed(_) | Verdict::Refused(_),
         ) => {},
     }
+    context.worlds_mut().settle(constant, home, spending);
+    let _home = context.binders().relocate(World::Host);
     Decision {
         verdict,
         failure,
         typings,
         elaboration,
+    }
+}
+
+/// Refuse the abstract type `declared` at `atom` when its signature marks it
+/// mobile and its representation does not cross: the promise a client relies
+/// on is checked where the representation is visible.
+///
+/// # Specification
+/// - requires: `declared` is formed.
+/// - ensures: nothing changes.
+/// - fails: [`crate::worlds::LocatedDefect::MarkUnfounded`] at the
+///   representation naming the former that does not cross; the crossing
+///   decision's own refusal.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a mobile mark over a string checks, one over a thunk is
+///   refused at sealing.
+/// - witness: `worlds::tests::a_mobility_mark_over_an_immobile_representation_is_refused_at_sealing`
+#[spec(ensures: |ret| declared.mobility() == crate::worlds::Mobility::Mobile || ret.is_ok())]
+fn founded(
+    context: &mut CheckingContext<'_>,
+    atom: ConstantIndex,
+    declared: AbstractType,
+) -> Result<(), CheckRefusal>
+{
+    if declared.mobility() == crate::worlds::Mobility::Immobile {
+        return Ok(());
+    }
+    let representation = declared.representation();
+    match crate::worlds::crosses(context, representation)? {
+        crate::worlds::Crossing::Crosses => Ok(()),
+        crate::worlds::Crossing::Stays { former, predicate } => Err(CheckRefusal::Located {
+            at: CoreNode::Type(crate::refusal::TypeNode::Value(representation)),
+            defect: crate::worlds::LocatedDefect::MarkUnfounded {
+                atom,
+                former,
+                predicate,
+            },
+        }),
     }
 }
 
@@ -1285,6 +1392,7 @@ pub fn check_module(
         seal_table: context.seal_table().clone(),
         failures,
         nested_elaborations,
+        worlds: context.worlds().declared().clone(),
     }
 }
 

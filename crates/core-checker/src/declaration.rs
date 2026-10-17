@@ -35,6 +35,14 @@
 //! where the representation stops being visible, so the module's own members
 //! check at the representation and every later declaration sees the atom
 //! alone.
+//!
+//! # A world and an entry
+//!
+//! A world declaration takes a position and carries nothing else: the
+//! position is the world's identity, as an atom's is. A value declaration
+//! may carry an [`Entry`], the world its body is judged at and the
+//! capabilities its host hands it; one carrying none takes the host's
+//! ([`crate::worlds`]).
 
 use alloc::vec::Vec;
 
@@ -46,6 +54,8 @@ use gandr_kernel_term::SealExtent;
 use quenchant_shape::shape::Maybe;
 
 use crate::seal::SealSite;
+use crate::worlds::Entry;
+use crate::worlds::Mobility;
 
 quenchant_shape::reason_enum! {
     /// Why a declaration carries no declared type.
@@ -68,6 +78,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The body is a hole: no definition supplies it.
             Hole,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration states no entry.
+    pub mod entry {
+        /// The reason the entry is absent.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The source states none: the host's entry applies.
+            Unstated,
         }
     }
 }
@@ -121,6 +143,8 @@ pub struct AbstractType
     extent: SealExtent,
     /// The sealing site that mints the atom.
     site: SealSite,
+    /// Whether the signature marks the atom as crossing worlds.
+    mobility: Mobility,
 }
 
 impl AbstractType
@@ -144,7 +168,33 @@ impl AbstractType
             representation,
             extent,
             site,
+            mobility: Mobility::Immobile,
         }
+    }
+
+    /// This abstract type with the signature's mark `mobility`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn marked(
+        self,
+        mobility: Mobility,
+    ) -> Self
+    {
+        Self { mobility, ..self }
+    }
+
+    /// Whether the signature marks the atom as crossing worlds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn mobility(&self) -> Mobility
+    {
+        self.mobility
     }
 
     /// The universe the atom inhabits.
@@ -193,7 +243,7 @@ impl AbstractType
     }
 }
 
-/// The three disjoint declaration judgments.
+/// The four disjoint declaration judgments.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationContent
 {
@@ -209,6 +259,8 @@ pub enum DeclarationContent
     Data(alloc::sync::Arc<gandr_core_term::DataSignature>),
     /// A sealed abstract type; an atom, neither a value nor an assumption.
     Abstract(AbstractType),
+    /// A world: its position is its identity, and it carries nothing.
+    World,
 }
 /// One declaration, as the judgement reads it.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -223,6 +275,8 @@ pub struct Declaration
     /// The laws a definition's folds rest on, one per rule of the folded
     /// type in written order; empty for every other declaration.
     laws: Vec<ConstantIndex>,
+    /// The entry a value declaration states, or why none.
+    entry: Maybe<Entry, entry::Absent>,
 }
 
 impl Declaration
@@ -261,6 +315,7 @@ impl Declaration
             content: DeclarationContent::Value { signature, body },
             origin,
             laws: Vec::new(),
+            entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
 
@@ -306,6 +361,7 @@ impl Declaration
             origin,
             content: DeclarationContent::Data(signature),
             laws: Vec::new(),
+            entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
 
@@ -326,6 +382,27 @@ impl Declaration
             origin,
             content: DeclarationContent::Abstract(sealed),
             laws: Vec::new(),
+            entry: Maybe::Absent(entry::Absent::Unstated),
+        }
+    }
+
+    /// A world declaration at its own admission position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn world(
+        constant: ConstantIndex,
+        origin: OriginToken,
+    ) -> Self
+    {
+        Self {
+            constant,
+            origin,
+            content: DeclarationContent::World,
+            laws: Vec::new(),
+            entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
 
@@ -350,6 +427,19 @@ impl Declaration
     pub fn laws(&self) -> &[ConstantIndex]
     {
         &self.laws
+    }
+
+    /// The entry the declaration states, or why none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn entry(&self) -> Maybe<&Entry, entry::Absent>
+    {
+        match self.entry {
+            Maybe::Present(ref stated) => Maybe::Present(stated),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
     }
 
     /// This value declaration carrying `laws` as the laws its folds rest on,
@@ -383,7 +473,48 @@ impl Declaration
     {
         match self.content {
             DeclarationContent::Value { .. } => Self { laws, ..self },
-            DeclarationContent::Data(_) | DeclarationContent::Abstract(_) => self,
+            DeclarationContent::Data(_)
+            | DeclarationContent::Abstract(_)
+            | DeclarationContent::World => self,
+        }
+    }
+
+    /// This value declaration stating `entry`, everything else unchanged;
+    /// any other declaration unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the worlds `entry` names are checked when the
+    ///   declaration is judged, as is its bound by the host's entry.
+    /// - ensures: a value declaration states exactly `entry`; a data, abstract
+    ///   or world declaration is returned unchanged.
+    /// - provides: how a producer attaches the entry an `entry` attribute
+    ///   states.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration entered at the seat's world with one
+    ///   capability migrates once and is refused a second migration.
+    /// - witness: `worlds::tests::a_migration_consumes_its_capability_visibly`
+    #[spec(
+        captures: entry_before = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. })),
+        ensures: |ret| ret.constant == entry_before.0 && ret.origin == entry_before.1
+            && (!entry_before.2 || matches!(ret.entry, Maybe::Present(_))),
+    )]
+    #[inline]
+    #[must_use]
+    pub fn entered(
+        self,
+        entry: Entry,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::Value { .. } => Self {
+                entry: Maybe::Present(entry),
+                ..self
+            },
+            DeclarationContent::Data(_)
+            | DeclarationContent::Abstract(_)
+            | DeclarationContent::World => self,
         }
     }
 }

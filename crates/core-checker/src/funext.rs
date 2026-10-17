@@ -605,6 +605,7 @@ fn first_order(
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
+            | ValueTypeView::World(_)
             | ValueTypeView::Unknown => return Ok(Maybe::Absent(outside::Absent::Former)),
         }
     }
@@ -740,6 +741,7 @@ fn coverage(
                     | ValueTypeView::Staged { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Session(_)
+                    | ValueTypeView::World(_)
                     | ValueTypeView::Unknown => return Ok(Maybe::Absent(outside::Absent::Former)),
                 }
             },

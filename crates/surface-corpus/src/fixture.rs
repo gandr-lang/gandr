@@ -23,6 +23,8 @@ use gandr_core_checker::SealingSite;
 use gandr_core_checker::body;
 use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
+use gandr_core_checker::worlds::Entry;
+use gandr_core_checker::worlds::Mobility;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_grammar::built_in;
@@ -30,6 +32,7 @@ use gandr_surface_lowering::AttributeRegistry;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
+use gandr_surface_lowering::Mark;
 use gandr_surface_lowering::RegisteredAttribute;
 use gandr_surface_lowering::Sealing;
 use gandr_surface_lowering::SurfaceName;
@@ -202,6 +205,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                     return match *declared.content() {
                         gandr_core_checker::DeclarationContent::Data(ref held) => matches!(lowered.outcome(), DeclarationOutcome::Data(index) if module.data(index) == Maybe::Present(held)),
                         gandr_core_checker::DeclarationContent::Abstract(sealed) => matches!(lowered.outcome(), DeclarationOutcome::Abstract(sealing) if sealed == abstract_type(sealing)),
+                        gandr_core_checker::DeclarationContent::World => matches!(lowered.outcome(), DeclarationOutcome::World),
                         gandr_core_checker::DeclarationContent::Value { .. } => false,
                     } && declared.constant() == lowered.constant()
                         && usize::from(declared.origin()) == usize::from(lowered.origin());
@@ -222,7 +226,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                             *signature == Maybe::Absent(signature::Absent::Unsigned)
                                 && *held_body == Maybe::Present(value)
                         }
-                        DeclarationOutcome::Data(_) | DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => false,
+                        DeclarationOutcome::Data(_) | DeclarationOutcome::Abstract(_) | DeclarationOutcome::World | DeclarationOutcome::Refused(_) => false,
                     }
             })
 },
@@ -263,20 +267,28 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
                         OriginToken::from(usize::from(lowered.origin())),
                     ));
                 },
+                DeclarationOutcome::World => {
+                    return Some(Declaration::world(
+                        lowered.constant(),
+                        OriginToken::from(usize::from(lowered.origin())),
+                    ));
+                },
                 DeclarationOutcome::Refused(_) => return None,
             };
             let origin = OriginToken::from(usize::from(lowered.origin()));
-            Some(
-                Declaration::new(lowered.constant(), declared, defined, origin)
-                    .lawful(module.laws(lowered).to_vec()),
-            )
+            let declaration = Declaration::new(lowered.constant(), declared, defined, origin)
+                .lawful(module.laws(lowered).to_vec());
+            Some(match Entry::declared(module.worlds(lowered)) {
+                Maybe::Present(entry) => declaration.entered(entry),
+                Maybe::Absent(_) => declaration,
+            })
         })
         .collect()
 }
 
 /// The checker's abstract type for the sealing the lowering recorded: its
 /// kind, representation and extent, at the site its sealing module and
-/// component number.
+/// component number, mobile exactly when its signature marks it.
 ///
 /// # Specification
 /// trivial.
@@ -291,6 +303,10 @@ fn abstract_type(sealing: Sealing) -> AbstractType
             ComponentOrdinal::from(usize::from(sealing.component)),
         ),
     )
+    .marked(match sealing.mark {
+        Mark::Unmarked => Mobility::Immobile,
+        Mark::Mobile => Mobility::Mobile,
+    })
 }
 
 /// The settle report for `source` under `root`, over its own verdicts, each

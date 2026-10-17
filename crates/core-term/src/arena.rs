@@ -288,7 +288,8 @@ impl CoreArena
                         | Computation::With(..)
                         | Computation::Project(..)
                         | Computation::Session(_)
-                        | Computation::Memory(_) => None,
+                        | Computation::Memory(_)
+                        | Computation::World(_) => None,
                     }),
             )
     }

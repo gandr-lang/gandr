@@ -627,6 +627,7 @@ impl Naming
                     DeclarationOutcome::Bodied { body } => [Some(CoreNode::Value(body)), None],
                     DeclarationOutcome::Data(_)
                     | DeclarationOutcome::Abstract(_)
+                    | DeclarationOutcome::World
                     | DeclarationOutcome::Refused(_) => return None,
                 };
                 Some((declaration.constant(), roots))
@@ -1509,6 +1510,7 @@ impl TypeTable
                     Maybe::Absent(_) => continue,
                 },
                 DeclarationOutcome::Abstract(sealing) => Held::Typed(TypeNode::Value(sealing.kind)),
+                DeclarationOutcome::World => continue,
                 DeclarationOutcome::Refused(refusal) => Held::Refused(refusal.to_string()),
             };
             for key in [
@@ -2333,7 +2335,8 @@ impl TypeTable
                         DeclarationOutcome::Refused(refusal) => Err(refusal.to_string()),
                         other @ (DeclarationOutcome::Bodied { .. }
                         | DeclarationOutcome::Data(_)
-                        | DeclarationOutcome::Abstract(_)) => Err(format!("{other:?}")),
+                        | DeclarationOutcome::Abstract(_)
+                        | DeclarationOutcome::World) => Err(format!("{other:?}")),
                     };
                     let _first = lowered.insert(String::from(name.as_ref()), outcome);
                 }
@@ -2625,6 +2628,7 @@ impl TypeTable
                 DeclarationOutcome::Uncompleted { .. }
                 | DeclarationOutcome::Data(_)
                 | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_) => None,
             }
         });

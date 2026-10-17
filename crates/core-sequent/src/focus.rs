@@ -374,6 +374,9 @@ pub enum FocusRefusal
     /// A session action: the command IL carries no channels, so a send, a
     /// receive, a choice, a close or a fork has no image in it.
     Session(ComputationId),
+    /// A world form: the command IL runs at one world, so a hold, an open or
+    /// a migration has no image in it.
+    World(ComputationId),
     /// A computation standing where a value is read, before the checker's
     /// elaboration replaced it: only an elaborated body has a command-IL
     /// image, as only one has a kernel image.
@@ -419,6 +422,7 @@ impl fmt::Display for FocusRefusal
                 "a computation standing as a value before elaboration has no command-IL producer",
             ),
             Self::Session(_) => f.write_str("a session action has no image in the command IL"),
+            Self::World(_) => f.write_str("a world form has no image in the command IL"),
         }
     }
 }
@@ -983,7 +987,7 @@ impl<'run> Focusing<'run>
                 Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
                 Computation::Reset(_) | Computation::Shift(_) => !self.commands.is_empty(),
                 Computation::With(..) => self.commands.len() >= 2,
-                Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) => true,
+                Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
             | &Task::ListCons | &Task::Combinator { .. } => self.producers.len() >= 2,
@@ -1432,7 +1436,8 @@ impl<'run> Focusing<'run>
                     | Computation::With(..)
                     | Computation::Project(..)
                     | Computation::Session(_)
-                    | Computation::Memory(_) => (Introduces::Nothing, FocusOrigin::Handle),
+                    | Computation::Memory(_)
+                    | Computation::World(_) => (Introduces::Nothing, FocusOrigin::Handle),
                 };
                 let signature = self.signature(signature)?;
                 let mut translated = Vec::with_capacity(clauses.len());
@@ -1538,7 +1543,8 @@ impl<'run> Focusing<'run>
             | Computation::Mark { .. }
             | Computation::ListFold { .. }
             | Computation::Project(..)
-            | Computation::Session(_) => return Err(FocusRefusal::TranslationInvariant),
+            | Computation::Session(_)
+            | Computation::World(_) => return Err(FocusRefusal::TranslationInvariant),
         };
         let command = self.arena.mint_command(node)?;
         self.provenance.record(command, origin);
@@ -1826,6 +1832,7 @@ impl<'run> Focusing<'run>
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
             | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
             | Some(&Computation::Session(_)) => ret == Err(FocusRefusal::Session(id)),
+            | Some(&Computation::World(_)) => ret == Err(FocusRefusal::World(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -2062,6 +2069,7 @@ impl<'run> Focusing<'run>
                 return Err(FocusRefusal::IncompleteComputation(id));
             },
             Computation::Session(_) => return Err(FocusRefusal::Session(id)),
+            Computation::World(_) => return Err(FocusRefusal::World(id)),
             Computation::Fixpoint { body, evidence } => {
                 let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
                     tag: DestructorTag::Force,

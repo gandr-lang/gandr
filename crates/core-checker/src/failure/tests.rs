@@ -113,6 +113,10 @@ fn every_role_has_its_own_name()
         FrameRole::AccessBody,
         FrameRole::AccessUnwind,
         FrameRole::ResumeValue,
+        FrameRole::WorldHold,
+        FrameRole::LetaValue,
+        FrameRole::LetaBody,
+        FrameRole::MigrateBody,
     ];
     let names: Vec<_> = roles.iter().map(ToString::to_string).collect();
     for (index, name) in names.iter().enumerate() {

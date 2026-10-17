@@ -20,6 +20,9 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
+use gandr_core_term::world::World;
+use gandr_core_term::world::WorldForm;
+use gandr_core_term::world::WorldType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Side;
 use quenchant_shape::shape::Maybe;
@@ -495,6 +498,22 @@ impl<'arena> CoreSource<'arena>
         self.names.get(usize::from(constant)).copied()
     }
 
+    /// The name a world is written by: a declared world's own name; none for
+    /// the host's, which the surface never names.
+    ///
+    /// # Specification
+    /// trivial.
+    fn world_name(
+        &self,
+        world: World,
+    ) -> Option<Name<'arena>>
+    {
+        match world {
+            World::Host => None,
+            World::Declared(constant) => self.name(constant),
+        }
+    }
+
     /// The name the family `datatype` names, a data type of the arena.
     ///
     /// # Specification
@@ -526,7 +545,8 @@ impl<'arena> CoreSource<'arena>
             | ValueType::Stack { .. }
             | ValueType::Session(_)
             | ValueType::Capability { .. }
-            | ValueType::Staged { .. } => None,
+            | ValueType::Staged { .. }
+            | ValueType::World(_) => None,
         }
     }
 
@@ -846,6 +866,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&ValueType::Flow { carrier, source: left, target: right }), Former::Flow { carrier: actual_carrier, left: actual_left, right: actual_right }) =>
             actual_carrier == CoreNode::ValueType(carrier) && actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
         (Some(&ValueType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (Some(&ValueType::Lift { .. }), Former::Unreadable(Unreadable::Lift))
+            | (Some(&ValueType::World(WorldType::Capability(_))), Former::Unreadable(Unreadable::WorldCapability))
             | (None, Former::Unreadable(Unreadable::Dangling)) => true,
         | (Some(&ValueType::Record(ref fields)), Former::Product(arity)) => fields.is_empty() && usize::from(arity) == 0_usize,
         | (Some(&ValueType::Record(ref fields)), Former::RecordType(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
@@ -868,6 +889,8 @@ impl<'arena> CoreSource<'arena>
             core::ptr::eq(core::ptr::from_ref(protocol), core::ptr::from_ref(session.protocol())) && state == session.state() && usize::from(payloads) == session.payloads().len(),
         | (Some(&ValueType::Capability { grade, region, .. }), Former::Capability { grade: actual_grade, region: actual_region, .. }) =>
             grade == actual_grade && region == actual_region,
+        | (Some(&ValueType::World(WorldType::At { inner, world })), Former::Located { inner: actual, world: named }) =>
+            actual == CoreNode::ValueType(inner) && named == self.world_name(world),
         | (Some(&(ValueType::Sigma { .. } | ValueType::Flow { .. })), Former::Relation { .. }) =>
             self.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
         | _ => false,
@@ -954,6 +977,13 @@ impl<'arena> CoreSource<'arena>
                 authority,
                 grade,
                 region,
+            },
+            ValueType::World(WorldType::At { inner, world }) => Former::Located {
+                inner: CoreNode::ValueType(inner),
+                world: self.world_name(world),
+            },
+            ValueType::World(WorldType::Capability(_)) => {
+                Former::Unreadable(Unreadable::WorldCapability)
             },
             // Never read: the arena holds no stage over a stage.
             ValueType::Staged { .. } => Former::Unreadable(Unreadable::Dangling),
@@ -1097,6 +1127,14 @@ impl<'arena> CoreSource<'arena>
             | (&MemoryForm::Resume { view, value }, Former::ResumeView { view: actual, value: written }) =>
                 view == actual && written == CoreNode::Value(value),
             | (&MemoryForm::Abort { view }, Former::AbortView(actual)) => view == actual,
+            | _ => false,
+        },
+        | (Some(&Computation::World(ref form)), _) => match (form, ret) {
+            | (&WorldForm::Hold { value }, Former::WorldHold(held)) => held == CoreNode::Value(value),
+            | (&WorldForm::Leta { value, body }, Former::Leta { value: opened, body: rest }) =>
+                opened == CoreNode::Value(value) && rest == CoreNode::Computation(body),
+            | (&WorldForm::Migrate { world, body }, Former::Migrate { world: named, body: run }) =>
+                run == CoreNode::Computation(body) && named == self.world_name(world),
             | _ => false,
         },
         | (Some(_), _) => !matches!(ret, Former::Unreadable(_)),
@@ -1311,6 +1349,20 @@ impl<'arena> CoreSource<'arena>
                 },
                 MemoryForm::Abort { view } => Former::AbortView(view),
             },
+            Computation::World(ref form) => match *form {
+                WorldForm::Hold { value: held } => Former::WorldHold(value(held)),
+                WorldForm::Leta {
+                    value: opened,
+                    body,
+                } => Former::Leta {
+                    value: value(opened),
+                    body: computation(body),
+                },
+                WorldForm::Migrate { world, body } => Former::Migrate {
+                    world: self.world_name(world),
+                    body: computation(body),
+                },
+            },
         }
     }
 }
@@ -1458,7 +1510,8 @@ impl Source for CoreSource<'_>
                 | ValueType::Unknown
                 | ValueType::Stack { .. }
                 | ValueType::Capability { .. }
-                | ValueType::Staged { .. } => None,
+                | ValueType::Staged { .. }
+                | ValueType::World(_) => None,
             },
             CoreNode::Value(id) => match *self.arena.value(id)? {
                 Value::Tuple(ref components) => components
@@ -1535,6 +1588,7 @@ impl Source for CoreSource<'_>
                     | SessionAction::Fork { .. },
                 )
                 | Computation::Memory(_)
+                | Computation::World(_)
                 | Computation::Transport(..)
                 | Computation::PathTransport { .. }
                 | Computation::TelescopeTransport { .. }
@@ -1631,7 +1685,8 @@ impl Source for CoreSource<'_>
                 | ValueType::Stack { .. }
                 | ValueType::Session(_)
                 | ValueType::Capability { .. }
-                | ValueType::Staged { .. } => None,
+                | ValueType::Staged { .. }
+                | ValueType::World(_) => None,
             },
             CoreNode::Value(id) => match *self.arena.value(id)? {
                 Value::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
@@ -1687,6 +1742,7 @@ impl Source for CoreSource<'_>
                     | SessionAction::Fork { .. },
                 )
                 | Computation::Memory(_)
+                | Computation::World(_)
                 | Computation::Primitive { .. }
                 | Computation::Transport(..)
                 | Computation::PathTransport { .. }

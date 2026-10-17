@@ -49,7 +49,7 @@
 //! signature content refuses term-bearing path
 //! classifiers just as it refuses quotes and decodes.
 //!
-//! Checkpoint sets use `GCKPT\0\0\x09`; programs use `GPROG\0\0\x07`. Their
+//! Checkpoint sets use `GCKPT\0\0\x0b`; programs use `GPROG\0\0\x07`. Their
 //! identities bind the checker, native declaration categories, effect and
 //! control content, support queries and refusal vocabulary. Identities of
 //! another version are rejected rather than reusing answers from a different
@@ -67,14 +67,16 @@
 //! # Native declaration content and support
 //!
 //! A declaration's roots are `DeclarationRoots::Value`,
-//! `DeclarationRoots::Data` or `DeclarationRoots::Abstract`; data retains the
-//! kind, every parameter and every constructor field, and an abstract type its
-//! kind, its representation, the extent of its seal and the site that mints
-//! its atom. Cache node tags `0x50–0x55` represent the six native data/record
-//! forms independently of kernel artifact tags, `0x5A` the positional tuple
-//! projection, its component a count after its tuple child, and `0x5B` the
-//! split, its arity a count between its scrutinee and body children. Field
-//! labels and arbitrary child counts survive persistence.
+//! `DeclarationRoots::Data`, `DeclarationRoots::Abstract` or
+//! `DeclarationRoots::World`; data retains the kind, every parameter and every
+//! constructor field, and an abstract type its kind, its representation, the
+//! extent of its seal, the site that mints its atom and the mobility its
+//! signature marks, a mobile one under its own roots tag so an unmarked one
+//! encodes as before. Cache node tags `0x50–0x55` represent the six native
+//! data/record forms independently of kernel artifact tags, `0x5A` the
+//! positional tuple projection, its component a count after its tuple child,
+//! and `0x5B` the split, its arity a count between its scrutinee and body
+//! children. Field labels and arbitrary child counts survive persistence.
 //!
 //! A value declaration's roots carry the laws its folds rest on as item
 //! references, so adding, removing or reordering a `respects` law changes the
@@ -89,6 +91,11 @@
 //! or the site changes the abstract type's content and reaches every reader
 //! through the value-changed closure. Adoption forms it again and mints its
 //! atom in the new context.
+//!
+//! A located program — one declaring a world, or stating an entry — is
+//! judged whole each time and never persisted: every item of it is opaque
+//! (see [`Locus`]), and a world form or a world type in any item is listed
+//! by its sort, as a stage is.
 //!
 //! Support keys distinguish a value-signature query from a data-signature query
 //! at the same reference. A data answer contains the complete nominal schema or
@@ -1776,6 +1783,33 @@ pub enum Opacity
     Opaque,
 }
 
+/// Whether an item belongs to a located program: one that declares a world,
+/// or an item that states an entry.
+///
+/// A located judgement reads the world register and the home of every
+/// constant it names, and a home reaches a reader through a term position no
+/// footprint keeps as type support. The cache has no vocabulary for that, so
+/// every item of a located program is opaque: judged each time, never
+/// persisted. **Reversal.** A home recorded in the support a reader consults,
+/// once an editor session over located code measures the recheck.
+///
+/// # Specification
+/// - executable: none — the tag holds no program; `Program::new` decides it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an item of a program declaring a world is opaque and
+///   refused persistence by name, while the same item alone is transparent.
+/// - witness: `content::tests::an_item_of_a_located_program_is_opaque`
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Locus
+{
+    /// No world is declared and no entry stated.
+    #[default]
+    Unlocated,
+    /// The program declares a world, or the item states an entry.
+    Located,
+}
+
 /// The roots of a nominal declaration in a discovery-numbered table, and the
 /// rules presenting its terms, which name constructors by tag and no node.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -1835,10 +1869,13 @@ pub enum DeclarationRoots
     Data(DataRoots),
     /// A sealed abstract type.
     Abstract(AbstractRoots),
+    /// A world declaration: no roots. Its program is located, so its item is
+    /// opaque.
+    World,
 }
 
-/// The roots of a sealed abstract type, with the reach of its seal and the
-/// site that mints its atom.
+/// The roots of a sealed abstract type, with the reach of its seal, the site
+/// that mints its atom and the mobility its signature marks.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AbstractRoots
 {
@@ -1850,6 +1887,9 @@ pub struct AbstractRoots
     pub extent: gandr_kernel_term::SealExtent,
     /// The site that mints the atom.
     pub site: gandr_core_checker::SealSite,
+    /// Whether its signature marks it mobile: sealing checks the mark against
+    /// the representation.
+    pub mobility: gandr_core_checker::worlds::Mobility,
 }
 
 impl DeclarationRoots
@@ -1858,7 +1898,8 @@ impl DeclarationRoots
     ///
     /// # Specification
     /// - ensures: value signature before body, all nominal classifiers in
-    ///   order, or an abstract type's kind before its representation.
+    ///   order, an abstract type's kind before its representation, or none for
+    ///   a world.
     /// - executable: none — the return is an opaque iterator.
     ///
     /// # Adequacy
@@ -1886,6 +1927,7 @@ impl DeclarationRoots
                 None,
             ),
             Self::Data(ref roots) => ([None, None], Some(roots)),
+            Self::World => ([None, None], None),
             Self::Abstract(roots) => (
                 [
                     Some((roots.kind, Sort::ValueType)),
@@ -2002,6 +2044,8 @@ pub struct ItemContent
     declaration: DeclarationRoots,
     /// Every node reachable from the roots, numbered by discovery.
     nodes: Vec<ContentNode>,
+    /// Whether the item belongs to a located program.
+    locus: Locus,
 }
 
 impl ItemContent
@@ -2039,7 +2083,19 @@ impl ItemContent
         &self.nodes
     }
 
-    /// The content of these parts, as the decoder reassembles it.
+    /// Whether the item belongs to a located program.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn locus(&self) -> Locus
+    {
+        self.locus
+    }
+
+    /// The content of these parts, as the decoder reassembles it: content a
+    /// decoder reads was persisted, so it is unlocated.
     ///
     /// # Specification
     /// trivial.
@@ -2053,18 +2109,30 @@ impl ItemContent
             reference,
             declaration,
             nodes,
+            locus: Locus::Unlocated,
         }
     }
 
-    /// Whether every node of the item resolved.
+    /// Whether the item may be adopted and persisted: every node resolved, in
+    /// an unlocated program.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: [`Opacity::Opaque`] for a located item, else as
+    ///   [`opacity_of`] its nodes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Locus`].
+    /// - witness: `content::tests::an_item_of_a_located_program_is_opaque`
+    #[spec(ensures: |ret| self.locus == Locus::Unlocated || ret == Opacity::Opaque)]
     #[inline]
     #[must_use]
     pub fn opacity(&self) -> Opacity
     {
-        opacity_of(&self.nodes)
+        match self.locus {
+            Locus::Located => Opacity::Opaque,
+            Locus::Unlocated => opacity_of(&self.nodes),
+        }
     }
 
     /// The signature's type, as a type table of its own.
@@ -2086,7 +2154,7 @@ impl ItemContent
 if let DeclarationRoots::Value { signature:Maybe::Present(ref root),.. } = *matched_left_value && let Some(content) = matched_right_value { self.nodes.get(usize::from(*root)).map_or_else(
             || content.nodes == [ContentNode::Unresolved(Sort::Value)],
             |node| content.nodes.first().is_some_and(|first| first.sort() == node.sort())) }
- else { matches!(*matched_left_value, DeclarationRoots::Value { signature:Maybe::Absent(_),.. } | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_)) && matched_right_value.is_none() }
+ else { matches!(*matched_left_value, DeclarationRoots::Value { signature:Maybe::Absent(_),.. } | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_) | DeclarationRoots::World) && matched_right_value.is_none() }
 })]
     pub(crate) fn signature_type(&self) -> Option<TypeContent>
     {
@@ -2102,7 +2170,8 @@ if let DeclarationRoots::Value { signature:Maybe::Present(ref root),.. } = *matc
                 ..
             }
             | DeclarationRoots::Data(_)
-            | DeclarationRoots::Abstract(_) => None,
+            | DeclarationRoots::Abstract(_)
+            | DeclarationRoots::World => None,
         }
     }
 }
@@ -2289,7 +2358,7 @@ pub struct Encoded
 ///   hole under an unoccupied reference.
 /// - ensures: the item's reference, complete declaration roots and shared
 ///   discovery-numbered table; nominal roots follow parameter and constructor
-///   order.
+///   order; the program's locus.
 /// - provides: the item's identity, the sites its verdict is projected through,
 ///   and the table its footprint is read from — one walk for all three.
 /// - panics: none.
@@ -2318,9 +2387,9 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
                     && signature.constructors().iter().zip(&roots.constructors).all(|(fields,roots)| fields.iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.iter().map(Some))) }
  else if let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_left_value && let DeclarationRoots::Abstract(roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(sealed.kind())) == Some(&roots.kind)
                     && ret.sites.0.get(&ArenaNode::ValueType(sealed.representation())) == Some(&roots.representation)
-                    && roots.extent == sealed.extent() && roots.site == sealed.site() }
- else { false }
-},
+                    && roots.extent == sealed.extent() && roots.site == sealed.site() && roots.mobility == sealed.mobility() }
+ else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World, DeclarationRoots::World)) }
+} && ret.content.locus == layout.locus(),
         None => ret.content.reference == Reference::Unoccupied
             && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws} if laws.is_empty())
             && ret.content.nodes.is_empty(),
@@ -2365,8 +2434,10 @@ pub fn encode_item(
                             .discover(ArenaNode::ValueType(sealed.representation())),
                         extent: sealed.extent(),
                         site: sealed.site(),
+                        mobility: sealed.mobility(),
                     })
                 },
+                gandr_core_checker::DeclarationContent::World => DeclarationRoots::World,
             };
             let reference = layout
                 .references
@@ -2382,6 +2453,7 @@ pub fn encode_item(
             reference,
             declaration,
             nodes: encoder.nodes,
+            locus: layout.locus(),
         },
         sites: Sites(encoder.seen),
     }
@@ -2811,7 +2883,9 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the corresponding former with child ids replaced by their
-    ///   discovery indices; the predicate bounds the sort and child indices.
+    ///   discovery indices; a world form has no content vocabulary and is
+    ///   listed by its sort, which makes the item opaque. The predicate bounds
+    ///   the sort and child indices.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2820,7 +2894,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   every payload.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::Computation
-        && !matches!(ret, ContentNode::Unresolved(_))
+        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*computation, Computation::World(_)))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_computation(
         &mut self,
@@ -2875,6 +2949,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     )
                     .unwrap_or_else(|never| match never {}),
             ),
+            // A located judgement reads the world register and each constant's
+            // home, which no footprint records: content holding a world form
+            // has no identity to key on, and stays opaque.
+            Computation::World(_) => ContentNode::Unresolved(Sort::Computation),
             Computation::Memory(ref form) => ContentNode::Memory(
                 form.try_map(
                     gandr_core_term::session::ChildOrder::Forward,
@@ -3126,7 +3204,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   every payload.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::ValueType
-        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. }))
+        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. } | ValueType::World(_)))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_value_type(
         &mut self,
@@ -3246,9 +3324,13 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 }
             },
             ValueType::Unknown => ContentNode::UnknownType,
-            // A stage is minted by one judgement and names nothing past it:
-            // content naming one has no identity to key on, and stays opaque.
-            ValueType::Staged { .. } => ContentNode::Unresolved(Sort::ValueType),
+            // A stage is minted by one judgement and names nothing past it,
+            // and a handle or a capability names a world, whose crossing
+            // decisions read what no footprint records: content naming
+            // either has no identity to key on, and stays opaque.
+            ValueType::Staged { .. } | ValueType::World(_) => {
+                ContentNode::Unresolved(Sort::ValueType)
+            },
         }
     }
 

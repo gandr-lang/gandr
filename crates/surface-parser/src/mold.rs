@@ -877,13 +877,18 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// every expression slot. Temporary access reserves its leads `access`,
 /// `resume` and `abort` for the same reason, and `unwind`, the tile after an
 /// access's body, so a name there is never read as the next statement.
+///
+/// A world declaration reserves its lead `world`, an item-position lead as
+/// `sign` is, and the mobility mark its lead `mobile`, which opens a module
+/// signature's field where an unreserved word would tie against the value
+/// field's `identifier`.
 const KEYWORDS: &[&str] = &[
     "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
     "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
     "forall", "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break",
     "continue", "with", "import", "module", "sign", "oper", "handle", "access", "unwind", "resume",
-    "abort",
+    "abort", "world", "mobile",
 ];
 
 /// Return the grammar tile labels to enumerate for a labeled token.

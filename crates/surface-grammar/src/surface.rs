@@ -478,6 +478,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "universe_flow_type",
     "value_function_type",
     "while_expression",
+    "world_declaration",
     // reserved / folded / diverged member surfaces (adaptation surfaces)
     "bare_type_params",
     "braced_variable_expansion",

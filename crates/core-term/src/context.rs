@@ -62,6 +62,7 @@ use gandr_kernel_term::DeBruijnIndex;
 
 use crate::arena::ValueTypeId;
 use crate::syntax::Zone;
+use crate::world::World;
 
 /// The number of binders one zone of a context holds.
 #[repr(transparent)]
@@ -105,7 +106,8 @@ pub enum LinearUse
     Consumed,
 }
 
-/// One binder of the linear zone: its declared type and its remaining use.
+/// One binder of the linear zone: its declared type, its remaining use and
+/// the world it is located at.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct LinearSlot
 {
@@ -113,6 +115,8 @@ struct LinearSlot
     declared: ValueTypeId,
     /// Whether the slot's single use is still available.
     use_state: LinearUse,
+    /// The world the resident is meaningful at.
+    world: World,
 }
 
 /// A snapshot of the linear zone, outermost slot first: what a branching
@@ -193,6 +197,17 @@ pub enum ContextError
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct SlotOffset(usize);
 
+/// A run of intuitionistic binders located at one world: every binder from
+/// `from` up to the next run's start.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct LocatedRun
+{
+    /// The offset of the run's first binder.
+    from: SlotOffset,
+    /// The world every binder of the run is located at.
+    world: World,
+}
+
 /// Resolve a de Bruijn index against a zone of `depth` binders.
 ///
 /// The index counts binders outward from the use site, so index zero names the
@@ -245,16 +260,25 @@ fn slot_offset(
 /// The unified typing context: the intuitionistic zone `Γ` and the linear zone
 /// `Σ`, both flat, both id-addressed, both name-free.
 ///
-/// Cloning a context is a flat two-vector clone, which is what lets a
-/// conversion or a normalizer take one by value without an owning-pointer
-/// graph coming with it.
+/// Every binder is located at the world it was opened at, and the world
+/// register names the world the next binder is located at. Cloning a context
+/// is a flat clone of its vectors, which is what lets a conversion or a
+/// normalizer take one by value without an owning-pointer graph coming with
+/// it; while every binder stands at the host's world the runs are empty, so
+/// an unlocated context clones as its two zones alone.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Context
 {
     /// `Γ`, innermost binder last.
     intuitionistic: Vec<ValueTypeId>,
+    /// Where `Γ`'s binders are located, as runs: a run starts at each binder
+    /// located elsewhere than the one below it, starts ascending, and a binder
+    /// below the first run stands at the host's world.
+    located: Vec<LocatedRun>,
     /// `Σ`, innermost binder last, each slot carrying its remaining use.
     linear: Vec<LinearSlot>,
+    /// The world the judgement stands at: where the next binder is located.
+    world: World,
 }
 
 impl Context
@@ -287,7 +311,7 @@ impl Context
         })
     }
 
-    /// Open a binder in `zone` at `declared`.
+    /// Open a binder in `zone` at `declared`, located at the world register.
     ///
     /// A linear binder opens with its single use available; the intuitionistic
     /// zone records the type alone, because a structural slot has no use to
@@ -298,7 +322,7 @@ impl Context
     ///   context against; the context stores the id and never dereferences it.
     /// - ensures: the zone's depth is one greater, every previously bound index
     ///   is reachable at one more than it was, and index zero of the zone names
-    ///   `declared`.
+    ///   `declared`, located at the register.
     /// - provides: the binder-opening half of every rule that goes under a
     ///   binder. The predicate observes depth, the new slot and the untouched
     ///   zone's depth; the shift of older slots is witnessed by lookup.
@@ -316,10 +340,11 @@ impl Context
         captures: [structural = self.intuitionistic.len(), linear = self.linear.len()],
         ensures: match zone {
             | Zone::Intuitionistic => structural.checked_add(1) == Some(self.intuitionistic.len())
-                && self.linear.len() == linear && self.intuitionistic.last() == Some(&declared),
+                && self.linear.len() == linear && self.intuitionistic.last() == Some(&declared)
+                && self.trailing_world() == self.world,
             | Zone::Linear => linear.checked_add(1) == Some(self.linear.len())
                 && self.intuitionistic.len() == structural
-                && self.linear.last() == Some(&LinearSlot { declared, use_state: LinearUse::Available }),
+                && self.linear.last() == Some(&LinearSlot { declared, use_state: LinearUse::Available, world: self.world }),
         },
     )]
     #[inline]
@@ -329,12 +354,135 @@ impl Context
         declared: ValueTypeId,
     )
     {
+        self.open_at(zone, declared, self.world);
+    }
+
+    /// Open a binder in `zone` at `declared`, located at `world` whatever the
+    /// register: the binder a `leta` opens at its handle's world.
+    ///
+    /// # Specification
+    /// - requires: as [`Context::open`].
+    /// - ensures: as [`Context::open`], the new binder located at `world`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binder opened at another world reads back located
+    ///   there while the register stays.
+    /// - witness: `context::tests::a_binder_is_located_where_it_was_opened`
+    #[spec(
+        captures: [structural = self.intuitionistic.len(), linear = self.linear.len(), register = self.world],
+        ensures: self.world == register && match zone {
+            | Zone::Intuitionistic => structural.checked_add(1) == Some(self.intuitionistic.len())
+                && self.linear.len() == linear && self.intuitionistic.last() == Some(&declared)
+                && self.trailing_world() == world,
+            | Zone::Linear => linear.checked_add(1) == Some(self.linear.len())
+                && self.intuitionistic.len() == structural
+                && self.linear.last() == Some(&LinearSlot { declared, use_state: LinearUse::Available, world }),
+        },
+    )]
+    #[inline]
+    pub fn open_at(
+        &mut self,
+        zone: Zone,
+        declared: ValueTypeId,
+        world: World,
+    )
+    {
         match zone {
-            Zone::Intuitionistic => self.intuitionistic.push(declared),
+            Zone::Intuitionistic => {
+                if world != self.trailing_world() {
+                    self.located.push(LocatedRun {
+                        from: SlotOffset(self.intuitionistic.len()),
+                        world,
+                    });
+                }
+                self.intuitionistic.push(declared);
+            },
             Zone::Linear => self.linear.push(LinearSlot {
                 declared,
                 use_state: LinearUse::Available,
+                world,
             }),
+        }
+    }
+
+    /// The world register: the world the judgement stands at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn world(&self) -> World
+    {
+        self.world
+    }
+
+    /// Move the world register to `world` and return the world it stood at:
+    /// a migration's push, and with the returned world its pop.
+    ///
+    /// # Specification
+    /// - ensures: the register is `world`, the previous register is returned,
+    ///   and every binder keeps its location.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binder opened before a move stays located where it
+    ///   was opened, and a binder opened after it is located at the new world.
+    /// - witness: `context::tests::a_binder_is_located_where_it_was_opened`
+    #[spec(captures: [register = self.world], ensures: |ret| ret == register && self.world == world)]
+    #[inline]
+    pub fn relocate(
+        &mut self,
+        world: World,
+    ) -> World
+    {
+        core::mem::replace(&mut self.world, world)
+    }
+
+    /// The world a bound index is located at.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-range index is admissible input.
+    /// - ensures: the world the named binder was opened at.
+    /// - fails: [`ContextError::UnboundIndex`] when the index names no binder
+    ///   of the zone.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ContextError::UnboundIndex`] — the index names no binder of the
+    ///   zone.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two binders opened at two worlds each read back at
+    ///   their own, and an index past the depth is unbound.
+    /// - witness: `context::tests::a_binder_is_located_where_it_was_opened`
+    #[spec(ensures: |ret| ret.is_ok() == self.declared(zone, index).is_ok())]
+    #[inline]
+    pub fn located(
+        &self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Result<World, ContextError>
+    {
+        let depth = self.depth(zone);
+        let unbound = ContextError::UnboundIndex { zone, index, depth };
+        let Some(offset) = slot_offset(depth, index)
+        else {
+            return Err(unbound);
+        };
+        match zone {
+            Zone::Intuitionistic => Ok(self
+                .located
+                .iter()
+                .rev()
+                .find(|run| run.from <= offset)
+                .map_or(World::Host, |run| run.world)),
+            Zone::Linear => self
+                .linear
+                .get(offset.0)
+                .map(|slot| slot.world)
+                .ok_or(unbound),
         }
     }
 
@@ -391,10 +539,14 @@ impl Context
     ) -> Result<ValueTypeId, ContextError>
     {
         match zone {
-            Zone::Intuitionistic => self
-                .intuitionistic
-                .pop()
-                .ok_or(ContextError::NoBinderToClose { zone }),
+            Zone::Intuitionistic => {
+                let declared = self
+                    .intuitionistic
+                    .pop()
+                    .ok_or(ContextError::NoBinderToClose { zone })?;
+                self.forget_runs_from(BinderDepth(self.intuitionistic.len()));
+                Ok(declared)
+            },
             Zone::Linear => {
                 // Pop first and restore on refusal, rather than reading the top
                 // and shortening the vector by a computed length. The slot is
@@ -714,6 +866,17 @@ impl Context
             .map(|slot| (slot.declared, slot.use_state))
     }
 
+    /// Every linear slot's world, outermost first, read in place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn linear_worlds(&self) -> impl DoubleEndedIterator<Item = World> + ExactSizeIterator + '_
+    {
+        self.linear.iter().map(|slot| slot.world)
+    }
+
     /// Put the linear zone back as `zone` recorded it: a branching rule's
     /// return to the state before its first arm.
     ///
@@ -780,9 +943,37 @@ impl Context
     )
     {
         match zone {
-            Zone::Intuitionistic => self.intuitionistic.truncate(depth.0),
+            Zone::Intuitionistic => {
+                self.intuitionistic.truncate(depth.0);
+                self.forget_runs_from(BinderDepth(self.intuitionistic.len()));
+            },
             Zone::Linear => self.linear.truncate(depth.0),
         }
+    }
+
+    /// The world the innermost intuitionistic binder is located at, the
+    /// host's when no run is open: where a binder opened at the same world
+    /// joins without a run of its own.
+    ///
+    /// # Specification
+    /// trivial.
+    fn trailing_world(&self) -> World
+    {
+        self.located.last().map_or(World::Host, |run| run.world)
+    }
+
+    /// Drop every run that starts at or above `depth` intuitionistic binders:
+    /// the binders they located are gone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn forget_runs_from(
+        &mut self,
+        depth: BinderDepth,
+    )
+    {
+        let kept = self.located.partition_point(|run| run.from.0 < depth.0);
+        self.located.truncate(kept);
     }
 }
 

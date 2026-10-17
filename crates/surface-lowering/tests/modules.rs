@@ -139,6 +139,8 @@ mod modules
         Data,
         /// A sealed abstract type.
         Abstract,
+        /// A world declaration.
+        World,
         /// The lowering's refusal.
         Refused(LoweringRefusal<'source>),
     }
@@ -356,7 +358,7 @@ mod modules
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
                     | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
                     | DeclarationOutcome::Abstract(sealing) => ret.arena.value_type(sealing.kind).is_some() && ret.arena.value_type(sealing.representation).is_some(),
-                    | DeclarationOutcome::Refused(_) => true,
+                    | DeclarationOutcome::Refused(_) | DeclarationOutcome::World => true,
                 })
         },
     )]
@@ -411,7 +413,7 @@ mod modules
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
                     | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
                     | DeclarationOutcome::Abstract(sealing) => ret.arena.value_type(sealing.kind).is_some() && ret.arena.value_type(sealing.representation).is_some(),
-                    | DeclarationOutcome::Refused(_) => true,
+                    | DeclarationOutcome::Refused(_) | DeclarationOutcome::World => true,
                 })
         },
     )]
@@ -465,7 +467,7 @@ mod modules
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
                     | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
                     | DeclarationOutcome::Abstract(sealing) => ret.arena.value_type(sealing.kind).is_some() && ret.arena.value_type(sealing.representation).is_some(),
-                    | DeclarationOutcome::Refused(_) => true,
+                    | DeclarationOutcome::Refused(_) | DeclarationOutcome::World => true,
                 })
         },
     )]
@@ -575,7 +577,8 @@ mod modules
                                 )
                                 | (Amounts::Bodied, DeclarationOutcome::Bodied { .. })
                                 | (Amounts::Data, DeclarationOutcome::Data(_))
-                                | (Amounts::Abstract, DeclarationOutcome::Abstract(_)) => true,
+                                | (Amounts::Abstract, DeclarationOutcome::Abstract(_))
+                                | (Amounts::World, DeclarationOutcome::World) => true,
                                 | (
                                     Amounts::Refused(actual),
                                     DeclarationOutcome::Refused(expected),
@@ -599,6 +602,7 @@ mod modules
                     DeclarationOutcome::Bodied { .. } => Amounts::Bodied,
                     DeclarationOutcome::Data(_) => Amounts::Data,
                     DeclarationOutcome::Abstract(_) => Amounts::Abstract,
+                    DeclarationOutcome::World => Amounts::World,
                     DeclarationOutcome::Refused(refusal) => Amounts::Refused(refusal),
                 };
                 (
@@ -719,6 +723,7 @@ mod modules
             outcome @ (DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_)) => {
                 panic!("`{path}` has a body, not {outcome:?}")
             },
@@ -818,6 +823,7 @@ mod modules
             outcome @ (DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_)) => {
                 panic!("`{path}` has a declared type, not {outcome:?}")
             },
@@ -1005,6 +1011,12 @@ mod modules
                                 sealing.extent,
                                 site,
                             ),
+                            OriginToken::from(usize::from(declaration.origin())),
+                        ));
+                    },
+                    DeclarationOutcome::World => {
+                        return Some(Declaration::world(
+                            declaration.constant(),
                             OriginToken::from(usize::from(declaration.origin())),
                         ));
                     },
@@ -3064,7 +3076,8 @@ mod modules
                 | Amounts::Uncompleted
                 | Amounts::Bodied
                 | Amounts::Data
-                | Amounts::Abstract => None,
+                | Amounts::Abstract
+                | Amounts::World => None,
             })
             .collect();
         assert!(
@@ -3087,7 +3100,8 @@ mod modules
                 | Amounts::Uncompleted
                 | Amounts::Bodied
                 | Amounts::Data
-                | Amounts::Abstract => None,
+                | Amounts::Abstract
+                | Amounts::World => None,
             })
             .collect();
         assert!(

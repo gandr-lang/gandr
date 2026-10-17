@@ -58,8 +58,8 @@ use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
 use crate::view::value_type_view;
 
-/// Who bound a linear slot: a fork's endpoint, a hold's held value, or an
-/// access's view.
+/// Who bound a linear slot: a fork's endpoint, a hold's held value, an
+/// access's view, or an entry's capability.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum Resident
 {
@@ -76,6 +76,12 @@ pub(super) enum Resident
     {
         /// The access.
         at: ComputationId,
+    },
+    /// A capability the run's entry holds, to migrate once to `world`.
+    Capability
+    {
+        /// The world it migrates to.
+        world: gandr_core_term::world::World,
     },
 }
 
@@ -97,7 +103,7 @@ pub(super) struct Opened
 pub(super) struct Sessions
 {
     /// The linear depth the run began at; slots below it are not the run's.
-    base: BinderDepth,
+    pub base: BinderDepth,
     /// One entry per linear slot above `base`, outermost first.
     pub opened: Vec<Opened>,
     /// The position above `base` of each held slot an access lends, the
@@ -251,7 +257,7 @@ impl Machine<'_, '_>
                     state,
                     use_state,
                 }),
-                Resident::Held { .. } | Resident::View { .. } => None,
+                Resident::Held { .. } | Resident::View { .. } | Resident::Capability { .. } => None,
             })
             .collect()
     }
@@ -280,6 +286,9 @@ impl Machine<'_, '_>
         | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::Unbound { index: unbound } }) => {
             refused == at && unbound == index
         },
+        | Err(CheckRefusal::Located { at: refused, defect: crate::worlds::LocatedDefect::Elsewhere { bound } }) => {
+            refused == at && bound != self.context.world()
+        },
         | Err(_) => false,
     })]
     pub(super) fn resided(
@@ -298,6 +307,16 @@ impl Machine<'_, '_>
             .declared(Zone::Linear, index)
             .map_err(|_fault| unbound)?;
         let use_state = binders.linear_use(index).map_err(|_fault| unbound)?;
+        let used = binders.world();
+        let bound = binders
+            .located(Zone::Linear, index)
+            .map_err(|_fault| unbound)?;
+        if bound != used {
+            return Err(CheckRefusal::Located {
+                at,
+                defect: crate::worlds::LocatedDefect::Elsewhere { bound },
+            });
+        }
         let position = usize::try_from(u32::from(index))
             .ok()
             .and_then(|index| depth.checked_sub(index)?.checked_sub(1))
@@ -339,6 +358,7 @@ impl Machine<'_, '_>
         | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::Unbound { index: unbound } }) => {
             refused == at && unbound == index
         },
+        | Err(CheckRefusal::Located { at: refused, .. }) => refused == at,
         | Err(_) => false,
     })]
     fn slot(
@@ -355,7 +375,8 @@ impl Machine<'_, '_>
                 use_state: resided.use_state,
                 depth: resided.depth,
             }),
-            Resident::Held { .. } | Resident::View { .. } => match at {
+            Resident::Held { .. } | Resident::View { .. } | Resident::Capability { .. } => match at
+            {
                 CoreNode::Term(term) => Err(CheckRefusal::ShapeMismatch {
                     at: term,
                     wanted: ExpectedShape::Session,
@@ -614,7 +635,8 @@ impl Machine<'_, '_>
                     | Computation::Reset(_)
                     | Computation::Project(..)
                     | Computation::Session(_)
-                    | Computation::Memory(_) => return Ok(()),
+                    | Computation::Memory(_)
+                    | Computation::World(_) => return Ok(()),
                 };
                 (
                     CoreTerm::Computation(term),
@@ -741,7 +763,8 @@ impl Machine<'_, '_>
             | CheckRefusal::RunNotAdmitted { .. }
             | CheckRefusal::ForwardUnsupported { .. }
             | CheckRefusal::Boundary { .. }
-            | CheckRefusal::Access { .. }) => other,
+            | CheckRefusal::Access { .. }
+            | CheckRefusal::Located { .. }) => other,
         })?;
         Err(CheckRefusal::Linearity {
             at: node,
@@ -1363,6 +1386,13 @@ impl Machine<'_, '_>
                     at,
                     defect: AccessDefect::Unended,
                 },
+                Resident::Capability { world } => CheckRefusal::Located {
+                    at,
+                    defect: crate::worlds::LocatedDefect::CapabilityCaptured {
+                        world,
+                        by: Capture::Branch,
+                    },
+                },
             });
         }
         Ok(())
@@ -1725,7 +1755,7 @@ impl Machine<'_, '_>
 /// - witness: `judgement::session::tests::a_held_value_is_captured_by_a_branch_only`
 #[spec(ensures: |ret| match (resident, ret) {
     | (Resident::Held { .. }, Ok(())) => by == Capture::Branch,
-    | (Resident::Endpoint(_) | Resident::View { .. }, Ok(())) => false,
+    | (Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. }, Ok(())) => false,
     | (_, Err(_)) => true,
 })]
 fn captured(
@@ -1747,6 +1777,10 @@ fn captured(
         Resident::View { .. } => Err(CheckRefusal::Access {
             at: node,
             defect: AccessDefect::Escaped { by },
+        }),
+        Resident::Capability { world } => Err(CheckRefusal::Located {
+            at: node,
+            defect: crate::worlds::LocatedDefect::CapabilityCaptured { world, by },
         }),
     }
 }

@@ -459,6 +459,7 @@ impl<'source> Collector<'_, 'source>
                         ComponentForm::Derived
                     },
                 },
+                mark: crate::module::Mark::Unmarked,
             })
             .collect();
 
@@ -997,6 +998,8 @@ pub fn spine_domains<'source>(
             | Former::Action
             | Former::Offer
             | Former::Access
+            | Former::World
+            | Former::WorldDeclaration
             | Former::Reserved
             | Former::Unadmitted => return Ok(domains),
         };

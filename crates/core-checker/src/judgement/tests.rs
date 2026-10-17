@@ -3600,7 +3600,7 @@ proptest! {
                 | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..)
                 | Computation::Exercise { .. } | Computation::Scope { .. }
                 | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..)
-                | Computation::Hole(_) | Computation::Mark { .. } | Computation::Session(_) | Computation::Memory(_) => {
+                | Computation::Hole(_) | Computation::Mark { .. } | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => {
                     prop_assert!(false, "the recipe mints no former outside the fragment, no hole and no mark");
                 },
             }

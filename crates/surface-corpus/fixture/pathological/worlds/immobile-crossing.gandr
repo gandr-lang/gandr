@@ -1,0 +1,34 @@
+// What does not cross, refused where it would. A migration's result comes
+// back to the world the migration left, and only what is mobile and open
+// comes back: an unmarked abstract type stays with its seal, a handle stays
+// when what it holds is not open, and a suspended computation stays where it
+// would run.
+
+// The operator's and the seat's worlds, and the seat's sealed side of the
+// exchange, its report alone marked mobile.
+import "../../model/worlds/seat-and-operator.gandr" ;
+
+/// The dispatch taken back from the seat, refused: `Dispatch` is not marked,
+/// so its representation stays with the seal.
+@[ refuses("Immobile") ]
+@[ entry((operator, seat)) ]
+def unmarkedBack() -> -F Seat.Dispatch {
+  migrate [seat] { pure Seat.task }
+}
+
+/// A handle to the dispatch taken back from the seat, refused: a handle
+/// crosses only when what it holds is open, and an unmarked abstract type is
+/// not.
+@[ refuses("Immobile") ]
+@[ entry((operator, seat)) ]
+def unmarkedHandle() -> -F (Seat.Dispatch at seat) {
+  migrate [seat] { (hold Seat.task) }
+}
+
+/// A suspended computation taken back from the seat, refused: a thunk runs
+/// where it is forced, and what it closes over is the seat's.
+@[ refuses("Immobile") ]
+@[ entry((operator, seat)) ]
+def suspendedBack() -> -F (+U (-F Seat.Report)) {
+  migrate [seat] { pure thunk { pure Seat.progress } }
+}

@@ -134,6 +134,9 @@ pub(in crate::lower) fn judged(
                         Maybe::Absent(_) => None,
                     };
                 },
+                DeclarationOutcome::World => {
+                    return Some(Declaration::world(declaration.constant(), origin));
+                },
                 DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => return None,
             };
             Some(Declaration::new(
@@ -248,6 +251,7 @@ pub(in crate::lower) fn body_named(
         other @ (DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
         | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a body: {other:?}"),
     }
 }
@@ -2280,6 +2284,7 @@ fn a_loop_mints_the_words_at_its_point()
             | DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
             | DeclarationOutcome::Refused(_) => panic!("the words are data"),
         }),
         ["here", "loop", "back(loop)", "turn", "back(turn)"].map(String::from),

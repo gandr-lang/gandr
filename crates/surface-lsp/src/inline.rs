@@ -2338,9 +2338,9 @@ mod tests
               "codata ${1:type_identifier} { \\}"
               "module ${1:type_identifier} { ${2:member} \\}"
               "import \"\";"
+              "world ${1:identifier};"
               "op infixl ${1:number} \"\";"
               "rec { ${1:item} \\}"
-              "@[${1:identifier}]"
         "#]]
         .assert_eq(&rendered);
     }

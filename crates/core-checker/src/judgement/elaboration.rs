@@ -199,8 +199,9 @@ pub struct Formed
     pub level: Level,
 }
 
-/// What a recording context kept: the term judgements, the type formations
-/// and the endpoints' standings finished, each in the order finished.
+/// What a recording context kept: the term judgements, the type formations,
+/// the endpoints' standings and the world register's moves finished, each in
+/// the order finished.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Kept
 {
@@ -210,11 +211,16 @@ pub struct Kept
     pub formed: Vec<Formed>,
     /// The session type each action's endpoint stood at, keyed by the action.
     pub endpoints: Vec<Typing>,
+    /// The world register's moves, in the order made.
+    pub moves: Vec<crate::worlds::WorldMove>,
 }
 
-/// A typed run's record: every term judgement it finished, with its type,
-/// every type formation it finished, with its level, the session type each
-/// action's endpoint stood at, and the refusals it marked.
+/// A typed run's record of what it judged.
+///
+/// Every term judgement it finished, with its type; every type formation it
+/// finished, with its level; the session type each action's endpoint stood
+/// at; every move of the world register, with the linear zone around each
+/// spent capability; and the refusals it marked.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Typings
 {
@@ -226,6 +232,8 @@ pub struct Typings
     /// The session type each action's endpoint stood at, read where the
     /// action stands, keyed by the action, in the order met.
     endpoints: Vec<Typing>,
+    /// The world register's moves, in the order made.
+    moves: Vec<crate::worlds::WorldMove>,
     /// The refusals marked, in the order met.
     marks: Vec<MarkEntry>,
 }
@@ -268,6 +276,18 @@ impl Typings
         &self.endpoints
     }
 
+    /// The world register's moves, in the order made: each migration's spent
+    /// capability, with the linear zone before and after, and its return.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn moves(&self) -> &[crate::worlds::WorldMove]
+    {
+        &self.moves
+    }
+
     /// The refusals marked, in the order met.
     ///
     /// # Specification
@@ -285,7 +305,7 @@ impl Typings
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the typings, the formations and the endpoints are
+    /// - ensures: the typings, the formations, the endpoints and the moves are
     ///   `signature`'s then `body`'s, in order; the marks are `body`'s.
     /// - panics: none.
     ///
@@ -306,14 +326,17 @@ impl Typings
             mut typings,
             mut formed,
             mut endpoints,
+            mut moves,
         } = signature;
         typings.extend(body.judged);
         formed.extend(body.formed);
         endpoints.extend(body.endpoints);
+        moves.extend(body.moves);
         Self {
             judged: typings,
             formed,
             endpoints,
+            moves,
             marks: body.marks,
         }
     }
@@ -588,20 +611,25 @@ pub fn type_value(
         sessions: super::Sessions::new(base),
         root: quenchant_shape::shape::Maybe::Absent(crate::respect::root::Absent::Unmarked),
     };
+    let register = machine.context.binders().world();
     let scope = machine.session_scope();
+    let _entered = machine.open_entry();
     let _outcome = machine.drive(goal);
     machine.unwind(entry);
     machine.close_sessions(scope);
+    let _moved = machine.context.binders().relocate(register);
     let marks = machine.marks;
     let Kept {
         typings,
         formed,
         endpoints,
+        moves,
     } = context.finish_typings(outer);
     Typings {
         judged: typings,
         formed,
         endpoints,
+        moves,
         marks,
     }
 }
@@ -889,6 +917,20 @@ impl Machine<'_, '_>
                 break anchor;
             }
         };
+        // A migration the recovery drops puts the register back where the
+        // outermost of them found it.
+        if let Some(from) = self.frames.get(anchor.frames ..).and_then(|dropped| {
+            dropped.iter().find_map(|waiting| {
+                if let super::Frame::MigrateBody { from, .. } = waiting.frame {
+                    Some(from)
+                }
+                else {
+                    None
+                }
+            })
+        }) {
+            let _moved = self.context.binders().relocate(from);
+        }
         self.frames.truncate(anchor.frames);
         self.native_types.truncate(anchor.native);
         self.unwind(anchor.depth);

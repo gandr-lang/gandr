@@ -63,6 +63,7 @@ use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
+use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_lowering::LoweringRefusal;
@@ -574,6 +575,30 @@ pub enum RefusalName
     NotAView,
     /// An access's unwind performing an effect.
     UnwindEffect,
+    /// A value crossing to a world its type does not reach.
+    Immobile,
+    /// A migration with no capability for its world.
+    CapabilityMissing,
+    /// A migration under a former that may run it other than once.
+    CapabilityCaptured,
+    /// A hypothesis or a resident used at a world other than its own.
+    Elsewhere,
+    /// A hold checked against a handle at another world.
+    HoldElsewhere,
+    /// A hold or a `leta` at the host's world.
+    Unlocated,
+    /// A world position no world declaration holds.
+    UndeclaredWorld,
+    /// A host entry naming a world the source declares nowhere.
+    HostWorldUndeclared,
+    /// A `mobile` mark over a representation that does not cross.
+    MarkUnfounded,
+    /// An entry named from another declaration.
+    EntryNamed,
+    /// A stated entry the host's does not hold.
+    EntryUngranted,
+    /// A `leta` of a value whose type is no handle.
+    NotAHandle,
 }
 
 impl RefusalName
@@ -593,7 +618,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 145_usize] = [
+    pub const VOCABULARY: [Self; 157_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -739,6 +764,18 @@ impl RefusalName
         Self::ViewSpent,
         Self::NotAView,
         Self::UnwindEffect,
+        Self::Immobile,
+        Self::CapabilityMissing,
+        Self::CapabilityCaptured,
+        Self::Elsewhere,
+        Self::HoldElsewhere,
+        Self::Unlocated,
+        Self::UndeclaredWorld,
+        Self::HostWorldUndeclared,
+        Self::MarkUnfounded,
+        Self::EntryNamed,
+        Self::EntryUngranted,
+        Self::NotAHandle,
     ];
 
     /// The name as a `refuses` payload spells it: the name of the variant it
@@ -874,6 +911,18 @@ impl RefusalName
         | (Self::ViewSpent, b"ViewSpent")
         | (Self::NotAView, b"NotAView")
         | (Self::UnwindEffect, b"UnwindEffect")
+        | (Self::Immobile, b"Immobile")
+        | (Self::CapabilityMissing, b"CapabilityMissing")
+        | (Self::CapabilityCaptured, b"CapabilityCaptured")
+        | (Self::Elsewhere, b"Elsewhere")
+        | (Self::HoldElsewhere, b"HoldElsewhere")
+        | (Self::Unlocated, b"Unlocated")
+        | (Self::UndeclaredWorld, b"UndeclaredWorld")
+        | (Self::HostWorldUndeclared, b"HostWorldUndeclared")
+        | (Self::MarkUnfounded, b"MarkUnfounded")
+        | (Self::EntryNamed, b"EntryNamed")
+        | (Self::EntryUngranted, b"EntryUngranted")
+        | (Self::NotAHandle, b"NotAHandle")
         | (Self::CapabilityForged, b"CapabilityForged")
         | (Self::CapabilityAmplified, b"CapabilityAmplified")
         | (Self::CapabilityOutsideAuthority, b"CapabilityOutsideAuthority")
@@ -976,6 +1025,18 @@ impl RefusalName
             Self::ViewSpent => "ViewSpent",
             Self::NotAView => "NotAView",
             Self::UnwindEffect => "UnwindEffect",
+            Self::Immobile => "Immobile",
+            Self::CapabilityMissing => "CapabilityMissing",
+            Self::CapabilityCaptured => "CapabilityCaptured",
+            Self::Elsewhere => "Elsewhere",
+            Self::HoldElsewhere => "HoldElsewhere",
+            Self::Unlocated => "Unlocated",
+            Self::UndeclaredWorld => "UndeclaredWorld",
+            Self::HostWorldUndeclared => "HostWorldUndeclared",
+            Self::MarkUnfounded => "MarkUnfounded",
+            Self::EntryNamed => "EntryNamed",
+            Self::EntryUngranted => "EntryUngranted",
+            Self::NotAHandle => "NotAHandle",
             Self::CapabilityForged => "CapabilityForged",
             Self::CapabilityAmplified => "CapabilityAmplified",
             Self::CapabilityOutsideAuthority => "CapabilityOutsideAuthority",
@@ -1307,6 +1368,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::Delegation | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint)
         | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::UnwindEffect)
+        | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
         | (Self::Checking(CheckRefusal::CapabilityForged { .. }), RefusalName::CapabilityForged)
         | (Self::Checking(CheckRefusal::CapabilityAmplified(_)), RefusalName::CapabilityAmplified)
         | (Self::Checking(CheckRefusal::CapabilityOutsideAuthority { .. }), RefusalName::CapabilityOutsideAuthority)
@@ -1594,6 +1656,18 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Access { defect: AccessDefect::Spent, .. }, RefusalName::ViewSpent)
         | (CheckRefusal::Access { defect: AccessDefect::NotAView, .. }, RefusalName::NotAView)
         | (CheckRefusal::Access { defect: AccessDefect::UnwindEffect, .. }, RefusalName::UnwindEffect)
+        | (CheckRefusal::Located { defect: LocatedDefect::Immobile { .. }, .. }, RefusalName::Immobile)
+        | (CheckRefusal::Located { defect: LocatedDefect::CapabilityMissing { .. }, .. }, RefusalName::CapabilityMissing)
+        | (CheckRefusal::Located { defect: LocatedDefect::CapabilityCaptured { .. }, .. }, RefusalName::CapabilityCaptured)
+        | (CheckRefusal::Located { defect: LocatedDefect::Elsewhere { .. }, .. }, RefusalName::Elsewhere)
+        | (CheckRefusal::Located { defect: LocatedDefect::HoldElsewhere { .. }, .. }, RefusalName::HoldElsewhere)
+        | (CheckRefusal::Located { defect: LocatedDefect::Unlocated, .. }, RefusalName::Unlocated)
+        | (CheckRefusal::Located { defect: LocatedDefect::UndeclaredWorld { .. }, .. }, RefusalName::UndeclaredWorld)
+        | (CheckRefusal::Located { defect: LocatedDefect::HostWorldUndeclared, .. }, RefusalName::HostWorldUndeclared)
+        | (CheckRefusal::Located { defect: LocatedDefect::MarkUnfounded { .. }, .. }, RefusalName::MarkUnfounded)
+        | (CheckRefusal::Located { defect: LocatedDefect::EntryNamed { .. }, .. }, RefusalName::EntryNamed)
+        | (CheckRefusal::Located { defect: LocatedDefect::EntryUngranted { .. }, .. }, RefusalName::EntryUngranted)
+        | (CheckRefusal::Located { defect: LocatedDefect::NotAHandle { .. }, .. }, RefusalName::NotAHandle)
         | (CheckRefusal::CapabilityForged { .. }, RefusalName::CapabilityForged)
         | (CheckRefusal::CapabilityAmplified(_), RefusalName::CapabilityAmplified)
         | (CheckRefusal::CapabilityOutsideAuthority { .. }, RefusalName::CapabilityOutsideAuthority)
@@ -1690,6 +1764,20 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             AccessDefect::Spent => RefusalName::ViewSpent,
             AccessDefect::NotAView => RefusalName::NotAView,
             AccessDefect::UnwindEffect => RefusalName::UnwindEffect,
+        },
+        CheckRefusal::Located { defect, .. } => match defect {
+            LocatedDefect::Immobile { .. } => RefusalName::Immobile,
+            LocatedDefect::CapabilityMissing { .. } => RefusalName::CapabilityMissing,
+            LocatedDefect::CapabilityCaptured { .. } => RefusalName::CapabilityCaptured,
+            LocatedDefect::Elsewhere { .. } => RefusalName::Elsewhere,
+            LocatedDefect::HoldElsewhere { .. } => RefusalName::HoldElsewhere,
+            LocatedDefect::Unlocated => RefusalName::Unlocated,
+            LocatedDefect::UndeclaredWorld { .. } => RefusalName::UndeclaredWorld,
+            LocatedDefect::HostWorldUndeclared => RefusalName::HostWorldUndeclared,
+            LocatedDefect::MarkUnfounded { .. } => RefusalName::MarkUnfounded,
+            LocatedDefect::EntryNamed { .. } => RefusalName::EntryNamed,
+            LocatedDefect::EntryUngranted { .. } => RefusalName::EntryUngranted,
+            LocatedDefect::NotAHandle { .. } => RefusalName::NotAHandle,
         },
         CheckRefusal::CapabilityEscaped { .. } => RefusalName::CapabilityEscaped,
         CheckRefusal::CapabilityConsumable(_) => RefusalName::CapabilityConsumable,

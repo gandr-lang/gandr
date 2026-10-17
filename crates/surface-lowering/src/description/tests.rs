@@ -947,7 +947,8 @@ fn an_unended_family_is_refused_once_at_its_close()
                 | DeclarationOutcome::Uncompleted { .. }
                 | DeclarationOutcome::Bodied { .. }
                 | DeclarationOutcome::Data(_)
-                | DeclarationOutcome::Abstract(_) => None,
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World => None,
             })
             .collect();
         let end = gandr_surface_syntax::ByteOffset::from(source.trim_end().len());

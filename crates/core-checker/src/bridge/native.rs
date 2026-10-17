@@ -169,7 +169,8 @@ impl Erasure<'_, '_>
                     | Computation::With(..)
                     | Computation::Project(..)
                     | Computation::Session(_)
-                    | Computation::Memory(_) => return Err(Refusal::MachineInvariant),
+                    | Computation::Memory(_)
+                    | Computation::World(_) => return Err(Refusal::MachineInvariant),
                 }
             },
             CoreNode::Type(TypeNode::Value(at)) => {
@@ -202,7 +203,8 @@ impl Erasure<'_, '_>
                     | ValueType::Unknown
                     | ValueType::Stack { .. }
                     | ValueType::Capability { .. }
-                    | ValueType::Staged { .. } => return Err(Refusal::MachineInvariant),
+                    | ValueType::Staged { .. }
+                    | ValueType::World(_) => return Err(Refusal::MachineInvariant),
                 }
             },
             CoreNode::Type(TypeNode::Computation(_)) => return Err(Refusal::MachineInvariant),
@@ -389,7 +391,8 @@ impl Erasure<'_, '_>
                     | Computation::With(..)
                     | Computation::Project(..)
                     | Computation::Session(_)
-                    | Computation::Memory(_) => return Err(Refusal::MachineInvariant),
+                    | Computation::Memory(_)
+                    | Computation::World(_) => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_computation(at, image))
             },
@@ -467,7 +470,8 @@ impl Erasure<'_, '_>
                     | ValueType::Unknown
                     | ValueType::Stack { .. }
                     | ValueType::Capability { .. }
-                    | ValueType::Staged { .. } => return Err(Refusal::MachineInvariant),
+                    | ValueType::Staged { .. }
+                    | ValueType::World(_) => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_value_type(at, image))
             },

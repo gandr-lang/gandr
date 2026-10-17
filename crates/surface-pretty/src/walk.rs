@@ -356,7 +356,7 @@ enum Kind
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
-        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Data { .. } | Former::RunType(_)),
+        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Data { .. } | Former::RunType(_) | Former::Located { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -374,7 +374,7 @@ enum Kind
         | Former::Scope { .. } | Former::Resume(..) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..) | Former::Ascription { .. }
         | Former::Project(..) | Former::Send { .. } | Former::Receive(_) | Former::Select { .. } | Former::Offer { .. }
         | Former::Close(_) | Former::Fork { .. } | Former::Hold { .. } | Former::Access { .. } | Former::ResumeView { .. }
-        | Former::AbortView(_)),
+        | Former::AbortView(_) | Former::WorldHold(_) | Former::Leta { .. } | Former::Migrate { .. }),
     | Kind::Unknown => matches!(*former, Former::Unreadable(_)),
 })]
 const fn kind<Node>(former: &Former<'_, Node>) -> Kind
@@ -399,7 +399,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Flow { .. }
         | Former::Relation { .. }
         | Former::Data { .. }
-        | Former::RunType(_) => Kind::ValueType,
+        | Former::RunType(_)
+        | Former::Located { .. } => Kind::ValueType,
         Former::Returner(_)
         | Former::With(..)
         | Former::EffectfulReturner { .. }
@@ -475,7 +476,10 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Hold { .. }
         | Former::Access { .. }
         | Former::ResumeView { .. }
-        | Former::AbortView(_) => Kind::Computation,
+        | Former::AbortView(_)
+        | Former::WorldHold(_)
+        | Former::Leta { .. }
+        | Former::Migrate { .. } => Kind::Computation,
         Former::Unreadable(_) => Kind::Unknown,
     }
 }
@@ -828,7 +832,7 @@ where
             && (!annotated || ret.last().is_some_and(|slot| slot.admits == Admits::ValueType))
     },
     | Former::Pi { .. } | Former::Sigma { .. } | Former::StaticLambda(_) | Former::Lambda(_) | Former::Bind(..) | Former::Fixpoint(_)
-        | Former::Shift(_) => ret.last().is_some_and(|slot| slot.binds == Binds::ONE),
+        | Former::Shift(_) | Former::Leta { .. } => ret.last().is_some_and(|slot| slot.binds == Binds::ONE),
     | Former::Case { arity, .. } | Former::DataCase { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize)
         && ret.first().is_some_and(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
     | Former::Thunk(_) => ret.len() == match bodies { Bodies::Spelled => 1_usize, Bodies::Opaque => 0_usize },
@@ -975,7 +979,8 @@ where
         Former::List(child)
         | Former::Returner(child)
         | Former::EffectfulReturner { result: child, .. }
-        | Former::Quote(child) => Vec::from([value_type(child)]),
+        | Former::Quote(child)
+        | Former::Located { inner: child, .. } => Vec::from([value_type(child)]),
         Former::PathRefl(child)
         | Former::Element(child)
         | Former::ComputationElement(child)
@@ -989,7 +994,8 @@ where
         | Former::TupleProjection(child, _)
         | Former::Perform { payload: child, .. }
         | Former::Send { payload: child, .. }
-        | Former::ResumeView { value: child, .. } => Vec::from([value(child)]),
+        | Former::ResumeView { value: child, .. }
+        | Former::WorldHold(child) => Vec::from([value(child)]),
         Former::Injection(summand, child) => Vec::from([Slot {
             label: Some(Labelled {
                 of: node,
@@ -1095,7 +1101,11 @@ where
             ..
         } => Vec::from([value(capability), value(payload)]),
         Former::Resume(stack, computation) => Vec::from([value(stack), continues(computation)]),
-        Former::Reset(body) => Vec::from([ends(body, Binds::NONE)]),
+        Former::Reset(body) | Former::Migrate { body, .. } => Vec::from([ends(body, Binds::NONE)]),
+        Former::Leta {
+            value: opened,
+            body,
+        } => Vec::from([value(opened), Slot::of(body, admits, Binds::ONE)]),
         Former::Lazy(first, second) => Vec::from([continues(first), continues(second)]),
         Former::Ascription { body, ty } => {
             Vec::from([Slot::of(body, admits, Binds::NONE), comp_type(ty)])
@@ -3073,6 +3083,10 @@ impl Walk<'_, '_>
                 | Former::Access { .. }
                 | Former::ResumeView { .. }
                 | Former::AbortView(_)
+                | Former::Located { .. }
+                | Former::WorldHold(_)
+                | Former::Leta { .. }
+                | Former::Migrate { .. }
                 | Former::Unreadable(_) => return None,
             }
         }
@@ -3580,7 +3594,11 @@ impl Walk<'_, '_>
             | Former::Hold { .. }
             | Former::Access { .. }
             | Former::ResumeView { .. }
-            | Former::AbortView(_) => Some(self.form(source, node, &former, admits)),
+            | Former::AbortView(_)
+            | Former::Located { .. }
+            | Former::WorldHold(_)
+            | Former::Leta { .. }
+            | Former::Migrate { .. } => Some(self.form(source, node, &former, admits)),
             | Former::Reify => return self.approximate(Glyphs("<stack>")),
             | Former::Stack(..) => Some(Join::Bracket(Bracket::Stack)),
             | Former::With(..) if self.form == Form::Sugared => Some(Join::Infix {
@@ -4762,6 +4780,33 @@ impl Walk<'_, '_>
             Former::AbortView(view) => {
                 let _ = parts.text("abort(").part(Part::Endpoint(view)).text(")");
                 Binding::Atom
+            },
+            // `A at w` binds as loosely as a word's cons, so a bridge over it
+            // parenthesizes it and it parenthesizes any operand but an atom.
+            Former::Located { world, .. } => {
+                let world = self.spelled(world, Unspelled::Unreadable(Unreadable::Unnamed));
+                let _ = parts.piece(Binding::Atom).text(" at ").text(world);
+                Binding::Cons
+            },
+            Former::WorldHold(_) => {
+                let _ = parts.text("hold ").piece(Binding::Prefix);
+                Binding::Prefix
+            },
+            Former::Leta { .. } => {
+                let _ = parts
+                    .text("leta ")
+                    .part(Part::Binder(0_usize))
+                    .text(" = ")
+                    .piece(Binding::Arrow)
+                    .text(" ;")
+                    .part(Part::Line)
+                    .piece(Binding::Sequence);
+                Binding::Sequence
+            },
+            Former::Migrate { world, .. } => {
+                let world = self.spelled(world, Unspelled::Unreadable(Unreadable::Unnamed));
+                let _ = parts.text("migrate [").text(world).text("] {").body();
+                Binding::Prefix
             },
             Former::Reify
             | Former::Stack(..)

@@ -413,7 +413,7 @@ fn value_spelling(
             Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) |
 &ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Path { .. } | &ValueType::Universe { ..
 } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi { .. } | &ValueType::Sigma {
-.. } | &ValueType::Capability { .. } | &ValueType::Unknown | &ValueType::Session(_) | &ValueType::Flow { .. } | &ValueType::Run(_) | &ValueType::Staged { .. }) | None => Token::Other,
+.. } | &ValueType::Capability { .. } | &ValueType::World(_) | &ValueType::Unknown | &ValueType::Session(_) | &ValueType::Flow { .. } | &ValueType::Run(_) | &ValueType::Staged { .. }) | None => Token::Other,
             },
         | Visit::Value(id) => match arena.value(id) {
             | Some(&Value::Variable { index, .. }) => Token::Variable(u32::from(index)),
@@ -1215,6 +1215,11 @@ fn binder_counts_clamp_at_the_ceiling()
             Binders::from(input).deeper_by(crate::ComponentCount::from(count)),
             "{input} binders past {count} more"
         );
+        assert_eq!(
+            Binders::from(expected),
+            Binders::from(input).beyond(Binders::from(u32::try_from(count).unwrap_or(u32::MAX))),
+            "{input} binders beyond {count} more"
+        );
     }
 }
 
@@ -1855,7 +1860,8 @@ fn binding_sites_distinguish_free_bound_and_linear_indices()
                         | crate::Computation::With(..)
                         | crate::Computation::Project(..)
                         | crate::Computation::Session(_)
-                        | crate::Computation::Memory(_) => {
+                        | crate::Computation::Memory(_)
+                        | crate::Computation::World(_) => {
                             panic!("the golden uses binding computations and return")
                         },
                     }
@@ -3098,6 +3104,14 @@ fn formers() -> Vec<Witnessed>
             });
             a.value_thunk(body)
         }),
+        ("world form", |a, c| {
+            let rest = done(a);
+            let body = a.computation_world(crate::world::WorldForm::Leta {
+                value: c,
+                body: rest,
+            });
+            a.value_thunk(body)
+        }),
         ("record type", |a, c| {
             let field = path(a, c);
             let record = a.value_type_record(BTreeMap::from([(
@@ -3125,6 +3139,14 @@ fn formers() -> Vec<Witnessed>
         ("run type", |a, c| {
             let run = a.value_type_run(c);
             a.value_quote(run)
+        }),
+        ("located type", |a, c| {
+            let inner = path(a, c);
+            let located = a.value_type_world(crate::world::WorldType::At {
+                inner,
+                world: crate::world::World::Host,
+            });
+            a.value_quote(located)
         }),
         ("staged type", |a, c| {
             let base = path(a, c);

@@ -17,7 +17,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 **Why.** A checker reads core terms, a diagnostic reads source spans, and an obligation ledger reads which declarations are still owed. The lowering is the one place all three are decided together: what the source means in the core fragment, where each core node came from, and whether a declaration that failed to lower failed because the author erred, because the fragment cannot represent it, or because the engine was misused — so no failure the engine refuses is mistaken for an obligation the author owes.
 
-**How.** Every node is dispatched on the named kind the grammar resolves its mold to (`Pbg::named_kind`), and a form's children are split into its own tiles — the tiles of its own grammar rule, read by label — and the forms standing in its holes. A collection pass pairs each name's signature and definition and records which declaration owns every node. An ascending sweep over the level-order arena fixes each node's sort and binder frame from its parent, resolves names and literals, and decides every refusal; a descending sweep then mints each planned node over its already-minted children. Neither sweep recurses, and both spend one caller-set `LoweringBudget`.
+**How.** Each node is dispatched on the named kind its mold resolves to (`Pbg::named_kind`); a collection pass pairs signatures with definitions, and two sweeps over the level-order tree, neither recursive and both under one `LoweringBudget`, plan every node and then mint it. The crate rustdoc's _The grammar names every form_ and _Two sweeps, no recursion_ hold the mechanism.
 
 ## Provided features
 
@@ -47,6 +47,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
 - `model::derive`, `ModelSignature`, `LoweredModule::signs` and `LoweredSign`: `Model(S)` derived from the `Sig` value `sign S` defines, a module ascribed `: Model(S)` checked against it, and a sign's description and presentation handed to later passes; type members with parameters, expanding where they are applied (`module::model`).
 - Binary sessions: a session type read whole into one protocol; `send`, `select`, `offer` and `close`, and the statements `recv(c) as x ;` and `fork (c : S) t as d ;`, lowered to core session actions; `fork !`, `dup`, `acquire` and `release` reserved by name.
+- Worlds: `world w ;` as `DeclarationOutcome::World`, `A at w`, `hold`, `leta`, `migrate [w]`, `mobile type T` as `Mark`, `@[ entry(…) ]` as `LoweredModule::worlds`.
 
 ## Expected features
 
@@ -104,6 +105,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Early exits and loops: the survey, the commuting, the cut, inferred exits and a loop's fixpoint | [`lower::exits`](src/lower/exits.rs), [`lower::loops`](src/lower/loops.rs), [`src/lib.rs`](src/lib.rs), [`lower`](src/lower.rs) |
 | Nested computations: the lowering's record of each inferred run, the attribute's ask and how its `run` is spelled | [`lower::runs`](src/lower/runs.rs), [`lower`](src/lower.rs) |
 | Binary sessions: protocols, endpoints, actions and the statements binding them | [`lower::session`](src/lower/session.rs) |
+| Worlds | [`module::world`](src/module/world.rs), [`lower::world`](src/lower/world.rs) |
 | The failure classifier | [`classify`](src/classify.rs) |
 | Attributes and documentation | [`attribute`](src/attribute.rs), [`doc`](src/doc.rs) |
 | Origins | [`origin`](src/origin.rs) |

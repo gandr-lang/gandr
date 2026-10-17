@@ -169,7 +169,8 @@ fn a_statement_the_syntax_cannot_read_is_refused()
             | DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
-            | DeclarationOutcome::Abstract(_)) => panic!("`{written}` is refused: {other:?}"),
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World) => panic!("`{written}` is refused: {other:?}"),
         }
     };
     let records = "#{mul = exchange, one = keep}";

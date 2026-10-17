@@ -410,3 +410,79 @@ fn an_intuitionistic_scope_closes_without_a_use()
         "a structural binder closes unread — weakening is admissible in the structural zone"
     );
 }
+
+#[test]
+fn a_binder_is_located_where_it_was_opened()
+{
+    let (_arena, declared, other) = two_types();
+    let elsewhere = crate::world::World::Declared(gandr_kernel_term::ConstantIndex::from(3_usize));
+    let mut context = Context::new();
+    context.open(Zone::Intuitionistic, declared);
+    context.open(Zone::Linear, declared);
+    assert_eq!(
+        crate::world::World::Host,
+        context.relocate(elsewhere),
+        "the register starts at the host's world and reports it on a move"
+    );
+    context.open(Zone::Intuitionistic, other);
+    context.open_at(Zone::Linear, other, crate::world::World::Host);
+    let zero = DeBruijnIndex::from(0_u32);
+    let one = DeBruijnIndex::from(1_u32);
+    assert_eq!(Ok(elsewhere), context.located(Zone::Intuitionistic, zero));
+    assert_eq!(
+        Ok(crate::world::World::Host),
+        context.located(Zone::Intuitionistic, one),
+        "a binder opened before the move stays where it was opened"
+    );
+    assert_eq!(
+        Ok(crate::world::World::Host),
+        context.located(Zone::Linear, zero),
+        "an explicit location wins over the register"
+    );
+    assert_eq!(
+        elsewhere,
+        context.world(),
+        "an explicit location moves no register"
+    );
+    assert!(matches!(
+        context.located(Zone::Linear, DeBruijnIndex::from(2_u32)),
+        Err(ContextError::UnboundIndex { .. })
+    ));
+    assert_eq!(Ok(other), context.close(Zone::Intuitionistic));
+    assert_eq!(
+        Ok(crate::world::World::Host),
+        context.located(Zone::Intuitionistic, zero),
+        "closing a binder drops its location with it"
+    );
+    context.open(Zone::Intuitionistic, other);
+    context.open(Zone::Intuitionistic, other);
+    context.open_at(Zone::Intuitionistic, declared, crate::world::World::Host);
+    assert_eq!(
+        [
+            zero,
+            one,
+            DeBruijnIndex::from(2_u32),
+            DeBruijnIndex::from(3_u32)
+        ]
+        .map(|index| context.located(Zone::Intuitionistic, index)),
+        [
+            Ok(crate::world::World::Host),
+            Ok(elsewhere),
+            Ok(elsewhere),
+            Ok(crate::world::World::Host),
+        ],
+        "binders opened at one world in a row share it, and one opened back at the host's stands there"
+    );
+    context.truncate(Zone::Intuitionistic, BinderDepth::from(2_usize));
+    context.open_at(Zone::Intuitionistic, other, crate::world::World::Host);
+    assert_eq!(
+        [zero, one, DeBruijnIndex::from(2_u32)]
+            .map(|index| context.located(Zone::Intuitionistic, index)),
+        [
+            Ok(crate::world::World::Host),
+            Ok(elsewhere),
+            Ok(crate::world::World::Host),
+        ],
+        "truncating forgets the locations above the depth and keeps those below it"
+    );
+}

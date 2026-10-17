@@ -1,0 +1,32 @@
+// A migration spends the capability its entry holds for its world, once.
+// What spends it again, or could run it other than once, is refused at the
+// migration.
+
+// The operator's and the seat's worlds, and the seat's sealed side of the
+// exchange.
+import "../../model/worlds/seat-and-operator.gandr" ;
+
+/// A second migration to the seat on one capability, refused at the second:
+/// the first spent the one the entry holds.
+@[ refuses("CapabilityMissing") ]
+@[ entry((operator, seat)) ]
+def twice() -> -F Seat.Report {
+  run first : Seat.Report <- migrate [seat] { pure Seat.progress };
+  migrate [seat] { pure first }
+}
+
+/// A migration from an entry holding no capability for its world, refused:
+/// the operator stands at its own world with nothing to spend.
+@[ refuses("CapabilityMissing") ]
+@[ entry(operator) ]
+def unheld() -> -F Seat.Report {
+  migrate [seat] { pure Seat.progress }
+}
+
+/// A migration suspended in a thunk, refused: a thunk may be forced any
+/// number of times, and a capability is spent once.
+@[ refuses("CapabilityCaptured") ]
+@[ entry((operator, seat)) ]
+def suspended() -> -F (+U (-F Seat.Report)) {
+  pure thunk { migrate [seat] { pure Seat.progress } }
+}

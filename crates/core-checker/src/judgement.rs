@@ -510,6 +510,8 @@ mod native;
 
 mod session;
 
+mod worlds;
+
 use self::elaboration::Anchor;
 pub use self::elaboration::Elaboration;
 pub use self::elaboration::Formed;
@@ -2032,6 +2034,37 @@ enum Frame
         /// The view it ends.
         view: DeBruijnIndex,
     },
+    /// A hold of a value at the current world waits on the value's synthesis.
+    WorldHold
+    {
+        /// The hold.
+        at: ComputationId,
+    },
+    /// A `leta` waits on its handle's synthesis; its binder then opens at the
+    /// handle's world.
+    LetaValue
+    {
+        /// The `leta`.
+        at: ComputationId,
+        /// The `leta`'s own direction, which its body takes.
+        direction: Direction<CompTypeId>,
+    },
+    /// A `leta`'s body is being judged with its binder located.
+    LetaBody
+    {
+        /// The `leta`.
+        at: ComputationId,
+    },
+    /// A migration's body is being judged at the world it migrated to.
+    MigrateBody
+    {
+        /// The migration.
+        at: ComputationId,
+        /// The world it left, which its result crosses back to.
+        from: gandr_core_term::world::World,
+        /// The migration's own direction.
+        direction: Direction<CompTypeId>,
+    },
 }
 
 /// A frame beside the goal under way when its rule pushed it: the node the
@@ -2205,6 +2238,10 @@ impl Frame
             Self::AccessBody { .. } => FrameRole::AccessBody,
             Self::AccessUnwind { .. } => FrameRole::AccessUnwind,
             Self::ResumeValue { .. } => FrameRole::ResumeValue,
+            Self::WorldHold { .. } => FrameRole::WorldHold,
+            Self::LetaValue { .. } => FrameRole::LetaValue,
+            Self::LetaBody { .. } => FrameRole::LetaBody,
+            Self::MigrateBody { .. } => FrameRole::MigrateBody,
         }
     }
 
@@ -2212,10 +2249,10 @@ impl Frame
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one for an abstraction body, a bind body, a formation under a
-    ///   binder, a return clause, a capability scope's subject, a stack bind
-    ///   and a case motive; two for an operation clause; the component count
-    ///   for a split body; zero otherwise.
+    /// - ensures: one for an abstraction body, a bind body, a `leta` body, a
+    ///   formation under a binder, a return clause, a capability scope's
+    ///   subject, a stack bind and a case motive; two for an operation clause;
+    ///   the component count for a split body; zero otherwise.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2233,7 +2270,8 @@ impl Frame
             | Self::StackBind { .. }
             | Self::NativeMotive { .. }
             | Self::SigmaSplitMotive { .. }
-            | Self::ScopeSubject { .. } => 1_usize,
+            | Self::ScopeSubject { .. }
+            | Self::LetaBody { .. } => 1_usize,
             Self::HandlerClause { .. } => 2_usize,
             Self::SplitBody(arity) => usize::from(arity),
             Self::NativeNext(_)
@@ -2331,7 +2369,10 @@ impl Frame
             | Self::HoldBody { .. }
             | Self::AccessBody { .. }
             | Self::AccessUnwind { .. }
-            | Self::ResumeValue { .. } => 0_usize,
+            | Self::ResumeValue { .. }
+            | Self::WorldHold { .. }
+            | Self::LetaValue { .. }
+            | Self::MigrateBody { .. } => 0_usize,
         })
     }
 }
@@ -2642,118 +2683,125 @@ impl<'context, 'arena> Machine<'context, 'arena>
         captured: CompTypeId,
     ) -> Result<Step, CheckRefusal>
     {
-        let Some((answer, depth)) =
-            self.frames
-                .iter()
-                .rev()
-                .find_map(|waiting| match waiting.frame {
-                    Frame::Reset { answer, depth } => Some((answer, depth)),
-                    Frame::NativeNext(_)
-                    | Frame::NativeYield(_)
-                    | Frame::NativeCollect
-                    | Frame::NativeDiscard
-                    | Frame::NativeTuple { .. }
-                    | Frame::NativeRecord { .. }
-                    | Frame::NativeCase(_)
-                    | Frame::NativeMotive { .. }
-                    | Frame::NativeRespect { .. }
-                    | Frame::NativeLoops { .. }
-                    | Frame::NativeForesee(_)
-                    | Frame::NativeForget(_)
-                    | Frame::SigmaSplitScrutinee(_)
-                    | Frame::SigmaSplitMotive { .. }
-                    | Frame::NativeProjection(_)
-                    | Frame::Ascription { .. }
-                    | Frame::PerformPayload { .. }
-                    | Frame::Next(_)
-                    | Frame::Resume { .. }
-                    | Frame::Project { .. }
-                    | Frame::HandlerForm { .. }
-                    | Frame::HandlerSubject { .. }
-                    | Frame::HandlerReturn { .. }
-                    | Frame::HandlerClause { .. }
-                    | Frame::ExerciseCapability { .. }
-                    | Frame::ScopeForm { .. }
-                    | Frame::ScopeSubject { .. }
-                    | Frame::StackNext { .. }
-                    | Frame::StackBind { .. }
-                    | Frame::ListFold { .. }
-                    | Frame::PathProductFirst { .. }
-                    | Frame::PathProductSecond { .. }
-                    | Frame::PathBackward { .. }
-                    | Frame::PathChecked { .. }
-                    | Frame::PrimitiveSecond { .. }
-                    | Frame::PrimitiveResult { .. }
-                    | Frame::TransportPath { .. }
-                    | Frame::TransportOperand { .. }
-                    | Frame::HereSynthesised { .. }
-                    | Frame::HereEndpoints { .. }
-                    | Frame::FunextLeft { .. }
-                    | Frame::FunextRight { .. }
-                    | Frame::EquivForward { .. }
-                    | Frame::EquivBackward { .. }
-                    | Frame::UaTranslators { .. }
-                    | Frame::ReturnedEndpoint { .. }
-                    | Frame::Ran { .. }
-                    | Frame::ElementTransportPath { .. }
-                    | Frame::ElementTransportMotive { .. }
-                    | Frame::SessionStatement { .. }
-                    | Frame::StaySynthesised { .. }
-                    | Frame::ThenFirst { .. }
-                    | Frame::ThenSecond { .. }
-                    | Frame::FlowProductFirst { .. }
-                    | Frame::FlowProductSecond { .. }
-                    | Frame::RideFlow { .. }
-                    | Frame::RideMotive { .. }
-                    | Frame::RideValue { .. }
-                    | Frame::ForwardTranslator { .. }
-                    | Frame::ArrowDomain { .. }
-                    | Frame::ArrowCodomain { .. }
-                    | Frame::ArrowAgainst { .. }
-                    | Frame::StayEndpoints { .. }
-                    | Frame::TelescopePath { .. }
-                    | Frame::TelescopeMotive { .. }
-                    | Frame::TelescopeStart { .. }
-                    | Frame::TelescopeOver { .. }
-                    | Frame::CaseScrutinee { .. }
-                    | Frame::SplitScrutinee { .. }
-                    | Frame::SplitBody(_)
-                    | Frame::CaseBranch { .. }
-                    | Frame::Force { .. }
-                    | Frame::ApplicationHead { .. }
-                    | Frame::ApplicationArgument { .. }
-                    | Frame::LambdaBody
-                    | Frame::BindBound { .. }
-                    | Frame::BindBody { .. }
-                    | Frame::ValueBridge { .. }
-                    | Frame::CompBridge { .. }
-                    | Frame::Quote(_)
-                    | Frame::FormNext(_)
-                    | Frame::FormUnder { .. }
-                    | Frame::FormBinder
-                    | Frame::FormLift(_)
-                    | Frame::FormElement(_)
-                    | Frame::FormStaticPi(_)
-                    | Frame::PairSecond { .. }
-                    | Frame::StaticSpine { .. }
-                    | Frame::StaticArgument { .. }
-                    | Frame::StaticOperand { .. }
-                    | Frame::Unknowing(_)
-                    | Frame::ThunkBody
-                    | Frame::ReturnValue
-                    | Frame::InjectionPayload
-                    | Frame::FormSession(_)
-                    | Frame::SessionSend { .. }
-                    | Frame::OfferArm { .. }
-                    | Frame::ForkProtocol { .. }
-                    | Frame::ForkChild { .. }
-                    | Frame::ForkParent { .. }
-                    | Frame::HoldValue { .. }
-                    | Frame::HoldBody { .. }
-                    | Frame::AccessBody { .. }
-                    | Frame::AccessUnwind { .. }
-                    | Frame::ResumeValue { .. } => None,
-                })
+        // A migration delimits control: a shift in its body captures no
+        // continuation past it, which would run at the world it left.
+        let Some((answer, depth)) = self
+            .frames
+            .iter()
+            .rev()
+            .take_while(|waiting| !matches!(waiting.frame, Frame::MigrateBody { .. }))
+            .find_map(|waiting| match waiting.frame {
+                Frame::Reset { answer, depth } => Some((answer, depth)),
+                Frame::NativeNext(_)
+                | Frame::NativeYield(_)
+                | Frame::NativeCollect
+                | Frame::NativeDiscard
+                | Frame::NativeTuple { .. }
+                | Frame::NativeRecord { .. }
+                | Frame::NativeCase(_)
+                | Frame::NativeMotive { .. }
+                | Frame::NativeRespect { .. }
+                | Frame::NativeLoops { .. }
+                | Frame::NativeForesee(_)
+                | Frame::NativeForget(_)
+                | Frame::SigmaSplitScrutinee(_)
+                | Frame::SigmaSplitMotive { .. }
+                | Frame::NativeProjection(_)
+                | Frame::Ascription { .. }
+                | Frame::PerformPayload { .. }
+                | Frame::Next(_)
+                | Frame::Resume { .. }
+                | Frame::Project { .. }
+                | Frame::HandlerForm { .. }
+                | Frame::HandlerSubject { .. }
+                | Frame::HandlerReturn { .. }
+                | Frame::HandlerClause { .. }
+                | Frame::ExerciseCapability { .. }
+                | Frame::ScopeForm { .. }
+                | Frame::ScopeSubject { .. }
+                | Frame::StackNext { .. }
+                | Frame::StackBind { .. }
+                | Frame::ListFold { .. }
+                | Frame::PathProductFirst { .. }
+                | Frame::PathProductSecond { .. }
+                | Frame::PathBackward { .. }
+                | Frame::PathChecked { .. }
+                | Frame::PrimitiveSecond { .. }
+                | Frame::PrimitiveResult { .. }
+                | Frame::TransportPath { .. }
+                | Frame::TransportOperand { .. }
+                | Frame::HereSynthesised { .. }
+                | Frame::HereEndpoints { .. }
+                | Frame::FunextLeft { .. }
+                | Frame::FunextRight { .. }
+                | Frame::EquivForward { .. }
+                | Frame::EquivBackward { .. }
+                | Frame::UaTranslators { .. }
+                | Frame::ReturnedEndpoint { .. }
+                | Frame::Ran { .. }
+                | Frame::ElementTransportPath { .. }
+                | Frame::ElementTransportMotive { .. }
+                | Frame::SessionStatement { .. }
+                | Frame::StaySynthesised { .. }
+                | Frame::ThenFirst { .. }
+                | Frame::ThenSecond { .. }
+                | Frame::FlowProductFirst { .. }
+                | Frame::FlowProductSecond { .. }
+                | Frame::RideFlow { .. }
+                | Frame::RideMotive { .. }
+                | Frame::RideValue { .. }
+                | Frame::ForwardTranslator { .. }
+                | Frame::ArrowDomain { .. }
+                | Frame::ArrowCodomain { .. }
+                | Frame::ArrowAgainst { .. }
+                | Frame::StayEndpoints { .. }
+                | Frame::TelescopePath { .. }
+                | Frame::TelescopeMotive { .. }
+                | Frame::TelescopeStart { .. }
+                | Frame::TelescopeOver { .. }
+                | Frame::CaseScrutinee { .. }
+                | Frame::SplitScrutinee { .. }
+                | Frame::SplitBody(_)
+                | Frame::CaseBranch { .. }
+                | Frame::Force { .. }
+                | Frame::ApplicationHead { .. }
+                | Frame::ApplicationArgument { .. }
+                | Frame::LambdaBody
+                | Frame::BindBound { .. }
+                | Frame::BindBody { .. }
+                | Frame::ValueBridge { .. }
+                | Frame::CompBridge { .. }
+                | Frame::Quote(_)
+                | Frame::FormNext(_)
+                | Frame::FormUnder { .. }
+                | Frame::FormBinder
+                | Frame::FormLift(_)
+                | Frame::FormElement(_)
+                | Frame::FormStaticPi(_)
+                | Frame::PairSecond { .. }
+                | Frame::StaticSpine { .. }
+                | Frame::StaticArgument { .. }
+                | Frame::StaticOperand { .. }
+                | Frame::Unknowing(_)
+                | Frame::ThunkBody
+                | Frame::ReturnValue
+                | Frame::InjectionPayload
+                | Frame::FormSession(_)
+                | Frame::SessionSend { .. }
+                | Frame::OfferArm { .. }
+                | Frame::ForkProtocol { .. }
+                | Frame::ForkChild { .. }
+                | Frame::ForkParent { .. }
+                | Frame::HoldValue { .. }
+                | Frame::HoldBody { .. }
+                | Frame::AccessBody { .. }
+                | Frame::AccessUnwind { .. }
+                | Frame::ResumeValue { .. }
+                | Frame::WorldHold { .. }
+                | Frame::LetaValue { .. }
+                | Frame::LetaBody { .. }
+                | Frame::MigrateBody { .. } => None,
+            })
         else {
             return Err(CheckRefusal::ShiftWithoutReset { at });
         };
@@ -3344,14 +3392,24 @@ impl<'context, 'arena> Machine<'context, 'arena>
             sessions: Sessions::new(base),
             root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         };
+        let register = machine.context.binders().world();
         let scope = machine.session_scope();
+        let entered = machine.open_entry();
         match machine.drive(goal) {
-            Ok(produced) => Ok((produced, machine.conversions, machine.marks)),
+            Ok(produced) => {
+                // An entry's capabilities are tokens: spent or not, they end
+                // with the run that held them.
+                if entered == worlds::Entered::Holding {
+                    machine.close_sessions(scope);
+                }
+                Ok((produced, machine.conversions, machine.marks))
+            },
             Err(halt) => {
                 let failure = machine.failure(halt, entry);
                 machine.unwind(entry);
                 machine.context.forget_foresight(foresight);
                 machine.close_sessions(scope);
+                let _moved = machine.context.binders().relocate(register);
                 Err(failure)
             },
         }
@@ -3860,6 +3918,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 .occurrence(Zone::Intuitionistic, index)
             {
                 Ok(declared) => {
+                    self.located_here(term, index)?;
                     let read =
                         shift_value_type(self.context.arena_mut(), declared, Binders::past(index));
                     Ok(Step::Ascend(Produced::ValueType(read)))
@@ -3879,7 +3938,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 ) => Err(CheckRefusal::MachineInvariant),
             },
             Value::Constant(constant) => match self.context.consult(constant) {
-                Maybe::Present(declared) => produced(declared),
+                Maybe::Present(declared) => {
+                    self.located_constant(term, constant, declared.id())?;
+                    produced(declared)
+                },
                 Maybe::Absent(_) => Err(CheckRefusal::UnknownConstant { at: term, constant }),
             },
             Value::Literal(ref literal) => match literal.base_type() {
@@ -4881,6 +4943,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             }),
             Computation::Session(_) => self.session(term, Direction::Synthesise),
             Computation::Memory(_) => self.memory(term, Direction::Synthesise),
+            Computation::World(_) => self.world(term, Direction::Synthesise),
             Computation::Hole(_) | Computation::Mark { .. } => {
                 let unknown = self.context.arena_mut().comp_type_unknown();
                 Ok(Step::Ascend(Produced::CompType(unknown)))
@@ -5085,6 +5148,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 gandr_core_term::memory::MemoryForm::Hold { .. }
                 | gandr_core_term::memory::MemoryForm::Access { .. },
             ) => self.memory(term, Direction::Check(expected)),
+            Computation::World(_) => self.world(term, Direction::Check(expected)),
             Computation::Hole(_) | Computation::Mark { .. } => Ok(Step::Ascend(Produced::Checked)),
         }
     }
@@ -5736,6 +5800,22 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     }));
                 Ok(Step::Ascend(Produced::Checked))
             },
+            // A handle names a declared world and forms what it holds; a
+            // capability lives only in the linear zone an entry opens, which
+            // no written type reaches.
+            ValueTypeView::World(gandr_core_term::world::WorldType::At { inner, world }) => {
+                self.context
+                    .worlds()
+                    .named(world)
+                    .map_err(|defect| CheckRefusal::Located {
+                        at: CoreNode::Type(TypeNode::Value(at)),
+                        defect,
+                    })?;
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(inner))))
+            },
+            ValueTypeView::World(gandr_core_term::world::WorldType::Capability(_)) => {
+                Err(CheckRefusal::CapabilityConsumable(at))
+            },
         }
     }
 
@@ -6013,7 +6093,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Sigma { .. }
                 | ValueTypeView::Abstract(_)
                 | ValueTypeView::Staged { .. }
-                | ValueTypeView::Session(_) => {
+                | ValueTypeView::Session(_)
+                | ValueTypeView::World(_) => {
                     return Err(CheckRefusal::StaticClassifierExpected {
                         at,
                         found: classifier,
@@ -6083,6 +6164,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Abstract(_)
                 | ValueTypeView::Staged { .. }
                 | ValueTypeView::Session(_)
+                | ValueTypeView::World(_)
                 | ValueTypeView::Unknown => return Err(CheckRefusal::MachineInvariant),
             },
             TypeNode::Computation(at) => match comp_type_view(arena, at)? {
@@ -7432,7 +7514,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::RunNotAdmitted { .. }
                     | CheckRefusal::ForwardUnsupported { .. }
                     | CheckRefusal::Boundary { .. }
-                    | CheckRefusal::Access { .. }) => other,
+                    | CheckRefusal::Access { .. }
+                    | CheckRefusal::Located { .. }) => other,
                 })?;
                 Ok(Step::Ascend(Produced::ValueType(codomain)))
             },
@@ -7479,6 +7562,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
             (Frame::AccessBody { at, .. }, produced) => self.accessed(at, produced),
             (Frame::AccessUnwind { produced, .. }, Produced::Checked) => Ok(Step::Ascend(produced)),
             (Frame::ResumeValue { at, view }, Produced::Checked) => self.resumed(at, view),
+            (Frame::WorldHold { .. }, Produced::ValueType(held)) => self.held_here(held),
+            (Frame::LetaValue { at, direction }, Produced::ValueType(handle)) => {
+                self.opened_at(at, direction, handle)
+            },
+            (Frame::LetaBody { at }, produced) => self.leta_closed(at, produced),
+            (
+                Frame::MigrateBody {
+                    at,
+                    from,
+                    direction,
+                },
+                produced,
+            ) => self.returned(at, from, direction, produced),
             (
                 Frame::PathProductFirst { .. }
                 | Frame::Resume { .. }
@@ -7508,7 +7604,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ArrowDomain { .. }
                 | Frame::ArrowCodomain { .. }
                 | Frame::ArrowAgainst { .. }
-                | Frame::HoldValue { .. },
+                | Frame::HoldValue { .. }
+                | Frame::WorldHold { .. }
+                | Frame::LetaValue { .. },
                 Produced::CompType(_) | Produced::Checked,
             )
             | (
@@ -7757,7 +7855,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Capability { .. }
-            | ValueTypeView::Session(_) => Err(CheckRefusal::ShapeMismatch {
+            | ValueTypeView::Session(_)
+            | ValueTypeView::World(_) => Err(CheckRefusal::ShapeMismatch {
                 at,
                 wanted: ExpectedShape::Path,
                 found: TypeNode::Value(classifier),

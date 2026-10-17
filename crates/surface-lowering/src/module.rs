@@ -321,6 +321,8 @@ mod model;
 
 mod sealing;
 
+mod world;
+
 pub use self::data::Constructor;
 pub use self::data::DataForm;
 pub use self::data::Generators;
@@ -350,6 +352,7 @@ pub use self::model::ungrouped;
 pub use self::sealing::AbstractSlot;
 pub use self::sealing::ComponentPlace;
 use self::sealing::KindForm;
+pub use self::sealing::Mark;
 pub use self::sealing::Sealed;
 pub use self::sealing::SealedComponent;
 pub use self::sealing::Sealing;
@@ -791,6 +794,9 @@ pub struct Component<'source>
     pub named: Placed,
     /// What the component states.
     pub form: ComponentForm,
+    /// Whether the signature marks it `mobile`, which only an abstract type
+    /// component is written with.
+    pub mark: Mark,
 }
 
 /// A type a module states by name — a manifest component, an abstract
@@ -1004,6 +1010,9 @@ pub enum Operand
     /// The type a model signature derives for one of its value components,
     /// minted from the derivation rather than from a written form.
     Model(ModelPart),
+    /// A world declaration `world w ;`, which lowers to no core term: the
+    /// declaration's admission position is the world's identity.
+    World,
 }
 
 /// One half of a declared name: the declaration form that wrote it and what
@@ -2004,6 +2013,8 @@ enum Tail<'source>
     /// A data declaration, its form read into the collection's data list at
     /// this position.
     Data(usize),
+    /// A world declaration, `world w ;`.
+    World,
 }
 
 /// The collection pass's working state.
@@ -2214,6 +2225,11 @@ pub fn collect<'source>(
         let former = collector.root_former(child)?;
         if former == Former::AttributeBlock {
             decorations.push(child);
+            continue;
+        }
+        if former == Former::WorldDeclaration {
+            collector.world(child, &decorations)?;
+            decorations.clear();
             continue;
         }
         if former == Former::Data {
@@ -2698,6 +2714,8 @@ impl<'source> Collector<'_, 'source>
                 | Former::Action
                 | Former::Offer
                 | Former::Access
+                | Former::World
+                | Former::WorldDeclaration
                 | Former::Reserved
                 | Former::Unadmitted => {
                     let Some(node) = self.tree.node(member.node)
@@ -3830,6 +3848,7 @@ impl<'source> Collector<'_, 'source>
                 },
                 | Tail::Function(signing) => (Operand::Function, signing == Signing::Signed, true),
                 | Tail::Data(form) => (Operand::Data(form), false, true),
+                | Tail::World => (Operand::World, false, true),
                 | Tail::Refused(_) => {
                     return entry.signature == signature
                         && entry.definition == definition
@@ -3905,6 +3924,7 @@ impl<'source> Collector<'_, 'source>
             ]),
             Tail::Function(Signing::Unsigned) => (Operand::Function, &[HalfKind::Definition]),
             Tail::Data(form) => (Operand::Data(form), &[HalfKind::Definition]),
+            Tail::World => (Operand::World, &[HalfKind::Definition]),
             Tail::Refused(refusal) => {
                 entry.refuse(declaration.node, refusal);
                 return;
@@ -4906,6 +4926,22 @@ impl<'source> Collector<'_, 'source>
                     name: self.name_of(named),
                     named,
                     form: ComponentForm::Value(one_in(FormName::MODULE, cursor.operands())?),
+                    mark: Mark::Unmarked,
+                }
+            }
+            else if let Maybe::Present(_) = cursor.tile(TileName::MOBILE) {
+                if let Maybe::Absent(_) = cursor.tile(TileName::TYPE) {
+                    return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                }
+                let Maybe::Present(named) = cursor.tile(TileName::TYPE_IDENTIFIER)
+                else {
+                    return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                };
+                Component {
+                    name: self.name_of(named),
+                    named,
+                    form: ComponentForm::Abstract(Maybe::Absent(component_kind::Absent::Unkinded)),
+                    mark: Mark::Mobile,
                 }
             }
             else if let Maybe::Present(_) = cursor.tile(TileName::TYPE) {
@@ -4939,6 +4975,7 @@ impl<'source> Collector<'_, 'source>
                     name: self.name_of(named),
                     named,
                     form,
+                    mark: Mark::Unmarked,
                 }
             }
             else {
@@ -6038,7 +6075,8 @@ impl<'source> Collector<'_, 'source>
                 | Operand::Signature
                 | Operand::Presented
                 | Operand::Code
-                | Operand::Model(_) => None,
+                | Operand::Model(_)
+                | Operand::World => None,
             };
             let has_signature = matches!(prior, Maybe::Present(_));
             let keeps_signature = matches!(
@@ -6653,7 +6691,7 @@ const fn misplaced_in<'source>(
         | Tail::Refused(_) => {
             !matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN)
         },
-        | Tail::Data(_) => false,
+        | Tail::Data(_) | Tail::World => false,
     },
 )]
 fn read_tail<'source>(
@@ -6886,6 +6924,9 @@ pub enum DeclarationOutcome<'source>
     /// abstract components mints, with its kind, its representation, the
     /// reach of its seal and its site.
     Abstract(Sealing),
+    /// A world declaration `world w ;`: the world its admission position
+    /// names, which has no type and no body.
+    World,
     /// The declaration's first refusal.
     Refused(LoweringRefusal<'source>),
 }
@@ -8016,6 +8057,42 @@ impl<'source> LoweredModule<'source>
             .find_map(|key| match key {
                 Maybe::Present(key) => {
                     Some(self.attributes.laws(key)).filter(|laws| !laws.is_empty())
+                },
+                Maybe::Absent(_) => None,
+            })
+            .unwrap_or_default()
+    }
+
+    /// The worlds `declaration`'s `entry` attribute names, its home first and
+    /// then the world of each capability it holds: what the checker's
+    /// declaration carries as the world it is judged at.
+    ///
+    /// # Specification
+    /// - requires: `declaration` is one of this module's declarations.
+    /// - ensures: the worlds filed under the declaration's definition form,
+    ///   else under its signature form; the empty slice for a declaration no
+    ///   `entry` attribute decorates.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is the receiver's attribute table read
+    ///   at the declaration's keys, which a clause may not compare against.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decorated declaration and an undecorated one
+    ///   separate the two answers.
+    /// - witness: `lower::world::tests::an_entry_names_its_home_then_its_capabilities`
+    #[inline]
+    #[must_use]
+    pub fn worlds(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> &[ConstantIndex]
+    {
+        [declaration.definition(), declaration.signature()]
+            .into_iter()
+            .find_map(|key| match key {
+                Maybe::Present(key) => {
+                    Some(self.attributes.worlds(key)).filter(|worlds| !worlds.is_empty())
                 },
                 Maybe::Absent(_) => None,
             })

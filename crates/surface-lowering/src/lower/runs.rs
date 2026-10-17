@@ -295,7 +295,8 @@ impl Lowerer<'_, '_>
 /// - requires: nothing.
 /// - ensures: [`RunOperand::Tight`] exactly for a form whose former is read at
 ///   the postfix or atom precedence; a prefix form at or below `run`'s, an
-///   operator, a form outside the fragment and a node that is no form are
+///   operator, a world form (a `hold` is a prefix form, and a migration shares
+///   its former), a form outside the fragment and a node that is no form are
 ///   [`RunOperand::Grouped`], which reads back as written wherever it stands.
 /// - fails: never.
 /// - panics: none.
@@ -314,6 +315,7 @@ impl Lowerer<'_, '_>
             | Former::Run
             | Former::Binary
             | Former::Unary
+            | Former::World
             | Former::Unadmitted
     ),
     | Some(Ok(_) | Err(_)) | None => ret == RunOperand::Grouped,
@@ -335,6 +337,7 @@ fn operand_of(
         | Former::Run
         | Former::Binary
         | Former::Unary
+        | Former::World
         | Former::Unadmitted => RunOperand::Grouped,
         Former::Name
         | Former::Constructor
@@ -389,6 +392,7 @@ fn operand_of(
         | Former::Action
         | Former::Offer
         | Former::Access
+        | Former::WorldDeclaration
         | Former::Reserved => RunOperand::Tight,
     }
 }

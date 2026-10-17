@@ -110,6 +110,7 @@ fn judged(
                 ),
                 DeclarationOutcome::Data(_)
                 | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_) => return None,
             };
             Some(Declaration::new(
@@ -215,6 +216,7 @@ fn tail_of(
         other @ (DeclarationOutcome::Uncompleted { .. }
         | DeclarationOutcome::Data(_)
         | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name:?}` lowers a body: {other:?}"),
     };
     let Some(&Value::Thunk(mut computation)) = arena.value(body)

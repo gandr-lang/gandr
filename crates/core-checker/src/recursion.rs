@@ -802,6 +802,7 @@ pub fn constructor_owes(
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
+        | ValueTypeView::World(_)
         | ValueTypeView::Unknown => Ok(Maybe::Absent(Unstaged::Plain)),
     }
 }

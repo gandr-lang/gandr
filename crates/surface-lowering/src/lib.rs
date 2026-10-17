@@ -392,6 +392,7 @@ pub use crate::module::LoweredDeclaration;
 pub use crate::module::LoweredModule;
 pub use crate::module::LoweredStructure;
 pub use crate::module::ManifestComponent;
+pub use crate::module::Mark;
 pub use crate::module::Role;
 pub use crate::module::SealedComponent;
 pub use crate::module::Sealing;

@@ -116,6 +116,7 @@ fn declared_of(
         other @ (DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Data(_)
         | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
         | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature: {other:?}"),
     }
 }

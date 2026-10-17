@@ -224,6 +224,117 @@ pub enum Linearity
     },
 }
 
+/// The world a located refusal names, projected: the host's, or the
+/// reference of the world declaration.
+///
+/// # Specification
+/// - executable: none — this declaration has no call boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a missing capability projects its declared world.
+/// - witness: `typing::tests::a_located_refusal_projects_its_worlds_and_types`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Place
+{
+    /// The host's world.
+    Host,
+    /// The world the declaration at this reference declares.
+    Declared(Reference),
+}
+
+/// How a located judgement broke, projected: types as their own tables,
+/// worlds and positions as references.
+///
+/// # Specification
+/// - requires: tables are interpreted in their own coordinates.
+/// - ensures: projection preserves the defect kind and its scalar payloads.
+/// - executable: none — this declaration has no call boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a missing capability and an unfounded mark project their
+///   world, atom and former.
+/// - witness: `typing::tests::a_located_refusal_projects_its_worlds_and_types`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Located
+{
+    /// A value crosses to a world where its type does not.
+    Immobile
+    {
+        /// What crosses.
+        crossed: gandr_core_checker::worlds::Crossed,
+        /// Its type.
+        ty: TypeContent,
+        /// The former that fails.
+        former: TypeContent,
+        /// The predicate it fails.
+        predicate: gandr_core_checker::worlds::Predicate,
+    },
+    /// A migration found no capability for its world.
+    CapabilityMissing
+    {
+        /// The world migrated to.
+        world: Place,
+    },
+    /// A migration under a former that may run it other than once.
+    CapabilityCaptured
+    {
+        /// The world migrated to.
+        world: Place,
+        /// What may run it again.
+        by: Capture,
+    },
+    /// A hypothesis or a resident used at a world other than its own.
+    Elsewhere
+    {
+        /// The world it was bound at.
+        bound: Place,
+    },
+    /// A hold checked against a handle at another world.
+    HoldElsewhere
+    {
+        /// The world the handle was wanted at.
+        wanted: Place,
+    },
+    /// A hold or a `leta` at the host's world.
+    Unlocated,
+    /// A world position no world declaration holds.
+    UndeclaredWorld
+    {
+        /// The position named.
+        world: Reference,
+    },
+    /// The host's entry names a world the source declares nowhere.
+    HostWorldUndeclared,
+    /// A `mobile` mark over a representation that does not cross.
+    MarkUnfounded
+    {
+        /// The abstract type.
+        atom: Reference,
+        /// The former that fails.
+        former: TypeContent,
+        /// The predicate it fails.
+        predicate: gandr_core_checker::worlds::Predicate,
+    },
+    /// An entry named from another declaration.
+    EntryNamed
+    {
+        /// The entry.
+        constant: Reference,
+    },
+    /// A stated entry the host's does not hold.
+    EntryUngranted
+    {
+        /// The declaration stating it.
+        constant: Reference,
+    },
+    /// A `leta` of a value whose type is no handle.
+    NotAHandle
+    {
+        /// The type the value synthesised.
+        found: TypeContent,
+    },
+}
+
 /// A refusal, projected.
 ///
 /// # Specification
@@ -729,6 +840,14 @@ pub enum Refusal
         /// What the discipline refuses.
         defect: gandr_core_checker::access::AccessDefect,
     },
+    /// A located judgement broke.
+    Located
+    {
+        /// The node where it broke.
+        at: Site,
+        /// How.
+        defect: Located,
+    },
 }
 
 /// An item's typing: its verdict, projected.
@@ -1009,6 +1128,97 @@ impl Projection<'_, '_, '_>
         }
     }
 
+    /// The projected world.
+    ///
+    /// # Specification
+    /// trivial.
+    fn place(
+        &self,
+        world: gandr_core_term::world::World,
+    ) -> Place
+    {
+        match world {
+            gandr_core_term::world::World::Host => Place::Host,
+            gandr_core_term::world::World::Declared(constant) => {
+                Place::Declared(self.layout.resolve(constant))
+            },
+        }
+    }
+
+    /// The projected located defect.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the defect kind and scalar payloads are kept; types are their
+    ///   own tables and worlds and positions references.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a missing capability and an unfounded mark project
+    ///   their world, atom and former.
+    /// - witness: `typing::tests::a_located_refusal_projects_its_worlds_and_types`
+    #[spec(ensures: |ret| matches!(
+        (defect, &ret),
+        (gandr_core_checker::worlds::LocatedDefect::Unlocated, &Located::Unlocated)
+            | (gandr_core_checker::worlds::LocatedDefect::HostWorldUndeclared, &Located::HostWorldUndeclared)
+    ) || !matches!(ret, Located::Unlocated | Located::HostWorldUndeclared))]
+    fn located(
+        &self,
+        defect: gandr_core_checker::worlds::LocatedDefect,
+    ) -> Located
+    {
+        use gandr_core_checker::worlds::LocatedDefect;
+        match defect {
+            LocatedDefect::Immobile {
+                crossed,
+                ty,
+                former,
+                predicate,
+            } => Located::Immobile {
+                crossed,
+                ty: self.value_type(ty),
+                former: self.value_type(former),
+                predicate,
+            },
+            LocatedDefect::CapabilityMissing { world } => Located::CapabilityMissing {
+                world: self.place(world),
+            },
+            LocatedDefect::CapabilityCaptured { world, by } => Located::CapabilityCaptured {
+                world: self.place(world),
+                by,
+            },
+            LocatedDefect::Elsewhere { bound } => Located::Elsewhere {
+                bound: self.place(bound),
+            },
+            LocatedDefect::HoldElsewhere { wanted } => Located::HoldElsewhere {
+                wanted: self.place(wanted),
+            },
+            LocatedDefect::Unlocated => Located::Unlocated,
+            LocatedDefect::UndeclaredWorld { world } => Located::UndeclaredWorld {
+                world: self.layout.resolve(world),
+            },
+            LocatedDefect::HostWorldUndeclared => Located::HostWorldUndeclared,
+            LocatedDefect::MarkUnfounded {
+                atom,
+                former,
+                predicate,
+            } => Located::MarkUnfounded {
+                atom: self.layout.resolve(atom),
+                former: self.value_type(former),
+                predicate,
+            },
+            LocatedDefect::EntryNamed { constant } => Located::EntryNamed {
+                constant: self.layout.resolve(constant),
+            },
+            LocatedDefect::EntryUngranted { constant } => Located::EntryUngranted {
+                constant: self.layout.resolve(constant),
+            },
+            LocatedDefect::NotAHandle { found } => Located::NotAHandle {
+                found: self.value_type(found),
+            },
+        }
+    }
+
     /// The projected refusal.
     ///
     /// # Specification
@@ -1188,6 +1398,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let (CheckRefusal::NonCovariantMotive { at }, &Refusal::NonCovariantMotive(projected)) | (CheckRefusal::RideUnsupported { at }, &Refusal::RideUnsupported(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::RunNotAdmitted { at, fault } = matched_left_value && let Refusal::RunNotAdmitted { at: projected, fault: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == fault }
  else if let CheckRefusal::Access { at, defect } = matched_left_value && let Refusal::Access { at: projected, defect: kept } = *matched_right_value { projected == self.core_site(at) && kept == defect }
+ else if let CheckRefusal::Located { at, defect } = matched_left_value && let Refusal::Located { at: projected, defect: ref kept } = *matched_right_value { projected == self.core_site(at) && *kept == self.located(defect) }
  else { false }
 })]
     fn refusal(
@@ -1555,6 +1766,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             CheckRefusal::Access { at, defect } => Refusal::Access {
                 at: self.core_site(at),
                 defect,
+            },
+            CheckRefusal::Located { at, defect } => Refusal::Located {
+                at: self.core_site(at),
+                defect: self.located(defect),
             },
         }
     }

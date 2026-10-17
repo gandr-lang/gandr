@@ -1142,6 +1142,7 @@ gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
     },
 gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
 gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some(),
+gandr_core_checker::DeclarationContent::World => true,
 }
         }),
         | Err(error) => matches!(
@@ -1275,6 +1276,7 @@ gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
     },
 gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
 gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some(),
+gandr_core_checker::DeclarationContent::World => true,
 }
         }),
         | Err(_) => true,
@@ -1332,6 +1334,7 @@ gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
     },
 gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
 gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some(),
+gandr_core_checker::DeclarationContent::World => true,
 }
         }),
         | Err(_) => true,

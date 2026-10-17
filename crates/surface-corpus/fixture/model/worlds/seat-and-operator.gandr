@@ -1,0 +1,59 @@
+// Located judgements over the seat exchange: an operator dispatches work to a
+// seat, the seat works where it stands, and what comes back is a report or a
+// handle to one. The judgement `M : A @ w` reads a term at a world; `A at w`
+// is a handle to a value at `w`, `hold` makes one at the current world and
+// `leta` opens one there; `migrate [w] { M }` runs `M` at `w` and spends one
+// capability `cap_w` the entry holds (Murphy, Crary and Harper, "Type-Safe
+// Distributed Programming with ML5", TGC 2007, §3: `get`, `hold`, `leta`).
+// Only what is mobile and open comes back: a `mobile type` component of a
+// sealed signature says its representation crosses.
+
+// The seat's protocol and its messages, sealed, its report marked mobile.
+import "../sessions/seat-base.gandr" ;
+
+/// The world the operator stands at.
+@[ checks ]
+world operator ;
+
+/// The world a seat works at.
+@[ checks ]
+world seat ;
+
+/// The operator's turn: at its own world, holding one capability to the
+/// seat's, it runs the seat's work there and takes the report back. The
+/// migration spends the capability, and the report crosses because its type
+/// is marked mobile.
+@[ checks ]
+@[ entry((operator, seat)) ]
+def collect() -> -F Seat.Report {
+  migrate [seat] { pure Seat.progress }
+}
+
+/// The same turn returning a handle instead of the report: `hold` makes it at
+/// the seat, and a handle crosses back exactly when what it holds is open,
+/// which the mark on `Report` says it is.
+@[ checks ]
+@[ entry((operator, seat)) ]
+def dispatch() -> -F (Seat.Report at seat) {
+  migrate [seat] { (hold Seat.progress) }
+}
+
+/// The seat opening a handle at its own world: the report is read where it
+/// was written.
+@[ checks ]
+@[ entry(seat) ]
+def opened(report : Seat.Report at seat) -> -F Seat.Report {
+  leta written = report;
+  pure written
+}
+
+/// The operator holding the seat's handle and reading it: `leta` opens the
+/// handle at the operator's world, but what it binds is the seat's, so the
+/// report is read through a second migration, spending a second capability.
+@[ checks ]
+@[ entry((operator, seat, seat)) ]
+def review() -> -F Seat.Report {
+  run held : Seat.Report at seat <- migrate [seat] { (hold Seat.progress) };
+  leta report = held;
+  migrate [seat] { pure report }
+}

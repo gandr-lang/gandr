@@ -14,6 +14,7 @@ use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::effect::host::AuthorityError;
 use gandr_core_term::effect::host::HostSignatures;
 use gandr_core_term::hole::HoleId;
+use gandr_core_term::world::World;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -40,6 +41,9 @@ use crate::fixture::text_literal;
 use crate::form_comp_type;
 use crate::form_value_type;
 use crate::synthesise_comp;
+use crate::worlds::Entry;
+use crate::worlds::HostEntry;
+use crate::worlds::WorldName;
 
 /// The host filesystem restricted to `names`, as an authority.
 ///
@@ -529,4 +533,39 @@ fn a_named_grant_bounds_the_held_capabilities()
         panic!("a named grant bounds");
     };
     assert_eq!(both.grants_within(&granted, &arena), RowInclusion::Included);
+}
+
+#[test]
+fn a_named_entry_reads_as_the_declared_worlds()
+{
+    let [operator, seat, elsewhere] = ["operator", "seat", "elsewhere"].map(WorldName::from);
+    let declared = alloc::collections::BTreeMap::from([
+        (operator.clone(), ConstantIndex::from(0_usize)),
+        (seat.clone(), ConstantIndex::from(1_usize)),
+    ]);
+    assert_eq!(
+        HostGrant::UNBOUNDED.entry(&declared),
+        HostEntry::Unbounded,
+        "a grant naming no world bounds no entry"
+    );
+    assert_eq!(
+        HostGrant::UNBOUNDED
+            .entering(alloc::vec![operator.clone(), seat.clone(), seat])
+            .entry(&declared),
+        HostEntry::Within(Entry::new(
+            World::Declared(ConstantIndex::from(0_usize)),
+            alloc::vec![
+                World::Declared(ConstantIndex::from(1_usize)),
+                World::Declared(ConstantIndex::from(1_usize)),
+            ],
+        )),
+        "the first world is the home and each later one a capability, in order"
+    );
+    assert_eq!(
+        HostGrant::UNBOUNDED
+            .entering(alloc::vec![operator, elsewhere])
+            .entry(&declared),
+        HostEntry::Undeclared,
+        "a world the module declares nowhere grants nothing"
+    );
 }

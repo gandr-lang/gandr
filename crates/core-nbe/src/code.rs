@@ -1182,7 +1182,8 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                     | ValueType::Session(_)
                     | ValueType::Flow { .. }
                     | ValueType::Run(_)
-                    | ValueType::Staged { .. } => return Ok(node),
+                    | ValueType::Staged { .. }
+                    | ValueType::World(_) => return Ok(node),
                 },
                 Node::CompType(at, place) => match *self
                     .core
@@ -1312,6 +1313,11 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             if (grade, region) == (other_grade, other_region) && matching_effect_shapes(first, second) == Alike::Same {
                                 children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(first.types().zip(second.types()).map(|(a, b)| (Node::ValueType(a, here), Node::ValueType(b, there)))));
                                 Ok((Alike::Same, first.types().count(), 0))
+                            } else { Ok((Alike::Different, 0, 0)) },
+                        (&ValueType::World(ref a), &ValueType::World(ref b)) =>
+                            if a.shape() == b.shape() {
+                                children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(a.types().zip(b.types()).map(|(a, b)| (Node::ValueType(a, here), Node::ValueType(b, there)))));
+                                Ok((Alike::Same, a.types().count(), 0))
                             } else { Ok((Alike::Different, 0, 0)) },
                         (&ValueType::Run(a), &ValueType::Run(b)) =>
                             self.atom(Node::Code(a, here)).and_then(|left| Ok([(left, self.atom(Node::Code(b, there))?)]))
@@ -1661,6 +1667,21 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         ));
                         Ok(Alike::Same)
                     }
+                    else if let ValueType::World(ref a) = *matched_left_value
+                        && let ValueType::World(ref b) = *matched_right_value
+                    {
+                        // Two world types are one former when they name one
+                        // world in one case; a handle's held types compare.
+                        if a.shape() != b.shape() {
+                            return Ok(Alike::Different);
+                        }
+                        pending.extend(
+                            a.types().zip(b.types()).map(|(a, b)| {
+                                (Node::ValueType(a, here), Node::ValueType(b, there))
+                            }),
+                        );
+                        Ok(Alike::Same)
+                    }
                     else {
                         {
                             match *matched_left_value {
@@ -1685,7 +1706,8 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 | ValueType::Session(_)
                                 | ValueType::Flow { .. }
                                 | ValueType::Run(_)
-                                | ValueType::Staged { .. } => Ok(Alike::Different),
+                                | ValueType::Staged { .. }
+                                | ValueType::World(_) => Ok(Alike::Different),
                             }
                         }
                     }
@@ -2357,6 +2379,9 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         | ValueType::Abstract(_) => {},
                         ValueType::Capability { ref authority, .. } => {
                             types.extend(authority.types().map(|ty| Node::ValueType(ty, place)));
+                        },
+                        ValueType::World(ref ty) => {
+                            types.extend(ty.types().map(|inner| Node::ValueType(inner, place)));
                         },
                         // An unknown type is what a fill may still decide, so
                         // nothing that holds one is apart from anything.

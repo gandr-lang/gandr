@@ -147,6 +147,7 @@ pub struct Unfolded(pub u64);
                     Computation::Case { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } => 4,
                     Computation::Session(ref action) => 1_u64.saturating_add(u64::try_from(action.values().count().saturating_add(action.computations().count()).saturating_add(action.value_types().count())).unwrap_or(u64::MAX)),
                     Computation::Memory(ref form) => 1_u64.saturating_add(u64::try_from(form.values().count().saturating_add(form.computations().count())).unwrap_or(u64::MAX)),
+                    Computation::World(ref form) => 1_u64.saturating_add(u64::try_from(form.values().count().saturating_add(form.computations().count())).unwrap_or(u64::MAX)),
                 }
             },
             CoreNode::ValueType(id) => {
@@ -158,6 +159,7 @@ pub struct Unfolded(pub u64);
                     ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 1,
                     ValueType::Session(ref session) => 1_u64.saturating_add(u64::try_from(session.payloads().len()).unwrap_or(u64::MAX)),
                     ValueType::Capability { ref authority, .. } => 1_u64.checked_add(u64::try_from(authority.types().count()).expect("walkable authority arity")).expect("walkable authority arity"),
+                    ValueType::World(ref ty) => 1_u64.saturating_add(u64::try_from(ty.types().count()).unwrap_or(u64::MAX)),
                     ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 3,
                     ValueType::Path { .. } | ValueType::Flow { .. } => 4,
                     ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } => 2,
@@ -457,6 +459,10 @@ pub fn unfolded(
                         pending.extend(form.values().map(CoreNode::Value));
                         pending.extend(form.computations().map(CoreNode::Computation));
                     },
+                    Computation::World(ref form) => {
+                        pending.extend(form.values().map(CoreNode::Value));
+                        pending.extend(form.computations().map(CoreNode::Computation));
+                    },
                 }
             },
             CoreNode::ValueType(id) => {
@@ -472,6 +478,9 @@ pub fn unfolded(
                     },
                     ValueType::Session(ref session) => {
                         pending.extend(session.payloads().iter().copied().map(CoreNode::ValueType));
+                    },
+                    ValueType::World(ref ty) => {
+                        pending.extend(ty.types().map(CoreNode::ValueType));
                     },
                     ValueType::Stack { input, output } => {
                         pending.extend([CoreNode::CompType(input), CoreNode::CompType(output)]);

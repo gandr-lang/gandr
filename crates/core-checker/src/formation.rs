@@ -90,6 +90,7 @@ use gandr_core_term::Classifier;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::world::WorldType;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
@@ -486,6 +487,10 @@ pub fn level_of(
                         tasks.push(Task::Enter(TypeNode::Value(operation_type)));
                     }
                 },
+                ValueTypeView::World(WorldType::At { inner, .. }) => {
+                    tasks.push(Task::Enter(TypeNode::Value(inner)));
+                },
+                ValueTypeView::World(WorldType::Capability(_)) => levels.push(Level::zero()),
                 ValueTypeView::StaticPi {
                     domain: first,
                     codomain: second,

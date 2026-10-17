@@ -107,7 +107,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 114 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=19 => Sort::Item, 20..=23 => Sort::ModuleMember, 24..=35 | 98..=104 => Sort::Pattern, 36..=41 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 115 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=20 => Sort::Item, 21..=24 => Sort::ModuleMember, 25..=36 | 99..=105 => Sort::Pattern, 37..=42 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -245,7 +245,7 @@ fn items(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 6 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "import_declaration", "operator_declaration", "rec_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 7 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "import_declaration", "world_declaration", "operator_declaration", "rec_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
 fn declarations(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -424,6 +424,23 @@ fn declarations(
             t(TileLabel("import")),
             dq_string(),
             opt(seq([t(TileLabel("as")), t(TileLabel("identifier"))])),
+            t(TileLabel(";")),
+        ]),
+    ));
+
+    // --- world declaration ------------------------------
+    // `world w ;` declares a world a located judgement names: where a handle
+    // `A at w` lives, where `migrate [w] { … }` runs its body, and where an
+    // entry the host grants is homed. A world has no body and no type; its
+    // name is all it brings into scope, and only the world positions read it.
+    out.push(r(
+        RuleName("world_declaration"),
+        Provenance("world_declaration"),
+        s,
+        p,
+        seq([
+            t(TileLabel("world")),
+            t(TileLabel("identifier")),
             t(TileLabel(";")),
         ]),
     ));
@@ -683,12 +700,20 @@ fn module_signature() -> Regex
 }
 
 /// A value component `ℓ : T` or a parameterized value component
-/// `ℓ : (a : T) -> U`, or a **type component** — `type T = τ` when the
-/// component is *manifest*, `type T` when it is abstract. The value and type
-/// forms are first-token-discriminated by the `type` keyword — already a tile
-/// in this grammar, from the `extern` block's inline type members — so
-/// admitting them in one semicolon- or comma-separated list costs no lookahead,
-/// and the manifest tail is one optional `=`.
+/// `ℓ : (a : T) -> U`, a **type component** — `type T = τ` when the
+/// component is *manifest*, `type T` when it is abstract — or a **mobile**
+/// abstract component, `mobile type T`. The value and type forms are
+/// first-token-discriminated by the `type` keyword — already a tile in this
+/// grammar, from the `extern` block's inline type members — and the mobile one
+/// by its own `mobile` keyword, so admitting them in one semicolon- or
+/// comma-separated list costs no lookahead, and the manifest tail is one
+/// optional `=`.
+///
+/// The `mobile` mark is the signature's promise that the atom sealing mints
+/// may cross between worlds; the checker holds the representation to it when
+/// it seals. Only an abstract component carries it: a manifest component
+/// expands to its type, whose mobility is decided on the type itself, and a
+/// kinded one declares a family no single representation answers for.
 ///
 /// **All three type forms parse and they mean different things.** A manifest
 /// component `type T = τ` names the type it equals, so it introduces no
@@ -727,9 +752,8 @@ fn module_signature() -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a value-field branch and a type-component branch, discriminated
-///   by their initial name classes.
-/// - panics: none.
+/// - ensures: a value-field branch, a type-component branch and a mobile
+///   abstract-component branch, discriminated by their initial name classes.
 ///
 /// # Adequacy
 /// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
@@ -738,7 +762,7 @@ fn module_signature() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type)))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type)))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "mobile")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier"))))))]
 fn module_signature_field() -> Regex
 {
     alt([
@@ -751,6 +775,11 @@ fn module_signature_field() -> Regex
                 seq([t(TileLabel("=")), h(Sort::Type)]),
                 seq([t(TileLabel(":")), h(Sort::Type)]),
             ])),
+        ]),
+        seq([
+            t(TileLabel("mobile")),
+            t(TileLabel("type")),
+            t(TileLabel("type_identifier")),
         ]),
     ])
 }

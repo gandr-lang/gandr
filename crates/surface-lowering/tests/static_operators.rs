@@ -239,6 +239,12 @@ mod static_operators
                     DeclarationOutcome::Abstract(sealing) => {
                         panic!("no fixture seals a module: {sealing:?}")
                     },
+                    DeclarationOutcome::World => {
+                        return Declaration::world(
+                            declaration.constant(),
+                            OriginToken::from(usize::from(declaration.origin())),
+                        );
+                    },
                     DeclarationOutcome::Refused(refusal) => {
                         panic!("every declaration lowers: {refusal:?}")
                     },

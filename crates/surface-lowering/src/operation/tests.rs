@@ -108,7 +108,9 @@ fn judged(
                         Maybe::Absent(_) => None,
                     };
                 },
-                DeclarationOutcome::Abstract(_) | DeclarationOutcome::Refused(_) => return None,
+                DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World
+                | DeclarationOutcome::Refused(_) => return None,
             };
             Some(Declaration::new(
                 declaration.constant(),
