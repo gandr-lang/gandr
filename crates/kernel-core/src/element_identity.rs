@@ -685,7 +685,7 @@ pub(crate) fn reflexive_endpoints(
 ///   through a definition's body convert by the definition's dialogue, and a
 ///   dialogue naming the wrong side or an unrelated definition is refused by
 ///   name; a definition relating nothing keeps the forced reading's verdict.
-/// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits`
+/// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits_274`
 /// - witness: `element_identity::tests::a_corrupted_relation_is_refused_by_name`
 /// - witness: `element_identity::tests::a_decoded_endpoint_passes_exactly_where_its_code_reads_as_the_other_type`
 #[spec(
@@ -880,8 +880,10 @@ where
 ///   must lower: a body names only declarations admitted before its own.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`sigma_fibre`].
+/// - hypothesis: L3 — as [`sigma_fibre`]; a declared pair relates by its body's
+///   components, an axiom's projections do not unfold.
 /// - witness: `element_identity::tests::a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair`
+/// - witness: `element_identity::tests::a_declared_pair_relates_by_its_body_s_components_337`
 #[spec(ensures: |ret| ret.iter().all(|&component| arena.value(component).is_some()))]
 fn pair_components(
     arena: &mut TermArena,

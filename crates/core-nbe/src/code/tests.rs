@@ -275,7 +275,7 @@ fn effect_rows_compare_names_and_scoped_operation_types()
 }
 
 #[test]
-fn capability_types_compare_grade_region_and_authority_types()
+fn capability_types_compare_grade_region_and_authority_types_373()
 {
     use gandr_core_term::effect::EffectName;
     use gandr_core_term::effect::EffectOp;

@@ -504,7 +504,7 @@ impl Machine<'_, '_>
     ///   coverage; a dependent motive distinguishes its binder's scope; over
     ///   the circle a fixpoint's root case and a bare case are read apart.
     /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
-    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     /// - witness: `native_formers::native_formers::a_case_over_the_circle_takes_its_constructors_and_loops_only`
     #[spec(ensures: |ret| matches!(self.root, Maybe::Absent(root::Absent::Unmarked)) && (ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Computation(_)))))))]
     pub(super) fn native_case(
@@ -647,7 +647,7 @@ impl Machine<'_, '_>
     ///   ill-typed branch of a case over the circle is refused by its own
     ///   mismatch before any rule is decided.
     /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
-    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
     pub(super) fn native_branches(
         &mut self,
@@ -860,7 +860,7 @@ impl Machine<'_, '_>
     ///   admits a fixpoint over the circle that a bare reading of its case
     ///   would refuse, and a fold over a path at a looped point respects its
     ///   words' cancellations.
-    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     /// - witness: `native_formers::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |root| match *root { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, .. } if marked == fixpoint), Maybe::Absent(reason) => reason == root::Absent::NotOverCase }))]
     pub(super) fn fold_root(

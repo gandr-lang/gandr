@@ -131,7 +131,7 @@ pub struct Loop
 /// # Adequacy
 /// - hypothesis: L3 — the circle's case owes its one loop and a case over the
 ///   integers owes none.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.iter().all(|owed| context.data_signatures().get(&owed.words).is_some_and(|signature| signature.presentation().cells().is_some())))]
 pub fn loops(
     context: &mut CheckingContext<'_>,
@@ -206,7 +206,7 @@ pub fn loops(
 ///   Base, x)` is refused at its loop while the same arm at `Path(Circle, x,
 ///   x)` and `Base => loop` there are admitted, and a non-dependent case owes
 ///   nothing.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. } | CheckRefusal::LoopUndecided { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn respected(
     context: &mut CheckingContext<'_>,
@@ -346,7 +346,7 @@ pub fn respected(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`].
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 fn owe(
     context: &CheckingContext<'_>,
     (at, cell): (ComputationId, CellIndex),
@@ -629,7 +629,7 @@ pub fn arm_type(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`]: the circle's point is `Base`.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&point| matches!(context.arena().value(point), Some(Value::Constructor { .. }))))]
 pub fn point(
     context: &mut CheckingContext<'_>,

@@ -4357,7 +4357,7 @@ where
     ///   reading the endpoint's own head, or stopping at the first returned
     ///   head, refuses the unfolding.
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
-    /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
+    /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361`
     #[spec(ensures: |ret| match self.domain.neutral(neutral) {
         | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
         | Some(node) => match node.head() {
@@ -4417,7 +4417,7 @@ where
     ///   meets what the kernel's replay meets; re-applying only the endpoint's
     ///   own spine refuses in evaluation.
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
-    /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
+    /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361`
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     #[spec(ensures: |ret| ret.is_ok() == self.unfolded_neutral(neutral).is_ok())]
     fn reapplication(

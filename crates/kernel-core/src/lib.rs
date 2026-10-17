@@ -253,7 +253,7 @@
 //! ([`mod@element_identity`] § A definition's conversions replay the dialogues
 //! it carries). Matching is content equality, never a search, and the forced
 //! loop stays δ-free. The witness is
-//! `element_identity::tests::a_definition_relating_compound_endpoints_admits`.
+//! `element_identity::tests::a_definition_relating_compound_endpoints_admits_274`.
 //!
 //! # Presented types
 //!
@@ -314,7 +314,7 @@
 //! per rule, which the checker's decision makes redundant. **Reversal.** A
 //! respect that holds only up to a path is the next paragraph's. The
 //! witnesses are
-//! `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+//! `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 //! and, on readmission,
 //! `kernel_export::kernel_presented_readmission::a_fold_whose_arm_breaks_a_rule_is_refused_by_name`
 //! in the surface corpus.

@@ -65,7 +65,7 @@
 //! A case that respects every rule, by conversion or by its law, is admitted;
 //! one that does not is refused `RuleNotRespected`, naming the case, the
 //! rule's position and its two sides as built. Witnesses:
-//! `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+//! `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 //! and
 //! `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`.
 //!
@@ -206,7 +206,7 @@ pub enum Reading
 ///   sides; a fold computing the integers is admitted on its two cancellation
 ///   laws and refused without them or with a law stating another path; the
 ///   kernel re-derives every verdict.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 /// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::RuleNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn respected(
@@ -514,7 +514,7 @@ enum Related
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`]: a rule over one variable reads it at
 ///   the innermost binder.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 #[spec(ensures: |ret| u32::from(ret) == u32::from(bound).checked_sub(u32::from(variable)).and_then(|past| past.checked_sub(1_u32)).unwrap_or_default())]
 fn pattern_binder(
     bound: VariableCount,

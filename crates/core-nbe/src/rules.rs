@@ -731,8 +731,8 @@ pub fn head(
 ///   conversion, and reading the third as held compares what has no meaning
 ///   yet.
 /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
-/// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
-/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation`
+/// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361`
+/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation_369`
 /// - witness: `live::tests::a_comparison_that_meets_a_hole_declines`
 /// - witness: `rules::tests::a_returned_endpoint_over_a_frozen_call_is_indeterminate_on_that_side`
 #[spec(ensures: |ret| match held_call(domain, computation) {
@@ -806,7 +806,7 @@ fn endpoint_head(
 ///   endpoint unfolds the inner call and the kernel replays it; stopping at the
 ///   first returned head reads the endpoint as indeterminate and declines the
 ///   conversion.
-/// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
+/// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361`
 /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
 #[spec(ensures: |ret| match domain.computation(computation) {
     | None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
@@ -1649,7 +1649,7 @@ enum Term
 ///   transports whose motives close over different environments convert by
 ///   their computations; an endpoint and a different value decline rather than
 ///   settle apart.
-/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation`
+/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation_369`
 /// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
 /// - witness: `machine::tests::two_held_transports_convert_by_their_computations`
 #[spec(ensures: |ret| match ret.as_ref().map(Option::as_ref) {
@@ -1804,7 +1804,7 @@ fn payload(
 /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
 /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
 /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
-/// - witness: `identity::tests::reflexivities_convert_by_points_a_definition_relates`
+/// - witness: `identity::tests::reflexivities_convert_by_points_a_definition_relates_345`
 /// - witness: `rules::tests::each_former_decomposes_against_its_twin_at_another_id`
 /// - witness: `rules::tests::two_flows_of_different_formers_are_planned_apart`
 /// - witness: `rules::tests::a_record_with_more_labels_than_fields_is_refused_by_the_plan_on_either_side`

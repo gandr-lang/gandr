@@ -218,7 +218,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a relating definition admits by its dialogue and the
     ///   same definition without it is refused.
-    /// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits`
+    /// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits_274`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.related().len(), related.len()),
         ensures: |ret| ret.content_start == entry.0

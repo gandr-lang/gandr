@@ -469,7 +469,7 @@ mod native_formers
     }
 
     #[test]
-    fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule()
+    fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357()
     {
         let looped = ConstructorTag::from(1_usize);
         let unlooped = ConstructorTag::from(2_usize);
@@ -824,7 +824,7 @@ mod native_formers
     }
 
     #[test]
-    fn a_case_over_the_circle_owes_its_loop()
+    fn a_case_over_the_circle_owes_its_loop_377()
     {
         let mut arena = CoreArena::new();
         let (mut declarations, circle) = one_loop(&mut arena);
@@ -1271,7 +1271,7 @@ mod native_formers
     }
 
     #[test]
-    fn a_word_written_as_a_transport_path_is_that_path_in_both_checkers()
+    fn a_word_written_as_a_transport_path_is_that_path_in_both_checkers_397()
     {
         let mut arena = CoreArena::new();
         let (mut declarations, circle) = one_loop(&mut arena);

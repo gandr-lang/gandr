@@ -2848,7 +2848,7 @@ impl<'run> Evaluation<'run>
     ///   unfolding at the endpoint's head; dropping a delivery or an enclosing
     ///   spine changes the verdict or the replay.
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
-    /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
+    /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361`
     #[spec(
         requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_)))
             && !enclosing.is_empty(),
@@ -6453,7 +6453,7 @@ fn resume_returned(
 ///   whole, and skipping the reading leaves the first apart; two binds in turn,
 ///   each over a stuck call, read as the quote over both calls, and judging the
 ///   outer continuation before reading its own bind leaves the decode stuck.
-/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation`
+/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation_369`
 /// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
 /// - witness: `machine::tests::a_continuation_stuck_at_its_own_bind_reads_through_both`
 #[spec(
@@ -6582,7 +6582,7 @@ fn continue_past(
 ///   with the stuck call as its leaf, and a bind whose continuation then sticks
 ///   is passed over; finding no bind, or the call with its bind, leaves the
 ///   first endpoint apart.
-/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation`
+/// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation_369`
 /// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|(bind, _, _)| bind >= from)))]
 fn read_through(

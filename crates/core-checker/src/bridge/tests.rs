@@ -2188,7 +2188,7 @@ fn element_identity_and_a_compound_endpoint_are_readmitted()
 }
 
 #[test]
-fn a_reflexive_transport_at_a_path_motive_is_readmitted()
+fn a_reflexive_transport_at_a_path_motive_is_readmitted_336()
 {
     // def moved_end : Path(Path(Integer, 0, 0),
     //                      ⟨tr(x. Path(Integer, x, x), here(0), here(0))⟩, here(0))
@@ -2822,7 +2822,7 @@ fn a_ride_along_a_named_flow_crosses_with_the_flows_unfolding()
 }
 
 #[test]
-fn a_ride_through_named_translators_crosses_with_their_unfoldings()
+fn a_ride_through_named_translators_crosses_with_their_unfoldings_308()
 {
     // def not : U (Bool -> F Bool) = \b. case b of { .0 -> .1 ; .1 -> .0 } ;
     // def both : Path(#{Bool, Bool},

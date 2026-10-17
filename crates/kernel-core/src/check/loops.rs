@@ -113,7 +113,7 @@ pub(super) struct Loop
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's case owes its one loop.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.iter().all(|owed| presentations.presented(owed.words).is_some()))]
 pub(super) fn loops(
     arena: &TermArena,
@@ -156,7 +156,7 @@ pub(super) fn loops(
 /// # Adequacy
 /// - hypothesis: L3 — the circle's point is `Base`, at which every loop
 ///   witness's answer is read; a wrong point would carry the wrong answer.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&built| matches!(arena.value(built), Some(&Value::Constructor { .. }))))]
 fn point(
     arena: &mut TermArena,
@@ -232,7 +232,7 @@ struct Sides
 /// # Adequacy
 /// - hypothesis: L3 — the sides of the circle's loop decide reflexivity at
 ///   `Path(Circle, Base, x)` refused and at `Path(Circle, x, x)` admitted.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| matches!(arena.computation(found.transported), Some(&Computation::PathTransport { .. })) && matches!(arena.computation(found.stayed), Some(&Computation::PathTransport { .. }))))]
 fn sides(
     arena: &mut TermArena,
@@ -279,7 +279,7 @@ fn sides(
 /// # Adequacy
 /// - hypothesis: L3 — reflexivity and the loop answered at the circle's point
 ///   are read as their words, so the loop at every point is respected.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| arena.value(ret).is_some())]
 fn answer(
     arena: &mut TermArena,
@@ -393,7 +393,7 @@ pub(super) fn arm_type(
 ///   x)` is admitted, as the checker refuses and admits them; `rotInv1`'s
 ///   obligation over `a` holds at `b = Base`, and the same nesting over a fibre
 ///   of paths of paths is refused.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 /// - witness: `native_formers::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
 /// - witness: `native_formers::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
 #[spec(
@@ -687,7 +687,7 @@ fn presented_set(
 /// # Adequacy
 /// - hypothesis: L3 — the collapse's motive `F Circle` ignores its binder and
 ///   owes no loop, while `F Path(Circle, x, x)` reads it and owes one.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 fn binder_use(
     arena: &mut TermArena,
     motive: CompTypeId,
