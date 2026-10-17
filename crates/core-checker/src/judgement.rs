@@ -6193,38 +6193,65 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// The type an application whose argument checked has.
     ///
     /// # Specification
-    /// - requires: `argument` checked against the domain `codomain` belongs to.
+    /// - requires: `argument` checked against the domain `codomain` belongs to,
+    ///   and the application frames waiting on the stack are the arguments the
+    ///   spine applies after it, innermost first.
     /// - ensures: an arrow's codomain as it stands; a dependent arrow's
-    ///   instantiated at the argument — at the lifted code when the argument
-    ///   crossed the value bridge with a lift, so the codomain reads the code
-    ///   at the universe the domain names.
-    /// - fails: never.
+    ///   instantiated at the argument — at the staged code a later argument of
+    ///   the spine holds for a plain code
+    ///   ([`crate::recursion::instantiation`]), and at the lifted code when the
+    ///   argument crossed the value bridge with a lift, so the codomain reads
+    ///   the code at the universe the domain names.
+    /// - fails: the staged instantiation's refusal.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — ordinary and dependent applications expose exact
     ///   result types, with a dependent argument substituted into its codomain;
-    ///   retaining a bound variable or changing an ambient codomain differs.
+    ///   retaining a bound variable or changing an ambient codomain differs; a
+    ///   type argument a later argument holds at a stage is substituted staged.
     /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::a_dependent_application_instantiates_its_codomain_at_the_argument`
+    /// - witness: `recursion::tests::a_type_parameter_instantiates_at_a_staged_code`
     #[spec(ensures: |ret| match codomain {
-        | Codomain::Ambient(held) => ret == held,
-        | Codomain::Dependent(_) => self.context.arena().comp_type(ret).is_some(),
+        | Codomain::Ambient(held) => ret == Ok(held),
+        | Codomain::Dependent(_) => ret.as_ref().map_or(true, |&instantiated| self.context.arena().comp_type(instantiated).is_some()),
     })]
     fn applied(
         &mut self,
         argument: ValueId,
         codomain: Codomain,
-    ) -> CompTypeId
+    ) -> Result<CompTypeId, CheckRefusal>
     {
         match codomain {
-            Codomain::Ambient(codomain) => codomain,
+            Codomain::Ambient(codomain) => Ok(codomain),
             Codomain::Dependent(codomain) => {
                 self.read_by_a_type(argument);
+                let spine = self.frames.iter().rev().map_while(|waiting| {
+                    if let Frame::ApplicationHead { argument, .. } = waiting.frame {
+                        Some(argument)
+                    }
+                    else {
+                        None
+                    }
+                });
+                let instance = match crate::recursion::instantiation(
+                    self.context,
+                    (argument, codomain),
+                    spine,
+                )? {
+                    Maybe::Present(staged) => staged,
+                    Maybe::Absent(
+                        crate::recursion::Unstaged::Plain | crate::recursion::Unstaged::Unknown,
+                    ) => argument,
+                };
                 let lift = self.context.lifts().get(&argument).cloned();
                 let arena = self.context.arena_mut();
-                let code = lift.map_or(argument, |lift| lift.mint(arena, argument));
-                instantiate_comp_type(arena, codomain, code)
+                let code = lift.map_or(instance, |lift| lift.mint(arena, instance));
+                Ok(instantiate_comp_type(arena, codomain, code))
             },
         }
     }
@@ -7256,9 +7283,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 {
                     self.rigid_operator(argument)?;
                 }
-                Ok(Step::Ascend(Produced::CompType(
-                    self.applied(argument, codomain),
-                )))
+                let applied = self.applied(argument, codomain)?;
+                Ok(Step::Ascend(Produced::CompType(applied)))
             },
             (Frame::LambdaBody | Frame::FormBinder | Frame::BindBody { .. }, Produced::Checked) => {
                 self.close()?;

@@ -1,0 +1,62 @@
+// What a recursion handed through a higher-order function refuses. The
+// recursion's own parameter handed to `apply` instantiates its type parameter
+// at that parameter's stage, which the claim does not take (#393). A helper
+// whose signature names no type parameter hands its argument on at no stage,
+// and a helper's result stands at no stage whatever its argument's: a
+// signature quantified over stages lifts both, the sized rung's explicit bound
+// (#392). Shared with `../../model/data/sized-higher-order.gandr`.
+
+// The naturals the recursions take apart.
+import "../../model/data/data-base.gandr" ;
+
+// `apply`, the higher-order function the model's recursion goes through.
+import "../../model/data/sized-higher-order.gandr" ;
+
+/// The parameter itself handed on: `apply`'s type parameter is the number at
+/// its own stage, not below it, and `applied_again[<]` takes only what stands
+/// below (#393).
+@[ refuses("StageNotBelow") ]
+def rec applied_again(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => Succ(apply(Nat, Nat, applied_again[<], n))
+  }
+}
+
+/// A function applied to a number, its signature naming no type parameter.
+@[ checks ]
+def applyNat(f : Nat => Nat, x : Nat) -> -F Nat {
+  f(x)
+}
+
+/// The predecessor handed through `applyNat`: its signature takes any number,
+/// so `helped[<]`, which takes only numbers below the stage, does not stand
+/// for its function until a signature can quantify over stages (#392).
+@[ refuses("StageNotBelow") ]
+def rec helped(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => Succ(applyNat(helped[<], p))
+  }
+}
+
+/// The predecessor of a number, zero's its own.
+@[ checks ]
+def pred(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => p
+  }
+}
+
+/// Half a number, recursing on its predecessor's predecessor read through
+/// `pred`: `pred`'s result stands at no stage, so `halved_through_pred[<]`
+/// does not take it until a signature can say the result stands below the
+/// argument (#392).
+@[ refuses("StageNotBelow") ]
+def rec halved_through_pred(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => { run q <- pred(p); Succ(halved_through_pred[<](q)) }
+  }
+}

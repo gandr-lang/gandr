@@ -114,17 +114,32 @@
 //!   root its scrutinee does not fit. Curry's consumer, `λb. case b of { MkBad
 //!   f ↦ (force f) b }`, is refused as `StageNotBelow` at its call; an
 //!   occurrence no stage reaches is refused by name in the `occurrence` module.
+//! - **A type parameter instantiates at a staged code.** A call whose callee
+//!   quantifies a type parameter `a`, handed the plain code `⌜T⌝`, instantiates
+//!   `a` at `⌜T^s⌝` when the first later argument that is a variable stands at
+//!   `T^s` where its parameter's type holds `a` — as `El a` itself, or as an
+//!   argument of a data type, `D(…, a, …)` met by `D(…, ⌜T^s⌝, …)` — and `T`
+//!   converts with the written code's type. `map ⌜Rose⌝ ⌜Nat⌝ s kids`, with
+//!   `kids : List ⌜Rose^{s'}⌝` bound by a case, takes `s` at `Rose^{s'} → F
+//!   Nat`; a list built around the scrutinee itself stands at no stage and
+//!   keeps `map` at the plain `Rose`, where `s` refuses it. Only a variable
+//!   drives the rule, and the first one that holds the parameter decides it: a
+//!   staged code inside another code, and a callee whose result stage follows
+//!   its argument's, need a signature quantified over stages.
 //!
-//! The kernel re-derives every stage from the case structure and the
-//! evidence's staged position, and no stage is carried on a node or crosses
-//! to the kernel: a stage in a term would change node identity, which stays
-//! free of sizes. A staged type the bridge meets is refused by name.
+//! The kernel re-derives every stage from the case structure, the evidence's
+//! staged position and the same instantiation rule, and no stage is carried on
+//! a node or crosses to the kernel: a stage in a term would change node
+//! identity, which stays free of sizes. A staged type is a classifier the
+//! judgement holds and erases to its plain code on the wire; a staged type the
+//! bridge meets in a term is refused by name.
 //!
 //! **This is the solver-free fragment of sized types** (Barthe et al.'s
-//! stage-based termination): every stage is minted by a fixpoint or a case,
-//! none is chosen, and the order is a forest read off the term with no
-//! variables, no `∞` and no successor arithmetic to solve. Stage polymorphism,
-//! the solver and measures extend this core without a second format.
+//! stage-based termination): every stage is minted by a fixpoint or a case and
+//! read off where it was minted, none is chosen, and the order is a forest read
+//! off the term with no variables, no `∞` and no successor arithmetic to solve.
+//! Stage polymorphism, the solver and measures extend this core without a
+//! second format.
 //!
 //! **No global check, ever.** The guarantee is per definition: a definition's
 //! typing is self-contained, so its termination holds in every extension of
@@ -145,7 +160,7 @@
 //! scrutinee, the recursive fields among them, and the scrutinee itself
 //! never fits.
 //!
-//! Five alternatives were weighed:
+//! Six alternatives were weighed:
 //!
 //! - **The descent claim**, a syntactic walk over case fields that the kernel
 //!   replayed, gave the same verdicts over the corpus but recursed on the last
@@ -154,9 +169,14 @@
 //!   evidence byte it wrote is still read, as the stage typing at position 0.
 //!   Reversal: none — the stage rule admits every program the claim did.
 //! - **Carried stages**, a stage written on each call's argument type for the
-//!   kernel to compare, would make a stage part of a node's identity. Reversal:
-//!   stage polymorphism needs stage codes in terms, and the sized rung erases
-//!   them before the kernel reads a node.
+//!   kernel to compare, would make a stage part of a node's identity and of its
+//!   content key. Reversal: an instantiation the kernel cannot re-derive from
+//!   the arguments it reads — a stage a solver chooses — which then crosses as
+//!   a stage binder of the signature, never on a node.
+//! - **A stage as a decoration**, a size beside an unstaged type that
+//!   instantiation passes over, keeps `map`'s parameter at the plain `Rose` and
+//!   refuses a size computed through `map`. Reversal: none — the classifier
+//!   admits every program the decoration does.
 //! - **Sizes now**, full sized types with stage variables, `∞` and a constraint
 //!   solver, decide more than the corpus asks for and add a consistency gate.
 //!   Reversal: the sized rung, once a program needs a stage quantified over (a

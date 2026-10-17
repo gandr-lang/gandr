@@ -1,0 +1,26 @@
+// A recursion handed through a higher-order function: `apply` takes its
+// function and its argument at one type parameter, and a call instantiates
+// that parameter at the argument's stage (#393). A recursion's claim handed
+// on beside its predecessor takes the predecessor at that stage, one below its
+// own. Its run waits on the machine taking a type code as an argument (#452).
+// What refuses is in `../../pathological/data/sized-higher-order.gandr`.
+
+// The naturals the recursion takes apart.
+import "./data-base.gandr" ;
+
+/// A function applied to an argument, both at one type parameter.
+@[ checks ]
+def apply(a : Type, b : Type, f : a => b, x : a) -> -F b {
+  f(x)
+}
+
+/// A number rebuilt, each predecessor counted through `apply`: the call
+/// instantiates `apply`'s parameter at the predecessor's stage, so `count[<]`
+/// takes it.
+@[ checks ]
+def rec count(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => Succ(apply(Nat, Nat, count[<], p))
+  }
+}

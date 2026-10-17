@@ -30,7 +30,6 @@ use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
 use crate::module::Judged;
 use crate::module::Verdict;
-use crate::module::check_declaration;
 use crate::module::check_module;
 use crate::refusal::CheckRefusal;
 use crate::refusal::ExpectedShape;
@@ -770,20 +769,20 @@ fn map_declaration(arena: &mut CoreArena) -> Declaration
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Children
 {
-    /// The node's own field.
+    /// The node's own field, at the stage the case bound it.
     Field,
-    /// A one-element list of the node itself, at the unstaged `List Rose`.
-    Escaped,
+    /// A one-element list of the node itself, at the plain `List Rose`.
+    Forged,
 }
 
 /// `size : Rose → F Nat` at position 4: `fix s. λt. case t { Node kids ↦
-/// map code Nat (λu. s u) children to _. return 1 }`.
+/// map ⌜Rose⌝ ⌜Nat⌝ (λu. s u) children to _. return 1 }`, the codes the
+/// plain ones a source writes.
 ///
 /// # Specification
 /// trivial.
 fn size_declaration(
     arena: &mut CoreArena,
-    code: impl FnOnce(&mut CoreArena) -> ValueId,
     children: Children,
 ) -> Declaration
 {
@@ -793,7 +792,7 @@ fn size_declaration(
     let classifier = arena.comp_type_arrow(rose, returner);
     let declared = arena.value_type_thunk(classifier);
     let map = arena.value_constant(ConstantIndex::from(3_usize));
-    let code = code(arena);
+    let rose_code = arena.value_quote(rose);
     let nat_code = arena.value_quote(nat);
     let zero = zero(arena);
     let one = succ(arena, zero);
@@ -808,15 +807,14 @@ fn size_declaration(
     };
     let listed = match children {
         Children::Field => var(arena, DeBruijnIndex::from(0)),
-        Children::Escaped => {
-            let rose_code = arena.value_quote(rose);
+        Children::Forged => {
             let list = data(arena, ConstantIndex::from(1), vec![rose_code]);
             let nil = arena.value_constructor(list, ConstructorTag::from(0_usize), vec![]);
             let t = var(arena, DeBruijnIndex::from(1));
             arena.value_constructor(list, ConstructorTag::from(1_usize), vec![t, nil])
         },
     };
-    let mapped = call(arena, map, &[code, nat_code, mapped_function, listed]);
+    let mapped = call(arena, map, &[rose_code, nat_code, mapped_function, listed]);
     let on_node = arena.computation_bind(mapped, counted);
     let on_node = arena.computation_lambda(on_node);
     let t = var(arena, DeBruijnIndex::from(0));
@@ -827,76 +825,186 @@ fn size_declaration(
     define(ConstantIndex::from(4), declared, body)
 }
 
-/// The verdicts of `map` and of `size`, judged after `Nat`, `List` and
-/// `Rose`; `Rose` is recorded past its formation, whose occurrence walk
-/// refuses a nested occurrence before any recursion over it is typed.
+/// `Nat`, `List`, `Rose`, `map` and `size` handing `map` `children`, one
+/// module.
 ///
 /// # Specification
 /// trivial.
-fn rose_sized(
-    code: impl FnOnce(&mut CoreArena) -> ValueId,
+fn rose_module(
+    arena: &mut CoreArena,
     children: Children,
-) -> (Verdict, Verdict)
+) -> Vec<Declaration>
 {
-    let mut arena = CoreArena::new();
-    let nat = nat_signature(&mut arena);
-    let list = list_signature(&mut arena);
-    let rose = rose_signature(&mut arena);
-    let map = map_declaration(&mut arena);
-    let size = size_declaration(&mut arena, code, children);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-    assert_eq!(
-        check_declaration(&mut context, &declare_data(ConstantIndex::from(0), nat)),
-        Verdict::Data
-    );
-    assert_eq!(
-        check_declaration(&mut context, &declare_data(ConstantIndex::from(1), list)),
-        Verdict::Data
-    );
-    let rose_position = ConstantIndex::from(2_usize);
-    assert_eq!(context.admit(rose_position), Ok(()));
-    context.record_data(rose_position, Arc::new(rose));
-    let mapped = check_declaration(&mut context, &map);
-    let sized = check_declaration(&mut context, &size);
-    (mapped, sized)
+    let nat = nat_signature(arena);
+    let list = list_signature(arena);
+    let rose = rose_signature(arena);
+    let map = map_declaration(arena);
+    let size = size_declaration(arena, children);
+    vec![
+        declare_data(ConstantIndex::from(0), nat),
+        declare_data(ConstantIndex::from(1), list),
+        declare_data(ConstantIndex::from(2), rose),
+        map,
+        size,
+    ]
+}
+
+/// `Nat`, then `apply : Π(a b : Type). U (El a → F (El b)) → El a → F (El
+/// b)` at position 1, `λa λb λf λx. f x`, then `count : Nat → F Nat` at
+/// position 2, `fix c. λn. case n { Zero ↦ return Zero; Succ p ↦ apply ⌜Nat⌝
+/// ⌜Nat⌝ c v }`, `v` the variable `handed` under `p` 0, `n` 1, `c` 2.
+///
+/// # Specification
+/// trivial.
+fn count_module(
+    arena: &mut CoreArena,
+    handed: DeBruijnIndex,
+) -> Vec<Declaration>
+{
+    let nat_signature = nat_signature(arena);
+    let apply = {
+        // Under Π a Π b: `a` 1, `b` 0.
+        let a = var(arena, DeBruijnIndex::from(1));
+        let b = var(arena, DeBruijnIndex::from(0));
+        let source = element(arena, a);
+        let target = element(arena, b);
+        let into = arena.comp_type_returner(target);
+        let function = arena.comp_type_arrow(source, into);
+        let thunked = arena.value_type_thunk(function);
+        let applying = arena.comp_type_arrow(thunked, function);
+        let kind = kind(arena);
+        let inner = arena.comp_type_pi(kind, applying);
+        let outer = arena.comp_type_pi(kind, inner);
+        let declared = arena.value_type_thunk(outer);
+        // Under λa λb λf λx: `x` 0, `f` 1.
+        let function = var(arena, DeBruijnIndex::from(1));
+        let argument = var(arena, DeBruijnIndex::from(0));
+        let called = call(arena, function, &[argument]);
+        let body = (0_u8 .. 4).fold(called, |body, _binder| arena.computation_lambda(body));
+        let body = arena.value_thunk(body);
+        define(ConstantIndex::from(1), declared, body)
+    };
+    let nat = data(arena, ConstantIndex::from(0), vec![]);
+    let nat_code = arena.value_quote(nat);
+    let returner = arena.comp_type_returner(nat);
+    let classifier = arena.comp_type_arrow(nat, returner);
+    let declared = arena.value_type_thunk(classifier);
+    let helper = arena.value_constant(ConstantIndex::from(1_usize));
+    let claim = var(arena, DeBruijnIndex::from(2));
+    let handed = var(arena, handed);
+    let counted = call(arena, helper, &[nat_code, nat_code, claim, handed]);
+    let on_successor = arena.computation_lambda(counted);
+    let zero = zero(arena);
+    let on_zero = arena.computation_return(zero);
+    let n = var(arena, DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(n, returner, vec![on_zero, on_successor]);
+    let lambda = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+    let body = arena.value_thunk(fixpoint);
+    vec![
+        declare_data(ConstantIndex::from(0), nat_signature),
+        apply,
+        define(ConstantIndex::from(2), declared, body),
+    ]
 }
 
 #[test]
-fn a_rose_tree_recurses_through_map_at_its_children_s_stage()
+fn a_type_parameter_instantiates_at_a_staged_code()
 {
-    // The code of the children's stage: `size`'s fixpoint mints the first
-    // stage, and its case on `t` the second, one below it, at which `kids`
-    // binds `List Rose`.
-    let children = |arena: &mut CoreArena| {
-        let rose = data(arena, ConstantIndex::from(2), vec![]);
-        let staged = arena.value_type_staged(rose, Stage::At(StageId::from(1_usize)));
-        arena.value_quote(staged)
-    };
-    let (mapped, sized) = rose_sized(children, Children::Field);
-    assert!(matches!(mapped, Verdict::Checked { .. }), "{mapped:?}");
-    assert!(matches!(sized, Verdict::Checked { .. }), "{sized:?}");
-
-    // At the unstaged code, `λu. s u` takes a `u` at no stage.
-    let unstaged = |arena: &mut CoreArena| {
-        let rose = data(arena, ConstantIndex::from(2), vec![]);
-        arena.value_quote(rose)
-    };
-    let (_, sized) = rose_sized(unstaged, Children::Field);
+    // `kids : List ⌜Rose^{ι1}⌝`, bound by the case one stage below `t`,
+    // instantiates `map`'s element at `Rose^{ι1}`, so `λu. s u` takes a `u`
+    // below the node's stage (#393).
+    let mut arena = CoreArena::new();
+    let declarations = rose_module(&mut arena, Children::Field);
+    let (verdicts, _) = judge(&mut arena, &declarations);
     assert!(
-        matches!(
-            sized,
-            Verdict::Refused(CheckRefusal::StageNotBelow {
-                found: Standing::Top,
-                ..
-            })
-        ),
-        "{sized:?}"
+        matches!(verdicts[3], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[3]
+    );
+    assert!(
+        matches!(verdicts[4], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[4]
     );
 
-    // The escape: a list of `t` itself, at the unstaged `List Rose`, handed
-    // to `map` at the children's stage.
-    let (_, escaped) = rose_sized(children, Children::Escaped);
-    assert!(!matches!(escaped, Verdict::Checked { .. }), "{escaped:?}");
+    // The predecessor `p : Nat^{ι1}` instantiates `apply`'s parameter at its
+    // own stage, which the claim takes.
+    let mut arena = CoreArena::new();
+    let declarations = count_module(&mut arena, DeBruijnIndex::from(0));
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(verdicts[2], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[2]
+    );
+}
+
+#[test]
+fn a_staged_instantiation_erases_and_readmits()
+{
+    // The term keeps the plain code the source wrote, so it crosses with no
+    // stage for the bridge to refuse, and the kernel re-derives the stage from
+    // the argument that holds it: each recursion is defined there.
+    let mut rose = CoreArena::new();
+    let declarations = rose_module(&mut rose, Children::Field);
+    let sized = judge(&mut rose, &declarations);
+    let mut count = CoreArena::new();
+    let declarations = count_module(&mut count, DeBruijnIndex::from(0));
+    let counted = judge(&mut count, &declarations);
+    for ((verdicts, outcomes), at) in [(sized, 4_usize), (counted, 2_usize)] {
+        assert!(
+            matches!(verdicts[at], Verdict::Checked { .. }),
+            "{:?}",
+            verdicts[at]
+        );
+        assert!(
+            matches!(outcomes[at], Outcome::Defined { .. }),
+            "{:?}",
+            outcomes[at]
+        );
+    }
+}
+
+#[test]
+fn a_claim_at_the_scrutinee_through_map_is_refused()
+{
+    // The node itself in a list of its own stands at no stage, so `map`'s
+    // element stays the plain `Rose` and `λu. s u` takes any node.
+    let root = Stage::At(StageId::from(0_usize));
+    let mut arena = CoreArena::new();
+    let declarations = rose_module(&mut arena, Children::Forged);
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(
+            verdicts[4],
+            Verdict::Refused(CheckRefusal::StageNotBelow {
+                found: Standing::Top,
+                bound,
+                ..
+            }) if bound == below(root)
+        ),
+        "{:?}",
+        verdicts[4]
+    );
+
+    // The parameter `n` itself instantiates `apply`'s parameter at the root,
+    // which the claim's bound does not reach.
+    let mut arena = CoreArena::new();
+    let declarations = count_module(&mut arena, DeBruijnIndex::from(1));
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(
+            verdicts[2],
+            Verdict::Refused(CheckRefusal::StageNotBelow {
+                found: Standing::Staged(found),
+                bound,
+                ..
+            }) if found == root && bound == below(root)
+        ),
+        "{:?}",
+        verdicts[2]
+    );
 }
 
 #[test]
