@@ -2,36 +2,12 @@
 // a presented type (#424): the kernel reads the endpoint by the type's rules,
 // which may rewrite the constructor away to the call beneath it, and reads a
 // transport the recursive path leaves standing as a neutral on that path.
+// The integers and their sum follow cubical Agda's `Cubical/Data/Int`.
 
-/// The integers as a presented type: a successor and a predecessor that
-/// cancel.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
-}
-
-/// The sum, by recursion on the second summand.
-@[ checks ]
-def rec plus(a : Int, b : Int) -> -F Int {
-  case b {
-    Z => a,
-    S(x) => S(plus[<](a, x)),
-    P(x) => P(plus[<](a, x))
-  }
-}
-
-/// One successor more.
-def up(n : Int) -> -F Int {
-  S(n)
-}
-
-/// One predecessor more.
-def down(n : Int) -> -F Int {
-  P(n)
-}
+// The integers, one successor more and one predecessor more.
+import "./circle-base.gandr" ;
+// The sum, by recursion on the second summand.
+import "./int-sum.gandr" ;
 
 /// At `P(x)` the endpoint `S(plus(Z, P(x)))` is `S(P(plus(Z, x)))`, which the
 /// first rule reads as the call `plus(Z, x)` itself (#424).

@@ -1,26 +1,40 @@
+// A flow between types given by a translator, after directed univalence
+// (Gratzer, Weinberger and Buchholtz, _Directed univalence in simplicial
+// homotopy type theory_, arXiv:2407.09146, Definition 1.2): riding it moves
+// a record of the old schema to the new, and riding it in the family of
+// lists moves every record of a list.
+
+/// The old and the new schema, the translator between them and the flow it
+/// gives.
 module Schema {
   type Old = #{String, Integer};
   type New = #{Integer, String, +{Unit, Unit}};
+  /// The translator: the fields swapped and a flag added.
   @[ checks ]
   def toNew(old : Old) -> -F New {
     case old {
       #{name, age} => return #{age, name, +{.0 = unit}}
     }
   }
+  /// The flow from the old schema to the new, by its translator.
   @[ checks ]
   def upgrade : Flow(Type, Old, New) ;
   def upgrade = forward(toNew) ;
+  /// One record ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> -F New {
     become ride(\X. X, upgrade, old)
   }
+  /// A list of records ridden along the flow in the family of lists.
   @[ checks ]
   def everyone(olds : List(Old)) -> -F List(New) {
     become ride(\X. List(X), upgrade, olds)
   }
+  /// One old record migrated by a run.
   @[ runs("(30, \"ada\", +{.0 = unit})") ]
   def one : +U (-F New) ;
   def one = thunk { become moved(#{"ada", 30}) } ;
+  /// Two old records migrated by a run.
   @[ runs("cons((30, \"ada\", +{.0 = unit}), cons((41, \"grace\", +{.0 = unit}), nil))") ]
   def many : +U (-F List(New)) ;
   def many = thunk { become everyone(cons(#{"ada", 30}, cons(#{"grace", 41}, nil))) } ;

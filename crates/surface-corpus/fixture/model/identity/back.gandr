@@ -1,11 +1,18 @@
+// A path's inverse, the HoTT book's Lemma 2.1.1 (`p⁻¹`), at the integers:
+// `back(q)` reverses a path between two parameters, and a run reverses a
+// reflexivity to itself.
+
+/// Reflexivity at seven, the path the runs here reverse and compose.
 @[ checks ]
 def p = here(7);
 
+/// A path between two integers, reversed.
 @[ checks ]
 def flip(a: Integer, b: Integer, q: Path(Integer, a, b)) -> -F Path(Integer, b, a) {
   become back(q)
 }
 
+/// Reflexivity at seven, reversed by a run.
 @[ checks ]
-def flipped : +U (-F Path(Integer, 7, 7));
-def flipped = thunk { become flip(7, 7, p) };
+def flipped_here : +U (-F Path(Integer, 7, 7));
+def flipped_here = thunk { become flip(7, 7, p) };

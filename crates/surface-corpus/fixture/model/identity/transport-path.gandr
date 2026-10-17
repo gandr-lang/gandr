@@ -1,3 +1,7 @@
+// Transport, the HoTT book's § 2.3 (`transport`), along reflexivity at a
+// motive whose fibres are path types: the element it returns is a path, and
+// an element of another type is none.
+
 /// A reflexive transport at a path-type motive returns a path.
 @[ checks ]
 def moved_end : Path(Path(Integer, 2, 2), transport(\x. Path(Integer, x, x), here(2), here(2)), here(2)) ;

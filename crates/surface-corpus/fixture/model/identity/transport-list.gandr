@@ -1,41 +1,46 @@
-@[ checks ]
-def not(b : Bool) -> -F Bool {
-  case b {
-    true => return +{.1 = unit},
-    false => return +{.0 = unit}
-  }
-}
+// Transport along a path between types built from an equivalence, the HoTT
+// book's § 2.10 (`ua`) and Lemma 2.10.5 (transport along `ua(e)` is `e`),
+// in the family of lists: negation, its own inverse, makes a path from the
+// booleans to themselves, and transport along it negates every element. A
+// pair of maps whose round trips differ makes no path, and an equivalence
+// between types of lists is out of the stratum `equiv` certifies.
 
-@[ checks ]
-def same(b : Bool) -> -F Bool {
-  return b
-}
+// Negation and the identity on the booleans.
+import "./funext.gandr" ;
 
+/// The booleans to themselves by negation, its own inverse.
 @[ checks ]
 def negation : Path(Type, Bool, Bool) ;
 def negation = equiv(not, not) ;
 
+/// A list of booleans transported along negation, in the family of lists.
 @[ checks ]
-def moved(xs : List(Bool)) -> -F List(Bool) {
+def moved_list(xs : List(Bool)) -> -F List(Bool) {
   become transport(\X. List(X), negation, xs)
 }
 
+/// Truth then falsity.
 @[ runs("cons(+{.0 = unit}, cons(+{.1 = unit}, nil))") ]
 def both : List(Bool) ;
 def both = cons(+{.0 = unit}, cons(+{.1 = unit}, nil)) ;
 
+/// `both` transported along negation by a run.
 @[ checks ]
-def flipped : +U (-F List(Bool)) ;
-def flipped = thunk { become moved(both) } ;
+def flipped_list : +U (-F List(Bool)) ;
+def flipped_list = thunk { become moved_list(both) } ;
 
+/// Negation and the identity are no equivalence: their round trips differ.
 @[ refuses("RoundTripDistinct") ]
-def collapse : Path(Type, Bool, Bool) ;
-def collapse = equiv(not, same) ;
+def collapse_bool : Path(Type, Bool, Bool) ;
+def collapse_bool = equiv(not, same) ;
 
+/// The identity on lists of booleans.
 @[ checks ]
 def keep(xs : List(Bool)) -> -F List(Bool) {
   return xs
 }
 
+/// An equivalence between types of lists is outside the stratum `equiv`
+/// certifies.
 @[ refuses("UncertifiedStratum") ]
 def lists = equiv(keep, keep) ;
