@@ -7,6 +7,8 @@
 //! * the sorting discipline: sort names are distinct, every sort's polarity
 //!   agrees with the declaration's, and every result sort and recursive
 //!   occurrence names a declared sort;
+//! * a π⁺ binder's domain is a declared representable sort: an operation may
+//!   bind only variables of a sort that extends a context;
 //! * a rule face may mention only in-signature symbols (constructor and
 //!   operation names of this datatype), and its right-hand side may not
 //!   introduce a variable absent from its left-hand side;
@@ -18,7 +20,9 @@
 //!   attribute Σ that names them is declined.
 //!
 //! A higher-order field has no decline here because [`Code`] cannot encode
-//! one: that decline lands at elaboration, before a description exists.
+//! one: that decline lands at elaboration, before a description exists. The π⁺
+//! binder of an operation port is object-language binding; the atom
+//! abstraction of a constructor code is a separate, nominal former.
 //!
 //! [`Code`]: crate::Code
 
@@ -41,6 +45,7 @@ use crate::circuit::CircuitRule;
 use crate::circuit::derive_boundaries;
 use crate::code::Attrs;
 use crate::code::Name;
+use crate::desc::Representability;
 use crate::desc::SignDesc;
 use crate::desc::SurfaceSpan;
 use crate::rule::FreeTerm;
@@ -93,6 +98,8 @@ pub enum WfKind
     /// A results tuple stands somewhere other than the root of a rule's
     /// right-hand side, the one place a many-out operation's results leave.
     MisplacedResults,
+    /// A restricted binder's domain is undeclared or not representable.
+    NonRepresentableBinder,
     /// A circuit rule's wiring reads one output of a many-out node on its
     /// own, which no term carries.
     SplitCircuitOutputs,
@@ -181,19 +188,23 @@ fn located(
 ///
 /// # Specification
 /// - ensures: every failure of the rules this module states, in a deterministic
-///   order: sorting-discipline checks, then attribute declines, then per-face
-///   checks, then per-arity checks, then per-circuit-rule checks; an empty
-///   result witnesses a well-formed description.
+///   order: sorting-discipline checks, then the π⁺ binder check, then attribute
+///   declines, then per-face checks, then per-arity checks, then
+///   per-circuit-rule checks; an empty result witnesses a well-formed
+///   description. The binder check reports one `NonRepresentableBinder` per
+///   binder, over every port of every operation, whose domain is not a declared
+///   representable sort.
 /// - panics: none; total on any description, a mis-built one included.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a clean description passes; a duplicate sort name, a
 ///   foreign result or `var` sort, a sort polarity disagreeing with the
-///   declaration's, an out-of-signature face, a fresh right-hand-side variable,
-///   a non-composing arity, a reserved-derived attribute, a circuit rule whose
-///   wiring derives a boundary its sphere does not fix, a cyclic wiring, and a
-///   redex applying a rewrite the rule's telescope does not declare each
-///   surface exactly their diagnostic.
+///   declaration's, an ordinary or undeclared π⁺ domain, an out-of-signature
+///   face, a fresh right-hand-side variable, a non-composing arity, a
+///   reserved-derived attribute, a circuit rule whose wiring derives a boundary
+///   its sphere does not fix, a cyclic wiring, and a redex applying a rewrite
+///   the rule's telescope does not declare each surface exactly their
+///   diagnostic.
 /// - witness: `wellformed::tests::the_sorting_discipline_indexes_the_description`
 /// - witness: `wellformed::tests::a_clean_description_passes`
 /// - witness: `wellformed::tests::an_out_of_signature_cell_is_declined`
@@ -207,17 +218,25 @@ fn located(
 /// - witness: `wellformed::tests::a_declared_telescope_admits_the_redex_heads_it_names`
 /// - witness: `wellformed::tests::a_redex_applying_an_undeclared_port_is_declined`
 /// - witness: `wellformed::tests::declaring_derived_metadata_is_declined`
+/// - witness: `tests::glf::restricted_binding_requires_representability`
 /// - witness: `wellformed::tests::a_derivation_budget_failure_prevents_boundary_comparison`
 /// - witness: `wellformed::tests::a_results_tuple_stands_only_at_a_right_hand_root`
 #[inline]
 #[must_use]
 #[spec(ensures: |ref diagnostics| diagnostics.iter().all(|diagnostic| match diagnostic.kind {
-    | WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::DerivedBoundaryMismatch
+    WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::DerivedBoundaryMismatch
     | WfKind::CyclicCircuitWiring | WfKind::UnknownRewritePort | WfKind::CircuitDerivationBudget
     | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs => matches!(diagnostic.span, Maybe::Present(_)),
-    | WfKind::ArityDoesNotCompose | WfKind::DeclaresDerivedMetadata | WfKind::DuplicateSortName
-    | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
-}))]
+    WfKind::ArityDoesNotCompose | WfKind::DeclaresDerivedMetadata | WfKind::DuplicateSortName
+    | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement
+    | WfKind::NonRepresentableBinder => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
+}) && diagnostics.iter().filter(|diagnostic| diagnostic.kind == WfKind::NonRepresentableBinder).count()
+    == desc.opers.iter()
+        .flat_map(|op| op.arity.inputs.iter().chain(&op.arity.outputs))
+        .flat_map(|port| port.bindings.iter())
+        .filter(|binder| !desc.sorts.iter().any(|sort|
+            sort.name == binder.sort && sort.representability == Representability::Representable))
+        .count())]
 pub fn check_desc<G>(desc: &SignDesc<G>) -> Vec<WfDiagnostic>
 {
     let mut diagnostics = Vec::new();
@@ -225,6 +244,25 @@ pub fn check_desc<G>(desc: &SignDesc<G>) -> Vec<WfDiagnostic>
     // The sorting discipline: the declared sort set is the description's
     // index, and every indexed slot must resolve in it.
     check_sorts(desc, &mut diagnostics);
+    for port in desc
+        .opers
+        .iter()
+        .flat_map(|op| op.arity.inputs.iter().chain(&op.arity.outputs))
+    {
+        for binder in &port.bindings {
+            if !desc.sorts.iter().any(|sort| {
+                sort.name == binder.sort && sort.representability == Representability::Representable
+            }) {
+                diagnostics.push(unlocated(
+                    WfKind::NonRepresentableBinder,
+                    format!(
+                        "π⁺ domain '{}' of port '{}' is not representable",
+                        binder.sort, port.name
+                    ),
+                ));
+            }
+        }
+    }
 
     // Reserved-derived metadata: no attribute Σ may declare it.
     check_attrs(

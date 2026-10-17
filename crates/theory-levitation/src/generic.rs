@@ -751,7 +751,28 @@ pub fn serialize_desc<G>(desc: &SignDesc<G>) -> SerializedDescText
     };
     let mut members: Vec<String> = Vec::new();
     for sort in &desc.sorts {
-        members.push(format!("sort {} : Type", sort.name));
+        let indices: Vec<String> = sort
+            .indices
+            .iter()
+            .map(|index| {
+                format!(
+                    "{} : {}",
+                    index.name,
+                    render_sort(&index.sort, &index.arguments)
+                )
+            })
+            .collect();
+        let telescope = if indices.is_empty() {
+            String::new()
+        }
+        else {
+            format!("({})", indices.join(", "))
+        };
+        let universe = match sort.representability {
+            crate::desc::Representability::Ordinary => "Type",
+            crate::desc::Representability::Representable => "Type+",
+        };
+        members.push(format!("sort {}{telescope} : {universe}", sort.name));
     }
     for oper in &desc.opers {
         members.push(render_oper_member(oper));
@@ -811,28 +832,68 @@ fn render_oper_member(oper: &OperDesc) -> String
 }
 
 /// Render one port (`m : Nat`), spelling the sort bare when the port carries
-/// no authored name.
+/// no authored name, and a restricted binder telescope as nested
+/// `pi+ (x : S) . T`, outermost binder first.
 ///
 /// # Specification
 /// - ensures: anonymous ports render their bare sort; authored names render as
-///   the name, a colon separator and their sort.
+///   the name, a colon separator and their sort. The sort ends with the port's
+///   own sort application, after one `pi+` prefix per binder.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — empty, underscore and authored names have exact port
-///   text; a spurious name, lost sort or wrong separator changes that text.
+///   text; a spurious name, lost sort or wrong separator changes that text. A
+///   binder port's exact text in the source signature separates a lost or
+///   reordered binder.
 /// - witness: `generic::tests::port_rendering_distinguishes_authored_and_placeholder_names`
+/// - witness: `tests::glf::restricted_binding_requires_representability`
 #[spec(ensures: |ref text| match authored_name(port) {
-    | Maybe::Present(name) => text.strip_prefix(name.as_ref())
-        .and_then(|body| body.strip_prefix(" : ")) == Some(port.sort.as_ref()),
-    | Maybe::Absent(_) => text == port.sort.as_ref(),
+    Maybe::Present(name) => text.strip_prefix(name.as_ref())
+        .and_then(|body| body.strip_prefix(" : "))
+        .is_some_and(|body| body.ends_with(render_sort(&port.sort, &port.arguments).as_str())),
+    Maybe::Absent(_) => text.ends_with(render_sort(&port.sort, &port.arguments).as_str()),
 })]
 fn render_port(port: &SortRef) -> String
 {
-    match authored_name(port) {
-        Maybe::Present(name) => format!("{name} : {}", port.sort),
-        Maybe::Absent(port_name::Absent::Anonymous) => port.sort.to_string(),
+    let mut sort = render_sort(&port.sort, &port.arguments);
+    for binder in port.bindings.iter().rev() {
+        sort = format!(
+            "pi+ ({} : {}) . {sort}",
+            binder.name,
+            render_sort(&binder.sort, &binder.arguments)
+        );
     }
+    match authored_name(port) {
+        Maybe::Present(name) => format!("{name} : {sort}"),
+        Maybe::Absent(port_name::Absent::Anonymous) => sort,
+    }
+}
+
+/// Render a sort application without discarding its dependent indices.
+///
+/// # Specification
+/// - ensures: the sort name followed by all arguments, in order, when present.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the independently derived LC table separates context
+///   erasure, reordered indices and omitted binder domains.
+/// - witness: `tests::glf::generation`
+#[spec(ensures: |ref text| text.starts_with(name.as_ref()))]
+fn render_sort(
+    name: &Name,
+    arguments: &[crate::rule::FreeTerm],
+) -> String
+{
+    if arguments.is_empty() {
+        return name.to_string();
+    }
+    let arguments: Vec<String> = arguments
+        .iter()
+        .map(alloc::string::ToString::to_string)
+        .collect();
+    format!("{name}({})", arguments.join(", "))
 }
 
 /// Render a circuit rule's parameter telescope: its rewrite-sorted ports,
