@@ -1762,6 +1762,47 @@ const fn writes<T>(
     produced
 }
 
+/// The bound call and the rest of `node` when it is a run binding a call, `x
+/// ← f(a); …`: a bind whose bound computation applies a forced value to at
+/// least one argument.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the bind's bound and rest exactly when `node` reads as a bind
+///   whose bound reads as an application whose spine, read down through every
+///   application, ends at a force; absent otherwise.
+/// - provides: the runs [`Walk::inlined`] spells as the calls they bind.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn reads one application nearer the spine's head, a finite term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Walk::inlined`].
+/// - witness: `goldens::tests::a_run_bound_call_in_a_type_prints_nested_676`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Bind(..)))]
+fn bound_call<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<(S::Node, S::Node)>
+where
+    S: Source + ?Sized,
+{
+    let Former::Bind(bound, rest) = source.read(node)
+    else {
+        return None;
+    };
+    let Former::Application(mut head, _) = source.read(bound)
+    else {
+        return None;
+    };
+    while let Former::Application(inner, _) = source.read(head) {
+        head = inner;
+    }
+    matches!(source.read(head), Former::Force(_)).then_some((bound, rest))
+}
+
 /// A name as a former spelled by parts writes it: the name itself, or `?`.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4097,6 +4138,13 @@ impl Walk<'_, '_>
                 None
             },
             | Former::Lambda(_) => Some(writes(Production("lambda_expression"), Join::Lambda)),
+            // A nested call the lowering bound by a run, `x ← f(a); g(x)`,
+            // spells as the call it was written as, `g(f(a))`: a type has no
+            // run to read back (#676).
+            | Former::Nested(body) | Former::Returned(body) if bound_call(source, body).is_some() => {
+                Self::inlined(source, body, below(depth, kind), tasks);
+                return writes(Production("call_expression"), Ok(()));
+            },
             // A computation where a value is read stands bare, its run left
             // to the checker, and so does the computation a returned value
             // stands for; its piece, as a decode's and a quote's, is the
@@ -4451,6 +4499,70 @@ impl Walk<'_, '_>
                 depth,
             }
         });
+    }
+
+    /// Schedules a computation whose runs bind calls as its last step with
+    /// each run's binder standing for the call it binds, `g(f(a))` for `x ←
+    /// f(a); g(x)`.
+    ///
+    /// # Specification
+    /// - requires: `body` is the computation a nested or returned value at
+    ///   `depth` stands for, and `tasks` is the walk's stack.
+    /// - ensures: every leading bind whose bound is a call ([`bound_call`]) is
+    ///   peeled; each bound call is scheduled as a computation where the body
+    ///   goes on, in order, each followed by one binder standing for it; the
+    ///   rest is scheduled under them all, and every binder is closed after it.
+    /// - provides: the nested call a type writes, which the lowering commutes
+    ///   into runs and the type grammar cannot read back as runs.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn peels one bind off the computation, a finite term.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one run and two runs, the second's call naming the
+    ///   first's binder, observe each call standing for its binder in order.
+    /// - witness: `goldens::tests::a_run_bound_call_in_a_type_prints_nested_676`
+    #[spec(
+        captures: [entry = tasks.len()],
+        ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
+            let substitutes = scheduled.iter().filter(|task| matches!(**task, Task::Substitute(Arity(1_usize)))).count();
+            substitutes > 0_usize
+                && scheduled.iter().filter(|task| matches!(**task, Task::Unbind)).count() == substitutes
+                && substitutes.checked_mul(3_usize).and_then(|all| all.checked_add(1_usize)) == Some(scheduled.len())
+        }),
+    )]
+    fn inlined<S>(
+        source: &S,
+        body: S::Node,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<S::Node>>,
+    ) where
+        S: Source + ?Sized,
+    {
+        let mut bounds = Vec::new();
+        let mut rest = body;
+        while let Some((bound, next)) = bound_call(source, rest) {
+            bounds.push(bound);
+            rest = next;
+        }
+        for _ in &bounds {
+            tasks.push(Task::Unbind);
+        }
+        tasks.push(Task::Visit {
+            node: rest,
+            admits: Admits::Computation(Tail::Continues),
+            depth,
+        });
+        for &bound in bounds.iter().rev() {
+            tasks.push(Task::Substitute(Arity(1_usize)));
+            tasks.push(Task::Visit {
+                node: bound,
+                admits: Admits::Computation(Tail::Continues),
+                depth,
+            });
+        }
     }
 
     /// A leaf naming the binder at `offset` among those the join at hand's
