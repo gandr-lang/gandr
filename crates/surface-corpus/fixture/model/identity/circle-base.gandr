@@ -1,11 +1,11 @@
-// The circle's shared declarations, written once and imported by every
-// circle source (`import "./circle-base.gandr" ;`): the empty type, the
-// circle and the presented integers, the winding number and spinning with
-// their round trips and the equivalence `winding` they make (the book's
-// § 8.1, `Path(Circle, Base, Base) ≃ Int`), and the maps out of the circle
-// the circle sources state their laws over, after cubical Agda's
-// `Cubical/HITs/S1/Base.agda`. `circle.gandr` states what the equivalence
-// computes; this source states only what the others read.
+// The identity subject's shared declarations, written once and imported by
+// every source that reads them (`import "./circle-base.gandr" ;`): the empty
+// type, the circle, the presented integers and the free naturals, the
+// winding number and spinning with their round trips (the book's § 8.1), and
+// the maps out of the circle the circle sources state their laws over, after
+// cubical Agda's `Cubical/HITs/S1/Base.agda`. `circle.gandr` states the
+// equivalence `winding` the round trips make and what it computes; this
+// source states only what the others read.
 
 /// The type with no element.
 @[ checks ]
@@ -20,8 +20,9 @@ data Circle : Type {
 }
 
 /// The integers as a presented type: a successor and a predecessor that
-/// cancel.
-@[ checks ]
+/// cancel. Their critical pairs join, so a word normalizes to the successors
+/// or predecessors it counts.
+@[ normalizes("S(S(P(P(S(Z))))) ~> S(Z)") ]
 data Int : Type {
   Z : Int;
   S : (x : Int) --> Int;
@@ -40,6 +41,13 @@ def up(n : Int) -> -F Int {
 @[ checks ]
 def down(n : Int) -> -F Int {
   P(n)
+}
+
+/// The natural numbers, free: every constructor term is its own value.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
 }
 
 /// The winding number (cubical's `winding`): a loop counts one up, its
@@ -78,8 +86,15 @@ def unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
 }
 
 /// Spinning undoes winding at every loop (cubical's `decodeEncode` at the
-/// point), by induction over the words: each arm carries the round trip at
-/// the rest along the letter it reads.
+/// point): the round trip at a variable, by induction over the words. The
+/// result type reads the word the fold descends on, so each arm answers it at
+/// its letter and the recursive call at the rest: `sect[<](q)` relates
+/// `spin(wind(q))` to `q`, and carried along `loopOn` it relates `loop ∷
+/// spin(wind(q))`, which `spin(wind(loop ∷ q))` runs to, to `loop ∷ q`. The
+/// case respects the cancellations: at `loop ∷ back(loop) ∷ q` the arms
+/// compose to `cong(loopOn, cong(unloopOn, p))`, whose functions compose to
+/// the identity under the words' rules, so the chain is `p` itself, the
+/// answer at `q`.
 @[ checks ]
 def rec sect(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), spin(wind(p)), p) {
   case p {
@@ -100,14 +115,6 @@ def rec retr(n : Int) -> -F Path(Int, wind(spin(n)), n) {
     P(x) => cong(down, retr[<](x))
   }
 }
-
-/// The loops at the point and the presented integers are equivalent, by
-/// `wind` and `spin` with the two round trips at a variable (the book's
-/// Theorem 8.1.9). The later entries read `to` and `back`, so the record is
-/// their dependent pairs nested to the right.
-@[ checks ]
-def winding : #{to : +U (Path(Circle, Base, Base) -> -F Int), back : +U (Int -> -F Path(Circle, Base, Base)), sect : (p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), back(to(p)), p), retr : (n : Int) => Path(Int, to(back(n)), n)} ;
-def winding = #{wind, #{spin, #{sect, retr}}} ;
 
 /// Every point's loop (cubical's `rotLoop`; the book's Lemma 6.4.2 element):
 /// the loop at the point, carried along the loop by conjugation to itself.
