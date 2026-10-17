@@ -827,6 +827,7 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(payload_paths));
                         },
                         Value::PathRefl(code)
+                        | Value::Univalence(code)
                         | Value::Here { point: code, .. }
                         | Value::Stay { point: code, .. } => {
                             tasks.push(ReachTask::OpenValue(code));
@@ -1436,7 +1437,7 @@ Value::ListNil | Value::Constant(_) | Value::Literal(_) => LooseDepth(0),
 Value::Tuple(ref components) => components.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
 Value::PathEquiv { path_type, forward, backward, .. } => self.cached_value_type(path_type).join(self.cached_value(forward)).join(self.cached_value(backward)),
 Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => self.cached_value_type(classifier).join(self.cached_value(payload_paths)),
-Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
+Value::PathRefl(body) | Value::Univalence(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
 Value::ForwardFlow { flow_type, translator, ref outputs, .. } => outputs.iter().fold(self.cached_value_type(flow_type).join(self.cached_value(translator)), |depth, id| depth.join(self.cached_value(*id))),
 Value::FunctionFlow { flow_type, domain, codomain } => self.cached_value_type(flow_type).join(self.cached_value(domain)).join(self.cached_value(codomain)),
 Value::Higher { evidence: ref values, .. } | Value::QuantifiedEvaluation { children: ref values, .. } => values.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
@@ -1502,6 +1503,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 .cached_value_type(path_type)
                 .join(self.cached_value(payload_paths)),
             Value::PathRefl(code)
+            | Value::Univalence(code)
             | Value::Here { point: code, .. }
             | Value::Stay { point: code, .. } => self.cached_value(code),
             Value::ForwardFlow {

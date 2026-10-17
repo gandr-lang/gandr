@@ -1,0 +1,193 @@
+// Univalence over the user universe, after the HoTT book's § 2.10 and cubical
+// Agda's `Cubical/Foundations/Univalence.agda`. `ua(e)` makes the
+// bi-invertible map `e : A ≃ B` between two types of `Type` a path
+// `Path(Type, A, B)`, admitted on the record's two laws as its evidence, at any
+// two codes: two variables, or a path type and a presented type, which no
+// finite round-trip coverage reaches. Transport along it applies the map, by
+// conversion (cubical's `uaβ`). Transport along a path between types,
+// packaged as the record, is `idtoequiv` (the book's `idtoeqv`, cubical's
+// `pathToEquiv`); `ua` and `idtoequiv` make a quasi-inverse and so an
+// equivalence, `univalence`, on two owed laws: `ua` after `idtoequiv`, which
+// no rule converts, and `idtoequiv` after `ua`, which needs the record's
+// inverses to be determined by its map.
+
+// The circle, the presented integers, the winding number and spinning.
+import "./circle-base.gandr" ;
+// The equivalence of the loops at the point with the integers, `winding`.
+import "./circle.gandr" ;
+
+/// Transport forward along a path between types, the map `idtoequiv` packages.
+@[ checks ]
+def fwdAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> -F b {
+  transport(\X. X, p, x)
+}
+
+/// Transport back along a path between types, both of `idtoequiv`'s inverses.
+@[ checks ]
+def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> -F a {
+  transport(\X. X, back(p), y)
+}
+
+/// Back after forward is the identity, by `J` on the path: at reflexivity
+/// both transports compute away. The round trips are stated over the named
+/// maps rather than the transports written out, which a field of the record
+/// does not yet convert under its binder (#650).
+@[ checks ]
+def sectAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> -F Path(
+  a,
+  bwdAlong(a, b, p, fwdAlong(a, b, p, x)),
+  x
+) {
+  become transport(
+    +U ((y : Type) -> (z : Path(Type, a, y)) -> -F Path(
+      a,
+      bwdAlong(a, y, z, fwdAlong(a, y, z, x)),
+      x
+    )),
+    p,
+    here(a),
+    here(p),
+    here(x)
+  )
+}
+
+/// Forward after back is the identity at every point, by `J` on the path.
+@[ checks ]
+def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> -F +U ((w : b) -> -F Path(
+  b,
+  fwdAlong(a, b, p, bwdAlong(a, b, p, w)),
+  w
+)) {
+  become transport(
+    +U ((y : Type) -> (z : Path(Type, a, y)) -> -F +U ((w : y) -> -F Path(
+      y,
+      fwdAlong(a, y, z, bwdAlong(a, y, z, w)),
+      w
+    ))),
+    p,
+    here(a),
+    here(p),
+    thunk { fn (w) { return here(w) } }
+  )
+}
+
+/// Forward after back is the identity at `y`.
+@[ checks ]
+def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> -F Path(
+  b,
+  fwdAlong(a, b, p, bwdAlong(a, b, p, y)),
+  y
+) {
+  run r <- retrAll(a, b, p);
+  become r(y)
+}
+
+/// Transport along a path between types as the bi-invertible map: the book's
+/// `idtoeqv`, cubical's `pathToEquiv`.
+@[ checks ]
+def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> -F (a ≃ b) {
+  return #{
+    thunk { fn (x) { fwdAlong(a, b, p, x) } },
+    #{
+      #{thunk { fn (y) { bwdAlong(a, b, p, y) } }, thunk { fn (x) { sectAlong(a, b, p, x) } }},
+      #{thunk { fn (y) { bwdAlong(a, b, p, y) } }, thunk { fn (y) { retrAlong(a, b, p, y) } }}
+    }
+  }
+}
+
+/// A record written out at two variables is a path between them: the record
+/// checks against `a ≃ b`, its laws the evidence.
+@[ checks ]
+def uaLiteral(
+  a : Type,
+  b : Type,
+  t : +U (a -> -F b),
+  g : +U (b -> -F a),
+  s : +U ((x : a) -> -F Path(a, g(t(x)), x)),
+  h : +U (b -> -F a),
+  r : +U ((y : b) -> -F Path(b, t(h(y)), y))
+) -> -F Path(Type, a, b) {
+  return ua(#{t, #{#{g, s}, #{h, r}}})
+}
+
+/// The loops at the point are the integers, as types: `winding`'s laws admit
+/// the path between a path type and a presented type.
+@[ checks ]
+def loopsAreIntegers : Path(Type, Path(Circle, Base, Base), Int) ;
+def loopsAreIntegers = ua(winding) ;
+
+/// Transport along `ua` applies the record's map, by conversion: cubical's
+/// `uaβ`, at two variables, the record written out and checked against the
+/// path `fwdAlong` takes.
+@[ checks ]
+def uaBeta(
+  a : Type,
+  b : Type,
+  t : +U (a -> -F b),
+  g : +U (b -> -F a),
+  s : +U ((x : a) -> -F Path(a, g(t(x)), x)),
+  h : +U (b -> -F a),
+  r : +U ((y : b) -> -F Path(b, t(h(y)), y)),
+  x : a
+) -> -F Path(b, fwdAlong(a, b, ua(#{t, #{#{g, s}, #{h, r}}}), x), t(x)) {
+  return here(t(x))
+}
+
+/// A loop carried along the loops' path to the integers is its winding
+/// number, by conversion.
+@[ checks ]
+def windingBeta(x : Path(Circle, Base, Base)) -> -F Path(
+  Int,
+  transport(\X. X, loopsAreIntegers, x),
+  wind(x)
+) {
+  return here(wind(x))
+}
+
+/// `ua` after `idtoequiv` is the path, owed: no rule converts `ua` of the
+/// packaged transport with the path, even at reflexivity, where both sides
+/// are values no computation moves (#520).
+@[ owes(1) ]
+def uaEta : (a : Type, b : Type, p : Path(Type, a, b)) => Path(
+  Path(Type, a, b),
+  ua(idtoequiv(a, b, p)),
+  p
+) ;
+
+/// `idtoequiv` after `ua` is the record, owed: the two maps convert by `uaβ`,
+/// but the record's inverses and laws are its own, equal to the packaged ones
+/// once being bi-invertible is a proposition, which this corpus does not yet
+/// prove.
+@[ owes(1) ]
+def idtoequivUa : (a : Type, b : Type, e : a ≃ b) => Path(a ≃ b, idtoequiv(a, b, ua(e)), e) ;
+
+/// The paths between two types and the bi-invertible maps between them are a
+/// quasi-inverse by `idtoequiv` and `ua`, on the two owed round trips.
+@[ checks ]
+def univalenceIso(a : Type, b : Type) -> -F (Path(Type, a, b) ≅ (a ≃ b)) {
+  return #{
+    thunk { fn (p) { idtoequiv(a, b, p) } },
+    #{
+      thunk { fn (e) { return ua(e) } },
+      #{
+        thunk { fn (p) { return uaEta(a, b, p) } },
+        thunk { fn (e) { return idtoequivUa(a, b, e) } }
+      }
+    }
+  }
+}
+
+/// Univalence: `idtoequiv` is an equivalence, the quasi-inverse made
+/// bi-invertible as `isoToEquiv` makes it, its map back both inverses. The
+/// record is written out: a split of `univalenceIso`'s result reads its type
+/// as unknown (#656).
+@[ checks ]
+def univalence(a : Type, b : Type) -> -F (Path(Type, a, b) ≃ (a ≃ b)) {
+  return #{
+    thunk { fn (p) { idtoequiv(a, b, p) } },
+    #{
+      #{thunk { fn (e) { return ua(e) } }, thunk { fn (p) { return uaEta(a, b, p) } }},
+      #{thunk { fn (e) { return ua(e) } }, thunk { fn (e) { return idtoequivUa(a, b, e) } }}
+    }
+  }
+}

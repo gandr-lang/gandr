@@ -1,0 +1,56 @@
+// What `ua` refuses. `ua(e)` is admitted on the record's laws as its
+// evidence, so a record whose law does not hold builds no path: the law is a
+// field that does not check. The codes `ua` relates are codes of `Type`, so a
+// record between types one universe up is refused at its code. And `ua` after
+// `idtoequiv` is not the path by conversion, the law the model source owes.
+
+// Two points, one point, the collapse of the first onto the second and the
+// map back with its one round trip.
+import "./equiv-fibres.gandr" ;
+// The paths between types packaged as records, `idtoequiv`.
+import "../../model/identity/univalence.gandr" ;
+
+/// The collapse made a path between `Two` and `One`, refused at the left
+/// inverse's round trip: `pick(collapse(x))` is `Yes` at every `x`, so
+/// reflexivity at `x` does not reach it.
+@[ refuses("EndpointMismatch") ]
+def collapsedPath : Path(Type, Two, One) ;
+def collapsedPath = ua(#{collapse, #{#{pick, thunk { fn (x) { here(x) } }}, #{pick, single}}}) ;
+
+/// A transport along `ua` of a bi-invertible map from `Type` to itself,
+/// refused at the code `ua` reads off the record: `Type` is a code of
+/// `Type[1]`, not of `Type`.
+@[ refuses("LevelMismatch") ]
+def alongTypeSelf(e : Type ≃ Type, x : Type) -> -F Type {
+  transport(\X. X, ua(e), x)
+}
+
+/// A record written out where nothing names the path it builds, refused at
+/// the `ua`: away from `Path(Type, a, b)` the record's own type names the
+/// codes, and a literal synthesises a product of its parts' types, not the
+/// dependent pair `a ≃ b` is.
+@[ refuses("ShapeMismatch") ]
+def alongLiteral(
+  a : Type,
+  b : Type,
+  t : +U (a -> -F b),
+  g : +U (b -> -F a),
+  s : +U ((x : a) -> -F Path(a, g(t(x)), x)),
+  h : +U (b -> -F a),
+  r : +U ((y : b) -> -F Path(b, t(h(y)), y)),
+  x : a
+) -> -F b {
+  transport(\X. X, ua(#{t, #{#{g, s}, #{h, r}}}), x)
+}
+
+/// `ua` after `idtoequiv` converted with the path, refused even at
+/// reflexivity: no rule relates `ua` of the packaged transport to the path it
+/// packages, so the model source owes it as `uaEta` (#520).
+@[ refuses("EndpointMismatch") ]
+def uaEtaByConversion(a : Type) -> -F Path(
+  Path(Type, a, a),
+  ua(idtoequiv(a, a, here(a))),
+  here(a)
+) {
+  return here(here(a))
+}

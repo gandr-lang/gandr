@@ -1321,9 +1321,9 @@ pub enum GoalReading
 /// - requires: nothing.
 /// - ensures: [`GoalReading::Fibre`] exactly when `expected` is an identity
 ///   type and `value` is an introduction form of the fold's fibres: neither an
-///   identity form (`here`, a higher field, a higher evaluation) nor a neutral
-///   that synthesizes its own type (a variable, a constant, a returned
-///   endpoint, a static application).
+///   identity form (`here`, univalence, a higher field, a higher evaluation)
+///   nor a neutral that synthesizes its own type (a variable, a constant, a
+///   returned endpoint, a static application).
 /// - provides: the checking machine's redirect of fibre evidence. A neutral
 ///   inhabits an identity by its synthesized type, so conversion stays
 ///   structural and never computes a fibre.
@@ -1348,6 +1348,7 @@ pub(crate) fn goal_reading(
             arena.value(value),
             None | Some(
                 &(Value::Here { .. }
+                    | Value::Univalence { .. }
                     | Value::Higher { .. }
                     | Value::HigherEvaluation { .. }
                     | Value::QuantifiedEvaluation { .. }

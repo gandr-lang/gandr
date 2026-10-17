@@ -3535,6 +3535,7 @@ proptest! {
                         "a synthesising value checks exactly as it synthesises, then crosses the value bridge"
                     );
                 },
+                | Value::Univalence(..)
                 | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_)
                 | Value::Constructor { .. } | Value::Record(_)
                 | Value::Reify(_)

@@ -1535,6 +1535,24 @@ enum Frame
         /// The source code's type and the target code's.
         codes: (ValueTypeId, ValueTypeId),
     },
+    /// Await the type a univalence's record synthesises, which names the two
+    /// types its forward map relates.
+    UnivalenceRecord
+    {
+        /// The `ua`.
+        at: ValueId,
+        /// Its record.
+        record: ValueId,
+        /// The forward map it carries.
+        forward: ValueId,
+    },
+    /// Await the checks of a univalence's record and codes, then produce its
+    /// path type.
+    UnivalenceChecked
+    {
+        /// The path type it synthesises.
+        path: ValueTypeId,
+    },
     /// Await the checks of a `ua`'s translators, then derive its path at its
     /// stratum.
     UaTranslators
@@ -2171,6 +2189,8 @@ impl Frame
             Self::EquivForward { .. } => FrameRole::EquivForward,
             Self::EquivBackward { .. } => FrameRole::EquivBackward,
             Self::UaTranslators { .. } => FrameRole::UaTranslators,
+            Self::UnivalenceRecord { .. } => FrameRole::UnivalenceRecord,
+            Self::UnivalenceChecked { .. } => FrameRole::UnivalenceChecked,
             Self::ReturnedEndpoint { .. } => FrameRole::ReturnedEndpoint,
             Self::Ran { .. } => FrameRole::Ran,
             Self::ElementTransportPath { .. } => FrameRole::ElementTransportPath,
@@ -2314,6 +2334,8 @@ impl Frame
             | Self::EquivForward { .. }
             | Self::EquivBackward { .. }
             | Self::UaTranslators { .. }
+            | Self::UnivalenceRecord { .. }
+            | Self::UnivalenceChecked { .. }
             | Self::ReturnedEndpoint { .. }
             | Self::Ran { .. }
             | Self::ElementTransportPath { .. }
@@ -2737,6 +2759,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::EquivForward { .. }
                 | Frame::EquivBackward { .. }
                 | Frame::UaTranslators { .. }
+                | Frame::UnivalenceRecord { .. }
+                | Frame::UnivalenceChecked { .. }
                 | Frame::ReturnedEndpoint { .. }
                 | Frame::Ran { .. }
                 | Frame::ElementTransportPath { .. }
@@ -4022,6 +4046,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            Value::Univalence(record, forward) => {
+                self.wait(Frame::UnivalenceRecord {
+                    at: term,
+                    record,
+                    forward,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: record,
+                    direction: Direction::Synthesise,
+                }))
+            },
             Value::Ua { .. } => {
                 let premises = crate::ua::premises(self.context, term)?;
                 let owner = self.owner;
@@ -4399,6 +4434,32 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 })),
             },
             Value::Recorded(_) => self.check_recorded(term, expected),
+            // Against an identity at `Type`, a univalence checks its record
+            // against the record type the two codes name, so a record literal
+            // checks; the path it then synthesises meets `expected` at the
+            // bridge. Against any other type it is synthesised.
+            Value::Univalence(record, forward) => {
+                match crate::univalence::checked(self.context, (record, forward), expected)? {
+                    crate::univalence::Reading::Record {
+                        record: record_type,
+                        path,
+                    } => {
+                        self.wait(Frame::ValueBridge { at: term, expected });
+                        self.wait(Frame::UnivalenceChecked { path });
+                        Ok(Step::Descend(Goal::Value {
+                            term: record,
+                            direction: Direction::Check(record_type),
+                        }))
+                    },
+                    crate::univalence::Reading::Synthesised => {
+                        self.wait(Frame::ValueBridge { at: term, expected });
+                        Ok(Step::Descend(Goal::Value {
+                            term,
+                            direction: Direction::Synthesise,
+                        }))
+                    },
+                }
+            },
             Value::Stay(point) => {
                 let head = self.context.whnf_value_type(expected)?;
                 if let ValueTypeView::Flow {
@@ -4641,6 +4702,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Here(_)
             | Value::Funext(..)
             | Value::Equiv(..)
+            | Value::Univalence(..)
             | Value::Ua { .. }
             | Value::Returned(_)
             | Value::Nested(_)
@@ -6765,6 +6827,41 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.context.record_equivalence(at, decided);
                 Ok(Step::Ascend(Produced::ValueType(path)))
             },
+            (
+                Frame::UnivalenceRecord {
+                    at,
+                    record,
+                    forward,
+                },
+                Produced::ValueType(classifier),
+            ) => {
+                let premises =
+                    crate::univalence::premises(self.context, at, (record, forward), classifier)?;
+                let owner = self.owner;
+                self.frames.push(Waiting {
+                    frame: Frame::UnivalenceChecked {
+                        path: premises.path,
+                    },
+                    owner,
+                });
+                let [(first, first_type), rest @ ..] = premises.checks;
+                for &(term, expected) in rest.iter().rev() {
+                    self.frames.push(Waiting {
+                        frame: Frame::NativeNext(Goal::Value {
+                            term,
+                            direction: Direction::Check(expected),
+                        }),
+                        owner,
+                    });
+                }
+                Ok(Step::Descend(Goal::Value {
+                    term: first,
+                    direction: Direction::Check(first_type),
+                }))
+            },
+            (Frame::UnivalenceChecked { path }, Produced::Checked) => {
+                Ok(Step::Ascend(Produced::ValueType(path)))
+            },
             (Frame::UaTranslators { at }, Produced::Checked) => {
                 let universal = crate::ua::decide(self.context, at)?;
                 self.context.record_native(at, universal.path());
@@ -7609,6 +7706,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::HereSynthesised { .. }
                 | Frame::FunextLeft { .. }
                 | Frame::EquivForward { .. }
+                | Frame::UnivalenceRecord { .. }
                 | Frame::ElementTransportPath { .. }
                 | Frame::TelescopePath { .. }
                 | Frame::TelescopeOver { .. }
@@ -7667,6 +7765,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::FunextRight { .. }
                 | Frame::EquivBackward { .. }
                 | Frame::UaTranslators { .. }
+                | Frame::UnivalenceChecked { .. }
                 | Frame::ElementTransportMotive { .. }
                 | Frame::TelescopeMotive { .. }
                 | Frame::TelescopeStart { .. }

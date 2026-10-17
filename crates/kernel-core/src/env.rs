@@ -2293,6 +2293,9 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(forward));
                     pending.push(AnyNode::Value(backward));
                 },
+                Some(&Value::Univalence(equivalence)) => {
+                    pending.push(AnyNode::Value(equivalence));
+                },
                 Some(
                     &Value::SessionPath {
                         path_type,

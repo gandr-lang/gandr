@@ -2125,6 +2125,11 @@ fn decode_entry(
                 .value_path_equiv(path_type, forward, backward, evidence);
             (DecodedNode::Value(id), Family::Value)
         },
+        tags::NODE_V_UNIVALENCE => {
+            let equivalence = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.value_univalence(equivalence);
+            (DecodedNode::Value(id), Family::Value)
+        },
         tags::NODE_C_TRANSPORT => {
             let path = read_value(reader, table, this, &mut children)?;
             let value = read_value(reader, table, this, &mut children)?;
@@ -3995,12 +4000,12 @@ mod tests
             })
         );
         assert_eq!(foreign.position.0, 4);
-        for version in [0_u16, 1, 2, 3, 4, 5, 0x0500, u16::MAX] {
+        for version in [0_u16, 1, 2, 3, 4, 5, 6, 0x0600, u16::MAX] {
             let mut image = magic.to_vec();
             image.extend_from_slice(&version.to_le_bytes());
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
-            let expected = if version == 5 {
+            let expected = if version == 6 {
                 Ok(())
             }
             else {
@@ -4734,7 +4739,7 @@ mod tests
     {
         let literal_artifact = |base: u8, literal: &[u8]| {
             let mut bytes = vec![
-                b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
+                b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
             ];
             bytes.extend_from_slice(literal);
             bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
@@ -4867,7 +4872,7 @@ mod tests
             })
         );
         let level_artifact = |level: &[u8]| {
-            let mut bytes = vec![b'G', b'K', b'X', b'1', 5, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
+            let mut bytes = vec![b'G', b'K', b'X', b'1', 6, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
             bytes.extend_from_slice(level);
             bytes.push(0);
             bytes

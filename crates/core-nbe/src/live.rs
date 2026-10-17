@@ -466,6 +466,7 @@ pub fn match_pattern(
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
+                | DomainValue::Univalence { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }

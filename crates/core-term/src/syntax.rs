@@ -379,6 +379,15 @@ pub enum Value
     /// computation, and the kernel admits it as the native universe path its
     /// fibre is; it is inert, as a native path certificate is.
     Equiv(ValueId, ValueId),
+    /// Univalence `ua(e)`, written `Univalence(e, f)`: an element of
+    /// `Path(U, a, b)` for a bi-invertible map `e : A ≃ B`, `a` and `b` the
+    /// codes of `A` and `B`, at any two codes of the level-zero value universe.
+    /// The record's laws are its evidence; the kernel checks them as the
+    /// record's fields and decides nothing. `f` is the record's forward map
+    /// `thunk (λx. e.0 x)`, derived by the lowering from `e` so that transport
+    /// along the path applies it; the bridge drops it and the kernel derives
+    /// the same map from the record.
+    Univalence(ValueId, ValueId),
     /// Univalence at a stated stratum, `ua[n, k](a, b, f, g)`: an element of
     /// `Path(U, ⌜Tel a⌝, ⌜Tel b⌝)` for two descriptions read as graphical
     /// species, `Tel` the telescope of their elements at each corolla of the
@@ -575,7 +584,7 @@ impl Value
     /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
     ///   injection separate the tuple reading from every other former.
     /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
-    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn components(&self) -> Option<&[ValueId]>
@@ -587,6 +596,7 @@ impl Value
             | Self::PathProduct(..)
             | Self::PathEquiv { .. }
             | Self::Here(_)
+            | Self::Univalence(..)
             | Self::Funext(..)
             | Self::Equiv(..)
             | Self::Ua { .. }
@@ -2143,6 +2153,7 @@ fn equal_syntax(
                     }
                     else if let (&Value::Funext(a, b), &Value::Funext(c, d))
                     | (&Value::Equiv(a, b), &Value::Equiv(c, d))
+                    | (&Value::Univalence(a, b), &Value::Univalence(c, d))
                     | (&Value::Then(a, b), &Value::Then(c, d))
                     | (&Value::FlowProduct(a, b), &Value::FlowProduct(c, d))
                     | (&Value::FunctionFlow(a, b), &Value::FunctionFlow(c, d)) =

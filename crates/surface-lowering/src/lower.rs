@@ -2244,6 +2244,8 @@ enum Plan
     Funext(NodeIndex, NodeIndex),
     /// A universe equivalence between its two translators.
     Equiv(NodeIndex, NodeIndex),
+    /// Univalence over its record, `ua(e)`.
+    Univalence(NodeIndex),
     /// The native product of two universe paths.
     PathProduct(NodeIndex, NodeIndex),
     /// Univalence at a stratum between two descriptions, over its forward
@@ -7067,7 +7069,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Resume(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Ride(..))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Resume(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Ride(..))) => true,
                     | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..))) => {
                         matches!(site.reading, Reading::Value(_))
                     },
@@ -10273,6 +10275,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Here(_)
                 | Plan::Funext(..)
                 | Plan::Equiv(..)
+                | Plan::Univalence(_)
                 | Plan::PathProduct(..)
                 | Plan::Ua { .. }
                 | Plan::ListNil
@@ -10561,6 +10564,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Here(_)
             | Plan::Funext(..)
             | Plan::Equiv(..)
+            | Plan::Univalence(_)
             | Plan::PathProduct(..)
             | Plan::Ua { .. }
             | Plan::ListNil
@@ -11299,7 +11303,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
             | Maybe::Present(Lowered::Value(id)) => {
-                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Run(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..))
+                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Run(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..))
                     && sink.origins.value(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::Computation(id)) => {
@@ -11375,6 +11379,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     let id = sink.arena.value_equiv(first, second);
                     sink.value(id, origin)
                 })
+            }),
+            Plan::Univalence(record) => self.value_at(record).map(|at| {
+                let forward = gandr_core_term::identity::univalence_forward(sink.arena, at);
+                let id = sink.arena.value_univalence(at, forward);
+                sink.value(id, origin)
             }),
             Plan::PathProduct(first, second) => self.value_at(first).and_then(|left| {
                 self.value_at(second).map(|right| {

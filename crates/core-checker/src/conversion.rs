@@ -1502,6 +1502,7 @@ fn convert(
                                         | Value::Recorded(_)
                                         | Value::Funext(..)
                                         | Value::Equiv(..)
+                                        | Value::Univalence(..)
                                         | Value::Ua { .. }
                                         | Value::Returned(_)
                                         | Value::Nested(_)

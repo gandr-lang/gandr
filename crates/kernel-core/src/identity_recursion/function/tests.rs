@@ -165,7 +165,7 @@ fn relation(
 /// - hypothesis: L3 — swapped Boolean components produce distinct evaluation
 ///   claims.
 /// - witness: `identity_recursion::function::tests::funext_computes_and_refuses_wrong_components`
-#[spec(ensures: |ret| ret.len() == match node { AnyNode::Value(id) => arena.value(id).map_or(0, |value| match *value { Value::PathEquiv { .. } => 3, Value::Tuple(ref components) => components.len(), Value::StaticApplication(..) | Value::PathProduct(..) => 2, Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) => 1, Value::Constructor { .. } | Value::Record(_) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil | Value::ListCons(..) => 0 }), AnyNode::Computation(id) => arena.computation(id).map_or(0, |computation| match *computation { Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2, Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Project(..) | Computation::Fixpoint { .. } => 1 }), AnyNode::ValueType(_) | AnyNode::CompType(_) => 0 })]
+#[spec(ensures: |ret| ret.len() == match node { AnyNode::Value(id) => arena.value(id).map_or(0, |value| match *value { Value::PathEquiv { .. } => 3, Value::Tuple(ref components) => components.len(), Value::StaticApplication(..) | Value::PathProduct(..) => 2, Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) => 1, Value::Constructor { .. } | Value::Record(_) | Value::SessionPath { .. } | Value::Univalence { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil | Value::ListCons(..) => 0 }), AnyNode::Computation(id) => arena.computation(id).map_or(0, |computation| match *computation { Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2, Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Project(..) | Computation::Fixpoint { .. } => 1 }), AnyNode::ValueType(_) | AnyNode::CompType(_) => 0 })]
 fn children(
     arena: &TermArena,
     node: AnyNode,
@@ -191,6 +191,7 @@ fn children(
             | &Value::PathRefl(_)
             | &Value::PathProduct(..)
             | &Value::PathEquiv { .. }
+            | &Value::Univalence { .. }
             | &Value::Here { .. }
             | &Value::Returned(_)
             | &Value::Higher { .. }
@@ -309,6 +310,7 @@ fn translate(
                     | Value::PathRefl(_)
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
+                    | Value::Univalence { .. }
                     | Value::Here { .. }
                     | Value::Returned(_)
                     | Value::Higher { .. }

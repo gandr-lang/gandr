@@ -850,6 +850,7 @@ fn formers(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
+                    | Value::Univalence(first, second)
                     | Value::Ua {
                         forward: first,
                         backward: second,

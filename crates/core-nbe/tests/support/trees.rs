@@ -71,6 +71,7 @@ pub enum Trees
             (Some(a), Some(b)) => match *a {
                 Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) => (ret == Trees::Same) == (a == b),
                 Value::Tuple(ref components) if components.is_empty() => (ret == Trees::Same) == (a == b),
+                Value::Univalence(..) |
                 Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => ret == Trees::Different || core::mem::discriminant(a) == core::mem::discriminant(b),
             },
             _ => ret == Trees::Different,

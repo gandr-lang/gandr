@@ -866,7 +866,7 @@ impl TermArena
             Value::Record(ref fields) => fields.values().all(|field| self.value(*field).is_some()),
             Value::ListCons(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::Then { first, second, .. } => self.value(first).is_some() && self.value(second).is_some(),
             Value::Tuple(ref components) => components.iter().all(|component| self.value(*component).is_some()),
-            Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } => self.value(body).is_some(),
+            Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) | Value::Univalence(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } => self.value(body).is_some(),
             Value::ForwardFlow { flow_type, translator, ref outputs, .. } => self.value_type(flow_type).is_some() && self.value(translator).is_some() && outputs.iter().all(|output| self.value(*output).is_some()),
             Value::FunctionFlow { flow_type, domain, codomain } => self.value_type(flow_type).is_some() && self.value(domain).is_some() && self.value(codomain).is_some(),
             Value::Higher { ref evidence, .. } => evidence.iter().all(|item| self.value(*item).is_some()),
@@ -1191,7 +1191,7 @@ impl TermArena
                 && self.value_types.len() == before.0.value_types
                 && self.comp_types.len() == before.0.comp_types
                 && ret.0 == u32::try_from(before.0.values).unwrap_or(u32::MAX)
-                && self.values.last().is_some_and(|node| match *node { Value::Literal(ref actual) => actual.base_type() == before.1, Value::Constructor { .. } | Value::Record(_) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticApplication(..) => false }),
+                && self.values.last().is_some_and(|node| match *node { Value::Literal(ref actual) => actual.base_type() == before.1, Value::Constructor { .. } | Value::Record(_) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Univalence { .. } | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticApplication(..) => false }),
     )]
     #[inline]
     pub fn value_literal(
@@ -2572,6 +2572,20 @@ impl TermArena
         })
     }
 
+    /// Mint univalence `ua(e)` of the record `equivalence`, without claiming
+    /// that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_univalence(
+        &mut self,
+        equivalence: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Univalence(equivalence))
+    }
+
     /// Mint transport; admission derives its source and result types.
     ///
     /// # Specification
@@ -3008,7 +3022,7 @@ Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied(
 Value::PathEquiv { path_type, forward, backward, .. } =>
                 ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
 Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => ret.as_slice() == [AnyNode::ValueType(classifier), AnyNode::Value(payload_paths)],
-Value::PathRefl(code) | Value::Here { point: code, .. } | Value::Stay { point: code, .. } => ret.as_slice() == [AnyNode::Value(code)],
+Value::PathRefl(code) | Value::Univalence(code) | Value::Here { point: code, .. } | Value::Stay { point: code, .. } => ret.as_slice() == [AnyNode::Value(code)],
 Value::ForwardFlow { flow_type, translator, ref outputs, .. } => ret.iter().copied().eq([AnyNode::ValueType(flow_type), AnyNode::Value(translator)].into_iter().chain(outputs.iter().copied().map(AnyNode::Value))),
 Value::FunctionFlow { flow_type, domain, codomain } => ret.as_slice() == [AnyNode::ValueType(flow_type), AnyNode::Value(domain), AnyNode::Value(codomain)],
 Value::Higher { ref evidence, .. } => ret.iter().copied().eq(evidence.iter().copied().map(AnyNode::Value)),
@@ -3122,6 +3136,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 },
                 Some(
                     &Value::PathRefl(code)
+                    | &Value::Univalence(code)
                     | &Value::Here { point: code, .. }
                     | &Value::Stay { point: code, .. },
                 ) => {

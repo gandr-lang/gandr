@@ -177,6 +177,7 @@ fn every_node_former_round_trips_under_its_own_frame()
         ContentNode::PathProduct(a, b),
         ContentNode::Funext(a, b),
         ContentNode::Equiv(a, b),
+        ContentNode::Univalence(a, b),
         ContentNode::Transport(a, b),
         ContentNode::PathType {
             carrier: a,

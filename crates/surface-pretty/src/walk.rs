@@ -363,7 +363,7 @@ enum Kind
         | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_)
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..)
+        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Univalence(_)
         | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
         | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. }),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_)
@@ -428,6 +428,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Here(_)
         | Former::Funext(..)
         | Former::Equiv(..)
+        | Former::Univalence(_)
         | Former::SessionRelated(..)
         | Former::Stay(_)
         | Former::Then(..)
@@ -993,6 +994,7 @@ where
         | Former::Element(child)
         | Former::ComputationElement(child)
         | Former::Here(child)
+        | Former::Univalence(child)
         | Former::Stay(child)
         | Former::Forward(child)
         | Former::RunType(child)
@@ -1529,6 +1531,8 @@ enum Bracket
     Funext,
     /// A universe equivalence, `equiv(f, g)`.
     Equiv,
+    /// Univalence, `ua(e)`.
+    Univalence,
     /// Native reflexivity.
     PathRefl,
     /// A native equivalence's maps.
@@ -1568,6 +1572,7 @@ impl Bracket
             Self::Here => "here(",
             Self::Funext => "funext(",
             Self::Equiv | Self::PathEquiv => "equiv(",
+            Self::Univalence => "ua(",
             Self::PathRefl => "refl(",
             Self::PathProduct => "pathProduct(",
             Self::ListCons => "cons(",
@@ -3109,6 +3114,7 @@ impl Walk<'_, '_>
                 | Former::Here(_)
                 | Former::Funext(..)
                 | Former::Equiv(..)
+                | Former::Univalence(_)
                 | Former::SessionRelated(..)
                 | Former::Stay(_)
                 | Former::Then(..)
@@ -3861,6 +3867,9 @@ impl Walk<'_, '_>
             },
             | Former::Equiv(..) => {
                 Some(writes(Production("call_expression"), Join::Bracket(Bracket::Equiv)))
+            },
+            | Former::Univalence(_) => {
+                Some(writes(Production("call_expression"), Join::Bracket(Bracket::Univalence)))
             },
             | Former::SessionRelated(SessionRelation::Equivalence, ..) => {
                 Some(writes(Production("call_expression"), Join::Bracket(Bracket::Bisim)))
@@ -5239,6 +5248,7 @@ impl Walk<'_, '_>
             | Former::Here(_)
             | Former::Funext(..)
             | Former::Equiv(..)
+            | Former::Univalence(_)
             | Former::SessionRelated(..)
             | Former::Stay(_)
             | Former::FlowProduct(..)
@@ -5313,7 +5323,7 @@ impl Walk<'_, '_>
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
-                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::List | Bracket::Stay | Bracket::Forward | Bracket::Run) => Some(1_usize),
+                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Forward | Bracket::Run) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
             Join::ValueFunction(Arity(domains)) => domains.checked_add(1_usize),
@@ -5614,6 +5624,7 @@ impl Walk<'_, '_>
                         items.extend([opener, first.doc, comma, second.doc]);
                     },
                     Bracket::Here
+                    | Bracket::Univalence
                     | Bracket::PathRefl
                     | Bracket::List
                     | Bracket::Stay

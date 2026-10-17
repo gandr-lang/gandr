@@ -251,6 +251,7 @@ impl Image
                 Value::PathProduct(ref mut first, ref mut second)
                 | Value::Funext(ref mut first, ref mut second)
                 | Value::Equiv(ref mut first, ref mut second)
+                | Value::Univalence(ref mut first, ref mut second)
                 | Value::Then(ref mut first, ref mut second)
                 | Value::FlowProduct(ref mut first, ref mut second)
                 | Value::FunctionFlow(ref mut first, ref mut second)
@@ -619,6 +620,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Value::PathProduct(..)
                                 | Value::PathEquiv { .. }
                                 | Value::Here(_)
+                                | Value::Univalence(..)
                                 | Value::Funext(..)
                                 | Value::Equiv(..)
                                 | Value::Ua { .. }

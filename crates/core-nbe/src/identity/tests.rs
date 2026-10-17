@@ -483,6 +483,45 @@ fn transport_in_the_decoded_binder_along_a_stuck_path_stays_in_its_motive()
 }
 
 #[test]
+fn transport_along_univalence_applies_the_forward_map()
+{
+    // A record whose forward map is negation and whose inverses are the
+    // identity: transport in the decoded binder applies the forward map,
+    // never an inverse, and the laws are not run.
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let [truth, falsity] =
+        [Side::Left, Side::Right].map(|side| core.value_injection(side.into(), unit));
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let negated = [falsity, truth].map(|value| core.computation_return(value));
+    let body = core.computation_case(bound, &negated);
+    let lambda = core.computation_lambda(body);
+    let not = core.value_thunk(lambda);
+    let kept = core.computation_return(bound);
+    let lambda = core.computation_lambda(kept);
+    let same = core.value_thunk(lambda);
+    let left = core.value_tuple(&[same, unit]);
+    let right = core.value_tuple(&[same, unit]);
+    let inverses = core.value_tuple(&[left, right]);
+    let record = core.value_tuple(&[not, inverses]);
+    let forward = gandr_core_term::identity::univalence_forward(&mut core, record);
+    let path = core.value_univalence(record, forward);
+    let motive = core.value_type_element(bound, gandr_kernel_strata::Level::zero());
+    let transported = core.computation_path_transport(motive, path, truth);
+    let moved = core.computation_return(falsity);
+    assert_eq!(
+        normalises_to(&mut core, transported, moved),
+        CertificateEquality::Equal,
+        "the point is carried by the record's forward map"
+    );
+    let unmoved = core.computation_return(truth);
+    assert_eq!(
+        normalises_to(&mut core, transported, unmoved),
+        CertificateEquality::Different
+    );
+}
+
+#[test]
 fn a_compound_endpoint_stands_for_what_it_returns()
 {
     let mut core = CoreArena::new();

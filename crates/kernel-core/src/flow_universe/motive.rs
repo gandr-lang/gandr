@@ -241,6 +241,7 @@ fn walk(
                     | Value::PathRefl(_)
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
+                    | Value::Univalence { .. }
                     | Value::Here { .. }
                     | Value::Returned(_)
                     | Value::Higher { .. }

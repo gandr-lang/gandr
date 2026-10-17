@@ -127,6 +127,7 @@ pub struct Unfolded(pub u64);
                     Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 1,
                     Value::Tuple(ref components) => 1_u64.saturating_add(u64::try_from(components.len()).unwrap_or(u64::MAX)),
                     Value::Recorded(ref moves) => 1_u64.saturating_add(u64::try_from(moves.iter().filter(|movement| matches!(movement, gandr_core_term::session::RecordedMove::Sent(_) | gandr_core_term::session::RecordedMove::Received(_))).count()).unwrap_or(u64::MAX)),
+                    Value::Univalence(..) |
                     Value::ListCons(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::StaticApplication(_, _) | Value::SessionRelated { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) => 3,
                     Value::PathEquiv { .. } => 4,
                     Value::PathRefl(_) | Value::Here(_) | Value::Stay(_) | Value::Forward(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
@@ -260,6 +261,7 @@ pub fn unfolded(
                 Value::PathProduct(first, second)
                 | Value::Funext(first, second)
                 | Value::Equiv(first, second)
+                | Value::Univalence(first, second)
                 | Value::Then(first, second)
                 | Value::FlowProduct(first, second)
                 | Value::FunctionFlow(first, second)

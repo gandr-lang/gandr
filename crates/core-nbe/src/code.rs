@@ -692,7 +692,7 @@ Value::Lift { .. } => ret == Ok(Atom::Lift(code, place)),
 Value::StaticLambda(_) => ret == Ok(Atom::Operator(code, place)),
 Value::StaticApplication(head, argument) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
 Value::Constructor { .. } | Value::Record(_) | Value::Tuple(_) | Value::ListNil | Value::ListCons(..) | Value::Literal(_) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
-Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Thunk(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => ret == Ok(Atom::Other(node)),
+Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Thunk(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => ret == Ok(Atom::Other(node)),
 }),
         Node::Held(value) => self.domain.value(value).map_or_else(|| ret == Err(ConversionFault::Domain(DomainFault::Dangling)), |matched_native_node| match *matched_native_node {
 DomainValue::Neutral { neutral, .. } => self.domain.neutral(neutral).map_or_else(
@@ -714,7 +714,7 @@ DomainValue::StaticLambda { lambda, .. } => self.domain.value_closure(lambda).ma
                 || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
                 |closure| match closure.body() { crate::ValueBody::Source(body) => ret == Ok(Atom::Operator(body,Self::opened(lambda))), crate::ValueBody::ValueType(_) | crate::ValueBody::CompType(_) => ret == Err(ConversionFault::MachineInvariant) }),
 DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::Tuple { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Literal { .. } | DomainValue::Injection { .. } => ret == Ok(Atom::FirstOrder(node)),
-DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Flow { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } => ret == Ok(Atom::Other(node)),
+DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::Flow { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } => ret == Ok(Atom::Other(node)),
 }),
         Node::Stuck(neutral, prefix) => ret == self.stuck(neutral, prefix),
         Node::ValueType(..) | Node::CompType(..) => ret == Ok(Atom::Other(node)),
@@ -770,6 +770,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                     },
                     Value::PathRefl(_)
                     | Value::Here(_)
+                    | Value::Univalence(..)
                     | Value::Stay(_)
                     | Value::Then(..)
                     | Value::FlowProduct(..)
@@ -826,6 +827,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                         },
                         Value::PathRefl(_)
                         | Value::Here(_)
+                        | Value::Univalence(..)
                         | Value::Stay(_)
                         | Value::Then(..)
                         | Value::FlowProduct(..)
@@ -872,6 +874,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
             DomainValue::PathCertificate { .. }
             | DomainValue::PathProduct { .. }
             | DomainValue::Here { .. }
+            | DomainValue::Univalence { .. }
             | DomainValue::Flow { .. }
             | DomainValue::Thunk { .. }
             | DomainValue::Lift { .. } => Ok(Atom::Other(stood)),
@@ -1958,6 +1961,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 | Value::PathProduct(..)
                 | Value::PathEquiv { .. }
                 | Value::Here(_)
+                | Value::Univalence(..)
                 | Value::Funext(..)
                 | Value::Equiv(..)
                 | Value::Ua { .. }
@@ -2044,6 +2048,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
+                | DomainValue::Univalence { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Thunk { .. }
                 | DomainValue::Lift { .. }

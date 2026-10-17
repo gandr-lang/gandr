@@ -161,6 +161,8 @@ pub enum GuardTag
     Injection,
     /// Reflexivity of an element path.
     Here,
+    /// Univalence over a record.
+    Univalence,
     /// A flow introduction.
     Flow,
     /// A universe lift.

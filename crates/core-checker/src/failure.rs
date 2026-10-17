@@ -183,6 +183,11 @@ pub enum FrameRole
     /// A univalence statement's translators are being checked against their
     /// corollas' codes.
     UaTranslators,
+    /// A univalence waits on the type its record synthesises.
+    UnivalenceRecord,
+    /// A univalence's record and codes are being checked against the
+    /// bi-invertible record type and the universe.
+    UnivalenceChecked,
     /// A compound endpoint waits on its computation's type.
     ReturnedEndpoint,
     /// A computation written where a value is read, run, waits on its
@@ -389,6 +394,8 @@ impl fmt::Display for FrameRole
             Self::EquivForward => "EquivForward",
             Self::EquivBackward => "EquivBackward",
             Self::UaTranslators => "UaTranslators",
+            Self::UnivalenceRecord => "UnivalenceRecord",
+            Self::UnivalenceChecked => "UnivalenceChecked",
             Self::ReturnedEndpoint => "ReturnedEndpoint",
             Self::Ran => "Ran",
             Self::ElementTransportPath => "ElementTransportPath",

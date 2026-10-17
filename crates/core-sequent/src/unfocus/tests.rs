@@ -224,6 +224,7 @@ fn closing_substitution_distinguishes_binders_and_zones()
             | Value::Here(_)
             | Value::Funext(..)
             | Value::Equiv(..)
+            | Value::Univalence(..)
             | Value::Ua { .. }
             | Value::SessionRelated { .. }
             | Value::Stay(_)
