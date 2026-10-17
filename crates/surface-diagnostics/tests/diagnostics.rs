@@ -501,6 +501,21 @@ mod diagnostics
             "a word's type is its path type, a letter conses before the rest, and the empty \
              word is `here` at the point"
         );
+        let preceded = only(
+            Path::new("preceded.gandr"),
+            SourceText::from(
+                "data Other : Type {\n  Spot : Other;\n}\ndata Circle : Type {\n  Base : Circle;\n  \
+                 loop : Base <-> Base;\n}\ndef wound : Path(Path(Circle, Base, Base), back(loop) \
+                 ∷ here(Base), here(Base)) ;\ndef wound = 1 ;\n",
+            ),
+        );
+        assert_eq!(
+            preceded.detail.compared.expected,
+            Maybe::Present(String::from(
+                "Path(Path(Circle, Base, Base), back(loop) ∷ here(Base), here(Base))"
+            )),
+            "the point is spelled by its own family's constructors, not an earlier family's"
+        );
     }
 
     #[test]
@@ -1653,9 +1668,33 @@ mod diagnostics
         else {
             panic!("the note closes with what leaves it unsettled");
         };
-        assert!(
-            note.contains("`b`") && note.contains("`a`"),
-            "the note names the declaration and the refused one it rests on: {note}"
+        assert_eq!(
+            note, "`b` is expected to check, and the refusal of `a` leaves it unsettled",
+            "a declaration expected to check owing nothing is told what leaves it unsettled"
+        );
+        let owing = SourceText::from(
+            "def a() -> Integer {\n  return 1 ~ 2\n}\n\n@[ owes(1) ]\ndef b() -> Integer {\n  \
+             return a()\n}\n",
+        );
+        let owing_printed = self::printed(
+            Path::new("owing.gandr"),
+            SourceRoot::Fixture,
+            owing,
+            Verb::Check(Goals::Gated),
+        );
+        let notes: Vec<_> = owing_printed
+            .iter()
+            .filter(|diagnostic| diagnostic.severity == Severity::Note)
+            .map(|diagnostic| diagnostic.note.clone())
+            .collect();
+        assert_eq!(
+            notes,
+            [Maybe::Present(String::from(
+                "`b` is expected to check owing 1 obligations, and this refusal leaves it \
+                 unsettled; surviving obligations: 0 undeclared, 1 unproduced; it rests on `a`, \
+                 which is refused"
+            ))],
+            "a declaration expected to owe is told its own expectation, then what it rests on"
         );
     }
 

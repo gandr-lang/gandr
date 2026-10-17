@@ -434,6 +434,12 @@ impl Report<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a term on one line and over two, and a lint finding
+    ///   inside the text and past it, observe the expression and fix guards.
+    /// - witness: `report::tests::only_a_one_line_term_is_quoted_as_the_expression`
+    /// - witness: `report::tests::a_finding_past_the_text_proposes_no_fix`
     fn diagnostic(&self) -> Diagnostic
     {
         let annotations = self.annotations();
@@ -1311,6 +1317,55 @@ mod tests
         assert_eq!(excerpt(text, [].into_iter()), Maybe::Absent(()));
     }
 
+    /// A lint's fix is proposed only at a point of the text it is read over:
+    /// a finding whose span lies past the text proposes none.
+    #[test]
+    fn a_finding_past_the_text_proposes_no_fix()
+    {
+        use gandr_core_term::effect::Purity;
+        use gandr_surface_lowering::AskedRuns;
+        use gandr_surface_lowering::Exit;
+        use gandr_surface_lowering::Explicitness;
+        use gandr_surface_lowering::InferredExit;
+        use gandr_surface_lowering::InferredRun;
+        use gandr_surface_lowering::NestedSite;
+        use gandr_surface_lowering::RunOperand;
+        use gandr_surface_lowering::RunSpelling;
+
+        let text = SourceText::from("def x = 1 ;\n");
+        let at = |start: usize| {
+            ByteSpan::new(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(1)),
+            )
+            .expect("ordered span")
+        };
+        for (start, proposed) in [(8_usize, true), (40_usize, false)] {
+            let exit = InferredExit {
+                span: at(start),
+                exit: Exit::Return,
+                explicitness: Explicitness::Asked,
+            };
+            let run = InferredRun {
+                span: at(start),
+                purity: Purity::Pure,
+                site: NestedSite {
+                    asked: AskedRuns::Every,
+                    spelling: RunSpelling::Bare,
+                    operand: RunOperand::Tight,
+                },
+            };
+            for subject in [Subject::InferredExit(&exit), Subject::InferredRun(&run)] {
+                let diagnostic = diagnose(Path::new("lint.gandr"), text, subject);
+                assert_eq!(
+                    matches!(diagnostic.fix, Maybe::Present(_)),
+                    proposed,
+                    "{subject:?} at byte {start}"
+                );
+            }
+        }
+    }
+
     /// #572: a located diagnostic whose primary mark is gone leads with no
     /// annotation; the context mark left first is not offered as the primary.
     #[test]
@@ -1340,5 +1395,100 @@ mod tests
             Maybe::Absent(report_span::Absent::OutsideText),
             "the context mark left first is not the primary annotation"
         );
+    }
+
+    /// A located refusal quotes its term as the expression only when the term
+    /// is one line; a term over two lines has none.
+    #[test]
+    fn only_a_one_line_term_is_quoted_as_the_expression()
+    {
+        let text = SourceText::from("def a = 1 ;\ndef a =\n  2 ;\n");
+        let at = |start: usize, end: usize| {
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("ordered span")
+        };
+        for (span, expression) in [
+            (at(12, 17), Maybe::Present(String::from("def a"))),
+            (
+                at(12, 23),
+                Maybe::Absent(crate::model::expression::Absent::Multiline),
+            ),
+        ] {
+            let diagnostic = diagnose(
+                Path::new("twice.gandr"),
+                text,
+                Subject::Source(LoweringRefusal::DuplicateDefinition {
+                    span,
+                    first: at(0, 5),
+                    name: "a".into(),
+                }),
+            );
+            assert_eq!(diagnostic.expression, expression, "{span:?}");
+        }
+    }
+
+    /// A lint finding's title is its message, so its details show no title
+    /// line repeating it.
+    #[test]
+    fn a_title_the_message_repeats_is_not_detailed()
+    {
+        use gandr_surface_lowering::Exit;
+        use gandr_surface_lowering::Explicitness;
+        use gandr_surface_lowering::InferredExit;
+
+        let exit = InferredExit {
+            span: ByteSpan::new(ByteOffset::from(8_usize), ByteOffset::from(9_usize))
+                .expect("ordered span"),
+            exit: Exit::Return,
+            explicitness: Explicitness::Asked,
+        };
+        let diagnostic = diagnose(
+            Path::new("lint.gandr"),
+            SourceText::from("def x = 1 ;\n"),
+            Subject::InferredExit(&exit),
+        );
+        assert_eq!(diagnostic.detail.title, diagnostic.message.text);
+        assert!(
+            diagnostic
+                .details(crate::verbosity::Verbosity::Detailed)
+                .iter()
+                .all(|detail| detail.name != "detail"),
+            "{:?}",
+            diagnostic.details(crate::verbosity::Verbosity::Detailed)
+        );
+    }
+
+    /// The JSON image lists a diagnostic's context loci, and not its primary
+    /// one, under `annotations`; and a located diagnostic whose first mark is
+    /// not its primary one claims no primary annotation.
+    #[test]
+    fn the_annotations_of_the_image_are_the_contexts_alone()
+    {
+        let at = |start: usize, end: usize| {
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("ordered span")
+        };
+        let diagnostic = diagnose(
+            Path::new("twice.gandr"),
+            SourceText::from("def a = 1 ;\ndef a = 2 ;\n"),
+            Subject::Source(LoweringRefusal::DuplicateDefinition {
+                span: at(12, 17),
+                first: at(0, 5),
+                name: "a".into(),
+            }),
+        );
+        let image: serde_json::Value =
+            serde_json::from_str(&diagnostic.json()).expect("the JSON image parses");
+        let annotations: Vec<(&serde_json::Value, &serde_json::Value)> = image["annotations"]
+            .as_array()
+            .map(|annotations| {
+                annotations
+                    .iter()
+                    .map(|annotation| (&annotation["start"], &annotation["end"]))
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(annotations, [(
+            &serde_json::json!(0_u64),
+            &serde_json::json!(5_u64)
+        )]);
     }
 }

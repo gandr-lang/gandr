@@ -95,6 +95,11 @@ impl AsRef<str> for Sentence
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every role's sentence, read through `as_ref`, is
+    ///   compared with the text it displays, so an empty or fixed text shows.
+    /// - witness: `frame::tests::every_role_reads_as_a_sentence`
     #[inline]
     fn as_ref(&self) -> &str
     {
@@ -559,11 +564,13 @@ mod tests
         ];
         let mut sentences: Vec<super::Sentence> =
             roles.iter().map(|&role| sentence(role)).collect();
-        assert!(
-            sentences.iter().all(|said| !said.0.is_empty()
-                && !said.0.contains('\n')
-                && said.0.contains("this"))
-        );
+        assert!(sentences.iter().all(|said| {
+            let text: &str = said.as_ref();
+            text == said.to_string()
+                && !text.is_empty()
+                && !text.contains('\n')
+                && text.contains("this")
+        }));
         sentences.sort_unstable();
         sentences.dedup();
         assert_eq!(

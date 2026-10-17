@@ -863,6 +863,7 @@ impl Diagnostic
     /// - hypothesis: L3 — one refusal shows the lines of its level and none of
     ///   the next.
     /// - witness: `diagnostics::diagnostics::one_refusal_details_each_verbosity`
+    /// - witness: `report::tests::a_title_the_message_repeats_is_not_detailed`
     #[spec(ensures: |ref ret| (matches!(verbosity, Verbosity::User | Verbosity::Json) == ret.is_empty()
         || self.severity == Severity::Ledger)
         && ret.iter().all(|detail| !detail.text.contains('\n')))]
@@ -974,6 +975,7 @@ impl Diagnostic
     /// - witness: `diagnostics::diagnostics::one_refusal_details_each_verbosity`
     /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
     /// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
+    /// - witness: `report::tests::the_annotations_of_the_image_are_the_contexts_alone`
     #[spec(ensures: |ref ret| ret.starts_with('{') && !ret.contains('\n'))]
     #[inline]
     #[must_use]
