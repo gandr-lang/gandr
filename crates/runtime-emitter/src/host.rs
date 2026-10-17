@@ -124,7 +124,9 @@ pub const STACK_PREFIX: usize = 3;
 pub enum Codes<'run>
 {
     /// Emitted code: each label's address by label, and each of
-    /// [`Stub::ALL`]'s shared copy.
+    /// [`Stub::ALL`]'s shared copy. Only a host with a patcher emits code,
+    /// so the variant stands with it (#684).
+    #[cfg(gandr_patcher)]
     Native
     {
         /// Each label's address.
@@ -148,6 +150,7 @@ impl Codes<'_>
     ) -> Word
     {
         match self {
+            #[cfg(gandr_patcher)]
             Self::Native { labels, .. } => labels
                 .get(usize::from(label))
                 .copied()
@@ -168,6 +171,7 @@ impl Codes<'_>
     ) -> Word
     {
         match self {
+            #[cfg(gandr_patcher)]
             Self::Native { stubs, .. } => stub.of(stubs),
             Self::Executor(program, _) => program.stub(stub),
         }

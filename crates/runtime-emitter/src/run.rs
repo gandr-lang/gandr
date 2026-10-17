@@ -13,6 +13,7 @@
 //! costs address space only. The choice reverses if a workload needs more
 //! than a bound holds, when the bound becomes the caller's to set.
 
+#[cfg(gandr_patcher)]
 use alloc::sync::Arc;
 use core::cell::RefCell;
 
