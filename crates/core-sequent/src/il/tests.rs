@@ -178,6 +178,9 @@ fn minting_refuses_a_dangling_child()
     let top = arena
         .mint_consumer(ConsumerNode::Top)
         .expect("a leaf mints");
+    let payload = arena
+        .mint_producer(ProducerNode::Literal(integer(Digits("7"))))
+        .expect("a leaf mints");
     let entry = arena.watermark();
     let phantom = ProducerId::from(3_u32);
     assert_eq!(
@@ -232,6 +235,25 @@ fn minting_refuses_a_dangling_child()
             then: ConsumerId::from(7_u32),
         }),
         "a selection's continuation dangles"
+    );
+    let unannotated = gandr_core_term::CoreArena::new().value_type_unit();
+    let signature =
+        gandr_core_term::effect::EffectSig::new("E".into(), [gandr_core_term::effect::EffectOp {
+            name: "op".into(),
+            payload: unannotated,
+            reply: unannotated,
+        }])
+        .expect("one operation");
+    assert_eq!(
+        Err(MintRefusal::DanglingAnnotation(unannotated)),
+        arena.mint_command(CommandNode::Perform {
+            signature,
+            operation: "op".into(),
+            route: Route::Nearest,
+            payload,
+            continuation: top,
+        }),
+        "a request's interface names a type the annotations do not hold"
     );
     assert_eq!(entry, arena.watermark(), "a refused mint appends nothing");
 }

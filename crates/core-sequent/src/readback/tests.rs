@@ -241,6 +241,109 @@ fn refusals_restore_an_existing_core_prefix()
     }
 }
 
+/// A record reads back only from as many fields as its labels, under labels
+/// in strictly ascending order.
+#[test]
+fn a_record_reads_back_only_from_one_field_per_ascending_label()
+{
+    use alloc::sync::Arc;
+
+    use gandr_core_term::FieldLabel;
+
+    let arena = CommandArena::new();
+    let mut store = Store::new();
+    let field = store
+        .allocate(HeapValue::Opaque(7_usize.into()))
+        .expect("room");
+    let label = |text: &str| FieldLabel::from(alloc::string::String::from(text));
+    let mut record = |labels: &[&str], fields: &[HeapValueId]| {
+        store
+            .allocate(HeapValue::Constructed {
+                tag: ConstructorTag::Record(
+                    labels.iter().map(|&text| label(text)).collect::<Arc<[_]>>(),
+                ),
+                fields: Box::from(fields),
+            })
+            .expect("room")
+    };
+    let read = record(&["a", "b"], &[field, field]);
+    let refused = [
+        record(&["a", "b"], &[field]),
+        record(&["b", "a"], &[field, field]),
+        record(&["a", "a"], &[field, field]),
+    ];
+    let mut core = CoreArena::new();
+    let Ok(read) = read_back_value(&arena, &store, read, &mut core)
+    else {
+        panic!("an ascending record of two fields reads back");
+    };
+    let Some(&Value::Record(ref fields)) = core.value(read)
+    else {
+        panic!("a record");
+    };
+    assert!(fields.keys().eq([label("a"), label("b")].iter()));
+    assert!(
+        fields
+            .values()
+            .all(|&value| core.value(value) == Some(&Value::Constant(7_usize.into())))
+    );
+    for value in refused {
+        assert_eq!(
+            Err(ReadbackRefusal::Unreadable(value)),
+            read_back_value(&arena, &store, value, &mut core)
+        );
+    }
+}
+
+/// A recorded run reads back only from one field per payload its moves
+/// carry, each payload in its move.
+#[test]
+fn a_recorded_run_reads_back_only_from_one_field_per_payload()
+{
+    use alloc::sync::Arc;
+
+    use gandr_core_term::session::RecordedMove;
+
+    let arena = CommandArena::new();
+    let mut store = Store::new();
+    let field = store
+        .allocate(HeapValue::Opaque(7_usize.into()))
+        .expect("room");
+    let mut run = |fields: &[HeapValueId]| {
+        store
+            .allocate(HeapValue::Constructed {
+                tag: ConstructorTag::Recorded(Arc::from([
+                    RecordedMove::Sent(()),
+                    RecordedMove::Closed,
+                ])),
+                fields: Box::from(fields),
+            })
+            .expect("room")
+    };
+    let read = run(&[field]);
+    let refused = [run(&[]), run(&[field, field])];
+    let mut core = CoreArena::new();
+    let Ok(read) = read_back_value(&arena, &store, read, &mut core)
+    else {
+        panic!("a send and a close read back from one payload");
+    };
+    let Some(&Value::Recorded(ref moves)) = core.value(read)
+    else {
+        panic!("a recorded run");
+    };
+    let [RecordedMove::Sent(payload), RecordedMove::Closed] = **moves
+    else {
+        panic!("a send, then a close: {moves:?}");
+    };
+    assert_eq!(core.value(payload), Some(&Value::Constant(7_usize.into())));
+    for value in refused {
+        assert_eq!(
+            Err(ReadbackRefusal::Unreadable(value)),
+            read_back_value(&arena, &store, value, &mut core)
+        );
+    }
+}
+
 /// A later-address dependency is rejected even when the store holds it.
 #[test]
 fn forward_dependencies_are_refused_before_reading_the_parent()
