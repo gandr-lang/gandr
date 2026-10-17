@@ -822,6 +822,14 @@ mod tests
     }
 
     #[test]
+    fn a_document_uri_reads_as_the_text_it_was_made_from()
+    {
+        let DocId { uri, .. } = document(Version(1));
+        assert_eq!(AsRef::<str>::as_ref(&uri), "file:///a.gandr");
+        assert_eq!(uri.to_string(), "file:///a.gandr");
+    }
+
+    #[test]
     fn document_scoped_constructors_populate_routing_keys()
     {
         let report = RenderFrame::frame(document(Version(7)), ReportView::default());
