@@ -162,6 +162,11 @@ fn table_signatures_and_currying_agree()
 {
     let mut arena = CoreArena::new();
     let primitive = named(PrimitiveName("sub"));
+    assert_eq!(
+        "sub",
+        primitive.name().as_ref(),
+        "a name borrows its spelling"
+    );
     let mut signature = primitive.declared_type(&mut arena);
     let thunk = primitive.thunk(&mut arena);
     let Some(&Value::Primitive { mut body, .. }) = arena.value(thunk)

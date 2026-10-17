@@ -1797,6 +1797,7 @@ fn spells(
 /// - hypothesis: L3 — reordered allocations preserve equality, changed replies
 ///   do not.
 /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+/// - witness: `effect::tests::a_signature_includes_another_only_at_one_name_and_one_operation_table`
 fn signature_children(
     pending: &mut alloc::vec::Vec<StructuralGoal>,
     left: &crate::effect::EffectSig,
@@ -1968,6 +1969,9 @@ fn session_children(
 /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
+/// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
+/// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
 fn equal_syntax(
     arena: &crate::CoreArena,
     reading: Reading<'_>,
@@ -3089,6 +3093,18 @@ mod tests
             Maybe::Absent(unworded::Absent::Unlooped),
             "an endpoint off the point reads as none"
         );
+        // The point is spelled by its constructor of its own sort: another
+        // constructor, or the same tag of another datatype, is off it.
+        let other_tag =
+            arena.value_constructor(carrier, ConstructorTag::from(1_usize), alloc::vec![]);
+        let foreign = arena.value_constructor(own, ConstructorTag::from(0_usize), alloc::vec![]);
+        for endpoint in [other_tag, foreign] {
+            assert_eq!(
+                identified_words(&arena, &signatures, carrier, (point, endpoint)),
+                Maybe::Absent(unworded::Absent::Unlooped),
+                "an endpoint spelled otherwise reads as none"
+            );
+        }
         // A word's own type, alone and as the carrier of a path between words.
         let empty = arena.value_constructor(own, ConstructorTag::from(0_usize), alloc::vec![]);
         let over_words = arena.value_type_path(own, empty, empty);
@@ -3389,6 +3405,453 @@ mod tests
             CertificateEquality::Different,
             "a call does not read as another call kept"
         );
+    }
+
+    #[test]
+    fn each_value_former_equals_its_twin_and_differs_where_its_guard_does()
+    {
+        use alloc::sync::Arc;
+
+        use crate::control::StackFrame;
+        use crate::session::RecordedMove;
+        use crate::session::SessionRelation;
+        use crate::ua::Description;
+        use crate::ua::Sides;
+        use crate::ua::Stratum;
+
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let returned = arena.computation_return(unit);
+        let label = |name| FieldLabel::from(alloc::string::String::from(name));
+        let one = Level::zero().succ().expect("one is a level");
+        let mut cases = Vec::new();
+
+        let [twin, same, other_tag, wider] =
+            [(0, 1), (0, 1), (1, 1), (0, 2)].map(|(tag, width)| {
+                arena.value_constructor(
+                    unit_type,
+                    ConstructorTag::from(tag),
+                    alloc::vec![unit; width],
+                )
+            });
+        cases.push((twin, same, alloc::vec![other_tag, wider], "a constructor"));
+        let [twin, same, other_label, wider] = [
+            alloc::vec!["a"],
+            alloc::vec!["a"],
+            alloc::vec!["b"],
+            alloc::vec!["a", "b"],
+        ]
+        .map(|labels| {
+            arena.value_record(labels.into_iter().map(|name| (label(name), unit)).collect())
+        });
+        cases.push((twin, same, alloc::vec![other_label, wider], "a record"));
+        let frames = [
+            StackFrame::Apply(unit),
+            StackFrame::Bind(returned),
+            StackFrame::Project(Side::Left),
+        ];
+        let [twin, same] = [(); 2].map(|()| arena.value_reify(Arc::from(frames)));
+        let shorter = arena.value_reify(Arc::from([StackFrame::Apply(unit)]));
+        let other_side = arena.value_reify(Arc::from([
+            StackFrame::Apply(unit),
+            StackFrame::Bind(returned),
+            StackFrame::Project(Side::Right),
+        ]));
+        cases.push((twin, same, alloc::vec![shorter, other_side], "a stack"));
+        let [twin, same, other] = [
+            SessionRelation::Equivalence,
+            SessionRelation::Equivalence,
+            SessionRelation::Subtyping,
+        ]
+        .map(|relation| arena.value_session_related(relation, unit, unit));
+        cases.push((twin, same, alloc::vec![other], "a session identity"));
+        let moves = |chosen| {
+            Arc::from([
+                RecordedMove::Sent(unit),
+                RecordedMove::Selected(label(chosen)),
+                RecordedMove::Closed,
+            ])
+        };
+        let [twin, same, other_choice] =
+            ["a", "a", "b"].map(|chosen| arena.value_recorded(moves(chosen)));
+        let shorter = arena.value_recorded(Arc::from([RecordedMove::Sent(unit)]));
+        cases.push((
+            twin,
+            same,
+            alloc::vec![shorter, other_choice],
+            "a recorded run",
+        ));
+        let description = |name| Description {
+            name: gandr_theory_levitation::Name::from(name),
+            generators: alloc::boxed::Box::from([]),
+        };
+        let sides = |name| {
+            Arc::new(Sides {
+                source: description(name),
+                target: description(name),
+            })
+        };
+        let stratum = |degree| Stratum {
+            degree: gandr_theory_sites::Degree::from(degree),
+            bound: gandr_theory_sites::ShapeSize::from(4_usize),
+        };
+        let [twin, same, other_degree, other_sides] =
+            [(1_usize, "M"), (1, "M"), (2, "M"), (1, "N")]
+                .map(|(degree, name)| arena.value_ua(stratum(degree), sides(name), unit, unit));
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_degree, other_sides],
+            "a univalence",
+        ));
+        let [twin, same, other] =
+            [0_usize, 0, 1].map(|summand| arena.value_injection(Summand::from(summand), unit));
+        cases.push((twin, same, alloc::vec![other], "an injection"));
+        let primitives = crate::primitive::PRELUDE;
+        let [twin, same, other] = [0_usize, 0, 1].map(|row| {
+            arena.alloc_value(Value::Primitive {
+                primitive: primitives
+                    .get(row)
+                    .copied()
+                    .expect("the prelude has two rows"),
+                body: returned,
+            })
+        });
+        cases.push((twin, same, alloc::vec![other], "a native function"));
+        let [twin, same, other] =
+            [Level::zero(), Level::zero(), one].map(|target| arena.value_lift(target, unit));
+        cases.push((twin, same, alloc::vec![other], "a lift"));
+        let [twin, same, other] =
+            [0_u32, 0, 1].map(|mark| arena.value_mark(MarkIndex::from(mark), unit));
+        cases.push((twin, same, alloc::vec![other], "a marked value"));
+
+        for (twin, same, others, what) in cases {
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(&arena, twin, same),
+                "{what} equals its twin"
+            );
+            for other in others {
+                assert_eq!(
+                    CertificateEquality::Different,
+                    equal_certificate_syntax(&arena, twin, other),
+                    "{what} differs from one that changes a guarded part"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn each_computation_former_equals_its_twin_and_differs_where_its_guard_does()
+    {
+        use alloc::sync::Arc;
+
+        use crate::control::EffectClause;
+        use crate::effect::EffectName;
+        use crate::effect::EffectOp;
+        use crate::effect::EffectSig;
+        use crate::effect::OperationName;
+        use crate::memory::MemoryForm;
+        use crate::primitive::Arguments;
+        use crate::session::SessionAction;
+
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let returned = arena.computation_return(unit);
+        let motive = arena.comp_type_returner(unit_type);
+        let label = |name| FieldLabel::from(alloc::string::String::from(name));
+        let signature = |name| {
+            EffectSig::new(EffectName::from(name), [
+                EffectOp {
+                    name: OperationName::from("ask"),
+                    payload: unit_type,
+                    reply: unit_type,
+                },
+                EffectOp {
+                    name: OperationName::from("tell"),
+                    payload: unit_type,
+                    reply: unit_type,
+                },
+            ])
+            .expect("two distinct operations")
+        };
+        let clause = |operation: &'static str| EffectClause {
+            operation: OperationName::from(operation),
+            body: returned,
+        };
+        let mut cases = Vec::new();
+
+        let [twin, same, wider] = [1_usize, 1, 2]
+            .map(|count| arena.computation_data_case(unit, motive, alloc::vec![returned; count]));
+        cases.push((twin, same, alloc::vec![wider], "a nominal case"));
+        let [twin, same, other] =
+            ["a", "a", "b"].map(|name| arena.computation_record_projection(unit, label(name)));
+        cases.push((twin, same, alloc::vec![other], "a record projection"));
+        let [twin, same, other] = [0_usize, 0, 1]
+            .map(|component| arena.computation_tuple_projection(unit, Component::from(component)));
+        cases.push((twin, same, alloc::vec![other], "a tuple projection"));
+        let [twin, same, other_operation, other_signature] =
+            [("P", "ask"), ("P", "ask"), ("P", "tell"), ("Q", "ask")].map(|(name, operation)| {
+                arena.computation_perform(signature(name), OperationName::from(operation), unit)
+            });
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_operation, other_signature],
+            "a perform",
+        ));
+        let [twin, same, other_operation, other_signature] =
+            [("P", "ask"), ("P", "ask"), ("P", "tell"), ("Q", "ask")].map(|(name, operation)| {
+                arena.computation_exercise(
+                    unit,
+                    signature(name),
+                    OperationName::from(operation),
+                    unit,
+                )
+            });
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_operation, other_signature],
+            "an exercise",
+        ));
+        for scoped in [false, true] {
+            let mut handler = |name, operations: &[&'static str]| {
+                let clauses: Arc<[EffectClause]> = operations
+                    .iter()
+                    .map(|&operation| clause(operation))
+                    .collect();
+                if scoped {
+                    arena.computation_scope(signature(name), returned, returned, clauses)
+                }
+                else {
+                    arena.computation_handle(signature(name), returned, returned, clauses)
+                }
+            };
+            let twin = handler("P", &["ask"]);
+            let same = handler("P", &["ask"]);
+            let others = alloc::vec![
+                handler("P", &["ask", "tell"]),
+                handler("Q", &["ask"]),
+                handler("P", &["tell"]),
+            ];
+            cases.push((
+                twin,
+                same,
+                others,
+                if scoped { "a scope" } else { "a handler" },
+            ));
+        }
+        let [twin, same, other] = [1_usize, 1, 2]
+            .map(|arity| arena.computation_split(unit, ComponentCount::from(arity), returned));
+        cases.push((twin, same, alloc::vec![other], "a split"));
+        let [twin, same] = [(); 2]
+            .map(|()| arena.computation_list_fold(unit_type, unit_type, unit, returned, returned));
+        cases.push((twin, same, alloc::vec![], "a list fold"));
+        let [twin, same] =
+            [(); 2].map(|()| arena.computation_telescope_transport(motive, unit, unit, unit, unit));
+        cases.push((twin, same, alloc::vec![], "a telescope transport"));
+        let primitives = crate::primitive::PRELUDE;
+        let row = |index: usize| {
+            primitives
+                .get(index)
+                .copied()
+                .expect("the prelude has two rows")
+        };
+        let [twin, same, other_row, other_count] = [
+            (0_usize, Arguments::Unary(unit)),
+            (0, Arguments::Unary(unit)),
+            (1, Arguments::Unary(unit)),
+            (0, Arguments::Binary([unit, unit])),
+        ]
+        .map(|(index, arguments)| arena.computation_primitive(row(index), arguments));
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_row, other_count],
+            "a native operation",
+        ));
+        let [twin, same, other] = [
+            FixpointEvidence::Partial,
+            FixpointEvidence::Partial,
+            FixpointEvidence::StructuralDescent,
+        ]
+        .map(|evidence| arena.computation_fixpoint(returned, evidence));
+        cases.push((twin, same, alloc::vec![other], "a fixpoint"));
+        let [twin, same] = [(); 2].map(|()| arena.computation_transport(unit, unit));
+        cases.push((twin, same, alloc::vec![], "a transport"));
+        let [twin, same, wider] = [1_usize, 1, 2]
+            .map(|count| arena.computation_case(unit, &alloc::vec![returned; count]));
+        cases.push((twin, same, alloc::vec![wider], "a sum case"));
+        let [twin, same, other] =
+            [0_u32, 0, 1].map(|hole| arena.computation_hole(HoleId::from(hole)));
+        cases.push((twin, same, alloc::vec![other], "a hole"));
+        let [twin, same, other] =
+            [0_u32, 0, 1].map(|mark| arena.computation_mark(MarkIndex::from(mark), returned));
+        cases.push((twin, same, alloc::vec![other], "a marked computation"));
+        let send = |endpoint| SessionAction::Send {
+            endpoint: DeBruijnIndex::from(endpoint),
+            payload: unit,
+        };
+        let [twin, same, other] =
+            [0_u32, 0, 1].map(|endpoint| arena.computation_session(send(endpoint)));
+        cases.push((twin, same, alloc::vec![other], "a session action"));
+        let hold = || MemoryForm::Hold {
+            value: unit,
+            body: returned,
+        };
+        let [twin, same] = [(); 2].map(|()| arena.computation_memory(hold()));
+        let other = arena.computation_memory(MemoryForm::Abort {
+            view: DeBruijnIndex::from(0_u32),
+        });
+        cases.push((twin, same, alloc::vec![other], "a memory form"));
+        let unit_list = arena.value_type_list(unit_type);
+        let unit_motive = arena.comp_type_returner(unit_list);
+        let [twin, same] = [(); 2].map(|()| arena.computation_ascribe(returned, motive));
+        let other = arena.computation_ascribe(returned, unit_motive);
+        cases.push((twin, same, alloc::vec![other], "an ascription"));
+
+        for (twin, same, others, what) in cases {
+            let twin = arena.value_thunk(twin);
+            let same = arena.value_thunk(same);
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(&arena, twin, same),
+                "{what} equals its twin"
+            );
+            for other in others {
+                let other = arena.value_thunk(other);
+                assert_eq!(
+                    CertificateEquality::Different,
+                    equal_certificate_syntax(&arena, twin, other),
+                    "{what} differs from one that changes a guarded part"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn each_type_former_equals_its_twin_and_differs_where_its_guard_does()
+    {
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let label = |name| FieldLabel::from(alloc::string::String::from(name));
+        let one = Level::zero().succ().expect("one is a level");
+        let mut cases = Vec::new();
+
+        let [twin, same, other_declaration, wider] = [(0_usize, 1_usize), (0, 1), (1, 1), (0, 2)]
+            .map(|(declaration, count)| {
+                arena.value_type_data(ConstantIndex::from(declaration), alloc::vec![unit; count])
+            });
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_declaration, wider],
+            "a nominal type",
+        ));
+        let [twin, same, other_label, wider] = [
+            alloc::vec!["a"],
+            alloc::vec!["a"],
+            alloc::vec!["b"],
+            alloc::vec!["a", "b"],
+        ]
+        .map(|labels| {
+            arena.value_type_record(
+                labels
+                    .into_iter()
+                    .map(|name| (label(name), unit_type))
+                    .collect(),
+            )
+        });
+        cases.push((twin, same, alloc::vec![other_label, wider], "a record type"));
+        let [twin, same, wider] =
+            [1_usize, 1, 2].map(|count| arena.value_type_product(&alloc::vec![unit_type; count]));
+        cases.push((twin, same, alloc::vec![wider], "a product type"));
+        let [twin, same, wider] =
+            [1_usize, 1, 2].map(|count| arena.value_type_sum(&alloc::vec![unit_type; count]));
+        cases.push((twin, same, alloc::vec![wider], "a sum type"));
+        let [twin, same, other] = [Level::zero(), Level::zero(), one.clone()]
+            .map(|target| arena.value_type_lift(unit_type, target));
+        cases.push((twin, same, alloc::vec![other], "a lifted type"));
+        let [twin, same, other] = [Level::zero(), Level::zero(), one.clone()]
+            .map(|target| arena.value_type_element(unit, target));
+        cases.push((twin, same, alloc::vec![other], "an element type"));
+        let base = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let [twin, same, other] = [0_usize, 0, 1].map(|stage| {
+            arena.value_type_staged(
+                base,
+                gandr_kernel_term::Stage::At(gandr_kernel_term::StageId::from(stage)),
+            )
+        });
+        cases.push((twin, same, alloc::vec![other], "a staged type"));
+        let session = {
+            use crate::session::PayloadCount;
+            use crate::session::PayloadSlot;
+            use crate::session::Protocol;
+            use crate::session::ProtocolState;
+            use crate::session::ProtocolSyntax;
+            let send = Protocol::new(
+                alloc::vec![
+                    ProtocolSyntax::Send {
+                        payload: PayloadSlot::from(0_usize),
+                        next: ProtocolState::from(1_usize),
+                    },
+                    ProtocolSyntax::End,
+                ],
+                ProtocolState::from(0_usize),
+                PayloadCount::from(1_usize),
+            )
+            .expect("a send, then the end");
+            crate::session::SessionType::new(
+                alloc::sync::Arc::new(send),
+                alloc::sync::Arc::from([unit_type]),
+            )
+            .expect("one payload for one slot")
+        };
+        let [twin, same] = [(); 2].map(|()| arena.value_type_session(session.clone()));
+        let received = arena.value_type_session(session.dual());
+        let ended = arena.value_type_session(
+            session
+                .at(crate::session::ProtocolState::from(1_usize))
+                .expect("the end is a state"),
+        );
+        cases.push((twin, same, alloc::vec![received, ended], "a session type"));
+        let returner = arena.comp_type_returner(unit_type);
+        let arrows = [
+            arena.comp_type_arrow(unit_type, returner),
+            arena.comp_type_arrow(unit_type, returner),
+            arena.comp_type_pi(unit_type, returner),
+            arena.comp_type_pi(unit_type, returner),
+        ];
+        let mut thunked = |comp_type| arena.value_type_thunk(comp_type);
+        let [arrow, same_arrow, pi, same_pi] = arrows.map(&mut thunked);
+        cases.push((arrow, same_arrow, alloc::vec![], "an arrow"));
+        cases.push((pi, same_pi, alloc::vec![], "a dependent arrow"));
+        let elements =
+            [Level::zero(), Level::zero(), one].map(|target| arena.comp_type_element(unit, target));
+        let [twin, same, other] = elements.map(|element| arena.value_type_thunk(element));
+        cases.push((twin, same, alloc::vec![other], "a computation element type"));
+        let unknowns = [(); 2].map(|()| arena.comp_type_unknown());
+        let [twin, same] = unknowns.map(|unknown| arena.value_type_thunk(unknown));
+        cases.push((twin, same, alloc::vec![], "an unknown computation type"));
+
+        for (twin, same, others, what) in cases {
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_type_syntax(&arena, twin, same),
+                "{what} equals its twin"
+            );
+            for other in others {
+                assert_eq!(
+                    CertificateEquality::Different,
+                    equal_type_syntax(&arena, twin, other),
+                    "{what} differs from one that changes a guarded part"
+                );
+            }
+        }
     }
 }
 

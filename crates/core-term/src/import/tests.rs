@@ -74,3 +74,79 @@ fn an_imported_arrow_answers_its_image()
         "a node no import reached answers none"
     );
 }
+
+/// `Path((), ⟨stack, run, handler, chooser⟩, ())`: a type whose endpoint
+/// holds a stack of an application and a bind, a recorded send, a handler
+/// with one clause and a case of two branches, every one of them over values
+/// and computations of its own.
+///
+/// # Specification
+/// trivial.
+fn spelled(arena: &mut CoreArena) -> ValueTypeId
+{
+    use alloc::sync::Arc;
+
+    use crate::control::EffectClause;
+    use crate::control::StackFrame;
+    use crate::effect::EffectName;
+    use crate::effect::EffectOp;
+    use crate::effect::EffectSig;
+    use crate::effect::OperationName;
+    use crate::session::RecordedMove;
+
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let nil = arena.value_list_nil();
+    let returned = arena.computation_return(nil);
+    let stack = arena.value_reify(Arc::from([
+        StackFrame::Apply(nil),
+        StackFrame::Bind(returned),
+    ]));
+    let run = arena.value_recorded(Arc::from([RecordedMove::Sent(nil)]));
+    let signature = EffectSig::new(EffectName::from("Probe"), [EffectOp {
+        name: OperationName::from("ask"),
+        payload: unit_type,
+        reply: unit_type,
+    }])
+    .expect("one operation");
+    let answer = arena.computation_return(unit);
+    let handled = arena.computation_handle(
+        signature,
+        returned,
+        returned,
+        Arc::from([EffectClause {
+            operation: OperationName::from("ask"),
+            body: answer,
+        }]),
+    );
+    let handler = arena.value_thunk(handled);
+    let chosen = arena.computation_case(nil, &[answer, returned]);
+    let chooser = arena.value_thunk(chosen);
+    let endpoint = arena.value_tuple(&[stack, run, handler, chooser]);
+    arena.value_type_path(unit_type, endpoint, unit)
+}
+
+#[test]
+fn an_imported_endpoint_maps_every_stack_frame_move_and_clause()
+{
+    let mut source = CoreArena::new();
+    let root = spelled(&mut source);
+    let mut target = CoreArena::new();
+    let unit = target.value_type_unit();
+    // Every family is occupied, so no image shares its source's id.
+    for _ in 0_u8 .. 4 {
+        let quoted = target.value_quote(unit);
+        let returned = target.computation_return(quoted);
+        let _occupied = target.comp_type_returner(unit);
+        let _thunk = target.value_thunk(returned);
+    }
+    let copied = TypeImporter::new(&source, &mut target)
+        .value_type(root)
+        .expect("source graph resolves");
+    let twin = spelled(&mut target);
+    assert_eq!(
+        crate::CertificateEquality::Equal,
+        crate::equal_type_syntax(&target, copied, twin),
+        "the image reads as the same spelling written in the target"
+    );
+}

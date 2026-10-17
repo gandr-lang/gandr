@@ -383,6 +383,7 @@ impl EffectSig
     /// - hypothesis: L3 — equal types allocated twice remain the same
     ///   interface.
     /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+    /// - witness: `effect::tests::a_signature_includes_another_only_at_one_name_and_one_operation_table`
     #[spec(ensures: |ret| ret != RowInclusion::Included || (self.name() == other.name() && self.0.operations.len() == other.0.operations.len()))]
     #[inline]
     #[must_use]

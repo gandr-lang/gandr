@@ -87,6 +87,7 @@ impl Edge<'_>
     /// - hypothesis: L3 — annotation imports preserve type-to-value-to-type
     ///   edges.
     /// - witness: `import::tests::dependent_annotations_preserve_sharing_across_arenas`
+    /// - witness: `import::tests::an_imported_endpoint_maps_every_stack_frame_move_and_clause`
     #[spec(ensures: |ret| ret.is_err() || self.node() == image)]
     fn replace(
         &mut self,
@@ -491,6 +492,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
     ///   nonempty arena must preserve its variable and must not retain source
     ///   handles.
     /// - witness: `import::tests::dependent_annotations_preserve_sharing_across_arenas`
+    /// - witness: `import::tests::an_imported_endpoint_maps_every_stack_frame_move_and_clause`
     #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|id| self.target.value_type(id).is_some()))]
     #[inline]
     pub fn value_type(

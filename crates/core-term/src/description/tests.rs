@@ -355,6 +355,21 @@ fn native_applications_preserve_heads_and_arguments()
         decode_ref(&mut arena, &ValueTypeRef::ctor("Box", []), context),
         Err(DecodeError::AppliedType(Name::from("Box")))
     );
+    // A type binding written as an application of no arguments is its type,
+    // and applied to one it is refused.
+    let named = BTreeMap::from([(Name::from("Word"), TypeBinding::Type(carrier))]);
+    let named_context = self::context(carrier, &named);
+    let bare = decode_ref(&mut arena, &ValueTypeRef::ctor("Word", []), named_context)
+        .expect("a bare type name decodes");
+    assert_eq!(arena.value_type(bare), Some(&ValueType::unit()));
+    assert_eq!(
+        decode_ref(
+            &mut arena,
+            &ValueTypeRef::ctor("Word", [ValueTypeRef::prim(PrimTy::StringTy)]),
+            named_context
+        ),
+        Err(DecodeError::AppliedType(Name::from("Word")))
+    );
 }
 
 #[test]
@@ -397,6 +412,23 @@ fn native_signatures_keep_nominality_and_empty_data()
     .unwrap();
     assert_eq!(empty.constructors().iter().next(), None);
     assert_eq!(empty.kind(), kind);
+    // A parameter's classifier is retained in telescope order.
+    let parameterised = SignDesc::new(
+        NominalId::new(NominalSerial::from(0_u64), "Self"),
+        vec![gandr_theory_levitation::ParamDesc::new(
+            "a",
+            (),
+            Attrs::empty(),
+        )],
+        Vec::<CtorDesc<()>>::new(),
+        Vec::new(),
+        Vec::new(),
+        DeclPolarity::Data,
+        Attrs::empty(),
+    );
+    let signature =
+        decode_signature(&mut arena, &parameterised, context, vec![kind], kind).unwrap();
+    assert_eq!(signature.parameters(), [kind]);
 }
 
 #[test]

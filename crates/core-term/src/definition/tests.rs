@@ -298,17 +298,19 @@ fn restating_a_stance_replaces_it()
 fn an_unknown_scope_is_refused()
 {
     let mut environment = DefinitionalEnvironment::new();
-    let absent = ScopeId::from(7_usize);
-    assert_eq!(
-        Err(DefinitionError::UnknownScope { scope: absent }),
-        environment.open_scope(absent)
-    );
-    assert_eq!(
-        Err(DefinitionError::UnknownScope { scope: absent }),
-        environment.state(absent, ConstantIndex::from(0_usize), Transparency::Opaque)
-    );
-    assert_eq!(
-        Err(DefinitionError::UnknownScope { scope: absent }),
-        environment.transparency(absent, ConstantIndex::from(0_usize), Transparency::Opaque)
-    );
+    // The id just past the root, the first no scope holds, and one far past.
+    for absent in [ScopeId::from(1_usize), ScopeId::from(7_usize)] {
+        assert_eq!(
+            Err(DefinitionError::UnknownScope { scope: absent }),
+            environment.open_scope(absent)
+        );
+        assert_eq!(
+            Err(DefinitionError::UnknownScope { scope: absent }),
+            environment.state(absent, ConstantIndex::from(0_usize), Transparency::Opaque)
+        );
+        assert_eq!(
+            Err(DefinitionError::UnknownScope { scope: absent }),
+            environment.transparency(absent, ConstantIndex::from(0_usize), Transparency::Opaque)
+        );
+    }
 }

@@ -151,6 +151,61 @@ fn signature_inclusion_ignores_allocation_identity()
 }
 
 #[test]
+fn a_signature_includes_another_only_at_one_name_and_one_operation_table()
+{
+    let mut arena = crate::CoreArena::new();
+    let unit = arena.value_type_unit();
+    let list = arena.value_type_list(unit);
+    let operation = |name, payload, reply| EffectOp {
+        name: OperationName::from(name),
+        payload,
+        reply,
+    };
+    let probe = |operations: alloc::vec::Vec<EffectOp>| {
+        EffectSig::new(EffectName::from("Probe"), operations).expect("distinct operations")
+    };
+    let base = probe(alloc::vec![operation("run", unit, unit)]);
+    for (other, what) in [
+        (
+            probe(alloc::vec![
+                operation("run", unit, unit),
+                operation("stop", unit, unit)
+            ]),
+            "one more operation",
+        ),
+        (
+            probe(alloc::vec![operation("stop", unit, unit)]),
+            "another operation name",
+        ),
+        (
+            probe(alloc::vec![operation("run", list, unit)]),
+            "another payload",
+        ),
+        (
+            probe(alloc::vec![operation("run", unit, list)]),
+            "another reply",
+        ),
+    ] {
+        assert_eq!(
+            RowInclusion::Excluded,
+            base.inclusion(&other, &arena),
+            "{what} excludes"
+        );
+    }
+    let row = EffectRow::singleton(signature(EffectName::from("A"), unit))
+        .union(
+            &EffectRow::singleton(signature(EffectName::from("B"), unit)),
+            &arena,
+        )
+        .expect("two interfaces");
+    assert_eq!(
+        "⟨A, B⟩",
+        alloc::format!("{row:?}"),
+        "names are separated, not prefixed"
+    );
+}
+
+#[test]
 fn operation_types_survive_substitution_and_import()
 {
     let mut source = crate::CoreArena::new();
