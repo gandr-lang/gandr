@@ -6,33 +6,14 @@
 // as one and sharing one stage; and the two measures name each other, so they
 // are one fixpoint over the sum of their domains, each measure that fixpoint
 // at its own summand. A call through either stands one stage below the node or
-// forest it was read from. The direct form's measure, recursing through a
+// forest it was read from (Abel, _Termination checking with types_,
+// doi:10.1051/ita:2004015). The direct form's measure, recursing through a
 // list's map at its children's stage, is refused in
 // `../../pathological/data/rose.gandr` until #393.
 
-/// Natural numbers, the measure the fold counts in.
-@[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
-}
-
-/// Addition by recursion on the second argument.
-@[ checks ]
-def rec plus(n : Nat, m : Nat) -> -F Nat {
-  case m {
-    Zero => n,
-    Succ(p) => Succ(plus[<](n, p))
-  }
-}
-
-/// Lists, whose element stands only where a list holds it: strictly
-/// positive, so a family nests through it.
-@[ checks ]
-data List(a : Type) : Type {
-  Nil : List(a);
-  Cons : (head : a, tail : List(a)) --> List(a);
-}
+// The naturals the measures count in, their addition, and the lists the
+// direct form nests through.
+import "./data-base.gandr" ;
 
 /// The direct form: a node over a list of nodes, nested through `List`'s
 /// strictly positive parameter (#517).
@@ -69,18 +50,18 @@ rec {
 
   /// The nodes of a tree: its own and its children's.
   @[ checks ]
-  def rec size(t : Rose) -> -F Nat {
+  def rec treeSize(t : Rose) -> -F Nat {
     case t {
-      Node(kids) => { run s <- sizes[<](kids); return Succ(s) }
+      Node(kids) => { run s <- forestSize[<](kids); return Succ(s) }
     }
   }
 
   /// The nodes of a forest: each tree's, summed.
   @[ checks ]
-  def rec sizes(ts : Forest) -> -F Nat {
+  def rec forestSize(ts : Forest) -> -F Nat {
     case ts {
       Empty => return Zero,
-      More(t, rest) => { run a <- size[<](t); run b <- sizes[<](rest); plus(a, b) }
+      More(t, rest) => { run a <- treeSize[<](t); run b <- forestSize[<](rest); plus(a, b) }
     }
   }
 }
@@ -92,15 +73,15 @@ def leaf = Node(Empty) ;
 
 /// A node over two leaves.
 @[ checks ]
-def cherry : Rose ;
-def cherry = Node(More(leaf, More(leaf, Empty))) ;
+def sapling : Rose ;
+def sapling = Node(More(leaf, More(leaf, Empty))) ;
 
-/// The cherry's three nodes.
+/// The sapling's three nodes.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def counted : +U (-F Nat) ;
-def counted = thunk { size(cherry) } ;
+def sapling_nodes : +U (-F Nat) ;
+def sapling_nodes = thunk { treeSize(sapling) } ;
 
-/// A forest of a cherry and a leaf: four nodes.
+/// A forest of a sapling and a leaf: four nodes.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
 def forested : +U (-F Nat) ;
-def forested = thunk { sizes(More(cherry, More(leaf, Empty))) } ;
+def forested = thunk { forestSize(More(sapling, More(leaf, Empty))) } ;

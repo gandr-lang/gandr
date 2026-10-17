@@ -1,7 +1,8 @@
 // What descent refuses (#518). A claim at the parameter's own value stands at
 // its stage, not below it; claims under matches on two parameters descend on
 // two at once, which is the sized rung's (#392). The twin of
-// `../../model/data/descent.gandr`, whose `Nat` this shares.
+// `../../model/data/descent.gandr`; its `Nat` is the one
+// `../../model/data/data-base.gandr` declares.
 
 /// Natural numbers, the data every definition here descends on.
 @[ checks ]

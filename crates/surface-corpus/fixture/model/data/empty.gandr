@@ -3,7 +3,11 @@
 // asked for: `A -> Empty` is how "not A" is spelled. A path between two terms
 // of a data type is eliminated the same way when the terms are apart: their
 // type's rules converge, and their normal forms first differ at two distinct
-// constructors, so no path joins them and a match on one has no arm either.
+// constructors, so no path joins them and a match on one has no arm either
+// (Coquand, _Pattern matching with dependent types_, 1992).
+
+// The presented integers.
+import "./data-base.gandr" ;
 
 /// The type with no element.
 @[ checks ]
@@ -31,16 +35,6 @@ def viaLambda = thunk { fn (x) { case x {} } } ;
 @[ checks ]
 def viaStated : +U (Empty -> -F Integer) ;
 def viaStated = thunk { fn (x) { case x -> -F Integer {} } } ;
-
-/// The integers as a presented type: a successor and a predecessor that
-/// cancel.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
-}
 
 /// One is not zero: `S(Z)` and `Z` are normal forms with distinct heads.
 @[ checks ]
