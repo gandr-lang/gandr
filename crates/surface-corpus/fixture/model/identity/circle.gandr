@@ -18,25 +18,11 @@
 // Reversal: a cell between two distinct points, whose words spell neither
 // endpoint, would need its operations' path type written again.
 
+// The circle, the presented integers, the winding number and spinning with
+// their round trips.
+import "./circle-base.gandr" ;
 // The quasi-inverse made bi-invertible, which the equivalence is.
 import "./equivalence.gandr" ;
-
-/// The circle: one point and a loop at it, bound as `loop : Path(Circle,
-/// Base, Base)`.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
-}
-
-/// The integers as a presented type: a successor and a predecessor that
-/// cancel.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
-}
 
 /// The loop's word: one letter before the empty word.
 @[ runs("loop ∷ here(Base)") ]
@@ -70,26 +56,6 @@ def tell(p : Path(Circle, Base, Base)) -> -F Integer {
   }
 }
 
-/// The winding number: a loop counts one up, its inverse one down. It respects
-/// the cancellations by `Int`'s rules.
-def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
-  case p {
-    here => Z,
-    loop ∷ q => S(wind[<](q)),
-    back(loop) ∷ q => P(wind[<](q))
-  }
-}
-
-/// Spinning a count: a successor is one more loop, a predecessor one more
-/// inverse. It respects `Int`'s rules by the cancellations.
-def rec spin(n : Int) -> -F Path(Circle, Base, Base) {
-  case n {
-    Z => here(Base),
-    S(x) => loop ∷ spin[<](x),
-    P(x) => back(loop) ∷ spin[<](x)
-  }
-}
-
 /// Winding twice around and spinning the count back gives the word the
 /// composite is, by conversion.
 @[ checks ]
@@ -105,56 +71,6 @@ def twice = here(loop ∷ loop ∷ here(Base)) ;
 @[ runs("S(S(Z))") ]
 def counted : +U (-F Int) ;
 def counted = thunk { wind(spin(S(S(Z)))) } ;
-
-/// One loop more: the cons a path between words is carried along.
-def loopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
-  loop ∷ p
-}
-
-/// One inverse loop more.
-def unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
-  back(loop) ∷ p
-}
-
-/// Spinning undoes winding at every loop: the round trip at a variable, by
-/// induction over the words. The result type reads the word the fold descends
-/// on, so each arm answers it at its letter and the recursive call at the
-/// rest: `sect[<](q)` relates `spin(wind(q))` to `q`, and carried along
-/// `loopOn` it relates `loop ∷ spin(wind(q))`, which `spin(wind(loop ∷ q))`
-/// runs to, to `loop ∷ q`. The case respects the cancellations: at `loop ∷
-/// back(loop) ∷ q` the arms compose to `cong(loopOn, cong(unloopOn, p))`,
-/// whose functions compose to the identity under the words' rules, so the
-/// chain is `p` itself, the answer at `q`.
-@[ checks ]
-def rec sect(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), spin(wind(p)), p) {
-  case p {
-    here => here(here(Base)),
-    loop ∷ q => cong(loopOn, sect[<](q)),
-    back(loop) ∷ q => cong(unloopOn, sect[<](q))
-  }
-}
-
-/// One successor more.
-def up(n : Int) -> -F Int {
-  S(n)
-}
-
-/// One predecessor more.
-def down(n : Int) -> -F Int {
-  P(n)
-}
-
-/// Winding undoes spinning at every count: the other round trip, by
-/// induction over the presented integers, a successor carried along `up` and
-/// a predecessor along `down`.
-@[ checks ]
-def rec retr(n : Int) -> -F Path(Int, wind(spin(n)), n) {
-  case n {
-    Z => here(Z),
-    S(x) => cong(up, retr[<](x)),
-    P(x) => cong(down, retr[<](x))
-  }
-}
 
 /// The loops at the point and the presented integers are a quasi-inverse, by
 /// `wind` and `spin` with the two round trips at a variable, nothing owed.

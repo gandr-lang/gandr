@@ -8,63 +8,11 @@
 // Out of reach by design: `rotIsEquiv` needs equivalences as structure, and
 // `invS¹Equiv` and `invS¹Path` univalence as well.
 
-/// The type with no element.
-data Empty : Type {}
-
-/// The circle: one point and a loop at it, bound as `loop : Path(Circle,
-/// Base, Base)`.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
-}
-
-/// The integers as a presented type: a successor and a predecessor that
-/// cancel.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
-}
-
-/// Every point's loop (cubical's `rotLoop`): the loop at the point, carried
-/// along the loop by conjugation to itself.
-@[ checks ]
-def selfloop(x : Circle) -> -F Path(Circle, x, x) {
-  case x {
-    Base => loop
-  }
-}
-
-/// Every point's reflexivity.
-@[ checks ]
-def selfrefl(x : Circle) -> -F Path(Circle, x, x) {
-  case x {
-    Base => here(Base)
-  }
-}
-
-/// The circle's flip (cubical's `invLooper`): the point to itself and the
-/// loop to its inverse.
-@[ checks ]
-def invLooper(x : Circle) -> -F Circle {
-  case x {
-    Base => Base,
-    loop => back(loop)
-  }
-}
-
-/// The circle's multiplication (cubical's `_·_`, the book's § 8.5.2 μ): the
-/// point is the unit, and the loop rotates the other argument by its own
-/// loop. A non-dependent case whose loop arm answers `Path(Circle, b, b)`.
-@[ checks ]
-def mul(a : Circle, b : Circle) -> -F Circle {
-  case a {
-    Base => b,
-    loop => selfloop(b)
-  }
-}
+// The empty type, the circle, the integers, every point's loop and
+// reflexivity, the flip and the multiplication.
+import "./circle-base.gandr" ;
+// The loop is not the empty word.
+import "./circle-apart.gandr" ;
 
 /// The unit squared: `mul(Base, Base)` computes the point without spelling
 /// it, so the path from it to itself is the circle's words, and reflexivity
@@ -120,13 +68,6 @@ def rotInv4(a : Circle, b : Circle) -> -F Path(Circle, mul(invLooper(mul(b, invL
       Base => here(Base)
     }
   }
-}
-
-/// The loop is not the empty word (`circle-apart.gandr`, the book's Lemma
-/// 6.4.1).
-@[ checks ]
-def loop_apart(e : Path(Path(Circle, Base, Base), loop, here(Base))) -> -F Empty {
-  case e {}
 }
 
 /// A loop at every point, evaluated at the point.
