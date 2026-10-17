@@ -1,9 +1,16 @@
+// A data type with one parameter: an optional value, absent or present. A
+// match on a constructor written with its type takes the arm that
+// constructor names (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis,
+// 1984).
+
+/// An optional `a`: none, or some value.
 @[ checks ]
 data Maybe(a : Type) : Type {
   None : Maybe(a);
   Some : (x : a) --> Maybe(a);
 }
 
+/// The value inside a present option, or zero for an absent one.
 @[ checks ]
 def unwrap_or_zero() -> -F Integer {
   case (Some(3) : Maybe(Integer)) {

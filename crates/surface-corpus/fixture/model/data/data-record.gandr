@@ -1,8 +1,14 @@
+// A data type with one constructor of several fields: a record, read by a
+// match that binds each field by position (Martin-Löf, _Intuitionistic Type
+// Theory_, Bibliopolis, 1984).
+
+/// A colour as its three channels.
 @[ checks ]
 data Color3 : Type {
   RGB : (r : Integer, g : Integer, b : Integer) --> Color3;
 }
 
+/// The green channel of a colour, bound by its position in the constructor.
 @[ checks ]
 def green_channel() -> -F Integer {
   case (RGB(10, 20, 30) : Color3) {

@@ -2,8 +2,8 @@
 // single shaft builds and a double shaft computes; a left head makes the
 // arrow invertible (`surface-lowering`, `module/data`):
 //
-//   `S : (x : Int) --> Int`       a constructor: builds a term of the sort
-//   `oper pred(x : Int) -> Int`    an operation: a term former the rules compute
+//   `S : (x : IntOp) --> IntOp`   a constructor: builds a term of the sort
+//   `oper pred(x : IntOp) -> IntOp` an operation: a term former the rules compute
 //   `rule P(S(x)) ==> x`           a rule: computes its left side to its right
 //   `rule x <=> S(P(x))`           an invertible rule: one term spelled two
 //                                  ways; the order chooses the direction
@@ -13,8 +13,10 @@
 //
 // A rule collapses terms the constructors build, so the type is their
 // quotient; a cell adds a path between points the constructors build, so the
-// paths at the point are the words over it. `Int` is presented by rules:
+// paths at the point are the words over it. `IntOp` is presented by rules:
 // `S(P(x))` is `x`. `Circle` carries a cell: `loop` is apart from `here(Base)`.
+// The integers here carry an operation the base's do not, so they are named
+// apart from them.
 
 /// The integers: two constructors that cancel, one rule written directed and
 /// one invertible, and an operation the rules compute. The directed rule runs
@@ -22,11 +24,11 @@
 /// the direction the order admits, `S(P(x))` to `x`. The operation's own rule
 /// unfolds it to a predecessor, which the directed rule then cancels.
 @[ normalizes("pred(S(S(Z))) ~> S(Z)") ]
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  oper pred(x : Int) -> Int;
+data IntOp : Type {
+  Z : IntOp;
+  S : (x : IntOp) --> IntOp;
+  P : (x : IntOp) --> IntOp;
+  oper pred(x : IntOp) -> IntOp;
   rule P(S(x)) ==> x;
   rule x <=> S(P(x));
   rule pred(x) <=> P(x);
@@ -35,7 +37,7 @@ data Int : Type {
 /// A rule identifies: `S(P(Z))` and `Z` are one term, so reflexivity proves
 /// the path between them.
 @[ checks ]
-def collapsed : Path(Int, S(P(Z)), Z) ;
+def collapsed : Path(IntOp, S(P(Z)), Z) ;
 def collapsed = here(Z) ;
 
 /// The circle: one point and one invertible cell at it, bound as `loop :

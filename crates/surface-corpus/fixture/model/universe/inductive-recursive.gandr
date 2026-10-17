@@ -8,13 +8,11 @@
 // decoder reads the fixpoint's binder, so the decode a field holds stands
 // below the code it came from. Nothing about induction-recursion is new to
 // the kernel: the decoder is a function into the universe, and a decode is
-// the type the code it returns quotes.
+// the type the code it returns quotes. The codes and the decoder are named
+// apart from the closed universe's, whose arrow code is not dependent.
 
-/// Natural numbers, free: every constructor term is its own value.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
-}
+// The naturals.
+import "../data/data-base.gandr" ;
 
 /// The universe and its decoder, one block: a code's field names the
 /// decoder, and the decoder recurses on the codes.
@@ -22,42 +20,42 @@ rec {
   /// The codes: the naturals, and the dependent functions from a coded
   /// domain to a family of codes over that domain's decode.
   @[ checks ]
-  data U : Type {
-    NatC : U;
-    PiC : (a : U, b : +U (el(a) -> -F U)) --> U;
+  data UPi : Type {
+    NatC : UPi;
+    PiC : (a : UPi, b : +U (elPi(a) -> -F UPi)) --> UPi;
   }
 
   /// The decoder. The function code's arm decodes its domain and, under a
   /// binder at that decode, the codomain its family picks; each decode
   /// recurses below the code.
   @[ checks ]
-  def rec el(u : U) -> -F Type {
+  def rec elPi(u : UPi) -> -F Type {
     case u {
       NatC => return Nat,
-      PiC(a, b) => return (+U ((x : el[<](a)) -> -F el[<](b(x))))
+      PiC(a, b) => return (+U ((x : elPi[<](a)) -> -F elPi[<](b(x))))
     }
   }
 }
 
 /// The family that picks the natural code at every natural.
 @[ checks ]
-def toNat : +U (Nat -> -F U) ;
+def toNat : +U (Nat -> -F UPi) ;
 def toNat = thunk { fn (x) { return NatC } } ;
 
 /// The identity at the decode of the function code from naturals to
 /// naturals, which runs to the dependent arrow between them.
 @[ checks ]
-def idAt : el(PiC(NatC, toNat)) ;
-def idAt = thunk { fn (x) { return x } } ;
+def idDecoded : elPi(PiC(NatC, toNat)) ;
+def idDecoded = thunk { fn (x) { return x } } ;
 
 /// The identity applied at its decoded type.
 @[ runs("Succ(Zero)") ]
-def applied : +U (-F Nat) ;
-def applied = thunk { idAt(Succ(Zero)) } ;
+def appliedDecoded : +U (-F Nat) ;
+def appliedDecoded = thunk { idDecoded(Succ(Zero)) } ;
 
 /// The same identity where the plain arrow between naturals is expected: the
-/// decode is a dependent arrow whose codomain, `el(toNat(x))`, runs to `Nat`
-/// and so ignores its binder, which makes it the plain arrow (#577).
+/// decode is a dependent arrow whose codomain, `elPi(toNat(x))`, runs to
+/// `Nat` and so ignores its binder, which makes it the plain arrow (#577).
 @[ checks ]
 def idNat : +U (Nat -> -F Nat) ;
-def idNat = idAt ;
+def idNat = idDecoded ;
