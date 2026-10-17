@@ -474,6 +474,37 @@ impl<'source, 'target> TypeImporter<'source, 'target>
         }
     }
 
+    /// The image of the source value type `source`, when an import of this
+    /// session copied it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the target node the importer relocated `source` to; none when
+    ///   no root imported so far reaches it.
+    /// - provides: a side table keyed by source value types, such as the
+    ///   relation a lowering records for a type written as one, carried to the
+    ///   target.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an imported root and a value type inside it answer
+    ///   their relocated nodes, and one no import reached answers none.
+    /// - witness: `import::tests::an_imported_arrow_answers_its_image`
+    #[spec(ensures: |ret| ret.is_none_or(|image| self.target.value_type(image).is_some()))]
+    #[inline]
+    #[must_use]
+    pub fn value_type_image(
+        &self,
+        source: ValueTypeId,
+    ) -> Option<ValueTypeId>
+    {
+        match self.images.get(&Node::ValueType(source)) {
+            Some(&Node::ValueType(image)) => Some(image),
+            Some(&(Node::Value(_) | Node::Computation(_) | Node::CompType(_))) | None => None,
+        }
+    }
+
     /// Copy a reachable value-type graph, retaining previous imported nodes.
     ///
     /// # Specification

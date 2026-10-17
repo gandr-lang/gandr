@@ -1,0 +1,44 @@
+// A map sending two points to one, ascribed an equivalence. `A ≃ B` is the
+// bi-invertible map, whose left inverse undoes the map at every point of
+// `A`; a map that collapses two points has no such inverse, and the round
+// trip claimed for one is refused at that field of the record.
+
+/// Two points.
+@[ checks ]
+data Two : Type {
+  Yes : Two;
+  No : Two;
+}
+
+/// One point.
+@[ checks ]
+data One : Type {
+  Only : One;
+}
+
+/// Both points to the one.
+@[ checks ]
+def collapse(x : Two) -> -F One {
+  return Only
+}
+
+/// The one point back to the first.
+@[ checks ]
+def pick(u : One) -> -F Two {
+  return Yes
+}
+
+/// Every point of `One` is `Only`, by induction on it.
+@[ checks ]
+def single(u : One) -> -F Path(One, collapse(pick(u)), u) {
+  case u {
+    Only => here(Only)
+  }
+}
+
+/// The collapse ascribed an equivalence, refused at the left inverse's round
+/// trip: `pick(collapse(x))` is `Yes` at every `x`, so reflexivity at `x`
+/// does not reach it (#514).
+@[ refuses("EndpointMismatch") ]
+def collapsed : Two ≃ One ;
+def collapsed = #{collapse, #{#{pick, thunk { fn (x) { here(x) } }}, #{pick, single}}} ;

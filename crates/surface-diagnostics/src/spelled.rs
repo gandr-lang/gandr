@@ -366,9 +366,12 @@ impl Spellings
                     .map(|name| (arrow, Name::from(name)))
             })
             .collect();
+        let mut relations = origins.relations().to_vec();
+        relations.sort_by_key(|&(related, _)| related);
         let source = CoreSource::new(arena, &names)
             .naming(&constructors)
-            .naming_arrows(&arrows);
+            .naming_arrows(&arrows)
+            .relating(&relations);
         for (node, Scoped { scope, depth }) in named {
             if spelled.contains_key(&node) {
                 continue;

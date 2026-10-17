@@ -165,6 +165,9 @@ mod entries
         ("Type number", Standing::Owed(0)),
         ("Type type_identifier", Standing::Owed(0)),
         ("Type type_variable", Standing::Owed(0)),
+        ("Type ⇝", Standing::Owed(0)),
+        ("Type ≃", Standing::Owed(0)),
+        ("Type ≅", Standing::Owed(0)),
     ];
 
     /// The names of the primitive formers a call can head: the call is one

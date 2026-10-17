@@ -57,6 +57,7 @@ const EXPECTED_PRECEDENCE_GROUPS: &[(&str, Assoc)] = &[
     ("type.arrow", Assoc::Right),
     ("expression.cons", Assoc::Right),
     ("pattern.cons", Assoc::Right),
+    ("type.equivalence", Assoc::Right),
 ];
 
 /// The built-in tighter-than edges, in the DAG's edge order.
@@ -78,11 +79,12 @@ const EXPECTED_PRECEDENCE_EDGES: &[(&str, &str)] = &[
     ("type.sum", "type.union"),
     ("type.sum", "type.intersection"),
     ("type.sum", "type.lazy_product"),
-    ("type.union", "type.arrow"),
-    ("type.intersection", "type.arrow"),
-    ("type.lazy_product", "type.arrow"),
+    ("type.union", "type.equivalence"),
+    ("type.intersection", "type.equivalence"),
+    ("type.lazy_product", "type.equivalence"),
     ("expression.cons", "expression.cmp"),
     ("pattern.cons", "pattern.as"),
+    ("type.equivalence", "type.arrow"),
 ];
 
 /// The group of `dag` named `name`.
@@ -335,6 +337,7 @@ fn built_in_precedence_bands_are_exact() -> Result<(), Box<dyn Error>>
         assert_chain(dag, &[
             PrecName("type.sum"),
             PrecName(middle),
+            PrecName("type.equivalence"),
             PrecName("type.arrow"),
         ]);
     }

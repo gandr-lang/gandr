@@ -1,0 +1,38 @@
+// The quasi-inverse and the equivalence between two types, and the maps
+// between them, after the HoTT book's § 4.3 and cubical Agda's
+// `Cubical/Foundations/Isomorphism.agda` (`isoToEquiv`). `A ≅ B`, also
+// written `Iso(A, B)`, is the record of a map, a map back and the two round
+// trips. `A ≃ B`, also written `A <~> B`, is the bi-invertible map: a map
+// with a left inverse and a right inverse, each a record of its own. A
+// quasi-inverse is bi-invertible at once, its map back serving as both
+// inverses. A bi-invertible map is a quasi-inverse by its left inverse, whose
+// second round trip passes through the right one: the two inverses agree,
+// `h(y) = g(t(h(y))) = g(y)`.
+
+/// A quasi-inverse is bi-invertible: its map back is both the left and the
+/// right inverse (cubical's `isoToEquiv`).
+@[ checks ]
+def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> -F (a ≃ b) {
+  case i {
+    #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}}
+  }
+}
+
+/// The left inverse's round trip through the forward map, at `y`: the right
+/// inverse's round trip at `y` carried back along the left inverse, joined to
+/// the left inverse's round trip at `h(y)`, makes the two inverses agree at
+/// `y`; carried along the forward map, that agreement turns the right
+/// inverse's round trip into the left one's.
+@[ checks ]
+def leftRetraction(a : Type, b : Type, t : +U (a -> -F b), g : +U (b -> -F a), h : +U (b -> -F a), y : b, sh : Path(a, g(t(h(y))), h(y)), ry : Path(b, t(h(y)), y)) -> -F Path(b, t(g(y)), y) {
+  back(cong(t, back(sh) then cong(g, ry))) then ry
+}
+
+/// A bi-invertible map is a quasi-inverse: the forward map, the left inverse
+/// and its round trip, and the other round trip through the right inverse.
+@[ checks ]
+def equivToIso(a : Type, b : Type, e : a ≃ b) -> -F (a ≅ b) {
+  case e {
+    #{t, #{g, s}, #{h, r}} => #{t, #{g, #{s, thunk { fn (y) { leftRetraction(a, b, t, g, h, y, s(h(y)), r(y)) } }}}}
+  }
+}

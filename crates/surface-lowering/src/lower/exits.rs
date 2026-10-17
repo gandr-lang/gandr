@@ -516,6 +516,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::StaticAbstraction
             | Former::ParenthesizedType
             | Former::PathType
+            | Former::RelationType
             | Former::CapabilityType
             | Former::AtType
             | Former::AttributeBlock

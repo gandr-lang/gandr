@@ -977,6 +977,7 @@ pub fn spine_domains<'source>(
             | Former::StaticAbstraction
             | Former::ParenthesizedType
             | Former::PathType
+            | Former::RelationType
             | Former::CapabilityType
             | Former::AtType
             | Former::Scope

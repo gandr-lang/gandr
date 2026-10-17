@@ -83,6 +83,27 @@ use crate::syntax::Computation;
 use crate::syntax::Value;
 use crate::syntax::Zone;
 
+/// A relation between two types the surface writes infix.
+///
+/// The core states it as the record or the flow it abbreviates: the lowering
+/// records it against the type, and the printer reads it back to spell the
+/// relation as written.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Relation
+{
+    /// The quasi-inverse `A ≅ B`, or `Iso(A, B)`: the record of a map, a map
+    /// back and the two round trips.
+    Isomorphism,
+    /// The equivalence `A ≃ B`: the record of a map with a left and a right
+    /// inverse.
+    Equivalence,
+    /// The flow `A ⇝ B` between two types, `Flow(Type, A, B)`.
+    Flow,
+}
+
 /// The moving endpoint of a motive: the innermost intuitionistic binder.
 ///
 /// # Specification

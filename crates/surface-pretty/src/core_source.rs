@@ -17,6 +17,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::ConstantIndex;
@@ -346,6 +347,9 @@ pub struct CoreSource<'arena>
     /// The name the source writes for each dependent arrow's binder,
     /// ascending by the arrow.
     arrows: &'arena [(CompTypeId, Name<'arena>)],
+    /// The relation each type the source writes as `A ≅ B`, `A ≃ B` or
+    /// `A ⇝ B` abbreviates, ascending by the type.
+    relations: &'arena [(ValueTypeId, Relation)],
 }
 
 impl<'arena> CoreSource<'arena>
@@ -369,6 +373,7 @@ impl<'arena> CoreSource<'arena>
             context: &[],
             regions: &[],
             arrows: &[],
+            relations: &[],
         }
     }
 
@@ -452,6 +457,21 @@ impl<'arena> CoreSource<'arena>
         Self { arrows, ..self }
     }
 
+    /// This source, spelling each type `relations` records as the relation
+    /// it was written as, ascending by the type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn relating(
+        self,
+        relations: &'arena [(ValueTypeId, Relation)],
+    ) -> Self
+    {
+        Self { relations, ..self }
+    }
+
     /// The name at admission position `constant`.
     ///
     /// # Specification
@@ -532,6 +552,63 @@ impl<'arena> CoreSource<'arena>
             Some(&ValueType::Staged { base, .. }) => base,
             Some(_) | None => id,
         }
+    }
+
+    /// The relation the type `id` was written as, when the source records
+    /// one, its operands read off the record or the flow it abbreviates.
+    ///
+    /// # Specification
+    /// - requires: `relations` is ascending by the type.
+    /// - ensures: for a recorded quasi-inverse or equivalence, the relation
+    ///   over the forward map's domain and result, read off the record's first
+    ///   component `+U (A -> -F B)`; for a recorded flow, the relation over the
+    ///   flow's two codes; nothing for an unrecorded type, or a recorded one
+    ///   whose node is no longer that shape.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each relation over its record or its flow spells as
+    ///   written; the same record unrecorded spells as the record.
+    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    #[spec(ensures: |ret| ret.is_none() || self.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok())]
+    fn related(
+        &self,
+        id: ValueTypeId,
+    ) -> Option<Former<'arena, CoreNode>>
+    {
+        let at = self
+            .relations
+            .binary_search_by_key(&id, |&(held, _)| held)
+            .ok()?;
+        let &(_, relation) = self.relations.get(at)?;
+        let (left, right) = match (relation, self.arena.value_type(id)?) {
+            (Relation::Flow, &ValueType::Flow { source, target, .. }) => {
+                (CoreNode::Value(source), CoreNode::Value(target))
+            },
+            (Relation::Isomorphism | Relation::Equivalence, &ValueType::Sigma { first, .. }) => {
+                let &ValueType::Thunk(arrow) = self.arena.value_type(first)?
+                else {
+                    return None;
+                };
+                let &CompType::Arrow { domain, codomain } = self.arena.comp_type(arrow)?
+                else {
+                    return None;
+                };
+                let &CompType::Returner { result, .. } = self.arena.comp_type(codomain)?
+                else {
+                    return None;
+                };
+                (CoreNode::ValueType(domain), CoreNode::ValueType(result))
+            },
+            _ => return None,
+        };
+
+        Some(Former::Relation {
+            relation,
+            left,
+            right,
+        })
     }
 
     /// The value `id` names.
@@ -791,6 +868,8 @@ impl<'arena> CoreSource<'arena>
             core::ptr::eq(core::ptr::from_ref(protocol), core::ptr::from_ref(session.protocol())) && state == session.state() && usize::from(payloads) == session.payloads().len(),
         | (Some(&ValueType::Capability { grade, region, .. }), Former::Capability { grade: actual_grade, region: actual_region, .. }) =>
             grade == actual_grade && region == actual_region,
+        | (Some(&(ValueType::Sigma { .. } | ValueType::Flow { .. })), Former::Relation { .. }) =>
+            self.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
         | _ => false,
     })]
     fn value_type(
@@ -798,6 +877,9 @@ impl<'arena> CoreSource<'arena>
         id: ValueTypeId,
     ) -> Former<'arena, CoreNode>
     {
+        if let Some(related) = self.related(id) {
+            return related;
+        }
         let Some(value_type) = self.arena.value_type(self.unstaged(id))
         else {
             return Former::Unreadable(Unreadable::Dangling);
