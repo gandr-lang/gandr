@@ -5261,7 +5261,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a lambda in term position.
     /// - ensures: a lambda standing as a computation binds its one parameter in
     ///   a frame extending its own, reads its block under that frame as a body
-    ///   a path runs through, and is planned over it.
+    ///   a path runs through, and is planned over it. Where its position
+    ///   answers a written arrow `A -> C`, parentheses stripped, the binder is
+    ///   typed `A` as a parameter's written type types it, and the body answers
+    ///   `C`, each under the frame the arrow was read under.
     /// - provides: the binder of the fragment.
     /// - fails: yields the wrong-sort refusal where no bridge reaches a
     ///   computation; the unadmitted refusal for a type abstraction or a typed
@@ -5298,17 +5301,75 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let binder = parameter(site, &mut cursor)?;
         let name = self.name_at(binder);
         self.note_binder(binder, name)?;
-        let extended = self.scope.extend(frame, name, Maybe::Present(binder.span));
+        let arrow = self.answered_arrow(site)?;
+        let extended = match arrow {
+            Some((domain, _)) => {
+                self.scope
+                    .extend_typed(frame, name, domain, Maybe::Present(binder.span))
+            },
+            None => self.scope.extend(frame, name, Maybe::Present(binder.span)),
+        };
         let body = self.block(site, &mut cursor, Frame::Inner(extended))?;
-        self.open_body(
-            site,
-            body,
-            Maybe::Absent(native::answered::Absent::Unstated),
-        )?;
+        let answer = match arrow {
+            Some((_, codomain)) => {
+                let _passed = self.answers.insert(body.last, codomain);
+                Maybe::Present(codomain)
+            },
+            None => Maybe::Absent(native::answered::Absent::Unstated),
+        };
+        self.open_body(site, body, answer)?;
 
         self.plan(site, Plan::Lambda(body, binder.node));
 
         Ok(())
+    }
+
+    /// The domain and the answered codomain of the written arrow `A -> C` the
+    /// lambda at `site` answers, parentheses stripped.
+    ///
+    /// # Specification
+    /// - requires: `site` is a lambda in term position.
+    /// - ensures: for a position answering a written type that unwraps to an
+    ///   arrow of two operands, the domain's node and the codomain answered
+    ///   under the arrow's frame; nothing for an unanswered position, an answer
+    ///   over a loop or a returner, and any other type.
+    /// - fails: as [`Self::unwrapped`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda signed `+U (Empty -> -F Integer)` matches no
+    ///   arm on its binder, as a parameter of the same type does.
+    /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_a_lambda_binder_its_arrow_types`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(_, codomain)| codomain.over == native::Over::Written)))]
+    fn answered_arrow(
+        &mut self,
+        site: Site,
+    ) -> Result<Option<(NodeIndex, native::Answer)>, LoweringRefusal<'source>>
+    {
+        let Some(&answer) = self.answers.get(&site.at.node)
+        else {
+            return Ok(None);
+        };
+        if answer.over != native::Over::Written {
+            return Ok(None);
+        }
+        Ok(match self.unwrapped(answer.node)? {
+            Maybe::Present(native::Unwrapped {
+                former: Former::ArrowType,
+                ref operands,
+                ..
+            }) => match *operands.as_slice() {
+                [domain, codomain] => Some((domain, native::Answer {
+                    node: codomain,
+                    ..answer
+                })),
+                _ => None,
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => None,
+        })
     }
 
     /// Classify a block standing as a computation, `{ run x <- c ; … c }`.

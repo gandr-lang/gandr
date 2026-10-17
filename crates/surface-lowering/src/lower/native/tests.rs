@@ -1434,6 +1434,27 @@ fn a_match_of_no_arms_switches_on_empty_data_and_on_a_path()
 }
 
 #[test]
+fn a_match_of_no_arms_switches_on_a_lambda_binder_its_arrow_types()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Empty : Type {}\ndef bare : +U (Empty -> -F Integer) ;\ndef bare = thunk { fn (x) { case x {} } } ;\ndef stated : +U (Empty -> -F Integer) ;\ndef stated = thunk { fn (x) { case x -> -F Integer {} } } ;\n",
+        ),
+        &mut arena,
+    );
+    for name in ["bare", "stated"] {
+        assert!(
+            arena
+                .computation(tail_of(&arena, body_named(&module, SurfaceName::from(name))))
+                .is_some_and(|held| matches!(*held, Computation::DataCase { ref branches, .. } if branches.is_empty())),
+            "`{name}` switches on its binder with no branch"
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
 fn an_or_pattern_settles_each_alternative()
 {
     let mut arena = CoreArena::new();
