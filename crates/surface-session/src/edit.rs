@@ -1589,7 +1589,7 @@ impl EditScript
 /// - witness: `tests::edit::comp_constructor_change_is_one_replace`
 /// - witness: `tests::edit::item_deletion_is_one_delete`
 /// - witness: `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`
-/// - witness: `tests::edit::growing_a_tuple_replaces_it`
+/// - witness: `tests::edit::growing_a_tuple_replaces_it_325`
 #[spec(
     ensures: |ret| {
     ret.0.is_empty() == (old.items == new.items)
@@ -2438,7 +2438,7 @@ enum Agreement
 ///   semantic data, ignoring a component the pairing would drop, or treating
 ///   renumbered children as a change. Independent source- and target-dialogue
 ///   edits retain their evidence even when every child is unchanged.
-/// - witness: `tests::edit::growing_a_tuple_replaces_it`
+/// - witness: `tests::edit::growing_a_tuple_replaces_it_325`
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
 /// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
 /// - witness: `edit::tests::effect_row_edits_preserve_names_and_rebuild_operation_types`

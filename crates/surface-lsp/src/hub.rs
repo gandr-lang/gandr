@@ -284,7 +284,7 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 /// - hypothesis: L3 — two connections over one document are each answered for
 ///   their own copy; one leaving leaves the other served; the hub, left with
 ///   none, removes its socket and returns.
-/// - witness: `hub::tests::two_clients_hold_their_own_copies`
+/// - witness: `hub::tests::two_clients_hold_their_own_copies_230`
 /// - witness: `hub::tests::a_hub_left_alone_exits_after_its_linger`
 /// - witness: `hub::tests::a_hub_whose_socket_is_already_gone_exits_cleanly`
 /// - witness: `hub::tests::a_line_connection_reaches_the_second_face`
@@ -361,7 +361,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`run_hub`]'s witnesses.
-/// - witness: `hub::tests::two_clients_hold_their_own_copies`
+/// - witness: `hub::tests::two_clients_hold_their_own_copies_230`
 fn connection<Log>(
     stream: UnixStream,
     peer: Peer,
@@ -712,7 +712,7 @@ mod tests
         ///
         /// # Adequacy
         /// - hypothesis: L3 — the witnesses read exact versions and results.
-        /// - witness: `hub::tests::two_clients_hold_their_own_copies`
+        /// - witness: `hub::tests::two_clients_hold_their_own_copies_230`
         #[spec(ensures: |ret| ret.is_object())]
         fn receive(&mut self) -> Value
         {
@@ -796,7 +796,7 @@ mod tests
     }
 
     #[test]
-    fn two_clients_hold_their_own_copies()
+    fn two_clients_hold_their_own_copies_230()
     {
         let scratch = Scratch::new(Json("share"));
         let socket = scratch.socket();

@@ -6272,7 +6272,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — a call as a dependent pair's first component and a
     ///   projection as a dependent function's argument each stand in the type
     ///   after them as what they return, and the second run accepts them.
-    /// - witness: `module::tests::a_pure_run_a_type_reads_stands_as_what_it_returns`
+    /// - witness: `module::tests::a_pure_run_a_type_reads_stands_as_what_it_returns_444`
     #[spec(
         captures: [
             before = self.context.nesting().get(&value).copied(),

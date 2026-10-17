@@ -164,7 +164,7 @@ impl fmt::Display for Indefinite
     /// # Adequacy
     /// - hypothesis: L3 — the wrong-sort refusal writes `an identifier`, `an
     ///   instantiation expression`, `a unit` and `a hole`.
-    /// - witness: `message::tests::a_form_takes_the_article_its_name_is_spoken_with`
+    /// - witness: `message::tests::a_form_takes_the_article_its_name_is_spoken_with_417`
     #[inline]
     fn fmt(
         &self,
@@ -1642,7 +1642,7 @@ mod tests
     /// A refusal that names a form with an article writes the one its name is
     /// spoken with (#417).
     #[test]
-    fn a_form_takes_the_article_its_name_is_spoken_with()
+    fn a_form_takes_the_article_its_name_is_spoken_with_417()
     {
         let span = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(1_usize))
             .expect("an ordered span");

@@ -601,7 +601,7 @@ fn a_type_endpoint_is_quoted()
 /// sort: a sum and a session protocol, neither of which reads as a value,
 /// each stand as the quoted code of the type it spells.
 #[test]
-fn a_path_at_a_universe_reads_its_endpoints_as_types()
+fn a_path_at_a_universe_reads_its_endpoints_as_types_402()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
@@ -730,7 +730,7 @@ fn back_then_and_cong_unfold_to_transports()
 /// motive's binder; a parameter map's lift is the written map's copy, so it
 /// answers at the map's bytes (#443).
 #[test]
-fn a_parameter_map_under_cong_answers_at_its_bytes()
+fn a_parameter_map_under_cong_answers_at_its_bytes_443()
 {
     let source = "def mapped(f: Integer => Integer, a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(Integer, f(a), f(b)) {\n  become cong(f, p)\n}\n";
     let mut arena = CoreArena::new();

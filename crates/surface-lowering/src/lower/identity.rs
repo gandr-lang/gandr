@@ -1066,7 +1066,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   between a sum and a session type reads each endpoint as its code.
     /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
-    /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types`
+    /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types_402`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -2973,7 +2973,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   checked, answered and synthesised.
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
-    /// - witness: `lower::identity::tests::a_parameter_map_under_cong_answers_at_its_bytes`
+    /// - witness: `lower::identity::tests::a_parameter_map_under_cong_answers_at_its_bytes_443`
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),

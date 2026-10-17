@@ -567,7 +567,7 @@ fn a_selection_projects_a_dependent_record_along_its_nesting()
 /// component and `.1` its second, as the labels of a type of two name them;
 /// a third position is refused.
 #[test]
-fn a_selection_by_position_projects_a_pair()
+fn a_selection_by_position_projects_a_pair_401()
 {
     let mut arena = CoreArena::new();
     let module = lowered(

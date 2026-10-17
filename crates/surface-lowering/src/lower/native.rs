@@ -877,8 +877,8 @@ pub(super) enum Over
 ///   signature answers, a field of either, one written as a data family's
 ///   argument, and a family without parameters.
 /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
-/// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
-/// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
+/// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
+/// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum Classifier
 {
@@ -913,7 +913,7 @@ pub(super) enum Classifier
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Lowerer::unwrapped`].
-/// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+/// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Unwrapped
 {
@@ -938,7 +938,7 @@ pub(super) struct Unwrapped
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Classifier`]'s slot row.
-/// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
+/// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) struct Argued
 {
@@ -962,7 +962,7 @@ pub(super) struct Argued
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Lowerer::field_classifier`].
-/// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+/// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct FieldAt
 {
@@ -1774,8 +1774,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   one written as a data family's argument, classified by its place.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
-    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
-    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Constructor(planned)) if planned.fields == fields))]
     pub(super) fn construct(
         &mut self,
@@ -1876,7 +1876,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a list's tail and head, written and answered.
-    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     #[spec(ensures: |ret| match ret {
         | Ok(Maybe::Present(found)) => found == classifier || matches!(found, Classifier::Written(_)),
         | Ok(Maybe::Absent(_)) | Err(_) => true,
@@ -1989,7 +1989,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a thunk signed `+U (-F T)` and `() => T`, and a
     ///   definition signed `T`, each over a parameterised family's constructor.
-    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     #[spec(
         captures: before = (self.inherited.len(), self.thunked.len()),
         ensures: |ret| ret.is_err() || (self.inherited.len() >= before.0 && self.thunked.len() >= before.1),
@@ -2085,7 +2085,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a parenthesised application and a bare head.
-    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     #[spec(captures: before = self.fuel.remaining, ensures: self.fuel.remaining <= before)]
     pub(super) fn unwrapped(
         &mut self,
@@ -5387,7 +5387,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::construct`].
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
-    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
     pub(super) fn mint_constructor(
         &self,
@@ -5500,7 +5500,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — `Inl(a)` written for the third parameter `s :
     ///   SumOb(l, r)` of a family applied to `Integer` and `String` is
     ///   classified `SumOb(Integer, String)`.
-    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
     fn slot_type(
         &self,
@@ -5676,7 +5676,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a function result and a thunk signed `() => T`, each
     ///   answering a constructor's classifier.
-    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.comp_type(id).is_some()))]
     pub(super) fn answered_type(
         &self,
@@ -7148,7 +7148,7 @@ pub(super) fn record_since(
 ///   rewrite made of a copy names the use's binder too; reading every source
 ///   before recording any leaves it unbound and fails the second witness.
 /// - witness: `lower::native::tests::a_leaf_copy_keeps_each_use_naming_its_pattern_variable`
-/// - witness: `lower::native::tests::a_leaf_copy_of_a_copy_keeps_the_use_naming_its_binder`
+/// - witness: `lower::native::tests::a_leaf_copy_of_a_copy_keeps_the_use_naming_its_binder_451`
 #[spec(
     requires: sink.arena.values_since(floor).next().is_none_or(|first| {
         sink.origins.bindings().last().is_none_or(|&(held, _)| held < first)

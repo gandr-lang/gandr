@@ -1420,7 +1420,7 @@ fn a_parameterized_constructor_needs_its_classifier()
 }
 
 #[test]
-fn a_constructor_takes_its_classifier_from_the_type_it_answers()
+fn a_constructor_takes_its_classifier_from_the_type_it_answers_402()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
@@ -1472,7 +1472,7 @@ fn a_constructor_takes_its_classifier_from_the_type_it_answers()
 }
 
 #[test]
-fn a_constructor_takes_its_slot_as_a_family_argument()
+fn a_constructor_takes_its_slot_as_a_family_argument_421()
 {
     let families = "data SumOb(a : Type, b : Type) : Type { Inl : (x : a) --> SumOb(a, b); Inr : (y : b) --> SumOb(a, b); }\ndata Tagged(l : Type, r : Type, s : SumOb(l, r)) : Type { Tag : (n : Integer) --> Tagged(l, r, s); }\n";
     let mut arena = CoreArena::new();
@@ -2566,7 +2566,7 @@ fn a_leaf_copy_keeps_each_use_naming_its_pattern_variable()
 /// parameter the use was written against, and no variable the form carries
 /// names another binder.
 #[test]
-fn a_leaf_copy_of_a_copy_keeps_the_use_naming_its_binder()
+fn a_leaf_copy_of_a_copy_keeps_the_use_naming_its_binder_451()
 {
     let source = concat!(
         "data Int : Type { Z : Int; S : (x : Int) --> Int; }\n",

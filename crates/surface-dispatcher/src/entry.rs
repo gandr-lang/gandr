@@ -1211,7 +1211,7 @@ mod tests
     }
 
     #[test]
-    fn a_second_run_refusal_is_located_where_its_bound_spelling_is()
+    fn a_second_run_refusal_is_located_where_its_bound_spelling_is_380()
     {
         let grammar = built_in().expect("the grammar builds");
         let data = "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  P : (x : Int) --> \
