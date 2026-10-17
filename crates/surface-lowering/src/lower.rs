@@ -9979,7 +9979,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   reach them; a tail of each polarity records its own exit once; a call
     ///   of no arguments answers at the call, its head at the head.
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
-    /// - witness: `lower::tests::a_call_of_no_arguments_is_the_call_the_source_wrote`
+    /// - witness: `lower::tests::a_call_of_no_arguments_is_the_call_the_source_wrote_364`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
@@ -17153,7 +17153,7 @@ mod tests
     }
 
     #[test]
-    fn a_call_of_no_arguments_is_the_call_the_source_wrote()
+    fn a_call_of_no_arguments_is_the_call_the_source_wrote_364()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();

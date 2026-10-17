@@ -258,12 +258,20 @@ pub struct Style
 ///   written value and computation types, a mismatched term, a term past a
 ///   refusal in its body, a keyword, layout inside a declaration, a word in a
 ///   comment and a position past the last declaration are asserted at their
-///   exact answers; a declaration and a written type in HTML, coloured by their
-///   roles.
+///   exact answers, and so is each position a fixed defect hovered wrongly — a
+///   decode and a constructor written in a type, a type under a static binder,
+///   a module's instantiation and two pattern tiles; a declaration and a
+///   written type in HTML, coloured by their roles.
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::each_member_hovers_its_own_type`
 /// - witness: `hover::tests::html_hovers_colour_the_name_and_the_type`
+/// - witness: `hover::tests::a_decode_written_as_a_type_hovers_as_a_type_419`
+/// - witness: `hover::tests::a_constructor_applied_inside_a_type_hovers_its_text_420`
+/// - witness: `hover::tests::a_type_under_a_static_binder_hovers_its_text_404`
+/// - witness: `hover::tests::a_module_instantiation_answers_its_own_entry_never_a_member_s_type_405`
+/// - witness: `hover::tests::the_parentheses_around_an_inverted_letter_answer_the_cons_pattern_408`
+/// - witness: `hover::tests::a_sum_pattern_s_positional_label_answers_as_a_label_408`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref hover) => hover.contents.value.starts_with(style.markup.opener().0)
         && hover.range.start <= position && position <= hover.range.end,
@@ -782,7 +790,7 @@ mod tests
     #[test]
     fn each_marked_position_hovers_its_answer()
     {
-        let rows: [(&str, &str, Result<String, hovered::Absent>); 25] = [
+        let rows: [(&str, &str, Result<String, hovered::Absent>); 19] = [
             (
                 "a synthesised declaration's name",
                 "def ans$0wer = 42 ;\n",
@@ -850,47 +858,6 @@ mod tests
                 Ok(fenced(SourceText::from("-F Integer : Type[-]"))),
             ),
             (
-                "a decode written as a type (#419)",
-                "data Flag : Type {\n  On : Flag;\n  Off : Flag;\n}\ndef decoded(f : Flag) -> -F \
-                 Type { case f { On => return Integer, Off => return Unit } }\ndef kept(f : \
-                 Flag, n : decoded$0(f)) -> -F decoded(f) { return n }\n",
-                Ok(fenced(SourceText::from("decoded(f) : Type"))),
-            ),
-            (
-                "a constructor applied inside a type (#420)",
-                "data U : Type {\n  NatC : U;\n  Arrow : (a : U, b : U) --> U;\n}\ndef el(u : U) \
-                 -> -F Type { case u { NatC => return Integer, Arrow(a, b) => return Unit } \
-                 }\ndef k : el(Arrow$0(NatC, NatC)) ;\n",
-                Ok(fenced(SourceText::from("Arrow(NatC, NatC) : U"))),
-            ),
-            (
-                "a type under a static binder (#404)",
-                "def pair : Type -> Type[-] ;\ndef pair = \\X. -$0F (X * X) ;\n",
-                Ok(fenced(SourceText::from("-F (X * X) : Type[-]"))),
-            ),
-            (
-                "a module's instantiation answers its own entry, never a member's type (#405)",
-                "module Seed :> #{ type T, zero : T } {\n  type T = Integer;\n  def zero = 0;\n}\nmodule \
-                 Keep(S : #{ type T, zero : T }) :> #{ type T, zero : T } {\n  type T = S.T;\n  def \
-                 zero = S.zero;\n}\nmodule A = Keep(S$0eed) ;\n",
-                Err(hovered::Absent::Unknown),
-            ),
-            (
-                "the parentheses around an inverted letter answer the cons pattern (#408)",
-                "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef rec size(p : \
-                 Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    here => return 0,\n    \
-                 loop ∷ q => become size[<](q),\n    back$0(loop) ∷ q => become size[<](q)\n  }\n}\n",
-                Ok(fenced(SourceText::from(
-                    "back(loop) ∷ q : Path(Circle, Base, Base)",
-                ))),
-            ),
-            (
-                "a sum pattern's positional label answers as a label (#408)",
-                "def flip(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  case b {\n    +{.$00 = u} => \
-                 return +{.1 = u},\n    +{.1 = u} => return +{.0 = u}\n  }\n}\n",
-                Ok(fenced(SourceText::from("0 : Unit"))),
-            ),
-            (
                 "a keyword opening a term",
                 "def f(x: Integer) -> -F Integer { ret$0urn x }\n",
                 Ok(fenced(SourceText::from("-F Integer"))),
@@ -929,13 +896,95 @@ mod tests
             ),
         ];
         for (position, fixture, expected) in rows {
-            let (text, at) = marker(SourceText::from(fixture));
-            assert_eq!(
-                shown_at(SourceText::from(text.as_str()), at),
-                expected,
-                "{position}"
-            );
+            assert_eq!(marked(SourceText::from(fixture)), expected, "{position}");
         }
+    }
+
+    /// The hover at the marker `$0` in `fixture`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn marked(fixture: SourceText<'_>) -> Result<String, hovered::Absent>
+    {
+        let (text, at) = marker(fixture);
+        shown_at(SourceText::from(text.as_str()), at)
+    }
+
+    #[test]
+    fn a_decode_written_as_a_type_hovers_as_a_type_419()
+    {
+        assert_eq!(
+            marked(SourceText::from(
+                "data Flag : Type {\n  On : Flag;\n  Off : Flag;\n}\ndef decoded(f : Flag) -> -F \
+                 Type { case f { On => return Integer, Off => return Unit } }\ndef kept(f : \
+                 Flag, n : decoded$0(f)) -> -F decoded(f) { return n }\n"
+            )),
+            Ok(fenced(SourceText::from("decoded(f) : Type")))
+        );
+    }
+
+    #[test]
+    fn a_constructor_applied_inside_a_type_hovers_its_text_420()
+    {
+        assert_eq!(
+            marked(SourceText::from(
+                "data U : Type {\n  NatC : U;\n  Arrow : (a : U, b : U) --> U;\n}\ndef el(u : U) \
+                 -> -F Type { case u { NatC => return Integer, Arrow(a, b) => return Unit } \
+                 }\ndef k : el(Arrow$0(NatC, NatC)) ;\n"
+            )),
+            Ok(fenced(SourceText::from("Arrow(NatC, NatC) : U")))
+        );
+    }
+
+    #[test]
+    fn a_type_under_a_static_binder_hovers_its_text_404()
+    {
+        assert_eq!(
+            marked(SourceText::from(
+                "def pair : Type -> Type[-] ;\ndef pair = \\X. -$0F (X * X) ;\n"
+            )),
+            Ok(fenced(SourceText::from("-F (X * X) : Type[-]")))
+        );
+    }
+
+    #[test]
+    fn a_module_instantiation_answers_its_own_entry_never_a_member_s_type_405()
+    {
+        assert_eq!(
+            marked(SourceText::from(
+                "module Seed :> #{ type T, zero : T } {\n  type T = Integer;\n  def zero = \
+                 0;\n}\nmodule Keep(S : #{ type T, zero : T }) :> #{ type T, zero : T } {\n  type \
+                 T = S.T;\n  def zero = S.zero;\n}\nmodule A = Keep(S$0eed) ;\n"
+            )),
+            Err(hovered::Absent::Unknown)
+        );
+    }
+
+    #[test]
+    fn the_parentheses_around_an_inverted_letter_answer_the_cons_pattern_408()
+    {
+        assert_eq!(
+            marked(SourceText::from(
+                "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef rec size(p : \
+                 Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    here => return 0,\n    \
+                 loop ∷ q => become size[<](q),\n    back$0(loop) ∷ q => become size[<](q)\n  }\n}\n"
+            )),
+            Ok(fenced(SourceText::from(
+                "back(loop) ∷ q : Path(Circle, Base, Base)"
+            )))
+        );
+    }
+
+    #[test]
+    fn a_sum_pattern_s_positional_label_answers_as_a_label_408()
+    {
+        assert_eq!(
+            marked(SourceText::from(
+                "def flip(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  case b {\n    +{.$00 = u} => \
+                 return +{.1 = u},\n    +{.1 = u} => return +{.0 = u}\n  }\n}\n"
+            )),
+            Ok(fenced(SourceText::from("0 : Unit")))
+        );
     }
 
     #[test]

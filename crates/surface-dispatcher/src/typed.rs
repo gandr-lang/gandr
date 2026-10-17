@@ -2776,7 +2776,7 @@ quenchant_shape::reason_enum! {
 ///   settled and in one it refused, and a constructor pattern on a staged
 ///   scrutinee, are asserted at their types; and a record pattern inside a
 ///   dependent pair's second component, at its type under the first.
-/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match`
+/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
 /// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
 #[spec(ensures: |ret| ret.iter().all(|&(_, ty, _, _)| arena.value_type(ty).is_some()))]
@@ -2895,7 +2895,7 @@ fn matched(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`matched`].
-/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match`
+/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
 /// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
 #[spec(ensures: |ret| ret.iter().all(|&(_, part, _)| arena.value_type(part).is_some())
@@ -3014,7 +3014,7 @@ fn parts(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`matched`].
-/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match`
+/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(ref fields) => matches!(arena.value_type(ty), Some(&ValueType::Data { declaration, .. })
         if signatures.get(&declaration)
@@ -3078,7 +3078,7 @@ fn declared(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`matched`].
-/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match`
+/// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(answer) => matches!(*pattern, Pattern::Constructor { .. })
         && (answer == ty || matches!(arena.value_type(answer), Some(&ValueType::Thunk(_)))),
@@ -3575,7 +3575,7 @@ mod tests
     }
 
     #[test]
-    fn a_pattern_answers_as_itself_in_a_settled_and_a_refused_match()
+    fn a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385()
     {
         let source = SourceText::from(
             "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\n\ndata Int : \
