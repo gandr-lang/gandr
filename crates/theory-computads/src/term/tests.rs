@@ -313,6 +313,48 @@ fn substitution_walks_are_transactional_and_bounded()
     }
 }
 
+/// #654: a match is applied once, all at once. Firing associativity at a term
+/// that carries a variable named as one of the rule's own reads that variable
+/// as the term's, never as the rule's to replace again; a unifier, applied
+/// once, is already its fixpoint.
+#[test]
+fn a_substitution_replaces_each_variable_once_all_at_once_654()
+{
+    let mul = |left: FreeTerm, right: FreeTerm| FreeTerm::op("mul", [left, right]);
+    let v = FreeTerm::var;
+    let lhs = Term::from(&mul(mul(v("x"), v("y")), v("z")));
+    let rhs = Term::from(&mul(v("x"), mul(v("y"), v("z"))));
+    let target = Term::from(&mul(mul(v("a"), v("b")), mul(v("c"), v("z"))));
+    let mut matched = TermSubst::default();
+    assert!(bool::from(TermAlphabet::match_cmd(
+        &lhs,
+        &target,
+        &mut matched
+    )));
+    assert_eq!(
+        Term::from(&mul(v("a"), mul(v("b"), mul(v("c"), v("z"))))),
+        TermAlphabet::apply_subst(&matched, &rhs),
+        "the target's own `z` is not the rule's"
+    );
+    let mut unified = TermSubst::default();
+    let chained = Term::from(&mul(v("p"), v("q")));
+    let ground = Term::from(&mul(v("q"), ctor("Zero", [])));
+    assert!(bool::from(TermAlphabet::unify_cmd(
+        &chained,
+        &ground,
+        &mut unified
+    )));
+    let both = Term::from(&mul(ctor("Zero", []), ctor("Zero", [])));
+    assert_eq!(
+        (both.clone(), both),
+        (
+            TermAlphabet::apply_subst(&unified, &chained),
+            TermAlphabet::apply_subst(&unified, &ground)
+        ),
+        "a chained unifier is resolved, so one pass equates both sides"
+    );
+}
+
 #[test]
 fn metadata_names_and_orders_observe_boundaries()
 {
