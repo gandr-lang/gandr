@@ -1,0 +1,24 @@
+// The group laws of `../../model/identity/group-laws.gandr` with the left
+// inverse added: `mul(inv(x), x) ==> e()` overlaps associativity at
+// `mul(mul(inv(x), x), z)`, which it leaves at `z` and associativity at
+// `mul(inv(x), mul(x, z))`, a term no rule rewrites. The pair joins only
+// through the cell completion derives, `mul(inv(x), mul(x, y)) ==> y`, which
+// follows from the written rules; the check declines derived cells today
+// (#338), so the block is refused.
+
+/// A group's laws with the left inverse.
+@[ refuses("RulesDiverge") ]
+sign GroupWithInverse {
+  sort G : Type;
+
+  oper e : G;
+  oper inv : (x : G) --> G;
+  oper mul : (x : G, y : G) --> G;
+
+  rule unitL : mul(e(), x) <=> x;
+  rule unitR : mul(x, e()) <=> x;
+  rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
+  rule invInv : inv(inv(x)) <=> x;
+  rule invE : inv(e()) <=> e();
+  rule invL : mul(inv(x), x) <=> e();
+}

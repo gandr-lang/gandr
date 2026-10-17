@@ -1,0 +1,27 @@
+// A group's laws stated as rules, the coincidence check certifying each with
+// the others: the structure the circle's loops carry under composition, whose
+// laws `circle-group.gandr` proves as paths. The unit on both sides,
+// associativity and the inverse's own two laws join among themselves; the
+// cancellation `mul(inv(x), x) ==> e()` does not until completion adds the
+// cells it derives (Knuth and Bendix, _Simple Word Problems in Universal
+// Algebras_, 1970, § 7), and is refused in
+// `../../pathological/identity/group-inverse-law.gandr`.
+
+/// A group's unit, associativity and inverse laws, each a rule: `e()` is the
+/// unit and `a()`, `b()` two elements the rows read.
+@[ normalizes("mul(mul(e, inv(inv(a))), mul(b, e)) ~> mul(a, b)") ]
+sign Group {
+  sort G : Type;
+
+  oper e : G;
+  oper a : G;
+  oper b : G;
+  oper inv : (x : G) --> G;
+  oper mul : (x : G, y : G) --> G;
+
+  rule unitL : mul(e(), x) <=> x;
+  rule unitR : mul(x, e()) <=> x;
+  rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
+  rule invInv : inv(inv(x)) <=> x;
+  rule invE : inv(e()) <=> e();
+}

@@ -39,75 +39,7 @@ The expectation language over a lowered module and its verdicts — the `checks`
 
 ## Examples
 
-```rust
-use gandr_core_checker::CheckBudget;
-use gandr_core_checker::CheckingContext;
-use gandr_core_checker::Declaration;
-use gandr_core_checker::OriginToken;
-use gandr_core_checker::body;
-use gandr_core_checker::check_module;
-use gandr_core_checker::signature;
-use gandr_core_term::CoreArena;
-use gandr_kernel_term::ConstantIndex;
-use gandr_surface_corpus::CorpusRoot;
-use gandr_surface_corpus::RunSpelling;
-use gandr_surface_corpus::Seal;
-use gandr_surface_corpus::Settlement;
-use gandr_surface_corpus::settle;
-use gandr_surface_grammar::built_in;
-use gandr_surface_lowering::DeclarationOutcome;
-use gandr_surface_lowering::LoweringBudget;
-use gandr_surface_lowering::lower_module;
-use gandr_surface_lowering::namespace::Recognition;
-use gandr_surface_parser::parse;
-use gandr_surface_syntax::SourceText;
-use quenchant_shape::shape::Maybe;
-
-let source = SourceText::from(
-    r#"@[ owes(1) ] def owed : Integer ;
-@[ refuses("UnresolvedName") ] def broken = missing ;"#,
-);
-let pbg = built_in()?;
-let tree = parse(&pbg, source)?.into_tree();
-let mut arena = CoreArena::new();
-let module = lower_module(&pbg, &tree, &mut arena, LoweringBudget::DEFAULT, Recognition::default())?;
-
-// The driver's adaptation: every declaration the lowering did not refuse.
-let declarations: Vec<Declaration> = module
-    .declarations()
-    .iter()
-    .filter_map(|lowered| {
-        let (declared, defined) = match lowered.outcome() {
-            DeclarationOutcome::Completed { declared_type, body } => {
-                (Maybe::Present(declared_type), Maybe::Present(body))
-            },
-            DeclarationOutcome::Uncompleted { declared_type } => {
-                (Maybe::Present(declared_type), Maybe::Absent(body::Absent::Hole))
-            },
-            DeclarationOutcome::Bodied { body } => {
-                (Maybe::Absent(signature::Absent::Unsigned), Maybe::Present(body))
-            },
-            DeclarationOutcome::Refused(_) => return None,
-        };
-        let origin = OriginToken::from(usize::from(lowered.origin()));
-        Some(Declaration::new(lowered.constant(), declared, defined, origin))
-    })
-    .collect();
-let verdicts = check_module(
-    &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-    &declarations,
-);
-
-// No declaration states a run outcome, so the runner is never asked.
-let mut runner = |_constant: ConstantIndex| RunSpelling::from(String::new());
-let report = settle(CorpusRoot::Fixture, &arena, &module, &verdicts, &mut runner)?;
-let tally = report.tally();
-assert_eq!(tally.settlement(), Settlement::Settled);
-assert_eq!(usize::from(tally.ledger()), 1_usize);
-assert_eq!(tally.seal(), Seal::Unsealed);
-```
-
-The same example is the crate-level doctest. `cargo nextest run -p gandr-surface-corpus` runs the crate's tests. Source-level settlement witnesses parse, lower and check their modules; counter and formatter boundary witnesses also construct values directly to reach saturation and sink failures.
+The crate-level doctest (`src/lib.rs`, § Example) is the example: it lowers a module of two declarations, one owing a hole and one stating the refusal it earns, checks it, settles it on the fixture root and reads the tally — settled, a ledger of one, unsealed. `cargo nextest run -p gandr-surface-corpus` runs it with the crate's tests. Source-level settlement witnesses parse, lower and check their modules; counter and formatter boundary witnesses also construct values directly to reach saturation and sink failures.
 
 Five headline sources — `fixture/model/higher-cells/ua-corolla.gandr`, `fixture/model/identity/transport-dependent.gandr`, `fixture/model/identity/transport-path.gandr`, `fixture/model/identity/funext.gandr` and `fixture/model/identity/circle.gandr` — keep a golden of every hover beside their role goldens, as `crates/surface-grammar/tests/highlight/<source>.hover`: one line per run of positions answered alike, its span, the text, the hover text and its range. A change that moves a hover moves a line; `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-lsp --test editor -E 'test(the_headline_sources_hover_as_their_goldens)'` rewrites them, and the diff is the review.
 
@@ -119,6 +51,7 @@ The corpus is a proof library and a test suite at once, and it grows by subject,
 - **One file, one claim.** A source states one theorem family or one feature, in the order the argument runs: definitions, then laws, then what refuses. Its head says what it proves and names the source it follows — a cubical file and line, a book section — and an item that follows a named lemma keeps that name in its comment. A lemma two files need is written in the file that owns it and imported, never restated; a new item goes to the file that owns its subject before a new file is opened.
 - **Every item carries its comment and its attribute.** `///` before the attribute block (`check:corpus-comments` refuses otherwise), one of `checks`, `runs`, `normalizes`, `owes`, `refuses`. A refused item names its issue (`#n`) in the comment and sits beside the item it blocks; there is no `declined` fixture — a refusal the record admits is a defect to file and fix. A fix's regression is an item in the subject's file, named by its issue.
 - **A refusal has a twin.** What a model source proves, `pathological/<subject>/` refuses by name, one refusal per item, the same subject directory on both sides.
+- **A law sits beside what it governs.** A definition with an algebraic law — a unit, associativity, a functor's composition — states it as a `rule` of its own `data` or `sign` block, oriented by the order or by a written `==>`, so the coincidence check certifies it with the block's other rules, and a `normalizes` row fires it (`model/data/map-laws.gandr`, `model/identity/group-laws.gandr`). A law is never adjoined as an axiom: one the check cannot certify yet is refused by name in the subject's twin, naming the issue that admits it — a rule over a `def` (#525), a law that joins only through a cell completion derives (#338).
 - **Size follows the sweeps.** A source stays within the per-source bounds the sweeps enforce (#416: typed when at most a kibibyte, erased within the test bound); split by claim, never by count.
 - **Names say the claim.** Files are kebab-case by subject and claim (`circle-group`, not `circle2`); items are the language's camelCase; a name that coincides with cubical's or the book's is kept.
 - **The strict root is strict.** `strict/` admits only `checks` and its `runs` and `normalizes` refinements.
