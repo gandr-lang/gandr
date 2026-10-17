@@ -128,11 +128,11 @@ impl Machine<'_, '_>
         }
         self.wait(Frame::NativeYield(Produced::ValueType(datatype)));
         for (index, &field_type) in declared.iter().enumerate().rev() {
-            let expected = former::instantiate(
+            let expected = former::field_at(
                 self.context,
-                datatype,
+                (datatype, term),
                 field_type,
-                gandr_core_term::BinderDepth::from(signature.parameters().len()),
+                gandr_kernel_term::FieldPosition::from(index),
             )?;
             let field = match self.value(term)? {
                 &Value::Constructor { ref fields, .. } => fields
@@ -249,11 +249,11 @@ impl Machine<'_, '_>
         self.wait(Frame::NativeYield(Produced::Checked));
         let mut recursive = 0_usize;
         for (index, &field_type) in declared.iter().enumerate().rev() {
-            let declared_type = former::instantiate(
+            let declared_type = former::field_at(
                 self.context,
-                datatype,
+                (datatype, term),
                 field_type,
-                gandr_core_term::BinderDepth::from(signature.parameters().len()),
+                gandr_kernel_term::FieldPosition::from(index),
             )?;
             let wanted =
                 crate::recursion::stage_field(self.context, declared_type, datatype, owed.fields)?;

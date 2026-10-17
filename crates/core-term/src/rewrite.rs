@@ -3430,6 +3430,99 @@ pub fn strengthen_comp_type(
     }
 }
 
+/// Lower a value type out from under its `past` innermost binders.
+///
+/// # Specification
+/// - requires: `subject` names a value type of `arena` formed in some context
+///   `Γ` extended by `past` binders.
+/// - ensures: the same type in `Γ`, every index outside the binders lowered by
+///   `past`, when no occurrence names one of them;
+///   [`strengthening::Absent::MentionsBinder`] when one does; the subject
+///   itself past no binder.
+/// - provides: a constructor field's type read outside the binders of the
+///   fields before it, where it names none of them.
+/// - fails: never; a mention is a named absence.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: a `for` loop over the binders, each lowered by one rewrite.
+/// - measure: the binders left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a type that mentions a binder and one that mentions only
+///   an outer index separate the two answers, past one binder and past two.
+/// - witness: `rewrite::tests::a_value_type_strengthens_unless_it_names_a_binder`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(id) => id == subject || arena.value_type(id).is_some(),
+    | Maybe::Absent(strengthening::Absent::MentionsBinder) => past != Binders::NONE,
+})]
+#[inline]
+pub fn strengthen_value_type(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+    past: Binders,
+) -> Maybe<ValueTypeId, strengthening::Absent>
+{
+    let mut lowered = subject;
+    for _binder in 0 .. u32::from(past) {
+        let mut engine = Engine::new(arena);
+        let next = engine.run(Node::ValueType(lowered), Binders::NONE, Rewrite::Lower);
+        lowered = match (engine.mention, next) {
+            (Mention::Present, _) => {
+                return Maybe::Absent(strengthening::Absent::MentionsBinder);
+            },
+            (Mention::Absent, Node::ValueType(id)) => id,
+            (Mention::Absent, Node::Value(_) | Node::Computation(_) | Node::CompType(_)) => lowered,
+        };
+    }
+    Maybe::Present(lowered)
+}
+
+/// The classifier of a constructor of `family` over the field telescope
+/// `fields`.
+///
+/// It reads `U (A₀ → … → F family)`, an arrow where the rest names no binder
+/// of the field it crosses and a dependent arrow where it does.
+///
+/// # Specification
+/// - requires: `family` and the first field are scoped in one context `Γ`, each
+///   later field under `Γ` and the fields before it.
+/// - ensures: in `Γ`, the thunk of the chain over every field, `family` at the
+///   end; each field's binder dropped where nothing after it names it, so a
+///   telescope of independent fields reads as a chain of plain arrows.
+/// - provides: what a constructor's name answers at, wherever a constructor is
+///   shown as a function from its fields.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: a `for` loop over the fields, innermost first.
+/// - measure: the fields left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list's `cons` reads as plain arrows, and a field the
+///   next one names as a dependent arrow binding it.
+/// - witness: `rewrite::tests::a_constructor_classifier_binds_only_the_fields_named_after_them`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Thunk(_))))]
+#[inline]
+pub fn constructor_classifier(
+    arena: &mut CoreArena,
+    family: ValueTypeId,
+    fields: &[ValueTypeId],
+) -> ValueTypeId
+{
+    let past = Binders::from(u32::try_from(fields.len()).unwrap_or(u32::MAX));
+    let shifted = shift_value_type(arena, family, past);
+    let mut chain = arena.comp_type_returner(shifted);
+    for &field in fields.iter().rev() {
+        chain = match strengthen_comp_type(arena, chain) {
+            Maybe::Present(lowered) => arena.comp_type_arrow(field, lowered),
+            Maybe::Absent(_) => arena.comp_type_pi(field, chain),
+        };
+    }
+    arena.value_type_thunk(chain)
+}
+
 /// Shift free value occurrences, preserving variables bound within the value.
 ///
 /// # Specification

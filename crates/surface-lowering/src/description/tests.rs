@@ -551,11 +551,49 @@ fn codata_declarations_elaborate_with_codata_polarity()
 }
 
 #[test]
-fn a_higher_order_field_is_declined_at_elaboration()
+fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
 {
-    let source = "data Cell(a : Type) : Type { Mk : (get : a -> a) --> Cell(a); }";
+    for (source, what, result) in [
+        (
+            "data Cell(a : Type) : Type { Mk : (get : a -> a) --> Cell(a); }",
+            "a function field",
+            "Cell(a)",
+        ),
+        (
+            "data Box : Type { Put : (a : Type) --> Box; }",
+            "a universe field",
+            "Box",
+        ),
+        (
+            "data Pack : Type { Mk : (c : Integer, v : c) --> Pack; }",
+            "a field naming the one before it",
+            "Pack",
+        ),
+    ] {
+        let report = elaborated(SourceText::from(source));
+        assert!(
+            report.declarations.is_empty() && report.diagnostics.is_empty(),
+            "{what}: no description and no refusal, {:?}",
+            report.diagnostics
+        );
+        let [ref native] = *report.natives.as_slice()
+        else {
+            panic!("{what}: the native reading owns the family")
+        };
+        let [ref generator] = *native.written.constructors.as_slice()
+        else {
+            panic!("{what}: its one generator is written")
+        };
+        assert_eq!(
+            source
+                .get(usize::from(generator.result.start()) .. usize::from(generator.result.end())),
+            Some(result),
+            "{what}: the result is kept past the field the code cannot carry"
+        );
+    }
+    // An operation the description must carry keeps the field's refusal.
+    let source = "data Cell : Type { Mk : (get : Integer -> Integer) --> Cell; oper reset(c : Cell) -> Cell; }";
     let report = elaborated(SourceText::from(source));
-    assert!(report.declarations[0].description.ctors.is_empty());
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
         panic!("one higher-order field")
@@ -563,7 +601,7 @@ fn a_higher_order_field_is_declined_at_elaboration()
     assert_eq!(diagnostic.fault, DescriptionFault::HigherOrderField);
     assert_eq!(
         source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
-        Some("a -> a")
+        Some("Integer -> Integer")
     );
 }
 

@@ -2,7 +2,9 @@
 // codes to value types. The decode of a code over a binder is a value type
 // over a neutral code, compared by its code; the decode of a code that runs
 // to a quote is the quoted type. The arrow code decodes to the function type
-// between its two decoded sides, so a function at a decoded arrow applies.
+// between its two decoded sides, so a function at a decoded arrow applies. A
+// constructor field may read the one before it, so a value packs with its
+// code.
 
 /// Natural numbers, free: every constructor term is its own value.
 data Nat : Type {
@@ -74,3 +76,33 @@ def atOne = thunk { fn (g) { g(one) } } ;
 @[ runs("Succ(Succ(Zero))") ]
 def appliedAbove : +U (-F Nat) ;
 def appliedAbove = thunk { applyAt(Arrow(NatC, NatC), NatC, atOne, succ) } ;
+
+/// A value packed with its code: the second field's type is the decode of the
+/// first, so each constructor term carries its own type.
+@[ checks ]
+data Coded : Type {
+  Pack : (c : U, v : el(c)) --> Coded;
+}
+
+/// One, packed at the natural code.
+@[ checks ]
+def packedOne : Coded ;
+def packedOne = Pack(NatC, one) ;
+
+/// The successor, packed at the arrow code its type decodes from.
+@[ checks ]
+def packedSucc : Coded ;
+def packedSucc = Pack(Arrow(NatC, NatC), succ) ;
+
+/// The code a packed value carries.
+@[ checks ]
+def codeOf(p : Coded) -> -F U {
+  case p {
+    Pack(c, v) => return c
+  }
+}
+
+/// The successor's code, read back out of its pack.
+@[ runs("Arrow(NatC, NatC)") ]
+def unpacked : +U (-F U) ;
+def unpacked = thunk { codeOf(packedSucc) } ;

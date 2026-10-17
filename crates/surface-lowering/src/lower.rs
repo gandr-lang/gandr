@@ -3145,6 +3145,7 @@ pub fn lower_module<'source>(
         crate::description::DescriptionReport {
             declarations: collected.descriptions.into_values().collect(),
             diagnostics: collected.description_diagnostics,
+            natives: collected.natives,
         },
         collected.cells,
     )

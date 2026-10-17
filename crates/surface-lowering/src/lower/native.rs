@@ -1344,20 +1344,23 @@ impl<'source> Lowerer<'_, 'source>
 {
     /// Seed every data declaration's types: each parameter's type under the
     /// parameters before it, the universe at the outermost frame, and each
-    /// field's type under all the parameters.
+    /// field's type under all the parameters and the fields before it in its
+    /// constructor.
     ///
     /// # Specification
     /// - requires: the collection pass has run.
     /// - ensures: one frame per parameter, typed with its written type and
-    ///   mentioned, so a type naming it counts it, and one seed per type the
-    ///   declarations write, appended to `seeds`.
+    ///   mentioned, so a type naming it counts it; one frame per field but its
+    ///   constructor's last, bound to the field's written name or to none; and
+    ///   one seed per type the declarations write, appended to `seeds`.
     /// - provides: the data half of [`Self::seed`].
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a two-parameter family whose field names its first
-    ///   parameter lowers with the field scoped under both.
+    ///   parameter lowers with the field scoped under both, and a field naming
+    ///   the field before it reads that field's binder.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     #[spec(
         captures: before = seeds.len(),
@@ -1386,9 +1389,34 @@ impl<'source> Lowerer<'_, 'source>
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
             }
             for generator in &form.generators {
-                for field in &generator.fields {
-                    seeds.push((field.node, Reading::ValueType(frame)));
+                let Some((last, earlier)) = generator.fields.split_last()
+                else {
+                    continue;
+                };
+                let mut inner = frame;
+                for field in earlier {
+                    seeds.push((field.ty.node, Reading::ValueType(inner)));
+                    let bound = match field.named {
+                        Maybe::Present(named) => {
+                            let name = SurfaceName::from(self.text_at(named));
+                            let bound = self.scope.extend_typed(
+                                inner,
+                                name,
+                                field.ty.node,
+                                Maybe::Present(named.span),
+                            );
+                            self.scope.mention(bound);
+                            bound
+                        },
+                        Maybe::Absent(_) => self.scope.extend(
+                            inner,
+                            SurfaceName::from(""),
+                            Maybe::Absent(binder_site::Absent::Unwritten),
+                        ),
+                    };
+                    inner = Frame::Inner(bound);
                 }
+                seeds.push((last.ty.node, Reading::ValueType(inner)));
             }
         }
     }
@@ -1593,7 +1621,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   parentheses stripped, is the family applied to its own parameters in
     ///   order, or the family bare when it has none; the argument a written
     ///   classifier, an application of the family, gives the parameter when the
-    ///   field's type is that parameter; the unclassified absence otherwise.
+    ///   field's type is that parameter; the unclassified absence otherwise,
+    ///   and whenever a field before it binds a parameter's name.
     /// - provides: the classifier a constructor written in a field takes.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance; the refusals the tree's molds yield.
@@ -1620,10 +1649,11 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(unclassified);
         };
-        let Some(field) = data
-            .generators
-            .get(at.tag)
-            .and_then(|generator| generator.fields.get(at.index))
+        let Some(generator) = data.generators.get(at.tag)
+        else {
+            return Ok(unclassified);
+        };
+        let Some(field) = generator.fields.get(at.index)
         else {
             return Ok(unclassified);
         };
@@ -1632,12 +1662,20 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .map(|parameter| self.name_at(parameter.named))
             .collect();
+        // A field before it binding a parameter's name shadows the parameter,
+        // so the spelling no longer says which the type names.
+        let shadowed = generator.fields.iter().take(at.index).any(|earlier| {
+            matches!(earlier.named, Maybe::Present(binder) if named.contains(&self.name_at(binder)))
+        });
+        if shadowed {
+            return Ok(unclassified);
+        }
         let family = self
             .collected
             .slots
             .get(usize::from(data.slot))
             .map(|slot| slot.name);
-        let Maybe::Present(typed) = self.unwrapped(field.node)?
+        let Maybe::Present(typed) = self.unwrapped(field.ty.node)?
         else {
             return Ok(unclassified);
         };
@@ -4597,7 +4635,7 @@ impl<'source> Lowerer<'_, 'source>
                 let fields: Vec<ValueTypeId> = generator
                     .fields
                     .iter()
-                    .filter_map(|field| match self.value_type_at(field.node) {
+                    .filter_map(|field| match self.value_type_at(field.ty.node) {
                         Maybe::Present(id) => Some(id),
                         Maybe::Absent(_) => None,
                     })

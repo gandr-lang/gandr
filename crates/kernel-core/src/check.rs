@@ -5051,20 +5051,26 @@ where
                 )?;
                 context.push(*parameter);
             }
-            for field in constructors.iter().flatten() {
-                let formed = type_level(
-                    arena,
-                    judgement,
-                    TypeLevelGoal::Value(*field),
-                    context.clone(),
-                    Recording {
-                        memo,
-                        session,
-                        census,
-                        owed: &mut owed,
-                    },
-                )?;
-                judgement.levels.check_universe_below(&formed, &upper)?;
+            // A field forms under the parameters and the fields before it in
+            // its constructor, which a later field's type may name.
+            for fields in constructors {
+                let mut scope = context.clone();
+                for field in fields {
+                    let formed = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Value(*field),
+                        scope.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                    )?;
+                    judgement.levels.check_universe_below(&formed, &upper)?;
+                    scope.push(*field);
+                }
             }
             // A presented type's rules are checked against the table its
             // fields just formed: linear, constructor-headed over the own

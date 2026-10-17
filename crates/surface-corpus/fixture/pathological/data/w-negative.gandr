@@ -1,0 +1,17 @@
+// What a function-typed field refuses. A W-type's node may hold a function
+// into its own family, but not from it: a family to the left of the arrow is a
+// negative occurrence, and no fold over it is well-founded. Shared with
+// `../../model/data/w-tree.gandr`.
+
+/// The two branches of a binary node.
+@[ checks ]
+data Two : Type {
+  L : Two;
+  R : Two;
+}
+
+/// A node consuming its own family: `Bad` stands left of the arrow.
+@[ refuses("NegativeOccurrence") ]
+data Bad : Type {
+  Mk : (f : +U (Bad -> -F Two)) --> Bad;
+}

@@ -73,7 +73,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_core_term::BinderDepth;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::DataSignature;
 use gandr_core_term::ValueType;
@@ -83,6 +82,7 @@ use gandr_core_term::pattern::PatternId;
 use gandr_core_term::pattern::Patterns;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
+use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
 use crate::formation::FormedValueType;
@@ -744,16 +744,20 @@ impl Walker<'_, '_, '_>
                 let signature = self.signature(column)?;
                 let declared = signature.constructors().get(usize::from(tag)).ok_or(ill)?;
                 let mut fields = Vec::with_capacity(declared.len());
-                for &field in declared {
-                    fields.push(
-                        former::instantiate(
-                            self.context,
-                            column,
-                            field,
-                            BinderDepth::from(signature.parameters().len()),
-                        )
-                        .map_err(CoverageFault::Refused)?,
-                    );
+                for (position, &field) in declared.iter().enumerate() {
+                    let outside = former::field_outside(
+                        self.context,
+                        column,
+                        field,
+                        gandr_kernel_term::FieldPosition::from(position),
+                    )
+                    .map_err(CoverageFault::Refused)?;
+                    // A field naming one before it is read at the unknown
+                    // column: its classifier varies with the pattern there.
+                    fields.push(match outside {
+                        Maybe::Present(ty) => ty,
+                        Maybe::Absent(_) => self.unknown,
+                    });
                 }
                 fields
             },

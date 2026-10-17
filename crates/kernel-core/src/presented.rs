@@ -582,12 +582,17 @@ fn words(
 ///   `arena`, the declaration standing at `position`.
 /// - ensures: one row per constructor, one slot per field in order:
 ///   [`RuleSlot::Own`] where the field's type is the declaration's own family,
-///   [`RuleSlot::Other`] with the field's type id elsewhere.
+///   [`RuleSlot::Dependent`] where the field follows its constructor's first
+///   and its type reaches a binder — formed under the fields before it as well
+///   as the parameters — and [`RuleSlot::Other`] with the field's type id
+///   elsewhere.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`admit`].
+/// - hypothesis: L3 — as [`admit`], and a pair over a parameter reads its
+///   second field as dependent.
 /// - witness: `presented::tests::admission_reads_the_own_type_from_the_table`
+/// - witness: `presented::tests::a_pair_over_a_parameter_reads_its_second_field_as_dependent`
 #[spec(ensures: |ret| ret.len() == constructors.len())]
 pub(crate) fn slot_table(
     arena: &TermArena,
@@ -595,14 +600,22 @@ pub(crate) fn slot_table(
     constructors: &[Vec<ValueTypeId>],
 ) -> Vec<Vec<RuleSlot<ValueTypeId>>>
 {
+    let mut reaches = crate::support::LooseDepths::new();
     constructors
         .iter()
         .map(|fields| {
             fields
                 .iter()
-                .map(|&field| match arena.value_type(field) {
+                .enumerate()
+                .map(|(index, &field)| match arena.value_type(field) {
                     Some(&ValueType::Data { declaration, .. }) if declaration == position => {
                         RuleSlot::Own
+                    },
+                    _ if index != 0
+                        && reaches.value_type_reach(arena, field)
+                            != crate::support::LooseDepth::default() =>
+                    {
+                        RuleSlot::Dependent
                     },
                     _ => RuleSlot::Other(field),
                 })
@@ -857,6 +870,7 @@ mod tests
     use gandr_kernel_term::RuleIndex;
     use gandr_kernel_term::RuleNode;
     use gandr_kernel_term::RuleRefusal;
+    use gandr_kernel_term::RuleSlot;
     use gandr_kernel_term::RuleVariable;
     use gandr_kernel_term::TermArena;
 
@@ -981,6 +995,31 @@ mod tests
                 fault: RuleFault::NotOwnPosition,
             })),
             "at another position the same table is not the declaration's own"
+        );
+    }
+
+    #[test]
+    fn a_pair_over_a_parameter_reads_its_second_field_as_dependent()
+    {
+        // `Pair(a) { mk : (x : El a, y : El a) }`: the first field reads `a`
+        // at index 0, the second past the first's binder at index 1, so only
+        // the first has a classifier of its own.
+        let mut arena = TermArena::new();
+        let first = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let second = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let head = arena.value_type_element(first, Level::zero());
+        let tail = arena.value_type_element(second, Level::zero());
+        let unit = arena.value_type_unit();
+        assert_eq!(
+            super::slot_table(&arena, ConstantIndex::from(0_usize), &[
+                alloc::vec![head, tail],
+                alloc::vec![head, unit]
+            ],),
+            alloc::vec![
+                alloc::vec![RuleSlot::Other(head), RuleSlot::Dependent],
+                alloc::vec![RuleSlot::Other(head), RuleSlot::Other(unit)],
+            ],
+            "an open field after the first is dependent, a closed one keeps its classifier"
         );
     }
 

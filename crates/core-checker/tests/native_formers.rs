@@ -361,6 +361,78 @@ mod native_formers
         );
     }
 
+    #[test]
+    fn a_rule_binding_a_dependent_field_is_refused_in_both_checkers()
+    {
+        use gandr_kernel_term::RuleNode;
+        use gandr_kernel_term::RuleVariable;
+        // `P(a : Type) { Mk : (x : El a, y : El a); S : (p : P(a)) }` with
+        // `S(Mk(x, y)) ~> Mk(x, y)`: `y`'s type reads `a` past `x`'s binder,
+        // so a rule variable there has no classifier of its own.
+        let rule = gandr_kernel_term::PresentedRule::new(
+            [
+                RuleNode::Constructor(ConstructorTag::from(1_usize)),
+                RuleNode::Constructor(ConstructorTag::from(0_usize)),
+                RuleNode::Variable(RuleVariable::from(0_u32)),
+                RuleNode::Variable(RuleVariable::from(1_u32)),
+            ]
+            .into(),
+            [
+                RuleNode::Constructor(ConstructorTag::from(0_usize)),
+                RuleNode::Variable(RuleVariable::from(0_u32)),
+                RuleNode::Variable(RuleVariable::from(1_u32)),
+            ]
+            .into(),
+        );
+        let presentation = gandr_kernel_term::Presentation::new(vec![rule]);
+        let refusal = gandr_kernel_term::RuleRefusal {
+            rule: gandr_kernel_term::RuleIndex::from(0_usize),
+            fault: gandr_kernel_term::RuleFault::DependentSlot,
+        };
+        let mut arena = CoreArena::new();
+        let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let near = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let far = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let first = arena.value_type_element(near, Level::zero());
+        let second = arena.value_type_element(far, Level::zero());
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![near]);
+        let pairs = Declaration::data(
+            ConstantIndex::from(0_usize),
+            DataSignature::new(vec![kind], vec![vec![first, second], vec![own]], kind)
+                .presented(presentation.clone())
+                .into(),
+            OriginToken::from(0_usize),
+        );
+        let (report, _crossed) = run(&mut arena, &[pairs]);
+        assert_eq!(
+            report.judged()[0].verdict(),
+            Verdict::Refused(CheckRefusal::RuleNotPresentable { kind, refusal }),
+            "the checker names the rule and its fault"
+        );
+        let mut environment = gandr_kernel_core::Environment::new();
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kernel_kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let near = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let far = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let first = arena.value_type_element(near, Level::zero());
+        let second = arena.value_type_element(far, Level::zero());
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![near]);
+        let staged = staging
+            .data(
+                gandr_kernel_term::LevelSignature::monomorphic(),
+                vec![kernel_kind],
+                vec![vec![first, second], vec![own]],
+                kernel_kind,
+            )
+            .presented(presentation);
+        assert_eq!(
+            environment.add_decl(staged).map(|_admitted| ()),
+            Err(gandr_kernel_core::KernelError::RuleNotPresentable(refusal)),
+            "the kernel refuses the same rule for the same fault"
+        );
+    }
+
     /// `fix f. λy. case y { Base ⇒ return (); Loop(x) ⇒ f(x); Unloop(x) ⇒
     /// f(x) }` at `Circle → F Unit`, its descent claimed, and the case at its
     /// root.

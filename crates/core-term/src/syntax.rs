@@ -3396,7 +3396,8 @@ mod tests
 /// and the rules presenting its terms.
 ///
 /// Parameter classifiers are scoped under their predecessors. Constructor
-/// fields are scoped under all parameters and do not bind one another.
+/// fields are scoped under all parameters and then the fields before them in
+/// their constructor, which a later field may name.
 /// Admission, not this container, verifies those scopes, the universe bound
 /// and that every rule is constructor-headed over the table.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

@@ -34,7 +34,9 @@
 //! - **A parameterised data family's** constructors read under its parameters:
 //!   each name at the type above with `F` applied to them, each field's name at
 //!   its type, the written result at the family's universe and each argument
-//!   naming a parameter at that parameter's classifier.
+//!   naming a parameter at that parameter's classifier. A family the native
+//!   reading owns whole ([`crate::description::NativeFamily`]) reads the same
+//!   way, at its native signature, with or without parameters.
 //!
 //! A component the derivation cannot state answers nowhere, and neither does
 //! a node no position sorts.
@@ -1168,11 +1170,7 @@ impl Typer<'_>
                 family
             }
             else {
-                let mut chain = self.arena.comp_type_returner(family);
-                for &field in fields.iter().rev() {
-                    chain = self.arena.comp_type_arrow(field, chain);
-                }
-                self.arena.value_type_thunk(chain)
+                gandr_core_term::constructor_classifier(self.arena, family, fields)
             };
             self.emit(member.named, DescribedRole::Name, ty, closed);
             for (&field, port) in fields.iter().zip(&member.fields) {
@@ -1328,16 +1326,18 @@ impl Typer<'_>
     ///   constructors, in the order `signature` lists them.
     /// - ensures: under the parameters, a constant constructor's name answers
     ///   at the family applied to them, one with fields at `+U (A₁ -> … -> -F
-    ///   F(…))`, each field's name at its type; the written result at the
-    ///   family's universe, and each of its arguments naming a parameter at
-    ///   that parameter's classifier.
+    ///   F(…))`, a field a later one names bound by a dependent arrow; each
+    ///   field's name at its type where it names no field before it; the
+    ///   written result at the family's universe, and each of its arguments
+    ///   naming a parameter at that parameter's classifier.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as [`Self::sign`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Maybe(a)`'s constructors, fields, result and its
-    ///   argument answer under `a`.
+    ///   argument answer under `a`, and `List(a)`'s tail, scoped past the
+    ///   head's binder, answers at `List(a)`.
     /// - witness: `described::tests::a_parameterised_constructor_answers_under_its_parameters`
     fn parameterised(
         &mut self,
@@ -1373,16 +1373,17 @@ impl Typer<'_>
                 family
             }
             else {
-                let mut chain = self.arena.comp_type_returner(family);
-                for &field in fields.iter().rev() {
-                    chain = self.arena.comp_type_arrow(field, chain);
-                }
-                self.arena.value_type_thunk(chain)
+                gandr_core_term::constructor_classifier(self.arena, family, fields)
             };
             self.emit(member.named, DescribedRole::Name, ty, context);
+            let mut earlier = Binders::NONE;
             for (&field, port) in fields.iter().zip(&member.fields) {
-                if let Maybe::Present(named) = port.named {
-                    self.emit(named, DescribedRole::Name, field, context);
+                let outside = gandr_core_term::strengthen_value_type(self.arena, field, earlier);
+                earlier = earlier.deeper();
+                if let Maybe::Present(named) = port.named
+                    && let Maybe::Present(outside) = outside
+                {
+                    self.emit(named, DescribedRole::Name, outside, context);
                 }
             }
             self.emit(
@@ -1407,16 +1408,20 @@ impl LoweredModule<'_>
     /// - ensures: for every `sign` block and every unparameterised `data`
     ///   family's operations and rules, each written node at the type its
     ///   member states, as the [`crate::described`] documentation lays out,
-    ///   each read in its context; the first context is the empty one.
+    ///   each read in its context; a parameterised family's constructors, and
+    ///   those of a family the native reading owns whole, at its native
+    ///   signature under its parameters; the first context is the empty one.
     /// - provides: what a face answers inside a described declaration.
     /// - fails: never; a node no type is stated for records nothing.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a sign's sorts, operations, laws and circuit and a
-    ///   data family's operations and rules answer at the types asserted.
+    /// - hypothesis: L3 — a sign's sorts, operations, laws and circuit, a data
+    ///   family's operations and rules, and the constructors of a family with a
+    ///   function field answer at the types asserted.
     /// - witness: `described::tests::a_sign_answers_at_every_member`
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
+    /// - witness: `described::tests::a_family_the_native_reading_owns_answers_at_its_signature`
     #[spec(ensures: |ret| ret.contexts.first().is_some_and(Vec::is_empty)
         && ret.entries.iter().all(|entry| usize::from(entry.context) < ret.contexts.len()))]
     #[inline]
@@ -1434,7 +1439,7 @@ impl LoweredModule<'_>
         };
         let mut families: BTreeMap<Name, (ValueTypeId, ValueTypeId)> = BTreeMap::new();
         let mut constructors: BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId)> = BTreeMap::new();
-        let mut parameterised: BTreeMap<Name, (ConstantIndex, &DataSignature)> = BTreeMap::new();
+        let mut signatures: BTreeMap<Name, (ConstantIndex, &DataSignature)> = BTreeMap::new();
         let base = typer.universe(Level::zero());
         for (name, atom) in [("Integer", BaseType::Integer), ("String", BaseType::String)] {
             let ty = typer.arena.value_type_base(atom);
@@ -1456,11 +1461,11 @@ impl LoweredModule<'_>
             else {
                 continue;
             };
+            let _first = signatures.insert(
+                Name::from(declaration.name().as_ref()),
+                (declaration.constant(), signature),
+            );
             if !signature.parameters().is_empty() {
-                let _first = parameterised.insert(
-                    Name::from(declaration.name().as_ref()),
-                    (declaration.constant(), signature),
-                );
                 continue;
             }
             let ty = typer
@@ -1496,7 +1501,7 @@ impl LoweredModule<'_>
                         );
                     }
                     else if let Some(&(constant, signature)) =
-                        parameterised.get(&described.description.id.name)
+                        signatures.get(&described.description.id.name)
                     {
                         typer.parameterised(
                             &described.parameters,
@@ -1506,6 +1511,13 @@ impl LoweredModule<'_>
                         );
                     }
                 },
+            }
+        }
+        // A family the native reading owns whole answers as a parameterised
+        // one does, at its signature, under however many parameters it has.
+        for native in &self.descriptions().natives {
+            if let Some(&(constant, signature)) = signatures.get(&native.name) {
+                typer.parameterised(&native.parameters, &native.written, constant, signature);
             }
         }
         typer.types

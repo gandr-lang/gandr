@@ -73,7 +73,8 @@ pub(super) struct Signature<'signature>
 {
     /// Classifiers scoped under their preceding parameters.
     pub parameters: &'signature [ValueTypeId],
-    /// Field types scoped under the entire parameter telescope.
+    /// Field types scoped under the entire parameter telescope, then the
+    /// fields before them in their constructor.
     pub constructors: &'signature [Vec<ValueTypeId>],
     /// The positive universe bounding the fields.
     pub kind: ValueTypeId,
@@ -229,6 +230,43 @@ pub(super) fn instantiate(
     prefix: ParameterPrefix,
 ) -> Result<ValueTypeId, KernelError>
 {
+    field_type(
+        arena,
+        session,
+        (subject, datatype),
+        prefix,
+        BinderDepth::NONE,
+    )
+}
+
+/// A constructor field's type at a nominal application: the parameters
+/// instantiated beneath the `earlier` field binders the field stands under.
+///
+/// # Specification
+/// - requires: the subject is scoped under the supplied parameters, then
+///   `earlier` binders: the constructor's fields before it.
+/// - ensures: the same type under the ambient context and those binders, each
+///   parameter replaced by its argument carried under them; zero parameters
+///   return the subject.
+/// - fails: a telescope exceeding the representable binder space.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `DataArgumentArity` for an unrepresentable telescope.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list's tail reads its element parameter past the head's
+///   binder, and a dependent field keeps the binder it names.
+/// - witness: `recursive_data::recursive_data::dependent_fields_are_admitted`
+#[spec(ensures: |ret| prefix.0 != 0 || ret.as_ref() == Ok(&subject))]
+pub(super) fn field_type(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    (subject, datatype): (ValueTypeId, ValueTypeId),
+    prefix: ParameterPrefix,
+    earlier: BinderDepth,
+) -> Result<ValueTypeId, KernelError>
+{
     let (table, memo) = session.rewrite_parts();
     let mut result = subject;
     for index in (0 .. prefix.0).rev() {
@@ -243,7 +281,7 @@ pub(super) fn instantiate(
             u32::try_from(index).map_err(|_cause| KernelError::DataArgumentArity)?,
         );
         let argument = rewrite::shift_value(arena, table, memo, argument, BinderDepth::NONE, depth);
-        result = rewrite::substitute_value_type(arena, table, memo, result, argument);
+        result = rewrite::substitute_value_type_at(arena, table, memo, (result, argument), earlier);
     }
     Ok(result)
 }
@@ -253,7 +291,8 @@ pub(super) fn instantiate(
 /// # Specification
 /// - requires: the value id belongs to the current arena.
 /// - ensures: every supplied field checks against its declaration-instantiated
-///   type.
+///   type, the fields before it in the constructor substituted by the values
+///   the constructor gives them.
 /// - fails: non-data classifiers, unknown tags, wrong argument or field
 ///   arities.
 /// - panics: none.
@@ -265,8 +304,10 @@ pub(super) fn instantiate(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — equal carriers do not erase identity, arity or payload
-///   typing.
+///   typing, and a field naming the code before it checks at that code's
+///   decode.
 /// - witness: `native_formers::native_formers::nominal_identity_and_constructor_refusals`
+/// - witness: `recursive_data::recursive_data::dependent_fields_are_admitted`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckValue(..)))))]
 pub(super) fn constructor(
     arena: &mut TermArena,
@@ -354,13 +395,32 @@ pub(super) fn constructor(
     }
     let mut goals = Vec::with_capacity(count);
     for (index, &ty) in expected.iter().enumerate() {
-        let ty = instantiate(
+        let earlier = BinderDepth::from(
+            u32::try_from(index).map_err(|_cause| KernelError::ConstructorArity)?,
+        );
+        let mut ty = field_type(
             arena,
             session,
-            ty,
-            datatype,
+            (ty, datatype),
             ParameterPrefix(argument_count),
+            earlier,
         )?;
+        // The fields before it stand at the values the constructor gives
+        // them, the innermost first.
+        for before in (0 .. index).rev() {
+            let value = match arena.value(value) {
+                Some(&Value::Constructor { ref fields, .. }) => {
+                    fields.get(before).copied().ok_or(KernelError::ArenaFault)?
+                },
+                _ => return Err(KernelError::ArenaFault),
+            };
+            let depth = BinderDepth::from(
+                u32::try_from(before).map_err(|_cause| KernelError::ConstructorArity)?,
+            );
+            let (table, memo) = session.rewrite_parts();
+            let value = rewrite::shift_value(arena, table, memo, value, BinderDepth::NONE, depth);
+            ty = rewrite::substitute_value_type(arena, table, memo, ty, value);
+        }
         let field = match arena.value(value) {
             Some(&Value::Constructor { ref fields, .. }) => {
                 fields.get(index).copied().ok_or(KernelError::ArenaFault)?
@@ -378,8 +438,8 @@ pub(super) fn constructor(
 /// alone has an implicit binder; syntax walkers need no declaration lookup.
 ///
 /// # Specification
-/// - requires: field types are scoped under the declaration parameter
-///   telescope.
+/// - requires: field types are scoped under the declaration parameter telescope
+///   and their constructor's fields before them.
 /// - ensures: the result binds fields in declaration order and checks the
 ///   motive at the corresponding constructor, not merely at the original
 ///   scrutinee.
@@ -432,12 +492,16 @@ pub(super) fn branch_type(
     );
     let mut result = rewrite::substitute_comp_type(arena, table, memo, shifted, constructor);
     for (index, &field) in fields.iter().enumerate().rev() {
-        let field = instantiate(arena, session, field, datatype, ParameterPrefix(parameters))?;
-        let depth = BinderDepth::from(
+        let earlier = BinderDepth::from(
             u32::try_from(index).map_err(|_cause| KernelError::ConstructorArity)?,
         );
-        let (table, memo) = session.rewrite_parts();
-        let domain = rewrite::shift_value_type(arena, table, memo, field, BinderDepth::NONE, depth);
+        let domain = field_type(
+            arena,
+            session,
+            (field, datatype),
+            ParameterPrefix(parameters),
+            earlier,
+        )?;
         result = arena.comp_type_pi(domain, result);
     }
     Ok(result)

@@ -1,0 +1,87 @@
+// The cumulative hierarchy as a W-type over the universe, after Aczel's
+// sets as well-founded trees and the HoTT book's §10.5. A set is a type of
+// members and a function picking each one: `Sup(a, f)` has the members `f(x)`
+// for `x : a`. The family occurs only to the right of the function's arrow,
+// so it is strictly positive, and it lives one universe above the types it
+// ranges over. A fold reaches each member through `f(x)` and recurses there,
+// one stage below the set; the codes these sets carry have no machine image,
+// so every item here checks and none runs.
+
+/// Sets: a type of members, and the member at each of its elements.
+@[ checks ]
+data Vinf : Type[+, 1] {
+  Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf;
+}
+
+/// Ordinals of the same shape: the limit of a family of smaller ordinals.
+@[ checks ]
+data Ord : Type[+, 1] {
+  Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord;
+}
+
+/// The rank of a set: the limit, over its members, of their ranks. Each
+/// member is reached through `f` and ranked one stage below the set.
+@[ checks ]
+def rec rank(v : Vinf) -> -F Ord {
+  case v {
+    Sup(a, f) => Lim(a, thunk { fn (x) { rank[<](f(x)) } })
+  }
+}
+
+/// The type a set's members are picked by.
+@[ checks ]
+def members(v : Vinf) -> -F Type {
+  case v {
+    Sup(a, f) => return a
+  }
+}
+
+/// The type with no element; shared with `../data/empty.gandr`.
+@[ checks ]
+data Empty : Type {}
+
+/// The type with one element.
+@[ checks ]
+data Lone : Type {
+  Pt : Lone;
+}
+
+/// The type with two elements.
+@[ checks ]
+data Two : Type {
+  L : Two;
+  R : Two;
+}
+
+/// Any set follows from an element of the empty type.
+@[ checks ]
+def absurd(e : Empty) -> -F Vinf {
+  case e {}
+}
+
+/// No member: the empty set's picking function has nothing to pick from.
+@[ checks ]
+def none : +U (Empty -> -F Vinf) ;
+def none = thunk { fn (x) { absurd(x) } } ;
+
+/// The empty set.
+@[ checks ]
+def zero : Vinf ;
+def zero = Sup(Empty, none) ;
+
+/// The set whose one member is `v`.
+@[ checks ]
+def single(v : Vinf) -> -F Vinf {
+  Sup(Lone, thunk { fn (x) { v } })
+}
+
+/// The set whose members are `v` and `w`.
+@[ checks ]
+def pair(v : Vinf, w : Vinf) -> -F Vinf {
+  Sup(Two, thunk { fn (x) { case x -> -F Vinf { L => v, R => w } } })
+}
+
+/// The rank of the set whose one member is the empty set.
+@[ checks ]
+def ranked : +U (-F Ord) ;
+def ranked = thunk { run v <- single(zero); rank(v) } ;

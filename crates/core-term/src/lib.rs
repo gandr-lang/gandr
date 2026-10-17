@@ -10,12 +10,14 @@
 //! - The static calculus is three formers over codes: the static Pi classifies
 //!   a type operator, and the static lambda and the static application are
 //!   values, so a type operator is a value like any code.
-//! - [`shift_value_type`], [`shift_comp_type`], [`instantiate_comp_type`] and
-//!   [`strengthen_comp_type`] are the rewrites a type that mentions a bound
-//!   variable needs, and [`instantiate_value`] the substitution static beta
-//!   takes, as iterative machines memoized per node; [`rename_value_traced`]
-//!   and [`rename_value_type_traced`] rename constants and atoms by a
-//!   [`Renaming`], the step a functor application instantiates its body by.
+//! - [`shift_value_type`], [`shift_comp_type`], [`instantiate_comp_type`],
+//!   [`strengthen_comp_type`] and [`strengthen_value_type`] are the rewrites a
+//!   type that mentions a bound variable needs, and [`instantiate_value`] the
+//!   substitution static beta takes, as iterative machines memoized per node;
+//!   [`constructor_classifier`] reads a constructor's field telescope as the
+//!   function its name answers at; [`rename_value_traced`] and
+//!   [`rename_value_type_traced`] rename constants and atoms by a [`Renaming`],
+//!   the step a functor application instantiates its body by.
 //! - [`Context`] is the two-zone typing context `Γ; Σ`: flat, de Bruijn,
 //!   id-addressed and name-free. Names live in the surface syntax and in
 //!   diagnostics, above this crate.
@@ -189,6 +191,7 @@ pub use crate::rewrite::Carried;
 pub use crate::rewrite::Nesting;
 pub use crate::rewrite::Renaming;
 pub use crate::rewrite::Unenclosed;
+pub use crate::rewrite::constructor_classifier;
 pub use crate::rewrite::elaborate_nested_traced;
 pub use crate::rewrite::fill_hole;
 pub use crate::rewrite::instantiate_comp_type;
@@ -206,6 +209,7 @@ pub use crate::rewrite::shift_value;
 pub use crate::rewrite::shift_value_type;
 pub use crate::rewrite::shift_value_type_under;
 pub use crate::rewrite::strengthen_comp_type;
+pub use crate::rewrite::strengthen_value_type;
 pub use crate::rewrite::strengthening;
 pub use crate::rewrite::substitute_environment;
 pub use crate::rewrite::substitute_environment_traced;

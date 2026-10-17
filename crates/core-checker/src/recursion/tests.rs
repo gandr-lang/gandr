@@ -597,7 +597,9 @@ fn list_signature(arena: &mut CoreArena) -> DataSignature
     let kind = kind(arena);
     let code = var(arena, DeBruijnIndex::from(0));
     let head = element(arena, code);
-    let tail = data(arena, ConstantIndex::from(1), vec![code]);
+    // The tail stands past the head's binder: the element code is one out.
+    let past_head = var(arena, DeBruijnIndex::from(1));
+    let tail = data(arena, ConstantIndex::from(1), vec![past_head]);
     DataSignature::new(vec![kind], vec![vec![], vec![head, tail]], kind)
 }
 

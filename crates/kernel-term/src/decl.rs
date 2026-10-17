@@ -399,7 +399,8 @@ pub enum DeclarationContent
     {
         /// Classifier telescope, each entry scoped under earlier parameters.
         parameters: Vec<ValueTypeId>,
-        /// Field types per constructor, scoped under the whole telescope.
+        /// Field types per constructor, each scoped under the whole parameter
+        /// telescope and then its constructor's fields before it.
         constructors: Vec<Vec<ValueTypeId>>,
         /// Universe classifier bounding every constructor field.
         kind: ValueTypeId,

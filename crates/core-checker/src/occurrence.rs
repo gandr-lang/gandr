@@ -128,6 +128,17 @@ enum Uniformity
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Telescope(usize);
 
+/// Where a root stands in its declaration's scope: under the parameter
+/// telescope, then its constructor's `earlier` fields.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Scope
+{
+    /// The parameter telescope.
+    telescope: Telescope,
+    /// The field binders between the telescope and the root.
+    earlier: Binders,
+}
+
 /// The reach of a child that nests inside a former at `reach`.
 ///
 /// # Specification
@@ -158,34 +169,38 @@ const fn term(reach: Reach) -> Reach
 }
 
 /// Whether `arguments` are the parameter variables in telescope order, seen
-/// from under `depth` binders past the telescope.
+/// from under `depth` binders past the root's scope.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `Uniform` exactly when there is one argument per parameter and
-///   the `i`th is the intuitionistic variable at distance `depth + parameters -
-///   1 - i`.
+///   the `i`th is the intuitionistic variable at distance `depth + earlier +
+///   parameters - 1 - i`, `earlier` the field binders the scope holds past the
+///   telescope.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a family applied to a constant or to its parameters out
 ///   of order is non-uniform; `List A` applied to `A`, directly and under a
-///   function field's binder, is uniform.
+///   function field's binder, is uniform, and so is its tail past the head's
+///   binder.
 /// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
-#[spec(ensures: |ret| ret == Uniformity::NonUniform || arguments.len() == telescope.0)]
+#[spec(ensures: |ret| ret == Uniformity::NonUniform || arguments.len() == scope.telescope.0)]
 fn uniform(
     arena: &CoreArena,
     arguments: &[ValueId],
     depth: Binders,
-    telescope: Telescope,
+    scope: Scope,
 ) -> Uniformity
 {
-    let Telescope(parameters) = telescope;
+    let Telescope(parameters) = scope.telescope;
     let all = arguments.len() == parameters
         && arguments.iter().enumerate().all(|(position, &argument)| {
             let expected = usize::try_from(u32::from(depth))
                 .ok()
+                .zip(usize::try_from(u32::from(scope.earlier)).ok())
+                .and_then(|(depth, earlier)| depth.checked_add(earlier))
                 .and_then(|depth| depth.checked_add(parameters))
                 .and_then(|scope| scope.checked_sub(position))
                 .and_then(|scope| scope.checked_sub(1))
@@ -316,7 +331,7 @@ enum Binding
 fn worst(
     arena: &CoreArena,
     position: ConstantIndex,
-    telescope: Telescope,
+    scope: Scope,
     root: ValueTypeId,
     start: Reach,
 ) -> Result<Finding, ConstantIndex>
@@ -346,7 +361,7 @@ fn worst(
                             | Reach::Nested
                             | Reach::Term => Binders::NONE,
                         };
-                        let admitted = uniform(arena, arguments, depth, telescope);
+                        let admitted = uniform(arena, arguments, depth, scope);
                         worst = worst.max(found(reach, admitted));
                         term(reach)
                     }
@@ -877,7 +892,11 @@ pub fn occurrences(
 {
     for (index, &parameter) in signature.parameters().iter().enumerate() {
         let site = OccurrenceSite::Parameter(ParameterPosition::from(index));
-        let finding = worst(arena, position, Telescope(index), parameter, Reach::Term)
+        let scope = Scope {
+            telescope: Telescope(index),
+            earlier: Binders::NONE,
+        };
+        let finding = worst(arena, position, scope, parameter, Reach::Term)
             .map_err(|later| CheckRefusal::CrossBlockReference { site, index: later })?;
         if finding != Finding::Admitted {
             return Err(CheckRefusal::IndexOccurrence(site));
@@ -885,17 +904,20 @@ pub fn occurrences(
     }
     let telescope = Telescope(signature.parameters().len());
     for (tag, fields) in signature.constructors().iter().enumerate() {
+        let mut earlier = Binders::NONE;
         for (field, &root) in fields.iter().enumerate() {
             let site = OccurrenceSite::Field {
                 tag: ConstructorTag::from(tag),
                 field: FieldPosition::from(field),
             };
-            let finding = worst(arena, position, telescope, root, Reach::Head {
+            let scope = Scope { telescope, earlier };
+            let finding = worst(arena, position, scope, root, Reach::Head {
                 depth: Binders::NONE,
                 site: HeadSite::Field,
             })
             .map_err(|later| CheckRefusal::CrossBlockReference { site, index: later })?;
             refusal(finding, site)?;
+            earlier = earlier.deeper();
         }
     }
     Ok(())

@@ -475,9 +475,9 @@ fn a_recursive_family_names_itself_in_its_fields()
     assert!(
         matches!(
             arguments.as_slice(),
-            [argument] if matches!(arena.value(*argument), Some(&Value::Variable { index, .. }) if index == gandr_kernel_term::DeBruijnIndex::from(0_u32))
+            [argument] if matches!(arena.value(*argument), Some(&Value::Variable { index, .. }) if index == gandr_kernel_term::DeBruijnIndex::from(1_u32))
         ),
-        "the tail applies the family to its own parameter"
+        "the tail applies the family to its own parameter, one binder out past the head"
     );
     assert!(
         matches!(

@@ -280,9 +280,11 @@ fn shape(
 ///
 /// # Specification
 /// - requires: `chain` is the field's thunked computation type, scoped under
-///   the parameters; `closed` is the motive strengthened past its scrutinee.
-/// - ensures: the chain's domains, shifted past the fields, ending in the
-///   motive shifted past the fields and the chain's own dependent binders.
+///   the parameters and the fields before it, `from` binders short of all
+///   `fields`; `closed` is the motive strengthened past its scrutinee.
+/// - ensures: the chain's domains, shifted past the fields from the field on,
+///   ending in the motive shifted past every field and the chain's own
+///   dependent binders.
 /// - panics: none.
 ///
 /// # Termination
@@ -292,17 +294,17 @@ fn shape(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `Tree`'s `Nat → F Tree` field has the hypothesis `Nat →
-///   C`.
+///   C`, and a W-type's function field after its index code reads that code.
 /// - witness: `recursive_data::recursive_data::derived_eliminators_are_admitted_and_readmitted`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|id| arena.comp_type(*id).is_some()))]
 fn function_hypothesis(
     arena: &mut CoreArena,
     chain: CompTypeId,
     closed: CompTypeId,
-    fields: Binders,
+    (fields, from): (Binders, Binders),
 ) -> Result<CompTypeId, DerivationRefusal>
 {
-    let shifted = gandr_core_term::shift_comp_type(arena, chain, fields);
+    let shifted = gandr_core_term::shift_comp_type(arena, chain, from);
     let mut domains: Vec<(ValueTypeId, CompBinding)> = Vec::new();
     let mut focus = shifted;
     let mut dependent = Binders::NONE;
@@ -443,19 +445,22 @@ pub fn derive(
                     let at = variable(arena, distance);
                     gandr_core_term::instantiate_comp_type(arena, lifted, at)
                 },
+                // The field and those after it stand between its own scope and
+                // the hypothesis's.
                 FieldShape::Function(chain) => match closed {
-                    Maybe::Present(motive) => function_hypothesis(arena, chain, motive, width)?,
+                    Maybe::Present(motive) => {
+                        function_hypothesis(arena, chain, motive, (width, after))?
+                    },
                     Maybe::Absent(_) => return Err(DerivationRefusal::BinderCeiling),
                 },
             };
             let suspended = arena.value_type_thunk(hypothesis);
             ty = arena.comp_type_arrow(suspended, ty);
         }
-        let mut before = width;
+        // Each field is formed under the fields before it, as its binder in
+        // the telescope sees them.
         for &root in fields.iter().rev() {
-            before = minus(before, Binders::ONE)?;
-            let domain = gandr_core_term::shift_value_type(arena, root, before);
-            ty = arena.comp_type_pi(domain, ty);
+            ty = arena.comp_type_pi(root, ty);
         }
         method_types.push(ty);
     }
