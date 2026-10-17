@@ -63,6 +63,7 @@ mod recursive_data
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::FieldLabel;
     use gandr_kernel_term::FieldPosition;
     use gandr_kernel_term::FixpointEvidence;
     use gandr_kernel_term::GlobalIndex;
@@ -70,6 +71,7 @@ mod recursive_data
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::OccurrenceSite;
     use gandr_kernel_term::ParameterPosition;
+    use gandr_kernel_term::Standing;
     use quenchant_shape::shape::Maybe;
 
     /// The admission positions of the program module.
@@ -807,123 +809,348 @@ mod recursive_data
         assert!(crossed.audit().axioms().is_empty());
     }
 
-    /// The occurrence each refused declaration carries.
+    /// Where a one-parameter block's one field places the family `T A`, `A`
+    /// its parameter, beside `List`, whose parameter is strictly positive,
+    /// and `Test`, whose parameter is consumed.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum Fixture
+    enum Placement
     {
-        /// `U (T A → F 1)`: the family under a function's domain.
-        Negative,
-        /// `T A × 1`: the family inside another former.
+        /// `T A`.
+        Direct,
+        /// `U (F (T A))`: the returner's result.
+        Returned,
+        /// `U (Π (x : 1). F (T A))`: a dependent function's codomain.
+        Codomain,
+        /// `T A × 1`.
+        Product,
+        /// `T A + 1`.
+        Sum,
+        /// `{ x : T A }`.
+        Record,
+        /// `[T A]`.
+        List,
+        /// `Σ (x : 1). T A`.
+        Sigma,
+        /// `U (F (T A) & F 1)`.
+        With,
+        /// `List ⌜T A⌝`: through a strictly positive parameter.
         Nested,
-        /// `U (F (T A))`: the family under a returner, not a function.
-        Returner,
-        /// `T ⌜1⌝`: the family at another argument than its parameter.
+        /// `U (T A → F 1)`: under a function's domain, one stage below.
+        Domain,
+        /// `U (U (T A → F 1) → F 1)`: under two domains.
+        TwoDomains,
+        /// `T ⌜1⌝`: at an argument other than its parameter.
         NonUniform,
-        /// A family declared after this one.
+        /// `U (T ⌜1⌝ → F 1)`: at another argument under a domain.
+        NonUniformDomain,
+        /// `Test ⌜T A⌝`: through a consumed parameter.
+        Consumed,
+        /// `U (Test ⌜T A⌝ → F 1)`: through a consumed parameter under a
+        /// domain.
+        ConsumedDomain,
+        /// `Lift (T A)`: the family lifted, a type no stage reaches.
+        Lifted,
+        /// A declaration after the block's own position.
         Later,
         /// The family in its own parameter telescope.
         Parameter,
     }
 
-    /// Offer the fixture's one-parameter, one-field declaration to the
-    /// checker at position 0.
+    /// Every placement, with the checker's verdict on its block and the
+    /// kernel's.
+    ///
+    /// # Specification
+    /// trivial.
+    fn placements() -> [(Placement, Verdict, Result<(), KernelError>); 19]
+    {
+        let field = OccurrenceSite::Field {
+            tag: ConstructorTag::from(0_usize),
+            field: FieldPosition::from(0_usize),
+        };
+        let telescope = OccurrenceSite::Parameter(ParameterPosition::from(1_usize));
+        let later = ConstantIndex::from(3_usize);
+        [
+            (Placement::Direct, Verdict::Data, Ok(())),
+            (Placement::Returned, Verdict::Data, Ok(())),
+            (Placement::Codomain, Verdict::Data, Ok(())),
+            (Placement::Product, Verdict::Data, Ok(())),
+            (Placement::Sum, Verdict::Data, Ok(())),
+            (Placement::Record, Verdict::Data, Ok(())),
+            (Placement::List, Verdict::Data, Ok(())),
+            (Placement::Sigma, Verdict::Data, Ok(())),
+            (Placement::With, Verdict::Data, Ok(())),
+            (Placement::Nested, Verdict::Data, Ok(())),
+            (Placement::Domain, Verdict::Data, Ok(())),
+            (Placement::TwoDomains, Verdict::Data, Ok(())),
+            (
+                Placement::NonUniform,
+                Verdict::Refused(CheckRefusal::NonUniformOccurrence(field)),
+                Err(KernelError::NonUniformOccurrence(field)),
+            ),
+            (
+                Placement::NonUniformDomain,
+                Verdict::Refused(CheckRefusal::NegativeOccurrence(field)),
+                Err(KernelError::NegativeOccurrence(field)),
+            ),
+            (
+                Placement::Consumed,
+                Verdict::Refused(CheckRefusal::NestedOccurrence(field)),
+                Err(KernelError::NestedOccurrence(field)),
+            ),
+            (
+                Placement::ConsumedDomain,
+                Verdict::Refused(CheckRefusal::NegativeOccurrence(field)),
+                Err(KernelError::NegativeOccurrence(field)),
+            ),
+            (
+                Placement::Lifted,
+                Verdict::Refused(CheckRefusal::IndexOccurrence(field)),
+                Err(KernelError::IndexOccurrence(field)),
+            ),
+            (
+                Placement::Later,
+                Verdict::Refused(CheckRefusal::CrossBlockReference {
+                    site: field,
+                    index: later,
+                }),
+                Err(KernelError::CrossBlockReference {
+                    site: field,
+                    index: later,
+                }),
+            ),
+            (
+                Placement::Parameter,
+                Verdict::Refused(CheckRefusal::IndexOccurrence(telescope)),
+                Err(KernelError::IndexOccurrence(telescope)),
+            ),
+        ]
+    }
+
+    /// `U (domain → returns)`: a thunked function from `domain`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn consuming(
+        arena: &mut CoreArena,
+        domain: ValueTypeId,
+        returns: CompTypeId,
+    ) -> ValueTypeId
+    {
+        let function = arena.comp_type_arrow(domain, returns);
+        arena.value_type_thunk(function)
+    }
+
+    /// `List` at 0, `Test` at 1 and a one-parameter block at 2 whose one
+    /// field places the family as `placement` names, checked and readmitted.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the checker's verdict on the declaration.
+    /// - ensures: the checker's report on the three declarations and their
+    ///   readmission.
     /// - panics: only if a called judgement violates its contract.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — each fixture differs from an admitted family in one
-    ///   occurrence.
-    /// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
-    #[spec(ensures: |ret| ret != Verdict::Data)]
-    fn checker_refusal(fixture: Fixture) -> Verdict
+    /// - hypothesis: L3 — each placement differs from `T A` in one former, so
+    ///   its verdict is that former's.
+    /// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
+    /// - witness: `recursive_data::recursive_data::readmission_agrees_with_the_checker_on_every_occurrence_class`
+    #[spec(ensures: |ret| ret.0.judged().len() == 3)]
+    fn checker_placed(placement: Placement) -> (ModuleReport, bridge::Readmission)
     {
         let mut arena = CoreArena::new();
-        let position = ConstantIndex::from(0);
+        let list = ConstantIndex::from(0_usize);
+        let consumed = ConstantIndex::from(1_usize);
+        let position = ConstantIndex::from(2_usize);
         let universe = kind(&mut arena);
         let unit = arena.value_type_unit();
+        let returns = arena.comp_type_returner(unit);
         let parameter = var(&mut arena, DeBruijnIndex::from(0));
+        let element = arena.value_type_element(parameter, Level::zero());
+        // Past one binder the parameter is one out.
+        let past = var(&mut arena, DeBruijnIndex::from(1));
+        let tail = arena.value_type_data(list, vec![past]);
+        let tested = consuming(&mut arena, element, returns);
         let own = arena.value_type_data(position, vec![parameter]);
+        let own_past = arena.value_type_data(position, vec![past]);
+        let code = arena.value_quote(own);
+        let one = arena.value_quote(unit);
         let mut parameters = vec![universe];
-        let field = match fixture {
-            Fixture::Negative => {
-                let returner = arena.comp_type_returner(unit);
-                let function = arena.comp_type_arrow(own, returner);
-                arena.value_type_thunk(function)
-            },
-            Fixture::Nested => arena.value_type_product(&[own, unit]),
-            Fixture::Returner => {
+        let field = match placement {
+            Placement::Direct => own,
+            Placement::Returned => {
                 let returner = arena.comp_type_returner(own);
                 arena.value_type_thunk(returner)
             },
-            Fixture::NonUniform => {
-                let code = arena.value_quote(unit);
-                arena.value_type_data(position, vec![code])
+            Placement::Codomain => {
+                let returner = arena.comp_type_returner(own_past);
+                let function = arena.comp_type_pi(unit, returner);
+                arena.value_type_thunk(function)
             },
-            Fixture::Later => arena.value_type_data(ConstantIndex::from(1), vec![]),
-            Fixture::Parameter => {
+            Placement::Product => arena.value_type_product(&[own, unit]),
+            Placement::Sum => arena.value_type_sum(&[own, unit]),
+            Placement::Record => arena
+                .value_type_record(BTreeMap::from([(FieldLabel::from(String::from("x")), own)])),
+            Placement::List => arena.value_type_list(own),
+            Placement::Sigma => arena.value_type_sigma(unit, own_past),
+            Placement::With => {
+                let first = arena.comp_type_returner(own);
+                let both = arena.comp_type_with(first, returns);
+                arena.value_type_thunk(both)
+            },
+            Placement::Nested => arena.value_type_data(list, vec![code]),
+            Placement::Domain => consuming(&mut arena, own, returns),
+            Placement::TwoDomains => {
+                let inner = consuming(&mut arena, own, returns);
+                consuming(&mut arena, inner, returns)
+            },
+            Placement::NonUniform => arena.value_type_data(position, vec![one]),
+            Placement::NonUniformDomain => {
+                let other = arena.value_type_data(position, vec![one]);
+                consuming(&mut arena, other, returns)
+            },
+            Placement::Consumed => arena.value_type_data(consumed, vec![code]),
+            Placement::ConsumedDomain => {
+                let tested = arena.value_type_data(consumed, vec![code]);
+                consuming(&mut arena, tested, returns)
+            },
+            Placement::Lifted => arena.value_type_lift(own, Level::zero()),
+            Placement::Later => arena.value_type_data(ConstantIndex::from(3_usize), vec![]),
+            Placement::Parameter => {
                 parameters.push(own);
                 unit
             },
         };
-        let declaration = Declaration::data(
-            position,
-            Arc::new(DataSignature::new(parameters, vec![vec![field]], universe)),
-            origin(position),
-        );
-        let report = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-            &[declaration],
-        );
-        report.judged()[0].verdict()
+        let declarations = [
+            data(
+                list,
+                DataSignature::new(vec![universe], vec![vec![], vec![element, tail]], universe),
+            ),
+            data(
+                consumed,
+                DataSignature::new(vec![universe], vec![vec![tested]], universe),
+            ),
+            data(
+                position,
+                DataSignature::new(parameters, vec![vec![field]], universe),
+            ),
+        ];
+        run(&mut arena, &declarations)
     }
 
-    /// Offer the fixture's declaration to the kernel, as the checker's
-    /// fixture states it.
+    /// Offer the kernel `List`, `Test` and the placement's block, as
+    /// [`checker_placed`] states them.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the kernel's refusal, one of the occurrence refusals.
-    /// - panics: if the kernel admits it.
+    /// - ensures: the kernel's verdict on the placement's block.
+    /// - panics: if the kernel refuses `List` or `Test`.
+    ///
+    /// # Errors
+    /// The kernel's refusal of the block.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the kernel names the occurrence the checker names.
-    /// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
-    #[spec(ensures: |ret| matches!(ret, KernelError::NegativeOccurrence(_)
+    /// - hypothesis: L3 — the kernel decides each placement as the checker
+    ///   does.
+    /// - witness: `recursive_data::recursive_data::readmission_agrees_with_the_checker_on_every_occurrence_class`
+    #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|error| matches!(error,
+        KernelError::NegativeOccurrence(_)
         | KernelError::NestedOccurrence(_)
         | KernelError::IndexOccurrence(_)
         | KernelError::NonUniformOccurrence(_)
-        | KernelError::CrossBlockReference { .. }))]
-    fn kernel_refusal(fixture: Fixture) -> KernelError
+        | KernelError::CrossBlockReference { .. })))]
+    fn kernel_placed(placement: Placement) -> Result<(), KernelError>
     {
         let mut environment = Environment::new();
-        let position = ConstantIndex::from(0);
+        let list = ConstantIndex::from(0_usize);
+        let consumed = ConstantIndex::from(1_usize);
+        let position = ConstantIndex::from(2_usize);
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let parameter = arena.value_variable(DeBruijnIndex::from(0));
+        let element = arena.value_type_element(parameter, Level::zero());
+        let past = arena.value_variable(DeBruijnIndex::from(1));
+        let tail = arena.value_type_data(list, vec![past]);
+        let declaration = staging.data(
+            LevelSignature::monomorphic(),
+            vec![universe],
+            vec![vec![], vec![element, tail]],
+            universe,
+        );
+        environment.add_decl(declaration).expect("List is admitted");
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let parameter = arena.value_variable(DeBruijnIndex::from(0));
+        let element = arena.value_type_element(parameter, Level::zero());
+        let unit = arena.value_type_unit();
+        let returns = arena.comp_type_returner(unit);
+        let function = arena.comp_type_arrow(element, returns);
+        let tested = arena.value_type_thunk(function);
+        let declaration = staging.data(
+            LevelSignature::monomorphic(),
+            vec![universe],
+            vec![vec![tested]],
+            universe,
+        );
+        environment.add_decl(declaration).expect("Test is admitted");
         let mut staging = environment.stage();
         let arena = staging.arena();
         let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
         let unit = arena.value_type_unit();
+        let returns = arena.comp_type_returner(unit);
         let parameter = arena.value_variable(DeBruijnIndex::from(0));
         let own = arena.value_type_data(position, vec![parameter]);
+        let past = arena.value_variable(DeBruijnIndex::from(1));
+        let own_past = arena.value_type_data(position, vec![past]);
+        let code = arena.value_quote(own);
+        let one = arena.value_quote(unit);
         let mut parameters = vec![universe];
-        let field = match fixture {
-            Fixture::Negative => {
-                let returner = arena.comp_type_returner(unit);
-                let function = arena.comp_type_arrow(own, returner);
-                arena.value_type_thunk(function)
-            },
-            Fixture::Nested => arena.value_type_product(&[own, unit]),
-            Fixture::Returner => {
+        let consumer = |arena: &mut gandr_kernel_term::TermArena, domain| {
+            let function = arena.comp_type_arrow(domain, returns);
+            arena.value_type_thunk(function)
+        };
+        let field = match placement {
+            Placement::Direct => own,
+            Placement::Returned => {
                 let returner = arena.comp_type_returner(own);
                 arena.value_type_thunk(returner)
             },
-            Fixture::NonUniform => {
-                let code = arena.value_quote(unit);
-                arena.value_type_data(position, vec![code])
+            Placement::Codomain => {
+                let returner = arena.comp_type_returner(own_past);
+                let function = arena.comp_type_pi(unit, returner);
+                arena.value_type_thunk(function)
             },
-            Fixture::Later => arena.value_type_data(ConstantIndex::from(1), vec![]),
-            Fixture::Parameter => {
+            Placement::Product => arena.value_type_product(&[own, unit]),
+            Placement::Sum => arena.value_type_sum(&[own, unit]),
+            Placement::Record => arena
+                .value_type_record(BTreeMap::from([(FieldLabel::from(String::from("x")), own)])),
+            Placement::List => arena.value_type_list(own),
+            Placement::Sigma => arena.value_type_sigma(unit, own_past),
+            Placement::With => {
+                let first = arena.comp_type_returner(own);
+                let both = arena.comp_type_with(first, returns);
+                arena.value_type_thunk(both)
+            },
+            Placement::Nested => arena.value_type_data(list, vec![code]),
+            Placement::Domain => consumer(arena, own),
+            Placement::TwoDomains => {
+                let inner = consumer(arena, own);
+                consumer(arena, inner)
+            },
+            Placement::NonUniform => arena.value_type_data(position, vec![one]),
+            Placement::NonUniformDomain => {
+                let other = arena.value_type_data(position, vec![one]);
+                consumer(arena, other)
+            },
+            Placement::Consumed => arena.value_type_data(consumed, vec![code]),
+            Placement::ConsumedDomain => {
+                let tested = arena.value_type_data(consumed, vec![code]);
+                consumer(arena, tested)
+            },
+            Placement::Lifted => arena.value_type_lift(own, Level::zero()),
+            Placement::Later => arena.value_type_data(ConstantIndex::from(3_usize), vec![]),
+            Placement::Parameter => {
                 parameters.push(own);
                 unit
             },
@@ -934,67 +1161,211 @@ mod recursive_data
             vec![vec![field]],
             universe,
         );
-        environment
-            .add_decl(declaration)
-            .expect_err("the occurrence is refused")
+        environment.add_decl(declaration).map(drop)
     }
 
+    /// Every placeable former admits the family it places, at a strictly
+    /// positive position and under domains alike; what no stage reaches is
+    /// refused by the occurrence it is, as malformed source.
     #[test]
-    fn occurrences_are_refused_by_name_in_both_checkers()
+    fn accessibility_is_decided_on_every_former()
     {
-        let field = OccurrenceSite::Field {
-            tag: ConstructorTag::from(0_usize),
-            field: FieldPosition::from(0_usize),
+        for (placement, verdict, _) in placements() {
+            let (report, _) = checker_placed(placement);
+            let judged = report.judged()[2].verdict();
+            assert_eq!(judged, verdict, "{placement:?}");
+            if let Verdict::Refused(refusal) = judged {
+                assert_eq!(
+                    refusal.classify(),
+                    gandr_core_term::FailureClass::MalformedSource
+                );
+            }
+        }
+    }
+
+    /// The kernel decides every placement as the checker does: a block the
+    /// checker admits is readmitted, and one it refuses the kernel refuses by
+    /// the same occurrence.
+    #[test]
+    fn readmission_agrees_with_the_checker_on_every_occurrence_class()
+    {
+        for (placement, _, kernel) in placements() {
+            let (report, crossed) = checker_placed(placement);
+            assert_eq!(kernel_placed(placement), kernel, "{placement:?}");
+            let readmitted = crossed.readmitted()[2].outcome();
+            let judged = report.judged()[2].verdict();
+            assert_eq!(
+                judged == Verdict::Data,
+                matches!(readmitted, Outcome::Data { admitted, .. } if admitted.position() == ConstantIndex::from(2_usize)),
+                "{placement:?}: {judged:?} crossed as {readmitted:?}"
+            );
+        }
+    }
+
+    /// What a consumer of `Chain` applies the test a link holds to.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Consumer
+    {
+        /// The chain before the link, one stage below it.
+        Before,
+        /// The link itself: Curry's consumer.
+        Itself,
+        /// The link itself, through a helper that takes the test at its
+        /// declared type.
+        Handed,
+    }
+
+    /// `Chain`, `start` and `link : (prev : Chain, test : U (Chain → F 1))`;
+    /// `apply : U (U (Chain → F 1) → Chain → F 1)`, `λg. λx. (force g) x`;
+    /// and at `U (Chain → F 1)` the consumer `λc. case c of { start ↦ return
+    /// (); link ↦ λprev test. … }`, applying `test` to what `consumer` names.
+    ///
+    /// # Specification
+    /// trivial.
+    fn chain(
+        arena: &mut CoreArena,
+        consumer: Consumer,
+    ) -> [Declaration; 3]
+    {
+        let chain = ConstantIndex::from(0_usize);
+        let apply = ConstantIndex::from(1_usize);
+        let consuming_at = ConstantIndex::from(2_usize);
+        let kind = kind(arena);
+        let own = arena.value_type_data(chain, vec![]);
+        let unit = arena.value_type_unit();
+        let returns = arena.comp_type_returner(unit);
+        let test = consuming(arena, own, returns);
+        let tested = arena.comp_type_arrow(own, returns);
+        let handing = arena.comp_type_arrow(test, tested);
+        let handing = arena.value_type_thunk(handing);
+        let handed = {
+            let head = var(arena, DeBruijnIndex::from(1));
+            let argument = var(arena, DeBruijnIndex::from(0));
+            let applied = call(arena, head, &[argument]);
+            function(arena, Binders::from(2), applied)
         };
-        let telescope = OccurrenceSite::Parameter(ParameterPosition::from(1_usize));
-        for (fixture, checker, kernel) in [
-            (
-                Fixture::Negative,
-                CheckRefusal::NegativeOccurrence(field),
-                KernelError::NegativeOccurrence(field),
+        let done = arena.value_unit();
+        let on_start = arena.computation_return(done);
+        // Under the link's fields: `test` 0, `prev` 1, `c` 2.
+        let held = var(arena, DeBruijnIndex::from(0));
+        let applied = match consumer {
+            Consumer::Before => {
+                let prev = var(arena, DeBruijnIndex::from(1));
+                call(arena, held, &[prev])
+            },
+            Consumer::Itself => {
+                let link = var(arena, DeBruijnIndex::from(2));
+                call(arena, held, &[link])
+            },
+            Consumer::Handed => {
+                let helper = arena.value_constant(apply);
+                let link = var(arena, DeBruijnIndex::from(2));
+                call(arena, helper, &[held, link])
+            },
+        };
+        let on_link = arena.computation_lambda(applied);
+        let on_link = arena.computation_lambda(on_link);
+        let scrutinee = var(arena, DeBruijnIndex::from(0));
+        let case = arena.computation_data_case(scrutinee, returns, vec![on_start, on_link]);
+        let body = function(arena, Binders::from(1), case);
+        [
+            data(
+                chain,
+                DataSignature::new(vec![], vec![vec![], vec![own, test]], kind),
             ),
-            (
-                Fixture::Nested,
-                CheckRefusal::NestedOccurrence(field),
-                KernelError::NestedOccurrence(field),
-            ),
-            (
-                Fixture::Returner,
-                CheckRefusal::NestedOccurrence(field),
-                KernelError::NestedOccurrence(field),
-            ),
-            (
-                Fixture::NonUniform,
-                CheckRefusal::NonUniformOccurrence(field),
-                KernelError::NonUniformOccurrence(field),
-            ),
-            (
-                Fixture::Later,
-                CheckRefusal::CrossBlockReference {
-                    site: field,
-                    index: ConstantIndex::from(1),
-                },
-                KernelError::CrossBlockReference {
-                    site: field,
-                    index: ConstantIndex::from(1),
-                },
-            ),
-            (
-                Fixture::Parameter,
-                CheckRefusal::IndexOccurrence(telescope),
-                KernelError::IndexOccurrence(telescope),
-            ),
-        ] {
-            assert_eq!(
-                checker_refusal(fixture),
-                Verdict::Refused(checker),
-                "{fixture:?}"
+            definition(apply, handing, handed),
+            definition(consuming_at, test, body),
+        ]
+    }
+
+    /// `Chain`'s test consumes the family under a domain, so a link's test
+    /// takes chains one stage below the link: the block declares, and a
+    /// consumer applying the test to the chain before the link is admitted
+    /// and readmitted.
+    #[test]
+    fn a_negative_occurrence_below_the_stage_declares()
+    {
+        let mut arena = CoreArena::new();
+        let declarations = chain(&mut arena, Consumer::Before);
+        let (report, crossed) = run(&mut arena, &declarations);
+        assert_eq!(report.judged()[0].verdict(), Verdict::Data);
+        assert!(
+            matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+            "{:?}",
+            report.judged()[2].verdict()
+        );
+        for (position, readmitted) in crossed.readmitted().iter().enumerate() {
+            assert!(
+                matches!(readmitted.outcome(), Outcome::Data { admitted, .. } | Outcome::Defined { admitted, .. } if admitted.position() == ConstantIndex::from(position)),
+                "{position}: {:?}",
+                readmitted.outcome()
             );
-            assert_eq!(
-                checker.classify(),
-                gandr_core_term::FailureClass::MalformedSource
+        }
+    }
+
+    /// Curry's consumer applies a link's test to the link itself, at no
+    /// stage the test takes: refused at the call, written directly or
+    /// through a helper, and nothing of it crosses.
+    #[test]
+    fn currys_consumer_is_refused_at_its_call()
+    {
+        for consumer in [Consumer::Itself, Consumer::Handed] {
+            let mut arena = CoreArena::new();
+            let declarations = chain(&mut arena, consumer);
+            let (report, crossed) = run(&mut arena, &declarations);
+            assert!(
+                matches!(
+                    report.judged()[2].verdict(),
+                    Verdict::Refused(CheckRefusal::StageNotBelow {
+                        found: Standing::Top,
+                        ..
+                    })
+                ),
+                "{consumer:?}: {:?}",
+                report.judged()[2].verdict()
             );
-            assert_eq!(kernel_refusal(fixture), kernel, "{fixture:?}");
+            assert!(
+                !matches!(crossed.readmitted()[2].outcome(), Outcome::Defined { .. }),
+                "{consumer:?}"
+            );
+        }
+    }
+
+    /// `Rose`, `node : (kids : List ⌜Rose⌝)`, nests the family through
+    /// `List`'s strictly positive parameter: the block declares, a node with
+    /// no children is a rose, and both are readmitted.
+    #[test]
+    fn a_nested_occurrence_through_a_strictly_positive_parameter_declares()
+    {
+        let mut arena = CoreArena::new();
+        let [nat, list_signature, ..] = signatures(&mut arena);
+        let rose = ConstantIndex::from(2_usize);
+        let sprig = ConstantIndex::from(3_usize);
+        let kind = kind(&mut arena);
+        let own = arena.value_type_data(rose, vec![]);
+        let code = arena.value_quote(own);
+        let kids = list(&mut arena, code);
+        let none = arena.value_constructor(kids, ConstructorTag::from(0_usize), vec![]);
+        let node = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![none]);
+        let declarations = [
+            data(ConstantIndex::from(at::NAT), nat),
+            data(ConstantIndex::from(at::LIST), list_signature),
+            data(rose, DataSignature::new(vec![], vec![vec![kids]], kind)),
+            definition(sprig, own, node),
+        ];
+        let (report, crossed) = run(&mut arena, &declarations);
+        assert_eq!(report.judged()[2].verdict(), Verdict::Data);
+        assert!(
+            matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+            "{:?}",
+            report.judged()[3].verdict()
+        );
+        for (position, readmitted) in crossed.readmitted().iter().enumerate() {
+            assert!(
+                matches!(readmitted.outcome(), Outcome::Data { admitted, .. } | Outcome::Defined { admitted, .. } if admitted.position() == ConstantIndex::from(position)),
+                "{position}: {:?}",
+                readmitted.outcome()
+            );
         }
     }
 
@@ -1694,10 +2065,10 @@ mod recursive_data
         );
     }
 
-    /// A block whose first family consumes its second, `Left` holding `U
-    /// (Right → F 1)` and `Right` holding a `Left`, is refused whole: the
-    /// second family's own field is positive, but the block is one admission,
-    /// and the kernel refuses it as one.
+    /// A block whose first family consumes its second where no stage reaches
+    /// it, `Left` holding `U (Lift Right → F 1)` and `Right` holding a
+    /// `Left`, is refused whole: the second family's own field is positive,
+    /// but the block is one admission, and the kernel refuses it as one.
     #[test]
     fn a_mutual_block_is_refused_whole_in_both_checkers()
     {
@@ -1709,7 +2080,8 @@ mod recursive_data
         let rights = arena.value_type_data(right, vec![]);
         let unit = arena.value_type_unit();
         let returns = arena.comp_type_returner(unit);
-        let consuming = arena.comp_type_arrow(rights, returns);
+        let lifted = arena.value_type_lift(rights, Level::zero());
+        let consuming = arena.comp_type_arrow(lifted, returns);
         let consumer = arena.value_type_thunk(consuming);
         let declarations = [
             data(left, DataSignature::new(vec![], vec![vec![consumer]], kind)),

@@ -1,11 +1,11 @@
 // What an inductive-recursive block refuses. The block is one admission, so
-// one refused member refuses every member with it: positivity is checked
-// across the block, so a family to the left of an arrow in another family's
-// field refuses the block whole; and a decode a code's field holds must stand
-// below the code, so a field decoding a code it was not built from, or a
-// decoder arm decoding its own code again, refuses the decoder by the stage
-// order and its codes with it. A decode reads a call only when the call
-// returns a code.
+// one refused member refuses every member with it: accessibility is checked
+// across the block, so a family named to the left of an arrow where no stage
+// reaches, in another family's field, refuses the block whole (#517); and a
+// decode a code's field holds must stand below the code, so a field decoding
+// a code it was not built from, or a decoder arm decoding its own code again,
+// refuses the decoder by the stage order and its codes with it. A decode reads
+// a call only when the call returns a code.
 // Shared with `../../model/universe/inductive-recursive.gandr`.
 
 /// The two branches of a binary node.
@@ -15,13 +15,14 @@ data Two : Type {
   R : Two;
 }
 
-/// Two families, one consuming the other: positivity is checked across
-/// the block, so both are refused.
+/// Two families, one consuming the other through a definition of their
+/// block: the definition stands for its body, where no stage reaches, so the
+/// block is refused whole (#517).
 rec {
-  /// A family consuming the next one: `Right` stands left of the arrow.
+  /// A family consuming the next one: `right` stands left of the arrow.
   @[ refuses("NegativeOccurrence") ]
   data Left : Type {
-    MkL : (f : +U (Right -> -F Two)) --> Left;
+    MkL : (f : +U (right -> -F Two)) --> Left;
   }
 
   /// The family `Left` consumes: its own field is positive, and it is
@@ -30,6 +31,11 @@ rec {
   data Right : Type {
     MkR : (l : Left) --> Right;
   }
+
+  /// `Right`, named by a definition of the block, refused with it.
+  @[ refuses("NegativeOccurrence") ]
+  def right : Type ;
+  def right = Right ;
 }
 
 /// A universe whose field decodes a definition of the block rather than

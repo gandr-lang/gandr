@@ -675,9 +675,9 @@ pub(super) fn case(
     let mut goals = Vec::with_capacity(count);
     let mut reads = Vec::new();
     // A mutual block's families share the stage the case opened.
-    let kin = match opened {
-        Maybe::Present(_) => super::recursion::kin(arena, entries, datatype),
-        Maybe::Absent(_) => Maybe::Absent(super::recursion::Kinless::Lone),
+    let block = match opened {
+        Maybe::Present(_) => super::recursion::families(arena, entries, datatype)?,
+        Maybe::Absent(_) => super::occurrence::Block::lone(declaration),
     };
     for (index, fields) in signature.constructors.iter().enumerate() {
         let tag = ConstructorTag::from(index);
@@ -686,7 +686,7 @@ pub(super) fn case(
             Maybe::Present(child) => super::recursion::stage_branch(
                 arena,
                 session,
-                (super::recursion::families(&kin, &datatype), tag),
+                (block, tag),
                 expected,
                 (fields, child),
                 (own, &mut reads),

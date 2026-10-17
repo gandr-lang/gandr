@@ -164,20 +164,22 @@ pub fn kind_level(
 ///
 /// Fields see the complete parameter telescope, the fields before them in
 /// their constructor and the declaration's own family, at its admission
-/// position. The family may occur in a field only strictly positively and at
-/// its parameter variables, which the occurrence walk decides before anything
-/// forms. A refused signature leaves no binder, block or nominal entry of its
-/// own; a family of an open mutual block stays in scope with the block, which
-/// its other families' fields name.
+/// position. The family may occur in a field only where the stage order places
+/// it below the constructor and at its parameter variables, which the
+/// occurrence walk decides before anything forms; what the walk decided is
+/// kept once the signature forms. A refused signature leaves no binder, block,
+/// nominal entry or accessibility of its own; a family of an open mutual block
+/// stays in scope with the block, which its other families' fields name.
 ///
 /// # Specification
 /// - requires: the nominal entry has not been installed in the context, and
 ///   `position` is the admission position the declaration takes.
-/// - ensures: every occurrence of the family is strictly positive and uniform;
-///   every parameter and field forms in its declared scope, a field under the
-///   parameters and its constructor's fields before it; fields fit the declared
-///   value universe; the original binder depth is restored and the block
-///   closed, unless the family is one of an open mutual block.
+/// - ensures: every occurrence of the family is accessible under the stage
+///   order and uniform; every parameter and field forms in its declared scope,
+///   a field under the parameters and its constructor's fields before it;
+///   fields fit the declared value universe; the original binder depth is
+///   restored and the block closed, unless the family is one of an open mutual
+///   block; on success the walk's accessibility is held at `position`.
 /// - fails: occurrence, kind, formation and field-universe refusals are
 ///   retained.
 /// - panics: none.
@@ -191,7 +193,7 @@ pub fn kind_level(
 ///   distinguish the admission premises.
 /// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
-/// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::readmission_agrees_with_the_checker_on_every_occurrence_class`
 /// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth
     && (matches!(context.data_in_scope(position), Maybe::Absent(_))
@@ -203,10 +205,13 @@ pub fn form_signature(
     signature: &Arc<DataSignature>,
 ) -> Result<(), CheckRefusal>
 {
-    crate::occurrence::occurrences(
+    let accessibility = crate::occurrence::occurrences(
         context.arena(),
-        &context.block_of(position),
-        context.block_definitions(),
+        (
+            &context.block_of(position),
+            context.block_definitions(),
+            context.accessibility(),
+        ),
         signature,
     )?;
     let depth = context.depth(Zone::Intuitionistic);
@@ -248,6 +253,9 @@ pub fn form_signature(
             .binders()
             .close(Zone::Intuitionistic)
             .map_err(|_cause| CheckRefusal::MachineInvariant)?;
+    }
+    if outcome.is_ok() {
+        context.record_accessibility(position, accessibility);
     }
     outcome
 }

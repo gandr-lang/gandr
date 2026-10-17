@@ -1,25 +1,39 @@
-//! The strict-positivity walk a data declaration passes before its fields form.
+//! The accessibility walk a data declaration passes before its fields form.
 //!
 //! A declaration is admitted in a block: alone, or with the declarations a
 //! mutual block admits beside it, its families a run of data declarations at
-//! the block's head and its definitions after them. A field may name a family
-//! of its block in exactly two forms — directly, `T ps`, or as the codomain of
-//! a thunked function whose domains do not name it, `U (Π ȳ. F (T ps))` — and
-//! always at the parameter variables in telescope order. Every other
-//! occurrence of a family is refused by name. A definition of the block stands
-//! for its body: a field naming one is read through it, the types the body
-//! quotes at the place the definition is named and the types it only
-//! annotates its terms with not at all (#602). A reference past the block's
-//! last member is a reference outside the block. The block is what its
-//! families' fields reach — [`reach`] measures it, the same walk the checker
-//! measures it by — so it is never declared, only measured.
+//! the block's head and its definitions after them. A field may place a
+//! family of its block under any placeable former — a thunk, a function's
+//! domain or codomain, a returner's result, a record, product, sum, list or Σ
+//! component, a `&` branch, or a strictly positive parameter of an earlier
+//! family — always at the parameter variables in telescope order. A
+//! definition of the block stands for its body: a field naming one is read
+//! through it, the types the body quotes at the place the definition is named
+//! and the types it only annotates its terms with not at all (#602). A
+//! reference past the block's last member is a reference outside the block.
+//! The block is what its families' fields reach — [`reach`] measures it, the
+//! same walk the checker measures it by — so it is never declared, only
+//! measured.
+//!
+//! A family placed under no function's domain is strictly positive. One under
+//! a domain is accessible one stage down: a case on a value opens a stage
+//! below the value's and puts every occurrence its fields place at that
+//! stage, so a function field takes the value's fields and never the value
+//! itself. The block declares
+//! [`Stratification::Stratified`], and Curry's consumer, which applies the
+//! field to its holder, is refused at the call as `StageNotBelow`, never at
+//! the declaration. The walk returns each family's [`Accessibility`]: that
+//! stratification, and the [`Variance`] of each parameter, which a later
+//! family nests through.
 //!
 //! The walk reads every parameter and field before formation and refuses, at
-//! the parameter or field site:
+//! the parameter or field site, what no stage reaches:
 //!
-//! - an occurrence under a function's domain, `NegativeOccurrence`;
-//! - one inside another family's arguments or a field-local positive former,
-//!   `NestedOccurrence`;
+//! - an occurrence under a function's domain the order cannot place: at other
+//!   arguments, inside a term, or through a parameter that is not strictly
+//!   positive, `NegativeOccurrence`;
+//! - one through another family's parameter that is not strictly positive, or
+//!   under a former that places nothing, `NestedOccurrence`;
 //! - one inside a term a type reads, or in the parameter telescope,
 //!   `IndexOccurrence`;
 //! - the family applied to any other arguments, `NonUniformOccurrence`;
@@ -27,11 +41,19 @@
 //!
 //! Formation then reads the self occurrence through the block's own
 //! signature. Every other reference still sees only the admitted prefix. The
-//! criteria are strict positivity with uniform parameters (Thierry Coquand and
-//! Christine Paulin, "Inductively defined types", COLOG-88, LNCS 417, 1990,
-//! `doi:10.1007/3-540-52335-9_47`), within the formation criteria of
-//! inductive families (Peter Dybjer, "Inductive families", Formal Aspects of
-//! Computing 6, 1994, `doi:10.1007/BF01211308`). The fixpoint the admitted
+//! criteria generalise strict positivity with uniform parameters (Thierry
+//! Coquand and Christine Paulin, "Inductively defined types", COLOG-88, LNCS
+//! 417, 1990, `doi:10.1007/3-540-52335-9_47`), within the formation criteria
+//! of inductive families (Peter Dybjer, "Inductive families", Formal Aspects
+//! of Computing 6, 1994, `doi:10.1007/BF01211308`), to accessibility: a
+//! positive occurrence at or below the constructor's stage and a negative one
+//! strictly below it, the accessible argument positions of Liye Guo, Kasper
+//! Hagens, Cynthia Kop and Deivid Vale, "Higher-Order Constrained Dependency
+//! Pairs for (Universal) Computability", MFCS 2024,
+//! `doi:10.4230/LIPIcs.MFCS.2024.49`, § 2.2, read over the stage order the
+//! way Nathan Guermond and Gopalan Nadathur stratify negative occurrences at
+//! smaller arguments ("Ground Stratified Inductive Definitions", FSCD 2026,
+//! `doi:10.4230/LIPIcs.FSCD.2026.18`). The fixpoint the admitted
 //! family recurses through is in the sibling `descent` module.
 
 use alloc::collections::BTreeSet;
@@ -56,60 +78,314 @@ use gandr_kernel_term::ValueTypeId;
 use crate::error::KernelError;
 use crate::rewrite::BinderDepth;
 
-/// Which head a [`Reach::Head`] stands at.
+/// Which side of the function arrows above it an occurrence stands on.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum HeadSite
+enum Polarity
 {
-    /// The field's own type, the one place a thunk opens a function.
-    Field,
-    /// The type a function codomain returns.
-    Codomain,
+    /// Under no function's domain: strictly positive.
+    Strict,
+    /// Under an even number of function domains, at least two.
+    Positive,
+    /// Under an odd number of function domains.
+    Negative,
 }
 
-/// Where a node stands relative to the two admitted recursive field forms.
+impl Polarity
+{
+    /// The polarity past one more function domain.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn flip(self) -> Self
+    {
+        match self {
+            Self::Strict | Self::Positive => Self::Negative,
+            Self::Negative => Self::Positive,
+        }
+    }
+}
+
+/// Where a node stands relative to the stage the constructor rule gives a
+/// field: where the stage order places an occurrence, or past its reach.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Reach
 {
-    /// A field's own type, or the type a function codomain returns, under
-    /// `depth` binders: a uniform self application is admitted here.
-    Head
+    /// The field's own type, or a child a placeable former holds at a placed
+    /// position: a uniform occurrence here stands at a stage below its
+    /// constructor's.
+    Placed
     {
         /// The binders crossed since the field's root.
         depth: BinderDepth,
-        /// Which head this is.
-        site: HeadSite,
+        /// The side of the function arrows it stands on.
+        polarity: Polarity,
     },
-    /// The computation type under the field's thunk, before any domain.
-    Thunk,
-    /// The computation type past at least one function domain, under `depth`
-    /// binders.
-    Chain
+    /// Inside a former no stage reaches through.
+    Nested
     {
-        /// The binders crossed since the field's root.
-        depth: BinderDepth,
+        /// The side of the function arrows it stands on.
+        polarity: Polarity,
     },
-    /// Under a function's domain, at any depth.
-    Domain,
-    /// Inside another family's arguments or under a field-local former.
-    Nested,
     /// Inside a term a type reads.
-    Term,
+    Term
+    {
+        /// The side of the function arrows it stands on.
+        polarity: Polarity,
+    },
+}
+
+impl Reach
+{
+    /// Where a field's own type stands.
+    const FIELD: Self = Self::Placed {
+        depth: BinderDepth::NONE,
+        polarity: Polarity::Strict,
+    };
+    /// Where a parameter's type stands: every occurrence in it is an index.
+    const PARAMETER: Self = Self::Term {
+        polarity: Polarity::Strict,
+    };
+
+    /// The side of the function arrows this reach stands on.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn polarity(self) -> Polarity
+    {
+        match self {
+            Self::Placed { polarity, .. } | Self::Nested { polarity } | Self::Term { polarity } => {
+                polarity
+            },
+        }
+    }
+
+    /// The reach of a child a former no stage reaches through holds.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn nest(self) -> Self
+    {
+        match self {
+            Self::Placed { polarity, .. } | Self::Nested { polarity } => Self::Nested { polarity },
+            Self::Term { polarity } => Self::Term { polarity },
+        }
+    }
+
+    /// The reach of a child a type reads as a term.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn term(self) -> Self
+    {
+        Self::Term {
+            polarity: self.polarity(),
+        }
+    }
+
+    /// The reach of a function's domain.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn domain(self) -> Self
+    {
+        match self {
+            Self::Placed { depth, polarity } => Self::Placed {
+                depth,
+                polarity: polarity.flip(),
+            },
+            Self::Nested { polarity } => Self::Nested {
+                polarity: polarity.flip(),
+            },
+            Self::Term { polarity } => Self::Term {
+                polarity: polarity.flip(),
+            },
+        }
+    }
+
+    /// The reach of a child standing under one more binder.
+    ///
+    /// # Specification
+    /// trivial.
+    fn under(self) -> Self
+    {
+        match self {
+            Self::Placed { depth, polarity } => Self::Placed {
+                depth: depth.deeper(),
+                polarity,
+            },
+            Self::Nested { .. } | Self::Term { .. } => self,
+        }
+    }
 }
 
 /// What a self occurrence earns at its reach, least severe first.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Finding
 {
-    /// No refused occurrence.
+    /// No occurrence, or only strictly positive ones the stage order places.
     Admitted,
-    /// A head occurrence at non-parameter arguments.
+    /// An occurrence the stage order places under a function's domain: the
+    /// family is stratified.
+    Stratified,
+    /// An occurrence at non-parameter arguments.
     NonUniform,
-    /// An occurrence nested in another former.
+    /// An occurrence nested in a former no stage reaches through.
     Nested,
     /// An occurrence inside a term a type reads.
     Index,
-    /// An occurrence under a function's domain.
+    /// An occurrence under a function's domain no stage reaches.
     Negative,
+}
+
+/// Whether every use of a family's parameter stands strictly positively.
+///
+/// A nested occurrence through a strictly positive parameter is placed: the
+/// parameter stands as the decode of a field's own type or a strictly positive
+/// position under it, or is handed on to a strictly positive parameter of
+/// another family there.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Variance
+{
+    /// Every use of the parameter is strictly positive.
+    StrictlyPositive,
+    /// Some use is not, or the family was not walked.
+    NotStrictlyPositive,
+}
+
+/// Whether a family's own occurrences all stand strictly positively.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Stratification
+{
+    /// Every occurrence of a family of its block stands strictly positively.
+    Positive,
+    /// Some occurrence stands under a function's domain, at a stage below its
+    /// constructor's: a case on a value at no stage reads its fields at a
+    /// fresh one.
+    Stratified,
+}
+
+/// What a data declaration's walk decided: how its own occurrences stand,
+/// and how each of its parameters does.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `parameters` holds one variance per parameter of the walked
+///   declaration.
+/// - executable: none — the declaration is not held beside it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family with a negative field below its stage is
+///   stratified, and a list's element parameter is strictly positive.
+/// - witness: `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `recursive_data::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Accessibility
+{
+    /// How the family's own occurrences stand.
+    stratification: Stratification,
+    /// How each parameter stands, in telescope order.
+    parameters: Vec<Variance>,
+}
+
+impl Accessibility
+{
+    /// What a declaration admitted unchecked is taken to be: stratified, every
+    /// parameter not strictly positive — the reading that admits least.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) const fn unwalked() -> Self
+    {
+        Self {
+            stratification: Stratification::Stratified,
+            parameters: Vec::new(),
+        }
+    }
+
+    /// How the family's own occurrences stand.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn stratification(&self) -> Stratification
+    {
+        self.stratification
+    }
+
+    /// How the parameter at `parameter` stands; not strictly positive past the
+    /// telescope.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn variance(
+        &self,
+        parameter: ParameterPosition,
+    ) -> Variance
+    {
+        self.parameters
+            .get(usize::from(parameter))
+            .copied()
+            .unwrap_or(Variance::NotStrictlyPositive)
+    }
+}
+
+/// The accessibility of the families admitted before a walk, which a nested
+/// occurrence is read through.
+pub(super) trait Admitted
+{
+    /// How the parameter at `parameter` of the family at `family` stands; not
+    /// strictly positive for a family not walked.
+    ///
+    /// # Specification
+    /// trivial.
+    fn variance(
+        &self,
+        family: ConstantIndex,
+        parameter: ParameterPosition,
+    ) -> Variance;
+}
+
+impl Admitted for [crate::env::AdmittedDeclaration]
+{
+    /// The admitted family's variance, or none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn variance(
+        &self,
+        family: ConstantIndex,
+        parameter: ParameterPosition,
+    ) -> Variance
+    {
+        self.get(usize::from(family))
+            .map_or(Variance::NotStrictlyPositive, |entry| {
+                entry.accessibility().variance(parameter)
+            })
+    }
+}
+
+/// No family walked: what a block's measure reads, which no variance moves.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Unwalked;
+
+impl Admitted for Unwalked
+{
+    /// Not strictly positive.
+    ///
+    /// # Specification
+    /// trivial.
+    fn variance(
+        &self,
+        _family: ConstantIndex,
+        _parameter: ParameterPosition,
+    ) -> Variance
+    {
+        Variance::NotStrictlyPositive
+    }
 }
 
 /// Whether a self application's arguments are the parameter variables.
@@ -151,7 +427,7 @@ struct Scope
 /// # Adequacy
 /// - hypothesis: L3 — a lone family and a mutual block of a family and its
 ///   decoder are each walked by the block they are admitted in.
-/// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name`
+/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
 /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Block
@@ -272,35 +548,6 @@ impl From<Telescope> for Scope
     }
 }
 
-/// The reach of a child that nests inside a former at `reach`.
-///
-/// # Specification
-/// trivial.
-#[inline]
-const fn nest(reach: Reach) -> Reach
-{
-    match reach {
-        Reach::Domain => Reach::Domain,
-        Reach::Term => Reach::Term,
-        Reach::Head { .. } | Reach::Thunk | Reach::Chain { .. } | Reach::Nested => Reach::Nested,
-    }
-}
-
-/// The reach of a child a type reads as a term, from a former at `reach`.
-///
-/// # Specification
-/// trivial.
-#[inline]
-const fn term(reach: Reach) -> Reach
-{
-    match reach {
-        Reach::Domain => Reach::Domain,
-        Reach::Head { .. } | Reach::Thunk | Reach::Chain { .. } | Reach::Nested | Reach::Term => {
-            Reach::Term
-        },
-    }
-}
-
 /// Whether `arguments` are the parameter variables in telescope order, seen
 /// from under `depth` binders past the root's scope.
 ///
@@ -316,7 +563,7 @@ const fn term(reach: Reach) -> Reach
 ///   of order is non-uniform; `List A` applied to `A`, directly and under a
 ///   function field's binder, is uniform, and so is its tail past the head's
 ///   binder.
-/// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name`
+/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted`
 #[spec(ensures: |ret| ret == Uniformity::NonUniform || arguments.len() == scope.telescope.0)]
 fn uniform(
@@ -351,7 +598,9 @@ fn uniform(
     }
 }
 
-/// The finding of a self occurrence at `reach`.
+/// The finding of a self occurrence at `reach`: a uniform one the stage
+/// order places is admitted, and one under a function's domain stratifies
+/// its family; any other is refused by its polarity, then its reach.
 ///
 /// # Specification
 /// trivial.
@@ -362,11 +611,101 @@ const fn found(
 ) -> Finding
 {
     match (reach, uniformity) {
-        (Reach::Domain, _) => Finding::Negative,
-        (Reach::Term, _) => Finding::Index,
-        (Reach::Nested | Reach::Thunk | Reach::Chain { .. }, _) => Finding::Nested,
-        (Reach::Head { .. }, Uniformity::Uniform) => Finding::Admitted,
-        (Reach::Head { .. }, Uniformity::NonUniform) => Finding::NonUniform,
+        (
+            Reach::Placed {
+                polarity: Polarity::Strict,
+                ..
+            },
+            Uniformity::Uniform,
+        ) => Finding::Admitted,
+        (
+            Reach::Placed {
+                polarity: Polarity::Positive | Polarity::Negative,
+                ..
+            },
+            Uniformity::Uniform,
+        ) => Finding::Stratified,
+        (
+            Reach::Placed {
+                polarity: Polarity::Negative,
+                ..
+            }
+            | Reach::Nested {
+                polarity: Polarity::Negative,
+            }
+            | Reach::Term {
+                polarity: Polarity::Negative,
+            },
+            Uniformity::Uniform | Uniformity::NonUniform,
+        ) => Finding::Negative,
+        (
+            Reach::Placed {
+                polarity: Polarity::Strict | Polarity::Positive,
+                ..
+            },
+            Uniformity::NonUniform,
+        ) => Finding::NonUniform,
+        (
+            Reach::Nested {
+                polarity: Polarity::Strict | Polarity::Positive,
+            },
+            Uniformity::Uniform | Uniformity::NonUniform,
+        ) => Finding::Nested,
+        (
+            Reach::Term {
+                polarity: Polarity::Strict | Polarity::Positive,
+            },
+            Uniformity::Uniform | Uniformity::NonUniform,
+        ) => Finding::Index,
+    }
+}
+
+/// Mark not strictly positive every parameter the variable at `index`, met
+/// at `reach` in a root at `scope`, may name: the one it names under a placed
+/// reach's known depth, and under any other every one it may name at some
+/// depth.
+///
+/// # Specification
+/// - requires: `parameters` holds the walked declaration's whole telescope.
+/// - ensures: the variances of the parameters named so are not strictly
+///   positive; every other is unchanged.
+/// - panics: none.
+/// - executable: none — the clause ranges over the mutable telescope, which a
+///   predicate may not iterate; the witnesses read the variances back through
+///   the families they admit and refuse.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list's element stands only at a field's own type and
+///   stays strictly positive; a parameter under a function's domain does not.
+/// - witness: `recursive_data::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
+fn mark(
+    parameters: &mut [Variance],
+    index: DeBruijnIndex,
+    reach: Reach,
+    scope: Scope,
+)
+{
+    let Telescope(telescope) = scope.telescope;
+    let Some(past) = usize::try_from(u32::from(index))
+        .ok()
+        .zip(usize::try_from(u32::from(scope.earlier)).ok())
+        .and_then(|(index, earlier)| index.checked_sub(earlier))
+    else {
+        return;
+    };
+    let named = match reach {
+        Reach::Placed { depth, .. } => usize::try_from(u32::from(depth))
+            .ok()
+            .and_then(|depth| past.checked_sub(depth))
+            .and_then(|distance| telescope.checked_sub(distance))
+            .and_then(|above| above.checked_sub(1))
+            .map_or(0 .. 0, |position| position .. position.saturating_add(1)),
+        Reach::Nested { .. } | Reach::Term { .. } => {
+            telescope.saturating_sub(past.saturating_add(1)) .. telescope
+        },
+    };
+    for variance in parameters.get_mut(named).into_iter().flatten() {
+        *variance = Variance::NotStrictlyPositive;
     }
 }
 
@@ -556,19 +895,27 @@ impl Extend<(AnyNode, Reach)> for Pending
 }
 
 /// The most severe occurrence of a family of `block` in one root's type, or
-/// the first position past the block it names.
+/// the first position past the block it names; the parameters the root uses
+/// other than strictly positively marked so in `parameters`.
+///
+/// The stage order places an occurrence through the field's own type, a
+/// thunk, a function's domain and codomain, a returner's result, the parts of
+/// a product, a sum, a record, a list, a dependent pair and a lazy product,
+/// and a strictly positive parameter of another family; through any other
+/// former no stage reaches.
 ///
 /// # Specification
-/// - requires: `telescope` is the declaration's telescope length and `root` is
-///   scoped under it; `definitions` are the bodies of the block's definitions
-///   by position.
+/// - requires: `scope` is the root's scope in its declaration, `parameters`
+///   holds the declaration's whole telescope, and `definitions` are the bodies
+///   of the block's definitions by position.
 /// - ensures: `Err(index)` when the root names a position at or past the
 ///   block's end; otherwise the most severe finding over every occurrence of a
-///   family of the block, with the two admitted forms finding nothing, a
-///   definition of `definitions` read through its body at the reach it is named
-///   at, as [`Reading`] says.
-/// - provides: the syntactic half of strict positivity; formation is the other
-///   half.
+///   family of the block, a uniform one the stage order places finding nothing
+///   when strictly positive and [`Finding::Stratified`] under a function's
+///   domain, a definition of `definitions` read through its body at the reach
+///   it is named at, as [`Reading`] says.
+/// - provides: the declaration half of accessibility under the stage order; the
+///   stage order at a consumer is the other half.
 /// - fails: a position past the block, as its index.
 /// - panics: none.
 ///
@@ -584,25 +931,28 @@ impl Extend<(AnyNode, Reach)> for Pending
 ///   finite per node.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a negative, a nested, an index and a non-uniform
-///   occurrence, and a reference to a later position, each surface as their own
-///   finding, while the direct and function forms of `Nat`, `List A` and `Tree`
-///   find nothing; a decoder named in a field of its mutual block finds
-///   nothing, and a family named under a domain through a definition of the
-///   block is negative.
-/// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name`
+/// - hypothesis: L3 — a nested, an index and a non-uniform occurrence, a
+///   negative one no stage reaches, and a reference to a later position, each
+///   surface as their own finding, while the direct and function forms of
+///   `Nat`, `List A` and `Tree` find nothing; a family under a function's
+///   domain at a placed position stratifies, and nested under a list's strictly
+///   positive element finds nothing; a decoder named in a field of its mutual
+///   block finds nothing, and a family named under a domain through a
+///   definition of the block is negative.
+/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted`
 /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
 /// - witness: `recursive_data::recursive_data::a_definition_of_the_block_is_read_through_602`
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|later| *later >= block.end))]
-fn worst(
+fn worst<Earlier>(
     arena: &TermArena,
-    block: Block,
-    definitions: &[(ConstantIndex, ValueId)],
+    (block, definitions, earlier): (Block, &[(ConstantIndex, ValueId)], &Earlier),
     scope: Scope,
-    root: ValueTypeId,
-    start: Reach,
+    (root, start): (ValueTypeId, Reach),
+    parameters: &mut [Variance],
 ) -> Result<Finding, ConstantIndex>
+where
+    Earlier: Admitted + ?Sized,
 {
     let mut pending = Pending::new(AnyNode::ValueType(root), start);
     let mut seen: BTreeSet<(AnyNode, Reach, Reading)> = BTreeSet::new();
@@ -622,80 +972,95 @@ fn worst(
                     if declaration >= block.end {
                         return Err(declaration);
                     }
-                    let inner = if block.membership(declaration) == Membership::Family {
+                    if block.membership(declaration) == Membership::Family {
                         let depth = match reach {
-                            Reach::Head { depth, .. } => depth,
-                            Reach::Thunk
-                            | Reach::Chain { .. }
-                            | Reach::Domain
-                            | Reach::Nested
-                            | Reach::Term => BinderDepth::NONE,
+                            Reach::Placed { depth, .. } => depth,
+                            Reach::Nested { .. } | Reach::Term { .. } => BinderDepth::NONE,
                         };
-                        let admitted = uniform(arena, arguments, depth, scope);
-                        worst = worst.max(found(reach, admitted));
-                        term(reach)
+                        let uniformity = uniform(arena, arguments, depth, scope);
+                        worst = worst.max(found(reach, uniformity));
+                        // A uniform application's arguments are the
+                        // parameters themselves, handed on unchanged.
+                        if uniformity == Uniformity::NonUniform {
+                            pending.extend(
+                                arguments
+                                    .iter()
+                                    .map(|&argument| (AnyNode::Value(argument), reach.term())),
+                            );
+                        }
                     }
                     else {
-                        nest(reach)
-                    };
-                    pending.extend(
-                        arguments
-                            .iter()
-                            .map(|&argument| (AnyNode::Value(argument), inner)),
-                    );
+                        for (position, &argument) in arguments.iter().enumerate() {
+                            let variance =
+                                earlier.variance(declaration, ParameterPosition::from(position));
+                            let placed = matches!(reach, Reach::Placed { .. })
+                                && variance == Variance::StrictlyPositive;
+                            match (placed, arena.value(argument), reach.polarity()) {
+                                // A parameter handed on strictly positively
+                                // stays strictly positive.
+                                (true, Some(&Value::Variable(_)), Polarity::Strict) => {},
+                                (true, Some(&(Value::Quote(_) | Value::Variable(_))), _) => {
+                                    pending.push((AnyNode::Value(argument), reach));
+                                },
+                                (true | false, Some(_) | None, _) => {
+                                    pending.push((AnyNode::Value(argument), reach.nest()));
+                                },
+                            }
+                        }
+                    }
                 },
                 Some(&ValueType::Abstract(index)) => {
                     if index >= block.end {
                         return Err(index);
                     }
                     if block.membership(index) == Membership::Family {
-                        worst = worst.max(found(term(reach), Uniformity::NonUniform));
+                        worst = worst.max(found(reach.term(), Uniformity::NonUniform));
                     }
                 },
                 Some(&ValueType::Record(ref fields)) => {
                     pending.extend(
                         fields
                             .values()
-                            .map(|&field| (AnyNode::ValueType(field), nest(reach))),
+                            .map(|&field| (AnyNode::ValueType(field), reach)),
                     );
                 },
                 Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
-                    pending.extend(
-                        parts
-                            .iter()
-                            .map(|&part| (AnyNode::ValueType(part), nest(reach))),
-                    );
+                    pending.extend(parts.iter().map(|&part| (AnyNode::ValueType(part), reach)));
                 },
-                // A dependent pair's factors are nested positions, as a
-                // product's parts are.
                 Some(&ValueType::Sigma { first, second }) => {
-                    pending.push((AnyNode::ValueType(first), nest(reach)));
-                    pending.push((AnyNode::ValueType(second), nest(reach)));
+                    pending.push((AnyNode::ValueType(first), reach));
+                    pending.push((AnyNode::ValueType(second), reach.under()));
                 },
-                Some(
-                    &(ValueType::List(inner)
-                    | ValueType::Session {
-                        payloads: inner, ..
-                    }),
-                ) => {
-                    pending.push((AnyNode::ValueType(inner), nest(reach)));
+                Some(&ValueType::List(element)) => {
+                    pending.push((AnyNode::ValueType(element), reach));
+                },
+                Some(&ValueType::Session { payloads, .. }) => {
+                    pending.push((AnyNode::ValueType(payloads), reach.nest()));
                 },
                 Some(&ValueType::Lift { inner, .. }) => {
-                    pending.push((AnyNode::ValueType(inner), term(reach)));
+                    pending.push((AnyNode::ValueType(inner), reach.term()));
                 },
                 Some(&ValueType::StaticPi { domain, codomain }) => {
-                    pending.push((AnyNode::ValueType(domain), term(reach)));
-                    pending.push((AnyNode::ValueType(codomain), term(reach)));
+                    pending.push((AnyNode::ValueType(domain), reach.term()));
+                    pending.push((AnyNode::ValueType(codomain), reach.term()));
                 },
                 Some(&ValueType::Element { code, .. }) => {
-                    pending.push((AnyNode::Value(code), term(reach)));
+                    // A parameter decoded where the stage order places
+                    // strictly positively is a strictly positive use.
+                    let strict = matches!(reach, Reach::Placed {
+                        polarity: Polarity::Strict,
+                        ..
+                    }) && matches!(arena.value(code), Some(&Value::Variable(_)));
+                    if !strict {
+                        pending.push((AnyNode::Value(code), reach.term()));
+                    }
                 },
                 Some(
                     &ValueType::PathUniverse(source, target)
                     | &ValueType::FlowUniverse(source, target),
                 ) => {
-                    pending.push((AnyNode::Value(source), term(reach)));
-                    pending.push((AnyNode::Value(target), term(reach)));
+                    pending.push((AnyNode::Value(source), reach.term()));
+                    pending.push((AnyNode::Value(target), reach.term()));
                 },
                 // An identity over the declaration being formed is no strictly
                 // positive field: every part of a path or flow type is a term
@@ -712,27 +1077,12 @@ fn worst(
                         target: right,
                     }),
                 ) => {
-                    pending.push((AnyNode::ValueType(domain), term(reach)));
-                    pending.push((AnyNode::Value(left), term(reach)));
-                    pending.push((AnyNode::Value(right), term(reach)));
+                    pending.push((AnyNode::ValueType(domain), reach.term()));
+                    pending.push((AnyNode::Value(left), reach.term()));
+                    pending.push((AnyNode::Value(right), reach.term()));
                 },
                 Some(&ValueType::Thunk(body)) => {
-                    let inner = match reach {
-                        Reach::Head {
-                            site: HeadSite::Field,
-                            ..
-                        } => Reach::Thunk,
-                        Reach::Head {
-                            site: HeadSite::Codomain,
-                            ..
-                        }
-                        | Reach::Thunk
-                        | Reach::Chain { .. }
-                        | Reach::Domain
-                        | Reach::Nested
-                        | Reach::Term => nest(reach),
-                    };
-                    pending.push((AnyNode::CompType(body), inner));
+                    pending.push((AnyNode::CompType(body), reach));
                 },
                 // A stage refines its base's values and never its shape: the
                 // base stands where the staged type does.
@@ -743,48 +1093,22 @@ fn worst(
             },
             AnyNode::CompType(id) => match arena.comp_type(id) {
                 Some(&CompType::Arrow { domain, codomain }) => {
-                    pending.push((AnyNode::ValueType(domain), Reach::Domain));
-                    let inner = match reach {
-                        Reach::Thunk => Reach::Chain {
-                            depth: BinderDepth::NONE,
-                        },
-                        Reach::Chain { depth } => Reach::Chain { depth },
-                        Reach::Head { .. } | Reach::Domain | Reach::Nested | Reach::Term => reach,
-                    };
-                    pending.push((AnyNode::CompType(codomain), inner));
+                    pending.push((AnyNode::ValueType(domain), reach.domain()));
+                    pending.push((AnyNode::CompType(codomain), reach));
                 },
                 Some(&CompType::Pi { domain, codomain }) => {
-                    pending.push((AnyNode::ValueType(domain), Reach::Domain));
-                    let inner = match reach {
-                        Reach::Thunk => Reach::Chain {
-                            depth: BinderDepth::NONE.deeper(),
-                        },
-                        Reach::Chain { depth } => Reach::Chain {
-                            depth: depth.deeper(),
-                        },
-                        Reach::Head { .. } | Reach::Domain | Reach::Nested | Reach::Term => reach,
-                    };
-                    pending.push((AnyNode::CompType(codomain), inner));
+                    pending.push((AnyNode::ValueType(domain), reach.domain()));
+                    pending.push((AnyNode::CompType(codomain), reach.under()));
                 },
                 Some(&CompType::Returner(result)) => {
-                    let inner = match reach {
-                        Reach::Chain { depth } => Reach::Head {
-                            depth,
-                            site: HeadSite::Codomain,
-                        },
-                        Reach::Thunk => Reach::Nested,
-                        Reach::Head { .. } | Reach::Domain | Reach::Nested | Reach::Term => reach,
-                    };
-                    pending.push((AnyNode::ValueType(result), inner));
+                    pending.push((AnyNode::ValueType(result), reach));
                 },
                 Some(&CompType::Element { code, .. }) => {
-                    pending.push((AnyNode::Value(code), term(reach)));
+                    pending.push((AnyNode::Value(code), reach.term()));
                 },
-                // The lazy product is a field-local former, so a self
-                // occurrence in either component is nested.
                 Some(&CompType::With(left, right)) => {
-                    pending.push((AnyNode::CompType(left), nest(reach)));
-                    pending.push((AnyNode::CompType(right), nest(reach)));
+                    pending.push((AnyNode::CompType(left), reach));
+                    pending.push((AnyNode::CompType(right), reach));
                 },
                 None => {},
             },
@@ -794,7 +1118,7 @@ fn worst(
                         return Err(index);
                     }
                     if block.membership(index) == Membership::Family {
-                        worst = worst.max(found(term(reach), Uniformity::NonUniform));
+                        worst = worst.max(found(reach.term(), Uniformity::NonUniform));
                     }
                     // A definition of the block is read through: what its
                     // body names, the field names where it names the
@@ -921,7 +1245,15 @@ fn worst(
                     let reading = pending.reading().quote();
                     pending.read(AnyNode::CompType(quoted), reach, reading);
                 },
-                Some(&(Value::Variable(_) | Value::Literal(_) | Value::ListNil)) | None => {},
+                // A parameter of the walked declaration used anywhere a
+                // strictly positive use was not read is not strictly
+                // positive; a definition's body names none.
+                Some(&Value::Variable(index)) => {
+                    if reading == Reading::Field {
+                        mark(parameters, index, reach, scope);
+                    }
+                },
+                Some(&(Value::Literal(_) | Value::ListNil)) | None => {},
             },
             AnyNode::Computation(id) => match arena.computation(id) {
                 Some(&Computation::DataCase {
@@ -1064,7 +1396,7 @@ const fn refusal(
 ) -> Result<(), KernelError>
 {
     match finding {
-        Finding::Admitted => Ok(()),
+        Finding::Admitted | Finding::Stratified => Ok(()),
         Finding::NonUniform => Err(KernelError::NonUniformOccurrence(site)),
         Finding::Nested => Err(KernelError::NestedOccurrence(site)),
         Finding::Index => Err(KernelError::IndexOccurrence(site)),
@@ -1072,21 +1404,28 @@ const fn refusal(
     }
 }
 
-/// Refuse every occurrence of a family of `block` in a data declaration
-/// outside the two admitted field forms, and every reference past the block.
+/// Decide a data declaration's accessibility under the stage order: refuse
+/// every occurrence of a family of `block` the stage order cannot place
+/// below the constructor, and every reference past the block.
 ///
 /// # Specification
 /// - requires: `block` holds the admission position the declaration takes among
 ///   its families, `definitions` the bodies of its definitions by position,
-///   `parameters` its telescope and `constructors` its field table scoped under
-///   that telescope.
+///   `earlier` the declarations admitted before it, `parameters` its telescope
+///   and `constructors` its field table scoped under that telescope.
 /// - ensures: success exactly when no parameter names a family of the block,
-///   every field names one only directly or as a thunked function's codomain
-///   whose domains do not name it, always at the parameter variables in order,
+///   every field names one only where the stage order places it — under the
+///   placeable formers [`worst`] names, through a strictly positive parameter
+///   of a family admitted before — always at the parameter variables in order,
 ///   a definition of the block counting as the types its body quotes, and
-///   nothing names a position past the block.
-/// - provides: the strict-positivity and head-uniformity judgement the
-///   formation of a recursive block rests on; it runs before any field forms.
+///   nothing names a position past the block; then the accessibility found:
+///   [`Stratification::Stratified`] exactly when some occurrence stands under a
+///   function's domain, and each parameter strictly positive exactly when every
+///   use of it is.
+/// - provides: the declaration half of accessibility under the stage order: a
+///   positive occurrence stands at `≤` the constructor's stage and a negative
+///   one strictly below it, and the stage order refuses at a consumer what no
+///   declaration refuses; it runs before any field forms.
 /// - fails: the first site in parameter-then-field order that refuses.
 /// - panics: none.
 ///
@@ -1097,38 +1436,42 @@ const fn refusal(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `Nat`, `List A` and `Tree` with a function field are
-///   admitted; a `T → A` field domain, a non-uniform head, a later reference, a
-///   nested and an index occurrence are each refused by name at their site; a
-///   universe naming its decoder is admitted with the decoder in its block; a
-///   family named under a domain through a definition of its block is refused
-///   as one named there directly.
+///   admitted positive; a `T → A` field domain is admitted stratified; a node
+///   over a list of nodes is admitted positive; a non-uniform head, a later
+///   reference, a nested, an index and a negative occurrence no stage reaches
+///   are each refused by name at their site; a universe naming its decoder is
+///   admitted with the decoder in its block; a family named under a domain
+///   through a definition of its block is refused.
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted`
-/// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name`
+/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
 /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
 /// - witness: `recursive_data::recursive_data::a_definition_of_the_block_is_read_through_602`
-#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|refusal| matches!(refusal,
     KernelError::CrossBlockReference { .. }
     | KernelError::NegativeOccurrence(_)
     | KernelError::IndexOccurrence(_)
     | KernelError::NestedOccurrence(_)
-    | KernelError::NonUniformOccurrence(_))))]
-pub(super) fn occurrences(
+    | KernelError::NonUniformOccurrence(_)),
+    |accessibility| accessibility.parameters.len() == parameters.len()))]
+pub(super) fn occurrences<Earlier>(
     arena: &TermArena,
-    block: Block,
-    definitions: &[(ConstantIndex, ValueId)],
+    (block, definitions, earlier): (Block, &[(ConstantIndex, ValueId)], &Earlier),
     parameters: &[ValueTypeId],
     constructors: &[Vec<ValueTypeId>],
-) -> Result<(), KernelError>
+) -> Result<Accessibility, KernelError>
+where
+    Earlier: Admitted + ?Sized,
 {
+    let mut variances = alloc::vec![Variance::StrictlyPositive; parameters.len()];
+    let mut stratification = Stratification::Positive;
     for (index, &parameter) in parameters.iter().enumerate() {
         let site = OccurrenceSite::Parameter(ParameterPosition::from(index));
         let finding = worst(
             arena,
-            block,
-            definitions,
+            (block, definitions, earlier),
             Telescope(index).into(),
-            parameter,
-            Reach::Term,
+            (parameter, Reach::PARAMETER),
+            &mut variances,
         )
         .map_err(|later| KernelError::CrossBlockReference { site, index: later })?;
         if finding != Finding::Admitted {
@@ -1136,7 +1479,7 @@ pub(super) fn occurrences(
         }
     }
     for (tag, fields) in constructors.iter().enumerate() {
-        let mut earlier = BinderDepth::NONE;
+        let mut prior = BinderDepth::NONE;
         for (field, &root) in fields.iter().enumerate() {
             let site = OccurrenceSite::Field {
                 tag: ConstructorTag::from(tag),
@@ -1144,18 +1487,27 @@ pub(super) fn occurrences(
             };
             let scope = Scope {
                 telescope: Telescope(parameters.len()),
-                earlier,
+                earlier: prior,
             };
-            let finding = worst(arena, block, definitions, scope, root, Reach::Head {
-                depth: BinderDepth::NONE,
-                site: HeadSite::Field,
-            })
+            let finding = worst(
+                arena,
+                (block, definitions, earlier),
+                scope,
+                (root, Reach::FIELD),
+                &mut variances,
+            )
             .map_err(|later| KernelError::CrossBlockReference { site, index: later })?;
             refusal(finding, site)?;
-            earlier = earlier.deeper();
+            if finding == Finding::Stratified {
+                stratification = Stratification::Stratified;
+            }
+            prior = prior.deeper();
         }
     }
-    Ok(())
+    Ok(Accessibility {
+        stratification,
+        parameters: variances,
+    })
 }
 
 /// The position past the furthest one the data declaration at `position`
@@ -1189,14 +1541,14 @@ pub fn reach(
 ) -> ConstantIndex
 {
     let mut block = Block::lone(position);
+    let mut unread = alloc::vec![Variance::StrictlyPositive; parameters.len()];
     for (index, &parameter) in parameters.iter().enumerate() {
         while let Err(later) = worst(
             arena,
-            block,
-            &[],
+            (block, &[], &Unwalked),
             Telescope(index).into(),
-            parameter,
-            Reach::Term,
+            (parameter, Reach::PARAMETER),
+            &mut unread,
         ) {
             block.end = ConstantIndex::from(usize::from(later).saturating_add(1));
         }
@@ -1208,11 +1560,13 @@ pub fn reach(
                 telescope: Telescope(parameters.len()),
                 earlier,
             };
-            let start = Reach::Head {
-                depth: BinderDepth::NONE,
-                site: HeadSite::Field,
-            };
-            while let Err(later) = worst(arena, block, &[], scope, root, start) {
+            while let Err(later) = worst(
+                arena,
+                (block, &[], &Unwalked),
+                scope,
+                (root, Reach::FIELD),
+                &mut unread,
+            ) {
                 block.end = ConstantIndex::from(usize::from(later).saturating_add(1));
             }
             earlier = earlier.deeper();
@@ -1230,17 +1584,10 @@ mod tests
 
     use super::Block;
     use super::Finding;
-    use super::HeadSite;
     use super::Reach;
     use super::Telescope;
+    use super::Unwalked;
     use super::worst;
-    use crate::rewrite::BinderDepth;
-
-    /// A field's own type, where the walk starts a field.
-    const FIELD: Reach = Reach::Head {
-        depth: BinderDepth::NONE,
-        site: HeadSite::Field,
-    };
 
     #[test]
     fn a_named_position_is_read_against_the_declaration_s_own()
@@ -1269,11 +1616,10 @@ mod tests
             assert_eq!(
                 worst(
                     &arena,
-                    Block::lone(position),
-                    &[],
+                    (Block::lone(position), &[], &Unwalked),
                     Telescope(0).into(),
-                    atom,
-                    FIELD
+                    (atom, Reach::FIELD),
+                    &mut []
                 ),
                 expected,
                 "as an abstract type: {what}"
@@ -1283,11 +1629,10 @@ mod tests
             assert_eq!(
                 worst(
                     &arena,
-                    Block::lone(position),
-                    &[],
+                    (Block::lone(position), &[], &Unwalked),
                     Telescope(0).into(),
-                    element,
-                    FIELD
+                    (element, Reach::FIELD),
+                    &mut []
                 ),
                 expected,
                 "as a constant: {what}"

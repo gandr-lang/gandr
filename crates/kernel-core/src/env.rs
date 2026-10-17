@@ -868,6 +868,10 @@ pub struct AdmittedDeclaration
     /// The block it was admitted in: its own position alone unless a mutual
     /// block admitted it, whose families share one stage.
     block: check::occurrence::Block,
+    /// What the occurrence walk decided of it: a family's stratification and
+    /// its parameters' variance; the reading that admits least for anything
+    /// no walk read.
+    accessibility: check::Accessibility,
 }
 
 impl AdmittedDeclaration
@@ -925,6 +929,16 @@ impl AdmittedDeclaration
     pub(crate) const fn block(&self) -> check::occurrence::Block
     {
         self.block
+    }
+
+    /// What the occurrence walk decided of the declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn accessibility(&self) -> &check::Accessibility
+    {
+        &self.accessibility
     }
 }
 
@@ -1341,7 +1355,7 @@ impl Environment
             )
         };
         match outcome {
-            Ok(()) => {
+            Ok(accessibility) => {
                 // Keep this declaration's content; drop the intermediates that
                 // allocated past it.
                 self.arena.truncate_to(content_end);
@@ -1357,6 +1371,7 @@ impl Environment
                     admission: Admission::Checked,
                     rested_on,
                     block: check::occurrence::Block::lone(position),
+                    accessibility,
                 });
                 self.advance_seals(position);
                 Ok(CheckedId::new(position))
@@ -1435,6 +1450,7 @@ impl Environment
             admission: Admission::Unchecked,
             rested_on,
             block: check::occurrence::Block::lone(position),
+            accessibility: check::Accessibility::unwalked(),
         });
         self.advance_seals(position);
         CheckedId::new(position)
@@ -1605,7 +1621,7 @@ impl Environment
             // as a lone one is, every family and definition before it
             // admitted, inside the block only so its own fixpoint reads its
             // constant as the self binder.
-            {
+            let accessibility = {
                 let Self {
                     ref mut arena,
                     ref entries,
@@ -1622,8 +1638,8 @@ impl Environment
                         ),
                         members,
                     );
-                check::check_declaration(arena, judgement, member)?;
-            }
+                check::check_declaration(arena, judgement, member)?
+            };
             self.arena.truncate_to(content_end);
             let rested_on = self.transitive_rest(
                 member.content(),
@@ -1642,6 +1658,7 @@ impl Environment
                 else {
                     check::occurrence::Block::lone(position)
                 },
+                accessibility,
             });
             self.advance_seals(position);
             admitted.push(CheckedId::new(position));

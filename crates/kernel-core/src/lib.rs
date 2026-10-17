@@ -368,6 +368,44 @@
 //! `kernel_export::kernel_presented_readmission::an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name`
 //! in the surface corpus.
 //!
+//! # Accessibility
+//!
+//! A data declaration's fields may place its family anywhere the stage order
+//! can follow it: under no function's domain at the constructor's stage, and
+//! under a domain strictly below it. `Chain`'s `link : (prev : Chain, test :
+//! U (Chain → F 1))` declares; a case on a chain opens a stage below it and
+//! binds `prev` and the domain of `test` at that stage, so `test(prev)` is
+//! admitted and Curry's consumer `test(c)`, on the chain the case opened, is
+//! refused `StageNotBelow`. A family nests through another's parameter when
+//! that parameter's own walk found it strictly positive — `Rose`'s `node :
+//! (kids : List ⌜Rose⌝)` — the [`Variance`](check::Variance) the walk records
+//! per parameter. What no stage reaches is refused by name: a family at other
+//! arguments, lifted or inside a term, or through a parameter that is not
+//! strictly positive. A stratified value at no stage is read by a case at a
+//! fresh root its own scrutinee does not fit. The checker runs the same walk
+//! and stores the same [`Accessibility`](check::Accessibility); the kernel
+//! recomputes it on admission, never reads the checker's. Witnesses:
+//! `recursive_data::recursive_data::accessibility_is_decided_on_every_former`,
+//! `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`,
+//! `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call` and
+//! `recursive_data::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`.
+//!
+//! **Choice.** Accessibility under the stage order: the accessible argument
+//! positions of computability with accessibility — positive at or below the
+//! constructor's sort, negative strictly below — read over stages, as ground
+//! stratification admits negative occurrences at smaller arguments (the
+//! occurrence module cites both). Curry's paradox is refused where it is
+//! built, at the consumer, so a well-founded consumer of the same family
+//! stands. **Alternatives.** Strict positivity by position, every negative
+//! occurrence refused at the declaration and every nested one refused as
+//! `NestedOccurrence`, which turns away function fields a consumer only
+//! applies below the stage; Mendler-style abstraction of the recursive type
+//! in each field, which admits the same families but makes every consumer
+//! take its own recursion as an argument. **Reversal.** A consumer whose
+//! termination the stage order cannot state, or a family the stratified
+//! reading admits that a model of the stage order rejects, would return the
+//! walk to positivity by position.
+//!
 //! # Mutual blocks
 //!
 //! A universe and the decoder that reads it name each other: `U`'s `PiC`
@@ -397,12 +435,13 @@
 //!
 //! A block of several families — a rose tree's node and its forest — shares
 //! one stage: a case on any of its families, and a constructor of any, moves
-//! every field naming one of the block's families to the stage below
-//! ([`check`]'s `recursion::kin`), so a recursion walking a node into its
-//! forest descends. Such a recursion is one fixpoint over the sum of the
-//! block's families, `U (Rose + Forest → C)`, and a fixpoint over a sum of
-//! one block's families opens that one stage over every summand; the
-//! surface's mutually recursive functions lower to it, each at its summand.
+//! every occurrence of the block's families its fields place to the stage
+//! below ([`check`]'s `recursion::stage_field`), so a recursion walking a
+//! node into its forest descends. Such a recursion is one fixpoint over the
+//! sum of the block's families, `U (Rose + Forest → C)`, and a fixpoint over
+//! a sum of one block's families opens that one stage over every summand;
+//! the surface's mutually recursive functions lower to it, each at its
+//! summand.
 //! A field a definition reads inside its own fixpoint is formed with the
 //! whole block in scope, as its family's fields were, so a field naming a
 //! later definition of the block meets the stage order, not an unbound

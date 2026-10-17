@@ -291,8 +291,12 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::FamilyArgumentClassifier { .. } => "outside its parameter's domain",
         CheckRefusal::StaticLambdaArgument { .. } => "a type operator where a value is needed",
         CheckRefusal::StaticClassifierExpected { .. } => "a type that classifies no codes",
-        CheckRefusal::NegativeOccurrence(_) => "the declared type under a function's domain",
-        CheckRefusal::NestedOccurrence(_) => "the declared type inside another former",
+        CheckRefusal::NegativeOccurrence(_) => {
+            "the declared type under a function's domain, where no stage reaches it"
+        },
+        CheckRefusal::NestedOccurrence(_) => {
+            "the declared type inside another former, at a place it does not hold strictly positively"
+        },
         CheckRefusal::IndexOccurrence(_) => "the declared type inside an index",
         CheckRefusal::NonUniformOccurrence(_) => "the declared type at other arguments",
         CheckRefusal::CrossBlockReference { .. } => "names a later declaration",

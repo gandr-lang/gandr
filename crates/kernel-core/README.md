@@ -94,7 +94,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | ----- | ------ |
 | The four decisions, the memo's binding conditions and collapse law, arithmetic and absence, specification boundaries | [`src/lib.rs`](src/lib.rs) |
 | The checking machine, its correspondence table, universes and the lift, static operators, the native List | [`src/check.rs`](src/check.rs) |
-| Nominal data and records; strict positivity; the structural fixpoint typed by stages | [`src/check/former.rs`](src/check/former.rs), [`src/check/occurrence.rs`](src/check/occurrence.rs), [`src/check/recursion.rs`](src/check/recursion.rs), [`src/stage_order.rs`](src/stage_order.rs) |
+| Nominal data and records; accessibility under the stage order; the structural fixpoint typed by stages | [`src/check/former.rs`](src/check/former.rs), [`src/check/occurrence.rs`](src/check/occurrence.rs), [`src/check/recursion.rs`](src/check/recursion.rs), [`src/stage_order.rs`](src/stage_order.rs) |
 | Admission, staging order, the audit, replay | [`src/env.rs`](src/env.rs) |
 | The seal rule: a manifest atom read as its representation | [`src/seal.rs`](src/seal.rs) |
 | Conversion and its discharged set | [`src/conv.rs`](src/conv.rs) |

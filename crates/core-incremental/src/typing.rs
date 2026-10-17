@@ -582,9 +582,10 @@ pub enum Refusal
         /// The child that classifies no codes.
         found: TypeContent,
     },
-    /// A data declaration's own family occurs under a function's domain.
+    /// A data declaration's own family occurs under a function's domain where
+    /// no stage reaches it.
     NegativeOccurrence(OccurrenceSite),
-    /// A data declaration's own family occurs inside another former.
+    /// A data declaration's own family occurs nested where no stage reaches it.
     NestedOccurrence(OccurrenceSite),
     /// A data declaration's own family occurs inside a term a type reads.
     IndexOccurrence(OccurrenceSite),

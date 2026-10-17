@@ -299,6 +299,9 @@ pub struct CheckingContext<'arena>
     signatures: Vec<(ConstantIndex, FormedValueType)>,
     /// Successfully formed nominal signatures, without a value unfolding.
     data_signatures: BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::DataSignature>>,
+    /// What each data declaration's occurrence walk decided, kept once its
+    /// signature forms.
+    accessibility: BTreeMap<ConstantIndex, crate::occurrence::Accessibility>,
     /// The highest admission position admitted, or why there is none.
     admitted: Maybe<ConstantIndex, admission::Absent>,
     /// The atoms the leaf rules hand out.
@@ -485,6 +488,7 @@ impl<'arena> CheckingContext<'arena>
             binders: Context::new(),
             signatures: Vec::new(),
             data_signatures: BTreeMap::new(),
+            accessibility: BTreeMap::new(),
             admitted: Maybe::Absent(admission::Absent::Fresh),
             atoms,
             definitions: CodeDefinitions::new(),
@@ -820,6 +824,48 @@ impl<'arena> CheckingContext<'arena>
     {
         self.definitions.present(constant, &signature);
         let _previous = self.data_signatures.insert(constant, signature);
+    }
+
+    /// What the occurrence walk of every data declaration formed so far
+    /// decided: the variance a nested occurrence is read through.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn accessibility(
+        &self
+    ) -> &BTreeMap<ConstantIndex, crate::occurrence::Accessibility>
+    {
+        &self.accessibility
+    }
+
+    /// Retain the accessibility the walk of the data declaration at
+    /// `constant` decided, once its signature has formed.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn record_accessibility(
+        &mut self,
+        constant: ConstantIndex,
+        accessibility: crate::occurrence::Accessibility,
+    )
+    {
+        let _previous = self.accessibility.insert(constant, accessibility);
+    }
+
+    /// How the occurrences of the family at `constant` stand: stratified for
+    /// a family whose walk is not held, the reading a case owes no less.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn stratification(
+        &self,
+        constant: ConstantIndex,
+    ) -> crate::occurrence::Stratification
+    {
+        self.accessibility.get(&constant).map_or(
+            crate::occurrence::Stratification::Stratified,
+            crate::occurrence::Accessibility::stratification,
+        )
     }
 
     /// Re-form and adopt a nominal signature without a value unfolding.

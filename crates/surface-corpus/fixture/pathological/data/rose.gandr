@@ -1,19 +1,27 @@
-// What a rose tree refuses. A family standing in its own field under another
-// family's former, a node holding `List(Rose)`, is a nested occurrence: the
-// stage a fold descends through is the list's, not the tree's, so the
-// children are written as a family of the tree's own block instead. Shared
+// What a rose tree refuses. A family nested in another family's arguments
+// stands below its node only through a parameter the other family holds
+// strictly positively, as `List` holds its elements (#517); a parameter its
+// family consumes, standing to the left of an arrow in its own field, places
+// nothing below the node, and a node over it is a nested occurrence. Shared
 // with `../../model/data/rose.gandr`.
 
-/// Lists, the former the nested occurrence stands under.
+/// The two answers a test gives.
 @[ checks ]
-data List(a : Type) : Type {
-  Nil : List(a);
-  Cons : (head : a, tail : List(a)) --> List(a);
+data Two : Type {
+  L : Two;
+  R : Two;
 }
 
-/// A node over a list of nodes: `Rose` nested under `List`. The direct form,
-/// typed by stage, is #393.
+/// Tests of a value: the parameter stands to the left of an arrow, so it is
+/// not strictly positive.
+@[ checks ]
+data Test(a : Type) : Type {
+  MkTest : (probe : +U (a -> -F Two)) --> Test(a);
+}
+
+/// A node over a test of nodes: `Rose` nested under `Test`, whose parameter
+/// places nothing below the node (#517).
 @[ refuses("NestedOccurrence") ]
 data Rose : Type {
-  Node : (kids : List(Rose)) --> Rose;
+  Node : (kids : Test(Rose)) --> Rose;
 }

@@ -3001,11 +3001,11 @@ where
                     )?;
                     // A mutual block's families share the stage: a field of
                     // any of them stands one step below.
-                    let kin = recursion::kin(arena, judgement.entries, datatype);
+                    let block = recursion::families(arena, judgement.entries, datatype)?;
                     recursion::constructor_fields(
                         arena,
-                        (session, &stages, context.as_slice()),
-                        recursion::families(&kin, &datatype),
+                        (&stages, context.as_slice()),
+                        block,
                         stage,
                         &mut goals,
                     )?;
@@ -3710,7 +3710,14 @@ where
                     // words its free cells mint.
                     let scrutinee = produced.value_type()?;
                     let (scrutinee_type, opened) =
-                        recursion::open_case(arena, &mut stages, scrutinee)?;
+                        recursion::open_case(arena, judgement.entries, &mut stages, scrutinee)?;
+                    // A stratified value at no stage is read at a fresh root,
+                    // this run's own: the case's arms are neither recalled nor
+                    // memoized, as a fixpoint's body is not.
+                    if scrutinee_type == scrutinee && matches!(opened, Maybe::Present(_)) {
+                        staged_bodies = staged_bodies.saturating_add(1);
+                        frames.push(Frame::StageExit);
+                    }
                     let datatype = judgement.presentations.identified(arena, scrutinee_type);
                     let Some(matched_native_node) = arena.computation(case)
                     else {
@@ -5158,14 +5165,16 @@ fn check_sealing_provenance(
 ///   `judgement` pairs the environment's admission log with the declaration's
 ///   level context and the ascending positions of the abstract types whose
 ///   minting admission is open, outside any block.
-/// - ensures: `Ok(())` when the declared type forms, sealing provenance
-///   re-derives, a definition's body checks — at its declared type with every
-///   manifest atom read as its representation, as is every constant it names —
-///   and every deferred code checks within the operational ceiling. An axiom
-///   checks only its type; a sealed atom checks that its kind is a universe and
-///   that its representation forms below that kind's successor. The original
-///   arena prefix remains, and successful content roots are readable.
-///   Synthesized intermediates are appended for the caller to truncate.
+/// - ensures: the occurrence walk's accessibility for a data declaration, and
+///   the reading of none for any other, when the declared type forms, sealing
+///   provenance re-derives, a definition's body checks — at its declared type
+///   with every manifest atom read as its representation, as is every constant
+///   it names — and every deferred code checks within the operational ceiling.
+///   An axiom checks only its type; a sealed atom checks that its kind is a
+///   universe and that its representation forms below that kind's successor.
+///   The original arena prefix remains, and successful content roots are
+///   readable. Synthesized intermediates are appended for the caller to
+///   truncate.
 /// - provides: the body check the choke point runs, with a fresh live memo on
 ///   both machines. Full typing and admission-log provenance still require the
 ///   rule derivation; an operational refusal does not establish ill-typedness.
@@ -5201,7 +5210,7 @@ pub fn check_declaration(
     arena: &mut TermArena,
     judgement: Judgement<'_>,
     declaration: &Declaration,
-) -> Result<(), KernelError>
+) -> Result<occurrence::Accessibility, KernelError>
 {
     let mut memo: DefaultMemo = DefaultMemo::new();
     let mut session = SupportContext::new();
@@ -5316,7 +5325,7 @@ pub(crate) fn form_declared(
 /// - witness: `acceptance::acceptance::a_poisoned_term_entry_turns_a_refusal_into_an_acceptance`
 /// - witness: `acceptance::acceptance::a_poisoned_type_entry_turns_admission_into_a_universe_refusal`
 /// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
-/// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name`
+/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
 #[spec(captures: [entry_mark = arena.watermark(),
     entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
     entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
@@ -5347,7 +5356,7 @@ pub fn check_declaration_with_memo<M>(
     memo: &mut M,
     session: &mut SupportContext,
     census: &mut ExpansionCensus,
-) -> Result<(), KernelError>
+) -> Result<occurrence::Accessibility, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
@@ -5361,12 +5370,14 @@ where
         .lawful(declaration.laws())
         .presenting(&presentations);
     // A data declaration's own position names its block while it is checked:
-    // the occurrence walk refuses every non-strictly-positive or non-uniform
-    // occurrence of a family of the block by name first, reading a definition
-    // of the block through its body, and formation then reads it through the
-    // block's signatures. Alone, the block is the declaration's own; in a
-    // mutual block, the block in scope already holds it.
-    let judgement = match *declaration.content() {
+    // the occurrence walk refuses every occurrence of a family of the block
+    // the stage order cannot place below its constructor, by name, first,
+    // reading a definition of the block through its body and a family
+    // admitted before through its parameters' variance, and formation then
+    // reads it through the block's signatures. Alone, the block is the
+    // declaration's own; in a mutual block, the block in scope already holds
+    // it.
+    let (judgement, accessibility) = match *declaration.content() {
         DeclarationContent::Data {
             kind,
             ref parameters,
@@ -5386,28 +5397,37 @@ where
                         | DeclarationContent::AbstractType { .. } => None,
                     })
                     .collect::<Vec<_>>();
-                occurrence::occurrences(arena, block, &definitions, parameters, constructors)?;
-                judgement
-            },
-            Block::Outside | Block::Inside { .. } => {
-                let position = ConstantIndex::from(judgement.entries.len());
-                occurrence::occurrences(
+                let accessibility = occurrence::occurrences(
                     arena,
-                    occurrence::Block::lone(position),
-                    &[],
+                    (block, &definitions, judgement.entries),
                     parameters,
                     constructors,
                 )?;
-                judgement.within_block(position, former::Signature {
+                (judgement, accessibility)
+            },
+            Block::Outside | Block::Inside { .. } => {
+                let position = ConstantIndex::from(judgement.entries.len());
+                let accessibility = occurrence::occurrences(
+                    arena,
+                    (occurrence::Block::lone(position), &[], judgement.entries),
                     parameters,
                     constructors,
-                    kind,
-                })
+                )?;
+                (
+                    judgement.within_block(position, former::Signature {
+                        parameters,
+                        constructors,
+                        kind,
+                    }),
+                    accessibility,
+                )
             },
         },
         DeclarationContent::Def { .. }
         | DeclarationContent::Axiom { .. }
-        | DeclarationContent::AbstractType { .. } => judgement,
+        | DeclarationContent::AbstractType { .. } => {
+            (judgement, occurrence::Accessibility::unwalked())
+        },
     };
     let mut owed: Vec<CodeObligation> = Vec::new();
     let _level = type_level(
@@ -5581,7 +5601,8 @@ where
         },
     };
     verdict?;
-    drain_code_obligations(arena, judgement, memo, session, census, owed)
+    drain_code_obligations(arena, judgement, memo, session, census, owed)?;
+    Ok(accessibility)
 }
 
 /// Check every code a formation walk owed, and every code those checks owe in
@@ -7660,3 +7681,7 @@ mod recursion;
 mod respect;
 
 pub(crate) mod occurrence;
+
+pub use occurrence::Accessibility;
+pub use occurrence::Stratification;
+pub use occurrence::Variance;

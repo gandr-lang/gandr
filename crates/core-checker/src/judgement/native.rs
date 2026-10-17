@@ -183,20 +183,21 @@ impl Machine<'_, '_>
         Ok(Step::Descend(Goal::Form(TypeNode::Value(datatype))))
     }
 
-    /// Check a nominal constructor at a stage: its recursive fields — those
-    /// naming its family or, in a mutual block, any of the block's families —
-    /// one step below the stage, its other fields at their declared types. A
-    /// field whose own type is such a family holds a value below the stage;
-    /// a thunked one may hold a computation that never returns and shows
-    /// nothing (#598).
+    /// Check a nominal constructor at a stage: every occurrence of its family
+    /// or, in a mutual block, of any of the block's families that the stage
+    /// order places in a field one step below the stage, its fields otherwise
+    /// at their declared types. A field whose own type is such a family holds
+    /// a value below the stage; a thunked one may hold a computation that
+    /// never returns and shows nothing (#598).
     ///
     /// # Specification
     /// - requires: `term` is a constructor and `owed` what the stage it is
     ///   checked at owes ([`crate::recursion::constructor_owes`]).
     /// - ensures: the annotation forms before the declaration-ordered field
-    ///   checks; a field naming a family of the constructor's
-    ///   [`crate::recursion::kin`] checks at `owed.fields`, any other at its
-    ///   declared type; the constructor checks once they have.
+    ///   checks; each field checks at its declared type with the occurrences of
+    ///   the constructor's [`crate::recursion::families`] the stage order
+    ///   places at `owed.fields` ([`crate::recursion::stage_field`]); the
+    ///   constructor checks once they have.
     /// - fails: [`CheckRefusal::TypeMismatch`] for an annotation that does not
     ///   convert with the type the stage refines;
     ///   [`CheckRefusal::StageNotBelow`] for a constructor with no field whose
@@ -256,8 +257,7 @@ impl Machine<'_, '_>
             return Err(CheckRefusal::ConstructorArity(term));
         }
         self.wait(Frame::NativeYield(Produced::Checked));
-        let kin = crate::recursion::kin(self.context, datatype);
-        let families = crate::recursion::families(&kin, &datatype);
+        let block = crate::recursion::families(self.context, datatype)?;
         let mut holding = 0_usize;
         for (index, &field_type) in declared.iter().enumerate().rev() {
             let declared_type = former::field_at(
@@ -266,10 +266,8 @@ impl Machine<'_, '_>
                 field_type,
                 gandr_kernel_term::FieldPosition::from(index),
             )?;
-            let mut wanted = declared_type;
-            for &family in families {
-                wanted = crate::recursion::stage_field(self.context, wanted, family, owed.fields)?;
-            }
+            let wanted =
+                crate::recursion::stage_field(self.context, declared_type, &block, owed.fields)?;
             if matches!(
                 self.context.arena().value_type(wanted),
                 Some(&ValueType::Staged { .. })

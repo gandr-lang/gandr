@@ -1287,12 +1287,13 @@ impl fmt::Display for Checked
             ),
             | CheckRefusal::NegativeOccurrence(site) => write!(
                 f,
-                "the declared type occurs under a function's domain in {}",
+                "the declared type occurs under a function's domain in {}, where no stage reaches it",
                 Site(site)
             ),
             | CheckRefusal::NestedOccurrence(site) => write!(
                 f,
-                "the declared type occurs inside another type former in {}",
+                "the declared type occurs inside another type former in {}, at a place that former \
+                 does not hold strictly positively",
                 Site(site)
             ),
             | CheckRefusal::IndexOccurrence(site) => write!(

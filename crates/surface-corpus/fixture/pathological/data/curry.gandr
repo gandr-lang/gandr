@@ -1,0 +1,41 @@
+// Curry's paradox, refused at its consumer (#517). A family whose node holds
+// a function from the family itself declares: the function's domain stands
+// strictly below the node, a stratified definition. What refuses is the
+// consumer applying the function to the node it was read from, which stands
+// at no stage the function takes, directly or through a helper that takes
+// the function at its declared type. Shared with
+// `../../model/data/stratified.gandr`.
+
+/// The type with no element.
+@[ checks ]
+data Empty : Type {}
+
+/// A node holding a function from its own family into the empty type.
+@[ checks ]
+data Bad : Type {
+  MkBad : (f : +U (Bad -> -F Empty)) --> Bad;
+}
+
+/// A function applied to a node, each at its declared type.
+@[ checks ]
+def apply(g : +U (Bad -> -F Empty), b : Bad) -> -F Empty {
+  g(b)
+}
+
+/// Curry's consumer: the function a node holds, applied to that node
+/// (#517).
+@[ refuses("StageNotBelow") ]
+def bad(b : Bad) -> -F Empty {
+  case b {
+    MkBad(f) => f(b)
+  }
+}
+
+/// The same consumer through `apply`: the function a node holds takes
+/// nodes only below the node, not every node `apply` hands it (#517).
+@[ refuses("StageNotBelow") ]
+def smuggled(b : Bad) -> -F Empty {
+  case b {
+    MkBad(f) => apply(f, b)
+  }
+}

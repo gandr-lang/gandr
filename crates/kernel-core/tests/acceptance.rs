@@ -696,7 +696,7 @@ mod acceptance
             session,
             &mut census,
         );
-        (verdict, census)
+        (verdict.map(drop), census)
     }
 
     /// Check `build`'s definition twice — once with the live memo, once with

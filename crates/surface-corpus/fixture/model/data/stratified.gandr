@@ -1,0 +1,69 @@
+// Stratified families: a node may hold a function from its own family, the
+// family standing to the left of an arrow, because the constructor gives that
+// occurrence a stage strictly below the node's — Guermond and Nadathur's
+// stratification read through the accessibility of Guo, Hagens, Kop and Vale
+// (#517). A case on a link reads its fields one stage below the link's, or at
+// a fresh stage for a link at none, so the test a link holds takes the chain
+// before it and never the link itself. What refuses is in
+// `../../pathological/data/curry.gandr`.
+
+/// Natural numbers, the measure the length counts in.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// The two answers a test gives.
+@[ checks ]
+data Two : Type {
+  L : Two;
+  R : Two;
+}
+
+/// Chains whose every link holds the chain before it and a test of chains:
+/// `Chain` stands to the left of the test's arrow, below the link.
+@[ checks ]
+data Chain : Type {
+  Start : Chain;
+  Link : (prev : Chain, test : +U (Chain -> -F Two)) --> Chain;
+}
+
+/// A test answering `R` of a link and `L` of the start.
+@[ checks ]
+def linked : +U (Chain -> -F Two) ;
+def linked = thunk { fn (c) { case c -> -F Two { Start => L, Link(p, t) => R } } } ;
+
+/// Two links over the start, each holding `linked`.
+@[ checks ]
+def twice : Chain ;
+def twice = Link(Link(Start, linked), linked) ;
+
+/// The test a link holds, applied to the chain before it: the chain stands
+/// at the stage the test takes.
+@[ checks ]
+def judge(c : Chain) -> -F Two {
+  case c {
+    Start => L,
+    Link(prev, test) => test(prev)
+  }
+}
+
+/// The links of a chain, by recursion one stage below each link.
+@[ checks ]
+def rec length(c : Chain) -> -F Nat {
+  case c {
+    Start => Zero,
+    Link(prev, test) => { run n <- length[<](prev); Succ(n) }
+  }
+}
+
+/// The outer link's test of the inner link.
+@[ runs("R") ]
+def judged : +U (-F Two) ;
+def judged = thunk { judge(twice) } ;
+
+/// The chain's two links.
+@[ runs("Succ(Succ(Zero))") ]
+def measured : +U (-F Nat) ;
+def measured = thunk { length(twice) } ;
