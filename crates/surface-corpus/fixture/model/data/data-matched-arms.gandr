@@ -1,18 +1,22 @@
-@[ checks ]
-data Color : Type {
-  Red : Color;
-  Green : Color;
-  Blue : Color;
-}
+// The arms a match may write besides one constructor each: a wildcard that
+// takes every constructor the arms before it left, an or-pattern that shares
+// one body between constructors, and a pattern nested inside a constructor's
+// field (Augustsson, _Compiling pattern matching_,
+// doi:10.1007/3-540-15975-4_48).
 
+// The three colours.
+import "./data-base.gandr" ;
+
+/// Red apart from the rest: one arm, then a wildcard for the others.
 @[ checks ]
-def rank(c : Color) -> -F Integer {
+def notRed(c : Color) -> -F Integer {
   case c {
     Red => return 0,
     _ => return 1
   }
 }
 
+/// The warm colours, two constructors sharing one arm.
 @[ checks ]
 def warm(c : Color) -> -F Integer {
   case c {
@@ -21,18 +25,22 @@ def warm(c : Color) -> -F Integer {
   }
 }
 
+/// An optional integer.
 @[ checks ]
 data Inner : Type {
   No : Inner;
   Yes : (n : Integer) --> Inner;
 }
 
+/// An optional `Inner`, so a match can reach two constructors deep.
 @[ checks ]
 data Outer : Type {
   None : Outer;
   Some : (i : Inner) --> Outer;
 }
 
+/// The integer two constructors down, or zero: the first arm's pattern nests
+/// `Yes` inside `Some`.
 @[ checks ]
 def depth(m : Outer) -> -F Integer {
   case m {
@@ -42,8 +50,10 @@ def depth(m : Outer) -> -F Integer {
   }
 }
 
+/// An inner value, annotated with its type.
 @[ checks ]
 def inner = (Yes(41) : Inner);
 
+/// The inner value wrapped once more.
 @[ checks ]
 def answer = (Some(inner) : Outer);

@@ -890,8 +890,8 @@ impl TypeLevelGoal
 /// — stands below the stage that case put its fields at, as it did where the
 /// formation walk met it. Formation outside a run owes under no stage. The
 /// decoder of `fixture/model/universe/inductive-recursive.gandr` in the
-/// surface corpus, whose arm returns `+U ((x : el[<](a)) -> -F el[<](b(x)))`,
-/// is the witness on readmission.
+/// surface corpus, whose arm returns `+U ((x : elPi[<](a)) -> -F
+/// elPi[<](b(x)))`, is the witness on readmission.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum CodeObligation
 {

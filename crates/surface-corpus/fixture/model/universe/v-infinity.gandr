@@ -7,6 +7,12 @@
 // one stage below the set; the codes these sets carry have no machine image,
 // so every item here checks and none runs.
 
+// The type with no element.
+import "../data/empty.gandr" ;
+
+// The two branches a pair picks its members by.
+import "../data/data-base.gandr" ;
+
 /// Sets: a type of members, and the member at each of its elements.
 @[ checks ]
 data Vinf : Type[+, 1] {
@@ -36,33 +42,22 @@ def members(v : Vinf) -> -F Type {
   }
 }
 
-/// The type with no element; shared with `../data/empty.gandr`.
-@[ checks ]
-data Empty : Type {}
-
 /// The type with one element.
 @[ checks ]
 data Lone : Type {
   Pt : Lone;
 }
 
-/// The type with two elements.
-@[ checks ]
-data Two : Type {
-  L : Two;
-  R : Two;
-}
-
 /// Any set follows from an element of the empty type.
 @[ checks ]
-def absurd(e : Empty) -> -F Vinf {
+def absurdSet(e : Empty) -> -F Vinf {
   case e {}
 }
 
 /// No member: the empty set's picking function has nothing to pick from.
 @[ checks ]
 def none : +U (Empty -> -F Vinf) ;
-def none = thunk { fn (x) { absurd(x) } } ;
+def none = thunk { fn (x) { absurdSet(x) } } ;
 
 /// The empty set.
 @[ checks ]

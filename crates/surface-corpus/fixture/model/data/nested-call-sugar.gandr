@@ -1,12 +1,13 @@
-@[ checks ]
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) ==> x;
-  rule P(S(x)) ==> x;
-}
+// A recursive call nested in the constructor an arm returns: `S(S(dbl[<](x)))`
+// is sugar for running the call, then returning the constructors over its
+// value. Each fold respects the integers' rules, so it is defined on the
+// quotient (Altenkirch et al., _Quotient inductive-inductive types_,
+// doi:10.1007/978-3-319-89366-2_16).
 
+// The presented integers.
+import "./data-base.gandr" ;
+
+/// Doubling: each successor and each predecessor written twice.
 @[ checks ]
 def rec dbl(n : Int) -> -F Int {
   case n {
@@ -16,6 +17,7 @@ def rec dbl(n : Int) -> -F Int {
   }
 }
 
+/// Negation: successors and predecessors swapped.
 @[ checks ]
 def rec neg(n : Int) -> -F Int {
   case n {
@@ -25,10 +27,12 @@ def rec neg(n : Int) -> -F Int {
   }
 }
 
+/// Two doubled.
 @[ runs("S(S(S(S(Z))))") ]
 def doubled : +U (-F Int) ;
 def doubled = thunk { dbl(S(S(Z))) } ;
 
+/// Two negated.
 @[ runs("P(P(Z))") ]
 def negated : +U (-F Int) ;
 def negated = thunk { neg(S(S(Z))) } ;

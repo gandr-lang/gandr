@@ -1,8 +1,15 @@
+// A rule written as an equation, `<=>`: one term spelled two ways, with the
+// left side the one a reader would rewrite to. The order of terms chooses the
+// direction, so `x <=> S(P(x))` still runs `S(P(x))` to `x` (Huet, _Confluent
+// reductions_, doi:10.1145/322217.322230). The integers are named apart from
+// the base's, whose rules are written the other way round.
+
+/// The integers with their first rule written smaller side first.
 @[ normalizes("S(P(Z)) ~> Z") ]
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
+data IntEq : Type {
+  Z : IntEq;
+  S : (x : IntEq) --> IntEq;
+  P : (x : IntEq) --> IntEq;
   rule x <=> S(P(x));
   rule P(S(x)) <=> x;
 }

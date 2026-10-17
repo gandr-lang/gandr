@@ -1,10 +1,12 @@
-@[ checks ]
-data Color : Type {
-  Red : Color;
-  Green : Color;
-  Blue : Color;
-}
+// An enumeration matched on a constructor written with its type: the case
+// reads the scrutinee's type from the annotation and takes the arm its
+// constructor names (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis,
+// 1984).
 
+// The three colours.
+import "./data-base.gandr" ;
+
+/// The rank of green among the colours, read off the arm green takes.
 @[ checks ]
 def rank() -> -F Integer {
   case (Green : Color) {
