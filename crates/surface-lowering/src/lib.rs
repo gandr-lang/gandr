@@ -273,9 +273,10 @@
 //!   every recursive call at a field of the scrutinised constructor.
 //! - Conor `McBride`. "Elimination with a Motive." _Types for Proofs and Programs
 //!   (TYPES 2000)_, LNCS 2277, Springer (2002).
-//!   <https://doi.org/10.1007/3-540-45842-5_13> — the alternative not taken:
-//!   later parameters pushed into the motive, which would let a recursive call
-//!   vary them.
+//!   <https://doi.org/10.1007/3-540-45842-5_13> — the methods shape a
+//!   recursive function lowers to: the parameter its matches take apart first,
+//!   the later ones varying under it, here bound under its lambda rather than
+//!   pushed into the motive.
 //! - Pierre-Marie Pédrot and Nicolas Tabareau. "The Fire Triangle: How to Mix
 //!   Substitution, Dependent Elimination, and Effects." _Proceedings of the ACM
 //!   on Programming Languages_ 4 (POPL), 2020. `doi:10.1145/3371126` — ∂CBPV's

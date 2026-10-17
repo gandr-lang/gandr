@@ -7,7 +7,8 @@
 // are one fixpoint over the sum of their domains, each measure that fixpoint
 // at its own summand. A call through either stands one stage below the node or
 // forest it was read from. The direct form's measure, recursing through a
-// list's map at its children's stage, is #393.
+// list's map at its children's stage, is refused in
+// `../../pathological/data/rose.gandr` until #393.
 
 /// Natural numbers, the measure the fold counts in.
 @[ checks ]

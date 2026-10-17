@@ -107,42 +107,77 @@
 //! body. A pattern hole's identity is its syntax node's position, the
 //! identity a term hole takes, so a live match reads one seam.
 //!
-//! # A recursive function is one fixpoint over its last parameter
+//! # A recursive function is one fixpoint over the parameter its matches take apart
 //!
 //! The core's fixpoint `fix x. λy. M` binds its own thunk, and the checker
 //! and the kernel type it by stages: `y` stands at a fresh stage, a case on it
 //! binds its constructor's recursive fields one stage below, and every self
 //! call `(force x) a` takes `a` strictly below the stage `y` stands at
-//! (`gandr-core-checker`'s crate documentation, § Recursion).
-//! `def rec f(p₁, …, pₖ, y) -> C { b }` therefore lowers to `thunk (λp₁ …
-//! λpₖ. fix f. λy. b)`, and a call `f[<](p₁, …, pₖ, a)` to `(force f) a`. The
-//! parameters before the last are the uniform parameters of an inductive
-//! definition (Coquand and Paulin, *Inductively defined types*, COLOG 1988):
-//! bound outside the fixpoint, so every recursive call must pass them as
-//! themselves, and a call passing anything else is refused as non-uniform.
-//! The last parameter is the one the fixpoint recurses on, its evidence's
-//! staged position the fixpoint's first, and whether `a` stands below its
-//! stage is the checkers' to judge, which a call at anything else fails as
-//! `StageNotBelow`; the lowering neither searches for a decreasing argument
-//! nor duplicates the check.
+//! (`gandr-core-checker`'s crate documentation, § Recursion). The lowering
+//! writes what that typing admits, reading the staged parameter off the body:
+//! it is the parameter the innermost match above a claim scrutinises, written
+//! as a bare name, and the last parameter where no match on a parameter stands
+//! above the claim. Nested matches on that parameter's fields keep it. So
+//! `def rec f(p₁, …, pₖ, y, q₁, …, qₘ) -> C { b }` staging `y` lowers to
+//! `thunk (λp₁ … λpₖ. fix f. λy. λq₁ … λqₘ. b)`, and a call `f[<](p₁, …, pₖ,
+//! a, c₁, …, cₘ)` to `(force f) a c₁ … cₘ`. The staged parameter is always the
+//! fixpoint's first binder, its evidence `StructuralDescent`, and whether `a`
+//! stands below its stage is the checkers' to judge: a call at anything else,
+//! the parameter's own value among them, fails as `StageNotBelow`. The
+//! lowering neither searches for a decreasing argument nor duplicates the
+//! check.
+//!
+//! The parameters before the staged one are the uniform parameters of an
+//! inductive definition (Coquand and Paulin, *Inductively defined types*,
+//! COLOG 1988): bound outside the fixpoint, so every recursive call passes
+//! them as themselves, and a call passing anything else is `OutOfFragment`
+//! with the `NonUniform` boundary, at the argument. The parameters after it
+//! are bound under the staged one inside the fixpoint, so a call varies them
+//! freely, an accumulator among them. Every claim of one definition descends
+//! on one parameter: the first claim in source order fixes it before the body
+//! binds anything (`Lowerer::staged_by_body`), and a later claim under a match
+//! on another parameter is `DescentOnSeveralParameters`, naming both.
 //!
 //! `<` is the claim. A fixpoint carries structural evidence when one of its
-//! calls writes it and partial evidence when none does, so the checker and
+//! claims writes it and partial evidence when none does, so the checker and
 //! the kernel type every recursion the source claims and none it does not.
-//! The function's own name is bound by one more frame, between the last
+//! The function's own name is bound by one more frame, between the staged
 //! parameter and the ones before it, typed by the declaration form so no
-//! signature telescope counts it — the binder exists in the body alone — and
-//! it resolves only as the head of a claim: written bare it is refused with
-//! the claim's spelling, `f[<](…)`. Every other resident of an
-//! instantiation, `>` for productivity among them, is declined as the
-//! grammar's reserved form until its termination rung lands.
+//! signature telescope counts it — the binder exists in the body alone. It
+//! resolves only under a claim: heading a call, `f[<](…)`; standing alone,
+//! `f[<]` is the fixpoint's own thunk, a value a call may pass on; written
+//! bare, it is `UnmarkedSelfReference`, whose message spells the claim. A
+//! parameter of the same name shadows it. A function with no parameter has
+//! nothing to recurse on and is declined. Every resident of the instantiation
+//! other than a lone `<` — `>` for productivity, a measure, a size, a cost —
+//! is reserved until its termination rung lands. The fixpoint is marked
+//! `Insertion::Fixpoint` at the function form's origin, since the source
+//! writes no `fix`. A block stands as a match arm, so the programs the corpus
+//! carries in `fixture/model/data/data-recursive.gandr` and
+//! `fixture/model/data/descent.gandr` are written in the surface's intended
+//! spelling.
 //!
-//! Alternative: the recursive argument first and every later parameter
-//! pushed into the case's motive and re-bound under each branch's fields, as
-//! an eliminator's methods take them (`McBride`, *Elimination with a Motive*,
-//! TYPES 2000), which admits a recursive call that varies them, an
-//! accumulator, at the cost of re-indexing every branch. Reversal: a
-//! recursive definition that must vary an earlier parameter.
+//! The shape is `McBride`'s methods (*Elimination with a Motive*, TYPES 2000)
+//! with one departure. An eliminator's methods take the recursive argument
+//! first and push every later parameter into the case's motive, re-bound
+//! under each branch's fields; here the later parameters stand under the
+//! staged parameter's lambda instead, `fix f. λy. λq. case y { … }`. The
+//! checkers' typing and their unfolding gate read only the fixpoint's first
+//! binder, so the later lambdas need no re-indexing of the branches, and a
+//! definition staging its last parameter — every one the corpus held before —
+//! lowers byte for byte as it did. Reversal: a presented type's rule check
+//! reads a fixpoint as a fold only when the case stands directly under its
+//! first lambda, so a definition over a presented type with a parameter after
+//! its staged one needs the arms to take that parameter.
+//!
+//! Alternative, retired: every parameter inside the fixpoint, `fix f. λp₁ …
+//! λpₙ. b`, with evidence naming the staged position. The checkers type that
+//! position, but their evaluation sticks a fixpoint on its first argument and
+//! reads a fold only over its first binder, so `plus` over the presented
+//! integers stopped respecting its rules (#626). Reversal: a fixpoint stuck at
+//! a later position carrying its leading arguments, which is the sized rung's
+//! (#392). Descent on several parameters at once — lexicographic or measured
+//! — is the sized rung's too, and replaces the one position by a measure.
 //!
 //! A mutual block, `rec { … }`, collects its members as declarations admitted
 //! as one block. Two or more recursive functions of one block recurse through
@@ -151,49 +186,17 @@
 //! through a sibling, `g[<](a)`, lowers to `(force f) (inj_g a)`. The
 //! checkers stage that sum at the one stage the block's families share, so a
 //! call descends through any of them; `Lowerer::mint_joints` states the
-//! choice. A member of the joint takes no leading parameter, which a call
-//! through it refuses as non-uniform.
-//!
-//! `def rec f(p₁, …, pₖ, y) -> C { b }` lowers to `thunk (λp₁ … λpₖ. fix f. λy.
-//! b)`: the core fixpoint binds its own thunk, and its structural evidence
-//! stages the parameter the fixpoint takes first, which is the last one the
-//! source writes. A recursive call is written `f[<](p₁, …, pₖ, a)` and lowers
-//! to `(force f) a`. `<` is the claim: a fixpoint carries `StructuralDescent`
-//! evidence when one of its calls writes it and `Partial` evidence when none
-//! does, so the checker and the kernel type every recursion the source claims
-//! and none it does not, and a call at an argument not below the stage fails
-//! as `StageNotBelow`. The lowering neither searches for a decreasing argument
-//! nor duplicates the check. The fixpoint is marked `Insertion::Fixpoint` at
-//! the function form's origin, since the source writes no `fix`.
-//!
-//! The function's own name is bound by one frame between the last parameter and
-//! the ones before it, typed by the declaration form so no signature telescope
-//! counts it, and it resolves only as the head of a claim: written bare, it is
-//! `UnmarkedSelfReference`, whose message spells the claim. A parameter of the
-//! same name shadows it. The parameters before the last are uniform (Coquand
-//! and Paulin): bound outside the fixpoint, so a recursive call must pass each
-//! as itself, and a call passing anything else is `OutOfFragment` with the
-//! `NonUniform` boundary, at the argument. A function with no parameter has
-//! nothing to recurse on and is declined. Every resident of the instantiation
-//! other than a lone `<` — `>` for productivity, a measure, a size, a cost — is
-//! reserved until its termination rung lands. A block stands as a match arm, so
-//! the four programs the corpus carries in
-//! `fixture/model/data/data-recursive.gandr` — `plus`, `length`, `append` and
-//! `map` — are written in the surface's intended spelling.
-//!
-//! The alternative was the recursive argument first, with every later parameter
-//! pushed into the case's motive and re-bound under each branch's fields, as an
-//! eliminator's methods take them (`McBride`); it admits a recursive call that
-//! varies them, an accumulator, at the cost of re-indexing every branch.
-//! Reversal: a recursive definition that must vary an earlier parameter.
+//! choice. A member of the joint takes one parameter: a call through it
+//! refuses a leading one as non-uniform and a later one as unadmitted, and a
+//! member's claim standing alone, the joint's thunk at the sum, is unadmitted.
 //!
 //! # Native data and the match
 //!
 //! `lower::native` lowers a `data` declaration at the root to the core's native
 //! `DataSignature`, a constructor to a native constructor value carrying its
 //! whole classifier, a `case` to a decision tree of native eliminations, and a
-//! `def rec` function to one fixpoint over its last parameter, recursive calls
-//! written with the descent claim `f[<](…)`.
+//! `def rec` function to one fixpoint over the parameter its matches take
+//! apart, recursive calls written with the descent claim `f[<](…)`.
 //!
 //! `data T(a : A) : Type { C : (x : X) --> T(a); … }` at the root lowers to the
 //! core's native `DataSignature`: the parameters as a telescope, each
@@ -365,6 +368,7 @@ use crate::origin::PatternSpan;
 use crate::origin::scrutinised;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
+use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
 use crate::resolve::TypeFormer;
@@ -563,14 +567,21 @@ pub(super) struct CaseIndex(usize);
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Claimed(pub bool);
 
+/// A recursive function's parameter, by its position in the function's
+/// parameter list; the staged one's position also counts the parameters before
+/// it, which every recursive call passes unchanged.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct ParameterAt(pub usize);
+
 /// A recursive function's own name, which the frame of its fixpoint binds.
 ///
 /// # Specification
 /// - requires: coordinates, when present, are interpreted in their originating
 ///   run.
-/// - ensures: the parameters every recursive call passes unchanged, whether a
-///   call claims descent and the tile writing the name stay together under the
-///   frame binding the name.
+/// - ensures: the function's parameters, the ones before the staged one that
+///   every recursive call passes unchanged, whether a call claims descent and
+///   the tile writing the name stay together under the frame binding the name.
 /// - provides: what a descent claim checks its call against, the evidence the
 ///   fixpoint carries, and the name its binder is read by.
 /// - fails: none as a data value; interpretation belongs to its consumers.
@@ -579,15 +590,19 @@ pub(super) struct Claimed(pub bool);
 ///   `function`, `instantiation` and `mint_function` interpret the record.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a recursive function over one parameter and over a
-///   uniform leading parameter each close their fixpoint over the last
-///   parameter, with descent evidence exactly when a call claims it.
-/// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
+/// - hypothesis: L3 — a recursive function over one parameter, over a uniform
+///   leading parameter and over a varying later one each close their fixpoint
+///   over the parameter their matches scrutinise, with descent evidence exactly
+///   when a call claims it.
+/// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
+/// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct Recursion
 {
-    /// The parameters before the last, in the lowerer's parameter store: the
-    /// ones every recursive call passes unchanged.
+    /// Every parameter, in the lowerer's parameter store.
+    pub parameters: Stretch,
+    /// The parameters before the staged one, in the lowerer's parameter
+    /// store: the ones every recursive call passes unchanged.
     pub uniform: Stretch,
     /// Whether a call claims descent, which makes the fixpoint's evidence
     /// structural rather than partial.
@@ -595,6 +610,31 @@ pub(super) struct Recursion
     /// The tile writing the function's own name: where its fixpoint's binder
     /// is named.
     pub named: NodeIndex,
+}
+
+/// A recursive function's parameter as a match on it reads it: the frame
+/// naming the function and the parameter's position in its list.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: the recursion and the position stay together.
+/// - provides: what an arm under a match on a parameter hands down to the
+///   claims inside it.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — `case` records it and `claim` reads it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Recursion`].
+/// - witness: `lower::native::tests::claims_under_cases_on_two_parameters_are_refused_by_name`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Scrutiny
+{
+    /// The frame binding the recursive function's own name.
+    pub recursion: ScopeId,
+    /// The parameter's position in the function's list.
+    pub position: ParameterAt,
 }
 
 /// A recursive call as its call form read it: what its head's claim checks.
@@ -2590,7 +2630,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   answer the position states is taken; each arm body is read as a
     ///   computation under the case's frame, the tree's anonymous binders and
     ///   its own variables, answers what the match does, and takes the paths
-    ///   through the match's position.
+    ///   through the match's position; a match on a recursive function's
+    ///   parameter records that parameter for its arm bodies
+    ///   ([`Self::scrutinise`]).
     /// - provides: the reading of `case`.
     /// - fails: the wrong-sort refusal outside computation position; the view
     ///   form `case … with` by the view's name; a match of no arms as
@@ -2757,6 +2799,11 @@ impl<'source> Lowerer<'_, 'source>
         }
         Self::keep(&patterns, &roots, &mut kept);
         self.read(scrutinee.node, Reading::Value(frame));
+        let bodies = arms
+            .iter()
+            .map(|&(_pattern, body)| body.node)
+            .chain(loops.iter().map(|arm| arm.body));
+        self.scrutinise(frame, scrutinee, bodies)?;
         if let Maybe::Present(node) = written {
             self.read(node.node, Reading::Result(frame));
         }
@@ -7206,42 +7253,49 @@ fn record_copied_since(
 impl<'source> Lowerer<'_, 'source>
 {
     /// Classify an instantiation, `f[<]`: the head of a recursive call
-    /// claiming structural descent.
+    /// claiming structural descent, or the self reference a value passes on.
     ///
     /// # Specification
     /// - requires: `site` is an instantiation in term position.
-    /// - ensures: an instantiation whose one resident is `<`, whose head is a
-    ///   name the frame of a recursive function's fixpoint binds, and which
-    ///   heads a call passing each of that function's parameters before the
-    ///   last as itself and one argument more, stands as the variable the frame
-    ///   binds and makes the function's fixpoint claim descent; each leading
-    ///   argument, which the call erases, is labelled with its parameter's
-    ///   written type. Inside a joint fixpoint ([`Joint`]) a head naming a
+    /// - ensures: an instantiation whose one resident is `<` and whose head is
+    ///   a name the frame of a recursive function's fixpoint binds stands as
+    ///   the variable the frame binds, the fixpoint's own thunk, makes the
+    ///   function's fixpoint claim descent and checks the position
+    ///   [`Self::claim`] reads; heading a call, the call passes each of the
+    ///   function's parameters before the staged one as itself, labelled with
+    ///   its parameter's written type, and one argument for the staged one and
+    ///   each after it. Inside a joint fixpoint ([`Joint`]) a head naming a
     ///   sibling member stands as the function's own fixpoint binder, and
     ///   either head's call injects its argument at the called member's
     ///   summand.
-    /// - provides: the head of a recursive call.
+    /// - provides: the head of a recursive call, and the self reference a value
+    ///   position passes on.
     /// - fails: the reserved refusal for any other resident, a termination
     ///   claim the grammar reserves; the unadmitted refusal for an
-    ///   instantiation whose head names no recursive function in scope or that
-    ///   heads no call; the arity refusal, at the call, for a call passing
-    ///   other than one argument per parameter; the non-uniform refusal, at the
-    ///   argument, for a parameter before the last passed as anything but
-    ///   itself, and at the call for a joint member over leading parameters;
-    ///   the wrong-sort refusal outside a head or value position; and the
-    ///   allowance refusal from the binder walk.
+    ///   instantiation whose head names no recursive function in scope, for a
+    ///   call through a joint member over a parameter after its staged one and
+    ///   for a joint member's claim standing unapplied, whose thunk is the
+    ///   joint's at the sum of the block's domains; the arity refusal, at the
+    ///   call, for a call passing other than one argument per parameter; the
+    ///   non-uniform refusal, at the argument, for a parameter before the
+    ///   staged one passed as anything but itself, and at the call for a joint
+    ///   member over leading parameters; the several-parameters refusal
+    ///   [`Self::claim`] raises; the wrong-sort refusal outside a head or value
+    ///   position; and the allowance refusal from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
     /// The instantiation's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a descent call over one parameter and over a uniform
-    ///   leading one lower to their variable; a productivity claim, a claim on
-    ///   a function that is not recursive, a bare claim, a wrong argument count
-    ///   and a varied leading parameter each refuse by their own boundary.
-    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
+    /// - hypothesis: L3 — a descent call over one parameter, over a uniform
+    ///   leading one and over a varying later one, and a claim standing
+    ///   unapplied, lower to their variable; a productivity claim, a claim on a
+    ///   function that is not recursive, a wrong argument count and a varied
+    ///   leading parameter each refuse by their own boundary.
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
+    /// - witness: `lower::native::tests::an_unapplied_claim_lowers_to_the_self_binder`
     /// - witness: `lower::native::tests::only_the_descent_claim_heads_a_recursive_call`
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Variable(..))))]
@@ -7288,10 +7342,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Unadmitted));
         }
         let name = self.name_at(head);
-        let Some(&descent) = self.descents.get(&site.at.node)
-        else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
-        };
+        let descent = self.descents.get(&site.at.node).copied();
         let joint = match self.collected.owner_of(site.at.node) {
             Maybe::Present(owner) => self.joint(owner),
             Maybe::Absent(_) => Joint::alone(),
@@ -7330,15 +7381,31 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(site.out(FragmentBoundary::Unadmitted));
         };
-        if let Maybe::Present(summand) = summand {
-            // The joint fixpoint takes one argument, the injection of the
-            // descended value: no member passes a leading parameter.
-            if !stretch(&self.parameters, recursion.uniform).is_empty() {
-                return Err(descent.call.out(FragmentBoundary::NonUniform));
-            }
-            let _previous = self.injected.insert(site.at.node, summand);
+        // The position first: a claim under a match on another parameter
+        // reads its arguments against the wrong split.
+        self.claim(site, bound.binder)?;
+        match (descent, summand) {
+            (Some(descent), Maybe::Present(summand)) => {
+                // The joint fixpoint takes one argument, the injection of the
+                // descended value: no member passes a leading parameter or
+                // one after its staged one.
+                if !stretch(&self.parameters, recursion.uniform).is_empty() {
+                    return Err(descent.call.out(FragmentBoundary::NonUniform));
+                }
+                if stretch(&self.parameters, recursion.parameters).len() != 1 {
+                    return Err(descent.call.out(FragmentBoundary::Unadmitted));
+                }
+                let _previous = self.injected.insert(site.at.node, summand);
+                self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
+            },
+            (Some(descent), Maybe::Absent(_)) => {
+                self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
+            },
+            // Unapplied, a joint member's claim would be the joint's thunk, at
+            // the sum of the block's domains rather than the member's own.
+            (None, Maybe::Present(_)) => return Err(site.out(FragmentBoundary::Unadmitted)),
+            (None, Maybe::Absent(_)) => {},
         }
-        self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
         if let Some(held) = self.recursions.get_mut(&bound.binder) {
             held.claimed = Claimed(true);
         }
@@ -7398,14 +7465,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `arguments` is a stretch of the operand store.
     /// - ensures: one argument per parameter of the recursive function, each
-    ///   before the last the parameter itself, which the call erases and which
-    ///   is labelled with its parameter's written type.
+    ///   before the staged one the parameter itself, which the call erases and
+    ///   which is labelled with its parameter's written type.
     /// - provides: the check a descent call's claim makes, in a body and in the
     ///   type a decoder's arm returns.
     /// - fails: the arity refusal, at the call, for a call passing other than
     ///   one argument per parameter; the non-uniform refusal, at the argument,
-    ///   for a parameter before the last passed as anything but itself; the
-    ///   allowance refusal from the binder walk.
+    ///   for a parameter before the staged one passed as anything but itself;
+    ///   the allowance refusal from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -7419,7 +7486,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   observe each refusal.
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
     /// - witness: `lower::native::tests::only_the_descent_claim_heads_a_recursive_call`
-    #[spec(ensures: |ret| ret.is_err() || stretch(&self.operands, arguments).len() == stretch(&self.parameters, recursion.uniform).len().saturating_add(1))]
+    #[spec(ensures: |ret| ret.is_err() || stretch(&self.operands, arguments).len() == stretch(&self.parameters, recursion.parameters).len())]
     fn uniform_descent(
         &mut self,
         frame: Frame,
@@ -7430,7 +7497,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let uniform = stretch(&self.parameters, recursion.uniform);
         let arguments = stretch(&self.operands, arguments);
-        if arguments.len() != uniform.len().saturating_add(1) {
+        if arguments.len() != stretch(&self.parameters, recursion.parameters).len() {
             return Err(call.out(FragmentBoundary::Arity(OperandCount::from(arguments.len()))));
         }
         for (parameter, &argument) in uniform.iter().zip(arguments) {
@@ -7472,6 +7539,365 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
+    /// The position a recursive function named `own` stages, read off its
+    /// body before the body is classified: the parameter the innermost match
+    /// above the body's first claim scrutinises, written bare, and the last
+    /// parameter where no match on a parameter stands above it or the body
+    /// claims nothing.
+    ///
+    /// **Choice.** The position is read off the body, where the match that
+    /// takes the staged parameter apart already says it. **Alternatives.** A
+    /// position written on the claim, a second spelling of what the match
+    /// says; a search for the decreasing argument, which duplicates the
+    /// checkers' judgment. **Reversal.** Descent on several parameters at
+    /// once — lexicographic or measured — is the sized rung's, and replaces
+    /// the one position by a measure.
+    ///
+    /// # Specification
+    /// - requires: `parameters` are the function's parameter names in order,
+    ///   and `roots` the syntax the function writes after its parameter list,
+    ///   in source order.
+    /// - ensures: the position, in `0 .. parameters.len()`, of the parameter
+    ///   the innermost match above the first instantiation of `own` in source
+    ///   order scrutinises, a scrutinee written as a bare name equal to that
+    ///   parameter's; the last position otherwise. The classification sweep
+    ///   checks every claim against it ([`Self::claim`]), so a name a binder
+    ///   between the match and the parameter shadows is refused there.
+    /// - provides: where the function binds its own name: between the
+    ///   parameters before the staged one and the staged one.
+    /// - fails: a fault reading a form's pieces or shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form fault.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop over a stack of syntax nodes, each pushed
+    ///   once by its parent in the finite tree, not recursion.
+    /// - measure: the nodes under `roots` not yet popped.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — claims under a match on the first parameter, under
+    ///   nested matches on one parameter's fields and under no match on a
+    ///   parameter each stage their own position.
+    /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
+    /// - witness: `lower::native::tests::a_definition_without_a_case_on_a_parameter_stages_its_last`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |position| position.0 < parameters.len().max(1)))]
+    pub(super) fn staged_by_body(
+        &mut self,
+        own: SurfaceName<'source>,
+        parameters: &[SurfaceName<'source>],
+        roots: &[NodeIndex],
+    ) -> Result<ParameterAt, LoweringRefusal<'source>>
+    {
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let found = self.first_claim(own, parameters, roots, &mut scratch);
+        self.scratch = scratch;
+        Ok(found?.unwrap_or_else(|| ParameterAt(parameters.len().saturating_sub(1))))
+    }
+
+    /// The position the match above the first instantiation of `own` under
+    /// `roots` scrutinises, by [`Self::staged_by_body`]'s rule.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::staged_by_body`]; `scratch` is free for reading
+    ///   pieces.
+    /// - ensures: `Some` of the scrutinised parameter's position, or of the
+    ///   last position where no match on a parameter stands above the first
+    ///   instantiation; `None` when no instantiation of `own` stands under
+    ///   `roots`.
+    /// - fails: as [`Self::staged_by_body`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form fault.
+    ///
+    /// # Termination
+    /// - reason: as [`Self::staged_by_body`].
+    /// - measure: the nodes under `roots` not yet popped.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::staged_by_body`].
+    /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|position| position.0 < parameters.len().max(1))))]
+    fn first_claim(
+        &self,
+        own: SurfaceName<'source>,
+        parameters: &[SurfaceName<'source>],
+        roots: &[NodeIndex],
+        scratch: &mut Pieces,
+    ) -> Result<Option<ParameterAt>, LoweringRefusal<'source>>
+    {
+        let last = ParameterAt(parameters.len().saturating_sub(1));
+        // A parameter's position, when `operand` names it bare.
+        let named = |operand: Placed| -> Result<Option<ParameterAt>, LoweringRefusal<'source>> {
+            let Some(node) = self.tree.node(operand.node)
+            else {
+                return Ok(None);
+            };
+            if !matches!(shape_of(self.pbg, node)?, Shape::Form {
+                former: Former::Name,
+                ..
+            }) {
+                return Ok(None);
+            }
+            let written = self.name_at(operand);
+            Ok(parameters
+                .iter()
+                .position(|&parameter| parameter == written)
+                .map(ParameterAt))
+        };
+        let mut pending: Vec<(NodeIndex, Option<ParameterAt>)> =
+            roots.iter().rev().map(|&root| (root, None)).collect();
+        while let Some((at, scrutinised)) = pending.pop() {
+            let Some(node) = self.tree.node(at)
+            else {
+                continue;
+            };
+            let former = match shape_of(self.pbg, node)? {
+                Shape::Form { former, .. } => Some(former),
+                Shape::Root | Shape::Repair(_) | Shape::Layout => None,
+            };
+            read_pieces(self.pbg, self.tree, at, scratch)?;
+            let pieces = scratch.pieces.clone();
+            let operands = pieces.iter().filter_map(|piece| match *piece {
+                Piece::Operand(operand) => Some(operand),
+                Piece::Tile { .. } => None,
+            });
+            if former == Some(Former::Instantiation)
+                && let Some(head) = operands.clone().next()
+                && self.tree.node(head.node).is_some_and(|node| {
+                    matches!(
+                        shape_of(self.pbg, node),
+                        Ok(Shape::Form {
+                            former: Former::Name,
+                            ..
+                        })
+                    )
+                })
+                && self.name_at(head) == own
+            {
+                return Ok(Some(scrutinised.unwrap_or(last)));
+            }
+            // A match on a parameter hands its position to its arm bodies,
+            // the operands its `=>` tiles introduce; every other child keeps
+            // the enclosing one.
+            let arms = match (former, operands.clone().next()) {
+                (Some(Former::Case), Some(scrutinee)) => named(scrutinee)?,
+                _ => None,
+            };
+            let mut children = Vec::new();
+            let mut after_arrow = false;
+            for piece in &pieces {
+                match *piece {
+                    Piece::Tile { label, .. } => after_arrow = label == TileName::FAT_ARROW,
+                    Piece::Operand(operand) => {
+                        let inherited = match arms {
+                            Some(position) if after_arrow => Some(position),
+                            Some(_) | None => scrutinised,
+                        };
+                        children.push((operand.node, inherited));
+                        after_arrow = false;
+                    },
+                }
+            }
+            pending.extend(children.into_iter().rev());
+        }
+
+        Ok(None)
+    }
+
+    /// How many parameters a recursive call headed by the instantiation
+    /// `head`, read under `frame`, passes unchanged: those before the staged
+    /// one of the recursive function its head names.
+    ///
+    /// # Specification
+    /// - requires: `head` is an instantiation form.
+    /// - ensures: the count of the named recursive function's parameters before
+    ///   its staged one when the head's name resolves to the frame binding a
+    ///   recursive function's own name; zero otherwise, where the claim
+    ///   ([`Self::instantiation`]) refuses or the call is a joint sibling's,
+    ///   whose members take no leading parameter.
+    /// - provides: the arguments a descent call leaves out of its application.
+    /// - fails: a fault reading the head's pieces or shape; the allowance
+    ///   refusal from the binder walk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's or the binder walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call over a uniform leading parameter applies its
+    ///   later arguments alone.
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |leading| leading.0 <= self.parameters.len()))]
+    pub(super) fn leading_parameters(
+        &mut self,
+        frame: Frame,
+        head: Placed,
+    ) -> Result<ParameterAt, LoweringRefusal<'source>>
+    {
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, head.node, &mut scratch);
+        let named = scratch.pieces.iter().find_map(|piece| match *piece {
+            Piece::Operand(operand) => Some(operand),
+            Piece::Tile { .. } => None,
+        });
+        self.scratch = scratch;
+        read?;
+        let Some(named) = named
+        else {
+            return Ok(ParameterAt(0));
+        };
+        let Some(node) = self.tree.node(named.node)
+        else {
+            return Ok(ParameterAt(0));
+        };
+        let Shape::Form {
+            former: Former::Name,
+            ..
+        } = shape_of(self.pbg, node)?
+        else {
+            return Ok(ParameterAt(0));
+        };
+        let name = self.name_at(named);
+        Ok(ParameterAt(
+            match self.scope.resolve(frame, name, &mut self.fuel)? {
+                Maybe::Present(bound) => {
+                    self.recursions.get(&bound.binder).map_or(0, |recursion| {
+                        stretch(&self.parameters, recursion.uniform).len()
+                    })
+                },
+                Maybe::Absent(_) => 0,
+            },
+        ))
+    }
+
+    /// Check the position the claim at `site` descends on against the one the
+    /// recursive function whose own name the frame `recursion` binds stages.
+    ///
+    /// # Specification
+    /// - requires: `recursion` binds a recursive function's own name.
+    /// - ensures: `Ok` when the parameter the innermost match above `site`
+    ///   scrutinises, recorded by [`Self::scrutinise`] for this function, or
+    ///   its last parameter where none is, is the staged one
+    ///   ([`Self::staged_by_body`]).
+    /// - provides: the one-position rule every claim of one function keeps.
+    /// - fails: [`LoweringRefusal::DescentOnSeveralParameters`] at `site`,
+    ///   naming the staged parameter and the claimed one, when they differ.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::DescentOnSeveralParameters`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — claims under cases on one parameter are admitted and
+    ///   claims under cases on two are refused, naming both.
+    /// - witness: `lower::native::tests::claims_under_cases_on_two_parameters_are_refused_by_name`
+    /// - witness: `lower::native::tests::a_rebuilt_argument_descends_on_the_same_position`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::DescentOnSeveralParameters { .. })))]
+    fn claim(
+        &self,
+        site: Site,
+        recursion: ScopeId,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(held) = self.recursions.get(&recursion)
+        else {
+            return Ok(());
+        };
+        let parameters = stretch(&self.parameters, held.parameters);
+        let staged = ParameterAt(stretch(&self.parameters, held.uniform).len());
+        let claimed = match self.scrutinised.get(&site.at.node) {
+            Some(scrutiny) if scrutiny.recursion == recursion => scrutiny.position,
+            Some(_) | None => ParameterAt(parameters.len().saturating_sub(1)),
+        };
+        if claimed == staged {
+            return Ok(());
+        }
+        let named = |at: ParameterAt| {
+            parameters
+                .get(at.0)
+                .and_then(|parameter| {
+                    self.tree
+                        .node(parameter.binder)
+                        .map(|node| self.name_at(Placed::of(parameter.binder, node)))
+                })
+                .unwrap_or_else(|| SurfaceName::from(""))
+        };
+        Err(LoweringRefusal::DescentOnSeveralParameters {
+            span: site.at.span,
+            staged: named(staged),
+            claimed: named(claimed),
+        })
+    }
+
+    /// Record that each arm body in `bodies` stands under a match on
+    /// `scrutinee`, read under `frame`, when it names a recursive function's
+    /// parameter.
+    ///
+    /// # Specification
+    /// - requires: `bodies` are the match's arm bodies, not yet visited by the
+    ///   classification sweep.
+    /// - ensures: when `scrutinee` is a name written bare that resolves to a
+    ///   recursive function's parameter, every body records that function and
+    ///   that parameter's position, replacing what an enclosing match recorded;
+    ///   otherwise nothing changes, so a match on anything else leaves the
+    ///   enclosing match's record in force.
+    /// - provides: the scrutiny the sweep hands down to every node under an
+    ///   arm, which [`Self::claim`] reads.
+    /// - fails: the allowance refusal from the binder walk; a fault reading the
+    ///   scrutinee's shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The binder walk's or the form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::claim`].
+    /// - witness: `lower::native::tests::claims_under_cases_on_two_parameters_are_refused_by_name`
+    /// - witness: `lower::native::tests::a_rebuilt_argument_descends_on_the_same_position`
+    #[spec(
+        captures: before = self.scrutinised.len(),
+        ensures: |ret| ret.is_err() || self.scrutinised.len() >= before,
+    )]
+    pub(super) fn scrutinise(
+        &mut self,
+        frame: Frame,
+        scrutinee: Placed,
+        bodies: impl IntoIterator<Item = NodeIndex>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        if self.staged_parameters.is_empty() {
+            return Ok(());
+        }
+        let Some(node) = self.tree.node(scrutinee.node)
+        else {
+            return Ok(());
+        };
+        let Shape::Form {
+            former: Former::Name,
+            ..
+        } = shape_of(self.pbg, node)?
+        else {
+            return Ok(());
+        };
+        let written = self.name_at(scrutinee);
+        let Maybe::Present(found) = self.scope.resolve(frame, written, &mut self.fuel)?
+        else {
+            return Ok(());
+        };
+        let Some(&scrutiny) = self.staged_parameters.get(&found.binder)
+        else {
+            return Ok(());
+        };
+        for body in bodies {
+            let _previous = self.scrutinised.insert(body, scrutiny);
+        }
+
+        Ok(())
+    }
+
     /// Classify a decoder's own recursion written in the type one of its arms
     /// returns, `el[<](a)`: the decode of the code the descent call returns.
     ///
@@ -7480,17 +7906,18 @@ impl<'source> Lowerer<'_, 'source>
     ///   named `name` at `head`, is followed by `[`; `cursor` stands past it.
     /// - ensures: the descent `[<]` on a name the frame of a recursive
     ///   function's fixpoint binds, applied to one argument per parameter with
-    ///   each leading one passed as itself, stands as the unquote of that
-    ///   fixpoint called on the last argument, read as a value, at the universe
-    ///   the position reads, and makes the fixpoint claim descent; the
-    ///   fixpoint's binder is recorded as mentioned.
+    ///   each before the staged one passed as itself, stands as the unquote of
+    ///   that fixpoint called on the staged argument and every one after it,
+    ///   each read as a value, at the universe the position reads, and makes
+    ///   the fixpoint claim descent once [`Self::claim`] admits its position;
+    ///   the fixpoint's binder is recorded as mentioned.
     /// - provides: the written spelling of an inductive-recursive decode, `(x :
     ///   el[<](a)) -> -F el[<](b(x))`, whose codomain decodes a code the arm
     ///   cannot compute before its binder.
     /// - fails: the misplaced-tile fault for a bracket holding other than `<`;
     ///   the unadmitted refusal for a head naming no recursive function in
-    ///   scope; the refusals [`Self::uniform_descent`] raises; the wrong-sort
-    ///   refusal where no type is read.
+    ///   scope; the refusals [`Self::uniform_descent`] and [`Self::claim`]
+    ///   raise; the wrong-sort refusal where no type is read.
     /// - panics: none.
     ///
     /// # Errors
@@ -7527,12 +7954,14 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(site.out(FragmentBoundary::Unadmitted));
         };
+        self.claim(site, bound.binder)?;
         self.uniform_descent(from, recursion, site, written)?;
         if let Some(held) = self.recursions.get_mut(&bound.binder) {
             held.claimed = Claimed(true);
         }
+        let leading = stretch(&self.parameters, recursion.uniform).len();
         let applied = Stretch {
-            start: written.end.saturating_sub(1).max(written.start),
+            start: written.start.saturating_add(leading).min(written.end),
             end: written.end,
         };
         let universe = site.reading.positional_universe();
@@ -7571,7 +8000,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a recursive function with a descent call and one with
     ///   no call each carry their own evidence.
-    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
     #[spec(ensures: |ret| match function.recursion {
         | Maybe::Present(frame) => ret == Maybe::Present(if self.recursions.get(&frame).is_some_and(|held| held.claimed.0) { FixpointEvidence::StructuralDescent } else { FixpointEvidence::Partial }),
         | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
@@ -7599,9 +8028,9 @@ impl<'source> Lowerer<'_, 'source>
     /// `A₀ + … + Aₙ`, a member `λ x. f (injᵢ x)` and a descent through a
     /// sibling `f (inj_j v)`. **Alternatives.** A mutual fixpoint former, a
     /// new kernel node the record declines; a tuple of fixpoints, which no
-    /// stage relates. **Reversal.** A member over leading parameters, or at
-    /// a dependent type, joins once the joint reads a telescope rather than
-    /// one domain.
+    /// stage relates. **Reversal.** A member over parameters beside its staged
+    /// one, or at a dependent type, joins once the joint reads a telescope
+    /// rather than one domain.
     ///
     /// # Specification
     /// - requires: the mint sweep has run.
@@ -7659,8 +8088,9 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the mint sweep has run.
-    /// - ensures: a function tail lowered to `thunk (fix. λ. b)` at `+U (A ->
-    ///   C)` reads as its declaration, `A`, `C`, `b` and the fixpoint's claim.
+    /// - ensures: a function tail of one parameter lowered to `thunk (fix. λ.
+    ///   b)` at `+U (A -> C)` reads as its declaration, `A`, `C`, `b` and the
+    ///   fixpoint's claim.
     /// - fails: [`joint::Absent::Unjoined`] for anything else.
     /// - panics: none.
     ///
@@ -7689,6 +8119,16 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unjoined;
         };
+        // A member joins over its one parameter; the plans are spent by the
+        // mint sweep, so its recursion record, keyed by the frame the
+        // declaration form types, says how many it takes.
+        let unary = self.recursions.iter().any(|(&binder, recursion)| {
+            self.scope.declared(binder) == Maybe::Present(declaration.node)
+                && stretch(&self.parameters, recursion.parameters).len() == 1
+        });
+        if !unary {
+            return unjoined;
+        }
         let (Maybe::Present(signature), Maybe::Present(body), Maybe::Present(origin)) = (
             self.signature_at(declaration.node),
             self.function_body_at(declaration.node),

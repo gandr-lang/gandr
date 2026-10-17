@@ -468,6 +468,8 @@ pub enum RefusalName
     NonExhaustiveMatch,
     /// A recursive definition's own name written without a descent claim.
     UnmarkedSelfReference,
+    /// A recursive definition whose claims descend on two parameters.
+    DescentOnSeveralParameters,
     /// Code after a statement every path of which exits.
     Unreachable,
     /// A `break` or a `continue` on no path through a loop's body.
@@ -618,7 +620,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 157_usize] = [
+    pub const VOCABULARY: [Self; 158_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -708,6 +710,7 @@ impl RefusalName
         Self::LowercaseModuleName,
         Self::NonExhaustiveMatch,
         Self::UnmarkedSelfReference,
+        Self::DescentOnSeveralParameters,
         Self::Unreachable,
         Self::OutsideLoop,
         Self::AcrossHandler,
@@ -820,6 +823,7 @@ impl RefusalName
         b"LowercaseModuleName") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
+        (Self::DescentOnSeveralParameters, b"DescentOnSeveralParameters") |
         (Self::Unreachable, b"Unreachable") |
         (Self::OutsideLoop, b"OutsideLoop") |
         (Self::AcrossHandler, b"AcrossHandler") |
@@ -1071,6 +1075,7 @@ impl RefusalName
             Self::LowercaseModuleName => "LowercaseModuleName",
             Self::NonExhaustiveMatch => "NonExhaustiveMatch",
             Self::UnmarkedSelfReference => "UnmarkedSelfReference",
+            Self::DescentOnSeveralParameters => "DescentOnSeveralParameters",
             Self::Unreachable => "Unreachable",
             Self::OutsideLoop => "OutsideLoop",
             Self::AcrossHandler => "AcrossHandler",
@@ -1276,6 +1281,8 @@ impl Refusal<'_>
         RefusalName::NonExhaustiveMatch) |
         (Self::Lowering(LoweringRefusal::UnmarkedSelfReference { .. }),
         RefusalName::UnmarkedSelfReference) |
+        (Self::Lowering(LoweringRefusal::DescentOnSeveralParameters { .. }),
+        RefusalName::DescentOnSeveralParameters) |
         (Self::Lowering(LoweringRefusal::Unreachable { .. }),
         RefusalName::Unreachable) |
         (Self::Lowering(LoweringRefusal::OutsideLoop { .. }),
@@ -1485,7 +1492,8 @@ impl Refusal<'_>
         RefusalName::FamilyTelescope) | (LoweringRefusal::LowercaseModuleName { .. },
         RefusalName::LowercaseModuleName) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
-        RefusalName::UnmarkedSelfReference) | (LoweringRefusal::Unreachable { .. },
+        RefusalName::UnmarkedSelfReference) | (LoweringRefusal::DescentOnSeveralParameters { .. },
+        RefusalName::DescentOnSeveralParameters) | (LoweringRefusal::Unreachable { .. },
         RefusalName::Unreachable) | (LoweringRefusal::OutsideLoop { .. },
         RefusalName::OutsideLoop) | (LoweringRefusal::AcrossHandler { .. },
         RefusalName::AcrossHandler) | (LoweringRefusal::ForNeedsListCase { .. },
@@ -1536,6 +1544,9 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
         LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
         LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
+        LoweringRefusal::DescentOnSeveralParameters { .. } => {
+            RefusalName::DescentOnSeveralParameters
+        },
         LoweringRefusal::Unreachable { .. } => RefusalName::Unreachable,
         LoweringRefusal::OutsideLoop { .. } => RefusalName::OutsideLoop,
         LoweringRefusal::AcrossHandler { .. } => RefusalName::AcrossHandler,

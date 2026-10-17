@@ -90,7 +90,8 @@ impl LoweringRefusal<'_>
             | Self::WithoutK { .. }
             | Self::DirectedCell { .. }
             | Self::CellNotALoop { .. }
-            | Self::ForNeedsListCase { .. } => matches!(ret, FailureClass::Unrepresentable),
+            | Self::ForNeedsListCase { .. }
+            | Self::DescentOnSeveralParameters { .. } => matches!(ret, FailureClass::Unrepresentable),
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
@@ -174,7 +175,8 @@ impl LoweringRefusal<'_>
             | Self::WithoutK { .. }
             | Self::DirectedCell { .. }
             | Self::CellNotALoop { .. }
-            | Self::ForNeedsListCase { .. } => FailureClass::Unrepresentable,
+            | Self::ForNeedsListCase { .. }
+            | Self::DescentOnSeveralParameters { .. } => FailureClass::Unrepresentable,
             Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
@@ -237,7 +239,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 43_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 44_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -417,6 +419,11 @@ mod tests
                 name: SurfaceName::from("pending"),
                 declared: empty,
             },
+            LoweringRefusal::DescentOnSeveralParameters {
+                span: empty,
+                staged: SurfaceName::from("m"),
+                claimed: SurfaceName::from("n"),
+            },
         ]
     }
 
@@ -467,6 +474,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
+            FailureClass::Unrepresentable,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

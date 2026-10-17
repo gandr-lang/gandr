@@ -267,13 +267,13 @@ fn lowered(
                     f.write_str("indexed datatype families are not supported yet")
                 },
                 FragmentBoundary::Unannotated => write!(f, "the {spoken} needs a type annotation"),
+                FragmentBoundary::NonUniform => f.write_str(
+                    "a recursive call must pass the parameters before the one it descends on \
+                     unchanged",
+                ),
                 FragmentBoundary::NotAFunction => f.write_str(
                     "`cong` maps a path by a function, and a constructor is not one; write a \
                      function definition that applies it",
-                ),
-                FragmentBoundary::NonUniform => f.write_str(
-                    "a recursive call must pass the earlier parameters unchanged; only the last \
-                     one descends",
                 ),
                 FragmentBoundary::NotInTail => write!(
                     f,
@@ -419,6 +419,13 @@ fn lowered(
         LoweringRefusal::UnmarkedSelfReference { name, .. } => write!(
             f,
             "`{name}` calls itself without saying how it recurses; write `{name}[<](…)`"
+        ),
+        LoweringRefusal::DescentOnSeveralParameters {
+            staged, claimed, ..
+        } => write!(
+            f,
+            "this call descends on `{claimed}`, and an earlier one on `{staged}`; a recursive \
+             definition descends on one parameter, the one its matches take apart"
         ),
         LoweringRefusal::Unreachable { .. } => {
             f.write_str("this code never runs: every path before it leaves the body")
@@ -1119,6 +1126,11 @@ mod tests
             LoweringRefusal::LowercaseModuleName { span, name },
             LoweringRefusal::NonExhaustiveMatch { span },
             LoweringRefusal::UnmarkedSelfReference { span, name },
+            LoweringRefusal::DescentOnSeveralParameters {
+                span,
+                staged: name,
+                claimed: name,
+            },
             LoweringRefusal::Unreachable { span },
             LoweringRefusal::OutsideLoop {
                 span,

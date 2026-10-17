@@ -2,8 +2,10 @@
 // stands below its node only through a parameter the other family holds
 // strictly positively, as `List` holds its elements (#517); a parameter its
 // family consumes, standing to the left of an arrow in its own field, places
-// nothing below the node, and a node over it is a nested occurrence. Shared
-// with `../../model/data/rose.gandr`.
+// nothing below the node, and a node over it is a nested occurrence. The
+// direct form's measure through a list's map refuses until a call infers its
+// instantiation at the children's stage (#393, #392). Shared with
+// `../../model/data/rose.gandr`.
 
 /// The two answers a test gives.
 @[ checks ]
@@ -24,4 +26,63 @@ data Test(a : Type) : Type {
 @[ refuses("NestedOccurrence") ]
 data Rose : Type {
   Node : (kids : Test(Rose)) --> Rose;
+}
+
+/// Natural numbers, the measure the fold counts in.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// Addition by recursion on the second argument.
+@[ checks ]
+def rec plus(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => Succ(plus[<](n, p))
+  }
+}
+
+/// Lists, whose element stands only where a list holds it: strictly
+/// positive, so a family nests through it.
+@[ checks ]
+data List(a : Type) : Type {
+  Nil : List(a);
+  Cons : (head : a, tail : List(a)) --> List(a);
+}
+
+/// The direct form: a node over a list of nodes (#517).
+@[ checks ]
+data Bush : Type {
+  Sprout : (kids : List(Bush)) --> Bush;
+}
+
+/// A function mapped over a list.
+@[ checks ]
+def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
+  case xs {
+    Nil => (Nil : List(b)),
+    Cons(x, rest) => (Cons(f(x), map[<](a, b, f, rest)) : List(b))
+  }
+}
+
+/// A list of numbers, summed.
+@[ checks ]
+def rec sum(xs : List(Nat)) -> -F Nat {
+  case xs {
+    Nil => Zero,
+    Cons(x, rest) => plus(x, sum[<](rest))
+  }
+}
+
+/// The nodes of a tree, its children's measured through `map`: `size[<]`
+/// takes only nodes below the node's stage, while `map` instantiated at `Bush`
+/// may hand it any node. Admitted once the call infers `map`'s instantiation
+/// at the children's staged type (#393), the sized rung's (#392).
+@[ refuses("StageNotBelow") ]
+def rec size(t : Bush) -> -F Nat {
+  case t {
+    Sprout(kids) => Succ(sum(map(Bush, Nat, size[<], kids)))
+  }
 }

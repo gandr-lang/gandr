@@ -31,7 +31,7 @@
 //! and, when every parameter and the result carry a type, a signature too. An
 //! implicit telescope is a form the fragment does not admit. `rec`, which the
 //! grammar writes before a function tail alone, is that tail's own tile: the
-//! classification closes the function by a fixpoint over its last parameter.
+//! classification closes the function by a fixpoint over its staged parameter.
 //! Attributes written before `def` are tiles of that same form, so a
 //! declaration's attributes are read with it. A data declaration's form holds
 //! none: the grammar leaves an attribute block before `data` standing on its
