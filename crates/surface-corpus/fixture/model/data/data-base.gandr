@@ -1,0 +1,72 @@
+// The data subject's shared declarations, written once and imported by every
+// source that reads them (`import "./data-base.gandr" ;`): the free naturals,
+// their addition and the numerals two and three, the integers presented by
+// two cancelling constructors, a three-colour enumeration, the two branches
+// of a binary node and the polymorphic lists. A data block is an inductive
+// type given by its constructors (Martin-Löf, _Intuitionistic Type Theory_,
+// Bibliopolis, 1984), and a rule between constructor terms quotients it
+// (Altenkirch et al., _Quotient inductive-inductive types_,
+// doi:10.1007/978-3-319-89366-2_16).
+// The universe subject reads the naturals and the branches from here too.
+
+/// Natural numbers, free: every constructor term is its own value.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// Addition by recursion on the second argument, the recursive call nested
+/// in the successor it returns.
+@[ checks ]
+def rec plus(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => Succ(plus[<](n, p))
+  }
+}
+
+/// Two.
+@[ runs("Succ(Succ(Zero))") ]
+def two : Nat ;
+def two = Succ(Succ(Zero)) ;
+
+/// Three.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def three : Nat ;
+def three = Succ(two) ;
+
+/// The integers as a presented type: a successor and a predecessor that
+/// cancel, each rule invertible.
+@[ normalizes("S(P(S(Z))) ~> S(Z)") ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
+
+/// Three colours: an enumeration, a data type whose constructors take no
+/// field.
+@[ checks ]
+data Color : Type {
+  Red : Color;
+  Green : Color;
+  Blue : Color;
+}
+
+/// The two branches of a binary node.
+@[ checks ]
+data Two : Type {
+  L : Two;
+  R : Two;
+}
+
+/// Lists of elements of a type `a`. The element stands only where a list
+/// holds it, strictly positive, so a family nests through it.
+@[ checks ]
+data List(a : Type) : Type {
+  Nil : List(a);
+  Cons : (head : a, tail : List(a)) --> List(a);
+}

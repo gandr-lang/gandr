@@ -153,9 +153,9 @@
 //! is reserved until its termination rung lands. The fixpoint is marked
 //! `Insertion::Fixpoint` at the function form's origin, since the source
 //! writes no `fix`. A block stands as a match arm, so the programs the corpus
-//! carries in `fixture/model/data/data-recursive.gandr` and
-//! `fixture/model/data/descent.gandr` are written in the surface's intended
-//! spelling.
+//! carries in `fixture/model/data/recursive-addition.gandr`,
+//! `recursive-lists.gandr`, `recursive-nat-lists.gandr` and `descent.gandr`
+//! are written in the surface's intended spelling.
 //!
 //! The shape is `McBride`'s methods (*Elimination with a Motive*, TYPES 2000)
 //! with one departure. An eliminator's methods take the recursive argument
