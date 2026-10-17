@@ -1888,6 +1888,20 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why a call's head names no type former.
+    pub mod formed {
+        /// The head is not a type former's spelling, free.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The head is no capitalised name, spells no former a type
+            /// application takes, or names a binder, an earlier declaration
+            /// or a stated type that shadows the former.
+            Unformed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why a `run` statement's binder splits no tuple.
     pub mod untupled {
         /// The binder is a name, a wildcard or another pattern.
@@ -6265,10 +6279,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   over the arguments; a call whose head selects an operation off a
     ///   capability is that exercise, and one whose head is an operation
     ///   clause's continuation resumes it, as [`Self::exercise`] and
-    ///   [`Self::resumption`] read them; any other call standing as a
-    ///   computation reads its head at the head position and each argument as a
-    ///   value, all in its own frame, and is planned as the head applied to the
-    ///   arguments left to right; a call whose head is an instantiation, a
+    ///   [`Self::resumption`] read them; a call standing where a value is read
+    ///   whose head is a type former's name, free — `Path` over three
+    ///   arguments, `List(A)`, `Flow`, `Stack`, `Run` — is the type it spells,
+    ///   as [`Self::applied_head`] plans it, quoted; any other call standing as
+    ///   a computation reads its head at the head position and each argument as
+    ///   a value, all in its own frame, and is planned as the head applied to
+    ///   the arguments left to right; a call whose head is an instantiation, a
     ///   recursive call, records every argument for the head's claim to check
     ///   and reads and applies its last alone, the one its fixpoint takes; a
     ///   call of no arguments is its head, whose force [`Self::mint_at`] marks
@@ -6287,6 +6304,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   each asserted as the exact application chain read back out of the
     ///   arena. The predicate reads only the operands this call appended.
     /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
@@ -6320,6 +6338,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             && constructed.fields.end == self.operands.len()
                     },
                     | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Resume(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Ride(..))) => true,
+                    | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..))) => {
+                        matches!(site.reading, Reading::Value(_))
+                    },
                     | _ => false,
                 }
         },
@@ -6353,6 +6374,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             let _head = cursor.operands();
             return self.ua_call(site, stratum, cursor);
+        }
+        if let Reading::Value(_) = site.reading
+            && let Run::One(head) = cursor.clone().operands()
+            && let Maybe::Present(name) = self.former_head(site, head)?
+        {
+            let _head = cursor.operands();
+            let start = self.operands.len();
+            arguments(site, &mut cursor, &mut self.operands)?;
+            let written = Stretch {
+                start,
+                end: self.operands.len(),
+            };
+            return self.applied_head(site, head, name, written);
         }
         if self.exercise(site, &cursor)? == arity::Planned(true) {
             return Ok(());
@@ -7541,13 +7575,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   naming a type family, as a component or a member, expands to the
     ///   family's type over the arguments; a head a binder or an earlier
     ///   declaration answers is read as the static application of that code to
-    ///   the arguments, left to right; any other head named `Flow` and applied
-    ///   to three arguments is the directed identity type [`Self::flow_type`]
-    ///   plans; any other head named `Stack` and applied to two is the
-    ///   continuation type [`Self::stack_type`] plans; any other head applied
-    ///   to one argument resolves against the unary table, stands at the sort
-    ///   its former produces, reads its argument at the sort the former takes,
-    ///   and is planned over it.
+    ///   the arguments, left to right; any other head is the type former
+    ///   [`Self::applied_head`] plans.
     /// - provides: the applied half of type-head resolution.
     /// - fails: yields the unresolved-head refusal for a head nothing answers
     ///   and no former takes at the arity it was written with, the wrong-sort
@@ -7574,7 +7603,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Constructor(_)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Constructor(_)))
                 )
         },
     )]
@@ -7643,18 +7672,84 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Err(refusal);
             },
         }
-        let count = self.operands.len().saturating_sub(start);
+
+        let written = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        self.applied_head(site, head, name, written)
+    }
+
+    /// Classify the type former `name`, written at `head` and applied to the
+    /// operands `written` holds in the operand store, which nothing the scope
+    /// binds answers.
+    ///
+    /// # Specification
+    /// - requires: `written` is the arguments the head was written with, left
+    ///   to right, and the last the store holds.
+    /// - ensures: the arguments leave the store; a head named `Path` and
+    ///   applied to three arguments is the path type [`Self::written_path`]
+    ///   plans, one named `Flow` and applied to three the directed identity
+    ///   type [`Self::flow_type`] plans, one named `Stack` and applied to two
+    ///   the continuation type [`Self::stack_type`] plans; any other head
+    ///   applied to one argument resolves against the unary table, stands at
+    ///   the sort its former produces, reads its argument at the sort the
+    ///   former takes, and is planned over it.
+    /// - provides: the one table of type formers written as an application, in
+    ///   a type and where a value is read.
+    /// - fails: yields the unresolved-head refusal for a head no former takes
+    ///   at the arity it was written with, and the wrong-sort refusal for a
+    ///   former whose sort does not suit the position.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The application's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a former's head, a head no former takes, a head
+    ///   written at two arguments, and a path type and a list type written as
+    ///   calls where a value is read, each asserted as the exact core node read
+    ///   back out of the arena or the exact refusal.
+    /// - witness: `lower::tests::u_and_f_are_names`
+    /// - witness: `lower::tests::an_applied_head_no_former_answers_is_refused`
+    /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+    /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    #[spec(
+        ensures: |ret| {
+            self.operands.len() == written.start
+                && (ret.is_err()
+                    || matches!(
+                        self.plans.get(usize::from(site.at.node)),
+                        Some(&(Plan::Former(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..)))
+                    ))
+        },
+    )]
+    fn applied_head(
+        &mut self,
+        site: Site,
+        head: Placed,
+        name: SurfaceName<'source>,
+        written: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let start = written.start;
+        let count = written.end.saturating_sub(start);
         let first = self.operands.get(start).copied();
-        let flow = self
+        let triple = self
             .operands
-            .get(start ..)
-            .and_then(|written| <[NodeIndex; 3]>::try_from(written).ok());
+            .get(start .. written.end)
+            .and_then(|operands| <[NodeIndex; 3]>::try_from(operands).ok());
         let stack = self
             .operands
-            .get(start ..)
-            .and_then(|written| <[NodeIndex; 2]>::try_from(written).ok());
+            .get(start .. written.end)
+            .and_then(|operands| <[NodeIndex; 2]>::try_from(operands).ok());
         self.operands.truncate(start);
-        if let Some(written) = flow
+        if let Some(written) = triple
+            && name.as_ref() == TileName::PATH.as_ref()
+        {
+            return self.written_path(site, written);
+        }
+        if let Some(written) = triple
             && name.as_ref() == identity::FLOW
         {
             return self.flow_type(site, written);
@@ -7679,6 +7774,78 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
 
         self.apply_former(site, former, argument)
+    }
+
+    /// The type former `head`, the head of a call written at `site`, spells.
+    ///
+    /// # Specification
+    /// - requires: `head` is the first operand of the call at `site`.
+    /// - ensures: the head's name when it is a capitalised name spelling
+    ///   `Path`, `Flow`, `Stack` or a unary type former, and no constructor,
+    ///   binder, earlier declaration or stated type carries that name; the
+    ///   unformed absence for any other head.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
+    ///   not hold; the refusals the name's resolution yields.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The resolution's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path type and a list type written as calls where a
+    ///   value is read are read as their formers, while a constructor and a
+    ///   data family applied the same way keep their own readings.
+    /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+    /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body reads the head's spelling once; the check reads it once more"
+        )
+    )]
+    #[spec(
+        ensures: |ret| match ret {
+            | Ok(Maybe::Present(name)) => name == self.name_at(head),
+            | _ => true,
+        },
+    )]
+    fn former_head(
+        &mut self,
+        site: Site,
+        head: Placed,
+    ) -> Result<Maybe<SurfaceName<'source>, formed::Absent>, LoweringRefusal<'source>>
+    {
+        let unformed = Maybe::Absent(formed::Absent::Unformed);
+        let Some(node) = self.tree.node(head.node)
+        else {
+            return Ok(unformed);
+        };
+        let Shape::Form {
+            former: Former::Constructor,
+            ..
+        } = shape_of(self.pbg, node)?
+        else {
+            return Ok(unformed);
+        };
+        let name = self.name_at(head);
+        let spelled = [TileName::PATH.as_ref(), identity::FLOW, STACK].contains(&name.as_ref())
+            || matches!(type_former(name), Maybe::Present(_));
+        if !spelled {
+            return Ok(unformed);
+        }
+        if let Maybe::Present(_constructor) = self.constructor_named(site, name) {
+            return Ok(unformed);
+        }
+        let named = Site { at: head, ..site };
+        if let Maybe::Present(_shadowed) = self.resolve_name(named, site.reading.frame(), name)? {
+            return Ok(unformed);
+        }
+        if let Maybe::Present(_stated) = self.stated_named(site, name)? {
+            return Ok(unformed);
+        }
+
+        Ok(Maybe::Present(name))
     }
 
     /// Classify a continuation's type, `Stack(C, D)`, its two operands already
@@ -14681,7 +14848,8 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def a = Integer ; def b = -F Integer ; def c = Type ; def d = +U (-F Integer) ;",
+                "def a = Integer ; def b = -F Integer ; def c = Type ; def d = +U (-F Integer) ; \
+                 def e = Path(Integer, 1, 1) ; def f = List(Integer) ;",
             ),
             &mut arena,
         );
@@ -14721,6 +14889,20 @@ mod tests
         assert!(
             matches!(quoted(3_usize), (Some(ValueType::Thunk(_)), None, _)),
             "a bridge where a value is read is the code of its thunk type"
+        );
+        let path = quoted(4_usize);
+        assert!(
+            matches!(path, (Some(ValueType::Path { carrier, .. }), None, provenance)
+                if arena.value_type(carrier) == Some(&ValueType::Base(BaseType::Integer))
+                    && provenance == inserted),
+            "a path type written as a call where a value is read is its code (#539): {path:?}"
+        );
+        let list = quoted(5_usize);
+        assert!(
+            matches!(list, (Some(ValueType::List(element)), None, provenance)
+                if arena.value_type(element) == Some(&ValueType::Base(BaseType::Integer))
+                    && provenance == inserted),
+            "a unary former written as a call where a value is read is its code (#539): {list:?}"
         );
     }
 
