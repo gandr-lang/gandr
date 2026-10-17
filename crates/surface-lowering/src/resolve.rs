@@ -1519,27 +1519,31 @@ impl<'source> Scope<'source>
         })
     }
 
-    /// The names of the frames of the chain rooted at `from` that bind in a
-    /// telescope, outermost first: the context a type read under `from` is
-    /// spelled in.
+    /// The names of the frames of the chain rooted at `from` that bind in
+    /// `telescope`, outermost first: the context a type read under `from` in
+    /// that telescope is spelled in.
     ///
     /// # Specification
     /// - requires: as [`Self::telescope_binders`].
-    /// - ensures: one name per frame [`Self::telescope_binders`] answers true
-    ///   for, in the reverse of its order, so the last names index zero.
+    /// - ensures: one name per frame [`Self::binders_in`] answers true for at
+    ///   `telescope`, in the reverse of its order, so the last names index
+    ///   zero.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a mentioned typed frame and an untyped one are named,
-    ///   an unmentioned typed one is not.
+    /// - hypothesis: L3 — a mentioned typed frame and an untyped one are named
+    ///   in the signature's telescope, an unmentioned typed one is not; a
+    ///   quoted one is named in a body quote's alone (#590).
     /// - witness: `resolve::tests::a_chain_reports_which_frames_bind_in_a_telescope`
-    #[spec(ensures: |ret| ret.len() == self.telescope_binders(from).filter(|&binds| binds).count())]
+    /// - witness: `resolve::tests::a_quoted_binder_binds_only_in_a_body_quote_s_telescope`
+    #[spec(ensures: |ret| ret.len() == self.binders_in(from, telescope).filter(|&binds| binds).count())]
     #[inline]
     #[must_use]
     pub fn telescope_names(
         &self,
         from: Frame,
+        telescope: Telescope,
     ) -> Vec<SurfaceName<'source>>
     {
         let first = match from {
@@ -1553,11 +1557,7 @@ impl<'source> Scope<'source>
             })
             .filter_map(|id| {
                 let entry = self.frames.get(id.0)?;
-                let binds = match entry.declared {
-                    Maybe::Present(_) => entry.mentioned.0,
-                    Maybe::Absent(_) => true,
-                };
-                (entry.zone != Zone::Linear && binds).then_some(entry.name)
+                entry.binds_in(telescope).0.then_some(entry.name)
             })
             .collect();
         names.reverse();
@@ -2061,6 +2061,15 @@ mod tests
             "the mentioned binder binds in both, the quoted one in a body quote's alone, the \
              unnamed one in neither"
         );
+        assert_eq!(
+            [Telescope::Signature, Telescope::Quote]
+                .map(|telescope| scope.telescope_names(Frame::Inner(n), telescope)),
+            [
+                Vec::from([SurfaceName::from("x")]),
+                Vec::from([SurfaceName::from("x"), SurfaceName::from("a")])
+            ],
+            "a type a body quotes is spelled with the quoted binder's name (#590)"
+        );
     }
 
     #[test]
@@ -2090,7 +2099,7 @@ mod tests
             "innermost first: the untyped frame, the unmentioned typed one, the mentioned one"
         );
         assert_eq!(
-            scope.telescope_names(Frame::Inner(y)),
+            scope.telescope_names(Frame::Inner(y), Telescope::Signature),
             Vec::from([SurfaceName::from("a"), SurfaceName::from("y")]),
             "outermost first, the unmentioned typed frame unnamed"
         );

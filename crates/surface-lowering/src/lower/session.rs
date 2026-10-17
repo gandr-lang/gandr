@@ -1210,7 +1210,7 @@ impl<'source> Lowerer<'_, 'source>
         let _root = states.insert(root, id);
         let context: Vec<String> = self
             .scope
-            .telescope_names(written.frame)
+            .telescope_names(written.frame, self.telescope_at(origin.node()))
             .into_iter()
             .map(|name| String::from(name.as_ref()))
             .collect();

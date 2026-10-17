@@ -5432,24 +5432,47 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   its binder, is the Π over it; one whose codomain does not is the plain
     ///   arrow.
     /// - witness: `lower::tests::a_dependent_arrow_a_body_quotes_binds_what_its_codomain_names`
-    #[spec(ensures: |ret| ret == self.scope.binds(binder, if self.in_quote.contains(&node) {
-        Telescope::Quote
-    } else {
-        Telescope::Signature
-    }))]
+    #[spec(ensures: |ret| ret == self.scope.binds(binder, self.telescope_at(node)))]
     fn names_own_binder(
         &self,
         node: NodeIndex,
         binder: ScopeId,
     ) -> Mentioned
     {
-        let telescope = if self.in_quote.contains(&node) {
+        self.scope.binds(binder, self.telescope_at(node))
+    }
+
+    /// The telescope a type at `node` counts its binders in: a body quote's
+    /// own when `node` lies in a body quote, the signature's otherwise (#547).
+    ///
+    /// # Specification
+    /// - requires: the classification has reached `node`.
+    /// - ensures: [`Telescope::Quote`] exactly when `node` lies in a body
+    ///   quote.
+    /// - provides: the one choice of telescope every reading of a type's
+    ///   binders shares: its indices, its arrows' dependency (#583) and the
+    ///   names it is spelled with (#590).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type a body quotes answers the quote's telescope
+    ///   and a signature type the signature's: the arrow minted from each, and
+    ///   the label spelled for each, tell the two apart.
+    /// - witness: `lower::tests::a_dependent_arrow_a_body_quotes_binds_what_its_codomain_names`
+    /// - witness: `resolve::tests::a_quoted_binder_binds_only_in_a_body_quote_s_telescope`
+    #[spec(ensures: |ret| (ret == Telescope::Quote) == self.in_quote.contains(&node))]
+    fn telescope_at(
+        &self,
+        node: NodeIndex,
+    ) -> Telescope
+    {
+        if self.in_quote.contains(&node) {
             Telescope::Quote
         }
         else {
             Telescope::Signature
-        };
-        self.scope.binds(binder, telescope)
+        }
     }
 
     /// Classify a number literal.
@@ -8569,12 +8592,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.family(site, constant, arity, applied);
         }
         let from = site.reading.frame();
-        let telescope = if self.in_quote.contains(&site.at.node) {
-            Telescope::Quote
-        }
-        else {
-            Telescope::Signature
-        };
+        let telescope = self.telescope_at(site.at.node);
         let (code, declared) = match resolved {
             Resolved::Binder(bound) => (
                 Code::Bound {
@@ -9653,7 +9671,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: every node is minted or absent.
     /// - ensures: one label per planned site whose entry lowered: a type's at
     ///   the type, with the names of the frames its entry is read under that
-    ///   bind in a telescope, outermost first; a term's at the term.
+    ///   bind in the telescope the type counts its binders in, outermost first;
+    ///   a term's at the term.
     /// - fails: never; a site whose entry did not lower records nothing.
     /// - panics: none.
     ///
@@ -9667,9 +9686,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         sink: &mut Sink<'_>,
     )
     {
-        let named = |frame: Frame| -> Vec<String> {
+        let named = |frame: Frame, held: NodeIndex| -> Vec<String> {
             self.scope
-                .telescope_names(frame)
+                .telescope_names(frame, self.telescope_at(held))
                 .into_iter()
                 .map(|name| String::from(name.as_ref()))
                 .collect()
@@ -9679,14 +9698,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 LabelRead::ValueType(frame) => match self.value_type_at(site.held) {
                     Maybe::Present(ty) => Labelled::ValueType {
                         ty,
-                        context: named(frame),
+                        context: named(frame, site.held),
                     },
                     Maybe::Absent(_) => continue,
                 },
                 LabelRead::CompType(frame) => match self.comp_type_at(site.held) {
                     Maybe::Present(ty) => Labelled::CompType {
                         ty,
-                        context: named(frame),
+                        context: named(frame, site.held),
                     },
                     Maybe::Absent(_) => continue,
                 },
