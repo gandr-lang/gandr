@@ -1155,6 +1155,9 @@ where
                     pending.push((AnyNode::ValueType(path_type), reach));
                     pending.push((AnyNode::Value(payload_paths), reach));
                 },
+                Some(&Value::Univalence(equivalence)) => {
+                    pending.push((AnyNode::Value(equivalence), reach));
+                },
                 Some(&Value::PathEquiv {
                     path_type,
                     forward,

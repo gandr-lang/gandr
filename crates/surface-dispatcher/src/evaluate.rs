@@ -1575,6 +1575,7 @@ Value::QuoteComputation(_) | Value::StaticLambda(_) |
 Value::StaticApplication(..) | Value::Hole(_))) | None => ret.is_empty(),
     Some(&(Value::Constructor { .. } | Value::Record(_)) |
 &Value::Reify(_) |
+&Value::Univalence(..) |
 &(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::PathProduct(..) |
 Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) |
 Value::PathEquiv { .. } | Value::Tuple(_) | Value::Injection(..) |
@@ -1622,6 +1623,7 @@ fn references(
                     &(Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
+                    | Value::Univalence(first, second)
                     | Value::Ua {
                         forward: first,
                         backward: second,

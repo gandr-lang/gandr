@@ -52,6 +52,8 @@ fn every_role_has_its_own_name()
         FrameRole::EquivForward,
         FrameRole::EquivBackward,
         FrameRole::UaTranslators,
+        FrameRole::UnivalenceRecord,
+        FrameRole::UnivalenceChecked,
         FrameRole::ReturnedEndpoint,
         FrameRole::Ran,
         FrameRole::ElementTransportPath,

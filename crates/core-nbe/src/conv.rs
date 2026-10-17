@@ -1153,6 +1153,20 @@ impl<'run> Walk<'run>
                 Ok(Local::Agree)
             },
             (
+                DomainValue::Univalence {
+                    record: left_record,
+                    ..
+                },
+                DomainValue::Univalence {
+                    record: right_record,
+                    ..
+                },
+            ) => {
+                self.goals
+                    .push(Goal::Values(left_record, right_record, context));
+                Ok(Local::Agree)
+            },
+            (
                 DomainValue::Thunk {
                     body: left_body, ..
                 },
@@ -1261,6 +1275,7 @@ impl<'run> Walk<'run>
                 | DomainValue::Record { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
+                | DomainValue::Univalence { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }

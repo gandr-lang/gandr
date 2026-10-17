@@ -160,6 +160,20 @@
 //! their identity evidence are native; their directional flows relate
 //! recorded runs, not kernel endpoint values, so a ride along one refuses.
 //!
+//! **An identity between two codes of `Type` is admitted by one of two
+//! routes.** On the first-order stratum — closed quoted codes of bases,
+//! products, sums and sessions — it is decided: `equiv(f, g)` crosses as a
+//! certificate whose round trips the kernel replays over generated constructor
+//! coverage. Everywhere else — a variable, a path type, a recursive datatype,
+//! any code the value universe holds — it is admitted on evidence: `ua(e)`
+//! checks the record `e` as the bi-invertible map between the two codes'
+//! types, whose section and retraction are fields that do not check when they
+//! do not hold, and transport along it applies the record's forward map. The
+//! alternative, extending the decided enumeration to every code, was declined:
+//! finite coverage exists only on the first-order stratum. The reversal is
+//! univalence proved as a theorem of the kernel (#520), after which `ua` is a
+//! definition and its rule a derived one. Both rules are in [`path_universe`].
+//!
 //! The decisions and exhaustion semantics are in [`path_universe`],
 //! [`flow_universe`], [`identity_recursion`], [`element_identity`],
 //! [`higher_field`] and [`session`]; every assigned and reserved wire byte is

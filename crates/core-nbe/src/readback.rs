@@ -641,6 +641,8 @@ enum Task
     TelescopeTransport,
     /// Assemble reflexivity over the value term on the stack.
     Here,
+    /// Assemble univalence over the record and forward map on the stack.
+    Univalence,
     /// Assemble a flow introduction of this former over the value terms on
     /// the stack, as many as it holds.
     Flow(crate::domain::FlowFormer),
@@ -2020,7 +2022,7 @@ fn run(
             && entry_comps == machine.comps.len()
             && entry_value_types == machine.value_types.len()
             && entry_comp_types == machine.comp_types.len(),
-        | Task::ListCons | Task::PathProduct | Task::StaticApply => machine.tasks.len() == entry_tasks
+        | Task::ListCons | Task::PathProduct | Task::StaticApply | Task::Univalence => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(2_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
             && machine.values.last().is_some_and(|id| core.value(*id).is_some())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
@@ -2576,6 +2578,12 @@ fn step(
             let tail = machine.pop_value()?;
             let head = machine.pop_value()?;
             machine.values.push(core.value_list_cons(head, tail));
+            Ok(())
+        },
+        Task::Univalence => {
+            let forward = machine.pop_value()?;
+            let record = machine.pop_value()?;
+            machine.values.push(core.value_univalence(record, forward));
             Ok(())
         },
         Task::ListFold => {
@@ -3593,6 +3601,20 @@ fn step_value(
             machine.tasks.push(Task::Here);
             machine.tasks.push(Task::Value {
                 value: point,
+                binders,
+            });
+            Ok(())
+        },
+        DomainValue::Univalence {
+            record, forward, ..
+        } => {
+            machine.tasks.push(Task::Univalence);
+            machine.tasks.push(Task::Value {
+                value: forward,
+                binders,
+            });
+            machine.tasks.push(Task::Value {
+                value: record,
                 binders,
             });
             Ok(())

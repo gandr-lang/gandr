@@ -87,7 +87,7 @@ Value::Record(ref fields) => fields.len(),
 Value::PathEquiv { .. } => 3,
 Value::Tuple(ref components) => components.len(),
 Value::StaticApplication(..) | Value::PathProduct(..) => 2,
-Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) => 1,
+Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Univalence(_) => 1,
 Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil | Value::ListCons(..) => 0,
 }),
         AnyNode::Computation(id) => arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
@@ -154,7 +154,10 @@ fn children(
             } => vec![A(path_type), V(forward), V(backward)],
             Value::PathProduct(a, b) | Value::StaticApplication(a, b) => vec![V(a), V(b)],
             Value::Tuple(ref components) => components.iter().copied().map(V).collect(),
-            Value::PathRefl(a) | Value::Injection(_, a) | Value::Lift { body: a, .. } => {
+            Value::PathRefl(a)
+            | Value::Univalence(a)
+            | Value::Injection(_, a)
+            | Value::Lift { body: a, .. } => {
                 vec![V(a)]
             },
             Value::Thunk(a) => vec![M(a)],
@@ -454,6 +457,7 @@ fn translate(
                         panic!("session evidence has a separate finite producer")
                     },
                     Value::Here { .. }
+                    | Value::Univalence { .. }
                     | Value::Stay { .. }
                     | Value::ForwardFlow { .. }
                     | Value::FunctionFlow { .. }
@@ -1484,5 +1488,150 @@ fn a_recursive_code_is_an_uncertified_stratum()
     assert_eq!(
         super::code(&arena, code, ReplayBudget::DEFAULT),
         Err(PathError::UncertifiedStratum(list))
+    );
+}
+
+/// The identity map `thunk (λx. return x)`.
+///
+/// # Specification
+/// trivial.
+fn identity_map(arena: &mut TermArena) -> ValueId
+{
+    let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(variable);
+    let lambda = arena.computation_lambda(returned);
+    arena.value_thunk(lambda)
+}
+
+/// The round trip that holds by computation, `thunk (λx. return here(x))`.
+///
+/// # Specification
+/// trivial.
+fn reflexive_law(arena: &mut TermArena) -> ValueId
+{
+    let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let here = arena.value_here(variable);
+    let returned = arena.computation_return(here);
+    let lambda = arena.computation_lambda(returned);
+    arena.value_thunk(lambda)
+}
+
+/// The bi-invertible record `#{to, #{#{g, law}, #{h, law}}}` over the maps
+/// `to`, `g` and `h`, each law reflexivity at the bound point.
+///
+/// # Specification
+/// trivial.
+fn record(
+    arena: &mut TermArena,
+    [to, g, h]: [ValueId; 3],
+) -> ValueId
+{
+    let law = reflexive_law(arena);
+    let left = arena.value_tuple(&[g, law]);
+    let right = arena.value_tuple(&[h, law]);
+    let inverses = arena.value_tuple(&[left, right]);
+    arena.value_tuple(&[to, inverses])
+}
+
+/// `Path(Type, ⌜T⌝, ⌜T⌝)` at the level-zero value universe.
+///
+/// # Specification
+/// trivial.
+fn identity_at(
+    arena: &mut TermArena,
+    ty: ValueTypeId,
+) -> ValueTypeId
+{
+    let universe = arena.value_type_universe(
+        gandr_kernel_term::GroundSort::Value,
+        gandr_kernel_strata::Level::zero(),
+    );
+    let code = arena.value_quote(ty);
+    arena.value_type_path(universe, code, code)
+}
+
+#[test]
+fn univalence_is_admitted_on_its_record()
+{
+    // Lists of booleans: a recursive code, which the decided stratum refuses
+    // (`a_recursive_code_is_an_uncertified_stratum`), admitted by `ua` on the
+    // identity's laws checked against the record its identity names.
+    let mut environment = Environment::new();
+    let checked = offer(&mut environment, |arena| {
+        let boolean = boolean(arena);
+        let list = arena.value_type_list(boolean.ty);
+        let map = identity_map(arena);
+        let equivalence = record(arena, [map, map, map]);
+        (
+            identity_at(arena, list),
+            arena.value_univalence(equivalence),
+        )
+    });
+    assert!(
+        checked.is_ok(),
+        "a record written out checks against the identity at Type: {checked:?}"
+    );
+
+    // The same record admitted at its type, then `ua` of it synthesised under
+    // a transport in the decoded binder: the record's type names the codes
+    // the transport moves between.
+    let declared = offer(&mut environment, |arena| {
+        let boolean = boolean(arena);
+        let list = arena.value_type_list(boolean.ty);
+        let path_type = identity_at(arena, list);
+        let record_type =
+            super::univalence_record(arena, path_type).expect("an identity at Type names a record");
+        let map = identity_map(arena);
+        (record_type, record(arena, [map, map, map]))
+    })
+    .expect("the record checks against the record type its identity names");
+    let transported = offer(&mut environment, |arena| {
+        let boolean = boolean(arena);
+        let list = arena.value_type_list(boolean.ty);
+        let constant = arena.value_constant(declared.position());
+        let path = arena.value_univalence(constant);
+        let nil = arena.value_list_nil();
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let motive = arena.value_type_element(bound, gandr_kernel_strata::Level::zero());
+        let transport = arena.computation_path_transport(motive, path, nil);
+        (list, arena.value_returned(transport))
+    });
+    assert!(
+        transported.is_ok(),
+        "`ua` of an admitted record synthesises its identity under a transport: {transported:?}"
+    );
+
+    // Negation with the identity as its left inverse: the section `g(to(x))
+    // = x` reads `not(x)` against `x`, refused where the record is checked.
+    let refused = offer(&mut environment, |arena| {
+        let boolean = boolean(arena);
+        let map = identity_map(arena);
+        let equivalence = record(arena, [boolean.not, map, boolean.not]);
+        (
+            identity_at(arena, boolean.ty),
+            arena.value_univalence(equivalence),
+        )
+    });
+    assert!(
+        matches!(refused, Err(KernelError::Identity(_))),
+        "a law that does not hold is a field that does not check: {refused:?}"
+    );
+
+    // Off the level-zero universe the identity is no `ua` reading, and a type
+    // that is no record of a map reads no codes.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let at_boolean = arena.value_type_path(boolean.ty, boolean.truth, boolean.truth);
+    assert_eq!(
+        super::identity_codes(&arena, at_boolean),
+        Err(PathError::ExpectedPath(at_boolean))
+    );
+    assert_eq!(
+        super::univalence_record(&mut arena, at_boolean),
+        Err(PathError::ExpectedPath(at_boolean))
+    );
+    assert_eq!(
+        super::univalence_reading(&mut arena, boolean.ty),
+        Err(PathError::ExpectedEquivalence(boolean.ty))
     );
 }

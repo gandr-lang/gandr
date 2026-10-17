@@ -471,6 +471,9 @@ pub enum Former<'source, Node>
     Funext(Node, Node),
     /// Universe equivalence `equiv(f, g)` over its two translators.
     Equiv(Node, Node),
+    /// Univalence `ua(e)` over its record; the forward map the core node
+    /// carries is derived from the record and never written.
+    Univalence(Node),
     /// A session statement, `bisim(a, b)` or `sim(a, b)`, over its two codes.
     SessionRelated(gandr_core_term::session::SessionRelation, Node, Node),
     /// Directed reflexivity `stay(a)`.

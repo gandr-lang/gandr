@@ -660,6 +660,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Here(point)), Former::Here(actual))
         | (Some(&Value::Stay(point)), Former::Stay(actual))
         | (Some(&Value::Forward(point)), Former::Forward(actual)) => actual == CoreNode::Value(point),
+        | (Some(&Value::Univalence(record, _)), Former::Univalence(actual)) => actual == CoreNode::Value(record),
         | (Some(&Value::Funext(left, right)), Former::Funext(actual_left, actual_right))
         | (Some(&Value::Then(left, right)), Former::Then(actual_left, actual_right))
         | (Some(&Value::FlowProduct(left, right)), Former::FlowProduct(actual_left, actual_right))
@@ -807,6 +808,7 @@ impl<'arena> CoreSource<'arena>
             Value::Equiv(forward, backward) => {
                 Former::Equiv(CoreNode::Value(forward), CoreNode::Value(backward))
             },
+            Value::Univalence(record, _) => Former::Univalence(CoreNode::Value(record)),
             Value::Ua {
                 stratum,
                 ref sides,
@@ -1671,6 +1673,7 @@ impl Source for CoreSource<'_>
                 | Value::Here(_)
                 | Value::Funext(..)
                 | Value::Equiv(..)
+                | Value::Univalence(..)
                 | Value::Ua { .. }
                 | Value::Returned(_)
                 | Value::Nested(_)
@@ -1825,6 +1828,7 @@ impl Source for CoreSource<'_>
                 | Value::Here(_)
                 | Value::Funext(..)
                 | Value::Equiv(..)
+                | Value::Univalence(..)
                 | Value::Ua { .. }
                 | Value::Returned(_)
                 | Value::Nested(_)

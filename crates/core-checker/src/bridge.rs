@@ -2519,6 +2519,12 @@ enum Frame
         /// The untrusted round-trip dialogues.
         evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
     },
+    /// Await the image of a univalence's record.
+    UnivalenceRecord
+    {
+        /// The univalence.
+        at: ValueId,
+    },
     /// Await the first product path.
     PathProductFirst
     {
@@ -4195,6 +4201,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
                 )
             },
+            // The forward map is the lowering's derived copy of the record's
+            // first projection, and the record's type names the identity; the
+            // kernel derives both from the record, so only the record crosses.
+            Value::Univalence(record, _) => (
+                Frame::UnivalenceRecord { at },
+                CoreNode::Term(TermNode::Value(record)),
+            ),
             Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..)
                 if self.source.flows.contains_key(&at) =>
             {
@@ -4598,6 +4611,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         | Value::Here(_)
                         | Value::Funext(..)
                         | Value::Equiv(..)
+                        | Value::Univalence(..)
                         | Value::Ua { .. }
                         | Value::SessionRelated { .. }
                         | Value::Stay(_)
@@ -5298,6 +5312,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::Here(_)
                     | Value::Funext(..)
                     | Value::Equiv(..)
+                    | Value::Univalence(..)
                     | Value::Ua { .. }
                     | Value::Nested(_)
                     | Value::Run(_)
@@ -5618,6 +5633,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 at,
                 target.value_path_equiv(path_type, forward, backward, evidence),
             )),
+            (Frame::UnivalenceRecord { at }, AnyNode::Value(record)) => {
+                Ok(self.erased_value(at, target.value_univalence(record)))
+            },
             (Frame::PathSource { at, target_code }, AnyNode::Value(source)) => {
                 self.frames.push(Frame::PathTarget { at, source });
                 self.argument(target_code)
@@ -6154,6 +6172,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::PathProductSecond { .. }
                 | Frame::PathEquivForward { .. }
                 | Frame::PathEquivBackward { .. }
+                | Frame::UnivalenceRecord { .. }
                 | Frame::PathSource { .. }
                 | Frame::PathTarget { .. }
                 | Frame::FlowSource { .. }

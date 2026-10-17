@@ -3107,6 +3107,7 @@ where
                 | Value::SessionPath { .. }
                 | Value::SessionFlow { .. }
                 | Value::PathEquiv { .. }
+                | Value::Univalence { .. }
                 | Value::Here { .. }
                 | Value::Stay { .. }
                 | Value::ForwardFlow { .. }
@@ -3773,6 +3774,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         } }
  else if matched_left_value.is_none() || matched_right_value.is_none() || matches!(matched_left_value, Some(&Value::Returned(_))) || matches!(matched_right_value, Some(&Value::Returned(_))) { ret == Err(unreadable()) }
  else if let (Some(&Value::Here { point: one_point, .. }), Some(&Value::Here { point: other_point, .. })) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_point, other_point)]) }
+ else if let (Some(&Value::Univalence(one)), Some(&Value::Univalence(other))) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one, other)]) }
  else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
                 && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)) }
  else if matches!((matched_left_value, matched_right_value), (Some(&Value::ListNil), Some(&Value::ListNil))) { ret == Ok(Structure::Leaf(Expect::Convertible)) }
@@ -3867,12 +3869,18 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     point: right_point, ..
                 },
             ) => Structure::of(Vec::from([Premise::values(left_point, right_point)])),
+            // Two univalences convert exactly when their records do, the laws
+            // included: the record is the term.
+            (&Value::Univalence(one), &Value::Univalence(other)) => {
+                Structure::of(Vec::from([Premise::values(one, other)]))
+            },
             (
                 &(Value::PathRefl(_)
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
                 | Value::SessionFlow { .. }
                 | Value::PathEquiv { .. }
+                | Value::Univalence { .. }
                 | Value::Here { .. }
                 | Value::Stay { .. }
                 | Value::ForwardFlow { .. }
@@ -4113,6 +4121,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     },
                     Some(&Value::Record(ref fields)) => {
                         work.extend(fields.values().copied().map(AnyNode::Value));
+                    },
+                    Some(&Value::Univalence(equivalence)) => {
+                        work.push(AnyNode::Value(equivalence));
                     },
                     Some(
                         &(Value::Literal(_)
@@ -4388,6 +4399,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::SessionPath { .. }
                         | Value::SessionFlow { .. }
                         | Value::PathEquiv { .. }
+                        | Value::Univalence { .. }
                         | Value::Literal(_)
                         | Value::Tuple(..)
                         | Value::ListNil
@@ -4568,6 +4580,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Value::SessionPath { .. }
                 | Value::SessionFlow { .. }
                 | Value::PathEquiv { .. }
+                | Value::Univalence { .. }
                 | Value::Literal(_)
                 | Value::Tuple(..)
                 | Value::ListNil

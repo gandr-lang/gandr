@@ -1277,7 +1277,7 @@ impl DomainArena
     /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| match *value { DomainValue::Tuple { fields, .. } => ret == self.fields(fields).ok(), DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Neutral { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret.is_none() })]
+    #[spec(ensures: |ret| match *value { DomainValue::Tuple { fields, .. } => ret == self.fields(fields).ok(), DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Neutral { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret.is_none() })]
     pub fn components(
         &self,
         value: &DomainValue,
@@ -1290,6 +1290,7 @@ impl DomainArena
             | DomainValue::PathCertificate { .. }
             | DomainValue::PathProduct { .. }
             | DomainValue::Here { .. }
+            | DomainValue::Univalence { .. }
             | DomainValue::Flow { .. }
             | DomainValue::Literal { .. }
             | DomainValue::ListNil { .. }
@@ -1423,6 +1424,45 @@ impl DomainArena
     {
         let guard = Guard::compose(GuardTag::Here, &(), &[self.folded_value_guard(point)]);
         self.alloc_value(DomainValue::Here { point, face }, guard)
+    }
+
+    /// Mint univalence `ua(e)` at an already-allocated record and its forward
+    /// map.
+    ///
+    /// # Specification
+    /// - requires: `record` and `forward` name live value nodes of this arena.
+    /// - ensures: appends the node under a guard composed of the record's and
+    ///   the forward map's own words under the univalence tag.
+    /// - provides: the domain form `ua(e)` evaluates to, which native transport
+    ///   reads through the forward map.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — transport along univalence applies the forward map to
+    ///   the operand; a wrong part changes the transported result.
+    /// - witness: `identity::tests::transport_along_univalence_applies_the_forward_map`
+    #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Univalence { record, forward, face }))]
+    pub fn value_univalence(
+        &mut self,
+        record: DomainValueId,
+        forward: DomainValueId,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        let guard = Guard::compose(GuardTag::Univalence, &(), &[
+            self.folded_value_guard(record),
+            self.folded_value_guard(forward),
+        ]);
+        self.alloc_value(
+            DomainValue::Univalence {
+                record,
+                forward,
+                face,
+            },
+            guard,
+        )
     }
 
     /// Mint a flow introduction over its already-allocated parts, in written

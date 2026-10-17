@@ -1238,6 +1238,12 @@ enum Task
         /// The source node.
         term: ValueId,
     },
+    /// Assemble univalence from its evaluated record.
+    Univalence
+    {
+        /// The source node.
+        term: ValueId,
+    },
     /// Read the value the computation on the stack returns: a compound
     /// endpoint's value.
     Returned,
@@ -3189,6 +3195,10 @@ fn run(
                 && machine.values.len() == entry_values
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)),
                     Some(DomainValue::Here { point, .. }) if Some(*point) == entry_value),
+            Task::Univalence { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values.saturating_sub(1_usize)
+                && matches!(machine.values.last().and_then(|value| domain.value(*value)),
+                    Some(DomainValue::Univalence { forward, .. }) if Some(*forward) == entry_value),
             Task::Returned | Task::Running => entry_comps.checked_sub(1_usize) == Some(machine.comps.len())
                 && ((machine.tasks.len() == entry_tasks && machine.values.len() == entry_values.saturating_add(1_usize))
                     || machine.tasks.len() > entry_tasks),
@@ -3662,6 +3672,26 @@ fn step(
             machine.values.push(domain.value_here(point, face));
             Ok(())
         },
+        Task::Univalence { term } => {
+            let forward = machine.pop_value()?;
+            let record = machine.pop_value()?;
+            let Some(&Value::Univalence(record_source, forward_source)) = core.value(term)
+            else {
+                return Err(EvalFault::DanglingTerm);
+            };
+            let face = composite_face(
+                denotes(domain, record, record_source).and(denotes(
+                    domain,
+                    forward,
+                    forward_source,
+                )),
+                term,
+            );
+            machine
+                .values
+                .push(domain.value_univalence(record, forward, face));
+            Ok(())
+        },
         Task::Returned => {
             let produced = machine.pop_comp()?;
             let stance = machine.definitions.endpoints();
@@ -3742,6 +3772,7 @@ fn step(
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
+                | DomainValue::Univalence { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Tuple { .. }
@@ -4010,6 +4041,12 @@ fn step_value(
         Value::Here(point) => {
             machine.tasks.push(Task::Here { term });
             machine.tasks.push(Task::Value { term: point, env });
+            Ok(())
+        },
+        Value::Univalence(record, forward) => {
+            machine.tasks.push(Task::Univalence { term });
+            machine.tasks.push(Task::Value { term: forward, env });
+            machine.tasks.push(Task::Value { term: record, env });
             Ok(())
         },
         // A compound endpoint runs its computation and stands for what it
@@ -4578,6 +4615,7 @@ fn step_force(
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Univalence { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
@@ -4704,6 +4742,7 @@ fn step_apply(
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
+                | DomainValue::Univalence { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
@@ -4869,6 +4908,7 @@ fn step_static_apply(
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Univalence { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
@@ -5045,6 +5085,7 @@ fn step_case(
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Univalence { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
@@ -5224,6 +5265,7 @@ fn step_case_branches(
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Univalence { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
@@ -5241,8 +5283,9 @@ fn step_case_branches(
 /// # Specification
 /// - requires: nothing; missing operands are admitted as malformed spines.
 /// - ensures: reflexivity returns unchanged; an equivalence, native or written
-///   `equiv(f, g)`, invokes the forward map; product transport uses ordinary
-///   bind closures, including neutral cases.
+///   `equiv(f, g)`, invokes the forward map, and so does univalence `ua(e)`,
+///   through the forward map it carries; product transport uses ordinary bind
+///   closures, including neutral cases.
 /// - provides: a returned value, a forward application or sequenced components,
 ///   never an evaluation of a certificate merely to compare it.
 /// - fails: missing operands are `MachineInvariant`; dangling nodes, non-path
@@ -5258,6 +5301,7 @@ fn step_case_branches(
 ///   machine fault rather than panic under enforcement.
 /// - witness: `eval::tests::native_transport_sequences_product_components`
 /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
+/// - witness: `identity::tests::transport_along_univalence_applies_the_forward_map`
 /// - witness: `eval::tests::transport_along_univalence_is_refused_as_underived`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len(), path = machine.values.get(machine.values.len().saturating_sub(2)).copied(), value = machine.values.last().copied()],
@@ -5269,6 +5313,7 @@ fn step_case_branches(
         },
         Some(&DomainValue::PathProduct { .. }) => (machine.values.len() == values && machine.tasks.len() == tasks.saturating_add(2) && machine.comps.len() == comps) || (machine.values.len() == values.saturating_sub(2) && machine.tasks.len() == tasks && machine.comps.len() == comps.saturating_add(1)),
         Some(&DomainValue::Neutral { .. }) => machine.values.len() == values.saturating_sub(2) && machine.tasks.len() == tasks && machine.comps.len() == comps.saturating_add(1),
+        Some(&DomainValue::Univalence { forward, .. }) => machine.values.len() == values && machine.values.last().copied() == Some(forward) && machine.comps.len() == comps && matches!(machine.tasks.get(tasks..), Some(&[Task::Apply, Task::Force])),
         _ => false,
     } },
 )]
@@ -5305,6 +5350,13 @@ fn step_transport(
             Some(&Value::Ua { .. }) => Err(EvalFault::TransportedUnderived),
             _ => Err(EvalFault::DanglingTerm),
         },
+        DomainValue::Univalence { forward, .. } => {
+            machine.values.push(value);
+            machine.values.push(forward);
+            machine.tasks.push(Task::Apply);
+            machine.tasks.push(Task::Force);
+            Ok(())
+        },
         DomainValue::PathProduct { first, second, .. } => {
             match domain
                 .value(value)
@@ -5338,6 +5390,7 @@ fn step_transport(
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
+                | DomainValue::Univalence { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::ListNil { .. }
@@ -5387,13 +5440,13 @@ fn step_transport(
 ///   unchanged and binds a cell's head, transported in the element's motive,
 ///   before its tail, transported in the list's — the kernel's reducts, so a
 ///   component stuck on a definition holds the components after it; the decode
-///   of the motive's own binder hands a universe path to native transport; the
-///   singleton `y. Path(D, l, y)`, its carrier and left endpoint closed over
-///   the binder, read against reflexivity returns the path itself; a word moves
-///   by the rules of the `words` module, and in that singleton a path no word
-///   rule reads moves the empty word or a letter-headed word by appending on
-///   it; any other configuration over a stuck path stacks the transport on the
-///   path's spine.
+///   of the motive's own binder hands a universe path — a certificate, a
+///   product of them or a univalence — to native transport; the singleton `y.
+///   Path(D, l, y)`, its carrier and left endpoint closed over the binder, read
+///   against reflexivity returns the path itself; a word moves by the rules of
+///   the `words` module, and in that singleton a path no word rule reads moves
+///   the empty word or a letter-headed word by appending on it; any other
+///   configuration over a stuck path stacks the transport on the path's spine.
 /// - provides: transport's computation rules — identity on `here` and in a
 ///   constant motive, through the motive's constructors, the singleton's, and
 ///   along a word — and its stuck form.
@@ -5520,14 +5573,17 @@ fn step_path_transport(
             return Ok(());
         },
         // The motive's own binder decoded: the universe path itself carries
-        // the operand, as native transport does.
+        // the operand, as native transport does, a univalence by its forward
+        // map.
         (Some(&ValueType::Element { code, .. }), _)
             if matches!(
                 core.value(code),
                 Some(&Value::Variable { zone: gandr_core_term::Zone::Intuitionistic, index }) if u32::from(index) == 0
             ) && matches!(
                 carried,
-                DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. }
+                DomainValue::PathCertificate { .. }
+                    | DomainValue::PathProduct { .. }
+                    | DomainValue::Univalence { .. }
             ) =>
         {
             machine.tasks.push(Task::Transport);
@@ -5688,6 +5744,7 @@ fn step_ride(
         | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Univalence { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Tuple { .. }
@@ -5851,6 +5908,7 @@ fn step_ride(
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
+                | DomainValue::Univalence { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Tuple { .. }
@@ -5878,6 +5936,7 @@ fn step_ride(
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
+                | DomainValue::Univalence { .. }
                 | DomainValue::Flow { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Tuple { .. }
@@ -6140,6 +6199,7 @@ fn step_telescope_transport(
         | DomainValue::Record { .. }
         | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
+        | DomainValue::Univalence { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Tuple { .. }
@@ -7000,6 +7060,7 @@ fn step_data_case(
         | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Univalence { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Tuple { .. }
@@ -7078,6 +7139,7 @@ fn step_split(
         | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Univalence { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Literal { .. }
         | DomainValue::ListNil { .. }

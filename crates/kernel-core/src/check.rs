@@ -1983,6 +1983,9 @@ enum Frame
     SynthStaticApply(ValueId),
     /// A static application: the argument checked; produce the held codomain.
     ProduceValue(ValueTypeId),
+    /// A univalence: its record is synthesized; read the identity and the
+    /// record type off that type, then check the record against it.
+    UnivalenceRecord(ValueId),
     /// A force: the value is synthesized.
     SynthForce,
     /// A returner synthesis: the value is synthesized.
@@ -2768,6 +2771,16 @@ where
                         goal = Goal::CheckValue(forward, translator);
                         continue 'expand;
                     },
+                    // Univalence synthesises the identity at the value
+                    // universe between the codes its record's type names,
+                    // once the record checks as the bi-invertible map between
+                    // the two codes' types: the record's laws are its
+                    // evidence, at any two codes.
+                    Value::Univalence(equivalence) => {
+                        frames.push(Frame::UnivalenceRecord(equivalence));
+                        goal = Goal::SynthValue(equivalence);
+                        continue 'expand;
+                    },
                     Value::Variable(index) => {
                         let synthesized = match lookup(arena, session, context.as_slice(), index) {
                             Maybe::Present(synthesized) => synthesized,
@@ -2901,6 +2914,23 @@ where
                             form: NonInferableForm::HigherEvaluation,
                         });
                     },
+                },
+                // A univalence checked at an identity at the value universe
+                // checks its record at the bi-invertible record the two codes
+                // name, so a record literal checks; anywhere else it is
+                // synthesised and converted.
+                Goal::CheckValue(id, expected)
+                    if matches!(arena.value(id), Some(&Value::Univalence(_)))
+                        && crate::path_universe::identity_codes(arena, expected).is_ok() =>
+                {
+                    let Value::Univalence(equivalence) = *read_value(arena, id)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let record = crate::path_universe::univalence_record(arena, expected)
+                        .map_err(KernelError::Path)?;
+                    goal = Goal::CheckValue(equivalence, record);
+                    continue 'expand;
                 },
                 // An introduction form checked at an identity checks at the
                 // fibre the identity fold computes for its domain and
@@ -3295,6 +3325,7 @@ where
                     | Value::Then { .. }
                     | Value::FlowProduct(..)
                     | Value::PathEquiv { .. }
+                    | Value::Univalence { .. }
                     | Value::Variable(_)
                     | Value::Constant(_)
                     | Value::Literal(_)
@@ -4091,6 +4122,27 @@ where
                     let domain = produced.value_type()?;
                     produced = Produced::ValueType(arena.value_type_path(domain, point, point));
                 },
+                Frame::UnivalenceRecord(equivalence) => {
+                    let classifier = produced.value_type()?;
+                    let (path_type, record) =
+                        crate::path_universe::univalence_reading(arena, classifier)
+                            .map_err(KernelError::Path)?;
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Value(path_type),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    frames.push(Frame::ProduceValue(path_type));
+                    goal = Goal::CheckValue(equivalence, record);
+                    continue 'expand;
+                },
                 Frame::SynthReturned => {
                     let synthesized = produced.comp_type()?;
                     let Some(&CompType::Returner(result)) = arena.comp_type(synthesized)
@@ -4354,6 +4406,7 @@ where
                         | Value::PathRefl(_)
                         | Value::PathProduct(..)
                         | Value::PathEquiv { .. }
+                        | Value::Univalence { .. }
                         | Value::Here { .. }
                         | Value::Returned(_)
                         | Value::Higher { .. }

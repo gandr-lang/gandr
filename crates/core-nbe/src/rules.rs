@@ -1477,7 +1477,7 @@ pub fn bind_step(
 #[spec(ensures: |ret| match value {
     DomainValue::Neutral { neutral, .. } => ret == head(domain, frozen, side, neutral)
         .map(|read| Neutrality::Neutral(neutral, read)),
-    DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::Tuple { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret == Ok(Neutrality::Former),
+    DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::Tuple { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret == Ok(Neutrality::Former),
 })]
 fn value_neutrality(
     domain: &DomainArena,
@@ -1496,6 +1496,7 @@ fn value_neutrality(
         | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
+        | DomainValue::Univalence { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Tuple { .. }
         | DomainValue::Literal { .. }
@@ -1784,7 +1785,9 @@ fn payload(
 /// # Specification
 /// - requires: nothing — dangling ids are admissible input and refused.
 /// - ensures: as [`plan`], over the value formers; two reflexivities that
-///   neither share nor separate decompose to their points.
+///   neither share nor separate decompose to their points, and two univalences
+///   to their records, the forward map each carries being derived from its
+///   record.
 /// - provides: the value half of the table.
 /// - fails: as [`plan`].
 /// - panics: none.
@@ -1818,7 +1821,8 @@ fn payload(
 }) && match (domain.value(left), domain.value(right)) {
     (Some(&DomainValue::PathCertificate { .. }), Some(&DomainValue::PathProduct { .. })) | (Some(&DomainValue::PathProduct { .. }), Some(&DomainValue::PathCertificate { .. })) => ret == Ok(Plan::Shared(Settled::NotConvertible)),
     (Some(&DomainValue::PathCertificate { certificate: a, .. }), Some(&DomainValue::PathCertificate { certificate: b, .. })) if a == b => ret == Ok(Plan::Shared(Settled::Convertible)),
-    (Some(&DomainValue::Here { point: a, .. }), Some(&DomainValue::Here { point: b, .. })) => early_values(domain, left, right) != Ok(Early::Open)
+    (Some(&DomainValue::Here { point: a, .. }), Some(&DomainValue::Here { point: b, .. }))
+    | (Some(&DomainValue::Univalence { record: a, .. }), Some(&DomainValue::Univalence { record: b, .. })) => early_values(domain, left, right) != Ok(Early::Open)
         || ret == Ok(Plan::Decompose(Vec::from([Subgoal::Values(a, b)]))),
     _ => true,
 })]
@@ -2075,6 +2079,16 @@ fn plan_values(
             },
         ) => Plan::Decompose(Vec::from([Subgoal::Values(left_point, right_point)])),
         (
+            DomainValue::Univalence {
+                record: left_record,
+                ..
+            },
+            DomainValue::Univalence {
+                record: right_record,
+                ..
+            },
+        ) => Plan::Decompose(Vec::from([Subgoal::Values(left_record, right_record)])),
+        (
             DomainValue::Lift {
                 target: left_target,
                 body: left_body,
@@ -2168,6 +2182,7 @@ fn plan_values(
             | DomainValue::Record { .. }
             | DomainValue::PathProduct { .. }
             | DomainValue::Here { .. }
+            | DomainValue::Univalence { .. }
             | DomainValue::Flow { .. }
             | DomainValue::Tuple { .. }
             | DomainValue::Literal { .. }

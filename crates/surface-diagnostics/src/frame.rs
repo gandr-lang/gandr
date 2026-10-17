@@ -191,6 +191,10 @@ pub fn sentence(role: FrameRole) -> Sentence
         FrameRole::UaTranslators => {
             "checking the translators of this univalence against their corollas"
         },
+        FrameRole::UnivalenceRecord => "synthesising the record of this univalence",
+        FrameRole::UnivalenceChecked => {
+            "checking the record of this univalence and the codes it relates"
+        },
         FrameRole::SessionStatement => "relating the two protocols of this session statement",
         FrameRole::StaySynthesised => "synthesising the point of this stay",
         FrameRole::ThenFirst => "synthesising the first flow of this composite",
@@ -504,6 +508,8 @@ mod tests
             FrameRole::EquivForward,
             FrameRole::EquivBackward,
             FrameRole::UaTranslators,
+            FrameRole::UnivalenceRecord,
+            FrameRole::UnivalenceChecked,
             FrameRole::SessionStatement,
             FrameRole::StaySynthesised,
             FrameRole::ThenFirst,

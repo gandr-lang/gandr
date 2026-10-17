@@ -97,10 +97,12 @@
 //! | `0x69` | Flow product, two flow children | Admitted |
 //! | `0x6A` | Dependent pair type, first factor and second factor under its binder | Admitted |
 //! | `0x6B` | Dependent split, scrutinee, motive under its binder and body under the two components | Admitted |
-//! | `0x6C–0xFF` | Unassigned | Refused |
+//! | `0x6C` | Unassigned | Refused |
+//! | `0x6D` | Univalence, bi-invertible record child | Admitted |
+//! | `0x6E–0xFF` | Unassigned | Refused |
 //!
 //! The admitted domain is sparse: the greatest assigned native byte is
-//! `0x6B`, not a promise to accept every smaller byte. Boundary witnesses
+//! `0x6D`, not a promise to accept every smaller byte. Boundary witnesses
 //! admit assigned native tags, refuse inline opcodes and retired bytes as
 //! native nodes, and retain the frozen block. The unit and the empty type are
 //! zero-count products and sums, and List nil is a zero-child leaf; all three
@@ -239,6 +241,20 @@
 //! nominal case's motive. Both bytes hold [`FORMAT_VERSION`]: a reader that
 //! predates them refuses each by name as an unassigned byte, so no artifact
 //! means anything else by them.
+//!
+//! # Univalence
+//!
+//! Univalence `ua(e)` persists as its own value former over the bi-invertible
+//! record it is admitted on. The record carries the laws as its evidence and
+//! its type names the identity the node inhabits, so the node has one child
+//! and no inline payload.
+//!
+//! | byte | node | family | children, in order | inline payload |
+//! | ---- | ---- | ------ | ------------------ | -------------- |
+//! | `0x6D` | [`NODE_V_UNIVALENCE`] | value | the record | none |
+//!
+//! The byte moves [`FORMAT_VERSION`] to 6: a reader at 5 refuses the
+//! artifact by its version before it meets the byte.
 //!
 //! # Universe paths
 //!
@@ -396,7 +412,7 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-pub const FORMAT_VERSION: FormatVersion = FormatVersion(5);
+pub const FORMAT_VERSION: FormatVersion = FormatVersion(6);
 
 /// Admission mark: admitted through the checked choke point.
 pub const ADMISSION_CHECKED: WireTag = WireTag(0);
@@ -820,6 +836,9 @@ pub const NODE_VT_SIGMA: WireTag = WireTag(0x6A);
 /// Node tag: the dependent pair's eliminator, over its scrutinee, its motive
 /// under the scrutinee binder and its body under the two components.
 pub const NODE_C_SIGMA_SPLIT: WireTag = WireTag(0x6B);
+/// Node tag: univalence `ua(e)`, over the bi-invertible record it is admitted
+/// on.
+pub const NODE_V_UNIVALENCE: WireTag = WireTag(0x6D);
 /// Composition seam: the first output feeds the second input.
 pub const SEAM_SEQUENCE: WireTag = WireTag(0);
 /// Composition seam: the second output also feeds back into the first input.
@@ -1006,7 +1025,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1058,7 +1077,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1158,7 +1177,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 73] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 74] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1238,6 +1257,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 73] = [
     unbounded(NODE_V_FLOW_PRODUCT, ChildArity::Fixed(2)),
     unbounded(NODE_VT_SIGMA, ChildArity::Fixed(2)),
     unbounded(NODE_C_SIGMA_SPLIT, ChildArity::Fixed(3)),
+    unbounded(NODE_V_UNIVALENCE, ChildArity::Fixed(1)),
 ];
 
 #[cfg(test)]
@@ -1302,6 +1322,7 @@ mod tests
                         Some(&crate::Value::PathRefl(_)) => row.tag == super::NODE_V_PATH_REFL,
                         Some(&crate::Value::PathProduct(_, _)) => row.tag == super::NODE_V_PATH_PRODUCT,
                         Some(&crate::Value::PathEquiv { .. }) => row.tag == super::NODE_V_PATH_EQUIV,
+                        Some(&crate::Value::Univalence { .. }) => row.tag == super::NODE_V_UNIVALENCE,
                         Some(&crate::Value::Here { .. }) => row.tag == super::NODE_V_HERE,
                         Some(&crate::Value::Returned(_)) => row.tag == super::NODE_V_RETURNED,
                         Some(&crate::Value::Higher { .. }) => row.tag == super::NODE_V_HIGHER,
@@ -1505,6 +1526,7 @@ mod tests
         let flow_product = arena.value_flow_product(stay, forward_flow);
         let sigma = arena.value_type_sigma(base, element_path);
         let sigma_split = arena.computation_sigma_split(pair, returner, bind);
+        let univalence = arena.value_univalence(pair);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(universe),
@@ -1579,6 +1601,7 @@ mod tests
             AnyNode::Value(flow_product),
             AnyNode::ValueType(sigma),
             AnyNode::Computation(sigma_split),
+            AnyNode::Value(univalence),
         ];
         (arena, nodes)
     }
@@ -1619,6 +1642,7 @@ mod tests
                             | crate::Value::PathRefl(_)
                             | crate::Value::PathProduct(..)
                             | crate::Value::PathEquiv { .. }
+                            | crate::Value::Univalence { .. }
                             | crate::Value::Here { .. }
                             | crate::Value::Returned(_)
                             | crate::Value::Variable(_)
@@ -1732,10 +1756,14 @@ mod tests
                 "the dependent pair holds its bytes: {sigma}"
             );
         }
-        for unassigned in 0x6C_u8 ..= u8::MAX {
+        assert!(
+            assigned[usize::from(u8::from(super::NODE_V_UNIVALENCE))],
+            "univalence holds its byte"
+        );
+        for unassigned in core::iter::once(0x6C_u8).chain(0x6E_u8 ..= u8::MAX) {
             assert!(
                 !assigned[usize::from(unassigned)],
-                "every byte above the dependent split is unassigned: {unassigned:#04x}"
+                "every byte above the dependent split but univalence's is unassigned: {unassigned:#04x}"
             );
         }
     }
@@ -1769,6 +1797,7 @@ mod tests
             .chain(0x48 ..= 0x4F)
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x6b)
+            .chain([0x6D])
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);

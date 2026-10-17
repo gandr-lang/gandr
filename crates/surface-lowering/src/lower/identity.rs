@@ -242,13 +242,13 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
-use gandr_core_term::Zone;
 use gandr_core_term::identity::Relation;
+use gandr_core_term::identity::bi_invertible;
+use gandr_core_term::identity::quasi_inverse;
 use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionRelation;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -322,14 +322,6 @@ pub(super) const ISO: &str = "Iso";
 
 /// A recorded run's close, a move written as a bare name.
 const CLOSED: &str = "closed";
-
-/// Where a round trip of a relation's record reads the forward map: past the
-/// other map and the trip's own point.
-const FORWARD_PAST_TWO: u32 = 2_u32;
-
-/// Where a round trip of a relation's record reads the map back: past the
-/// trip's own point.
-const OTHER_PAST_ONE: u32 = 1_u32;
 
 /// The record a relation between types abbreviates, or one of the records
 /// nested in it, as a pattern splits it: its labels in written order and
@@ -477,6 +469,8 @@ pub(super) enum Operation
     Funext,
     /// `equiv(f, g)`.
     Equiv,
+    /// `ua(e)`.
+    Univalence,
     /// `pathProduct(p, q)`.
     PathProduct,
     /// `transport(\X. T, p, v)`.
@@ -526,10 +520,11 @@ pub(super) enum Operation
 /// - witness: `lower::identity::tests::directed_statements_lower_to_their_formers`
 /// - witness: `lower::identity::tests::a_path_product_lowers_to_its_former`
 /// - witness: `lower::identity::tests::a_flow_product_lowers_to_its_former`
-const SPELLED: [(&str, Operation); 16] = [
+const SPELLED: [(&str, Operation); 17] = [
     (HERE, Operation::Here),
     ("funext", Operation::Funext),
     ("equiv", Operation::Equiv),
+    ("ua", Operation::Univalence),
     ("pathProduct", Operation::PathProduct),
     ("transport", Operation::Transport),
     (BACK, Operation::Back),
@@ -1564,17 +1559,19 @@ impl<'source> Lowerer<'_, 'source>
     ///   loops is the empty word of their words, as [`Self::looped_point`]
     ///   reads it; `funext(f, g)`, `equiv(f, g)`, `pathProduct(p, q)`,
     ///   `flowProduct(p, q)`, `cons(h, t)`, `bisim(A, B)` and `sim(A, B)` stand
-    ///   as values reading both operands as values; `transport(\X. T, p, v)`
-    ///   and `ride(\X. T, f, v)` stand as computations reading their motive,
-    ///   path or flow and value as values, and `transport(M, p, z₀, q, v)` as a
-    ///   computation reading its motive as a value type and the other four as
-    ///   values; `back(p)` and `cong(f, p)` stand as computations derived as
-    ///   [`Self::derive`] does; `recorded(m₀, …, mₙ)` stands as a value over
-    ///   its moves, each read as [`Self::recorded_move`] reads it. Every
-    ///   operand is read under the site's frame.
+    ///   as values reading both operands as values; `ua(e)` stands as a value
+    ///   reading its record as a value, its forward map derived from it;
+    ///   `transport(\X. T, p, v)` and `ride(\X. T, f, v)` stand as computations
+    ///   reading their motive, path or flow and value as values, and
+    ///   `transport(M, p, z₀, q, v)` as a computation reading its motive as a
+    ///   value type and the other four as values; `back(p)` and `cong(f, p)`
+    ///   stand as computations derived as [`Self::derive`] does; `recorded(m₀,
+    ///   …, mₙ)` stands as a value over its moves, each read as
+    ///   [`Self::recorded_move`] reads it. Every operand is read under the
+    ///   site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
     ///   the arity refusal for other than one argument to `here`, `stay`,
-    ///   `forward` or `back`, two to `funext`, `equiv`, `pathProduct`,
+    ///   `forward`, `ua` or `back`, two to `funext`, `equiv`, `pathProduct`,
     ///   `flowProduct`, `cons`, `cong`, `bisim`, `sim` or `arrow`, three to
     ///   `ride`, and three or five to `transport`; the unannotated refusal for
     ///   a three-operand transport or a ride whose motive is no static
@@ -1609,6 +1606,7 @@ impl<'source> Lowerer<'_, 'source>
                         | (Operation::Stay, Some(&Plan::Stay(point))) => self.at_endpoint.contains(&point),
                         | (Operation::Funext, Some(&Plan::Funext(..)))
                         | (Operation::Equiv, Some(&Plan::Equiv(..)))
+                        | (Operation::Univalence, Some(&Plan::Univalence(_)))
                         | (Operation::PathProduct, Some(&Plan::PathProduct(..)))
                         | (Operation::FlowProduct, Some(&Plan::FlowProduct(..)))
                         | (Operation::Cons, Some(&Plan::ListCons(..)))
@@ -1636,6 +1634,7 @@ impl<'source> Lowerer<'_, 'source>
             Operation::Here
             | Operation::Funext
             | Operation::Equiv
+            | Operation::Univalence
             | Operation::PathProduct
             | Operation::FlowProduct
             | Operation::Cons
@@ -1665,6 +1664,7 @@ impl<'source> Lowerer<'_, 'source>
             Operation::Here
             | Operation::Funext
             | Operation::Equiv
+            | Operation::Univalence
             | Operation::PathProduct
             | Operation::FlowProduct
             | Operation::Cons
@@ -1699,6 +1699,7 @@ impl<'source> Lowerer<'_, 'source>
                     Operation::Here
                     | Operation::Funext
                     | Operation::Equiv
+                    | Operation::Univalence
                     | Operation::PathProduct
                     | Operation::Transport
                     | Operation::Back
@@ -1743,6 +1744,7 @@ impl<'source> Lowerer<'_, 'source>
                     Operation::Arrow => Plan::FunctionFlow(left, right),
                     Operation::Here
                     | Operation::Funext
+                    | Operation::Univalence
                     | Operation::Transport
                     | Operation::Back
                     | Operation::Cong
@@ -1770,6 +1772,7 @@ impl<'source> Lowerer<'_, 'source>
                     Operation::Here
                     | Operation::Funext
                     | Operation::Equiv
+                    | Operation::Univalence
                     | Operation::PathProduct
                     | Operation::Transport
                     | Operation::Back
@@ -1822,6 +1825,11 @@ impl<'source> Lowerer<'_, 'source>
             (Operation::Forward, 1_usize, Some(translator), ..) => {
                 self.read(translator, Reading::Value(frame));
                 self.plan(site, Plan::Forward(translator));
+                Ok(())
+            },
+            (Operation::Univalence, 1_usize, Some(record), ..) => {
+                self.read(record, Reading::Value(frame));
+                self.plan(site, Plan::Univalence(record));
                 Ok(())
             },
             (Operation::Cong, 2_usize, Some(function), Some(path), _) => {
@@ -3964,160 +3972,4 @@ fn telescope(
     };
     let entry = arena.comp_type_pi(inner, body);
     arena.comp_type_pi(outer, entry)
-}
-
-/// The type of a map from `from` to `to`, `+U (from -> -F to)`, both read
-/// where the map stands.
-///
-/// # Specification
-/// - requires: `from` and `to` are value types of `arena` in one context.
-/// - ensures: the thunk of the arrow from `from` to the returner of `to`.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`quasi_inverse`].
-/// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
-#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Thunk(_))))]
-fn map_type(
-    arena: &mut CoreArena,
-    from: ValueTypeId,
-    to: ValueTypeId,
-) -> ValueTypeId
-{
-    let returned = arena.comp_type_returner(to);
-    let arrow = arena.comp_type_arrow(from, returned);
-    arena.value_type_thunk(arrow)
-}
-
-/// Which round trip of a relation's record a type states, past the forward
-/// map and then the other.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Trip
-{
-    /// `other(to(x))`.
-    Section,
-    /// `to(other(x))`.
-    Retraction,
-}
-
-/// The type of a round trip over `carrier`, `(x : C) => Path(C,
-/// outer(inner(x)), x)`, its two maps the innermost two binders.
-///
-/// # Specification
-/// - requires: `carrier` is a value type of `arena` in a context `Γ`; the round
-///   trip stands in `Γ` extended by the forward map and then the other.
-/// - ensures: the thunk of the dependent arrow over `carrier` shifted past the
-///   two maps, returning the path over `carrier` shifted past the binder too,
-///   from the outer map of `trip` applied to the inner one applied to the bound
-///   point, each application the value its computation returns, to the bound
-///   point: the core the written `(x : C) => Path(C, outer(inner(x)), x)`
-///   lowers to.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`quasi_inverse`].
-/// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
-#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Thunk(_))))]
-fn round_trip(
-    arena: &mut CoreArena,
-    carrier: ValueTypeId,
-    trip: Trip,
-) -> ValueTypeId
-{
-    let (inner, outer) = match trip {
-        Trip::Section => (FORWARD_PAST_TWO, OTHER_PAST_ONE),
-        Trip::Retraction => (OTHER_PAST_ONE, FORWARD_PAST_TWO),
-    };
-    let past_maps = Binders::ONE.deeper();
-    let domain = gandr_core_term::shift_value_type(arena, carrier, past_maps);
-    let over = gandr_core_term::shift_value_type(arena, carrier, past_maps.deeper());
-    let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(inner));
-    let forced = arena.computation_force(first);
-    let applied = arena.computation_application(forced, point);
-    let midway = arena.value_returned(applied);
-    let second = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(outer));
-    let forced = arena.computation_force(second);
-    let applied = arena.computation_application(forced, midway);
-    let there = arena.value_returned(applied);
-    let back_at = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let path = arena.value_type_path(over, there, back_at);
-    let returned = arena.comp_type_returner(path);
-    let dependent = arena.comp_type_pi(domain, returned);
-    arena.value_type_thunk(dependent)
-}
-
-/// The record type `A ≅ B` abbreviates: a map, a map back, and the two round
-/// trips.
-///
-/// # Specification
-/// - requires: `from` and `to` are value types of `arena` in one context.
-/// - ensures: the core the written `#{to : +U (A -> -F B), back : +U (B -> -F
-///   A), sect : (a : A) => Path(A, back(to(a)), a), retr : (b : B) => Path(B,
-///   to(back(b)), b)}` lowers to: `Σ to. Σ back. sect × retr`, each occurrence
-///   of `A` and `B` shifted past the binders it stands under.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the relation and the written record over two base types
-///   and over two bound type codes are one type.
-/// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
-#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Sigma { .. })))]
-fn quasi_inverse(
-    arena: &mut CoreArena,
-    from: ValueTypeId,
-    to: ValueTypeId,
-) -> ValueTypeId
-{
-    let forward = map_type(arena, from, to);
-    let from_past = gandr_core_term::shift_value_type(arena, from, Binders::ONE);
-    let to_past = gandr_core_term::shift_value_type(arena, to, Binders::ONE);
-    let backward = map_type(arena, to_past, from_past);
-    let section = round_trip(arena, from, Trip::Section);
-    let retraction = round_trip(arena, to, Trip::Retraction);
-    let laws = arena.value_type_product(&[section, retraction]);
-    let rest = arena.value_type_sigma(backward, laws);
-    arena.value_type_sigma(forward, rest)
-}
-
-/// The record type `A ≃ B` abbreviates: a map with a left inverse and a right
-/// inverse, the bi-invertible map.
-///
-/// # Specification
-/// - requires: `from` and `to` are value types of `arena` in one context.
-/// - ensures: the core the written `#{to : +U (A -> -F B), linv : #{g : +U (B
-///   -> -F A), sect : (a : A) => Path(A, g(to(a)), a)}, rinv : #{h : +U (B ->
-///   -F A), retr : (b : B) => Path(B, to(h(b)), b)}}` lowers to: `Σ to. (Σ g.
-///   sect) × (Σ h. retr)`, each occurrence of `A` and `B` shifted past the
-///   binders it stands under.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`quasi_inverse`].
-/// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
-#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Sigma { .. })))]
-fn bi_invertible(
-    arena: &mut CoreArena,
-    from: ValueTypeId,
-    to: ValueTypeId,
-) -> ValueTypeId
-{
-    let forward = map_type(arena, from, to);
-    let from_past = gandr_core_term::shift_value_type(arena, from, Binders::ONE);
-    let to_past = gandr_core_term::shift_value_type(arena, to, Binders::ONE);
-    let left_map = map_type(arena, to_past, from_past);
-    let section = round_trip(arena, from, Trip::Section);
-    let left = arena.value_type_sigma(left_map, section);
-    let right_map = map_type(arena, to_past, from_past);
-    let retraction = round_trip(arena, to, Trip::Retraction);
-    let right = arena.value_type_sigma(right_map, retraction);
-    let inverses = arena.value_type_product(&[left, right]);
-    arena.value_type_sigma(forward, inverses)
 }

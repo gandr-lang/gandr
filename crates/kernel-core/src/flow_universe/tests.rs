@@ -330,6 +330,7 @@ fn lowered(
             | gandr_kernel_term::Value::PathRefl(_)
             | gandr_kernel_term::Value::PathProduct(..)
             | gandr_kernel_term::Value::PathEquiv { .. }
+            | gandr_kernel_term::Value::Univalence { .. }
             | gandr_kernel_term::Value::Here { .. }
             | gandr_kernel_term::Value::Returned(_)
             | gandr_kernel_term::Value::Higher { .. }

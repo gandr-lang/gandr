@@ -565,6 +565,7 @@ impl Machine<'_, '_>
                     | Value::Here(_)
                     | Value::Funext(..)
                     | Value::Equiv(..)
+                    | Value::Univalence(..)
                     | Value::Ua { .. }
                     | Value::SessionRelated { .. }
                     | Value::Stay(_)

@@ -82,7 +82,32 @@
 //! evade persisted admission. **Reversal.** Extend the code grammar only with
 //! formation, coverage and replay rules for the new fragment. Element
 //! identity, open codes, higher fields, function codes and general dependent
-//! elimination remain outside this fragment.
+//! elimination remain outside this decided fragment; an identity between two
+//! such codes is admitted on evidence instead, below.
+//!
+//! # Univalence
+//!
+//! `Value::Univalence(e)`, the surface's `ua(e)`, is the second route to an
+//! identity between two codes of `Type`, beside the decided certificate. It is
+//! admitted on evidence, at any two codes: checked at `Path(Type, a, b)`, the
+//! record `e` checks at the bi-invertible record over the types `a` and `b`
+//! denote (`univalence_record`: `T` for `⌜T⌝`, `El c` for any other code);
+//! anywhere else `e` synthesises a dependent pair whose first factor is a map
+//! `U (A → F B)`, the identity is `Path(Type, a, b)` at the codes of `A` and
+//! `B` (`univalence_reading`), its formation checks both codes at `Type`,
+//! and `e` checks at the record. The record's section and retraction are
+//! fields, so a law that does not hold is a field that does not check. The
+//! node carries the record alone: its type names the identity, so a
+//! univalence the checker reads back crosses as the same term as the one it
+//! judged. Transport along it computes by `tr(ua(e), x) ⇝ f ← e.0; f(x)`;
+//! two univalences convert when their records do.
+//!
+//! **Choice.** The record's laws are the evidence, not a decision.
+//! **Alternative.** Extending the decided enumeration to every code was
+//! declined: finite constructor coverage exists only on the first-order
+//! stratum, and a code like `Path(Circle, base, base)` has none.
+//! **Reversal.** Univalence proved as a theorem of the kernel (#520), after
+//! which `ua` is a definition and this rule a derived one.
 //!
 //! # Witnesses
 //!
@@ -96,7 +121,10 @@
 //! composition at both Bool constructors. They distinguish omitted coverage,
 //! swapped maps or product legs, accepted bad dialogues, reflexivity
 //! reduction, evidence omitted from memo keys, and translator syntax erased by
-//! conversion; no mutation score is claimed.
+//! conversion; no mutation score is claimed. The univalence witness admits
+//! `ua` over lists of booleans, a code the decided stratum refuses, by
+//! checking a record literal and by synthesis from an admitted record under a
+//! transport, and refuses a record whose section does not hold.
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -224,6 +252,9 @@ pub enum PathError
     UncertifiedStratum(ValueTypeId),
     /// An equivalence annotation is not a native path classifier.
     ExpectedPath(ValueTypeId),
+    /// A univalence's record synthesises no dependent pair whose first factor
+    /// is the thunk of a map `U (A → F B)`.
+    ExpectedEquivalence(ValueTypeId),
     /// Round-trip evidence has the wrong constructor coverage.
     Coverage(Direction),
     /// A kernel-generated round-trip claim did not replay positively.
@@ -263,6 +294,9 @@ impl fmt::Display for PathError
                 f.write_str("a recursive code is an uncertified stratum of the universe")
             },
             Self::ExpectedPath(_) => f.write_str("an equivalence annotation was not Path_U"),
+            Self::ExpectedEquivalence(_) => {
+                f.write_str("a univalence's record was not a bi-invertible map")
+            },
             Self::Coverage(Direction::Source) => {
                 f.write_str("incomplete source round-trip coverage")
             },
@@ -414,7 +448,8 @@ pub fn endpoints(
 /// # Specification
 /// - requires: admission established the path and operand types.
 /// - ensures: reflexivity returns the exact operand; equivalence applies its
-///   forward map; product transport sequences both components without capture.
+///   forward map; univalence applies its record's forward map; product
+///   transport sequences both components without capture.
 /// - provides: a reduct derived entirely from the native syntax.
 /// - fails: `Arena` on an unreadable path or product operand.
 /// - panics: none.
@@ -431,11 +466,12 @@ pub fn endpoints(
 #[spec(ensures: |ret| match (arena.value(term.path), &ret) {
     (Some(&Value::PathRefl(_)), &Ok(Reduction::Reduced(result))) => matches!(arena.computation(result), Some(&gandr_kernel_term::Computation::Return(value)) if value == term.value),
     (Some(&Value::PathEquiv { forward, .. }), &Ok(Reduction::Reduced(result))) => matches!(arena.computation(result), Some(&gandr_kernel_term::Computation::Application(head, value)) if value == term.value && matches!(arena.computation(head), Some(&gandr_kernel_term::Computation::Force(map)) if map == forward)),
+    (Some(&Value::Univalence { .. }), &Ok(Reduction::Reduced(result))) => matches!(arena.computation(result), Some(&gandr_kernel_term::Computation::Bind(..))),
     (Some(&Value::PathProduct(..)), &Ok(Reduction::Reduced(result))) => arena.value(term.value).and_then(Value::components).is_some_and(|components| components.len() == 2_usize) && matches!(arena.computation(result), Some(&gandr_kernel_term::Computation::Bind(..))),
     (Some(&Value::PathProduct(..)), &Ok(Reduction::Stuck)) => arena.value(term.value).is_some_and(|value| value.components().is_none_or(|components| components.len() != 2_usize)),
     (Some(&Value::PathProduct(..)), &Err(PathError::Arena)) => arena.value(term.value).is_none(),
     (None, &Err(PathError::Arena)) => true,
-    (Some(value), &Ok(Reduction::Stuck)) => !matches!(value, &Value::PathRefl(_) | &Value::PathEquiv { .. } | &Value::PathProduct(..)),
+    (Some(value), &Ok(Reduction::Stuck)) => !matches!(value, &Value::PathRefl(_) | &Value::PathEquiv { .. } | &Value::Univalence { .. } | &Value::PathProduct(..)),
     _ => false,
 })]
 #[inline]
@@ -449,6 +485,26 @@ pub fn beta(
         Some(&Value::PathEquiv { forward, .. }) => {
             let force = arena.computation_force(forward);
             arena.computation_application(force, term.value)
+        },
+        // `tr(ua(e), x) ⇝ f ← e.0; f(x)`: the record's first component is
+        // its forward map.
+        Some(&Value::Univalence(equivalence)) => {
+            let forward = arena.computation_tuple_projection(
+                equivalence,
+                gandr_kernel_term::Component::from(0_usize),
+            );
+            let map = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
+            let force = arena.computation_force(map);
+            let value = crate::rewrite::shift_value(
+                arena,
+                &mut crate::encoding::ContentTable::new(),
+                &mut gandr_kernel_check_memo::NullMemo,
+                term.value,
+                crate::rewrite::BinderDepth::default(),
+                crate::rewrite::BinderDepth::from(1_u32),
+            );
+            let applied = arena.computation_application(force, value);
+            arena.computation_bind(forward, applied)
         },
         Some(&Value::PathProduct(first, second)) => {
             let Some(&[left, right]) = arena.value(term.value).and_then(Value::components)
@@ -481,6 +537,308 @@ pub fn beta(
         None => return Err(PathError::Arena),
     };
     Ok(Reduction::Reduced(reduct))
+}
+
+/// The two codes of `path_type` when it is an identity `Path(Type, a, b)` at
+/// the level-zero value universe, the identities `ua(e)` checks against.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the endpoints `a` and `b`, in order, when `path_type` resolves to
+///   a path type whose domain resolves to the level-zero universe of value
+///   codes.
+/// - fails: [`PathError::ExpectedPath`] naming `path_type` otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a record literal checks against `Path(Type, ⌜List Bool⌝,
+///   ⌜List Bool⌝)` and an identity at the booleans is refused by name.
+/// - witness: `path_universe::tests::univalence_is_admitted_on_its_record`
+#[spec(ensures: |ret| match ret {
+    Ok((left, right)) => matches!(arena.value_type(path_type), Some(&ValueType::Path { left: written, right: other, .. }) if written == left && other == right),
+    Err(PathError::ExpectedPath(named)) => named == path_type,
+    Err(_) => false,
+})]
+pub(crate) fn identity_codes(
+    arena: &TermArena,
+    path_type: ValueTypeId,
+) -> Result<(ValueId, ValueId), PathError>
+{
+    let refused = PathError::ExpectedPath(path_type);
+    let Some(&ValueType::Path {
+        domain,
+        left,
+        right,
+        ..
+    }) = arena.value_type(path_type)
+    else {
+        return Err(refused);
+    };
+    if matches!(
+        arena.value_type(domain),
+        Some(&ValueType::Universe { sort: gandr_kernel_term::GroundSort::Value, ref level }) if *level == gandr_kernel_strata::Level::zero()
+    ) {
+        Ok((left, right))
+    }
+    else {
+        Err(refused)
+    }
+}
+
+/// The bi-invertible record `ua(e)` at `path_type` is admitted on: `Σ (to :
+/// U (A → F B)). (Σ (g : U (B → F A)). sect) × (Σ (h : U (B → F A)). retr)`,
+/// with `A` and `B` the types the identity's two codes denote.
+///
+/// # Specification
+/// - requires: nothing; formation of `path_type` is the caller's.
+/// - ensures: for `path_type = Path(Type, a, b)` at the level-zero value
+///   universe, the record over `A` and `B`, where a quoted code `⌜T⌝` denotes
+///   `T` and any other code `c` the decode `El c`; `sect` is `(x : A) → F
+///   Path(A, g(to(x)), x)` and `retr` is `(y : B) → F Path(B, to(h(y)), y)`,
+///   each application the value its computation returns and each type shifted
+///   past the binders it stands under.
+/// - provides: the one statement of the laws the kernel admits univalence on;
+///   the checker's record is the same tree, so the bridge passes it unchanged.
+/// - fails: [`PathError::ExpectedPath`] naming `path_type` when it is no
+///   identity at the level-zero value universe; [`PathError::Arena`] when a
+///   node does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a record over two bound codes checks against the record a
+///   source states for `A ≃ B`, and an identity at a type other than the
+///   universe is refused by name.
+/// - witness: `path_universe::tests::univalence_is_admitted_on_its_record`
+#[spec(ensures: |ret| match ret {
+    Ok(record) => matches!(arena.value_type(record), Some(&ValueType::Sigma { .. })),
+    Err(PathError::ExpectedPath(named)) => named == path_type,
+    Err(_) => true,
+})]
+pub(crate) fn univalence_record(
+    arena: &mut TermArena,
+    path_type: ValueTypeId,
+) -> Result<ValueTypeId, PathError>
+{
+    let (left, right) = identity_codes(arena, path_type)?;
+    let source = denoted(arena, left)?;
+    let target = denoted(arena, right)?;
+    let one = crate::rewrite::BinderDepth::from(1_u32);
+    let past = |arena: &mut TermArena, subject, amount| {
+        crate::rewrite::shift_value_type(
+            arena,
+            &mut crate::encoding::ContentTable::new(),
+            &mut gandr_kernel_check_memo::NullMemo,
+            subject,
+            crate::rewrite::BinderDepth::default(),
+            amount,
+        )
+    };
+    let forward = map_type(arena, source, target);
+    let source_past = past(arena, source, one);
+    let target_past = past(arena, target, one);
+    let left_map = map_type(arena, target_past, source_past);
+    let source_laws = past(arena, source, one.deeper());
+    let section = round_trip(arena, source_laws, Trip::Section);
+    let left = arena.value_type_sigma(left_map, section);
+    let right_map = map_type(arena, target_past, source_past);
+    let target_laws = past(arena, target, one.deeper());
+    let retraction = round_trip(arena, target_laws, Trip::Retraction);
+    let right = arena.value_type_sigma(right_map, retraction);
+    let inverses = arena.value_type_product(&[left, right]);
+    Ok(arena.value_type_sigma(forward, inverses))
+}
+
+/// The identity `ua(e)` synthesises from the type `classifier` its record
+/// synthesised, with the record type the record then checks against.
+///
+/// # Specification
+/// - requires: nothing; `classifier` is the type the record synthesised.
+/// - ensures: for `classifier` a dependent pair whose first factor is the thunk
+///   `U (A → F B)` of a non-dependent arrow, the identity `Path(Type, a, b)` at
+///   the level-zero value universe between the codes of `A` and `B` — `c` for
+///   `El c`, the quote of any other type — and the record type
+///   [`univalence_record`] states at it, in that order.
+/// - provides: the synthesising reading of `ua(e)`: the record's own type names
+///   the two codes, so the node carries nothing else.
+/// - fails: [`PathError::ExpectedEquivalence`] naming `classifier` when it is
+///   no such pair.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a record of `Path(Circle, base, base) ≃ Int` names both
+///   codes as quotes and a record over two bound codes names the variables;
+///   reading the codes off the wrong side of the map, or quoting a decode,
+///   synthesises an identity the checker's does not convert with.
+/// - witness: `path_universe::tests::univalence_is_admitted_on_its_record`
+#[spec(ensures: |ret| match ret {
+    Ok((path_type, record)) => matches!(arena.value_type(path_type), Some(&ValueType::Path { .. })) && matches!(arena.value_type(record), Some(&ValueType::Sigma { .. })),
+    Err(PathError::ExpectedEquivalence(named)) => named == classifier,
+    Err(_) => true,
+})]
+pub(crate) fn univalence_reading(
+    arena: &mut TermArena,
+    classifier: ValueTypeId,
+) -> Result<(ValueTypeId, ValueTypeId), PathError>
+{
+    let refused = PathError::ExpectedEquivalence(classifier);
+    let Some(&ValueType::Sigma { first, .. }) = arena.value_type(classifier)
+    else {
+        return Err(refused);
+    };
+    let Some(&ValueType::Thunk(map)) = arena.value_type(first)
+    else {
+        return Err(refused);
+    };
+    let Some(&gandr_kernel_term::CompType::Arrow { domain, codomain }) = arena.comp_type(map)
+    else {
+        return Err(refused);
+    };
+    let Some(&gandr_kernel_term::CompType::Returner(target)) = arena.comp_type(codomain)
+    else {
+        return Err(refused);
+    };
+    let source = code_of(arena, domain);
+    let target = code_of(arena, target);
+    let universe = arena.value_type_universe(
+        gandr_kernel_term::GroundSort::Value,
+        gandr_kernel_strata::Level::zero(),
+    );
+    let path_type = arena.value_type_path(universe, source, target);
+    let record = univalence_record(arena, path_type)?;
+    Ok((path_type, record))
+}
+
+/// The code of the value type `carrier`: `c` for `El c`, the quote of any
+/// other type.
+///
+/// # Specification
+/// trivial.
+fn code_of(
+    arena: &mut TermArena,
+    carrier: ValueTypeId,
+) -> ValueId
+{
+    match arena.value_type(carrier) {
+        Some(&ValueType::Element { code, .. }) => code,
+        Some(_) | None => arena.value_quote(carrier),
+    }
+}
+
+/// The type a code of the level-zero value universe denotes: `T` for `⌜T⌝`,
+/// `El c` for any other code `c`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the quoted type, or a fresh decode at level zero.
+/// - fails: [`PathError::Arena`] when `code` does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`univalence_record`].
+/// - witness: `path_universe::tests::univalence_is_admitted_on_its_record`
+#[spec(ensures: |ret| match ret {
+    Ok(ty) => arena.value_type(ty).is_some(),
+    Err(PathError::Arena) => true,
+    Err(_) => false,
+})]
+fn denoted(
+    arena: &mut TermArena,
+    code: ValueId,
+) -> Result<ValueTypeId, PathError>
+{
+    match arena.value(code) {
+        Some(&Value::Quote(quoted)) => Ok(quoted),
+        Some(_) => Ok(arena.value_type_element(code, gandr_kernel_strata::Level::zero())),
+        None => Err(PathError::Arena),
+    }
+}
+
+/// The type `U (from → F to)` of a map.
+///
+/// # Specification
+/// trivial.
+fn map_type(
+    arena: &mut TermArena,
+    from: ValueTypeId,
+    to: ValueTypeId,
+) -> ValueTypeId
+{
+    let returned = arena.comp_type_returner(to);
+    let arrow = arena.comp_type_arrow(from, returned);
+    arena.value_type_thunk(arrow)
+}
+
+/// Which law of a bi-invertible record a round trip states.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Trip
+{
+    /// `g(to(x)) = x`, the inverse the forward map's.
+    Section,
+    /// `to(h(y)) = y`, the forward map the inverse's.
+    Retraction,
+}
+
+/// The law `U ((x : C) → F Path(C, outer(inner(x)), x))` over `carrier`,
+/// standing past the forward map and the inverse.
+///
+/// # Specification
+/// - requires: `carrier` already stands past the two maps.
+/// - ensures: the thunk of the dependent arrow over `carrier`, returning the
+///   path over `carrier` shifted past its binder from the outer map applied to
+///   the inner one applied to the bound point, to the bound point: under the
+///   binder the point is `#0`, the inverse `#1` and the forward map `#2`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`univalence_record`].
+/// - witness: `path_universe::tests::univalence_is_admitted_on_its_record`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Thunk(_))))]
+fn round_trip(
+    arena: &mut TermArena,
+    carrier: ValueTypeId,
+    trip: Trip,
+) -> ValueTypeId
+{
+    let (inner, outer) = match trip {
+        Trip::Section => (2_u32, 1_u32),
+        Trip::Retraction => (1_u32, 2_u32),
+    };
+    let over = crate::rewrite::shift_value_type(
+        arena,
+        &mut crate::encoding::ContentTable::new(),
+        &mut gandr_kernel_check_memo::NullMemo,
+        carrier,
+        crate::rewrite::BinderDepth::default(),
+        crate::rewrite::BinderDepth::from(1_u32),
+    );
+    let point = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
+    let first = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(inner));
+    let forced = arena.computation_force(first);
+    let applied = arena.computation_application(forced, point);
+    let midway = arena.value_returned(applied);
+    let second = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(outer));
+    let forced = arena.computation_force(second);
+    let applied = arena.computation_application(forced, midway);
+    let there = arena.value_returned(applied);
+    let path = arena.value_type_path(over, there, point);
+    let returned = arena.comp_type_returner(path);
+    let dependent = arena.comp_type_pi(carrier, returned);
+    arena.value_type_thunk(dependent)
 }
 /// Replay a native transport after checking its path and both computations.
 ///

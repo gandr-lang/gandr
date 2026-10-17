@@ -903,7 +903,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::Tuple(ref components) => components.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
             Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } => self.placed.contains_key(&AnyNode::Value(first))
                             && self.placed.contains_key(&AnyNode::Value(second)),
-            Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.placed.contains_key(&AnyNode::Value(body)),
+            Value::PathRefl(body) | Value::Univalence(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.placed.contains_key(&AnyNode::Value(body)),
             Value::ForwardFlow { flow_type, translator, ref outputs, .. } => self.placed.contains_key(&AnyNode::ValueType(flow_type)) && self.placed.contains_key(&AnyNode::Value(translator)) && outputs.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
             Value::FunctionFlow { flow_type, domain, codomain } => self.placed.contains_key(&AnyNode::ValueType(flow_type)) && self.placed.contains_key(&AnyNode::Value(domain)) && self.placed.contains_key(&AnyNode::Value(codomain)),
             Value::Higher { ref evidence, .. } => evidence.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
@@ -922,6 +922,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::PathRefl(_) => gandr_kernel_term::NODE_V_PATH_REFL,
             Value::PathProduct(..) => gandr_kernel_term::NODE_V_PATH_PRODUCT,
             Value::PathEquiv { .. } => gandr_kernel_term::NODE_V_PATH_EQUIV,
+            Value::Univalence { .. } => gandr_kernel_term::NODE_V_UNIVALENCE,
             Value::Here { .. } => gandr_kernel_term::NODE_V_HERE,
             Value::Stay { .. } => gandr_kernel_term::NODE_V_STAY,
             Value::ForwardFlow { .. } => gandr_kernel_term::NODE_V_FORWARD_FLOW,
@@ -1022,6 +1023,10 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::ValueType(path_type)));
                 record.put_content(self.content_of(AnyNode::Value(forward)));
                 record.put_content(self.content_of(AnyNode::Value(backward)));
+            },
+            Value::Univalence(equivalence) => {
+                record.put_tag(gandr_kernel_term::NODE_V_UNIVALENCE);
+                record.put_content(self.content_of(AnyNode::Value(equivalence)));
             },
             Value::Here {
                 point,
@@ -1777,7 +1782,7 @@ Value::Tuple(ref components) => opened.eq((components.iter().copied().map(AnyNod
 Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => opened.eq(([AnyNode::ValueType(classifier), AnyNode::Value(payload_paths)].into_iter()).map(Some)),
 Value::PathEquiv { path_type, forward, backward, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)].into_iter()).map(Some)),
 Value::ListCons(a,b) | Value::PathProduct(a,b) | Value::FlowProduct(a,b) | Value::StaticApplication(a,b) | Value::Then { first: a, second: b, .. } => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
-Value::PathRefl(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_,body) | Value::Lift {body,..} => opened.eq((core::iter::once(AnyNode::Value(body))).map(Some)),
+Value::PathRefl(body) | Value::Univalence(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_,body) | Value::Lift {body,..} => opened.eq((core::iter::once(AnyNode::Value(body))).map(Some)),
 Value::ForwardFlow { flow_type, translator, ref outputs, .. } => opened.eq(([AnyNode::ValueType(flow_type), AnyNode::Value(translator)].into_iter().chain(outputs.iter().copied().map(AnyNode::Value))).map(Some)),
 Value::FunctionFlow { flow_type, domain, codomain } => opened.eq(([AnyNode::ValueType(flow_type), AnyNode::Value(domain), AnyNode::Value(codomain)].into_iter()).map(Some)),
 Value::Higher { ref evidence, .. } => opened.eq((evidence.iter().copied().map(AnyNode::Value)).map(Some)),
@@ -1889,6 +1894,7 @@ fn push_children(
             },
             Some(
                 &Value::PathRefl(code)
+                | &Value::Univalence(code)
                 | &Value::Here { point: code, .. }
                 | &Value::Stay { point: code, .. },
             ) => {

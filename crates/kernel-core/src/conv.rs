@@ -1334,6 +1334,7 @@ fn converge(
                     | Value::PathRefl(_)
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
+                    | Value::Univalence { .. }
                     | Value::Here { .. }
                     | Value::Returned(_)
                     | Value::Higher { .. }
@@ -1384,9 +1385,12 @@ fn converge(
                         stack.push(ConversionGoal::ValueType(one_type, other_type));
                         stack.push(ConversionGoal::Value(one_paths, other_paths));
                     },
-                    // Two reflexivities compare by their points: the dialogues
-                    // relating a point to its endpoints are evidence about the
-                    // term, not part of what it means.
+                    // Two univalences compare by their records: the record is
+                    // the term, its laws included. Two reflexivities compare
+                    // by their points: the dialogues relating a point to its
+                    // endpoints are evidence about the term, not part of what
+                    // it means.
+                    | (&Value::Univalence(one), &Value::Univalence(other))
                     | (&Value::PathRefl(one), &Value::PathRefl(other))
                     | (&Value::Here { point: one, .. }, &Value::Here { point: other, .. })
                     | (&Value::Stay { point: one, .. }, &Value::Stay { point: other, .. }) => {
@@ -1547,7 +1551,7 @@ fn converge(
                         stack.push(ConversionGoal::CompType(one, other));
                     },
                     | (
-                        &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::SessionFlow { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
+                        &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::SessionFlow { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. } | &Value::Univalence { .. }
                         | &Value::Here { .. } | &Value::Stay { .. } | &Value::ForwardFlow { .. } | &Value::FunctionFlow { .. } | &Value::Then { .. } | &Value::FlowProduct(..)
                         | &Value::Returned(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. } | &Value::QuantifiedEvaluation { .. }
                         | &Value::Variable(_)

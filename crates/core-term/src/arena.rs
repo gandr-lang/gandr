@@ -222,6 +222,7 @@ impl CoreArena
                 | Value::PathProduct(..)
                 | Value::PathEquiv { .. }
                 | Value::Here(_)
+                | Value::Univalence(..)
                 | Value::Funext(..)
                 | Value::Equiv(..)
                 | Value::Ua { .. }
@@ -2029,6 +2030,21 @@ impl CoreArena
     ) -> ValueId
     {
         self.alloc_value(Value::Equiv(forward, backward))
+    }
+
+    /// Mint univalence `ua(e)` over a bi-invertible record and its derived
+    /// forward map.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_univalence(
+        &mut self,
+        equivalence: ValueId,
+        forward: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Univalence(equivalence, forward))
     }
 
     /// Mint univalence at a stratum, `ua[n, k](a, b, f, g)`.

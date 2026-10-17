@@ -358,6 +358,7 @@ mod static_normalization
                         | Value::Here(_)
                         | Value::Funext(..)
                         | Value::Equiv(..)
+                        | Value::Univalence(..)
                         | Value::Ua { .. }
                         | Value::SessionRelated { .. }
                         | Value::Stay(_)
@@ -397,6 +398,7 @@ mod static_normalization
                         | Value::Here(_)
                         | Value::Funext(..)
                         | Value::Equiv(..)
+                        | Value::Univalence(..)
                         | Value::Ua { .. }
                         | Value::SessionRelated { .. }
                         | Value::Stay(_)

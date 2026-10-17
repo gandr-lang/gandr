@@ -52,6 +52,7 @@ fn value(
         | Value::PathProduct(..)
         | Value::PathEquiv { .. }
         | Value::Here { .. }
+        | Value::Univalence { .. }
         | Value::Returned(_)
         | Value::Higher { .. }
         | Value::HigherEvaluation { .. }

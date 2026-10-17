@@ -2635,6 +2635,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::Recorded(_)
             | Value::Funext(..)
             | Value::Equiv(..)
+            | Value::Univalence(..)
             | Value::Ua { .. }
             | Value::Returned(_)
             | Value::Nested(_)

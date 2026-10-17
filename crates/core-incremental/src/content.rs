@@ -573,6 +573,8 @@ pub enum ContentNode
     Funext(NodeIndex, NodeIndex),
     /// A universe equivalence over its forward and backward translators.
     Equiv(NodeIndex, NodeIndex),
+    /// Univalence `ua(e)` over its record and the forward map it carries.
+    Univalence(NodeIndex, NodeIndex),
     /// Univalence at a stratum over its two translator records, retaining
     /// the stratum and the descriptions in the cache identity.
     Ua
@@ -1203,6 +1205,7 @@ impl ContentNode
         | Self::PathProduct(..)
         | Self::Funext(..)
         | Self::Equiv(..)
+        | Self::Univalence(..)
         | Self::Ua { .. }
         | Self::PathEquiv { .. }
         | Self::Variable { .. }
@@ -1309,6 +1312,7 @@ impl ContentNode
             | Self::PathProduct(..)
             | Self::Funext(..)
             | Self::Equiv(..)
+            | Self::Univalence(..)
             | Self::Ua { .. }
             | Self::PathEquiv { .. }
             | Self::Variable { .. }
@@ -1451,6 +1455,7 @@ impl ContentNode
             | Self::UnknownComputationType => ret.count == 0,
             | Self::Tuple(ref components) => ret.iter().eq(components.iter().map(|&component| (component, V))),
             | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
+            | Self::Univalence(a, b)
             | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) | Self::SessionRelated { source: a, target: b, .. } | Self::Then(a, b) | Self::FlowProduct(a, b) | Self::FunctionFlow(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
             },
@@ -1691,6 +1696,7 @@ impl ContentNode
             | Self::PathProduct(first, second)
             | Self::Funext(first, second)
             | Self::Equiv(first, second)
+            | Self::Univalence(first, second)
             | Self::Ua {
                 forward: first,
                 backward: second,
@@ -1801,6 +1807,7 @@ impl ContentNode
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
+        Self::Univalence(..) |
         Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
@@ -1861,6 +1868,7 @@ impl ContentNode
             | Self::PathProduct(..)
             | Self::Funext(..)
             | Self::Equiv(..)
+            | Self::Univalence(..)
             | Self::Ua { .. }
             | Self::PathEquiv { .. }
             | Self::Transport(..)
@@ -3590,6 +3598,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 let forward = self.discover(ArenaNode::Value(forward));
                 ContentNode::Equiv(forward, self.discover(ArenaNode::Value(backward)))
             },
+            Value::Univalence(record, forward) => {
+                let record = self.discover(ArenaNode::Value(record));
+                ContentNode::Univalence(record, self.discover(ArenaNode::Value(forward)))
+            },
             Value::Ua {
                 stratum,
                 ref sides,
@@ -4515,6 +4527,10 @@ where
             let forward = image(forward);
             ContentNode::Equiv(forward, image(backward))
         },
+        ContentNode::Univalence(record, forward) => {
+            let record = image(record);
+            ContentNode::Univalence(record, image(forward))
+        },
         ContentNode::Ua {
             stratum,
             ref sides,
@@ -5205,6 +5221,7 @@ fn mint_node(
         | ContentNode::PathProduct(..)
         | ContentNode::Funext(..)
         | ContentNode::Equiv(..)
+        | ContentNode::Univalence(..)
         | ContentNode::Ua { .. }
         | ContentNode::PathEquiv { .. }
         | ContentNode::Transport(..)

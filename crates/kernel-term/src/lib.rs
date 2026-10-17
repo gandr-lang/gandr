@@ -316,6 +316,7 @@ pub use crate::tags::NODE_V_STAY;
 pub use crate::tags::NODE_V_THEN;
 pub use crate::tags::NODE_V_THUNK;
 pub use crate::tags::NODE_V_TUPLE;
+pub use crate::tags::NODE_V_UNIVALENCE;
 pub use crate::tags::NODE_V_VARIABLE;
 pub use crate::tags::NODE_VT_ABSTRACT;
 pub use crate::tags::NODE_VT_BASE;

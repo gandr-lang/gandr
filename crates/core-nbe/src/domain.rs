@@ -593,6 +593,17 @@ pub enum DomainValue
         /// The term face.
         face: TermFace,
     },
+    /// Univalence `ua(e)` at its evaluated record and forward map: transport
+    /// along it applies the forward map.
+    Univalence
+    {
+        /// The bi-invertible record.
+        record: DomainValueId,
+        /// The record's forward map, a thunk of the function.
+        forward: DomainValueId,
+        /// The term face.
+        face: TermFace,
+    },
     /// A flow introduction at its evaluated parts: `stay(a)` and `forward(f)`
     /// hold one, `f then g` and `arrow(d, c)` two, in written order.
     Flow
@@ -740,6 +751,7 @@ impl DomainValue
         | Self::Record { face, .. }
         | Self::PathProduct { face, .. }
         | Self::Here { face, .. }
+        | Self::Univalence { face, .. }
         | Self::Flow { face, .. }
         | Self::Literal { face, .. }
         | Self::Tuple { face, .. }
@@ -759,6 +771,7 @@ impl DomainValue
             | Self::Record { face, .. }
             | Self::PathProduct { face, .. }
             | Self::Here { face, .. }
+            | Self::Univalence { face, .. }
             | Self::Flow { face, .. }
             | Self::Literal { face, .. }
             | Self::Tuple { face, .. }

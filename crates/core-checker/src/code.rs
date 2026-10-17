@@ -940,6 +940,7 @@ impl CodeDefinitions
             | Value::Recorded(_)
             | Value::Funext(..)
             | Value::Equiv(..)
+            | Value::Univalence(..)
             | Value::Ua { .. }
             | Value::Returned(_)
             | Value::Nested(_)
@@ -2152,6 +2153,7 @@ pub fn loose_reach(
                     Value::PathProduct(first, second)
                     | Value::Funext(first, second)
                     | Value::Equiv(first, second)
+                    | Value::Univalence(first, second)
                     | Value::Then(first, second)
                     | Value::FlowProduct(first, second)
                     | Value::FunctionFlow(first, second)

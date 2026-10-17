@@ -104,6 +104,217 @@ pub enum Relation
     Flow,
 }
 
+/// Where a round trip of a relation's record reads the forward map: past the
+/// other map and the trip's own point.
+const FORWARD_PAST_TWO: u32 = 2_u32;
+
+/// Where a round trip of a relation's record reads the map back: past the
+/// trip's own point.
+const OTHER_PAST_ONE: u32 = 1_u32;
+
+/// The type of a map from `from` to `to`, `+U (from -> -F to)`, both read
+/// where the map stands.
+///
+/// # Specification
+/// - requires: `from` and `to` are value types of `arena` in one context.
+/// - ensures: the thunk of the arrow from `from` to the returner of `to`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`quasi_inverse`].
+/// - witness: `identity::tests::the_relation_records_state_their_maps_and_trips`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&crate::syntax::ValueType::Thunk(_))))]
+#[inline]
+#[must_use]
+pub fn map_type(
+    arena: &mut CoreArena,
+    from: ValueTypeId,
+    to: ValueTypeId,
+) -> ValueTypeId
+{
+    let returned = arena.comp_type_returner(to);
+    let arrow = arena.comp_type_arrow(from, returned);
+    arena.value_type_thunk(arrow)
+}
+
+/// Which round trip of a relation's record a type states, past the forward
+/// map and then the other.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Trip
+{
+    /// `other(to(x))`.
+    Section,
+    /// `to(other(x))`.
+    Retraction,
+}
+
+/// The type of a round trip over `carrier`, `(x : C) => Path(C,
+/// outer(inner(x)), x)`, its two maps the innermost two binders.
+///
+/// # Specification
+/// - requires: `carrier` is a value type of `arena` in a context `Γ`; the round
+///   trip stands in `Γ` extended by the forward map and then the other.
+/// - ensures: the thunk of the dependent arrow over `carrier` shifted past the
+///   two maps, returning the path over `carrier` shifted past the binder too,
+///   from the outer map of `trip` applied to the inner one applied to the bound
+///   point, each application the value its computation returns, to the bound
+///   point: the core the written `(x : C) => Path(C, outer(inner(x)), x)`
+///   lowers to.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`quasi_inverse`].
+/// - witness: `identity::tests::the_relation_records_state_their_maps_and_trips`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&crate::syntax::ValueType::Thunk(_))))]
+fn round_trip(
+    arena: &mut CoreArena,
+    carrier: ValueTypeId,
+    trip: Trip,
+) -> ValueTypeId
+{
+    let (inner, outer) = match trip {
+        Trip::Section => (FORWARD_PAST_TWO, OTHER_PAST_ONE),
+        Trip::Retraction => (OTHER_PAST_ONE, FORWARD_PAST_TWO),
+    };
+    let past_maps = Binders::ONE.deeper();
+    let domain = shift_value_type(arena, carrier, past_maps);
+    let over = shift_value_type(arena, carrier, past_maps.deeper());
+    let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(inner));
+    let forced = arena.computation_force(first);
+    let applied = arena.computation_application(forced, point);
+    let midway = arena.value_returned(applied);
+    let second = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(outer));
+    let forced = arena.computation_force(second);
+    let applied = arena.computation_application(forced, midway);
+    let there = arena.value_returned(applied);
+    let back_at = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let path = arena.value_type_path(over, there, back_at);
+    let returned = arena.comp_type_returner(path);
+    let dependent = arena.comp_type_pi(domain, returned);
+    arena.value_type_thunk(dependent)
+}
+
+/// The record type `A ≅ B` abbreviates: a map, a map back, and the two round
+/// trips.
+///
+/// # Specification
+/// - requires: `from` and `to` are value types of `arena` in one context.
+/// - ensures: the core the written `#{to : +U (A -> -F B), back : +U (B -> -F
+///   A), sect : (a : A) => Path(A, back(to(a)), a), retr : (b : B) => Path(B,
+///   to(back(b)), b)}` lowers to: `Σ to. Σ back. sect × retr`, each occurrence
+///   of `A` and `B` shifted past the binders it stands under.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the relation and the written record over two base types
+///   and over two bound type codes are one type.
+/// - witness: `identity::tests::the_relation_records_state_their_maps_and_trips`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&crate::syntax::ValueType::Sigma { .. })))]
+#[inline]
+#[must_use]
+pub fn quasi_inverse(
+    arena: &mut CoreArena,
+    from: ValueTypeId,
+    to: ValueTypeId,
+) -> ValueTypeId
+{
+    let forward = map_type(arena, from, to);
+    let from_past = shift_value_type(arena, from, Binders::ONE);
+    let to_past = shift_value_type(arena, to, Binders::ONE);
+    let backward = map_type(arena, to_past, from_past);
+    let section = round_trip(arena, from, Trip::Section);
+    let retraction = round_trip(arena, to, Trip::Retraction);
+    let laws = arena.value_type_product(&[section, retraction]);
+    let rest = arena.value_type_sigma(backward, laws);
+    arena.value_type_sigma(forward, rest)
+}
+
+/// The record type `A ≃ B` abbreviates: a map with a left inverse and a right
+/// inverse, the bi-invertible map.
+///
+/// # Specification
+/// - requires: `from` and `to` are value types of `arena` in one context.
+/// - ensures: the core the written `#{to : +U (A -> -F B), linv : #{g : +U (B
+///   -> -F A), sect : (a : A) => Path(A, g(to(a)), a)}, rinv : #{h : +U (B ->
+///   -F A), retr : (b : B) => Path(B, to(h(b)), b)}}` lowers to: `Σ to. (Σ g.
+///   sect) × (Σ h. retr)`, each occurrence of `A` and `B` shifted past the
+///   binders it stands under.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`quasi_inverse`].
+/// - witness: `identity::tests::the_relation_records_state_their_maps_and_trips`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&crate::syntax::ValueType::Sigma { .. })))]
+#[inline]
+#[must_use]
+pub fn bi_invertible(
+    arena: &mut CoreArena,
+    from: ValueTypeId,
+    to: ValueTypeId,
+) -> ValueTypeId
+{
+    let forward = map_type(arena, from, to);
+    let from_past = shift_value_type(arena, from, Binders::ONE);
+    let to_past = shift_value_type(arena, to, Binders::ONE);
+    let left_map = map_type(arena, to_past, from_past);
+    let section = round_trip(arena, from, Trip::Section);
+    let left = arena.value_type_sigma(left_map, section);
+    let right_map = map_type(arena, to_past, from_past);
+    let retraction = round_trip(arena, to, Trip::Retraction);
+    let right = arena.value_type_sigma(right_map, retraction);
+    let inverses = arena.value_type_product(&[left, right]);
+    arena.value_type_sigma(forward, inverses)
+}
+
+/// The forward map of a bi-invertible record, `thunk (λx. f ← e.0; force f
+/// x)`, which univalence `ua(e)` carries so that transport along it applies
+/// the map.
+///
+/// # Specification
+/// - requires: `record` is read where the map stands.
+/// - ensures: the thunk of the abstraction binding the bound point, which
+///   projects the first component of `record` shifted past that binder and
+///   applies the forced projection to the point, read past the projection's own
+///   binder.
+/// - provides: the one spelling of the map the lowering writes and the checker
+///   compares a written `ua` against, so transport along `ua(e)` reduces to
+///   what the kernel derives from the record.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over a record that reads an outer variable the map reads
+///   it one binder further out and applies the projection to the bound point;
+///   dropping the shift, projecting another component or applying the record
+///   itself changes the built term.
+/// - witness: `identity::tests::univalence_carries_the_record_s_forward_map`
+#[spec(ensures: |ret| matches!(arena.value(ret), Some(&crate::syntax::Value::Thunk(_))))]
+#[inline]
+#[must_use]
+pub fn univalence_forward(
+    arena: &mut CoreArena,
+    record: ValueId,
+) -> ValueId
+{
+    let lifted = shift_value(arena, record, Binders::ONE);
+    let projected = arena.computation_tuple_projection(lifted, crate::Component::from(0_usize));
+    let map = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(map);
+    let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let applied = arena.computation_application(forced, point);
+    let bound = arena.computation_bind(projected, applied);
+    let abstraction = arena.computation_lambda(bound);
+    arena.value_thunk(abstraction)
+}
+
 /// The moving endpoint of a motive: the innermost intuitionistic binder.
 ///
 /// # Specification
