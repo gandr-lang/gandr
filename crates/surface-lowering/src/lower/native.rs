@@ -366,6 +366,7 @@ use crate::origin::scrutinised;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
+use crate::resolve::Telescope;
 use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
@@ -5128,7 +5129,7 @@ impl<'source> Lowerer<'_, 'source>
                     (Maybe::Absent(_), None) => return Maybe::Absent(lowered::Absent::Unminted),
                 };
                 let frame = self.reading(written).frame();
-                self.relocate_value_type(id, frame, sink, classified)
+                self.relocate_value_type(id, frame, Telescope::Signature, sink, classified)
             },
             Classifier::Slot(argued) => match self.slot_type(argued, sink, classified) {
                 Maybe::Present(id) => id,
@@ -5148,8 +5149,14 @@ impl<'source> Lowerer<'_, 'source>
                     .saturating_sub(self.scope.telescope_binders(answer.frame).count());
                 let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
                 let mut copies = Vec::new();
-                let carried =
-                    self.relocate(sink.arena, written, answer.frame, lift, Some(&mut copies));
+                let carried = self.relocate(
+                    sink.arena,
+                    written,
+                    answer.frame,
+                    Telescope::Signature,
+                    lift,
+                    Some(&mut copies),
+                );
                 record_copied_since(
                     sink,
                     mark,
@@ -5251,12 +5258,12 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(ty)
     }
 
-    /// `ty`, a value type read under `frame` in a type's telescope, carried
-    /// into the term context of the same frame.
+    /// `ty`, a value type read under `frame` in `telescope`, carried into the
+    /// term context of the same frame.
     ///
     /// # Specification
     /// - requires: `ty` is minted under `frame`, counting only the frames that
-    ///   bind in a telescope.
+    ///   bind in `telescope`.
     /// - ensures: `ty` itself when every frame binds; otherwise `ty` with a
     ///   binder inserted for each frame that does not, each node the rewrite
     ///   copies recorded at the origin of the node it copies and every other
@@ -5274,11 +5281,12 @@ impl<'source> Lowerer<'_, 'source>
         &self,
         ty: ValueTypeId,
         frame: Frame,
+        telescope: Telescope,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> ValueTypeId
     {
-        if self.scope.telescope_binders(frame).all(|binds| binds) {
+        if self.scope.binders_in(frame, telescope).all(|binds| binds) {
             return ty;
         }
         let mark = sink.arena.watermark();
@@ -5288,6 +5296,7 @@ impl<'source> Lowerer<'_, 'source>
             sink.arena,
             wrapped,
             frame,
+            telescope,
             Binders::default(),
             Some(&mut copies),
         );
@@ -5306,12 +5315,12 @@ impl<'source> Lowerer<'_, 'source>
         result
     }
 
-    /// `ty`, a computation type read under `frame` in a type's telescope,
-    /// carried into the term context of the same frame.
+    /// `ty`, a computation type read under `frame` in `telescope`, carried
+    /// into the term context of the same frame.
     ///
     /// # Specification
     /// - requires: `ty` is minted under `frame`, counting only the frames that
-    ///   bind in a telescope.
+    ///   bind in `telescope`.
     /// - ensures: as [`Self::relocate_value_type`], for a computation type.
     /// - fails: never.
     /// - panics: none.
@@ -5325,16 +5334,24 @@ impl<'source> Lowerer<'_, 'source>
         &self,
         ty: CompTypeId,
         frame: Frame,
+        telescope: Telescope,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> CompTypeId
     {
-        if self.scope.telescope_binders(frame).all(|binds| binds) {
+        if self.scope.binders_in(frame, telescope).all(|binds| binds) {
             return ty;
         }
         let mark = sink.arena.watermark();
         let mut copies = Vec::new();
-        let carried = self.relocate(sink.arena, ty, frame, Binders::default(), Some(&mut copies));
+        let carried = self.relocate(
+            sink.arena,
+            ty,
+            frame,
+            telescope,
+            Binders::default(),
+            Some(&mut copies),
+        );
         record_copied_since(
             sink,
             mark,
@@ -5379,15 +5396,15 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// `ty`, a computation type read under `from` in a type's telescope,
-    /// carried into the term context of `from` and then under `lift` more
-    /// binders, each node it rewrote reported into `copies` when given.
+    /// `ty`, a computation type read under `from` in `telescope`, carried
+    /// into the term context of `from` and then under `lift` more binders,
+    /// each node it rewrote reported into `copies` when given.
     ///
     /// # Specification
     /// - requires: `ty` is minted under `from`, counting only the frames that
-    ///   bind in a telescope.
+    ///   bind in `telescope`.
     /// - ensures: a binder inserted at each frame of `from`'s chain that does
-    ///   not bind in a telescope, then every free index raised by `lift`;
+    ///   not bind in `telescope`, then every free index raised by `lift`;
     ///   `copies`, when given, gains each node a shift rewrote beside its
     ///   source.
     /// - fails: never.
@@ -5405,6 +5422,7 @@ impl<'source> Lowerer<'_, 'source>
         arena: &mut CoreArena,
         ty: CompTypeId,
         from: Frame,
+        telescope: Telescope,
         lift: Binders,
         mut copies: Option<&mut Vec<Carried>>,
     ) -> CompTypeId
@@ -5417,7 +5435,7 @@ impl<'source> Lowerer<'_, 'source>
             None => gandr_core_term::shift_comp_type_under(arena, subject, scope, amount),
         };
         let mut carried = ty;
-        for (position, binds) in self.scope.telescope_binders(from).enumerate() {
+        for (position, binds) in self.scope.binders_in(from, telescope).enumerate() {
             if !binds {
                 let scope = Binders::from(u32::try_from(position).unwrap_or(u32::MAX));
                 carried = shift(arena, carried, scope, Binders::ONE);
@@ -5486,8 +5504,14 @@ impl<'source> Lowerer<'_, 'source>
                             .count()
                             .saturating_sub(self.scope.telescope_binders(answer.frame).count()),
                     );
-                    let base =
-                        self.relocate(sink.arena, written, answer.frame, Binders::default(), None);
+                    let base = self.relocate(
+                        sink.arena,
+                        written,
+                        answer.frame,
+                        Telescope::Signature,
+                        Binders::default(),
+                        None,
+                    );
                     Maybe::Present((base, gap))
                 },
                 Maybe::Absent(reason) => Maybe::Absent(reason),

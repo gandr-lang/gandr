@@ -619,6 +619,7 @@ use crate::resolve::OperandCount;
 use crate::resolve::Scope;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
+use crate::resolve::Telescope;
 use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
@@ -1868,13 +1869,16 @@ enum Carrier
 enum Code
 {
     /// A binder, named from a use site under the frame `from`, whose index is
-    /// counted in the signature's telescope once every type has been read.
+    /// counted in `telescope` once every type has been read: the signature's,
+    /// or a body quote's (#547).
     Bound
     {
         /// The use site's frame.
         from: Frame,
         /// The binder's frame.
         binder: ScopeId,
+        /// The telescope the index is counted in.
+        telescope: Telescope,
     },
     /// A declaration at this admission position.
     Constant(ConstantIndex),
@@ -2720,6 +2724,11 @@ struct Lowerer<'run, 'source>
     /// node under one, whose bound names count only the frames that bind in
     /// the type's telescope and make the arrow binding them dependent.
     in_type: BTreeSet<NodeIndex>,
+    /// The nodes of a type a body quotes, the quote included: their binder
+    /// reads count in the quote's own telescope, which the quote is carried
+    /// out of into the body's context, and never make the signature's arrows
+    /// dependent (#547).
+    in_quote: BTreeSet<NodeIndex>,
     /// The terms standing at an endpoint: a path type's endpoints,
     /// reflexivity's point and every node under one, where a computation
     /// standing as a value is the value it returns.
@@ -3355,6 +3364,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             answers: BTreeMap::new(),
             synthesised: Vec::new(),
             in_type: BTreeSet::new(),
+            in_quote: BTreeSet::new(),
             at_endpoint: BTreeSet::new(),
             leaves,
             exits: BTreeSet::new(),
@@ -4245,8 +4255,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// Mark every child of `position` as standing inside a type, and at an
-    /// endpoint, when `position` does.
+    /// Mark every child of `position` as standing inside a type, inside a type
+    /// a body quotes, and at an endpoint, when `position` does.
     ///
     /// # Specification
     /// - requires: `position` is visited in ascending arena order, so its own
@@ -4280,6 +4290,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         if self.in_type.contains(&position) {
             self.in_type.extend(self.tree.children(position));
+        }
+        if self.in_quote.contains(&position) {
+            self.in_quote.extend(self.tree.children(position));
         }
         if self.at_endpoint.contains(&position) {
             self.at_endpoint.extend(self.tree.children(position));
@@ -4779,6 +4792,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         if let Some(held) = self.bridges.get_mut(usize::from(site.at.node)) {
             *held = bridge;
+        }
+        // A type a term quotes, where no type reads it, is a body's: its reads
+        // count in its own telescope (#547).
+        if bridge == Bridge::Inserted(Insertion::Quote)
+            && !self.type_read.contains(&site.at.node)
+            && !self.in_type.contains(&site.at.node)
+        {
+            let _quote = self.in_quote.insert(site.at.node);
+            self.in_quote.extend(self.tree.children(site.at.node));
         }
 
         Ok(frame)
@@ -5306,7 +5328,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match (resolved, self.in_type.contains(&site.at.node)) {
             | (Resolved::Binder(bound), true) => {
                 matches!(ret, Plan::StaticApplication(Code::Bound { binder, .. }, arguments) if binder == bound.binder && arguments.start == arguments.end)
-                    && bool::from(self.scope.mentioned(bound.binder))
+                    && (bool::from(self.scope.mentioned(bound.binder)) || self.in_quote.contains(&site.at.node))
             },
             | _ => ret == resolved.term(),
         },
@@ -5320,7 +5342,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         match resolved {
             Resolved::Binder(bound) if self.in_type.contains(&site.at.node) => {
-                self.scope.mention(bound.binder);
+                let telescope = self.name_in_type(site.at.node, bound.binder);
                 let none = Stretch {
                     start: self.operands.len(),
                     end: self.operands.len(),
@@ -5329,11 +5351,53 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Code::Bound {
                         from: frame,
                         binder: bound.binder,
+                        telescope,
                     },
                     none,
                 )
             },
             Resolved::Binder(_) | Resolved::Declaration { .. } => resolved.term(),
+        }
+    }
+
+    /// Record that a type position at `node` names `binder`, and answer the
+    /// telescope its index counts in: a type a body quotes counts in its own,
+    /// leaving the signature's arrows as they are, and any other type in the
+    /// signature's, whose arrow binding `binder` becomes dependent (#547).
+    ///
+    /// # Specification
+    /// - requires: `node` is a type position naming `binder`.
+    /// - ensures: [`Telescope::Quote`] with `binder` quoted when `node` lies in
+    ///   a body quote; [`Telescope::Signature`] with `binder` mentioned
+    ///   otherwise.
+    /// - provides: the one place a binder read inside a type chooses its
+    ///   telescope.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter only a body quote names leaves its arrow
+    ///   independent and the quote reads it; one a signature type names makes
+    ///   it dependent.
+    /// - witness: `lower::tests::a_quote_in_a_body_reads_past_an_unmentioned_parameter`
+    #[spec(ensures: |ret| if self.in_quote.contains(&node) {
+        ret == Telescope::Quote
+    } else {
+        ret == Telescope::Signature && bool::from(self.scope.mentioned(binder))
+    })]
+    fn name_in_type(
+        &mut self,
+        node: NodeIndex,
+        binder: ScopeId,
+    ) -> Telescope
+    {
+        if self.in_quote.contains(&node) {
+            self.scope.quote(binder);
+            Telescope::Quote
+        }
+        else {
+            self.scope.mention(binder);
+            Telescope::Signature
         }
     }
 
@@ -8384,8 +8448,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   by a function tail is a dynamic function, not a static operator: where
     ///   a type is read, its application is the unquote of the code the call
     ///   returns, in the universe the position reads. Every argument is read as
-    ///   a value under the site's frame, and a binder so named is recorded as
-    ///   mentioned.
+    ///   a value under the site's frame, and a binder so named is recorded by
+    ///   [`Self::name_in_type`]: quoted in a body quote, mentioned elsewhere.
     /// - provides: the one reading of a type operator's use, bare or applied,
     ///   as a value or as the type it denotes.
     /// - fails: yields the arity refusal for a data family applied to other
@@ -8440,11 +8504,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.family(site, constant, arity, applied);
         }
         let from = site.reading.frame();
+        let telescope = if self.in_quote.contains(&site.at.node) {
+            Telescope::Quote
+        }
+        else {
+            Telescope::Signature
+        };
         let (code, declared) = match resolved {
             Resolved::Binder(bound) => (
                 Code::Bound {
                     from,
                     binder: bound.binder,
+                    telescope,
                 },
                 bound.declared,
             ),
@@ -8482,7 +8553,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         let frame = self.require(site, produced)?;
         if let Code::Bound { binder, .. } = code {
-            self.scope.mention(binder);
+            let _telescope = self.name_in_type(site.at.node, binder);
         }
         for position in applied.start .. applied.end {
             if let Some(&argument) = self.operands.get(position) {
@@ -9741,24 +9812,34 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         // A type a term quotes was minted in its telescope, which counts a
         // typed binder only once a type names it; the term's context binds
-        // every binder, so the quote is carried into it (#540). A value a type
-        // reads stays in that type's telescope.
+        // every binder, so the quote is carried into it (#540). A body's quote
+        // counts in its own telescope, which its reads extend without making
+        // the signature's arrows dependent (#547). A value a type reads stays
+        // in that type's telescope.
         let minted = match (bridge, minted) {
             (Bridge::Inserted(Insertion::Quote), Maybe::Present(Lowered::ValueType(quoted)))
                 if !self.type_read.contains(&position) && !self.in_type.contains(&position) =>
             {
                 let frame = self.reading(position).frame();
-                Maybe::Present(Lowered::ValueType(
-                    self.relocate_value_type(quoted, frame, sink, origin),
-                ))
+                Maybe::Present(Lowered::ValueType(self.relocate_value_type(
+                    quoted,
+                    frame,
+                    Telescope::Quote,
+                    sink,
+                    origin,
+                )))
             },
             (Bridge::Inserted(Insertion::Quote), Maybe::Present(Lowered::CompType(quoted)))
                 if !self.type_read.contains(&position) && !self.in_type.contains(&position) =>
             {
                 let frame = self.reading(position).frame();
-                Maybe::Present(Lowered::CompType(
-                    self.relocate_comp_type(quoted, frame, sink, origin),
-                ))
+                Maybe::Present(Lowered::CompType(self.relocate_comp_type(
+                    quoted,
+                    frame,
+                    Telescope::Quote,
+                    sink,
+                    origin,
+                )))
             },
             (_, minted) => minted,
         };
@@ -10256,9 +10337,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         let mut applied = match code {
-            Code::Bound { from, binder } => sink.arena.value_variable(
+            Code::Bound {
+                from,
+                binder,
+                telescope,
+            } => sink.arena.value_variable(
                 Zone::Intuitionistic,
-                self.scope.telescope_index(from, binder),
+                self.scope.index_in(from, binder, telescope),
             ),
             Code::Constant(constant) => sink.arena.value_constant(constant),
         };

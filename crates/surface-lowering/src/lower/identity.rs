@@ -238,6 +238,7 @@ use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
+use crate::resolve::Telescope;
 use crate::resolve::TypeFormer;
 use crate::resolve::type_former;
 
@@ -2134,7 +2135,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         match self.plans.get(usize::from(at)) {
             Some(&Plan::Variable(_, binder)) => parameter(binder, None),
-            Some(&Plan::StaticApplication(Code::Bound { from, binder }, arguments))
+            Some(&Plan::StaticApplication(Code::Bound { from, binder, .. }, arguments))
                 if arguments.start == arguments.end =>
             {
                 parameter(binder, Some(from))
@@ -2704,7 +2705,14 @@ impl<'source> Lowerer<'_, 'source>
             .count()
             .saturating_sub(self.scope.telescope_binders(answer.frame).count());
         let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
-        let answered = self.relocate(sink.arena, written, answer.frame, lift, None);
+        let answered = self.relocate(
+            sink.arena,
+            written,
+            answer.frame,
+            Telescope::Signature,
+            lift,
+            None,
+        );
         let Some(&CompType::Returner { result, .. }) = sink.arena.comp_type(answered)
         else {
             return Maybe::Absent(lowered::Absent::OtherSort);
@@ -3019,7 +3027,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         let lift = between(frame, from, |_| true);
         let wrapped = sink.arena.comp_type_returner(written);
-        let relocated = self.relocate(sink.arena, wrapped, from, lift, None);
+        let relocated = self.relocate(sink.arena, wrapped, from, Telescope::Signature, lift, None);
         match sink.arena.comp_type(relocated) {
             Some(&CompType::Returner { result, .. }) => Maybe::Present(result),
             _ => Maybe::Absent(synthesised::Absent::Unread),
@@ -3436,6 +3444,7 @@ impl<'source> Lowerer<'_, 'source>
             sink.arena,
             dependent,
             transported.frame,
+            Telescope::Signature,
             Binders::NONE,
             Some(&mut copies),
         );

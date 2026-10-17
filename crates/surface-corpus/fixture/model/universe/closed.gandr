@@ -35,6 +35,12 @@ def rec el(u : U) -> -F Type {
 @[ checks ]
 def endo(a : Type, n : Nat, v : a) -> -F Type { return (a => a) }
 
+/// The same arrow past one parameter no type names: the quote's read of `a`
+/// leaves the signature non-dependent, so it prints as `Type -> Nat -> -F
+/// Type` and reads back to itself (#547).
+@[ checks ]
+def endoBare(a : Type, n : Nat) -> -F Type { return (a => a) }
+
 /// One, at the decode of the natural code, which runs to `Nat`.
 @[ checks ]
 def one : el(NatC) ;
