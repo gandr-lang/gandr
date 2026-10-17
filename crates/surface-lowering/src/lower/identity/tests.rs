@@ -1,4 +1,5 @@
 use alloc::format;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -38,6 +39,7 @@ use crate::lower::lower_module;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;
 use crate::namespace::Recognition;
+use crate::origin::ComponentName;
 use crate::origin::Insertion;
 use crate::origin::Provenance;
 use crate::resolve::OperandCount;
@@ -1591,20 +1593,11 @@ fn a_pattern_at_a_relation_splits_its_record()
 #[test]
 fn a_relation_split_names_each_written_component_665()
 {
-    let source = "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { case i { #{t, k, s, r} => k } }\n";
-    let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source), &mut arena);
-    let mut named: Vec<&str> = module
-        .origins()
-        .components()
-        .iter()
-        .filter_map(|&(_, origin)| {
-            source.get(usize::from(origin.span().start()) .. usize::from(origin.span().end()))
-        })
-        .collect();
-    named.sort_unstable();
+    let source = SourceText::from(
+        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { case i { #{t, k, s, r} => k } }\n",
+    );
     assert_eq!(
-        named,
+        component_names(source),
         ["k", "r", "s", "t"],
         "every written component is named, the unused `t`, `s` and `r` with `k`"
     );
@@ -1630,4 +1623,44 @@ fn a_run_binder_splits_the_relation_its_call_returns_656()
         &mut arena,
     );
     assert_accepted(&judged(&module, &mut arena));
+}
+
+/// A label pattern writes no variable for the fields it omits; each is named
+/// by its label, the one name the record declares for it (#670).
+#[test]
+fn an_unwritten_field_is_named_by_its_label_670()
+{
+    let source = SourceText::from(
+        "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) { case i { #{.back = k} => k } }\n",
+    );
+    assert_eq!(
+        component_names(source),
+        ["k", "retr", "sect", "to"],
+        "the written `k` by its variable, the omitted fields by their labels"
+    );
+}
+
+/// The names `source`'s splits record for their components, sorted: a
+/// written one as the source spells it, a labelled one as its label.
+///
+/// # Specification
+/// trivial.
+fn component_names(source: SourceText<'_>) -> Vec<String>
+{
+    let text = <&str>::from(source);
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    let mut named: Vec<String> = module
+        .origins()
+        .components()
+        .iter()
+        .filter_map(|&(_, ref name)| match *name {
+            ComponentName::Written(origin) => text
+                .get(usize::from(origin.span().start()) .. usize::from(origin.span().end()))
+                .map(String::from),
+            ComponentName::Labelled(ref label) => Some(String::from(label.as_ref())),
+        })
+        .collect();
+    named.sort_unstable();
+    named
 }

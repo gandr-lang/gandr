@@ -449,6 +449,17 @@ impl From<SplitComponent> for usize
     }
 }
 
+/// The name a split component binds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ComponentName
+{
+    /// The pattern variable written for the component, at its origin.
+    Written(Origin),
+    /// The label of the field a labelled pattern leaves unwritten: the one
+    /// name the record declares for it.
+    Labelled(FieldLabel),
+}
+
 /// Every minted core node's origin, by family, and the declaration origins.
 ///
 /// Each family is a vector of id-and-origin pairs held in mint order. Core ids
@@ -503,9 +514,10 @@ pub struct OriginTable
     /// binder, ascending by id: the syntax the binder's name was written at.
     binders: Vec<(ComputationId, Origin)>,
     /// The name each component of a split binds, by the split and the
-    /// component, ascending: the pattern variable written for it. A split
-    /// opens several binders, so the opener alone does not name one.
-    components: Vec<((ComputationId, SplitComponent), Origin)>,
+    /// component, ascending: the pattern variable written for it, or the
+    /// label of the field a labelled pattern leaves unwritten. A split opens
+    /// several binders, so the opener alone does not name one.
+    components: Vec<((ComputationId, SplitComponent), ComponentName)>,
     /// The name each dependent arrow binds, by the arrow, ascending by id:
     /// the syntax its binder's name was written at, a parameter's or a
     /// telescope entry's. The core carries no name; the printer reads it
@@ -1118,14 +1130,14 @@ impl OriginTable
         &self.binders
     }
 
-    /// Every split component with the origin of the pattern variable it
-    /// binds, ascending by split and component.
+    /// Every split component with the name it binds, ascending by split and
+    /// component.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn components(&self) -> &[((ComputationId, SplitComponent), Origin)]
+    pub fn components(&self) -> &[((ComputationId, SplitComponent), ComponentName)]
     {
         &self.components
     }
@@ -1375,8 +1387,9 @@ impl OriginTable
     }
 
     /// Record the name component `component` of the split `split` binds,
-    /// written at `name` as a pattern variable, where it falls among the
-    /// components already recorded.
+    /// where it falls among the components already recorded: the pattern
+    /// variable written for it, or the label of a field a labelled pattern
+    /// leaves unwritten.
     ///
     /// A match's splits are named after the whole match is minted, as its
     /// field lambdas are, so they arrive out of mint order and are placed.
@@ -1392,21 +1405,34 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a relation's record split in one arm names each
-    ///   component it writes a variable for, used or not.
+    ///   component it writes a variable for, used or not, and each field a
+    ///   label pattern leaves unwritten by its label.
     /// - witness: `lower::identity::tests::a_relation_split_names_each_written_component_665`
+    /// - witness: `lower::identity::tests::an_unwritten_field_is_named_by_its_label_670`
     #[spec(
-        captures: [before = find(&self.components, (split, component))],
-        ensures: find(&self.components, (split, component)) == match before {
-                Maybe::Present(held) => Maybe::Present(held),
-                Maybe::Absent(_) => Maybe::Present(name),
-            },
+        captures: [
+            before = self
+                .components
+                .binary_search_by_key(&(split, component), |&(held, _)| held)
+                .ok()
+                .and_then(|at| self.components.get(at))
+                .map(|&(_, ref held)| held.clone()),
+            named = name.clone(),
+        ],
+        ensures: self
+            .components
+            .binary_search_by_key(&(split, component), |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.components.get(at))
+            .map(|&(_, ref held)| held)
+            == Some(before.as_ref().unwrap_or(&named)),
     )]
     #[inline]
     pub fn place_component(
         &mut self,
         split: ComputationId,
         component: SplitComponent,
-        name: Origin,
+        name: ComponentName,
     )
     {
         let key = (split, component);

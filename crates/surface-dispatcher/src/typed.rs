@@ -132,6 +132,7 @@ use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::Insertion;
 use gandr_surface_lowering::Labelled;
@@ -560,6 +561,18 @@ struct Printed
     under: Option<Under>,
 }
 
+/// The name a split component binds, as the table keeps it: where the
+/// pattern variable for it is written, or the label of the field a labelled
+/// pattern leaves unwritten.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Named
+{
+    /// The pattern variable, at its span.
+    Written(ByteSpan),
+    /// The field's label.
+    Labelled(String),
+}
+
 /// What the table keeps to name the binders an entry stands under when a
 /// reader asks: each declaration's roots, and where the source writes each
 /// binder and each use. The scopes are walked one declaration at a time by
@@ -574,9 +587,9 @@ struct Naming
     /// Each lambda and bind with where the binder it opens is written,
     /// ascending by id.
     openers: Vec<(ComputationId, ByteSpan)>,
-    /// Each split component with where the pattern variable it binds is
-    /// written, ascending by split and component.
-    components: Vec<((ComputationId, SplitComponent), ByteSpan)>,
+    /// Each split component with the name it binds, ascending by split and
+    /// component.
+    components: Vec<((ComputationId, SplitComponent), Named)>,
     /// Each dependent arrow with where the name it binds is written,
     /// ascending by id.
     arrows: Vec<(CompTypeId, ByteSpan)>,
@@ -651,7 +664,14 @@ impl Naming
         let components = origins
             .components()
             .iter()
-            .map(|&(component, origin)| (component, origin.span()))
+            .map(|&(component, ref name)| {
+                (component, match *name {
+                    ComponentName::Written(origin) => Named::Written(origin.span()),
+                    ComponentName::Labelled(ref label) => {
+                        Named::Labelled(String::from(label.as_ref()))
+                    },
+                })
+            })
             .collect();
         let uses = origins
             .bindings()
@@ -831,7 +851,9 @@ fn intuitionistic(
 ///   binder, at its position, the intuitionistic binder around it and its name:
 ///   the one written for the lambda or bind that opens it, or for the split
 ///   component it is, counted from the split's outermost binder, else the one
-///   written at a use's binder.
+///   written at a use's binder; a split component a label pattern leaves
+///   unwritten is named by its field's label, primed (`′`) until no other
+///   binder of the declaration holds the name.
 /// - provides: the context an entry's type is spelled in.
 /// - fails: never.
 /// - panics: none.
@@ -840,9 +862,11 @@ fn intuitionistic(
 /// - hypothesis: L3 — the corpus census spells the types of terms inside
 ///   bodies, and of endpoints under a signature's binders, by their binders'
 ///   names; a binder left unnamed spells `?`, which the census fails on. A
-///   split component its arm never uses is named all the same.
+///   split component its arm never uses is named all the same, and one a label
+///   pattern omits by its label, primed apart from a written name.
 /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
 /// - witness: `typed::tests::an_unused_split_component_answers_by_its_written_name_665`
+/// - witness: `typed::tests::an_unwritten_field_answers_by_its_label_670`
 #[spec(ensures: |ret| ret.1.len() == ret.0.binders().len())]
 fn scopes(
     arena: &CoreArena,
@@ -856,9 +880,12 @@ fn scopes(
     let scopes = Scopes::of(&printer, roots.into_iter().flatten());
     // A split's binders are consecutive, its outermost component first.
     let mut split: Option<(ComputationId, usize)> = None;
+    // The binders a label names, primed apart once every binder is named.
+    let mut labelled: Vec<usize> = Vec::new();
     let mut bound: Vec<Bound> = scopes
         .binders()
-        .map(|(_, binder)| {
+        .enumerate()
+        .map(|(at, (_, binder))| {
             let (name, scope) = match binder.opener() {
                 CoreNode::Computation(opener) => {
                     let component = match split {
@@ -867,22 +894,28 @@ fn scopes(
                     };
                     split = Some((opener, component));
                     let key = (opener, SplitComponent::from(component));
-                    let written = naming
+                    let opened = naming
                         .openers
                         .binary_search_by_key(&opener, |&(held, _)| held)
                         .ok()
                         .and_then(|at| naming.openers.get(at))
-                        .map(|&(_, span)| span)
-                        .or_else(|| {
-                            naming
-                                .components
-                                .binary_search_by_key(&key, |&(held, _)| held)
-                                .ok()
-                                .and_then(|at| naming.components.get(at))
-                                .map(|&(_, span)| span)
-                        });
+                        .and_then(|&(_, span)| naming.written(span));
+                    let name = opened.or_else(|| {
+                        let held = naming
+                            .components
+                            .binary_search_by_key(&key, |&(held, _)| held)
+                            .ok()
+                            .and_then(|at| naming.components.get(at))?;
+                        match held.1 {
+                            Named::Written(span) => naming.written(span),
+                            Named::Labelled(ref label) => {
+                                labelled.push(at);
+                                Some(label.clone())
+                            },
+                        }
+                    });
                     (
-                        written.and_then(|span| naming.written(span)),
+                        name,
                         binder.slot() == ChildSlot::FIRST
                             && matches!(
                                 arena.computation(opener),
@@ -929,6 +962,20 @@ fn scopes(
             && entry.name.is_none()
         {
             entry.name = Some(name);
+        }
+    }
+    // A label is the record's own name for the field, so it stands unless a
+    // written name already holds it.
+    for at in labelled {
+        while let Some(name) = bound.get(at).and_then(|held| held.name.clone())
+            && bound
+                .iter()
+                .enumerate()
+                .any(|(other, held)| other != at && held.name.as_ref() == Some(&name))
+        {
+            if let Some(held) = bound.get_mut(at) {
+                held.name = Some(format!("{name}′"));
+            }
         }
     }
     (scopes, bound)
@@ -4198,28 +4245,70 @@ mod tests
     #[test]
     fn an_unused_split_component_answers_by_its_written_name_665()
     {
-        let source = SourceText::from(
+        let spelled = spelled(SourceText::from(
             "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {\n  case i {\n    #{t, k, s, r} => k\n  }\n}\n",
-        );
-        let table = table(source);
-        let spelled: Vec<(String, bool)> = table
-            .entries(PageWidth::from(80_u32), Form::Sugared)
-            .filter_map(|entry| match entry {
-                Maybe::Present(entry) => Some((
-                    String::from(entry.ty().as_ref()),
-                    entry.ty().unspelled().is_empty(),
-                )),
-                Maybe::Absent(_) => None,
-            })
-            .collect();
+        ));
         assert!(
-            spelled.iter().all(|&(_, whole)| whole),
+            spelled
+                .iter()
+                .all(|entry| entry.ty().unspelled().is_empty()),
             "no entry spells a `?`: {spelled:#?}"
         );
         assert!(
-            spelled.iter().any(|&(ref ty, _)| ty
+            spelled.iter().any(|entry| entry.ty().as_ref()
                 == "+U ((c : a) -> -F Path(a, k(t(c)), c)) * +U ((c : b) -> -F Path(b, t(k(c)), c))"),
             "the remainder after `t` names it: {spelled:#?}"
         );
+    }
+
+    /// A label pattern leaves the forward map unwritten; the round trips
+    /// after it name it by its label, `to`, and where the pattern writes `to`
+    /// for another field, by the label primed apart (#670).
+    #[test]
+    fn an_unwritten_field_answers_by_its_label_670()
+    {
+        for (pattern, remainder, reason) in [
+            (
+                "#{.back = k} => k",
+                "+U ((c : a) -> -F Path(a, k(to(c)), c)) * +U ((c : b) -> -F Path(b, to(k(c)), c))",
+                "the omitted forward map answers by its label",
+            ),
+            (
+                "#{.back = to} => to",
+                "+U ((c : a) -> -F Path(a, to(to′(c)), c)) * +U ((c : b) -> -F Path(b, to′(to(c)), c))",
+                "the label primed apart from the written `to`",
+            ),
+        ] {
+            let source = format!(
+                "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {{\n  case i {{\n    {pattern}\n  }}\n}}\n"
+            );
+            let spelled = spelled(SourceText::from(source.as_str()));
+            assert!(
+                spelled
+                    .iter()
+                    .all(|entry| entry.ty().unspelled().is_empty()),
+                "{reason}: no entry spells a `?`: {spelled:#?}"
+            );
+            assert!(
+                spelled.iter().any(|entry| entry.ty().as_ref() == remainder),
+                "{reason}: {spelled:#?}"
+            );
+        }
+    }
+
+    /// Every entry of `source`'s table spelled sugared on a page wide enough
+    /// that no type wraps.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spelled(source: SourceText<'_>) -> Vec<super::TypedSpan>
+    {
+        table(source)
+            .entries(PageWidth::from(200_u32), Form::Sugared)
+            .filter_map(|entry| match entry {
+                Maybe::Present(entry) => Some(entry),
+                Maybe::Absent(_) => None,
+            })
+            .collect()
     }
 }

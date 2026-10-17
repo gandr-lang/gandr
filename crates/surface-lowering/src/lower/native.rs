@@ -361,6 +361,7 @@ use crate::module::WordsForm;
 use crate::module::closed_term;
 use crate::origin::ArmOrigin;
 use crate::origin::CaseOrigin;
+use crate::origin::ComponentName;
 use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::origin::PatternReading;
@@ -1184,6 +1185,9 @@ enum Test
         arity: usize,
         /// Whether the split reads its motive at the scrutinee.
         dependent: Dependent,
+        /// The label of each component some row leaves unwritten under a
+        /// label pattern, by component, ascending.
+        unwritten: Vec<(usize, FieldLabel)>,
         /// The child under them.
         child: TestAt,
     },
@@ -1348,6 +1352,9 @@ struct Written
     /// constructor pattern applies, a word pattern's letter, a sum pattern's
     /// key, an or-pattern.
     spelled: Vec<(PatternAt, ByteSpan, PatternReading)>,
+    /// Each wildcard a labelled pattern leaves for a field it does not
+    /// write, with the field's label, in the order read.
+    unwritten: Vec<(PatternAt, FieldLabel)>,
 }
 
 /// The matcher every unwritten column entry reads as.
@@ -3954,9 +3961,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: one tuple of two per link, the outermost returned and each
     ///   inner one a part after its parent: the link's entry, then the next
     ///   link or the last entry; a split of a link that binds is dependent; a
-    ///   place no entry names is a wildcard; each written entry queued with its
-    ///   place's written type, or unstated at a relation's record, in written
-    ///   order.
+    ///   place no entry names is a wildcard, kept with its field's label when
+    ///   the record labels it; each written entry queued with its place's
+    ///   written type, or unstated at a relation's record, in written order.
     /// - fails: the unresolved-name refusal for a label the record lacks.
     /// - panics: none.
     ///
@@ -3969,6 +3976,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   labels, and patterns at a relation's record.
     /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
     /// - witness: `lower::identity::tests::a_pattern_at_a_relation_splits_its_record`
+    /// - witness: `lower::identity::tests::an_unwritten_field_is_named_by_its_label_670`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Tuple { fields, .. } if fields.end.saturating_sub(fields.start) == 2_usize)))]
     fn dependent_components(
         here: Site,
@@ -4027,6 +4035,15 @@ impl<'source> Lowerer<'_, 'source>
                     },
                     punned: Punned(matches!(entry.held, arity::Held::Punned(_))),
                 }));
+            }
+            else if let Some(&arity::Entry {
+                key: arity::Key::Label(label, _),
+                ..
+            }) = typed.get(place)
+            {
+                patterns
+                    .unwritten
+                    .push((slot, FieldLabel::from(String::from(label.as_ref()))));
             }
             slot
         };
@@ -4554,7 +4571,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: a split, dependent as the column's tuple is, whose child
     ///   holds every row, the column replaced by the components a tuple pattern
     ///   writes or by wildcards for a pattern matching anything, under `arity`
-    ///   more binders, component zero outermost.
+    ///   more binders, component zero outermost; it keeps, for each component
+    ///   some row's tuple leaves to a labelled wildcard, the first such label.
     /// - fails: the switch's wrong-sort refusal for a row whose pattern in the
     ///   column is a tuple of another arity or of another kind;
     ///   [`LoweringRefusal::BudgetExceeded`].
@@ -4569,6 +4587,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   at the component's level.
     /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
     /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+    /// - witness: `lower::identity::tests::an_unwritten_field_is_named_by_its_label_670`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |test| matches!(*test, Test::Split { arity: held, dependent: split, .. } if held == width.0 && split == dependent)))]
     fn switch_tuple(
         &mut self,
@@ -4582,6 +4601,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let Width(arity) = width;
         let mut specialised = Vec::with_capacity(item.rows.len());
+        let mut unwritten: Vec<(usize, FieldLabel)> = Vec::new();
         for row in &item.rows {
             self.fuel.spend()?;
             let mut next = row.clone();
@@ -4590,11 +4610,20 @@ impl<'source> Lowerer<'_, 'source>
                 Matcher::Tuple { fields, .. }
                     if fields.end.saturating_sub(fields.start) == arity =>
                 {
-                    patterns
+                    let parts = patterns
                         .parts
                         .get(fields.start .. fields.end)
                         .map(<[PatternAt]>::to_vec)
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+                    for (component, part) in parts.iter().enumerate() {
+                        if let Some(&(_, ref label)) =
+                            patterns.unwritten.iter().find(|&&(held, _)| held == *part)
+                            && unwritten.iter().all(|&(named, _)| named != component)
+                        {
+                            unwritten.push((component, label.clone()));
+                        }
+                    }
+                    parts
                 },
                 Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
                     through(&mut next, held, switch.level);
@@ -4616,11 +4645,13 @@ impl<'source> Lowerer<'_, 'source>
             specialised,
         );
 
+        unwritten.sort_unstable_by_key(|&(component, _)| component);
         Ok(Test::Split {
             level: switch.level,
             depth: item.depth,
             arity,
             dependent,
+            unwritten,
             child,
         })
     }
@@ -5921,7 +5952,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   least one leaf settles a variable there and every one that does writes
     ///   the same name; each component `c` of a minted split under `d` tree
     ///   binders likewise, at the variable the leaves under the split settle at
-    ///   level `d + c + 1`; any other binder keeps no name.
+    ///   level `d + c + 1`, or else at the label of the field a labelled
+    ///   pattern leaves unwritten there; any other binder keeps no name.
     /// - provides: the source's name for a pattern variable, which a type
     ///   printed inside an arm reads its field binder by, whether or not the
     ///   arm uses it.
@@ -5933,9 +5965,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a field a single arm names, and one two arms name
     ///   alike, each answer under the written name; a relation's record split
-    ///   names a component its arm never uses.
+    ///   names a component its arm never uses, and one a label pattern omits.
     /// - witness: `lower::native::tests::a_pattern_variable_names_its_field_binder`
     /// - witness: `lower::identity::tests::a_relation_split_names_each_written_component_665`
+    /// - witness: `lower::identity::tests::an_unwritten_field_is_named_by_its_label_670`
     fn name_fields(
         &self,
         form: &CaseForm,
@@ -5958,17 +5991,24 @@ impl<'source> Lowerer<'_, 'source>
                     depth,
                     arity,
                     child,
+                    ref unwritten,
                     ..
                 } => {
                     for component in 0 .. arity {
                         let level = TreeLevel(depth.0.saturating_add(component).saturating_add(1));
-                        if let Some(origin) = self.field_name(form, child, level) {
-                            sink.origins.place_component(
-                                switch,
-                                SplitComponent::from(component),
-                                origin,
-                            );
+                        let name = if let Some(origin) = self.field_name(form, child, level) {
+                            ComponentName::Written(origin)
                         }
+                        else {
+                            let Some(&(_, ref label)) =
+                                unwritten.iter().find(|&&(held, _)| held == component)
+                            else {
+                                continue;
+                            };
+                            ComponentName::Labelled(label.clone())
+                        };
+                        sink.origins
+                            .place_component(switch, SplitComponent::from(component), name);
                     }
                     continue;
                 },
@@ -6783,6 +6823,7 @@ fn mint_test(
             arity,
             dependent,
             child: at,
+            ..
         } => {
             let Maybe::Present(body) = child(at)
             else {
