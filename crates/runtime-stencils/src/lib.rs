@@ -1,7 +1,7 @@
 //! The L machine's transitions, written once.
 //!
 //! Every transition is one stencil: an `extern "rust-preserve-none"` Rust
-//! function over the machine's registers that ends in a `become` to a
+//! function over the run's registers that ends in a `become` to a
 //! continuation. The same functions are compiled two ways, and that is the
 //! whole of how gandr runs a program:
 //!
@@ -16,16 +16,17 @@
 //!   defined here: an operand reads the current [`Instruction`], a continuation
 //!   advances to the next instruction and `become`s its stencil through the
 //!   [`StencilId`] dispatch table. It runs wherever rustc builds this crate,
-//!   with or without a patcher for the target, and it is the differential the
+//!   with or without a patcher for the target, and it is the reference the
 //!   emitted code is compared against.
 //!
 //! The choice is one definition for both executors (Deegen's lesson: two
 //! hand-written implementations of the same transitions are held together only
 //! by tests). The alternative was the emitter's stencils beside a separate
-//! interpreter loop, which is what `gandr-core-sequent`'s machine is today and
-//! what this crate retires. The choice reverses if a transition needs a form
-//! the copy-and-patch build cannot take — an out-of-line call, a constant pool
-//! — that the executor needs anyway, which would split the two again.
+//! interpreter loop, which is what `gandr-core-sequent`'s hand-written
+//! machine was until this crate retired it. The choice reverses if a
+//! transition needs a form the copy-and-patch build cannot take — an
+//! out-of-line call, a constant pool — that the executor needs anyway, which
+//! would split the two again.
 //!
 //! # The registers
 //!
@@ -69,7 +70,7 @@
 //! call to the record's [`Host`] entry with the record, the callee's number
 //! and the first two arguments. The host answers with a value it allocated
 //! on the heap through the record, or refuses ([`Refusal`]): an answer past
-//! a region's limit grows the region and runs again, as any allocation
+//! a region's limit takes that region's exhausted exit, as any allocation
 //! does, and operands the callee does not take stop the run stuck. The call
 //! is indirect through the record, so the stencil carries no relocation and
 //! both builds share it; LLVM saves what the platform convention clobbers
@@ -111,6 +112,16 @@
 //!   `jump` back to its test runs once per cell of a list the heap already
 //!   holds, so it is bounded without fuel.
 //!
+//! # The agreement differential
+//!
+//! The witnesses run each program on emitted native code where the host has
+//! a patcher and on the executor, and compare the two outcomes value by value
+//! across their stores. Both tiers share every stencil, so a stencil's error
+//! is caught where a program states its answer: each named program and
+//! witness states the reading it halts with, and each corpus `runs` item the
+//! spelling its run reaches. `gandr-core-sequent` holds both tiers to
+//! normalisation by evaluation over generated programs as well.
+//!
 //! # The feature gates
 //!
 //! The crate enables two unstable features, the only nightly surface the
@@ -118,9 +129,8 @@
 //! registers across a chain with no saves; `explicit_tail_calls` gives
 //! `become`, the guaranteed tail call that makes a continuation a branch and
 //! not a call that grows the native stack. Neither has a stable equivalent:
-//! without them every transition would return to a dispatch loop, the
-//! machine `gandr-core-sequent` holds. Reversal: both stabilise, and the
-//! expectations below leave.
+//! without them every transition would return to a dispatch loop. Reversal:
+//! both stabilise, and the expectations below leave.
 //!
 //! # Safety
 //!
@@ -166,6 +176,7 @@ pub use crate::layout::Flavour;
 pub use crate::layout::Fuel;
 pub use crate::layout::Header;
 pub use crate::layout::Kind;
+pub use crate::layout::Observed;
 pub use crate::layout::Status;
 pub use crate::layout::Tag;
 pub use crate::layout::UnknownKind;
@@ -348,11 +359,11 @@ pub type Host =
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Refusal
 {
-    /// The answer would pass the heap region's limit: the run grows the heap
-    /// and runs again.
+    /// The answer would pass the heap region's limit: the run takes the heap
+    /// exit.
     Heap,
     /// The frames a replay pushes would pass the frame region's limit: the
-    /// run grows the region and runs again.
+    /// run takes the frame exit.
     Frames,
     /// The operands are not the callee's: the run is stuck.
     Operands,
@@ -399,6 +410,13 @@ pub struct Runtime
     jump: Word,
     /// The window the code word continues in.
     jump_window: *mut Word,
+    /// What the stuck or unmatched exit observed by: an [`Observed`]
+    /// destructor's word, or the unmatched case's site; zero when a host call
+    /// refused.
+    observed: Word,
+    /// The run's constants, one word each: zero until unfolded, one while
+    /// unfolding, the value once unfolded.
+    globals: *mut Word,
 }
 
 impl Runtime
@@ -447,7 +465,31 @@ impl Runtime
             environment: core::ptr::null_mut(),
             jump: Word::ZERO,
             jump_window: core::ptr::null_mut(),
+            observed: Word::ZERO,
+            globals: core::ptr::null_mut(),
         }
+    }
+
+    /// Give the run's constants the table `globals`.
+    ///
+    /// # Specification
+    /// - requires: `globals` holds one zeroed word per constant the function
+    ///   unfolds, live for the run.
+    /// - ensures: each unfolding stencil reads and writes its word there.
+    /// - executable: none — the requirement is about the table's memory.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constant read twice answers one value, a constant
+    ///   needing its own value is stuck as cyclic, and an undefined one as
+    ///   undefined only when reached.
+    /// - witness: `tests::agreement::constants_unfold_once_and_a_cycle_is_stuck`
+    #[inline]
+    pub const fn set_globals(
+        &mut self,
+        globals: *mut Word,
+    )
+    {
+        self.globals = globals;
     }
 
     /// The host's state, as the record was made with it.
@@ -483,7 +525,7 @@ impl Runtime
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the named primitive programs allocate their answers
-    ///   through the host and compare them with the L machine's; a top left
+    ///   through the host and halt with the readings they state; a top left
     ///   behind lets the next allocation overwrite the answer.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
     #[inline]
@@ -626,6 +668,19 @@ impl Runtime
     pub fn status(&self) -> Result<Status, UnknownStatus>
     {
         Status::try_from(self.status)
+    }
+
+    /// What the stuck or unmatched exit observed by: an [`Observed`]
+    /// destructor's word after a stuck observation, the case's site after an
+    /// unmatched one, zero when a host call refused or no exit wrote it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn observed(&self) -> Word
+    {
+        self.observed
     }
 
     /// The heap pointer when the run exited: one past its last allocation.

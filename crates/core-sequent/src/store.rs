@@ -1,84 +1,36 @@
-//! The L machine's two-region store: an append-only **heap region** of values,
-//! memo cells and environment bindings, and a walkable **frame region** of
-//! continuation frames.
-//!
-//! # The heap region
+//! The store a run's answer moves into: an append-only heap of values and
+//! the environment chains their closures close over.
 //!
 //! [`HeapValue`]s are immutable once allocated and addressed by
-//! [`HeapValueId`]; sharing a value is sharing its address. A thunk owns one
-//! memo [`CellId`], the store's only mutable state: a cell is
-//! [`MemoState::Unforced`] until a force opens it, [`MemoState::InProgress`]
-//! while the forcing runs (the black hole), and [`MemoState::Forced`] once the
-//! forcing's value is written back. Cell identity is nominal: two thunks share
-//! a cell exactly when they are one allocation. The store enforces the
-//! transition table: a write-back or a decline of a cell not in progress is
-//! refused, and nothing leaves [`MemoState::Forced`].
+//! [`HeapValueId`]; sharing a value is sharing its address. An
+//! [`Environment`] is the innermost binding of a persistent chain of producer
+//! bindings, so extending one never copies it and a closure captures one by
+//! value. A literal stack is held as the core writes one, innermost frame
+//! first, each bind frame a [`ClosedCommand`].
 //!
-//! Environments are persistent chains in the heap region: an [`Environment`]
-//! is the innermost binding of its producer chain and of its covalue chain, so
-//! extending one never copies it and a closure captures one by value.
+//! # The run keeps its own regions
 //!
-//! # The frame region
-//!
-//! Frames stack in pushing order and every frame carries a fresh
-//! [`FrameSerial`]. A [`ContinuationMark`] names a height together with the
-//! serial of the frame directly below it, so a mark taken before a frame was
-//! popped and another pushed at the same height is recognized as stale rather
-//! than resumed into the wrong continuation. Returning through a mark shrinks
-//! the region to it; an update frame dropped by a shrink declines its cell
-//! back to [`MemoState::Unforced`], so an abandoned forcing leaves no black
-//! hole behind.
-//!
-//! # Two regions
-//!
-//! The heap region holds what outlives the frame that created it: values, memo
-//! cells and environment bindings, all append-only and addressed, so sharing is
-//! address sharing and a closure captures its environment by one address. The
-//! frame region holds the continuation as frames, in pushing order, each under
-//! a fresh `FrameSerial`. A `ContinuationMark` is a height together with the
-//! serial of the frame directly below it: binding a covariable binds a mark,
-//! and returning through one shrinks the region to it. A mark whose height has
-//! since been popped and re-pushed names a different serial and is refused with
-//! `StoreFault::StaleMark`. An update frame dropped by a shrink is a forcing
-//! abandoned mid-way, and its cell is declined back to unforced, so no black
-//! hole outlives the forcing that opened it.
-//!
-//! The alternatives were continuations as heap-allocated closures, which makes
-//! every frame an allocation and leaves nothing for an effect handler to walk,
-//! and a single stack holding values and frames together, which ties a value's
-//! lifetime to a frame's. The choice reverses if a measured run shows the
-//! serial check on every return to dominate, at which point marks of a
-//! well-bracketed fragment can skip it.
-//!
-//! # The store owns the cell protocol
-//!
-//! A memo cell moves from `Unforced` to `InProgress` through
-//! `Store::begin_force`, then to `Forced` through `Store::write_back` or back
-//! to `Unforced` through `Store::decline`. Every other write returns
-//! `StoreFault::CellNotInProgress` without changing the cell. The store
-//! enforces the protocol under arbitrary traces, not merely those one machine
-//! produces. Removing that check is justified only by measured cost and a
-//! replacement API that makes illegal transitions unrepresentable.
+//! `gandr-runtime-emitter` runs a command over regions of its own and moves
+//! into the store only what leaves the run: a host request's payload, the
+//! answer, and the values a stuck run names. Readback reads the store. The
+//! alternative was readback over the run's words, which no caller can hold
+//! past the run: the regions are the thread's, reused by its next run. The
+//! choice reverses if a run's regions come to outlive it, when readback can
+//! read them in place and the move disappears.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::control::StackFrame;
 use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
 
 use crate::boundary::FamilyAddress as _;
-use crate::boundary::FrameHeight;
-use crate::boundary::FrameSerial;
-use crate::boundary::NodeCount;
 use crate::boundary::address_wrapper;
 use crate::il::CommandId;
 use crate::il::ConstructorTag;
-use crate::il::ConsumerId;
-use crate::il::CovariableIndex;
-use crate::il::DestructorTag;
 use crate::il::ProducerId;
 
 address_wrapper! {
@@ -87,29 +39,20 @@ address_wrapper! {
 }
 
 address_wrapper! {
-    /// The address of a memo cell in a [`Store`].
-    pub struct CellId;
-}
-
-address_wrapper! {
     /// The address of one producer binding of an environment chain.
-    pub struct ValueBindingId;
+    struct ValueBindingId;
 }
 
-address_wrapper! {
-    /// The address of one covalue binding of an environment chain.
-    pub struct CovalueBindingId;
-}
-
-/// A machine value: what a producer evaluates to.
+/// A value a run answered with or named: what a producer evaluates to.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum HeapValue
 {
-    /// An immutable stack spine, bottom first, reusable by every resumption.
+    /// A literal stack, innermost frame first.
     Stack
     {
-        /// Frames refer to heap values and persistent environments by address.
-        frames: Box<[Frame]>,
+        /// Each frame: an application's argument, a projection's side, or a
+        /// bind frame's command closed over its environment.
+        frames: Box<[StackFrame<HeapValueId, ClosedCommand>]>,
     },
     /// A base-type literal.
     Literal(Literal),
@@ -121,16 +64,13 @@ pub enum HeapValue
         /// The fields, left to right.
         fields: Box<[HeapValueId]>,
     },
-    /// A thunk: a suspended command, the environment it closes over, and the
-    /// memo cell its forcing writes back to.
+    /// A thunk: a suspended command and the environment it closes over.
     Thunk
     {
         /// The suspended command, binding one covariable.
         body: CommandId,
         /// The captured environment.
         environment: Environment,
-        /// The memo cell.
-        cell: CellId,
     },
     /// A recursive thunk: a thunk whose forcing binds the thunk itself as its
     /// body's innermost producer variable, beside the continuation.
@@ -141,8 +81,6 @@ pub enum HeapValue
         body: CommandId,
         /// The captured environment, without the thunk itself.
         environment: Environment,
-        /// What forcing the thunk writes back.
-        memo: Memo,
         /// The termination claim the core fixpoint carried.
         evidence: gandr_kernel_term::FixpointEvidence,
     },
@@ -157,69 +95,28 @@ pub enum HeapValue
         environment: Environment,
     },
     /// A constant with no body to run: an owed or refused declaration, which
-    /// the machine carries as itself.
+    /// a run carries as itself.
     Opaque(ConstantIndex),
-    /// A capability a handler introduced: its address is its identity, which
-    /// the handler's frame carries, so an exercise through it reaches that
-    /// frame and no other.
+    /// A capability a handler introduced: its address is its identity.
     Capability,
 }
 
-/// What forcing a recursive thunk writes back.
+/// A bind frame's command and the environment it runs under.
 ///
 /// # Specification
-/// - requires: a cell belongs to the store holding the recursive thunk.
-/// - ensures: a cell follows the thunk protocol; an unfolding fixpoint has no
-///   cell to follow.
-/// - provides: the choice between caching a fixpoint's value and unfolding it.
-/// - executable: none — the cell's ownership is the store's, which this tag
-///   does not hold.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a recursive function forced twice reads its cached
-///   object, and a loop re-entered holds no update frame.
-/// - witness: `machine::tests::a_recursive_thunk_computes_through_its_own_binding`
-/// - witness: `machine::tests::a_loop_holds_no_frame_across_its_iterations`
+/// trivial.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Memo
+pub struct ClosedCommand
 {
-    /// The body returns a copattern object at once — a function or a lazy
-    /// record — which the cell caches as a thunk's does.
-    Cell(CellId),
-    /// The body returns nothing at once, a loop: forcing unfolds the fixpoint
-    /// against the forcing continuation, with no update frame.
-    Unfolds,
-}
-
-/// The state of a memo cell.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum MemoState
-{
-    /// Never forced, or forced and abandoned.
-    Unforced,
-    /// A forcing is running: the black hole.
-    InProgress,
-    /// Forced, with the value the forcing wrote back.
-    Forced(HeapValueId),
-}
-
-/// What opening a force on a cell found.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum ForceEntry
-{
-    /// The cell was forced: its cached value, unchanged.
-    Cached(HeapValueId),
-    /// The cell was unforced and is now in progress; the opener owns the
-    /// write-back or the decline.
-    Opened,
-    /// The cell was already in progress: a re-entrant force, which runs the
-    /// body inline and writes nothing.
-    Reentrant,
+    /// The command, binding one producer variable and one covariable.
+    pub body: CommandId,
+    /// The environment it runs under.
+    pub environment: Environment,
 }
 
 /// The innermost producer binding of an environment, or none.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum ValueScope
+enum ValueScope
 {
     /// No producer is bound.
     Empty,
@@ -227,29 +124,13 @@ pub enum ValueScope
     Innermost(ValueBindingId),
 }
 
-/// The innermost covalue binding of an environment, or none.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum CovalueScope
-{
-    /// No covariable is bound.
-    Empty,
-    /// The innermost binding.
-    Innermost(CovalueBindingId),
-}
-
-/// An environment: the producer chain, the linear chain and the covalue chain
-/// a command runs under.
+/// An environment: the producer chain a closed command runs under.
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Environment
 {
     /// The producer bindings, innermost first.
     values: ValueScope,
-    /// The linear producer bindings — held values and views — innermost
-    /// first. They share the producer bindings' family; a linear binding's
-    /// value is the one cell of the machine a write changes.
-    linears: ValueScope,
-    /// The covalue bindings, innermost first.
-    covalues: CovalueScope,
 }
 
 impl Environment
@@ -257,42 +138,7 @@ impl Environment
     /// The environment binding nothing.
     pub const EMPTY: Self = Self {
         values: ValueScope::Empty,
-        linears: ValueScope::Empty,
-        covalues: CovalueScope::Empty,
     };
-
-    /// The producer chain.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn values(self) -> ValueScope
-    {
-        self.values
-    }
-
-    /// The linear producer chain.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn linears(self) -> ValueScope
-    {
-        self.linears
-    }
-
-    /// The covalue chain.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn covalues(self) -> CovalueScope
-    {
-        self.covalues
-    }
 }
 
 /// One producer binding: the value and the chain it extends.
@@ -305,293 +151,27 @@ struct ValueBinding
     outer: ValueScope,
 }
 
-/// One covalue binding: the continuation mark and the chain it extends.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct CovalueBinding
-{
-    /// The bound continuation.
-    continuation: Covalue,
-    /// The chain this binding extends.
-    outer: CovalueScope,
-}
-
-/// A continuation: a height of the frame region, and the serial of the frame
-/// directly below that height when the mark was taken.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ContinuationMark
-{
-    /// The height the continuation starts at.
-    height: FrameHeight,
-    /// The serial of the frame at `height - 1`, or the base serial at height
-    /// `0`.
-    serial: FrameSerial,
-}
-
-impl ContinuationMark
-{
-    /// The base of the frame region: the terminal continuation `★`.
-    pub const BASE: Self = Self {
-        height: FrameHeight::ZERO,
-        serial: FrameSerial::BASE,
-    };
-
-    /// The height the continuation starts at.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn height(self) -> FrameHeight
-    {
-        self.height
-    }
-}
-
-/// A return target: a guarded linear mark, or a delimited stack's live tail.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Covalue
-{
-    /// Preserve the existing one-shot continuation identity.
-    Pinned(ContinuationMark),
-    /// Continue through the active stack after a captured prefix is reinstated.
-    FallThrough,
-}
-
-/// The eager payload of a native observation; every head is nullary or unary.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum ObservationArguments
-{
-    /// Force and projection carry no producer argument.
-    Nullary,
-    /// Application carries exactly one already evaluated value.
-    Unary(HeapValueId),
-}
-
-impl ObservationArguments
-{
-    /// Borrow the argument without allocating a one-element container.
-    ///
-    /// # Specification
-    /// trivial.
-    #[must_use]
-    #[inline]
-    pub fn as_slice(&self) -> &[HeapValueId]
-    {
-        match *self {
-            Self::Nullary => &[],
-            Self::Unary(ref value) => core::slice::from_ref(value),
-        }
-    }
-}
-
-/// The capability a handler frame introduced.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Introduced
-{
-    /// None: the core's anonymous handler.
-    Nothing,
-    /// The capability at this address, bound in the handler's subject.
-    Capability(HeapValueId),
-}
-
-/// How an access's view has ended, as its frame records it.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Ending
-{
-    /// Neither eliminator has run.
-    Open,
-    /// A resume ran, with the value the frame's pop writes back.
-    Resumed(HeapValueId),
-    /// An abort ran: the frame's pop runs the unwind and writes nothing.
-    Aborted,
-}
-
-/// A continuation frame.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Frame
-{
-    /// A reset delimiter, reinstalled by a captured resumption.
-    Reset,
-    /// A deep handler whose clauses close over the installation environment.
-    Handler
-    {
-        /// The Handle command carrying the inline interface and clauses.
-        command: CommandId,
-        /// The handler's ambient value and covalue bindings.
-        environment: Environment,
-        /// The capability the handler introduced, which identifies it.
-        introduced: Introduced,
-    },
-    /// An update cancelled by control capture or an operation request.
-    DeclinedUpdate,
-    /// A pending observation with its evaluated producer arguments.
-    Destructor
-    {
-        /// The head.
-        tag: DestructorTag,
-        /// The evaluated producer arguments, left to right.
-        arguments: ObservationArguments,
-    },
-    /// A pending value binder `μ̃x. s`.
-    Bind
-    {
-        /// The command, binding one producer variable.
-        body: CommandId,
-        /// The environment it runs under.
-        environment: Environment,
-    },
-    /// A pending pattern match.
-    Case
-    {
-        /// The [`crate::ConsumerNode::Case`] or
-        /// [`crate::ConsumerNode::DataCase`] the value arriving here meets.
-        arms: ConsumerId,
-        /// The environment the chosen arm runs under.
-        environment: Environment,
-    },
-    /// A pending native fold after a captured list has returned.
-    ListFold
-    {
-        /// The fold consumer carrying its branches.
-        fold: ConsumerId,
-        /// The branches' ambient environment.
-        environment: Environment,
-    },
-    /// A pending selection: the value arriving here is a tuple or a record,
-    /// and its selected field passes on.
-    Select
-    {
-        /// The [`crate::ConsumerNode::Select`] carrying the selector.
-        select: ConsumerId,
-    },
-    /// The write-back of a forcing: the value arriving here is the cell's.
-    Update
-    {
-        /// The cell in progress.
-        cell: CellId,
-    },
-    /// An access: the value arriving here is the access's answer. A resumed
-    /// view writes its value back into the held binding; an aborted one runs
-    /// the unwind, which [`Self::Answer`] then discards.
-    Access
-    {
-        /// The held binding the access lends.
-        held: ValueBindingId,
-        /// The view binding the eliminators name.
-        view: ValueBindingId,
-        /// The unwind, binding one return covariable.
-        unwind: CommandId,
-        /// The environment the unwind runs under.
-        environment: Environment,
-        /// How the view has ended.
-        ending: Ending,
-    },
-    /// The answer of an aborted access, waiting on its unwind's unit.
-    Answer
-    {
-        /// The access's answer, which passes on in the unwind's place.
-        value: HeapValueId,
-    },
-}
-
-/// How many reset and handler delimiters a frame contributes to its region.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Delimiters(usize);
-
-impl Frame
-{
-    /// How many delimiters this frame is: one for a frame that changes the
-    /// interpretation of local returns, none otherwise.
-    ///
-    /// # Specification
-    /// trivial.
-    const fn delimiters(self) -> Delimiters
-    {
-        Delimiters(match self {
-            Self::Reset | Self::Handler { .. } => 1,
-            Self::DeclinedUpdate
-            | Self::Destructor { .. }
-            | Self::Bind { .. }
-            | Self::Case { .. }
-            | Self::ListFold { .. }
-            | Self::Select { .. }
-            | Self::Update { .. }
-            | Self::Access { .. }
-            | Self::Answer { .. } => 0,
-        })
-    }
-}
-
-/// One frame and the serial it was pushed under.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct FrameEntry
-{
-    /// The frame.
-    frame: Frame,
-    /// Its serial.
-    serial: FrameSerial,
-}
-
-/// The families of the heap region, for a full-region refusal.
+/// The families of the store, for a full-family refusal.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HeapFamily
 {
     /// The values.
     Values,
-    /// The memo cells.
-    Cells,
     /// The producer bindings.
     ValueBindings,
-    /// The covalue bindings.
-    CovalueBindings,
 }
 
 /// Why the store refused an operation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum StoreFault
 {
-    /// A heap family has reached its address ceiling.
+    /// A family has reached its address ceiling.
     RegionFull(HeapFamily),
-    /// The frame serials are exhausted.
-    SerialsExhausted,
-    /// A value address names no value of this store.
-    DanglingValue(HeapValueId),
-    /// A cell address names no cell of this store.
-    DanglingCell(CellId),
-    /// A transition needs the cell in progress, and it is not.
-    CellNotInProgress
-    {
-        /// The cell.
-        cell: CellId,
-        /// The state it was found in.
-        found: MemoState,
-    },
-    /// A continuation mark names a frame no longer on the region.
-    StaleMark(ContinuationMark),
-    /// A view names no access frame on the region: its access has ended.
-    NoAccess(ValueBindingId),
-    /// A view whose access frame records an ending already.
-    Ended
-    {
-        /// The view.
-        view: ValueBindingId,
-        /// The ending found.
-        found: Ending,
-    },
-    /// A linear binding address names no binding of this store.
-    DanglingBinding(ValueBindingId),
 }
 
 impl fmt::Display for StoreFault
 {
-    /// Names the refused operation's subject.
+    /// Names the full family.
     ///
     /// # Specification
     /// trivial.
@@ -605,24 +185,10 @@ impl fmt::Display for StoreFault
             Self::RegionFull(family) => {
                 let name = match family {
                     HeapFamily::Values => "value",
-                    HeapFamily::Cells => "cell",
                     HeapFamily::ValueBindings => "producer binding",
-                    HeapFamily::CovalueBindings => "covalue binding",
                 };
-                write!(f, "the {name} family of the heap is full")
+                write!(f, "the {name} family of the store is full")
             },
-            Self::SerialsExhausted => f.write_str("the frame serials are exhausted"),
-            Self::DanglingValue(id) => write!(f, "value {id} is not in the store"),
-            Self::DanglingCell(id) => write!(f, "cell {id} is not in the store"),
-            Self::CellNotInProgress { cell, .. } => write!(f, "cell {cell} is not in progress"),
-            Self::StaleMark(mark) => write!(
-                f,
-                "the continuation at height {} names a popped frame",
-                mark.height
-            ),
-            Self::NoAccess(view) => write!(f, "view {view} names no live access"),
-            Self::Ended { view, .. } => write!(f, "view {view} has ended already"),
-            Self::DanglingBinding(id) => write!(f, "binding {id} is not in the store"),
         }
     }
 }
@@ -631,26 +197,14 @@ impl core::error::Error for StoreFault
 {
 }
 
-/// The two-region store.
+/// The values a run moved out and the environments they close over.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Store
 {
-    /// The heap's values.
+    /// The values.
     values: Vec<HeapValue>,
-    /// The memo cells.
-    cells: Vec<MemoState>,
     /// The producer bindings of every environment chain.
     value_bindings: Vec<ValueBinding>,
-    /// The covalue bindings of every environment chain.
-    covalue_bindings: Vec<CovalueBinding>,
-    /// The frame region, bottom first.
-    frames: Vec<FrameEntry>,
-    /// The serial of the most recently pushed frame, or the base serial.
-    last_serial: FrameSerial,
-    /// The number of reset and handler delimiters in the active frame region.
-    delimiters: usize,
-    /// The highest the frame region has stood since the store was made.
-    peak: usize,
 }
 
 impl Store
@@ -666,7 +220,7 @@ impl Store
         Self::default()
     }
 
-    /// Allocate a value in the heap region.
+    /// Allocate a value.
     ///
     /// # Specification
     /// - requires: every address `value` names was allocated by this store.
@@ -738,257 +292,12 @@ impl Store
         id.read_in(&self.values)
     }
 
-    /// Allocate a fresh unforced memo cell.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: on success a fresh address, above every cell address already
-    ///   allocated, whose state is [`MemoState::Unforced`].
-    /// - provides: the nominal identity of a thunk's memo.
-    /// - fails: [`StoreFault::RegionFull`] at the address ceiling, the store
-    ///   unchanged.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — dense fresh allocation and aliasing exactly by
-    ///   address separate nominal identity from structural identity.
-    /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
-    /// - witness: `tests::csl_fibration::nominal_identity_freshness_and_alias_coherence`
-    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
-    #[inline]
-    #[spec(
-        captures: [entry = self.cells.len()],
-        ensures: |ret| match ret {
-            | Ok(id) => usize::try_from(u32::from(id)) == Ok(entry)
-                && entry.checked_add(1) == Some(self.cells.len())
-                && self.cell(id) == Some(MemoState::Unforced),
-            | Err(error) => error == StoreFault::RegionFull(HeapFamily::Cells)
-                && self.cells.len() == entry,
-        },
-    )]
-    pub fn allocate_cell(&mut self) -> Result<CellId, StoreFault>
-    {
-        let id = CellId::next_in(&self.cells).ok_or(StoreFault::RegionFull(HeapFamily::Cells))?;
-        self.cells.push(MemoState::Unforced);
-        Ok(id)
-    }
-
-    /// The state of a cell, or `None` when the address dangles.
-    ///
-    /// # Specification
-    /// - requires: nothing; a dangling address is admissible.
-    /// - ensures: `Some(state)` exactly when the store allocated the cell.
-    /// - provides: the read side of the cell family.
-    /// - fails: `None` on a dangling address.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — empty and exact-end addresses are absent, while two
-    ///   cells in different states retain their individual identity. Wrong
-    ///   offsets and fabricated default states change the observer.
-    /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
-    /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| ret == usize::try_from(u32::from(id)).ok()
-        .and_then(|offset| self.cells.get(offset)).copied()
-    )]
-    pub fn cell(
-        &self,
-        id: CellId,
-    ) -> Option<MemoState>
-    {
-        id.read_in(&self.cells).copied()
-    }
-
-    /// Open a force on a cell.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: [`ForceEntry::Cached`] with the cached value for a forced
-    ///   cell; [`ForceEntry::Opened`] for an unforced cell, which is now in
-    ///   progress; [`ForceEntry::Reentrant`] for a cell already in progress,
-    ///   which is unchanged. No other cell changes.
-    /// - provides: the entry of the call-by-need protocol and its black hole.
-    /// - fails: [`StoreFault::DanglingCell`], the store unchanged.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the three states separate the three entries; the
-    ///   generated traces assert that no other cell changes.
-    /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
-    /// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
-    /// - witness: `tests::csl_fibration::frame_preservation_under_forcing`
-    /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
-    #[inline]
-    #[spec(
-        captures: [entry = self.cell(cell)],
-        ensures: |ret| match entry {
-            | None => ret == Err(StoreFault::DanglingCell(cell)) && self.cell(cell).is_none(),
-            | Some(MemoState::Unforced) => ret == Ok(ForceEntry::Opened)
-                && self.cell(cell) == Some(MemoState::InProgress),
-            | Some(MemoState::InProgress) => ret == Ok(ForceEntry::Reentrant)
-                && self.cell(cell) == entry,
-            | Some(MemoState::Forced(value)) => ret == Ok(ForceEntry::Cached(value))
-                && self.cell(cell) == entry,
-        },
-    )]
-    pub fn begin_force(
-        &mut self,
-        cell: CellId,
-    ) -> Result<ForceEntry, StoreFault>
-    {
-        let state = self.cell_mut(cell)?;
-        match *state {
-            MemoState::Forced(value) => Ok(ForceEntry::Cached(value)),
-            MemoState::InProgress => Ok(ForceEntry::Reentrant),
-            MemoState::Unforced => {
-                *state = MemoState::InProgress;
-                Ok(ForceEntry::Opened)
-            },
-        }
-    }
-
-    /// Write a forcing's value back to its cell.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the cell, in progress on entry, is [`MemoState::Forced`] with
-    ///   exactly `value`; no other cell changes.
-    /// - provides: the write-back that makes a second force a cache hit.
-    /// - fails: [`StoreFault::DanglingValue`] or [`StoreFault::DanglingCell`]
-    ///   for an address this store did not allocate, and
-    ///   [`StoreFault::CellNotInProgress`] for a cell unforced or already
-    ///   forced; the store is then unchanged.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a write-back to a cell in progress, and one to a cell
-    ///   in each other state, separate the transition from its refusals.
-    /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
-    /// - witness: `tests::csl_fibration::write_back_purity_caches_the_exact_probe_allocation`
-    /// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
-    /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
-    #[inline]
-    #[spec(
-        captures: [entry = self.cell(cell)],
-        ensures: |ret| if self.value(value).is_none() {
-            ret == Err(StoreFault::DanglingValue(value)) && self.cell(cell) == entry
-        } else { match entry {
-            | None => ret == Err(StoreFault::DanglingCell(cell)) && self.cell(cell).is_none(),
-            | Some(MemoState::InProgress) => ret.is_ok()
-                && self.cell(cell) == Some(MemoState::Forced(value)),
-            | Some(found) => ret == Err(StoreFault::CellNotInProgress { cell, found })
-                && self.cell(cell) == entry,
-        } },
-    )]
-    pub fn write_back(
-        &mut self,
-        cell: CellId,
-        value: HeapValueId,
-    ) -> Result<(), StoreFault>
-    {
-        if self.value(value).is_none() {
-            return Err(StoreFault::DanglingValue(value));
-        }
-        let state = self.cell_mut(cell)?;
-        if *state != MemoState::InProgress {
-            return Err(StoreFault::CellNotInProgress {
-                cell,
-                found: *state,
-            });
-        }
-        *state = MemoState::Forced(value);
-        Ok(())
-    }
-
-    /// Decline a forcing: return its cell to unforced.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the cell, in progress on entry, is [`MemoState::Unforced`];
-    ///   no other cell changes.
-    /// - provides: the release of a black hole whose forcing was abandoned.
-    /// - fails: [`StoreFault::DanglingCell`], and
-    ///   [`StoreFault::CellNotInProgress`] for a cell not in progress; the
-    ///   store is then unchanged.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — each memo state and a missing cell separate
-    ///   successful release, wrong-state refusal and dangling refusal. Exact
-    ///   error payloads and post-states expose a cleared cache or an unreleased
-    ///   black hole.
-    /// - witness: `store::tests::frames_shrink_to_a_mark`
-    /// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
-    /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
-    #[inline]
-    #[spec(
-        captures: [entry = self.cell(cell)],
-        ensures: |ret| match entry {
-            | None => ret == Err(StoreFault::DanglingCell(cell)) && self.cell(cell).is_none(),
-            | Some(MemoState::InProgress) => ret.is_ok() && self.cell(cell) == Some(MemoState::Unforced),
-            | Some(found) => ret == Err(StoreFault::CellNotInProgress { cell, found })
-                && self.cell(cell) == entry,
-        },
-    )]
-    pub fn decline(
-        &mut self,
-        cell: CellId,
-    ) -> Result<(), StoreFault>
-    {
-        let state = self.cell_mut(cell)?;
-        if *state != MemoState::InProgress {
-            return Err(StoreFault::CellNotInProgress {
-                cell,
-                found: *state,
-            });
-        }
-        *state = MemoState::Unforced;
-        Ok(())
-    }
-
-    /// The number of values allocated.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn value_count(&self) -> NodeCount
-    {
-        NodeCount::from(self.values.len())
-    }
-
-    /// The number of cells allocated.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn cell_count(&self) -> NodeCount
-    {
-        NodeCount::from(self.cells.len())
-    }
-
     /// Extend an environment's producer chain with one binding.
     ///
     /// # Specification
     /// - requires: `value` and the chain were allocated by this store.
-    /// - ensures: on success an environment whose producer index `0` reads
-    ///   `value` and whose index `i + 1` reads what index `i` read in
-    ///   `environment`; the covalue chain is unchanged.
+    /// - ensures: on success an environment whose walk reads `value` first and
+    ///   then what `environment`'s walk reads.
     /// - provides: the one way a producer variable is bound.
     /// - fails: [`StoreFault::RegionFull`], the store unchanged.
     /// - panics: none.
@@ -997,16 +306,14 @@ impl Store
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a lookup at index `0` and at index `1` after two
-    ///   bindings, and past the chain, separate the shift from the base.
+    /// - hypothesis: L3 — two bindings walked from the inner and from the outer
+    ///   environment separate the shift from the base.
     /// - witness: `store::tests::environments_bind_innermost_first`
-    /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
     #[inline]
     #[spec(
         captures: [entry = self.value_bindings.len()],
         ensures: |ret| match ret {
-            | Ok(extended) => extended.covalues == environment.covalues
-                && entry.checked_add(1) == Some(self.value_bindings.len())
+            | Ok(extended) => entry.checked_add(1) == Some(self.value_bindings.len())
                 && match extended.values {
                     | ValueScope::Empty => false,
                     | ValueScope::Innermost(id) => usize::try_from(u32::from(id)) == Ok(entry)
@@ -1031,387 +338,17 @@ impl Store
         });
         Ok(Environment {
             values: ValueScope::Innermost(id),
-            linears: environment.linears,
-            covalues: environment.covalues,
         })
-    }
-
-    /// Extend an environment's covalue chain with one binding.
-    ///
-    /// # Specification
-    /// - requires: the chain was allocated by this store.
-    /// - ensures: on success an environment whose covariable index `0` reads
-    ///   `continuation` and whose index `i + 1` reads what index `i` read in
-    ///   `environment`; the producer chain is unchanged.
-    /// - provides: the one way a covariable is bound.
-    /// - fails: [`StoreFault::RegionFull`], the store unchanged.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — empty and two-element chains, distinct payloads,
-    ///   exact-end indices and dangling links distinguish reversed order, an
-    ///   off-by-one index and accidental coupling of the two namespaces.
-    /// - witness: `store::tests::environments_bind_innermost_first`
-    /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
-    #[inline]
-    #[spec(
-        captures: [entry = self.covalue_bindings.len()],
-        ensures: |ret| match ret {
-            | Ok(extended) => extended.values == environment.values
-                && entry.checked_add(1) == Some(self.covalue_bindings.len())
-                && match extended.covalues {
-                    | CovalueScope::Empty => false,
-                    | CovalueScope::Innermost(id) => usize::try_from(u32::from(id)) == Ok(entry)
-                        && id.read_in(&self.covalue_bindings).is_some_and(|binding|
-                            binding.continuation == continuation && binding.outer == environment.covalues),
-                },
-            | Err(error) => error == StoreFault::RegionFull(HeapFamily::CovalueBindings)
-                && self.covalue_bindings.len() == entry,
-        },
-    )]
-    pub fn bind_covalue(
-        &mut self,
-        environment: Environment,
-        continuation: Covalue,
-    ) -> Result<Environment, StoreFault>
-    {
-        let id = CovalueBindingId::next_in(&self.covalue_bindings)
-            .ok_or(StoreFault::RegionFull(HeapFamily::CovalueBindings))?;
-        self.covalue_bindings.push(CovalueBinding {
-            continuation,
-            outer: environment.covalues,
-        });
-        Ok(Environment {
-            values: environment.values,
-            linears: environment.linears,
-            covalues: CovalueScope::Innermost(id),
-        })
-    }
-
-    /// Extend an environment's linear chain with one binding.
-    ///
-    /// # Specification
-    /// - requires: `value` and the chain were allocated by this store.
-    /// - ensures: on success the environment whose linear index `0` reads the
-    ///   fresh binding, holding `value`, and whose index `i + 1` reads what
-    ///   index `i` read in `environment`, beside the binding's address; the
-    ///   producer and covalue chains are unchanged.
-    /// - provides: the one way a held value or a view is bound.
-    /// - fails: [`StoreFault::RegionFull`], the store unchanged.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a linear binding is read at its own index past an
-    ///   intuitionistic one, and a write through it is read back while the
-    ///   other chain is unchanged.
-    /// - witness: `store::tests::a_linear_binding_is_written_in_place`
-    #[inline]
-    #[spec(
-        captures: [entry = self.value_bindings.len()],
-        ensures: |ret| match ret {
-            | Ok((extended, id)) => extended.values == environment.values
-                && extended.covalues == environment.covalues
-                && extended.linears == ValueScope::Innermost(id)
-                && entry.checked_add(1) == Some(self.value_bindings.len())
-                && self.linear(id) == Some(value),
-            | Err(error) => error == StoreFault::RegionFull(HeapFamily::ValueBindings)
-                && self.value_bindings.len() == entry,
-        },
-    )]
-    pub fn bind_linear(
-        &mut self,
-        environment: Environment,
-        value: HeapValueId,
-    ) -> Result<(Environment, ValueBindingId), StoreFault>
-    {
-        let id = ValueBindingId::next_in(&self.value_bindings)
-            .ok_or(StoreFault::RegionFull(HeapFamily::ValueBindings))?;
-        self.value_bindings.push(ValueBinding {
-            value,
-            outer: environment.linears,
-        });
-        Ok((
-            Environment {
-                values: environment.values,
-                linears: ValueScope::Innermost(id),
-                covalues: environment.covalues,
-            },
-            id,
-        ))
-    }
-
-    /// The linear binding an index reads in an environment, or `None` when
-    /// the index counts past its chain.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the binding `index` links out from the innermost of the
-    ///   linear chain; `None` past the chain or at a dangling link.
-    /// - provides: linear variable lookup, iterative over the chain.
-    /// - fails: `None`, the one reason an unbound index.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a linear binding is read at its own index past an
-    ///   intuitionistic one, and a write through it is read back while the
-    ///   other chain is unchanged.
-    /// - witness: `store::tests::a_linear_binding_is_written_in_place`
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| ret.is_none_or(|id| self.linear(id).is_some()))]
-    pub fn lookup_linear(
-        &self,
-        environment: Environment,
-        index: DeBruijnIndex,
-    ) -> Option<ValueBindingId>
-    {
-        let mut scope = environment.linears;
-        let mut remaining = u32::from(index);
-        loop {
-            let ValueScope::Innermost(id) = scope
-            else {
-                return None;
-            };
-            let binding = id.read_in(&self.value_bindings)?;
-            let Some(next) = remaining.checked_sub(1)
-            else {
-                return Some(id);
-            };
-            remaining = next;
-            scope = binding.outer;
-        }
-    }
-
-    /// The value a linear binding holds now.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn linear(
-        &self,
-        id: ValueBindingId,
-    ) -> Option<HeapValueId>
-    {
-        id.read_in(&self.value_bindings)
-            .map(|binding| binding.value)
-    }
-
-    /// Write `value` into a linear binding: an access's write-back.
-    ///
-    /// # Specification
-    /// - requires: `value` was allocated by this store.
-    /// - ensures: on success the binding holds `value`, which every environment
-    ///   sharing it reads; nothing else changes.
-    /// - fails: [`StoreFault::DanglingBinding`], the store unchanged.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a linear binding is read at its own index past an
-    ///   intuitionistic one, and a write through it is read back while the
-    ///   other chain is unchanged.
-    /// - witness: `store::tests::a_linear_binding_is_written_in_place`
-    #[inline]
-    #[spec(ensures: |ret| ret.is_err() || self.linear(id) == Some(value))]
-    pub fn write_linear(
-        &mut self,
-        id: ValueBindingId,
-        value: HeapValueId,
-    ) -> Result<(), StoreFault>
-    {
-        let binding = usize::try_from(u32::from(id))
-            .ok()
-            .and_then(|offset| self.value_bindings.get_mut(offset))
-            .ok_or(StoreFault::DanglingBinding(id))?;
-        binding.value = value;
-        Ok(())
-    }
-
-    /// Record how a view ends on its access's frame: the nearest
-    /// [`Frame::Access`] naming `view`, searched from the top of the region.
-    /// Returns that frame's position, counted from the bottom.
-    ///
-    /// # Specification
-    /// - requires: `ending` is not [`Ending::Open`].
-    /// - ensures: on success the frame at the returned position names `view`
-    ///   and records `ending`; nothing else changes. A replayed stack's copy of
-    ///   the frame is found the same way, so a resumed capture still ends its
-    ///   own access.
-    /// - fails: [`StoreFault::NoAccess`] when no frame names `view`;
-    ///   [`StoreFault::Ended`] when the frame records an ending already; the
-    ///   store is then unchanged.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a view ends once, a second ending and an ending with
-    ///   no frame are refused by name, and of two accesses the inner view ends
-    ///   the upper frame.
-    /// - witness: `store::tests::a_view_ends_once_on_its_own_frame`
-    #[inline]
-    #[spec(captures: height = self.frames.len(), ensures: |ret| self.frames.len() == height
-        && ret.as_ref().map_or(true, |&at| matches!(
-            self.frames.get(usize::from(at)),
-            Some(entry) if matches!(entry.frame, Frame::Access { view: found, ending: recorded, .. } if found == view && recorded == ending)
-        )))]
-    pub fn settle(
-        &mut self,
-        view: ValueBindingId,
-        ending: Ending,
-    ) -> Result<FrameHeight, StoreFault>
-    {
-        let (at, recorded) = self
-            .frames
-            .iter_mut()
-            .enumerate()
-            .rev()
-            .find_map(|(at, entry)| match entry.frame {
-                Frame::Access {
-                    view: found,
-                    ref mut ending,
-                    ..
-                } if found == view => Some((at, ending)),
-                Frame::Reset
-                | Frame::Handler { .. }
-                | Frame::DeclinedUpdate
-                | Frame::Destructor { .. }
-                | Frame::Bind { .. }
-                | Frame::Case { .. }
-                | Frame::ListFold { .. }
-                | Frame::Select { .. }
-                | Frame::Update { .. }
-                | Frame::Access { .. }
-                | Frame::Answer { .. } => None,
-            })
-            .ok_or(StoreFault::NoAccess(view))?;
-        if *recorded != Ending::Open {
-            return Err(StoreFault::Ended {
-                view,
-                found: *recorded,
-            });
-        }
-        *recorded = ending;
-        Ok(FrameHeight::from(at))
-    }
-
-    /// The value a producer index reads in an environment, or `None` when the
-    /// index counts past its chain.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the value of the binding `index` links out from the
-    ///   innermost; `None` past the chain or at a dangling link.
-    /// - provides: variable lookup, iterative over the chain.
-    /// - fails: `None`, the one reason an unbound index.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — empty and two-element chains, distinct payloads,
-    ///   exact-end indices and dangling links distinguish reversed order, an
-    ///   off-by-one index and accidental coupling of the two namespaces.
-    /// - witness: `store::tests::environments_bind_innermost_first`
-    /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| ret == usize::try_from(u32::from(index)).ok()
-        .and_then(|offset| self.bound_values(environment).nth(offset))
-    )]
-    pub fn lookup_value(
-        &self,
-        environment: Environment,
-        index: DeBruijnIndex,
-    ) -> Option<HeapValueId>
-    {
-        let mut scope = environment.values;
-        let mut remaining = u32::from(index);
-        loop {
-            let ValueScope::Innermost(id) = scope
-            else {
-                return None;
-            };
-            let binding = id.read_in(&self.value_bindings)?;
-            let Some(next) = remaining.checked_sub(1)
-            else {
-                return Some(binding.value);
-            };
-            remaining = next;
-            scope = binding.outer;
-        }
-    }
-
-    /// The continuation a covariable index reads in an environment, or `None`
-    /// when the index counts past its chain.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the mark of the binding `index` links out from the innermost;
-    ///   `None` past the chain or at a dangling link.
-    /// - provides: covariable lookup, iterative over the chain.
-    /// - fails: `None`, the one reason an unbound index.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — empty and two-element chains, distinct payloads,
-    ///   exact-end indices and dangling links distinguish reversed order, an
-    ///   off-by-one index and accidental coupling of the two namespaces.
-    /// - witness: `store::tests::environments_bind_innermost_first`
-    /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| ret == usize::try_from(u32::from(index)).ok()
-        .and_then(|offset| core::iter::successors(
-            match environment.covalues {
-                | CovalueScope::Empty => None,
-                | CovalueScope::Innermost(id) => id.read_in(&self.covalue_bindings),
-            },
-            |binding| match binding.outer {
-                | CovalueScope::Empty => None,
-                | CovalueScope::Innermost(id) => id.read_in(&self.covalue_bindings),
-            },
-        ).nth(offset).map(|binding| binding.continuation))
-    )]
-    pub fn lookup_covalue(
-        &self,
-        environment: Environment,
-        index: CovariableIndex,
-    ) -> Option<Covalue>
-    {
-        let mut scope = environment.covalues;
-        let mut remaining = u32::from(index);
-        loop {
-            let CovalueScope::Innermost(id) = scope
-            else {
-                return None;
-            };
-            let binding = id.read_in(&self.covalue_bindings)?;
-            let Some(next) = remaining.checked_sub(1)
-            else {
-                return Some(binding.continuation);
-            };
-            remaining = next;
-            scope = binding.outer;
-        }
     }
 
     /// The values an environment's producer chain binds, innermost first.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the `i`-th item is what [`Self::lookup_value`] reads at index
-    ///   `i`; the walk ends past the chain or at a dangling link.
+    /// - ensures: the `i`-th item is the value bound `i` links out from the
+    ///   innermost; the walk ends past the chain or at a dangling link.
     /// - provides: the closing substitution a readback builds from a captured
-    ///   environment, in one pass rather than one lookup per index.
+    ///   environment, in one pass.
     /// - fails: never; a dangling link ends the walk.
     /// - panics: none.
     /// - executable: none — anodized cannot instrument a postcondition on this
@@ -1420,11 +357,11 @@ impl Store
     ///   would change the public API.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — empty and two-element chains, distinct payloads,
-    ///   exact-end indices and dangling links distinguish reversed order, an
-    ///   off-by-one index and accidental coupling of the two namespaces.
+    /// - hypothesis: L3 — empty and two-element chains, distinct payloads and a
+    ///   dangling link distinguish reversed order, a dropped binding and a walk
+    ///   past the chain.
     /// - witness: `store::tests::environments_bind_innermost_first`
-    /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
+    /// - witness: `store::tests::a_dangling_chain_binds_nothing`
     #[inline]
     pub fn bound_values(
         &self,
@@ -1441,398 +378,6 @@ impl Store
             scope = binding.outer;
             Some(binding.value)
         })
-    }
-
-    /// Push a frame under a fresh serial.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the region is one frame higher, `frame` on top, under a
-    ///   serial above every serial already used.
-    /// - provides: the one push of the frame region.
-    /// - fails: [`StoreFault::SerialsExhausted`], the store unchanged.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a mark taken over a popped and re-pushed height is
-    ///   refused as stale, which only fresh serials make observable.
-    /// - witness: `store::tests::frames_shrink_to_a_mark`
-    /// - witness: `store::tests::frame_serial_exhaustion_preserves_the_region`
-    #[inline]
-    #[spec(
-        captures: [height = self.frames.len(), serial = self.last_serial],
-        ensures: |ret| match ret {
-            | Ok(()) => height.checked_add(1) == Some(self.frames.len())
-                && usize::from(serial).checked_add(1) == Some(usize::from(self.last_serial))
-                && self.mark().serial == self.last_serial,
-            | Err(error) => error == StoreFault::SerialsExhausted
-                && self.frames.len() == height && self.last_serial == serial,
-        },
-    )]
-    pub fn push_frame(
-        &mut self,
-        frame: Frame,
-    ) -> Result<(), StoreFault>
-    {
-        let serial = usize::from(self.last_serial)
-            .checked_add(1)
-            .map(FrameSerial::from)
-            .ok_or(StoreFault::SerialsExhausted)?;
-        self.frames.push(FrameEntry { frame, serial });
-        self.delimiters = self.delimiters.saturating_add(frame.delimiters().0);
-        self.last_serial = serial;
-        self.peak = self.peak.max(self.frames.len());
-        Ok(())
-    }
-
-    /// Pop the top frame, or `None` at the base.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the region is one frame lower and the popped frame is
-    ///   returned; `None` on an empty region, which is unchanged.
-    /// - provides: the one pop of the frame region.
-    /// - fails: `None`, the one reason an empty region.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — distinct stacked frames are popped in reverse order,
-    ///   then the empty region answers absence. Marks observe height and serial
-    ///   preservation, separating bottom-pop, repeated-pop and serial reuse.
-    /// - witness: `store::tests::frame_serial_exhaustion_preserves_the_region`
-    /// - witness: `store::tests::frames_shrink_to_a_mark`
-    #[inline]
-    #[spec(
-        captures: [height = self.frames.len(), serial = self.last_serial],
-        ensures: |ref ret| self.frames.len() == height.saturating_sub(1)
-            && ret.is_some() == (height != 0) && self.last_serial == serial,
-    )]
-    pub fn pop_frame(&mut self) -> Option<Frame>
-    {
-        let entry = self.frames.pop()?;
-        self.delimiters = self.delimiters.saturating_sub(entry.frame.delimiters().0);
-        Some(entry.frame)
-    }
-
-    /// The continuation the region currently is.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the current height with the top frame's serial, or
-    ///   [`ContinuationMark::BASE`] on an empty region.
-    /// - provides: the mark a covariable binds.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — base, two distinct live heights and a popped/replaced
-    ///   height observe both mark fields. Stale-mark rejection distinguishes
-    ///   serial reuse from a mark based only on height.
-    /// - witness: `store::tests::frames_shrink_to_a_mark`
-    /// - witness: `store::tests::frame_serial_exhaustion_preserves_the_region`
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| ret.height == FrameHeight::from(self.frames.len())
-        && ret.serial == self.frames.last().map_or(FrameSerial::BASE, |entry| entry.serial)
-    )]
-    pub fn mark(&self) -> ContinuationMark
-    {
-        self.frames
-            .last()
-            .map_or(ContinuationMark::BASE, |entry| ContinuationMark {
-                height: FrameHeight::from(self.frames.len()),
-                serial: entry.serial,
-            })
-    }
-
-    /// The frame region's height.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn frame_height(&self) -> FrameHeight
-    {
-        FrameHeight::from(self.frames.len())
-    }
-
-    /// The highest the frame region has stood since the store was made: the
-    /// most continuation any run on it held at once.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the largest height any push left, never below the current
-    ///   height.
-    /// - provides: the observation that a tail call runs in constant
-    ///   continuation.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — three pushes shrunk to a mark of one leave a peak of
-    ///   three, distinguishing the peak from the current height.
-    /// - witness: `store::tests::frames_shrink_to_a_mark`
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| usize::from(ret) >= self.frames.len())]
-    pub fn peak_height(&self) -> FrameHeight
-    {
-        FrameHeight::from(self.peak)
-    }
-
-    /// The frames, bottom first: the walkable continuation.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn frames(&self) -> impl DoubleEndedIterator<Item = &Frame> + ExactSizeIterator
-    {
-        self.frames.iter().map(|entry| &entry.frame)
-    }
-
-    /// Shrink the frame region to a continuation mark.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: on success the region's height is the mark's, the frames
-    ///   below it are untouched, and every update frame dropped has declined
-    ///   its cell to [`MemoState::Unforced`].
-    /// - provides: returning through a covariable: the continuation it names
-    ///   becomes the current one.
-    /// - fails: [`StoreFault::StaleMark`] when the mark's height exceeds the
-    ///   region or the frame at its height is not the one it named, the store
-    ///   unchanged; a decline's own refusal, at the first dropped update frame
-    ///   whose cell is not in progress.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a live mark below the top, a stale mark over a
-    ///   re-pushed height, and a dropped update frame separate the shrink, its
-    ///   refusal and its decline.
-    /// - witness: `store::tests::frames_shrink_to_a_mark`
-    /// - witness: `store::tests::shrinking_rejects_stale_marks_and_reports_dropped_update_faults`
-    #[inline]
-    #[spec(
-        captures: [entry = self.mark()],
-        ensures: |ret| match ret {
-            | Ok(()) => self.mark() == mark,
-            | Err(StoreFault::StaleMark(found)) => found == mark && self.mark() == entry,
-            | Err(_) => self.frames.len() >= usize::from(mark.height)
-                && self.frames.len() < usize::from(entry.height),
-        },
-    )]
-    pub fn shrink_to(
-        &mut self,
-        mark: ContinuationMark,
-    ) -> Result<(), StoreFault>
-    {
-        let height = usize::from(mark.height);
-        let below = match height.checked_sub(1) {
-            None => FrameSerial::BASE,
-            Some(offset) => self
-                .frames
-                .get(offset)
-                .map(|entry| entry.serial)
-                .ok_or(StoreFault::StaleMark(mark))?,
-        };
-        if below != mark.serial {
-            return Err(StoreFault::StaleMark(mark));
-        }
-        while self.frames.len() > height {
-            let Some(entry) = self.frames.pop()
-            else {
-                break;
-            };
-            self.delimiters = self.delimiters.saturating_sub(entry.frame.delimiters().0);
-            if let Frame::Update { cell } = entry.frame {
-                self.decline(cell)?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Choose a local return target without capturing the ambient continuation
-    /// twice.
-    ///
-    /// # Specification
-    /// - ensures: returns are relocatable exactly while a delimiter is active.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — resuming under a projection distinguishes an ambient
-    ///   tail from a stale absolute mark or a duplicated continuation.
-    /// - witness: `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`
-    #[spec(ensures: |ret| ret == if self.delimiters == 0 { Covalue::Pinned(mark) } else { Covalue::FallThrough })]
-    #[must_use]
-    #[inline]
-    pub fn return_continuation(
-        &self,
-        mark: ContinuationMark,
-    ) -> Covalue
-    {
-        if self.delimiters == 0 {
-            Covalue::Pinned(mark)
-        }
-        else {
-            Covalue::FallThrough
-        }
-    }
-
-    /// The live mark immediately below the frame at `height`.
-    ///
-    /// # Specification
-    /// - ensures: a present mark has the requested height and its live serial.
-    /// - fails: absence only when the height is beyond the active region.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — an empty prefix and a nested delimiter separate the
-    ///   bounds.
-    /// - witness: `machine::tests::hand_built_shift_cases_agree`
-    #[spec(ensures: |ret| ret.is_some() == (usize::from(height) <= self.frames.len()) && ret.is_none_or(|mark| mark.height == height))]
-    #[must_use]
-    #[inline]
-    pub fn mark_below(
-        &self,
-        height: FrameHeight,
-    ) -> Option<ContinuationMark>
-    {
-        usize::from(height)
-            .checked_sub(1)
-            .map_or(Some(ContinuationMark::BASE), |index| {
-                self.frames.get(index).map(|entry| ContinuationMark {
-                    height,
-                    serial: entry.serial,
-                })
-            })
-    }
-
-    /// Cancel memo writes crossed by an operation or a captured continuation.
-    ///
-    /// # Specification
-    /// - ensures: no update above `base` remains armed after success; frame
-    ///   identities and order are retained, so existing marks remain valid.
-    /// - fails: a stale prefix or an invalid update cell.
-    ///
-    /// # Errors
-    /// Returns the stale-mark or invalid-cell fault without discarding frames.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — repeated forces after a host operation must execute
-    ///   again, and both resumptions of a captured force must deliver their own
-    ///   values.
-    /// - witness: `machine::tests::hand_built_effect_cases_agree`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body walks every frame above the base once; the check reads each once more"
-        )
-    )]
-    #[spec(captures: height = self.frame_height(), ensures: |ret| self.frame_height() == height && (ret.is_err() || self.frames.iter().skip(usize::from(base.height)).all(|entry| !matches!(entry.frame, Frame::Update { .. }))))]
-    #[inline]
-    pub fn cancel_updates(
-        &mut self,
-        base: ContinuationMark,
-    ) -> Result<(), StoreFault>
-    {
-        if self.mark_below(base.height) != Some(base) {
-            return Err(StoreFault::StaleMark(base));
-        }
-        for index in usize::from(base.height) .. self.frames.len() {
-            let Some(entry) = self.frames.get(index)
-            else {
-                return Err(StoreFault::StaleMark(base));
-            };
-            if let Frame::Update { cell } = entry.frame {
-                self.decline(cell)?;
-                let Some(entry) = self.frames.get_mut(index)
-                else {
-                    return Err(StoreFault::StaleMark(base));
-                };
-                entry.frame = Frame::DeclinedUpdate;
-            }
-        }
-        Ok(())
-    }
-
-    /// Freeze and remove the delimited prefix above a live mark.
-    ///
-    /// # Specification
-    /// - ensures: the returned stack retains every frame in bottom-first order;
-    ///   the active region ends at `base` and no captured memo write remains
-    ///   armed.
-    /// - fails: a stale mark, exhausted heap, or an invalid update cell.
-    ///
-    /// # Errors
-    /// Returns a stale-mark, heap-capacity or invalid-cell fault.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — multi-shot resumption under a pending observation
-    ///   exposes destructive reuse and loss of the delimiter or ambient
-    ///   continuation.
-    /// - witness: `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`
-    #[spec(captures: height = usize::from(self.frame_height()), ensures: |ret| ret.is_err() || (self.frame_height() == base.height && ret.as_ref().is_ok_and(|&stack| matches!(self.value(stack), Some(HeapValue::Stack { frames }) if frames.len() == height.saturating_sub(usize::from(base.height)) && frames.iter().all(|frame| !matches!(frame, Frame::Update { .. }))))))]
-    #[inline]
-    pub fn capture(
-        &mut self,
-        base: ContinuationMark,
-    ) -> Result<HeapValueId, StoreFault>
-    {
-        let _next =
-            HeapValueId::next_in(&self.values).ok_or(StoreFault::RegionFull(HeapFamily::Values))?;
-        self.cancel_updates(base)?;
-        let frames = self
-            .frames
-            .get(usize::from(base.height) ..)
-            .ok_or(StoreFault::StaleMark(base))?
-            .iter()
-            .map(|entry| entry.frame)
-            .collect();
-        let captured = self.allocate(HeapValue::Stack { frames })?;
-        self.shrink_to(base)?;
-        Ok(captured)
-    }
-
-    /// The mutable state of a cell.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the cell's state, for in-place transition.
-    /// - provides: the one mutable read of the cell family.
-    /// - fails: [`StoreFault::DanglingCell`].
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — transition tests visit every memo state and a missing
-    ///   address. Exact cell state and error payload distinguish wrong-cell
-    ///   mutation and a fabricated state for a dangling cell.
-    /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
-    /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
-    #[spec(
-        captures: [entry = self.cell(cell)],
-        ensures: |ref ret| match *ret {
-            | Ok(ref state) => Some(**state) == entry,
-            | Err(error) => entry.is_none() && error == StoreFault::DanglingCell(cell),
-        },
-    )]
-    fn cell_mut(
-        &mut self,
-        cell: CellId,
-    ) -> Result<&mut MemoState, StoreFault>
-    {
-        usize::try_from(u32::from(cell))
-            .ok()
-            .and_then(|offset| self.cells.get_mut(offset))
-            .ok_or(StoreFault::DanglingCell(cell))
     }
 }
 

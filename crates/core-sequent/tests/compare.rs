@@ -99,7 +99,7 @@ pub fn same_value(
 ///   datatype constructor's datatype and a nominal match's motive are not
 ///   compared.
 /// - provides: equality independent of each arena's allocation history for the
-///   pure term fragment used by the focusing and machine suites.
+///   pure term fragment used by the focusing, run and differential suites.
 /// - panics: none.
 ///
 /// # Adequacy

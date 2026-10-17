@@ -1,3 +1,327 @@
+//! Focused commands run on the runtime's two tiers: emitted native code
+//! where this host has a patcher, the portable executor everywhere. Every
+//! run is made on each tier and the tiers' answers compared by structure;
+//! each test then states the answer it expects — a reading of the halted
+//! value, or the reason the run stopped stuck.
+
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use gandr_core_sequent::CommandArena;
+use gandr_core_sequent::CommandId;
+use gandr_core_sequent::CommandNode;
+use gandr_core_sequent::ConstructorResolver;
+use gandr_core_sequent::ConstructorTag;
+use gandr_core_sequent::ConsumerNode;
+use gandr_core_sequent::CovariableIndex;
+use gandr_core_sequent::Definition;
+use gandr_core_sequent::Definitions;
+use gandr_core_sequent::DestructorTag;
+use gandr_core_sequent::Environment;
+use gandr_core_sequent::FreeSet;
+use gandr_core_sequent::HeapValue;
+use gandr_core_sequent::HeapValueId;
+use gandr_core_sequent::Outcome;
+use gandr_core_sequent::PatternArm;
+use gandr_core_sequent::ProducerArity;
+use gandr_core_sequent::ProducerNode;
+use gandr_core_sequent::Provenance;
+use gandr_core_sequent::ReadbackRefusal;
+use gandr_core_sequent::Selector;
+use gandr_core_sequent::Store;
+use gandr_core_sequent::Stuck;
+use gandr_core_sequent::check_command;
+use gandr_core_sequent::focus_computation;
+use gandr_core_sequent::focus_value;
+use gandr_core_sequent::read_back_terminal;
+use gandr_core_sequent::read_back_value;
+use gandr_core_sequent::reify_command;
+use gandr_core_sequent::render_command;
+use gandr_core_sequent::unfocus_command;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
+use gandr_core_term::Zone;
+use gandr_core_term::memory::MemoryForm;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::IntegerLiteral;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::Magnitude;
+use gandr_kernel_term::Side;
+use gandr_kernel_term::Sign;
+use gandr_runtime_emitter::Declined;
+use gandr_runtime_emitter::Form;
+use gandr_runtime_emitter::Fuel;
+use gandr_runtime_emitter::PATCHER;
+use gandr_runtime_emitter::Status;
+use gandr_runtime_emitter::Tier;
+use gandr_runtime_emitter::TransferRefusal;
+use gandr_runtime_emitter::evaluate_on;
+use gandr_theory_cell_complexes::CmdPat;
+use gandr_theory_cell_complexes::ConsPat;
+use gandr_theory_cell_complexes::Polarity;
+use gandr_theory_cell_complexes::ProdPat;
+use gandr_theory_cell_complexes::Sym;
+
+/// The decimal digits of a test literal.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Digits(&'static str);
+
+/// The jumps a run may take: no test term comes near.
+///
+/// # Specification
+/// trivial.
+fn budget() -> Fuel
+{
+    Fuel::from(1_usize << 20)
+}
+
+/// A run's outcome and the store its values were moved into.
+struct Ran
+{
+    /// How the run ended.
+    outcome: Outcome,
+    /// The caller's store.
+    store: Store,
+}
+
+/// The tiers this host runs: native where a patcher exists, the executor
+/// everywhere.
+///
+/// # Specification
+/// trivial.
+fn tiers() -> &'static [Tier]
+{
+    if PATCHER {
+        &[Tier::Native, Tier::Executor]
+    }
+    else {
+        &[Tier::Executor]
+    }
+}
+
+/// One step of spelling a value: name its children first, then spell it
+/// from theirs.
+#[derive(Clone, Copy, Debug)]
+enum Spell
+{
+    /// Queue the value's children before it.
+    Enter(HeapValueId),
+    /// Spell the value; its children are spelled.
+    Write(HeapValueId),
+}
+
+/// The values `value` names directly: a constructed value's fields and a
+/// closure's bound values.
+///
+/// # Specification
+/// trivial.
+fn named(
+    store: &Store,
+    value: HeapValueId,
+) -> Vec<HeapValueId>
+{
+    match store.value(value) {
+        Some(&HeapValue::Constructed { ref fields, .. }) => fields.to_vec(),
+        Some(
+            &HeapValue::Thunk { environment, .. }
+            | &HeapValue::Fixpoint { environment, .. }
+            | &HeapValue::Closure { environment, .. },
+        ) => store.bound_values(environment).collect(),
+        None
+        | Some(
+            &HeapValue::Literal(_)
+            | &HeapValue::Opaque(_)
+            | &HeapValue::Capability
+            | &HeapValue::Stack { .. },
+        ) => Vec::new(),
+    }
+}
+
+/// The value `value` of `store`, spelled from its children's `spellings`.
+///
+/// # Specification
+/// trivial.
+fn spelled_from(
+    store: &Store,
+    value: HeapValueId,
+    spellings: &BTreeMap<HeapValueId, String>,
+) -> String
+{
+    let child = |held: HeapValueId| spellings.get(&held).cloned().unwrap_or_default();
+    let bound = |environment: Environment| {
+        store
+            .bound_values(environment)
+            .map(child)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    match store.value(value) {
+        None => String::from("dangling"),
+        Some(&HeapValue::Literal(ref literal)) => format!("{literal:?}"),
+        Some(&HeapValue::Constructed {
+            ref tag,
+            ref fields,
+        }) => {
+            let fields: Vec<String> = fields.iter().map(|&field| child(field)).collect();
+            format!("{tag:?}({})", fields.join(", "))
+        },
+        Some(&HeapValue::Thunk {
+            body, environment, ..
+        }) => format!("thunk {body:?} [{}]", bound(environment)),
+        Some(&HeapValue::Fixpoint {
+            body, environment, ..
+        }) => format!("fixpoint {body:?} [{}]", bound(environment)),
+        Some(&HeapValue::Closure {
+            producer,
+            environment,
+        }) => format!("closure {producer:?} [{}]", bound(environment)),
+        Some(
+            held @ (&HeapValue::Opaque(_) | &HeapValue::Capability | &HeapValue::Stack { .. }),
+        ) => {
+            format!("{held:?}")
+        },
+    }
+}
+
+/// The value `value` of `store`, spelled by structure, never by address.
+///
+/// # Specification
+/// trivial.
+fn spelled(
+    store: &Store,
+    value: HeapValueId,
+) -> String
+{
+    let mut spellings: BTreeMap<HeapValueId, String> = BTreeMap::new();
+    let mut work = Vec::from([Spell::Enter(value)]);
+    while let Some(step) = work.pop() {
+        match step {
+            Spell::Enter(held) if !spellings.contains_key(&held) => {
+                work.push(Spell::Write(held));
+                work.extend(named(store, held).into_iter().map(Spell::Enter));
+            },
+            Spell::Write(held) => {
+                let spelling = spelled_from(store, held, &spellings);
+                spellings.insert(held, spelling);
+            },
+            Spell::Enter(_) => {},
+        }
+    }
+    spellings.remove(&value).unwrap_or_default()
+}
+
+/// What a run answered, spelled so two stores' answers compare.
+///
+/// # Specification
+/// trivial.
+fn fingerprint(run: &Result<Ran, Declined>) -> String
+{
+    let (outcome, store) = match *run {
+        Err(ref declined) => return format!("declined {declined:?}"),
+        Ok(Ran {
+            ref outcome,
+            ref store,
+        }) => (outcome, store),
+    };
+    match *outcome {
+        Outcome::Halted(value) => format!("halted {}", spelled(store, value)),
+        Outcome::Stuck(ref stuck) => {
+            let held = match *stuck {
+                Stuck::Unobservable { value, .. }
+                | Stuck::Unmatched { value, .. }
+                | Stuck::NonScalar(value)
+                | Stuck::ResumedNonStack { value, .. } => spelled(store, value),
+                Stuck::PerformNoHandler(_)
+                | Stuck::ShiftNoReset(_)
+                | Stuck::Primitive(_)
+                | Stuck::UndefinedConstant(_)
+                | Stuck::CyclicConstant(_)
+                | Stuck::Unended(_) => String::new(),
+            };
+            format!("stuck {stuck:?}: {held}")
+        },
+    }
+}
+
+/// Run `root` on every tier this host has, assert the tiers' answers equal,
+/// and answer the executor's run.
+///
+/// # Specification
+/// trivial.
+fn ran(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+    fuel: Fuel,
+) -> Result<Ran, Declined>
+{
+    let mut runs: Vec<(Tier, Result<Ran, Declined>)> = tiers()
+        .iter()
+        .map(|&tier| {
+            let mut store = Store::new();
+            let outcome = evaluate_on(tier, arena, definitions, root, fuel, &mut store);
+            (tier, outcome.map(|outcome| Ran { outcome, store }))
+        })
+        .collect();
+    let (_, executor) = runs.pop().expect("the executor runs on every host");
+    let expected = fingerprint(&executor);
+    for &(tier, ref run) in &runs {
+        assert_eq!(
+            expected,
+            fingerprint(run),
+            "{tier:?} and the executor differ"
+        );
+    }
+    executor
+}
+
+/// Run `root` and answer the value it halted with and the store holding it.
+///
+/// # Specification
+/// trivial.
+fn halted(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+) -> (Store, HeapValueId)
+{
+    let Ran { outcome, store } = ran(arena, definitions, root, budget())
+        .unwrap_or_else(|declined| panic!("the run declined: {declined}"));
+    let Outcome::Halted(value) = outcome
+    else {
+        panic!("the run halts: {outcome:?}");
+    };
+    (store, value)
+}
+
+/// Run `root` and answer how it stopped stuck.
+///
+/// # Specification
+/// trivial.
+fn stuck(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+) -> (Store, Stuck)
+{
+    let Ran { outcome, store } = ran(arena, definitions, root, budget())
+        .unwrap_or_else(|declined| panic!("the run declined: {declined}"));
+    let Outcome::Stuck(stuck) = outcome
+    else {
+        panic!("the run sticks: {outcome:?}");
+    };
+    (store, stuck)
+}
+
+/// The partial application of `sub` to 19 halts with a function, which read
+/// back and applied to 7 answers 12.
 #[test]
 fn native_arithmetic_and_partial_application()
 {
@@ -6,68 +330,31 @@ fn native_arithmetic_and_partial_application()
         .iter()
         .copied()
         .find(|primitive| primitive.name().as_ref() == "sub")
-        .unwrap();
+        .expect("native sub");
     let value = sub.thunk(&mut core);
     let forced = core.computation_force(value);
     let first = integer(&mut core, Digits("19"));
     let partial = core.computation_application(forced, first);
     let mut arena = CommandArena::new();
-    let mut provenance = Provenance::new();
-    let command = focus_computation(&core, partial, &mut arena, &mut provenance).unwrap();
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let Outcome::Halted(value) = machine.run(command, budget()).unwrap()
-    else {
-        panic!("partial application halts with a closure");
-    };
-    let partial = machine.read_back(value, &mut core).unwrap();
+    let command = focus_computation(&core, partial, &mut arena, &mut Provenance::new())
+        .expect("a closed term focuses");
+    let (store, value) = halted(&arena, &Definitions::new(), command);
+    let partial =
+        read_back_terminal(&arena, &store, value, &mut core).expect("a function reads back");
     let second = integer(&mut core, Digits("7"));
     let saturated = core.computation_application(partial, second);
     assert_eq!(evaluated(&mut core, saturated), "⟨12 |+ ★⟩");
 }
-
-use alloc::string::String;
-
-use gandr_core_term::Computation;
-use gandr_kernel_term::IntegerLiteral;
-use gandr_kernel_term::Literal;
-use gandr_kernel_term::Magnitude;
-use gandr_kernel_term::Side;
-use gandr_kernel_term::Sign;
-
-use super::*;
-use crate::focus::Provenance;
-use crate::focus::focus_computation;
-use crate::focus::focus_value;
-use crate::pretty::render_command;
-use crate::readback::ReadbackRefusal;
-use crate::store::MemoState;
 
 /// A prelude spelling used by a native fixture.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 struct NativeName(&'static str);
 
-/// Apply a named prelude primitive to the supplied core values.
+/// Apply the prelude primitive `name` to `arguments`.
 ///
 /// # Specification
-/// - requires: the name occurs in the prelude and every argument resolves.
-/// - ensures: the resulting computation resolves in the same arena.
-/// - provides: the ordinary thunk, force and curried-application path.
-/// - panics: if the prelude does not contain the fixture's name.
-///
-/// # Adequacy
-/// - hypothesis: L3 — distinct integer operands and both boolean sides
-///   distinguish wrong primitive selection, dropped arguments and reversal.
-///   Evidence covers the named scalar fixtures, not arbitrary core values.
-/// - witness: `machine::tests::const_applied_returns_its_first_argument`
-/// - witness: `machine::tests::native_integer_addition_returns_sum`
-/// - witness: `machine::tests::native_boolean_and_returns_false`
-#[spec(
-        requires: gandr_core_term::primitive::PRELUDE.iter().any(|row| row.name().as_ref() == name.0)
-            && arguments.iter().all(|&argument| core.value(argument).is_some()),
-        ensures: |ret| core.computation(ret).is_some(),
-    )]
+/// trivial.
 fn native(
     core: &mut CoreArena,
     name: NativeName,
@@ -145,7 +432,7 @@ fn native_boolean_and_returns_false()
     assert_eq!(evaluated(&mut core, term), shown(&core, expected));
 }
 
-/// An admitted prelude thunk unfolds through the ordinary constant path.
+/// A prelude thunk admitted as a constant unfolds where it is forced.
 #[test]
 fn a_forced_prelude_name_resolves_to_its_builtin()
 {
@@ -157,67 +444,24 @@ fn a_forced_prelude_name_resolves_to_its_builtin()
     let thunk = primitive.thunk(&mut core);
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
-    let binding = focus_value(&core, thunk, &mut arena, &mut provenance).unwrap();
+    let binding = focus_value(&core, thunk, &mut arena, &mut provenance).expect("a thunk focuses");
     let mut definitions = Definitions::new();
     let constant = definitions.push(Definition::Transparent(binding));
     let reference = core.value_constant(constant);
     let forced = core.computation_force(reference);
     let argument = integer(&mut core, Digits("5"));
     let term = core.computation_application(forced, argument);
-    let root = focus_computation(&core, term, &mut arena, &mut provenance).unwrap();
-    let mut machine = Machine::new(&arena, &definitions);
-    let Outcome::Halted(value) = machine.run(root, budget()).unwrap()
-    else {
-        panic!("the forced prelude binding must return its argument");
-    };
-    let read = machine.read_back(value, &mut core).unwrap();
+    let root =
+        focus_computation(&core, term, &mut arena, &mut provenance).expect("a closed term focuses");
+    let (store, value) = halted(&arena, &definitions, root);
+    let read = read_back_terminal(&arena, &store, value, &mut core).expect("the answer reads back");
     assert_eq!(shown(&core, read), "⟨5 |+ ★⟩");
-}
-
-/// The decimal digits of a test literal.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct Digits(&'static str);
-
-/// A budget no test term comes near.
-///
-/// # Specification
-/// trivial.
-fn budget() -> StepCount
-{
-    StepCount::from(1_000_usize)
 }
 
 /// The non-negative integer literal `digits` in `core`.
 ///
 /// # Specification
-/// - requires: digits is a nonempty unsigned decimal spelling.
-/// - ensures: a core literal containing that nonnegative integer, in canonical
-///   decimal form.
-/// - provides: numeric input for the machine's semantic fixtures.
-/// - panics: on a malformed decimal spelling.
-///
-/// # Adequacy
-/// - hypothesis: L3 — nonnegative literals pass through return, binding and
-///   application with their expected numeric readings. Under enforcement the
-///   canonical payload is checked at construction, distinguishing the wrong
-///   sign, value or node kind. Invalid decimal spellings are outside these
-///   fixtures.
-/// - witness: `machine::tests::ret_is_a_terminal_value`
-/// - witness: `machine::tests::bind_threads_a_value`
-/// - witness: `machine::tests::application_binds_the_argument`
-#[spec(
-        requires: !digits.0.is_empty() && digits.0.bytes().all(|byte| byte.is_ascii_digit()),
-        ensures: |ret| match core.value(ret) {
-            | Some(&gandr_core_term::Value::Literal(Literal::Integer(ref integer))) => {
-                let significant = digits.0.trim_start_matches('0');
-                let expected = if significant.is_empty() { "0" } else { significant };
-                let actual: &str = integer.magnitude().as_ref();
-                integer.sign() == Sign::NonNegative && actual == expected
-            },
-            | _ => false,
-        },
-    )]
+/// trivial.
 fn integer(
     core: &mut CoreArena,
     digits: Digits,
@@ -233,76 +477,33 @@ fn integer(
 /// A core computation as the IL renders its focusing.
 ///
 /// # Specification
-/// - requires: computation is in the pure focusing domain.
-/// - ensures: the bounded IL rendering of its focused command.
-/// - provides: a semantic observation shared by machine fixtures.
-/// - panics: when focusing refuses the supplied term.
-///
-/// # Adequacy
-/// - hypothesis: L3 — exact return, binding and application readings
-///   distinguish omitted values, wrong binding and an incorrect focused
-///   command. Only supported finite fixture computations are rendered; this
-///   helper does not claim a lossless textual encoding.
-/// - witness: `machine::tests::ret_is_a_terminal_value`
-/// - witness: `machine::tests::bind_threads_a_value`
-/// - witness: `machine::tests::application_binds_the_argument`
-#[spec(requires: core.computation(computation).is_some(), ensures: |ref ret| ret.starts_with('⟨') && ret.ends_with('⟩'))]
+/// trivial.
 fn shown(
     core: &CoreArena,
     computation: ComputationId,
 ) -> String
 {
     let mut arena = CommandArena::new();
-    let mut provenance = Provenance::new();
-    let command = focus_computation(core, computation, &mut arena, &mut provenance)
+    let command = focus_computation(core, computation, &mut arena, &mut Provenance::new())
         .expect("a read-back term focuses");
     render_command(&arena, command)
 }
 
 /// Focus a closed computation, run it with no definitions, and show its
-/// terminal's readback.
+/// terminal's reading.
 ///
 /// # Specification
-/// - requires: a closed pure computation that halts within the fixture budget
-///   and whose terminal can be read back.
-/// - ensures: the bounded rendering of that terminal's core reading, retaining
-///   the source computation in the extended core arena.
-/// - provides: a full focus, execution, readback and display observation.
-/// - panics: on focusing, execution or readback failure, or a stuck run.
-///
-/// # Adequacy
-/// - hypothesis: L3 — return, binding, force, both case arms and application
-///   have exact terminal readings. These distinguish the wrong environment,
-///   branch and delivered value; captured function readings additionally
-///   observe closure. Only terminating pure fixtures within the fixed budget
-///   are covered.
-/// - witness: `machine::tests::ret_is_a_terminal_value`
-/// - witness: `machine::tests::bind_threads_a_value`
-/// - witness: `machine::tests::force_runs_a_thunk_body`
-/// - witness: `machine::tests::case_selects_the_matching_arm`
-/// - witness: `machine::tests::application_binds_the_argument`
-/// - witness: `machine::tests::a_function_terminal_reads_back_closed_over_its_environment`
-#[spec(requires: core.computation(computation).is_some(), ensures: |ref ret|
-        core.computation(computation).is_some() && ret.starts_with('⟨') && ret.ends_with('⟩'))]
+/// trivial.
 fn evaluated(
     core: &mut CoreArena,
     computation: ComputationId,
 ) -> String
 {
     let mut arena = CommandArena::new();
-    let mut provenance = Provenance::new();
-    let command = focus_computation(core, computation, &mut arena, &mut provenance)
+    let command = focus_computation(core, computation, &mut arena, &mut Provenance::new())
         .expect("a closed term focuses");
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let outcome = machine.run(command, budget()).expect("the run completes");
-    let Outcome::Halted(value) = outcome
-    else {
-        panic!("the run halts: {outcome:?}");
-    };
-    let back = machine
-        .read_back(value, core)
-        .expect("the terminal reads back");
+    let (store, value) = halted(&arena, &Definitions::new(), command);
+    let back = read_back_terminal(&arena, &store, value, core).expect("the terminal reads back");
     shown(core, back)
 }
 
@@ -317,21 +518,11 @@ enum ControlExpectation
     Shift,
 }
 
-/// Run the real focusing, scope check, machine and readback path.
+/// Focus `program`, check it is closed, run it on the tiers, and check its
+/// outcome against `expected`.
 ///
 /// # Specification
-/// - requires: a closed fixture whose expected observation is supplied.
-/// - ensures: the observed value or named source refusal equals that
-///   expectation.
-/// - panics: on a different value, refusal, free set or machine fault.
-///
-/// # Adequacy
-/// - hypothesis: L2 — independently built expected values separate control
-///   transfer from copying source syntax; refusals also inspect the blamed
-///   instruction.
-/// - witness: `machine::tests::hand_built_effect_cases_agree`
-/// - witness: `machine::tests::hand_built_shift_cases_agree`
-#[spec(ensures: core.computation(program).is_some())]
+/// trivial.
 fn assert_control(
     core: &mut CoreArena,
     program: ComputationId,
@@ -341,18 +532,13 @@ fn assert_control(
     let mut arena = CommandArena::new();
     let root = focus_computation(core, program, &mut arena, &mut Provenance::new())
         .expect("control focuses");
-    assert_eq!(
-        Ok(crate::FreeSet::default()),
-        crate::check_command(&arena, root)
-    );
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let outcome = machine.run(root, budget()).expect("bounded control run");
+    assert_eq!(Ok(FreeSet::default()), check_command(&arena, root));
+    let Ran { outcome, store } = ran(&arena, &Definitions::new(), root, budget())
+        .unwrap_or_else(|declined| panic!("the run declined: {declined}"));
     match (outcome, expected) {
         (Outcome::Halted(value), ControlExpectation::Value(expected)) => {
-            let actual = machine
-                .read_back_value(value, core)
-                .expect("literal result reads back");
+            let actual =
+                read_back_value(&arena, &store, value, core).expect("literal result reads back");
             assert_eq!(
                 gandr_core_term::CertificateEquality::Equal,
                 gandr_core_term::equal_certificate_syntax(core, actual, expected)
@@ -783,533 +969,6 @@ fn an_exercise_reaches_the_scope_that_introduced_its_capability()
     assert_control(&mut core, resuming, ControlExpectation::Value(five));
 }
 
-/// One independently expected host observation and its decision.
-struct Offer
-{
-    /// Qualified interface name.
-    signature: &'static str,
-    /// Operation within the interface.
-    operation: &'static str,
-    /// Closed source reading of the offered payload.
-    payload: ValueId,
-    /// Reply policy for this occurrence only.
-    answer: Answer,
-}
-
-/// The finite reply policy of a host fixture.
-enum Answer
-{
-    /// A newly allocated integer.
-    Integer(Digits),
-    /// A newly allocated unit.
-    Unit,
-    /// Preserve the offered heap identity, including thunk cells.
-    Payload,
-    /// Refuse this offer.
-    Decline,
-}
-
-/// An ordered oracle over actual runtime offers, not over source traversal.
-struct ScriptedHost<'core>
-{
-    /// Source arena also receives structural payload readbacks.
-    core: &'core mut CoreArena,
-    /// Every expected offer must occur once, in order.
-    offers: alloc::collections::VecDeque<Offer>,
-}
-
-impl HostHandler for ScriptedHost<'_>
-{
-    type Abort = core::convert::Infallible;
-
-    /// Check the observed payload before deciding its actual continuation.
-    ///
-    /// # Specification
-    /// - requires: the next offer and its payload equal the fixture's oracle.
-    /// - ensures: the prescribed reply is allocated in the running heap, or
-    ///   declined.
-    /// - panics: on missing, reordered or changed offers, or failed readback.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — payloads produced by earlier replies distinguish live
-    ///   execution from source inspection; captured thunks distinguish readback
-    ///   from copying.
-    /// - witness: `machine::tests::host_seam_offers_deep_re_entry_in_order`
-    /// - witness: `machine::tests::host_seam_higher_order_payload_reads_back_exactly`
-    #[spec(ensures: |ret| match ret { HostReply::Resume(value) => values.value(value).is_some(), HostReply::Decline => true, HostReply::Abort(never) => match never {} })]
-    fn handle(
-        &mut self,
-        request: HostRequest<'_>,
-        values: &mut HostValues<'_>,
-    ) -> HostReply<Self::Abort>
-    {
-        let expected = self.offers.pop_front().expect("no unsolicited host offer");
-        assert_eq!(
-            (expected.signature, expected.operation),
-            (
-                request.signature.name().as_ref(),
-                request.operation.as_ref()
-            )
-        );
-        assert!(
-            request
-                .signature
-                .types()
-                .all(|ty| values.annotations().value_type(ty).is_some()),
-            "the offered interface's types resolve among the host's annotations"
-        );
-        let actual = values
-            .read_back_value(request.payload, self.core)
-            .expect("closed payload reads back");
-        assert_eq!(
-            gandr_core_term::CertificateEquality::Equal,
-            gandr_core_term::equal_certificate_syntax(self.core, expected.payload, actual)
-        );
-        match expected.answer {
-            Answer::Integer(digits) => HostReply::Resume(
-                values
-                    .allocate(HeapValue::Literal(Literal::Integer(IntegerLiteral::new(
-                        Sign::NonNegative,
-                        Magnitude::from_decimal_text(String::from(digits.0))
-                            .expect("decimal reply"),
-                    ))))
-                    .expect("reply fits"),
-            ),
-            Answer::Unit => HostReply::Resume(
-                values
-                    .allocate(HeapValue::Constructed {
-                        tag: ConstructorTag::Tuple(ProducerArity::ZERO),
-                        fields: Box::new([]),
-                    })
-                    .expect("reply fits"),
-            ),
-            Answer::Payload => HostReply::Resume(request.payload),
-            Answer::Decline => HostReply::Decline,
-        }
-    }
-}
-
-#[test]
-fn host_abort_never_resumes_and_missing_replies_fault()
-{
-    /// The process exit status a host abort carries.
-    #[repr(transparent)]
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    struct ExitCode(u8);
-    struct ExitPolicy
-    {
-        reply: Option<HeapValueId>,
-        calls: usize,
-    }
-    impl HostHandler for ExitPolicy
-    {
-        type Abort = ExitCode;
-        /// Stop at Proc.exit, or deliberately supply an invalid reply.
-        ///
-        /// # Specification
-        /// trivial.
-        fn handle(
-            &mut self,
-            request: HostRequest<'_>,
-            values: &mut HostValues<'_>,
-        ) -> HostReply<Self::Abort>
-        {
-            self.calls += 1;
-            assert_eq!(
-                self.calls, 1,
-                "the continuation must not run after abort or fault"
-            );
-            assert_eq!(
-                (
-                    request.signature.name().as_ref(),
-                    request.operation.as_ref()
-                ),
-                ("Proc", "exit")
-            );
-            self.reply.map_or(HostReply::Abort(ExitCode(7)), |value| {
-                assert!(values.value(value).is_none());
-                HostReply::Resume(value)
-            })
-        }
-    }
-    let mut core = CoreArena::new();
-    let host =
-        gandr_core_term::effect::host::HostSignatures::new(&mut core).expect("host interfaces");
-    let seven = integer(&mut core, Digits("7"));
-    let exit = core.computation_perform(host.proc, "exit".into(), seven);
-    let unit = core.value_unit();
-    let unreachable = core.computation_perform(host.env, "path".into(), unit);
-    let program = core.computation_bind(exit, unreachable);
-    let mut arena = CommandArena::new();
-    let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
-        .expect("exit sequence");
-    let definitions = Definitions::new();
-    let mut abort = ExitPolicy {
-        reply: None,
-        calls: 0,
-    };
-    let mut machine = Machine::new(&arena, &definitions);
-    assert_eq!(
-        Ok(HostOutcome::Aborted(ExitCode(7))),
-        machine.run_with_host(root, budget(), &mut abort)
-    );
-    assert_eq!(abort.calls, 1);
-    let mut foreign = Store::new();
-    let mut missing = foreign
-        .allocate(HeapValue::Constructed {
-            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
-            fields: Box::new([]),
-        })
-        .expect("foreign value");
-    for _ in 0_u32 .. 32_u32 {
-        missing = foreign
-            .allocate(HeapValue::Constructed {
-                tag: ConstructorTag::Tuple(ProducerArity::ZERO),
-                fields: Box::new([]),
-            })
-            .expect("foreign value");
-    }
-    let mut invalid = ExitPolicy {
-        reply: Some(missing),
-        calls: 0,
-    };
-    let mut machine = Machine::new(&arena, &definitions);
-    assert_eq!(
-        Err(MachineFault::Store(StoreFault::DanglingValue(missing))),
-        machine.run_with_host(root, budget(), &mut invalid)
-    );
-    assert_eq!(invalid.calls, 1);
-}
-
-/// Observe the real host boundary and terminal reading together.
-///
-/// # Specification
-/// - requires: a closed program and an ordered host oracle.
-/// - ensures: every expected request occurs exactly once and the terminal
-///   reading or blamed unhandled instruction equals the supplied expectation.
-/// - panics: on a scope, machine, readback or observation mismatch.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a claimed source operation must bypass the host; replies
-///   affect arithmetic and subsequent operation payloads.
-/// - witness: `machine::tests::host_seam_never_consulted_for_a_claimed_perform`
-/// - witness: `machine::tests::host_seam_reply_flows_into_subsequent_computation`
-#[spec(ensures: core.computation(program).is_some())]
-fn assert_host(
-    core: &mut CoreArena,
-    program: ComputationId,
-    offers: impl IntoIterator<Item = Offer>,
-    expected: ControlExpectation,
-)
-{
-    let mut arena = CommandArena::new();
-    let root = focus_computation(core, program, &mut arena, &mut Provenance::new())
-        .expect("host program focuses");
-    assert_eq!(
-        Ok(crate::FreeSet::default()),
-        crate::check_command(&arena, root)
-    );
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let outcome = {
-        let mut host = ScriptedHost {
-            core,
-            offers: offers.into_iter().collect(),
-        };
-        let result = machine
-            .run_with_host(root, budget(), &mut host)
-            .expect("bounded host run");
-        assert!(host.offers.is_empty(), "every prescribed offer occurs");
-        result
-    };
-    match (outcome, expected) {
-        (HostOutcome::Completed(Outcome::Halted(value)), ControlExpectation::Value(expected)) => {
-            let actual = machine
-                .read_back_value(value, core)
-                .expect("host result reads back");
-            assert_eq!(
-                gandr_core_term::CertificateEquality::Equal,
-                gandr_core_term::equal_certificate_syntax(core, actual, expected)
-            );
-        },
-        (
-            HostOutcome::Completed(Outcome::Stuck(Stuck::PerformNoHandler(at))),
-            ControlExpectation::Perform(name, operation),
-        ) => {
-            let CommandNode::Perform {
-                ref signature,
-                operation: ref found,
-                ..
-            } = *arena.command(at).expect("perform instruction")
-            else {
-                panic!("host decline blames Perform");
-            };
-            assert_eq!(
-                (name, operation),
-                (signature.name().as_ref(), found.as_ref())
-            );
-        },
-        (outcome, _) => panic!("unexpected host outcome: {outcome:?}"),
-    }
-}
-
-#[test]
-fn host_seam_resumes_a_single_unhandled_perform()
-{
-    let mut core = CoreArena::new();
-    let five = integer(&mut core, Digits("5"));
-    let answer = integer(&mut core, Digits("42"));
-    let signature = effect(&mut core, "E".into(), "op".into());
-    let program = core.computation_perform(signature, "op".into(), five);
-    assert_host(
-        &mut core,
-        program,
-        [Offer {
-            signature: "E",
-            operation: "op",
-            payload: five,
-            answer: Answer::Integer(Digits("42")),
-        }],
-        ControlExpectation::Value(answer),
-    );
-}
-
-/// An exercise through a capability no handler introduced, which only the
-/// host holds, is offered to the host and resumes with its reply.
-#[test]
-fn host_seam_answers_an_exercise_through_a_capability_it_holds()
-{
-    let mut core = CoreArena::new();
-    let five = integer(&mut core, Digits("5"));
-    let held = integer(&mut core, Digits("7"));
-    let answer = integer(&mut core, Digits("42"));
-    let signature = effect(&mut core, "E".into(), "op".into());
-    let program = core.computation_exercise(held, signature, "op".into(), five);
-    assert_host(
-        &mut core,
-        program,
-        [Offer {
-            signature: "E",
-            operation: "op",
-            payload: five,
-            answer: Answer::Integer(Digits("42")),
-        }],
-        ControlExpectation::Value(answer),
-    );
-}
-
-#[test]
-fn host_seam_decline_blames_perform_no_handler()
-{
-    let mut core = CoreArena::new();
-    let five = integer(&mut core, Digits("5"));
-    let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
-    let identity = core.computation_return(zero);
-    let signature = effect(&mut core, "E".into(), "op".into());
-    let perform = core.computation_perform(signature, "op".into(), five);
-    let program = core.computation_bind(perform, identity);
-    assert_host(
-        &mut core,
-        program,
-        [Offer {
-            signature: "E",
-            operation: "op",
-            payload: five,
-            answer: Answer::Decline,
-        }],
-        ControlExpectation::Perform("E", "op"),
-    );
-}
-
-#[test]
-fn host_seam_offers_deep_re_entry_in_order()
-{
-    let mut core = CoreArena::new();
-    let one = integer(&mut core, Digits("1"));
-    let ten = integer(&mut core, Digits("10"));
-    let ninety_nine = integer(&mut core, Digits("99"));
-    let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
-    let signature = effect(&mut core, "E".into(), "op".into());
-    let first = core.computation_perform(signature.clone(), "op".into(), one);
-    let second = core.computation_perform(signature, "op".into(), zero);
-    let program = core.computation_bind(first, second);
-    assert_host(
-        &mut core,
-        program,
-        [
-            Offer {
-                signature: "E",
-                operation: "op",
-                payload: one,
-                answer: Answer::Integer(Digits("10")),
-            },
-            Offer {
-                signature: "E",
-                operation: "op",
-                payload: ten,
-                answer: Answer::Integer(Digits("99")),
-            },
-        ],
-        ControlExpectation::Value(ninety_nine),
-    );
-}
-
-#[test]
-fn host_seam_offers_across_a_non_matching_handler()
-{
-    let mut core = CoreArena::new();
-    let seven = integer(&mut core, Digits("7"));
-    let eight = integer(&mut core, Digits("8"));
-    let answer = integer(&mut core, Digits("555"));
-    let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
-    let identity = core.computation_return(zero);
-    let keep = effect(&mut core, "E".into(), "keep".into());
-    let escape = effect(&mut core, "E".into(), "escape".into());
-    let first = core.computation_perform(escape, "escape".into(), seven);
-    let second = core.computation_perform(keep.clone(), "keep".into(), eight);
-    let subject = core.computation_bind(first, second);
-    let clause = core.computation_return(answer);
-    let program = handler(&mut core, keep, subject, identity, clause);
-    assert_host(
-        &mut core,
-        program,
-        [Offer {
-            signature: "E",
-            operation: "escape",
-            payload: seven,
-            answer: Answer::Integer(Digits("20")),
-        }],
-        ControlExpectation::Value(answer),
-    );
-}
-
-#[test]
-fn host_seam_never_consulted_for_a_claimed_perform()
-{
-    let mut core = CoreArena::new();
-    let five = integer(&mut core, Digits("5"));
-    let answer = integer(&mut core, Digits("77"));
-    let signature = effect(&mut core, "E".into(), "op".into());
-    let perform = core.computation_perform(signature.clone(), "op".into(), five);
-    let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
-    let identity = core.computation_return(zero);
-    let clause = core.computation_return(answer);
-    let program = handler(&mut core, signature, perform, identity, clause);
-    assert_host(&mut core, program, [], ControlExpectation::Value(answer));
-}
-
-#[test]
-fn host_seam_reply_flows_into_subsequent_computation()
-{
-    let mut core = CoreArena::new();
-    let one = integer(&mut core, Digits("1"));
-    let ten = integer(&mut core, Digits("10"));
-    let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
-    let signature = effect(&mut core, "E".into(), "op".into());
-    let perform = core.computation_perform(signature, "op".into(), one);
-    let add = gandr_core_term::primitive::PRELUDE
-        .iter()
-        .copied()
-        .find(|primitive| primitive.name().as_ref() == "add")
-        .expect("native add");
-    let body = core.computation_primitive(
-        add,
-        gandr_core_term::primitive::Arguments::Binary([zero, one]),
-    );
-    let program = core.computation_bind(perform, body);
-    assert_host(
-        &mut core,
-        program,
-        [Offer {
-            signature: "E",
-            operation: "op",
-            payload: one,
-            answer: Answer::Integer(Digits("9")),
-        }],
-        ControlExpectation::Value(ten),
-    );
-}
-
-#[test]
-fn host_seam_first_order_payloads_read_back_identically()
-{
-    let mut core = CoreArena::new();
-    let one = integer(&mut core, Digits("1"));
-    let two = integer(&mut core, Digits("2"));
-    let three = integer(&mut core, Digits("3"));
-    let unit = core.value_unit();
-    let pair = core.value_tuple(&[one, two]);
-    let nil = core.value_list_nil();
-    let tail = core.value_list_cons(three, nil);
-    let tail = core.value_list_cons(two, tail);
-    let list = core.value_list_cons(one, tail);
-    let unit_type = core.value_type_unit();
-    let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
-    let pair_type = core.value_type_product(&[integer_type, integer_type]);
-    let list_type = core.value_type_list(integer_type);
-    for (payload, payload_type) in [(pair, pair_type), (list, list_type)] {
-        let signature = gandr_core_term::effect::EffectSig::new("Inspect".into(), [
-            gandr_core_term::effect::EffectOp {
-                name: "see".into(),
-                payload: payload_type,
-                reply: unit_type,
-            },
-        ])
-        .expect("one operation");
-        let program = core.computation_perform(signature, "see".into(), payload);
-        assert_host(
-            &mut core,
-            program,
-            [Offer {
-                signature: "Inspect",
-                operation: "see",
-                payload,
-                answer: Answer::Unit,
-            }],
-            ControlExpectation::Value(unit),
-        );
-    }
-}
-
-#[test]
-fn host_seam_higher_order_payload_reads_back_exactly()
-{
-    let mut core = CoreArena::new();
-    let seven = integer(&mut core, Digits("7"));
-    let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
-    let open_body = core.computation_return(zero);
-    let open_thunk = core.value_thunk(open_body);
-    let closed_body = core.computation_return(seven);
-    let closed_thunk = core.value_thunk(closed_body);
-    let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
-    let returner = core.comp_type_returner(integer_type);
-    let thunk_type = core.value_type_thunk(returner);
-    let signature = gandr_core_term::effect::EffectSig::new("Inspect".into(), [
-        gandr_core_term::effect::EffectOp {
-            name: "see".into(),
-            payload: thunk_type,
-            reply: thunk_type,
-        },
-    ])
-    .expect("one operation");
-    let perform = core.computation_perform(signature, "see".into(), open_thunk);
-    let force = core.computation_force(zero);
-    let force_reply = core.computation_bind(perform, force);
-    let lambda = core.computation_lambda(force_reply);
-    let program = core.computation_application(lambda, seven);
-    assert_host(
-        &mut core,
-        program,
-        [Offer {
-            signature: "Inspect",
-            operation: "see",
-            payload: closed_thunk,
-            answer: Answer::Payload,
-        }],
-        ControlExpectation::Value(seven),
-    );
-}
-
 /// Fold an integer list with a comparison and a Boolean combiner.
 ///
 /// # Specification
@@ -1411,7 +1070,7 @@ fn the_assert_handler_runs_combinator_assertions()
     let second = core.computation_bind(any, assert);
     let both = core.computation_bind(first, second);
     let program = assertions(&mut core, signature, both);
-    assert_host(&mut core, program, [], ControlExpectation::Value(yes));
+    assert_control(&mut core, program, ControlExpectation::Value(yes));
 }
 
 #[test]
@@ -1448,7 +1107,7 @@ fn the_assert_handler_reports_a_failure()
     let unreachable = core.computation_perform(unreachable_signature, "op".into(), one);
     let body = core.computation_bind(checked, unreachable);
     let program = assertions(&mut core, signature, body);
-    assert_host(&mut core, program, [], ControlExpectation::Value(no));
+    assert_control(&mut core, program, ControlExpectation::Value(no));
 }
 
 #[test]
@@ -1481,7 +1140,7 @@ fn a_mock_exec_handler_replaces_a_real_command()
     let clause = core.computation_resume(zero, reply);
     let perform = core.computation_perform(host.exec.clone(), "exec".into(), payload);
     let program = handler(&mut core, host.exec, perform, on_return, clause);
-    assert_host(&mut core, program, [], ControlExpectation::Value(output));
+    assert_control(&mut core, program, ControlExpectation::Value(output));
 }
 
 #[test]
@@ -1524,8 +1183,11 @@ fn literal_stacks_close_flat_frame_scopes_and_resume_in_order()
     assert_control(&mut core, program, ControlExpectation::Value(expected));
 }
 
+/// A run whose answer holds a captured stack declines moving it into the
+/// store: a captured stack is the run's own frames, which no store value
+/// spells.
 #[test]
-fn captured_stacks_have_a_named_nonliteral_readback_refusal()
+fn a_captured_stack_in_an_answer_declines_its_move()
 {
     let mut core = CoreArena::new();
     let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
@@ -1535,20 +1197,10 @@ fn captured_stacks_have_a_named_nonliteral_readback_refusal()
     let mut arena = CommandArena::new();
     let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
         .expect("control focuses");
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let Outcome::Halted(stack) = machine.run(root, budget()).expect("bounded capture")
-    else {
-        panic!("captured stack returns");
-    };
     assert!(matches!(
-        machine.store().value(stack),
-        Some(HeapValue::Stack { .. })
+        ran(&arena, &Definitions::new(), root, budget()),
+        Err(Declined::Transfer(TransferRefusal::HostObject(_)))
     ));
-    assert_eq!(
-        Err(ReadbackRefusal::NonLiteralStack(stack)),
-        machine.read_back_value(stack, &mut core)
-    );
 }
 
 #[test]
@@ -1583,8 +1235,8 @@ fn native_list_fold_preserves_order_and_outer_scope()
         focus_computation(&source, program, &mut focused, &mut provenance).expect("fold focuses");
     let mut target = CoreArena::new();
     let _unrelated = target.value_type_unit();
-    let decoded = crate::unfocus::unfocus_command(&focused, root, &mut target)
-        .expect("fold annotations travel with the IL");
+    let decoded =
+        unfocus_command(&focused, root, &mut target).expect("fold annotations travel with the IL");
     let &Computation::Application(lambda, _) = target.computation(decoded).expect("application")
     else {
         panic!("application");
@@ -1615,16 +1267,9 @@ fn native_list_fold_preserves_order_and_outer_scope()
         let mut arena = CommandArena::new();
         let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
             .expect("closed fold");
-        let definitions = Definitions::new();
-        let mut machine = Machine::new(&arena, &definitions);
-        let outcome = machine.run(root, budget()).expect("bounded fold run");
-        let Outcome::Halted(value) = outcome
-        else {
-            panic!("fold halts: {outcome:?}");
-        };
-        let back = machine
-            .read_back(value, &mut core)
-            .expect("native list readback");
+        let (store, value) = halted(&arena, &Definitions::new(), root);
+        let back =
+            read_back_terminal(&arena, &store, value, &mut core).expect("native list readback");
         let &Computation::Return(mut cursor) = core.computation(back).expect("returned list")
         else {
             panic!("return");
@@ -1774,15 +1419,12 @@ fn data_case_on_non_ctor_is_stuck()
     for scrutinee in [five, injected, beyond] {
         let program = core.computation_data_case(scrutinee, motive, alloc::vec![branch]);
         let mut arena = CommandArena::new();
-        let mut provenance = Provenance::new();
-        let command = focus_computation(&core, program, &mut arena, &mut provenance)
+        let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
             .expect("a closed term focuses");
-        let definitions = Definitions::new();
-        let mut machine = Machine::new(&arena, &definitions);
-        let outcome = machine.run(command, budget());
+        let (_, stuck) = stuck(&arena, &Definitions::new(), command);
         assert!(
-            matches!(outcome, Ok(Outcome::Stuck(Stuck::Unmatched { .. }))),
-            "the match is stuck unmatched: {outcome:?}"
+            matches!(stuck, Stuck::Unmatched { .. }),
+            "the match is stuck unmatched: {stuck:?}"
         );
     }
 }
@@ -1864,16 +1506,13 @@ fn a_selection_reads_the_width_of_the_value_it_meets()
     ];
     for program in unmatched {
         let mut arena = CommandArena::new();
-        let mut provenance = Provenance::new();
-        let command = focus_computation(&core, program, &mut arena, &mut provenance)
+        let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
             .expect("a closed projection focuses");
-        let definitions = Definitions::new();
-        let mut machine = Machine::new(&arena, &definitions);
-        let outcome = machine.run(command, budget());
+        let (_, stuck) = stuck(&arena, &Definitions::new(), command);
         assert!(
-            matches!(outcome, Ok(Outcome::Stuck(Stuck::Unmatched { arms, .. }))
+            matches!(stuck, Stuck::Unmatched { arms, .. }
                     if matches!(arena.consumer(arms), Some(&ConsumerNode::Select { .. }))),
-            "the selection is stuck unmatched: {outcome:?}"
+            "the selection is stuck unmatched: {stuck:?}"
         );
     }
 
@@ -1882,12 +1521,10 @@ fn a_selection_reads_the_width_of_the_value_it_meets()
     let held = focus_value(&core, quadruple, &mut arena, &mut provenance).expect("a tuple focuses");
     let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
     let named = arena
-        .mint_consumer(ConsumerNode::Covariable(crate::il::CovariableIndex::from(
-            0_u32,
-        )))
+        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
         .expect("a leaf");
     let returned = arena
-        .mint_cut(gandr_theory_cell_complexes::Polarity::Positive, held, named)
+        .mint_cut(Polarity::Positive, held, named)
         .expect("live children");
     let captured = arena
         .mint_producer(ProducerNode::Mu { body: returned })
@@ -1899,21 +1536,10 @@ fn a_selection_reads_the_width_of_the_value_it_meets()
         })
         .expect("a live continuation");
     let root = arena
-        .mint_cut(
-            gandr_theory_cell_complexes::Polarity::Positive,
-            captured,
-            select,
-        )
+        .mint_cut(Polarity::Positive, captured, select)
         .expect("live children");
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let Ok(Outcome::Halted(value)) = machine.run(root, budget())
-    else {
-        panic!("the captured command's value pops into the selection");
-    };
-    let back = machine
-        .read_back_value(value, &mut core)
-        .expect("a literal reads back");
+    let (store, value) = halted(&arena, &Definitions::new(), root);
+    let back = read_back_value(&arena, &store, value, &mut core).expect("a literal reads back");
     assert_eq!(
         core.value(two),
         core.value(back),
@@ -1958,12 +1584,17 @@ fn a_recursive_thunk_computes_through_its_own_binding()
     );
 }
 
-/// Three loops that never end stand as high after ten thousand steps as
-/// after a hundred: `fix x. force x`; `fix o. fix i. force o`, an inner
-/// loop left for the outer one, as a `break` commuted to the outer
-/// `continue` leaves it; and `(fix f. λn. fix k. (force f) n) ()`, a
-/// function tail-calling itself from inside a loop. Only the function's
-/// fixpoint takes a cell.
+/// Three loops that never end run until their heap fills, each pass
+/// allocating its window, without filling the frame region: `fix x. force
+/// x`; `fix o. fix i. force o`, an inner loop left for the outer one, as a
+/// `break` commuted to the outer `continue` leaves it; and `(fix f. λn. fix
+/// k. (force f) n) ()`, a function tail-calling itself from inside a loop.
+/// The contrast `fix x. (y ← force x; return y)` holds one frame a pass and
+/// fills the frame region first, so a held frame outruns the first loop's
+/// window. The nested loop and the tail call allocate more a pass than a
+/// held frame adds — each, holding one, still fills the heap first — so
+/// their rows pin only that they run to an exhausted region other than the
+/// frames.
 #[test]
 fn a_loop_holds_no_frame_across_its_iterations()
 {
@@ -1971,6 +1602,10 @@ fn a_loop_holds_no_frame_across_its_iterations()
     let itself = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let reentry = core.computation_force(itself);
     let plain = core.computation_fixpoint(reentry, gandr_kernel_term::FixpointEvidence::Partial);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let answered = core.computation_return(bound);
+    let held = core.computation_bind(reentry, answered);
+    let holding = core.computation_fixpoint(held, gandr_kernel_term::FixpointEvidence::Partial);
     let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let continued = core.computation_force(outer);
     let inner = core.computation_fixpoint(continued, gandr_kernel_term::FixpointEvidence::Partial);
@@ -1987,33 +1622,31 @@ fn a_loop_holds_no_frame_across_its_iterations()
     );
     let unit = core.value_unit();
     let calling = core.computation_application(recursive, unit);
-    for (program, cells, shape) in [
-        (plain, 0_usize, "a loop"),
-        (nested, 0_usize, "a nested loop"),
-        (calling, 1_usize, "a tail call inside a loop"),
+    for (program, shape, frames_fill) in [
+        (plain, "a loop", false),
+        (holding, "a loop holding a frame", true),
+        (nested, "a nested loop", false),
+        (calling, "a tail call inside a loop", false),
     ] {
-        let [short, long] = [100_usize, 10_000_usize].map(|steps| {
-            let mut arena = CommandArena::new();
-            let mut provenance = Provenance::new();
-            let command = focus_computation(&core, program, &mut arena, &mut provenance)
-                .expect("a closed term focuses");
-            let definitions = Definitions::new();
-            let mut machine = Machine::new(&arena, &definitions);
-            assert_eq!(
-                Err(MachineFault::OutOfSteps),
-                machine.run(command, StepCount::from(steps)),
-                "{shape} never ends"
-            );
-            assert_eq!(
-                cells,
-                usize::from(machine.store().cell_count()),
-                "{shape} caches only a function"
-            );
-            machine.store().peak_height()
-        });
+        let mut arena = CommandArena::new();
+        let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
+            .expect("a closed term focuses");
+        let run = ran(
+            &arena,
+            &Definitions::new(),
+            command,
+            Fuel::from(1_usize << 28_u32),
+        );
         assert_eq!(
-            short, long,
-            "{shape} stands no higher after more iterations"
+            frames_fill,
+            matches!(run, Err(Declined::Exhausted(Status::FramesExhausted))),
+            "{shape}: {}",
+            fingerprint(&run)
+        );
+        assert!(
+            matches!(run, Err(Declined::Exhausted(_))),
+            "{shape} never ends: {}",
+            fingerprint(&run)
         );
     }
 }
@@ -2038,54 +1671,9 @@ fn application_binds_the_argument()
     );
 }
 
-/// `t ← return (thunk (return 2)); _ ← force t; force t`: the second
-/// force returns the value the first wrote back, by address.
-#[test]
-fn a_shared_thunk_is_forced_once()
-{
-    let mut core = CoreArena::new();
-    let two = integer(&mut core, Digits("2"));
-    let body = core.computation_return(two);
-    let thunk = core.value_thunk(body);
-    let head = core.computation_return(thunk);
-    let first_use = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let first = core.computation_force(first_use);
-    let second_use = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-    let second = core.computation_force(second_use);
-    let forced_twice = core.computation_bind(first, second);
-    let program = core.computation_bind(head, forced_twice);
-
-    let mut arena = CommandArena::new();
-    let mut provenance = Provenance::new();
-    let command = focus_computation(&core, program, &mut arena, &mut provenance)
-        .expect("a closed term focuses");
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let Ok(Outcome::Halted(value)) = machine.run(command, budget())
-    else {
-        panic!("the run halts");
-    };
-    let cells = usize::from(machine.store().cell_count());
-    assert_eq!(1, cells, "one thunk, one cell");
-    assert_eq!(
-        Some(MemoState::Forced(value)),
-        machine.store().cell(crate::store::CellId::from(0_u32)),
-        "the second force returned the cell's cached value itself"
-    );
-    let literals = (0 .. usize::from(machine.store().value_count()))
-        .filter_map(|offset| u32::try_from(offset).ok())
-        .filter(|&offset| {
-            matches!(
-                machine.store().value(HeapValueId::from(offset)),
-                Some(&HeapValue::Literal(_))
-            )
-        })
-        .count();
-    assert_eq!(1, literals, "the body ran once");
-}
-
-/// A transparent constant unfolds once per machine, an opaque one reads
-/// back as itself, a cyclic one and an undefined one stop the run.
+/// A transparent constant unfolds where it is read, an opaque one reads
+/// back as itself, and a cyclic one and an undefined one stop the run at
+/// the read.
 #[test]
 fn constants_unfold_once_and_opaque_ones_stay_opaque()
 {
@@ -2123,65 +1711,65 @@ fn constants_unfold_once_and_opaque_ones_stay_opaque()
     let missing =
         focus_computation(&core, undefined_return, &mut arena, &mut provenance).expect("focuses");
 
-    let mut machine = Machine::new(&arena, &definitions);
-    let Ok(Outcome::Halted(value)) = machine.run(command, budget())
-    else {
-        panic!("the run halts");
-    };
-    assert_eq!(
-        1,
-        usize::from(machine.store().cell_count()),
-        "the constant's thunk exists once"
-    );
-    let back = machine
-        .read_back(value, &mut core)
-        .expect("the terminal reads back");
+    let (store, value) = halted(&arena, &definitions, command);
+    let back =
+        read_back_terminal(&arena, &store, value, &mut core).expect("the terminal reads back");
     assert_eq!(
         "⟨pair(c1, {force(α) ⇒ ⟨5 |+ α0⟩}) |+ ★⟩",
         shown(&core, back),
         "the opaque constant stays itself and the transparent one unfolds"
     );
+    let (_, cycle) = stuck(&arena, &definitions, looping);
     assert_eq!(
-        Ok(Outcome::Stuck(Stuck::CyclicConstant(ConstantIndex::from(
-            2_usize
-        )))),
-        machine.run(looping, budget()),
+        Stuck::CyclicConstant(ConstantIndex::from(2_usize)),
+        cycle,
         "a definition needing its own value stops the run"
     );
+    let (_, absent) = stuck(&arena, &definitions, missing);
     assert_eq!(
-        Ok(Outcome::Stuck(Stuck::UndefinedConstant(
-            ConstantIndex::from(9_usize)
-        ))),
-        machine.run(missing, budget()),
+        Stuck::UndefinedConstant(ConstantIndex::from(9_usize)),
+        absent,
         "a position never admitted stops the run"
     );
 }
 
-/// `return 1` takes four transitions: the cut, the delivery to `★`, the
-/// return to the base and the pop of the empty region.
+/// `t ← return thunk { return 1 }; force t` halts once its fuel covers its
+/// jumps; every smaller budget declines exhausted rather than answering.
 #[test]
 fn the_step_budget_bounds_a_run()
 {
     let mut core = CoreArena::new();
     let one = integer(&mut core, Digits("1"));
-    let returned = core.computation_return(one);
+    let body = core.computation_return(one);
+    let suspended = core.value_thunk(body);
+    let returned = core.computation_return(suspended);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = core.computation_force(bound);
+    let program = core.computation_bind(returned, forced);
     let mut arena = CommandArena::new();
-    let mut provenance = Provenance::new();
-    let command = focus_computation(&core, returned, &mut arena, &mut provenance)
+    let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
         .expect("a closed term focuses");
     let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    assert_eq!(
-        Err(MachineFault::OutOfSteps),
-        machine.run(command, StepCount::from(3_usize)),
-        "three transitions are one short"
-    );
+    let run = |jumps| ran(&arena, &definitions, command, Fuel::from(jumps));
+    let least = (0_usize ..= 64_usize)
+        .find(|&jumps| run(jumps).is_ok())
+        .expect("a bounded run halts");
+    assert!(least > 0, "a run spends fuel");
+    for jumps in 0 .. least {
+        assert!(
+            matches!(run(jumps), Err(Declined::Exhausted(Status::FuelExhausted))),
+            "{jumps} jumps are short of {least}"
+        );
+    }
     assert!(
         matches!(
-            machine.run(command, StepCount::from(4_usize)),
-            Ok(Outcome::Halted(_))
+            run(least),
+            Ok(Ran {
+                outcome: Outcome::Halted(_),
+                ..
+            })
         ),
-        "four transitions halt"
+        "{least} jumps halt"
     );
 }
 
@@ -2223,18 +1811,10 @@ fn a_thunk_reads_back_closed_over_its_environment()
     );
 
     let mut arena = CommandArena::new();
-    let mut provenance = Provenance::new();
-    let command = focus_computation(&core, program, &mut arena, &mut provenance)
+    let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
         .expect("a closed term focuses");
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let Ok(Outcome::Halted(value)) = machine.run(command, budget())
-    else {
-        panic!("the run halts");
-    };
-    let read = machine
-        .read_back_value(value, &mut core)
-        .expect("a thunk is a value");
+    let (store, value) = halted(&arena, &Definitions::new(), command);
+    let read = read_back_value(&arena, &store, value, &mut core).expect("a thunk is a value");
     let wrapped = core.computation_return(read);
     assert_eq!(
         "⟨{force(α) ⇒ ⟨4 |+ α0⟩} |+ ★⟩",
@@ -2255,7 +1835,7 @@ fn a_suspended_capture_has_no_reading()
     let mut arena = CommandArena::new();
     let unit = arena
         .mint_producer(ProducerNode::Constructor {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
             consumers: Box::from([]),
         })
@@ -2271,7 +1851,7 @@ fn a_suspended_capture_has_no_reading()
         .expect("the body resolves");
     let pair = arena
         .mint_producer(ProducerNode::Constructor {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::TWO),
+            tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([capture, unit]),
             consumers: Box::from([]),
         })
@@ -2283,16 +1863,11 @@ fn a_suspended_capture_has_no_reading()
         .mint_cut(Polarity::Positive, pair, top)
         .expect("children resolve");
 
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let Ok(Outcome::Halted(value)) = machine.run(command, budget())
-    else {
-        panic!("the run halts");
-    };
+    let (store, value) = halted(&arena, &Definitions::new(), command);
     let mut core = CoreArena::new();
     let kept = core.value_unit();
     let mark = core.watermark();
-    let refused = machine.read_back(value, &mut core);
+    let refused = read_back_terminal(&arena, &store, value, &mut core);
     assert!(
         matches!(refused, Err(ReadbackRefusal::Unreadable(_))),
         "the capture has no reading: {refused:?}"
@@ -2309,7 +1884,7 @@ fn polarity_decides_whether_a_capture_is_evaluated()
     let mut arena = CommandArena::new();
     let unit = arena
         .mint_producer(ProducerNode::Constructor {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
             consumers: Box::from([]),
         })
@@ -2358,59 +1933,50 @@ fn polarity_decides_whether_a_capture_is_evaluated()
     let resumed = arena
         .mint_cut(Polarity::Negative, capture, using)
         .expect("children resolve");
+    let unit_value = HeapValue::Constructed {
+        tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+        fields: Box::from([]),
+    };
     let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let Ok(Outcome::Stuck(Stuck::Unobservable {
+    let (store, strict) = stuck(&arena, &definitions, positive);
+    let Stuck::Unobservable {
         value: strict,
         head: DestructorTag::Force,
-    })) = machine.run(positive, budget())
+    } = strict
     else {
-        panic!("positive cut runs the capture");
+        panic!("positive cut runs the capture: {strict:?}");
     };
+    assert_eq!(Some(&unit_value), store.value(strict));
+    let (store, delayed) = halted(&arena, &definitions, negative);
     assert_eq!(
-        Some(&HeapValue::Constructed {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
-            fields: Box::from([])
-        }),
-        machine.store.value(strict)
+        Some(&unit_value),
+        store.value(delayed),
+        "negative cut leaves an ignored capture suspended"
     );
-    let Ok(Outcome::Halted(delayed)) = machine.run(negative, budget())
-    else {
-        panic!("negative cut leaves an ignored capture suspended");
-    };
-    assert_eq!(
-        Some(&HeapValue::Constructed {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
-            fields: Box::from([])
-        }),
-        machine.store.value(delayed)
-    );
-    assert_eq!(ContinuationMark::BASE, machine.store.mark());
-    let Ok(Outcome::Stuck(Stuck::Unobservable {
+    let (store, forced) = stuck(&arena, &definitions, resumed);
+    let Stuck::Unobservable {
         value: forced,
         head: DestructorTag::Force,
-    })) = machine.run(resumed, budget())
+    } = forced
     else {
-        panic!("using the suspended capture resumes its body");
+        panic!("using the suspended capture resumes its body: {forced:?}");
     };
-    assert_eq!(
-        Some(&HeapValue::Constructed {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
-            fields: Box::from([])
-        }),
-        machine.store.value(forced)
-    );
+    assert_eq!(Some(&unit_value), store.value(forced));
 }
 
-/// Invalid endpoints, zones and eliminators retain their exact refusal
-/// identity.
+/// A command the tiers cannot lay out declines naming its form: a root the
+/// arena does not hold, a constructor with consumer fields, a variable of
+/// either zone and a covariable bound by nothing, and a destructor of no
+/// continuation. A well-formed command meeting the wrong eliminator sticks
+/// naming the value: unit under an empty match and under `force`, a thunk
+/// and a recursive thunk under `apply`.
 #[test]
 fn transition_refusals_name_the_first_invalid_endpoint()
 {
     let mut arena = CommandArena::new();
     let unit = arena
         .mint_producer(ProducerNode::Constructor {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
             producers: Box::from([]),
             consumers: Box::from([]),
         })
@@ -2438,131 +2004,133 @@ fn transition_refusals_name_the_first_invalid_endpoint()
             consumers: Box::from([]),
         })
         .expect("empty children");
+    let non_value = arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+            producers: Box::from([]),
+            consumers: Box::from([top]),
+        })
+        .expect("children resolve");
+    let linear_body = arena
+        .mint_cut(Polarity::Positive, linear, top)
+        .expect("children resolve");
+    let binds_one_zone = arena
+        .mint_consumer(ConsumerNode::MuTilde { body: linear_body })
+        .expect("body resolves");
+    let definitions = Definitions::new();
+    let declined = [
+        (CommandId::from(u32::MAX), Form::Dangling),
+        (
+            arena
+                .mint_cut(Polarity::Positive, non_value, top)
+                .expect("children resolve"),
+            Form::ConsumerFields,
+        ),
+        (
+            arena
+                .mint_cut(Polarity::Positive, intuitionistic, top)
+                .expect("children resolve"),
+            Form::Unbound,
+        ),
+        (
+            arena
+                .mint_cut(Polarity::Positive, unit, binds_one_zone)
+                .expect("children resolve"),
+            Form::Unbound,
+        ),
+        (
+            arena
+                .mint_cut(Polarity::Positive, unit, unbound)
+                .expect("children resolve"),
+            Form::Unbound,
+        ),
+        (
+            arena
+                .mint_cut(Polarity::Positive, unit, malformed)
+                .expect("children resolve"),
+            Form::Destructor,
+        ),
+    ];
+    for (root, form) in declined {
+        assert!(
+            matches!(
+                ran(&arena, &definitions, root, budget()),
+                Err(Declined::Lowering(found)) if found == form
+            ),
+            "{root:?} declines as {form:?}"
+        );
+    }
+
+    let unit_value = HeapValue::Constructed {
+        tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+        fields: Box::from([]),
+    };
     let choices = arena
         .mint_consumer(ConsumerNode::Case {
             arms: Box::from([]),
         })
         .expect("empty arms");
-    let non_value = arena
-        .mint_producer(ProducerNode::Constructor {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
+    let unmatched = arena
+        .mint_cut(Polarity::Positive, unit, choices)
+        .expect("children resolve");
+    let (store, refused) = stuck(&arena, &definitions, unmatched);
+    let Stuck::Unmatched { value, arms } = refused
+    else {
+        panic!("an empty match sticks unmatched: {refused:?}");
+    };
+    assert_eq!((Some(&unit_value), choices), (store.value(value), arms));
+    let force = arena
+        .mint_consumer(ConsumerNode::Destructor {
+            tag: DestructorTag::Force,
             producers: Box::from([]),
             consumers: Box::from([top]),
         })
+        .expect("continuation resolves");
+    let forced = arena
+        .mint_cut(Polarity::Positive, unit, force)
         .expect("children resolve");
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let value = machine.evaluate(unit, Environment::EMPTY).expect("unit");
-    let missing_command = CommandId::from(u32::MAX);
-    let missing_producer = ProducerId::from(u32::MAX);
-    let missing_consumer = ConsumerId::from(u32::MAX);
-    let missing_value = HeapValueId::from(u32::MAX);
-    assert_eq!(
-        Err(Stop::Stuck(Stuck::IllFormedCommand(missing_command))),
-        machine.cut(missing_command, Environment::EMPTY)
-    );
-    assert_eq!(
-        Err(Stop::Stuck(Stuck::IllFormedProducer(missing_producer))),
-        machine.evaluate(missing_producer, Environment::EMPTY)
-    );
-    assert_eq!(
-        Err(Stop::Stuck(Stuck::IllFormedProducer(non_value))),
-        machine.evaluate(non_value, Environment::EMPTY)
-    );
-    assert_eq!(
-        Err(Stop::Stuck(Stuck::UnboundVariable {
-            zone: Zone::Intuitionistic,
-            index: 0_u32.into()
-        })),
-        machine.evaluate(intuitionistic, Environment::EMPTY)
-    );
-    let bound = machine
-        .store
-        .bind_value(Environment::EMPTY, value)
-        .expect("room");
-    assert_eq!(Ok(value), machine.evaluate(intuitionistic, bound));
-    assert_eq!(
-        Err(Stop::Stuck(Stuck::UnboundVariable {
-            zone: Zone::Linear,
-            index: 0_u32.into()
-        })),
-        machine.evaluate(linear, bound)
-    );
-    for consumer in [missing_consumer, malformed] {
-        assert_eq!(
-            Err(Stop::Stuck(Stuck::IllFormedConsumer(consumer))),
-            machine.deliver(value, consumer, Environment::EMPTY)
-        );
-        assert_eq!(
-            Err(Stop::Stuck(Stuck::IllFormedConsumer(consumer))),
-            machine.load(consumer, Environment::EMPTY)
-        );
-    }
-    assert_eq!(
-        Err(Stop::Stuck(Stuck::UnboundCovariable(0_u32.into()))),
-        machine.deliver(value, unbound, Environment::EMPTY)
-    );
-    assert_eq!(
-        Err(Stop::Stuck(Stuck::UnboundCovariable(0_u32.into()))),
-        machine.load(unbound, Environment::EMPTY)
-    );
-    for consumer in [missing_consumer, top] {
-        assert_eq!(
-            Err(Stop::Stuck(Stuck::IllFormedConsumer(consumer))),
-            machine.select(value, consumer, Environment::EMPTY)
-        );
-    }
-    for value in [value, missing_value] {
-        assert_eq!(
-            Err(Stop::Stuck(Stuck::Unmatched {
-                value,
-                arms: choices
-            })),
-            machine.select(value, choices, Environment::EMPTY)
-        );
-        assert_eq!(None, machine.suspended_capture(value));
-    }
-    let non_capture = machine
-        .store
-        .allocate(HeapValue::Closure {
-            producer: unit,
-            environment: Environment::EMPTY,
+    let (store, refused) = stuck(&arena, &definitions, forced);
+    let Stuck::Unobservable {
+        value,
+        head: DestructorTag::Force,
+    } = refused
+    else {
+        panic!("a forced unit is unobservable: {refused:?}");
+    };
+    assert_eq!(Some(&unit_value), store.value(value));
+
+    let returns = arena
+        .mint_consumer(ConsumerNode::Covariable(0_u32.into()))
+        .expect("leaf");
+    let suspended = arena
+        .mint_cut(Polarity::Positive, unit, returns)
+        .expect("children resolve");
+    let apply = arena
+        .mint_consumer(ConsumerNode::Destructor {
+            tag: DestructorTag::Apply,
+            producers: Box::from([unit]),
+            consumers: Box::from([top]),
         })
-        .expect("room");
-    assert_eq!(None, machine.suspended_capture(non_capture));
-    for value in [value, non_capture] {
-        assert_eq!(
-            Err(Stop::Stuck(Stuck::Unobservable {
-                value,
-                head: DestructorTag::Force
-            })),
-            machine.observe(value, DestructorTag::Force, &[], ContinuationMark::BASE)
-        );
-    }
-    // A suspension answers only `force`: applied, a thunk or an unfolding
-    // fixpoint is unobservable rather than run.
-    let cell = machine.store.allocate_cell().expect("room");
+        .expect("children resolve");
     let suspensions = [
-        HeapValue::Thunk {
-            body: missing_command,
-            environment: Environment::EMPTY,
-            cell,
-        },
-        HeapValue::Fixpoint {
-            body: missing_command,
-            environment: Environment::EMPTY,
-            memo: crate::store::Memo::Unfolds,
+        ProducerNode::Thunk { body: suspended },
+        ProducerNode::Fixpoint {
+            body: suspended,
             evidence: gandr_kernel_term::FixpointEvidence::Partial,
         },
     ];
     for suspension in suspensions {
-        let suspended = machine.store.allocate(suspension).expect("room");
-        assert_eq!(
-            Err(Stop::Stuck(Stuck::Unobservable {
-                value: suspended,
-                head: DestructorTag::Apply
-            })),
-            machine.observe(suspended, DestructorTag::Apply, &[], ContinuationMark::BASE)
+        let suspension = arena.mint_producer(suspension).expect("body resolves");
+        let applied = arena
+            .mint_cut(Polarity::Negative, suspension, apply)
+            .expect("children resolve");
+        let (_, refused) = stuck(&arena, &definitions, applied);
+        assert!(
+            matches!(refused, Stuck::Unobservable {
+                head: DestructorTag::Apply,
+                ..
+            }),
+            "a suspension answers only force: {refused:?}"
         );
     }
 }
@@ -2593,7 +2161,7 @@ fn pattern_fields_bind_last_innermost()
         .expect("leaf");
     let result = arena
         .mint_producer(ProducerNode::Constructor {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::TWO),
+            tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([outer, inner]),
             consumers: Box::from([]),
         })
@@ -2604,15 +2172,15 @@ fn pattern_fields_bind_last_innermost()
         .expect("children resolve");
     let matched = arena
         .mint_consumer(ConsumerNode::Case {
-            arms: Box::from([crate::il::PatternArm {
-                constructor: crate::il::ConstructorTag::Tuple(ProducerArity::TWO),
+            arms: Box::from([PatternArm {
+                constructor: ConstructorTag::Tuple(ProducerArity::TWO),
                 body,
             }]),
         })
         .expect("body resolves");
     let pair = arena
         .mint_producer(ProducerNode::Constructor {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::TWO),
+            tag: ConstructorTag::Tuple(ProducerArity::TWO),
             producers: Box::from([first, last]),
             consumers: Box::from([]),
         })
@@ -2620,15 +2188,8 @@ fn pattern_fields_bind_last_innermost()
     let root = arena
         .mint_cut(Polarity::Positive, pair, matched)
         .expect("children resolve");
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let Ok(Outcome::Halted(value)) = machine.run(root, budget())
-    else {
-        panic!("pair pattern returns");
-    };
-    let read = machine
-        .read_back_value(value, &mut core)
-        .expect("positive pair");
+    let (store, value) = halted(&arena, &Definitions::new(), root);
+    let read = read_back_value(&arena, &store, value, &mut core).expect("positive pair");
     let Some(&[first_read, last_read]) = core
         .value(read)
         .and_then(gandr_core_term::Value::components)
@@ -2639,115 +2200,8 @@ fn pattern_fields_bind_last_innermost()
     assert_eq!(core.value(last_source), core.value(last_read));
 }
 
-/// Reentry shares one update, cache returns its value, and even a
-/// zero-budget run declines abandonment.
-#[test]
-fn forcing_reentry_shares_updates_and_abandonment_declines_them()
-{
-    let mut arena = CommandArena::new();
-    let unit = arena
-        .mint_producer(ProducerNode::Constructor {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
-            producers: Box::from([]),
-            consumers: Box::from([]),
-        })
-        .expect("leaf");
-    let back = arena
-        .mint_consumer(ConsumerNode::Covariable(0_u32.into()))
-        .expect("leaf");
-    let body = arena
-        .mint_cut(Polarity::Positive, unit, back)
-        .expect("children resolve");
-    let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
-    let plain = arena
-        .mint_cut(Polarity::Positive, unit, top)
-        .expect("children resolve");
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let cell = machine.store.allocate_cell().expect("room");
-    let thunk = machine
-        .store
-        .allocate(HeapValue::Thunk {
-            body,
-            environment: Environment::EMPTY,
-            cell,
-        })
-        .expect("room");
-    let first = machine
-        .observe(thunk, DestructorTag::Force, &[], ContinuationMark::BASE)
-        .expect("first force opens");
-    let update = machine.store.mark();
-    assert!(
-        matches!(first, Next::Continue(Control::Run(found, inner)) if found == body && machine.store.lookup_covalue(inner, 0_u32.into()) == Some(crate::store::Covalue::Pinned(update)))
-    );
-    assert_eq!(Some(MemoState::InProgress), machine.store.cell(cell));
-    assert_eq!(1_usize, usize::from(machine.store.frame_height()));
-    assert!(
-        matches!(machine.store.frames().next(), Some(&Frame::Update { cell: found }) if found == cell)
-    );
-    let mut next = machine
-        .observe(thunk, DestructorTag::Force, &[], update)
-        .expect("reentry runs without another update");
-    assert_eq!(update, machine.store.mark());
-    let mut halted = None;
-    for _ in 0_usize .. 16 {
-        match next {
-            Next::Host { .. } => panic!("pure force offered an operation"),
-            Next::Halt(value) => {
-                halted = Some(value);
-                break;
-            },
-            Next::Continue(control) => {
-                next = machine
-                    .step(control)
-                    .expect("unit body returns through its update");
-            },
-        }
-    }
-    let value = halted.expect("the bounded return path halts");
-    assert_eq!(Some(MemoState::Forced(value)), machine.store.cell(cell));
-    assert_eq!(
-        Some(&HeapValue::Constructed {
-            tag: crate::il::ConstructorTag::Tuple(ProducerArity::ZERO),
-            fields: Box::from([])
-        }),
-        machine.store.value(value)
-    );
-    assert_eq!(
-        Ok(Next::Continue(Control::Return(
-            value,
-            ContinuationMark::BASE
-        ))),
-        machine.observe(thunk, DestructorTag::Force, &[], ContinuationMark::BASE)
-    );
-    let abandoned = machine.store.allocate_cell().expect("room");
-    let unfinished = machine
-        .store
-        .allocate(HeapValue::Thunk {
-            body,
-            environment: Environment::EMPTY,
-            cell: abandoned,
-        })
-        .expect("room");
-    machine
-        .observe(
-            unfinished,
-            DestructorTag::Force,
-            &[],
-            ContinuationMark::BASE,
-        )
-        .expect("open another force");
-    assert_eq!(
-        Err(MachineFault::OutOfSteps),
-        machine.run(plain, StepCount::from(0_usize))
-    );
-    assert_eq!(Some(MemoState::Unforced), machine.store.cell(abandoned));
-    assert_eq!(Some(MemoState::Forced(value)), machine.store.cell(cell));
-    assert_eq!(ContinuationMark::BASE, machine.store.mark());
-}
-
-/// A failed nested unfolding may be retried without turning into a false
-/// cycle.
+/// A nested unfolding that fails sticks the same way on every run: a
+/// constant left mid-unfolding by one run is never a false cycle in the next.
 #[test]
 fn failed_unfolding_resets_every_active_constant()
 {
@@ -2768,20 +2222,14 @@ fn failed_unfolding_resets_every_active_constant()
     let mut definitions = Definitions::new();
     definitions.push(Definition::Transparent(first_body));
     definitions.push(Definition::Transparent(second_body));
-    let mut machine = Machine::new(&arena, &definitions);
-    assert_eq!(
-        Ok(Outcome::Stuck(Stuck::UndefinedConstant(2_usize.into()))),
-        machine.run(command, budget())
-    );
-    assert_eq!(
-        Ok(Outcome::Stuck(Stuck::UndefinedConstant(2_usize.into()))),
-        machine.run(command, budget()),
-        "a retry encounters the same missing definition, not a poisoned memo"
-    );
-    assert_eq!(
-        [Unfolding::Pending, Unfolding::Pending],
-        machine.unfoldings.as_slice()
-    );
+    for attempt in ["first", "retried"] {
+        let (_, refused) = stuck(&arena, &definitions, command);
+        assert_eq!(
+            Stuck::UndefinedConstant(2_usize.into()),
+            refused,
+            "the {attempt} run meets the missing definition"
+        );
+    }
 }
 
 /// `thunk (λx. return o)`, `o` built over the bound variable by `body`.
@@ -3025,4 +2473,104 @@ fn a_flow_product_runs_componentwise()
         expected,
         "the first flow moves the left component"
     );
+}
+
+/// The core's own constructors under the names a reified pattern uses, and
+/// `Lift` at level zero.
+///
+/// # Specification
+/// trivial.
+fn resolver() -> ConstructorResolver
+{
+    let mut resolver = ConstructorResolver::new();
+    resolver.insert(Sym::new("Unit"), ConstructorTag::Tuple(ProducerArity::ZERO));
+    resolver.insert(Sym::new("Pair"), ConstructorTag::Tuple(ProducerArity::TWO));
+    resolver.insert(
+        Sym::new("Inl"),
+        ConstructorTag::Injection(Side::Left.into()),
+    );
+    resolver.insert(
+        Sym::new("Inr"),
+        ConstructorTag::Injection(Side::Right.into()),
+    );
+    resolver.insert(
+        Sym::new("Lift"),
+        ConstructorTag::Lift(gandr_kernel_strata::Level::zero()),
+    );
+    resolver
+}
+
+/// `⟨Unit |+ Inl⁻(★)⟩`, reified, runs to the value its frame re-wraps.
+#[test]
+fn a_reified_return_frame_runs_to_the_rewrapped_value()
+{
+    let pattern = CmdPat::cut(
+        Polarity::Positive,
+        ProdPat::ctor("Unit", []),
+        ConsPat::frame("Inl", ConsPat::top()),
+    );
+    let mut arena = CommandArena::new();
+    let command = reify_command(&mut arena, &pattern, &resolver()).expect("a unary frame");
+    let (store, value) = halted(&arena, &Definitions::new(), command);
+    let mut core = CoreArena::new();
+    let back = read_back_terminal(&arena, &store, value, &mut core).expect("the value reads back");
+    assert_eq!(
+        "⟨inl(()) |+ ★⟩",
+        shown(&core, back),
+        "the frame re-wrapped the value"
+    );
+}
+
+/// `⟨Pair(Lift(Inr(Unit)), Inl(Unit)) |+ Inl⁻(Inr⁻(★))⟩`, reified, runs
+/// its frames innermost first over every constructor head:
+/// `inr(inl(pair(lift(inr(())), inl(()))))`.
+#[test]
+fn reified_nested_frames_run_in_order()
+{
+    use gandr_core_term::Value;
+
+    let pattern = CmdPat::cut(
+        Polarity::Positive,
+        ProdPat::ctor("Pair", [
+            ProdPat::ctor("Lift", [ProdPat::ctor("Inr", [ProdPat::ctor("Unit", [])])]),
+            ProdPat::ctor("Inl", [ProdPat::ctor("Unit", [])]),
+        ]),
+        ConsPat::frame("Inl", ConsPat::frame("Inr", ConsPat::top())),
+    );
+    let mut arena = CommandArena::new();
+    let command = reify_command(&mut arena, &pattern, &resolver()).expect("ground pattern");
+    let (store, value) = halted(&arena, &Definitions::new(), command);
+    let mut core = CoreArena::new();
+    let read = read_back_value(&arena, &store, value, &mut core).expect("positive result");
+    let Some(&Value::Injection(last, outer)) = core.value(read)
+    else {
+        panic!("the last frame wraps last");
+    };
+    assert_eq!(last, Side::Right.into());
+    let Some(&Value::Injection(first, pair)) = core.value(outer)
+    else {
+        panic!("the first frame wraps first");
+    };
+    assert_eq!(first, Side::Left.into());
+    let Some(&[lift, right]) = core.value(pair).and_then(Value::components)
+    else {
+        panic!("pair head survives");
+    };
+    let Some(&Value::Lift { ref target, body }) = core.value(lift)
+    else {
+        panic!("first field is lifted");
+    };
+    assert_eq!(&gandr_kernel_strata::Level::zero(), target);
+    let Some(&Value::Injection(lifted, first_unit)) = core.value(body)
+    else {
+        panic!("right injection survives under lift");
+    };
+    assert_eq!(lifted, Side::Right.into());
+    let Some(&Value::Injection(second, last_unit)) = core.value(right)
+    else {
+        panic!("left injection remains the second field");
+    };
+    assert_eq!(second, Side::Left.into());
+    assert_eq!(Some(&Value::unit()), core.value(first_unit));
+    assert_eq!(Some(&Value::unit()), core.value(last_unit));
 }

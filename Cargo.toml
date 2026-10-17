@@ -281,7 +281,7 @@ path = "crates/core-incremental"
 
 # Normalisation by evaluation over the core: weak-head evaluation, readback,
 # the conversion machine whose recorded traces the kernel replays, and the
-# oracle the L machine's readback is compared against.
+# oracle the tiers' readback is compared against.
 # consumers:
 # - core-checker
 # - core-sequent (dev)
@@ -293,8 +293,8 @@ path = "crates/core-incremental"
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
 
-# The sequent intermediate language and the L machine: focusing a core term
-# into commands, running a command, and reading a run's terminal back.
+# The sequent intermediate language: focusing a core term into commands,
+# the store a run answers into, and reading a run's terminal back.
 # consumers:
 # - runtime-emitter
 # - runtime-stencils (dev)
@@ -407,6 +407,7 @@ default-features = false
 # macOS arm64 and Linux x86-64, the content cache and the native tier's
 # policy, falling back to the portable executor.
 # consumers:
+# - core-sequent (dev)
 # - runtime-stencils (dev)
 # - surface-dispatcher
 [workspace.dependencies.gandr-runtime-emitter]
@@ -641,6 +642,7 @@ path = "crates/surface-tui"
 # consumers:
 # - core-sequent
 # - runtime-emitter
+# - runtime-stencils (dev)
 # - storage-artifact
 # - surface-lowering
 # - theory-cell-complexes-tools

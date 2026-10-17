@@ -44,6 +44,8 @@ struct Exit
     fuel: Fuel,
     /// The value in hand.
     answer: Word,
+    /// What the run observed as it exited.
+    observed: Word,
 }
 
 /// A region's size in words.
@@ -98,6 +100,7 @@ fn run(
             .unwrap_or(0),
         fuel: runtime.fuel(),
         answer,
+        observed: runtime.observed(),
     }
 }
 
@@ -275,6 +278,28 @@ fn an_opaque_observation_exits_stuck()
         "an opaque constant is no closure"
     );
     assert_eq!(address, stuck.answer, "the observed value in hand");
+}
+
+/// A case with no arm for the constructor in hand takes the unmatched exit,
+/// the scrutinee in hand and the case's site observed, so the run names the
+/// case it stuck at.
+#[test]
+fn an_unmatched_case_names_its_site()
+{
+    let injection = [Word::from(0_usize), Word::from(7_i64)];
+    let address = Word::from_pointer((&raw const injection).cast::<Word>());
+    let site = Word::from(5_usize);
+    let program = [
+        instruction(StencilId::Const, address),
+        instruction(StencilId::Unmatched, site),
+        instruction(StencilId::Halt, Word::ZERO),
+    ];
+    let unmatched = run(&program, Words(1), Words(1), Fuel::from(4_usize), refusing);
+    assert_eq!(
+        (Status::Unmatched, address, site),
+        (unmatched.status, unmatched.answer, unmatched.observed),
+        "the scrutinee in hand and the case's site observed"
+    );
 }
 
 /// A host call pops its argument and continues with the host's answer in

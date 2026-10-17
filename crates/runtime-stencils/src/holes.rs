@@ -97,8 +97,8 @@ unsafe extern "C" {
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every executor run continues through this hole after each
-///   one-way stencil; a skipped or repeated instruction changes the answer the
-///   agreement suite compares with the L machine's.
+///   one-way stencil; a skipped or repeated instruction changes the answer a
+///   named program states.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 #[cfg(not(gandr_stencil_object))]
 pub extern "rust-preserve-none" fn hole_next(

@@ -176,6 +176,8 @@ const SHARED: [StencilId; 5_usize.wrapping_add(Stub::ALL.len())] = [
     Stub::Argument.stencil(),
     Stub::Reset.stencil(),
     Stub::Answer.stencil(),
+    Stub::ProjectLeft.stencil(),
+    Stub::ProjectRight.stencil(),
 ];
 
 impl Native
@@ -196,7 +198,7 @@ impl Native
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every named program emits its function here and
-    ///   compares the answer with the executor's and the L machine's.
+    ///   compares the answer with the executor's and the answer it states.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
     #[inline]
     pub fn emit(
@@ -368,6 +370,8 @@ impl Native
             argument,
             reset,
             answer,
+            left,
+            right,
         ] = addresses;
         let shared = Shared {
             halt,
@@ -375,7 +379,7 @@ impl Native
             frames,
             fuel,
             stuck,
-            stubs: [apply, force, argument, reset, answer],
+            stubs: [apply, force, argument, reset, answer, left, right],
         };
         region.write(
             reservation,

@@ -1,14 +1,17 @@
 //! Running a lowered command: the tier the policy picks, the content cache
-//! native code is served from, the regions a run uses, and the answer moved
-//! into the machine's store.
+//! native code is served from, the regions a run uses, and the outcome moved
+//! into the caller's store.
 //!
 //! A run lowers its command every time — the lowered function is the cache
 //! key, compared by value — and either serves the function's emitted code
 //! from the process's cache, emitting it on a miss, or builds the executor's
-//! program. Both run over the calling thread's heap and frame regions; an
-//! exhausted region is doubled and the run repeated from its start, up to a
-//! bound past which the L machine runs the command instead. A run is pure,
-//! so a repeated run answers as the first would have.
+//! program. Both run over the calling thread's heap and frame regions, each
+//! allocated at its bound once per thread and committed page by page as runs
+//! touch it; a run that would pass a bound declines exhausted. The
+//! alternative was a small region doubled and the run repeated from its
+//! start, which offers a host handler its requests a second time; the bound
+//! costs address space only. The choice reverses if a workload needs more
+//! than a bound holds, when the bound becomes the caller's to set.
 
 use alloc::sync::Arc;
 use core::cell::RefCell;
@@ -16,10 +19,14 @@ use core::cell::RefCell;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::Definitions;
+use gandr_core_sequent::DestructorTag;
 use gandr_core_sequent::HeapValueId;
+use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Store;
-use gandr_kernel_term::ConstantIndex;
+use gandr_core_sequent::Stuck;
+use gandr_kernel_term::Side;
 use gandr_runtime_stencils::Fuel;
+use gandr_runtime_stencils::Observed;
 use gandr_runtime_stencils::Runtime;
 use gandr_runtime_stencils::Status;
 use gandr_runtime_stencils::Word;
@@ -29,6 +36,8 @@ use crate::function::Unbound;
 use crate::host;
 use crate::host::Calls;
 use crate::host::Codes;
+use crate::host::Parts;
+use crate::host::Refused;
 use crate::lower::Form;
 use crate::lower::Lowered;
 use crate::lower::lower;
@@ -38,11 +47,12 @@ use crate::native::EmitRefusal;
 use crate::native::Emitted;
 #[cfg(gandr_patcher)]
 use crate::native::Native;
+use crate::seam::Adapter;
+use crate::seam::HostHandler;
+use crate::seam::HostOutcome;
+use crate::seam::Offer;
 use crate::transfer::Sites;
-use crate::transfer::Tables;
 use crate::transfer::TransferRefusal;
-use crate::transfer::observed;
-use crate::transfer::transfer;
 
 /// The environment variable the policy is read from.
 pub const POLICY_VARIABLE: &str = "GANDR_NATIVE";
@@ -118,7 +128,7 @@ pub enum Tier
     Executor,
 }
 
-/// Why a run did not answer: the L machine runs the command instead.
+/// Why a run gave no outcome.
 ///
 /// # Specification
 /// trivial.
@@ -136,18 +146,17 @@ pub enum Declined
     Unbound,
     /// The policy serves only cached code and the cache misses.
     Uncached,
-    /// A case met a constructor no arm answers: the machine's stuck answer.
-    Unmatched,
-    /// An observation met a value it does not observe, or a host call refused
-    /// its operands: the machine's stuck answer, which it names.
+    /// The run stopped stuck where nothing named why: a host call refused
+    /// operands no well-formed command gives it.
     Stuck,
-    /// An observation — a force, an application, a case — met the opaque
-    /// constant: the machine's stuck answer at it, which blames the constant.
-    Opaque(ConstantIndex),
     /// The run spent its fuel, or a region past its bound.
     Exhausted(Status),
-    /// The answer could not be moved into the store.
+    /// The answer, or a value the run stopped at or offered, could not be
+    /// moved into the store.
     Transfer(TransferRefusal),
+    /// The host resumed with a value its store does not hold, or one a run
+    /// cannot hold: code the host built rather than a value the run moved out.
+    Reply(HeapValueId),
 }
 
 impl From<Form> for Declined
@@ -189,6 +198,47 @@ impl From<TransferRefusal> for Declined
     }
 }
 
+impl core::fmt::Display for Declined
+{
+    /// Says why the run gave no outcome, in a line.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Lowering(form) => write!(f, "the lowering refused {form}"),
+            Self::NoPatcher => f.write_str("the host has no patcher for native code"),
+            #[cfg(gandr_patcher)]
+            Self::Emission(_) => f.write_str("native emission refused the function"),
+            Self::Unbound => f.write_str("a label of the function is unbound"),
+            Self::Uncached => f.write_str("the cache holds no code for the function"),
+            Self::Stuck => f.write_str("the run stopped stuck where nothing named why"),
+            Self::Exhausted(Status::FuelExhausted) => f.write_str("the run spent its budget"),
+            Self::Exhausted(Status::HeapExhausted) => {
+                f.write_str("the heap region passed its bound")
+            },
+            Self::Exhausted(Status::FramesExhausted) => {
+                f.write_str("the frame region passed its bound")
+            },
+            Self::Exhausted(
+                Status::Running | Status::Halted | Status::Unmatched | Status::Stuck,
+            ) => f.write_str("the run exited with a status no run returns"),
+            Self::Transfer(_) => f.write_str("a value could not be moved into the store"),
+            Self::Reply(value) => {
+                write!(
+                    f,
+                    "the host resumed with {value}, which the run cannot hold"
+                )
+            },
+        }
+    }
+}
+
 /// The process's emitted code, by the function it runs.
 #[cfg(gandr_patcher)]
 #[derive(Debug, Default)]
@@ -211,32 +261,30 @@ static CACHE: std::sync::LazyLock<std::sync::Mutex<Cache>> =
 /// The policy, read once per process.
 static POLICY: std::sync::LazyLock<Policy> = std::sync::LazyLock::new(Policy::from_environment);
 
-/// The regions a run uses, per thread.
+/// The regions a run uses, per thread, each allocated at its bound and
+/// committed as a run first touches it.
 #[derive(Debug)]
 struct Buffers
 {
-    /// The heap region.
+    /// The heap region: capacity only, every word written before it is read.
     heap: Vec<Word>,
-    /// The frame region, the sentinel frame in its first two words.
+    /// The frame region: capacity only, the sentinel frame written in its
+    /// first two words.
     frames: Vec<Word>,
     /// The entry window.
     window: Vec<Word>,
 }
 
-/// The heap region's first size, in words.
-const HEAP_WORDS: usize = 1 << 16;
-/// The heap region's bound, in words: past it the machine runs the command.
+/// The heap region's bound, in words: past it the run declines.
 const HEAP_BOUND: usize = 1 << 25;
-/// The frame region's first size, in words.
-const FRAME_WORDS: usize = 1 << 14;
-/// The frame region's bound, in words.
+/// The frame region's bound, in words: past it the run declines.
 const FRAME_BOUND: usize = 1 << 23;
 
 std::thread_local! {
     /// The calling thread's regions.
     static BUFFERS: RefCell<Buffers> = RefCell::new(Buffers {
-        heap: alloc::vec![Word::ZERO; HEAP_WORDS],
-        frames: alloc::vec![Word::ZERO; FRAME_WORDS],
+        heap: Vec::with_capacity(HEAP_BOUND),
+        frames: Vec::with_capacity(FRAME_BOUND),
         window: Vec::new(),
     });
 }
@@ -252,21 +300,54 @@ enum Code<'program>
     Executor(&'program Program),
 }
 
-/// Run `root` under the process's policy and move its answer into `store`.
+/// How a run ended, the host's abort apart.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Ran
+{
+    /// The run halted or stopped stuck.
+    Ended(Outcome),
+    /// The host stopped the run.
+    Aborted,
+}
+
+impl Ran
+{
+    /// The outcome of a run with no host, which nothing aborts.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Declined::Stuck`] for an abort, which no run without a host makes.
+    fn hostless(self) -> Result<Outcome, Declined>
+    {
+        match self {
+            Self::Ended(outcome) => Ok(outcome),
+            Self::Aborted => Err(Declined::Stuck),
+        }
+    }
+}
+
+/// Run `root` under the process's policy and move its outcome into `store`.
 ///
 /// # Specification
 /// - ensures: as [`evaluate_on`], on the tier the policy picks: native under
-///   [`Policy::Always`] where a patcher exists, the executor under
-///   [`Policy::Never`] and on a miss under [`Policy::Cached`].
-/// - executable: none — agreeing with the machine is the differential's to
-///   show; a postcondition would run the machine on every call.
+///   [`Policy::Always`] where a patcher exists and emits the function, the
+///   executor under [`Policy::Never`], on a miss under [`Policy::Cached`], and
+///   wherever native code is not to be had.
+/// - executable: none — the tiers' agreement is the differential's to show; a
+///   postcondition would run every command twice.
 ///
 /// # Errors
-/// As [`evaluate_on`].
+/// As [`evaluate_on`], but never [`Declined::NoPatcher`] or an emission
+/// refusal: the executor runs the command instead.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every named program runs through this entry and is
-///   compared with the machine's answer; the policy's spellings are witnessed
+///   compared with each tier's outcome; the policy's spellings are witnessed
 ///   apart.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `run::tests::the_policy_reads_its_three_spellings`
@@ -277,37 +358,30 @@ pub fn evaluate(
     root: CommandId,
     fuel: Fuel,
     store: &mut Store,
-) -> Result<HeapValueId, Declined>
+) -> Result<Outcome, Declined>
 {
-    let policy = *POLICY;
-    let tier = match policy {
-        Policy::Always if cfg!(gandr_patcher) => Tier::Native,
-        Policy::Always | Policy::Never => Tier::Executor,
-        Policy::Cached => {
-            let lowered = lower(arena, definitions, root)?;
-            return run_cached(&lowered, arena, fuel, store);
-        },
-    };
-    evaluate_on(tier, arena, definitions, root, fuel, store)
+    let lowered = lower(arena, definitions, root)?;
+    by_policy(&lowered, arena, fuel, store, None)?.hostless()
 }
 
-/// Run `root` on `tier` with `fuel` code-word jumps and move its answer into
-/// `store`.
+/// Run `root` on `tier` with `fuel` code-word jumps and move its outcome into
+/// `store`; an operation no handler of the run claims stops it stuck.
 ///
 /// # Specification
 /// - requires: every constant `root` reaches is defined in `definitions`.
-/// - ensures: on success the store holds the answer the L machine would halt
-///   with, as its readback reads it, and the answer's id is returned.
-/// - executable: none — agreeing with the machine is the differential's to
-///   show; a postcondition would run the machine on every call.
+/// - ensures: on success how the run ended: the value it halted with, or the
+///   reason it stopped stuck, every value either names moved into the store as
+///   its readback reads it.
+/// - executable: none — the tiers' agreement is the differential's to show; a
+///   postcondition would run every command twice.
 ///
 /// # Errors
-/// [`Declined`] naming why the command did not run on the tier: the machine
-/// runs it instead.
+/// [`Declined`] naming why the run gave no outcome: a form the lowering
+/// refuses, a spent budget, a region past its bound.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the named programs run on both tiers and the machine, and
-///   their answers are compared value by value.
+/// - hypothesis: L2 — the named programs run on both tiers and their outcomes
+///   are compared value by value, and with the outcome each states.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 #[inline]
 pub fn evaluate_on(
@@ -317,12 +391,158 @@ pub fn evaluate_on(
     root: CommandId,
     fuel: Fuel,
     store: &mut Store,
-) -> Result<HeapValueId, Declined>
+) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
+    on_tier(tier, &lowered, arena, fuel, store, None)?.hostless()
+}
+
+/// As [`evaluate`], an operation no handler of the run claims offered to
+/// `host`.
+///
+/// # Specification
+/// - ensures: as [`evaluate_on_with_host`], on the tier the policy picks as
+///   [`evaluate`] picks it.
+/// - executable: none — as [`evaluate`].
+///
+/// # Errors
+/// As [`evaluate_on_with_host`], but never [`Declined::NoPatcher`] or an
+/// emission refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a host reply runs on through the policy's tier as it does
+///   on each tier alone.
+/// - witness: `tests::seam::a_host_reply_flows_into_the_rest_of_the_run`
+#[inline]
+pub fn evaluate_with_host<Host>(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+    (fuel, store): (Fuel, &mut Store),
+    host: &mut Host,
+) -> Result<HostOutcome<Host::Abort>, Declined>
+where
+    Host: HostHandler,
+{
+    let lowered = lower(arena, definitions, root)?;
+    let mut adapter = Adapter {
+        host,
+        aborted: None,
+    };
+    let ran = by_policy(&lowered, arena, fuel, store, Some(&mut adapter))?;
+    hosted(ran, adapter)
+}
+
+/// As [`evaluate_on`], an operation no handler of the run claims offered to
+/// `host`.
+///
+/// # Specification
+/// - requires: as [`evaluate_on`].
+/// - ensures: as [`evaluate_on`], each unclaimed operation offered to the host
+///   once, its payload moved into the store: a reply continues the operation's
+///   continuation, a decline leaves the run stuck at the operation, and an
+///   abort ends the run with the host's result.
+/// - executable: none — as [`evaluate_on`].
+///
+/// # Errors
+/// As [`evaluate_on`], and [`Declined::Reply`] for a reply the run cannot
+/// hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — scripted hosts that resume, abort and decline, offered
+///   operations claimed and unclaimed by the run's handlers, on each tier.
+/// - witness: `tests::seam::a_host_resumes_a_single_unhandled_perform`
+/// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
+#[inline]
+pub fn evaluate_on_with_host<Host>(
+    tier: Tier,
+    (arena, definitions, root): (&CommandArena, &Definitions, CommandId),
+    (fuel, store): (Fuel, &mut Store),
+    host: &mut Host,
+) -> Result<HostOutcome<Host::Abort>, Declined>
+where
+    Host: HostHandler,
+{
+    let lowered = lower(arena, definitions, root)?;
+    let mut adapter = Adapter {
+        host,
+        aborted: None,
+    };
+    let ran = on_tier(tier, &lowered, arena, fuel, store, Some(&mut adapter))?;
+    hosted(ran, adapter)
+}
+
+/// A hosted run's outcome: an abort carries the result the host kept.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Declined::Stuck`] for an abort the host kept no result for, which no
+/// adapter makes.
+fn hosted<Host>(
+    ran: Ran,
+    adapter: Adapter<'_, Host>,
+) -> Result<HostOutcome<Host::Abort>, Declined>
+where
+    Host: HostHandler,
+{
+    match ran {
+        Ran::Ended(outcome) => Ok(HostOutcome::Completed(outcome)),
+        Ran::Aborted => adapter
+            .aborted
+            .map(HostOutcome::Aborted)
+            .ok_or(Declined::Stuck),
+    }
+}
+
+/// Run `lowered` on the tier the policy picks, the executor wherever native
+/// code is not to be had.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As [`evaluate`].
+fn by_policy(
+    lowered: &Lowered,
+    arena: &CommandArena,
+    fuel: Fuel,
+    store: &mut Store,
+    mut offer: Option<&mut (dyn Offer + '_)>,
+) -> Result<Ran, Declined>
+{
+    match *POLICY {
+        Policy::Always => match run_native(lowered, arena, fuel, store, offer.as_deref_mut()) {
+            Err(Declined::NoPatcher) => run_executor(lowered, arena, fuel, store, offer),
+            #[cfg(gandr_patcher)]
+            Err(Declined::Emission(_)) => run_executor(lowered, arena, fuel, store, offer),
+            ran => ran,
+        },
+        Policy::Never => run_executor(lowered, arena, fuel, store, offer),
+        Policy::Cached => run_cached(lowered, arena, fuel, store, offer),
+    }
+}
+
+/// Run `lowered` on `tier`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As [`evaluate_on`].
+fn on_tier(
+    tier: Tier,
+    lowered: &Lowered,
+    arena: &CommandArena,
+    fuel: Fuel,
+    store: &mut Store,
+    offer: Option<&mut (dyn Offer + '_)>,
+) -> Result<Ran, Declined>
+{
     match tier {
-        Tier::Native => run_native(&lowered, arena, fuel, store),
-        Tier::Executor => run_executor(&lowered, arena, fuel, store),
+        Tier::Native => run_native(lowered, arena, fuel, store, offer),
+        Tier::Executor => run_executor(lowered, arena, fuel, store, offer),
     }
 }
 
@@ -338,22 +558,23 @@ fn run_executor(
     arena: &CommandArena,
     fuel: Fuel,
     store: &mut Store,
-) -> Result<HeapValueId, Declined>
+    offer: Option<&mut (dyn Offer + '_)>,
+) -> Result<Ran, Declined>
 {
     let program = Program::build(&lowered.function)?;
-    let sites = Sites::new(&lowered.sites, |site| {
-        program
-            .code(&lowered.function, site.label)
-            .unwrap_or(Word::ZERO)
-    });
+    let codes = Codes::Executor(&program, &lowered.function);
+    let sites = Sites::new(lowered, codes);
     run(
         Code::Executor(&program),
-        Codes::Executor(&program, &lowered.function),
-        lowered,
-        &sites,
-        arena,
+        Parts {
+            lowered,
+            codes,
+            sites: &sites,
+            arena,
+            store,
+            offer,
+        },
         fuel,
-        store,
     )
 }
 
@@ -370,7 +591,8 @@ fn run_native(
     arena: &CommandArena,
     fuel: Fuel,
     store: &mut Store,
-) -> Result<HeapValueId, Declined>
+    offer: Option<&mut (dyn Offer + '_)>,
+) -> Result<Ran, Declined>
 {
     let emitted = {
         let mut cache = CACHE
@@ -392,7 +614,7 @@ fn run_native(
             emitted
         }
     };
-    run_emitted(&emitted, lowered, arena, fuel, store)
+    run_emitted(&emitted, lowered, arena, fuel, (store, offer))
 }
 
 /// The native tier needs a patcher this host lacks.
@@ -408,9 +630,10 @@ fn run_native(
     arena: &CommandArena,
     fuel: Fuel,
     store: &mut Store,
-) -> Result<HeapValueId, Declined>
+    offer: Option<&mut (dyn Offer + '_)>,
+) -> Result<Ran, Declined>
 {
-    let _ = (lowered, arena, fuel, store);
+    let _ = (lowered, arena, fuel, store, offer);
     Err(Declined::NoPatcher)
 }
 
@@ -426,7 +649,8 @@ fn run_cached(
     arena: &CommandArena,
     fuel: Fuel,
     store: &mut Store,
-) -> Result<HeapValueId, Declined>
+    offer: Option<&mut (dyn Offer + '_)>,
+) -> Result<Ran, Declined>
 {
     #[cfg(gandr_patcher)]
     {
@@ -437,10 +661,10 @@ fn run_cached(
             .get(&lowered.function)
             .map(Arc::clone);
         if let Some(emitted) = held {
-            return run_emitted(&emitted, lowered, arena, fuel, store);
+            return run_emitted(&emitted, lowered, arena, fuel, (store, offer));
         }
     }
-    run_executor(lowered, arena, fuel, store)
+    run_executor(lowered, arena, fuel, store, offer)
 }
 
 /// Run code the cache served.
@@ -456,139 +680,163 @@ fn run_emitted(
     lowered: &Lowered,
     arena: &CommandArena,
     fuel: Fuel,
-    store: &mut Store,
-) -> Result<HeapValueId, Declined>
+    (store, offer): (&mut Store, Option<&mut (dyn Offer + '_)>),
+) -> Result<Ran, Declined>
 {
-    let sites = Sites::new(&lowered.sites, |site| {
-        emitted
-            .labels
-            .get(usize::from(site.label))
-            .copied()
-            .unwrap_or(Word::ZERO)
-    });
+    let codes = Codes::Native {
+        labels: &emitted.labels,
+        stubs: &emitted.stubs,
+    };
+    let sites = Sites::new(lowered, codes);
     run(
         Code::Native(emitted.entry, emitted.halt),
-        Codes::Native {
-            labels: &emitted.labels,
-            stubs: &emitted.stubs,
+        Parts {
+            lowered,
+            codes,
+            sites: &sites,
+            arena,
+            store,
+            offer,
         },
-        lowered,
-        &sites,
-        arena,
         fuel,
-        store,
     )
 }
 
-/// Run `code` over the calling thread's regions, growing an exhausted one
-/// and running again, and move the answer into `store`.
+/// Run `code` once over the calling thread's regions and move how it ended
+/// into `parts`' store.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// As [`evaluate_on`].
+/// As [`evaluate_on_with_host`].
 fn run(
     code: Code<'_>,
-    codes: Codes<'_>,
-    lowered: &Lowered,
-    sites: &Sites<'_>,
-    arena: &CommandArena,
+    parts: Parts<'_, '_>,
     fuel: Fuel,
-    store: &mut Store,
-) -> Result<HeapValueId, Declined>
+) -> Result<Ran, Declined>
 {
+    let lowered = parts.lowered;
     BUFFERS.with_borrow_mut(|buffers| {
-        loop {
-            buffers.window.clear();
-            buffers
-                .window
-                .resize(lowered.function.slots().0.max(1), Word::ZERO);
-            let halt = match code {
-                #[cfg(gandr_patcher)]
-                Code::Native(_, halt) => halt,
-                Code::Executor(program) => program.halt(),
-            };
-            let &mut [ref mut sentinel_code, ref mut sentinel_window, ..] =
-                buffers.frames.as_mut_slice()
-            else {
-                return Err(Declined::Exhausted(Status::FramesExhausted));
-            };
-            *sentinel_code = halt;
-            *sentinel_window = Word::ZERO;
-            let heap = buffers.heap.as_mut_ptr();
-            let heap_limit = heap.wrapping_add(buffers.heap.len());
-            let frames = buffers.frames.as_mut_ptr();
-            let frame_limit = frames.wrapping_add(buffers.frames.len());
-            let base = frames.wrapping_add(2);
-            let window = buffers.window.as_mut_ptr();
-            let mut calls = Calls::new(lowered, codes);
-            let mut runtime = Runtime::new(
-                heap,
-                heap_limit,
-                frame_limit,
-                base,
-                fuel,
-                host::enter,
-                Word::from_pointer(&raw mut calls),
-            );
-            let answer = match code {
-                #[cfg(gandr_patcher)]
-                // SAFETY: the entry is a copy the emitter patched in a region
-                // the cache keeps mapped; the regions are this thread's,
-                // valid up to their limits, the sentinel frame below the base
-                // mark, and the window holds the function's slots.
-                Code::Native(entry, _) => unsafe {
-                    gandr_runtime_stencils::enter(entry, &raw mut runtime, heap, base, window)
-                },
-                // SAFETY: the program was built from this function and lives
-                // for the call; the regions are as above.
-                Code::Executor(program) => unsafe {
-                    gandr_runtime_stencils::execute(
-                        program.entry(),
-                        &raw mut runtime,
-                        heap,
-                        base,
-                        window,
-                    )
-                },
-            };
-            match runtime.status() {
-                Ok(Status::Halted) => {
-                    let tables = Tables {
-                        heads: &lowered.heads,
-                        literals: calls.literals(),
-                    };
-                    // SAFETY: the run halted; its heap and the function's
-                    // constants are live until this closure returns.
-                    return unsafe { transfer(answer, sites, tables, arena, store) }
-                        .map_err(Declined::from);
-                },
-                Ok(Status::HeapExhausted) if buffers.heap.len() < HEAP_BOUND => {
-                    let doubled = buffers.heap.len().saturating_mul(2);
-                    buffers.heap.resize(doubled, Word::ZERO);
-                },
-                Ok(Status::FramesExhausted) if buffers.frames.len() < FRAME_BOUND => {
-                    let doubled = buffers.frames.len().saturating_mul(2);
-                    buffers.frames.resize(doubled, Word::ZERO);
-                },
-                Ok(status @ (Status::Unmatched | Status::Stuck)) => {
-                    // SAFETY: both exits return the value they observed, or
-                    // zero when a host call refused, and the heap is live.
-                    if let Some(constant) = unsafe { observed(answer) } {
-                        return Err(Declined::Opaque(constant));
-                    }
-                    return Err(if status == Status::Unmatched {
-                        Declined::Unmatched
-                    }
-                    else {
-                        Declined::Stuck
-                    });
-                },
-                Ok(status) => return Err(Declined::Exhausted(status)),
-                Err(_unknown) => return Err(Declined::Exhausted(Status::Running)),
-            }
+        buffers.window.clear();
+        buffers
+            .window
+            .resize(lowered.function.slots().0.max(1), Word::ZERO);
+        let halt = match code {
+            #[cfg(gandr_patcher)]
+            Code::Native(_, halt) => halt,
+            Code::Executor(program) => program.halt(),
+        };
+        let table = buffers.heap.as_mut_ptr();
+        let heap_limit = table.wrapping_add(buffers.heap.capacity());
+        // The constant table sits at the heap's base, every word zero: no
+        // constant is unfolded yet.
+        let constants = lowered.globals.len();
+        if constants > buffers.heap.capacity() {
+            return Err(Declined::Exhausted(Status::HeapExhausted));
         }
+        // SAFETY: the heap region's capacity holds the table's words.
+        unsafe {
+            table.write_bytes(0, constants);
+        }
+        let heap = table.wrapping_add(constants);
+        let frames = buffers.frames.as_mut_ptr();
+        let frame_limit = frames.wrapping_add(buffers.frames.capacity());
+        // SAFETY: the frame region's capacity holds far more than the
+        // sentinel's two words.
+        unsafe {
+            frames.write(halt);
+        }
+        // SAFETY: as above.
+        unsafe {
+            frames.wrapping_add(1).write(Word::ZERO);
+        }
+        let base = frames.wrapping_add(2);
+        let window = buffers.window.as_mut_ptr();
+        let mut calls = Calls::new(parts);
+        let mut runtime = Runtime::new(
+            heap,
+            heap_limit,
+            frame_limit,
+            base,
+            fuel,
+            host::enter,
+            Word::from_pointer(&raw mut calls),
+        );
+        runtime.set_globals(table);
+        let answer = match code {
+            #[cfg(gandr_patcher)]
+            // SAFETY: the entry is a copy the emitter patched in a region the
+            // cache keeps mapped; the regions are this thread's, valid up to
+            // their limits, the sentinel frame below the base mark, and the
+            // window holds the function's slots.
+            Code::Native(entry, _) => unsafe {
+                gandr_runtime_stencils::enter(entry, &raw mut runtime, heap, base, window)
+            },
+            // SAFETY: the program was built from this function and lives for
+            // the call; the regions are as above.
+            Code::Executor(program) => unsafe {
+                gandr_runtime_stencils::execute(
+                    program.entry(),
+                    &raw mut runtime,
+                    heap,
+                    base,
+                    window,
+                )
+            },
+        };
+        let refused = calls.refused().cloned();
+        // SAFETY: the run exited; its heap and the function's constants are
+        // live until this closure returns, and every exit but the regions'
+        // and the fuel's returns a value of that heap or zero.
+        let mut moved = |word: Word| unsafe { calls.moved(word) };
+        let stuck = match runtime.status() {
+            Ok(Status::Halted) => return Ok(Ran::Ended(Outcome::Halted(moved(answer)?))),
+            Ok(Status::Unmatched) => {
+                let arms = lowered
+                    .unmatched
+                    .get(usize::from(runtime.observed()))
+                    .copied()
+                    .ok_or(Declined::Stuck)?;
+                Stuck::Unmatched {
+                    value: moved(answer)?,
+                    arms,
+                }
+            },
+            Ok(Status::Stuck) => match refused {
+                Some(Refused::PerformNoHandler(at)) => Stuck::PerformNoHandler(at),
+                Some(Refused::ShiftNoReset(at)) => Stuck::ShiftNoReset(at),
+                Some(Refused::ResumedNonStack { at, value }) => Stuck::ResumedNonStack {
+                    at,
+                    value: moved(value)?,
+                },
+                Some(Refused::Primitive(error)) => Stuck::Primitive(error),
+                Some(Refused::NonScalar(value)) => Stuck::NonScalar(moved(value)?),
+                Some(Refused::Unended(at)) => Stuck::Unended(at),
+                Some(Refused::UndefinedConstant(constant)) => Stuck::UndefinedConstant(constant),
+                Some(Refused::CyclicConstant(constant)) => Stuck::CyclicConstant(constant),
+                Some(Refused::Aborted) => return Ok(Ran::Aborted),
+                Some(Refused::Operands) => return Err(Declined::Stuck),
+                Some(Refused::Reply(value)) => return Err(Declined::Reply(value)),
+                Some(Refused::Transfer(refusal)) => return Err(Declined::Transfer(refusal)),
+                None => {
+                    let head = match Observed::try_from(runtime.observed()) {
+                        Ok(Observed::Apply) => DestructorTag::Apply,
+                        Ok(Observed::Force) => DestructorTag::Force,
+                        Ok(Observed::ProjectLeft) => DestructorTag::Project(Side::Left),
+                        Ok(Observed::ProjectRight) => DestructorTag::Project(Side::Right),
+                        Err(_unnamed) => return Err(Declined::Stuck),
+                    };
+                    Stuck::Unobservable {
+                        value: moved(answer)?,
+                        head,
+                    }
+                },
+            },
+            Ok(status) => return Err(Declined::Exhausted(status)),
+            Err(_unknown) => return Err(Declined::Exhausted(Status::Running)),
+        };
+        Ok(Ran::Ended(Outcome::Stuck(stuck)))
     })
 }
 

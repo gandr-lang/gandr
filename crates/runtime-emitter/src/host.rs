@@ -9,8 +9,8 @@
 //! stencil's heap pointer stood, as a constructor stencil would allocate it:
 //! an integer past 64 bits joins the literal table and is answered by its
 //! entry. Operands the callee does not take, or an evaluation the prelude
-//! refuses (a division by zero), stop the run stuck, where the L machine
-//! names the refusal.
+//! refuses (a division by zero), stop the run stuck, and the host records
+//! the refusal the run names: `Stuck::Primitive` or `Stuck::NonScalar`.
 //!
 //! # Control
 //!
@@ -37,14 +37,26 @@
 //!   passes the answer on, or saves the answer in an answer frame and continues
 //!   at the unwind.
 //!
-//! An operation no handler of the run answers — one offered to the host, or
-//! one through a capability the host holds — and a view ended twice or never
-//! stop the run stuck: the L machine runs the command and names them.
+//! An operation no handler of the run answers and the host declines, a shift
+//! with no reset, a resume of a value that is no stack, and a view ended
+//! twice or never stop the run stuck, each named by the command it stopped
+//! at.
 
+use alloc::collections::BTreeMap;
+
+use gandr_core_sequent::CommandArena;
+use gandr_core_sequent::CommandId;
+use gandr_core_sequent::CommandNode;
+use gandr_core_sequent::ConstructorTag;
+use gandr_core_sequent::HeapValue;
+use gandr_core_sequent::HeapValueId;
+use gandr_core_sequent::Store;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::primitive::Primitive;
+use gandr_core_term::primitive::PrimitiveError;
 use gandr_core_term::primitive::Scalar;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
@@ -73,6 +85,15 @@ use crate::lower::Reach;
 use crate::lower::Reified;
 use crate::lower::Slot;
 use crate::lower::integer_word;
+use crate::seam::HostRequest;
+use crate::seam::HostValues;
+use crate::seam::Offer;
+use crate::seam::Offered;
+use crate::transfer::Moved;
+use crate::transfer::Sites;
+use crate::transfer::Tables;
+use crate::transfer::TransferRefusal;
+use crate::transfer::transfer;
 
 /// A view's state: no eliminator has run.
 const OPEN: usize = 0;
@@ -92,7 +113,7 @@ const HELD: usize = 4;
 
 /// A stack's words before its frames: the header, the captured frames' base
 /// and top.
-const STACK_PREFIX: usize = 3;
+pub const STACK_PREFIX: usize = 3;
 
 /// Where a run's code words are: what the host compares frames' codes with
 /// and continues at.
@@ -121,7 +142,7 @@ impl Codes<'_>
     ///
     /// # Specification
     /// trivial.
-    fn label(
+    pub fn label(
         self,
         label: Label,
     ) -> Word
@@ -141,7 +162,7 @@ impl Codes<'_>
     ///
     /// # Specification
     /// trivial.
-    fn stub(
+    pub fn stub(
         self,
         stub: Stub,
     ) -> Word
@@ -154,13 +175,13 @@ impl Codes<'_>
 }
 
 /// One run's host state: the function's callees, handlers and frame
-/// windows, where its code is, and the literals the run holds — the
-/// function's own, then those its calls made.
+/// windows, where its code is, the literals the run holds — the function's
+/// own, then those its calls made — and what the run moves into the caller's
+/// store: the host's payloads, the answer and the values a stuck run names.
 ///
 /// # Specification
 /// trivial.
-#[derive(Debug)]
-pub struct Calls<'run>
+pub struct Calls<'run, 'host>
 {
     /// The callees, by the number a call stencil passes.
     callees: &'run [Callee],
@@ -168,43 +189,189 @@ pub struct Calls<'run>
     handlers: &'run [Handler],
     /// Each frame label with its window's slot count.
     windows: &'run [(Label, Slots)],
+    /// The heads a head object names, by family.
+    heads: &'run [ConstructorTag],
     /// Where the run's code is.
     codes: Codes<'run>,
+    /// The closure sites, by their code words.
+    sites: &'run Sites<'run>,
+    /// The commands the function was lowered from.
+    arena: &'run CommandArena,
+    /// The caller's store.
+    store: &'run mut Store,
+    /// The objects already moved into the store.
+    moved: Moved,
+    /// The host unclaimed operations are offered to, if any.
+    offer: Option<&'run mut (dyn Offer + 'host)>,
     /// The literals, by the family a literal object names.
     literals: Vec<Literal>,
+    /// Why the host last refused a call, when it named a reason.
+    refused: Option<Refused>,
 }
 
-impl<'run> Calls<'run>
+impl core::fmt::Debug for Calls<'_, '_>
 {
-    /// The state of a run of `lowered` whose code is at `codes`.
+    /// The run's tables and refusal; the store and the host stay opaque.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.debug_struct("Calls")
+            .field("callees", &self.callees)
+            .field("literals", &self.literals)
+            .field("refused", &self.refused)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Why the host refused a call: what the run is stuck at, its values still
+/// words of the run's heap.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Refused
+{
+    /// No handler of the run answers the operation this command performs.
+    PerformNoHandler(CommandId),
+    /// No reset is reachable from this shift.
+    ShiftNoReset(CommandId),
+    /// This resumption was given a value that is no stack.
+    ResumedNonStack
+    {
+        /// The resumption.
+        at: CommandId,
+        /// The value.
+        value: Word,
+    },
+    /// The prelude refused a primitive's operands.
+    Primitive(PrimitiveError),
+    /// A primitive's operand is neither an integer nor a boolean.
+    NonScalar(Word),
+    /// This access's body answered with its view never ended.
+    Unended(CommandId),
+    /// A constant the definitions do not hold was read.
+    UndefinedConstant(ConstantIndex),
+    /// A constant's unfolding read its own value.
+    CyclicConstant(ConstantIndex),
+    /// The host stopped the run.
+    Aborted,
+    /// A call refused operands no stuck answer names: a memory form on a
+    /// value that is no cell, a reified stack past a region.
+    Operands,
+    /// The host resumed with a value its store does not hold, or one a run
+    /// cannot hold: code the host built rather than a value the run moved
+    /// out.
+    Reply(HeapValueId),
+    /// A payload could not be moved into the store.
+    Transfer(TransferRefusal),
+}
+
+/// The parts a run's host state holds: the function lowered from `arena`,
+/// its code, its closure sites, the caller's store and the host.
+///
+/// # Specification
+/// trivial.
+pub struct Parts<'run, 'host>
+{
+    /// The function.
+    pub lowered: &'run Lowered,
+    /// Where its code is.
+    pub codes: Codes<'run>,
+    /// Its closure sites, by their code words.
+    pub sites: &'run Sites<'run>,
+    /// The commands it was lowered from.
+    pub arena: &'run CommandArena,
+    /// The caller's store.
+    pub store: &'run mut Store,
+    /// The host unclaimed operations are offered to, if any.
+    pub offer: Option<&'run mut (dyn Offer + 'host)>,
+}
+
+impl<'run, 'host> Calls<'run, 'host>
+{
+    /// The state of a run of `parts`' function.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn new(
-        lowered: &'run Lowered,
-        codes: Codes<'run>,
-    ) -> Self
+    pub fn new(parts: Parts<'run, 'host>) -> Self
     {
+        let Parts {
+            lowered,
+            codes,
+            sites,
+            arena,
+            store,
+            offer,
+        } = parts;
         Self {
             callees: &lowered.callees,
             handlers: &lowered.handlers,
             windows: &lowered.windows,
+            heads: &lowered.heads,
             codes,
+            sites,
+            arena,
+            store,
+            moved: Moved::new(),
+            offer,
             literals: lowered.literals.clone(),
+            refused: None,
         }
     }
 
-    /// The literals the run holds, by the family a literal object names.
+    /// Move the run's value `value` into the caller's store, sharing what
+    /// earlier moves of the run moved.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`transfer`].
+    ///
+    /// # Safety
+    /// - unsafe invariants: `value` is a value of this run, whose heap and
+    ///   constants are still live.
+    #[inline]
+    pub unsafe fn moved(
+        &mut self,
+        value: Word,
+    ) -> Result<HeapValueId, TransferRefusal>
+    {
+        let tables = Tables {
+            heads: self.heads,
+            literals: &self.literals,
+        };
+        // SAFETY: the caller's invariant; `moved` holds only this run's
+        // objects, moved into this store.
+        unsafe {
+            transfer(
+                value,
+                self.sites,
+                tables,
+                self.arena,
+                self.store,
+                &mut self.moved,
+            )
+        }
+    }
+
+    /// Why the host refused the call a stuck run stopped at, when it named a
+    /// reason.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn literals(&self) -> &[Literal]
+    pub const fn refused(&self) -> Option<&Refused>
     {
-        &self.literals
+        self.refused.as_ref()
     }
 
     /// The integer or boolean the operand `word` addresses.
@@ -255,7 +422,7 @@ impl<'run> Calls<'run>
     }
 
     /// Answer the call of callee `entry` on `first` and `second`, as many of
-    /// them as the callee takes.
+    /// them as the callee takes, recording why a refused one refused.
     ///
     /// # Specification
     /// trivial.
@@ -273,21 +440,23 @@ impl<'run> Calls<'run>
     ) -> Result<Word, Refusal>
     {
         let callees = self.callees;
-        match *callees.get(usize::from(entry)).ok_or(Refusal::Operands)? {
+        let callee = callees.get(usize::from(entry)).ok_or(Refusal::Operands)?;
+        let answered = match *callee {
             Callee::Primitive(primitive) => self.primitive(runtime, primitive, first, second),
             Callee::Perform {
                 ref signature,
                 ref operation,
                 reach,
+                at,
             } => {
                 let (capability, payload) = match reach {
                     Reach::Nearest => (None, first),
                     Reach::Capability => (Some(first), second),
                 };
-                self.perform(runtime, signature, operation, capability, payload)
+                self.perform(runtime, (signature, operation, at), capability, payload)
             },
-            Callee::Shift => self.shift(runtime),
-            Callee::Replay => self.replay(runtime, first),
+            Callee::Shift(_) => self.shift(runtime),
+            Callee::Replay(_) => self.replay(runtime, first),
             Callee::Hold => allocate_cell(runtime, &[first]),
             Callee::Access => {
                 let held = cell(first)?;
@@ -303,9 +472,27 @@ impl<'run> Calls<'run>
                 settle(first, Word::from(ABORTED), Word::ZERO)?;
                 unit(runtime)
             },
-            Callee::Ended { unwind } => self.ended(runtime, unwind, first, second),
+            Callee::Ended { unwind, .. } => self.ended(runtime, unwind, first, second),
             Callee::Reify(ref shape) => self.reify(runtime, shape),
+            Callee::Undefined(_) | Callee::Cyclic(_) => Err(Refusal::Operands),
+        };
+        if matches!(answered, Err(Refusal::Operands)) && self.refused.is_none() {
+            self.refused = match *callee {
+                Callee::Perform { at, .. } => Some(Refused::PerformNoHandler(at)),
+                Callee::Shift(at) => Some(Refused::ShiftNoReset(at)),
+                Callee::Replay(at) => Some(Refused::ResumedNonStack { at, value: first }),
+                Callee::Ended { at, .. } => Some(Refused::Unended(at)),
+                Callee::Undefined(constant) => Some(Refused::UndefinedConstant(constant)),
+                Callee::Cyclic(constant) => Some(Refused::CyclicConstant(constant)),
+                Callee::Primitive(_)
+                | Callee::Hold
+                | Callee::Access
+                | Callee::Resumed
+                | Callee::Aborted
+                | Callee::Reify(_) => Some(Refused::Operands),
+            };
         }
+        answered
     }
 
     /// Evaluate `callee` on `first` and, for a binary primitive, `second`,
@@ -324,17 +511,31 @@ impl<'run> Calls<'run>
         second: Word,
     ) -> Result<Word, Refusal>
     {
-        let operands = if callee.arguments().len() == 2 {
-            Vec::from([self.scalar(first)?, self.scalar(second)?])
+        let mut operands = Vec::with_capacity(2);
+        let arguments: &[Word] = if callee.arguments().len() == 2 {
+            &[first, second]
         }
         else {
-            Vec::from([self.scalar(first)?])
+            &[first]
         };
+        for &argument in arguments {
+            match self.scalar(argument) {
+                Ok(scalar) => operands.push(scalar),
+                Err(refusal) => {
+                    self.refused = Some(Refused::NonScalar(argument));
+                    return Err(refusal);
+                },
+            }
+        }
         let borrowed: Vec<Scalar<&IntegerLiteral>> =
             operands.iter().map(Scalar::borrowed).collect();
-        let answer = callee
-            .evaluate(&borrowed)
-            .map_err(|_error| Refusal::Operands)?;
+        let answer = match callee.evaluate(&borrowed) {
+            Ok(answer) => answer,
+            Err(error) => {
+                self.refused = Some(Refused::Primitive(error));
+                return Err(Refusal::Operands);
+            },
+        };
         let width = |_overflow| Refusal::Operands;
         match answer {
             Scalar::Integer(integer) => {
@@ -418,32 +619,28 @@ impl<'run> Calls<'run>
             .ok_or(Refusal::Operands)
     }
 
-    /// Perform `operation` of `signature` through `capability`, or by the
-    /// nearest delimiter when there is none: capture from its handler's
-    /// frame up, write `payload` into the handler's window and continue at
-    /// the clause with the stack in hand.
+    /// Perform `operation` of `signature` at the command `at` through
+    /// `capability`, or by the nearest delimiter when there is none: capture
+    /// from its handler's frame up, write `payload` into the handler's window
+    /// and continue at the clause with the stack in hand; offer it to the
+    /// host when no handler of the run claims it.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// [`Refusal::Operands`] when no handler of the run answers: the nearest
-    /// delimiter handles another interface or lacks the operation, or the
-    /// capability is the host's.
+    /// [`Refusal::Operands`] when neither a handler of the run nor the host
+    /// answers: the nearest delimiter handles another interface or lacks the
+    /// operation, or no handler introduced the capability, and the host
+    /// declines, aborts or is absent.
     fn perform(
-        &self,
+        &mut self,
         runtime: &mut Runtime,
-        signature: &EffectName,
-        operation: &OperationName,
+        (signature, operation, at): (&EffectName, &OperationName, CommandId),
         capability: Option<Word>,
         payload: Word,
     ) -> Result<Word, Refusal>
     {
-        if let Some(capability) = capability
-            && kind(capability)? != Kind::Capability
-        {
-            return Err(Refusal::Operands);
-        }
         let reset = self.codes.stub(Stub::Reset);
         let base = runtime.frame_base();
         let mut frame = runtime.frame_top();
@@ -468,7 +665,7 @@ impl<'run> Calls<'run>
                 .transpose()?
                 // SAFETY: the capability's slot lies inside the handler's
                 // window.
-                .map(|at| unsafe { *at });
+                .map(|slot| unsafe { *slot });
             if capability.is_some() && installed != capability {
                 continue;
             }
@@ -481,7 +678,10 @@ impl<'run> Calls<'run>
             }
             break;
         }
-        let (frame, window, clause) = selected.ok_or(Refusal::Operands)?;
+        let Some((frame, window, clause)) = selected
+        else {
+            return self.offered(runtime, at, payload);
+        };
         let stack = self.capture(runtime, frame)?;
         runtime.set_frame_top(frame);
         let at = slot_in(window, clause.payload)?;
@@ -491,6 +691,89 @@ impl<'run> Calls<'run>
         }
         runtime.jump(self.codes.label(clause.label), window);
         Ok(stack)
+    }
+
+    /// Offer the operation the command `at` performs with `payload` to the
+    /// host, and answer its reply.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] when there is no host, it declines or aborts —
+    /// recorded — or its reply cannot be laid out on the run's heap, or the
+    /// payload moved into the store; [`Refusal::Heap`] past the heap's limit.
+    fn offered(
+        &mut self,
+        runtime: &mut Runtime,
+        at: CommandId,
+        payload: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let arena = self.arena;
+        let (
+            Some(offer),
+            Some(&CommandNode::Perform {
+                ref signature,
+                ref operation,
+                ..
+            }),
+        ) = (self.offer.as_deref_mut(), arena.command(at))
+        else {
+            return Err(Refusal::Operands);
+        };
+        let tables = Tables {
+            heads: self.heads,
+            literals: &self.literals,
+        };
+        // SAFETY: the payload is a value of this run, whose heap and
+        // constants are live while its host call runs.
+        let moved = unsafe {
+            transfer(
+                payload,
+                self.sites,
+                tables,
+                arena,
+                self.store,
+                &mut self.moved,
+            )
+        };
+        let moved = match moved {
+            Ok(moved) => moved,
+            Err(refusal) => {
+                self.refused = Some(Refused::Transfer(refusal));
+                return Err(Refusal::Operands);
+            },
+        };
+        let request = HostRequest {
+            signature,
+            operation,
+            payload: moved,
+        };
+        let mut values = HostValues::new(arena, self.store);
+        match offer.offer(request, &mut values) {
+            Offered::Resume(reply) => {
+                let mut laying = Laying {
+                    store: self.store,
+                    heads: self.heads,
+                    literals: &mut self.literals,
+                    moved: &self.moved,
+                };
+                match laying.laid(runtime, reply) {
+                    Ok(word) => Ok(word),
+                    Err(Unlaid::Value(value)) => {
+                        self.refused = Some(Refused::Reply(value));
+                        Err(Refusal::Operands)
+                    },
+                    Err(Unlaid::Run(refusal)) => Err(refusal),
+                }
+            },
+            Offered::Abort => {
+                self.refused = Some(Refused::Aborted);
+                Err(Refusal::Operands)
+            },
+            Offered::Decline => Err(Refusal::Operands),
+        }
     }
 
     /// Capture from the nearest reset's frame up; answers the stack.
@@ -561,9 +844,10 @@ impl<'run> Calls<'run>
 
     /// Build the reified stack `shape` describes, innermost first: each
     /// application frame takes the call's next argument, which lie popped at
-    /// the frame region's top in order, and each bind frame resumes at its
-    /// label in a copy of the window in reach. No frame of the region is in
-    /// it, so a replay moves no mark.
+    /// the frame region's top in order, each projection frame resumes at its
+    /// side's stub, and each bind frame resumes at its label in a copy of the
+    /// window in reach. No frame of the region is in it, so a replay moves no
+    /// mark.
     ///
     /// # Specification
     /// trivial.
@@ -595,6 +879,14 @@ impl<'run> Calls<'run>
                         word: unsafe { *arguments.wrapping_add(remaining) },
                         window: None,
                     }
+                },
+                Reified::Project(side) => Frame {
+                    code: self.codes.stub(match side {
+                        Side::Left => Stub::ProjectLeft,
+                        Side::Right => Stub::ProjectRight,
+                    }),
+                    word: Word::ZERO,
+                    window: None,
                 },
                 Reified::Bind(label) => {
                     let code = self.codes.label(label);
@@ -765,6 +1057,191 @@ struct Frame
     word: Word,
     /// The window's slot count, or none for a value.
     window: Option<Slots>,
+}
+
+/// Why a host's reply could not be laid out on the run's heap.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Unlaid
+{
+    /// The store does not hold this value, or a run cannot hold it: code the
+    /// host built, a capability no handler of the run introduced.
+    Value(HeapValueId),
+    /// The run's heap refused.
+    Run(Refusal),
+}
+
+/// A reply laid out on the run's heap: read from the caller's store, a value
+/// the run moved out answered by the object it was moved from.
+struct Laying<'laying>
+{
+    /// The caller's store.
+    store: &'laying Store,
+    /// The function's heads, by family.
+    heads: &'laying [ConstructorTag],
+    /// The run's literals, by family, which a literal the reply holds joins.
+    literals: &'laying mut Vec<Literal>,
+    /// The run's objects already moved into the store.
+    moved: &'laying Moved,
+}
+
+impl Laying<'_>
+{
+    /// The object the store's value `reply` is laid out as, its fields laid
+    /// out first.
+    ///
+    /// # Specification
+    /// - requires: `runtime` is the record of the run whose objects `moved`
+    ///   names.
+    /// - ensures: a value the run moved out answers the object it was moved
+    ///   from, so a thunk or a function keeps its identity; any other value is
+    ///   allocated as the run lays out its own: an integer a word holds as an
+    ///   integer object, another literal as an object naming its new row in the
+    ///   run's literal table, a tuple, an injection or a datatype's constructor
+    ///   over its fields, a head the function's table holds as a head object,
+    ///   an opaque constant as an opaque object.
+    /// - executable: none — the objects are memory no predicate reads.
+    ///
+    /// # Errors
+    /// [`Unlaid::Value`] naming a value the store does not hold, a head the
+    /// function's table lacks, or code or a capability the host built;
+    /// [`Unlaid::Run`] past the heap's limit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — replies of an integer, the unit, the payload itself
+    ///   and a value the store does not hold, each continuing or stopping the
+    ///   run as it states.
+    /// - witness: `tests::seam::a_host_reply_flows_into_the_rest_of_the_run`
+    /// - witness: `tests::seam::a_host_reply_of_its_payload_keeps_its_identity`
+    /// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
+    fn laid(
+        &mut self,
+        runtime: &mut Runtime,
+        reply: HeapValueId,
+    ) -> Result<Word, Unlaid>
+    {
+        let mut laid: BTreeMap<HeapValueId, Word> =
+            self.moved.iter().map(|(&word, &id)| (id, word)).collect();
+        let mut pending = Vec::from([(reply, false)]);
+        while let Some((id, entered)) = pending.pop() {
+            if laid.contains_key(&id) {
+                continue;
+            }
+            let value = self.store.value(id).ok_or(Unlaid::Value(id))?;
+            if !entered {
+                pending.push((id, true));
+                if let HeapValue::Constructed { ref fields, .. } = *value {
+                    pending.extend(
+                        fields
+                            .iter()
+                            .rev()
+                            .filter(|field| !laid.contains_key(field))
+                            .map(|&field| (field, false)),
+                    );
+                }
+                continue;
+            }
+            let word = self.object(runtime, id, &laid)?;
+            laid.insert(id, word);
+        }
+        laid.get(&reply).copied().ok_or(Unlaid::Value(reply))
+    }
+
+    /// Allocate the store's value `id`, its fields laid out in `laid`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::laid`].
+    fn object(
+        &mut self,
+        runtime: &mut Runtime,
+        id: HeapValueId,
+        laid: &BTreeMap<HeapValueId, Word>,
+    ) -> Result<Word, Unlaid>
+    {
+        let width = |_overflow| Unlaid::Value(id);
+        let header = |kind, tag: usize, arity: usize, family| -> Result<Word, Unlaid> {
+            Ok(Header::new(
+                kind,
+                Tag::try_from(tag).map_err(width)?,
+                Arity::try_from(arity).map_err(width)?,
+                family,
+            )
+            .word())
+        };
+        let words = match *self.store.value(id).ok_or(Unlaid::Value(id))? {
+            HeapValue::Literal(ref literal) => {
+                let bits = match *literal {
+                    Literal::Integer(ref integer) => integer_word(integer),
+                    Literal::Text(_) | Literal::Numeric(_) => None,
+                };
+                if let Some(bits) = bits {
+                    Vec::from([header(Kind::Integer, 0, 1, Family::UNNAMED)?, bits])
+                }
+                else {
+                    let family = Family::try_from(self.literals.len()).map_err(width)?;
+                    self.literals.push(literal.clone());
+                    Vec::from([header(Kind::Literal, 0, 0, family)?])
+                }
+            },
+            HeapValue::Constructed {
+                ref tag,
+                ref fields,
+            } => {
+                let (kind, bits, family) = match *tag {
+                    ConstructorTag::Tuple(_) => (Kind::Tuple, 0, Family::UNNAMED),
+                    ConstructorTag::Injection(summand) => {
+                        (Kind::Injection, usize::from(summand), Family::UNNAMED)
+                    },
+                    ConstructorTag::Data {
+                        tag: constructor,
+                        family,
+                        ..
+                    } => (
+                        Kind::Data,
+                        usize::from(constructor),
+                        family.map_or(Ok(Family::UNNAMED), |family| {
+                            Family::try_from(usize::from(family)).map_err(width)
+                        })?,
+                    ),
+                    ConstructorTag::Record(_)
+                    | ConstructorTag::ListNil
+                    | ConstructorTag::ListCons
+                    | ConstructorTag::Lift(_)
+                    | ConstructorTag::Recorded(_) => {
+                        let row = self
+                            .heads
+                            .iter()
+                            .position(|head| head == tag)
+                            .ok_or(Unlaid::Value(id))?;
+                        (Kind::Head, 0, Family::try_from(row).map_err(width)?)
+                    },
+                };
+                let mut words = Vec::with_capacity(fields.len().saturating_add(1));
+                words.push(header(kind, bits, fields.len(), family)?);
+                for field in fields {
+                    words.push(*laid.get(field).ok_or(Unlaid::Value(*field))?);
+                }
+                words
+            },
+            HeapValue::Opaque(constant) => Vec::from([header(
+                Kind::Opaque,
+                0,
+                0,
+                Family::try_from(usize::from(constant)).map_err(width)?,
+            )?]),
+            HeapValue::Capability
+            | HeapValue::Thunk { .. }
+            | HeapValue::Fixpoint { .. }
+            | HeapValue::Closure { .. }
+            | HeapValue::Stack { .. } => return Err(Unlaid::Value(id)),
+        };
+        allocate(runtime, &words).map_err(Unlaid::Run)
+    }
 }
 
 /// Allocate a stack of `frames`, bottom first, captured from the region
@@ -1004,8 +1481,8 @@ pub fn integer_literal(bits: Word) -> IntegerLiteral
 ///   predicate observes.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   calling primitives on both tiers.
+/// - hypothesis: L2 — the agreement differential over the named programs
+///   calling primitives, each halting with the answer it states.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 pub extern "C" fn enter(
     runtime: *mut Runtime,
@@ -1017,7 +1494,7 @@ pub extern "C" fn enter(
     // SAFETY: the call stencil passes the run's live record, which no other
     // reference reaches during the call.
     let record = unsafe { &mut *runtime };
-    let calls = record.context().to_pointer::<Calls<'_>>();
+    let calls = record.context().to_pointer::<Calls<'_, '_>>();
     // SAFETY: the run made the record with its live state as the context.
     let state = unsafe { &mut *calls };
     match state.call(record, entry, first, second) {

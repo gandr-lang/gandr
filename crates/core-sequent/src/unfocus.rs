@@ -16,7 +16,7 @@
 //!
 //! The walk can close a term as it goes: a producer variable counting past
 //! the decoded root's own binders is replaced by the closed core value the
-//! caller supplies for it. The machine's readback closes a closure's body
+//! caller supplies for it. The store's readback closes a closure's body
 //! over its environment this way; the public entry points close nothing.
 //!
 //! Decoding writes into a caller's [`CoreArena`] and truncates it to its entry
@@ -44,10 +44,10 @@
 //! properties check node by node across the two arenas.
 //!
 //! The walk is a loop over an explicit task stack, and its one implementation
-//! serves both the public inverse and the machine's readback, which closes a
+//! serves both the public inverse and the store's readback, which closes a
 //! terminal's free variables by index from its environment. The alternative was
-//! a readback of its own for the machine, which would be a second decoder for
-//! the same image to keep in step. The choice reverses if the machine's
+//! a readback of its own for a run's values, which would be a second decoder
+//! for the same image to keep in step. The choice reverses if a run's
 //! terminals grow a form focusing never produces.
 //!
 //! Unfocusing a native List fold closes the ambient variables of the type
@@ -347,7 +347,7 @@ pub enum Decoded
 ///   intuitionistic zone counting `k` past the binders opened since the root
 ///   reads `closing[k]` where present, and counting past the closing it stays a
 ///   variable, shifted down past the `closing.len()` bindings substituted.
-/// - provides: the one walk both the public inverse and the machine's readback
+/// - provides: the one walk both the public inverse and the store's readback
 ///   run.
 /// - fails: as [`unfocus_command`]; `core` is then exactly as on entry.
 /// - panics: none.
@@ -357,7 +357,7 @@ pub enum Decoded
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — bounded generated source terms and machine closure
+/// - hypothesis: L2 — bounded generated source terms and stored closure
 ///   readbacks observe decoding independently of the IL traversal. L3 —
 ///   substitution at binder/closing boundaries, malformed heads and exact
 ///   dangling-root rollback distinguish shift and image-check defects.
@@ -366,8 +366,8 @@ pub enum Decoded
 /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
 /// - witness: `unfocus::tests::closing_substitution_distinguishes_binders_and_zones`
 /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
-/// - witness: `machine::tests::a_function_terminal_reads_back_closed_over_its_environment`
-/// - witness: `machine::tests::a_thunk_reads_back_closed_over_its_environment`
+/// - witness: `tests::run::a_function_terminal_reads_back_closed_over_its_environment`
+/// - witness: `tests::run::a_thunk_reads_back_closed_over_its_environment`
 #[spec(
     requires: closing.iter().all(|id| core.value(*id).is_some()),
     captures: [mark = core.watermark()],

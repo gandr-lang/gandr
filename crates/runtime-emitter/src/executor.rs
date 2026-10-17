@@ -52,6 +52,8 @@ const STUBS: [StencilId; Stub::ALL.len().wrapping_add(1)] = [
     Stub::Argument.stencil(),
     Stub::Reset.stencil(),
     Stub::Answer.stencil(),
+    Stub::ProjectLeft.stencil(),
+    Stub::ProjectRight.stencil(),
     StencilId::Halt,
 ];
 
@@ -75,7 +77,7 @@ impl Program
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every agreement case runs the program this builds
-    ///   beside the emitted code of the same function and the L machine.
+    ///   beside the emitted code of the same function and the answer it states.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
     #[inline]
     pub fn build(function: &Function) -> Result<Self, Unbound>

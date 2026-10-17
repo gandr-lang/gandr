@@ -217,25 +217,9 @@ count_wrapper! {
 }
 
 count_wrapper! {
-    /// The population of one node family: of an arena, a heap region or the
-    /// frame region.
+    /// The population of one node family: of an arena or of the store's
+    /// values.
     pub struct NodeCount;
-}
-
-count_wrapper! {
-    /// The height of the frame region: how many frames it holds.
-    pub struct FrameHeight;
-}
-
-count_wrapper! {
-    /// The serial a frame is pushed under. Serials strictly increase, so a
-    /// frame popped and replaced at the same height carries a new serial.
-    pub struct FrameSerial;
-}
-
-count_wrapper! {
-    /// A number of machine transitions: the budget a run may spend.
-    pub struct StepCount;
 }
 
 impl ProducerArity
@@ -254,18 +238,6 @@ impl ConsumerArity
     pub const ZERO: Self = Self(0);
     /// One consumer child.
     pub const ONE: Self = Self(1);
-}
-
-impl FrameHeight
-{
-    /// The empty region's height.
-    pub const ZERO: Self = Self(0);
-}
-
-impl FrameSerial
-{
-    /// The serial below every frame: the base of the region.
-    pub const BASE: Self = Self(0);
 }
 
 #[cfg(test)]
