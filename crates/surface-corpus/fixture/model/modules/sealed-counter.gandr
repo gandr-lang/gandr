@@ -1,17 +1,18 @@
-module Counter :> #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) } {
-  type T = Integer;
-  @[ runs("0") ]
-  def zero = 0;
-  @[ runs("fn (a) { a + 1 }") ]
-  def next(n : T) -> -F T { become n + 1 }
-  @[ runs("fn (a) { a }") ]
-  def read(n : T) -> -F Integer { return n }
-}
+// A module sealed by a signature, after ML's opaque ascription (Harper and
+// Lillibridge, _A Type-Theoretic Approach to Higher-Order Modules with
+// Sharing_, POPL 1994, doi:10.1145/174675.176927): outside the seal its type
+// is abstract, so a value of it is reached only through the members the
+// signature exposes.
 
+// The sealed counter `Seed`.
+import "./functor-pair.gandr" ;
+
+/// One step from the counter's zero, a value of its abstract type.
 @[ runs("1") ]
-def one : +U (-F Counter.T) ;
-def one = thunk { become Counter.next(Counter.zero) } ;
+def one : +U (-F Seed.T) ;
+def one = thunk { become Seed.next(Seed.zero) } ;
 
+/// That value read back through the exposed reader.
 @[ runs("1") ]
 def shown : +U (-F Integer) ;
-def shown = thunk { run n <- force one ; become Counter.read(n) } ;
+def shown = thunk { run n <- force one ; become Seed.read(n) } ;

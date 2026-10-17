@@ -1,6 +1,8 @@
 // Calls of no arguments: a module member called through its module's name,
 // and a suspension called by its own. Such a call is its head's force, and
-// it answers at the call, as a call that applies arguments does.
+// it answers at the call, as a call that applies arguments does: forcing a
+// thunk, after Levy's call-by-push-value (_Call-By-Push-Value_, Springer,
+// 2003, doi:10.1007/978-94-007-0954-6).
 
 /// A module whose one member takes no arguments.
 module Origin {

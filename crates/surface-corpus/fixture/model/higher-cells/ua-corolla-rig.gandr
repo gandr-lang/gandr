@@ -1,14 +1,25 @@
+// Univalence at the corollas of a signature, checked for naturality and
+// shape (Shulman, _Univalence for Inverse Diagrams and Homotopy Canonicity_,
+// doi:10.1017/S0960129514000565; Petrakis, _Univalent Typoids_,
+// arXiv:2205.06651): a translator must be natural along every automorphism
+// of its corolla, its tables must cover exactly the corollas both models
+// inhabit, and two corollas it relates must have as many elements.
+
+/// A rig's binary operations, two corollas of one shape.
 sign Rig {
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);
 }
 
+/// A semigroup: one binary operation.
 sign Semi {
   sort S : Type;
   oper mul : (x : S, y : S) --> (z : S);
 }
 
+/// A relabelling of the corolla's four elements, natural along its
+/// automorphisms.
 @[ checks ]
 def rename(e : +{Unit, Unit, Unit, Unit}) -> -F +{Unit, Unit, Unit, Unit} {
   case e {
@@ -19,6 +30,8 @@ def rename(e : +{Unit, Unit, Unit, Unit}) -> -F +{Unit, Unit, Unit, Unit} {
   }
 }
 
+/// A relabelling of the corolla's four elements that is not natural along
+/// its automorphisms.
 @[ checks ]
 def cross(e : +{Unit, Unit, Unit, Unit}) -> -F +{Unit, Unit, Unit, Unit} {
   case e {
@@ -29,19 +42,24 @@ def cross(e : +{Unit, Unit, Unit, Unit}) -> -F +{Unit, Unit, Unit, Unit} {
   }
 }
 
+/// The rig to itself by the natural relabelling at `plus`.
 @[ checks ]
 def dual = ua[1, 4](Rig, Rig, #{.plus = rename}, #{.plus = rename}) ;
 
+/// Transport along it relabels the corolla's element.
 @[ checks ]
 def swaps : Path(#{Unit, +{Unit, Unit, Unit, Unit}}, transport(\X. X, dual, #{unit, +{.1 = unit}}), #{unit, +{.3 = unit}}) ;
 def swaps = here(#{unit, +{.3 = unit}}) ;
 
+/// A relabelling that does not commute with the corolla's symmetry.
 @[ refuses("NotNatural") ]
 def crossed = ua[1, 4](Rig, Rig, #{.plus = cross}, #{.plus = cross}) ;
 
+/// Tables that name a corolla on one side and not on the other.
 @[ refuses("CorollaTables") ]
 def twice = ua[1, 4](Rig, Rig, #{.plus = rename, .times = rename}, #{.plus = rename}) ;
 
+/// The booleans into the corolla's four elements.
 @[ checks ]
 def widen(b : Bool) -> -F +{Unit, Unit, Unit, Unit} {
   case b {
@@ -50,6 +68,7 @@ def widen(b : Bool) -> -F +{Unit, Unit, Unit, Unit} {
   }
 }
 
+/// The corolla's four elements onto the booleans.
 @[ checks ]
 def narrow(e : +{Unit, Unit, Unit, Unit}) -> -F Bool {
   case e {
@@ -60,5 +79,6 @@ def narrow(e : +{Unit, Unit, Unit, Unit}) -> -F Bool {
   }
 }
 
+/// Two corollas of different element counts.
 @[ refuses("CorollaCardinality") ]
 def uneven = ua[1, 4](Semi, Rig, #{.mul = widen}, #{.plus = narrow}) ;

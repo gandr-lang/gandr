@@ -1,17 +1,15 @@
-sign Magma {
-  sort M : Type;
-  oper mul : (x : M, y : M) --> (z : M);
-  oper one : () --> (z : M);
-}
+// Univalence at the corollas of a signature: `ua[1, 4](Magma, Magma, f, g)`
+// is a path between the two models' degree telescopes, derived corolla by
+// corolla from the translator tables `f` and `g` (Shulman, _Univalence for
+// Inverse Diagrams and Homotopy Canonicity_, doi:10.1017/S0960129514000565;
+// a univalence map as a typoid function, Petrakis, _Univalent Typoids_,
+// arXiv:2205.06651). Transport along it applies each corolla's translator,
+// and two tables that agree at every element give the same path.
 
-@[ checks ]
-def exchange(b : Bool) -> -F Bool {
-  case b {
-    true => return +{.1 = unit},
-    false => return +{.0 = unit}
-  }
-}
+// The magma, the swap, the identity on the booleans and the unit's identity.
+import "./magma-base.gandr" ;
 
+/// The swap three times, which is the swap.
 @[ checks ]
 def flip(b : Bool) -> -F Bool {
   run c <- exchange(b);
@@ -19,34 +17,30 @@ def flip(b : Bool) -> -F Bool {
   become exchange(d)
 }
 
-@[ checks ]
-def stay(b : Bool) -> -F Bool {
-  return b
-}
-
-@[ checks ]
-def keep(e : +{Unit}) -> -F +{Unit} {
-  return e
-}
-
+/// The magma to itself by the swap at the binary corolla.
 @[ checks ]
 def opposite = ua[1, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
 
+/// Transport along it swaps the binary corolla's boolean.
 @[ checks ]
 def moves : Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
 def moves = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
 
+/// It does not leave the boolean where it was.
 @[ refuses("EndpointMismatch") ]
 def stays : Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.0 = unit}}}) ;
 def stays = here(#{unit, #{+{.0 = unit}, +{.0 = unit}}}) ;
 
+/// The magma to itself by the swap written three times.
 @[ checks ]
 def reopposite = ua[1, 4](Magma, Magma, #{.mul = flip, .one = keep}, #{.mul = flip, .one = keep}) ;
 
+/// The swap and the swap three times agree at every boolean.
 @[ checks ]
 def agree : Path(+U (Bool -> -F Bool), exchange, flip) ;
 def agree = funext(exchange, flip) ;
 
+/// The swap and the identity do not.
 @[ refuses("PointwiseDistinct") ]
-def disagree : Path(+U (Bool -> -F Bool), exchange, stay) ;
-def disagree = funext(exchange, stay) ;
+def disagree : Path(+U (Bool -> -F Bool), exchange, boolId) ;
+def disagree = funext(exchange, boolId) ;

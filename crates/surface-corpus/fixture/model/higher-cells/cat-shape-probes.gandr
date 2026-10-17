@@ -1,28 +1,39 @@
+// The reflexivities `cat-shape.gandr`'s laws are built from, each probed on
+// its own (the HoTT book's § 1.12, `refl`): at a variable of a type
+// parameter, at a function, at an application, and through a family indexed
+// by an integer, the shape of a hom-set indexed by its objects.
+
+/// Reflexivity at a variable of a type parameter.
 @[ checks ]
 def path_var(a : Type, x : a) -> -F Path(a, x, x) {
   return here(x)
 }
 
+/// Reflexivity at a function.
 @[ checks ]
 def path_fun(f : Integer => Integer) -> -F Path(Integer => Integer, f, f) {
   return here(f)
 }
 
+/// Reflexivity at an application.
 @[ checks ]
 def path_app(n : Integer) -> -F Path(Integer, n + 1, n + 1) {
   return here(n + 1)
 }
 
+/// A family indexed by an integer, one element at each index.
 @[ checks ]
 data Ix(n : Integer) : Type {
   MkIx : Ix(n);
 }
 
+/// The identity at every index of the family.
 @[ checks ]
 def ix_id(n : Integer, w : Ix(n)) -> -F Ix(n) {
   return w
 }
 
+/// The identity at one closed index.
 @[ checks ]
 def ix_ctor(w : Ix(1)) -> -F Ix(1) {
   return w
