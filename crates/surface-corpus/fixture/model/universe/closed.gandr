@@ -5,13 +5,10 @@
 // between its two decoded sides, so a function at a decoded arrow applies. A
 // type a body quotes reads each binder where the body binds it. A
 // constructor field may read the one before it, so a value packs with its
-// code.
+// code (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
 
-/// Natural numbers, free: every constructor term is its own value.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
-}
+// The naturals.
+import "../data/data-base.gandr" ;
 
 /// The codes: the naturals, and the functions from one coded type to another.
 @[ checks ]
