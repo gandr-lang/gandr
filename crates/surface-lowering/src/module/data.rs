@@ -86,7 +86,6 @@ use gandr_theory_spec_combinators::appended;
 use quenchant_shape::shape::Maybe;
 
 use super::Collector;
-use super::Container;
 use super::DeclarationSlot;
 use super::Half;
 use super::Operand;
@@ -483,7 +482,12 @@ impl<'source> Collector<'_, 'source>
             return Err(misplaced_in(FormName::DATA, cursor.here()));
         };
         let name = self.name_of(named);
-        let slot = self.admit(Container::TopLevel, name, declaration, named);
+        let slot = self.admit(
+            self.collected.top(declaration.span.start()),
+            name,
+            declaration,
+            named,
+        );
         self.collected.own(declaration.node, slot);
         for &block in decorations {
             self.document(slot, block.node, block.span.end(), declaration.node);
@@ -636,7 +640,10 @@ impl<'source> Collector<'_, 'source>
             let entered = self
                 .collected
                 .constructors
-                .get(&name)
+                .get(&(
+                    self.collected.unit.source_at(generator.named.span.start()),
+                    name,
+                ))
                 .map(|entry| entry.named.span);
             if let Some(first) = entered.or(earlier) {
                 return Tail::Refused(LoweringRefusal::DuplicateDefinition {
@@ -648,16 +655,17 @@ impl<'source> Collector<'_, 'source>
         }
         let position = self.collected.data.len();
         for (tag, generator) in form.generators.iter().enumerate() {
-            let _fresh =
-                self.collected
-                    .constructors
-                    .insert(self.name_of(generator.named), Constructor {
-                        family: form.slot,
-                        form: Generators::Written(position),
-                        tag,
-                        arity: generator.fields.len(),
-                        named: generator.named,
-                    });
+            let source = self.collected.unit.source_at(generator.named.span.start());
+            let _fresh = self.collected.constructors.insert(
+                (source, self.name_of(generator.named)),
+                Constructor {
+                    family: form.slot,
+                    form: Generators::Written(position),
+                    tag,
+                    arity: generator.fields.len(),
+                    named: generator.named,
+                },
+            );
         }
         self.collected.data.push(form);
 
@@ -714,12 +722,13 @@ impl<'source> Collector<'_, 'source>
             .slots
             .get(family.0)
             .map_or_else(|| SurfaceName::from(""), |slot| slot.name);
+        let top = self.collected.top(declaration.span.start());
         for (point, cells) in points {
             let index = self.collected.words.len();
             let words = SlotIndex(self.collected.slots.len());
             self.collected.slots.push(DeclarationSlot {
                 name,
-                container: Container::TopLevel,
+                container: top,
                 role: Role::Words,
                 constant: ConstantIndex::from(words.0),
                 introduced_by: declaration,
@@ -739,7 +748,7 @@ impl<'source> Collector<'_, 'source>
                 let named = self.name_of(cell.named);
                 self.collected.slots.push(DeclarationSlot {
                     name: named,
-                    container: Container::TopLevel,
+                    container: top,
                     role: Role::Declared,
                     constant: ConstantIndex::from(bound.0),
                     introduced_by: cell.at,
@@ -756,10 +765,7 @@ impl<'source> Collector<'_, 'source>
                     docs: Vec::new(),
                     refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
                 });
-                let _fresh = self
-                    .collected
-                    .by_name
-                    .insert((Container::TopLevel, named), bound);
+                let _fresh = self.collected.by_name.insert((top, named), bound);
                 loops.push(bound);
             }
             self.collected.words.push(WordsForm {
@@ -968,7 +974,7 @@ impl<'source> Collector<'_, 'source>
             let declared = self
                 .collected
                 .by_name
-                .get(&(Container::TopLevel, name))
+                .get(&(self.collected.top(cell.named.span.start()), name))
                 .and_then(|&slot| self.collected.slots.get(slot.0))
                 .map(|slot| slot.named.span);
             if let Some(first) = declared.or(earlier) {
@@ -1229,7 +1235,9 @@ impl<'source> Collector<'_, 'source>
                     continue;
                 };
                 if table.callees.contains_key(&operation.name)
-                    || collected.operation_names.contains_key(&name)
+                    || collected
+                        .operation_names
+                        .contains_key(&(collected.unit.source_at(named.span.start()), name))
                     || !cells
                         .operations
                         .iter()
@@ -1277,7 +1285,7 @@ impl<'source> Collector<'_, 'source>
             let minted = SlotIndex(self.collected.slots.len());
             self.collected.slots.push(DeclarationSlot {
                 name,
-                container: Container::TopLevel,
+                container: self.collected.top(named.span.start()),
                 role: Role::Operation,
                 constant: ConstantIndex::from(minted.0),
                 introduced_by: Placed {
@@ -1295,7 +1303,11 @@ impl<'source> Collector<'_, 'source>
                 refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
             });
             let _plan = self.collected.operations.insert(minted, plan);
-            let _name = self.collected.operation_names.insert(name, minted);
+            let source = self.collected.unit.source_at(named.span.start());
+            let _name = self
+                .collected
+                .operation_names
+                .insert((source, name), minted);
         }
     }
 
@@ -1344,7 +1356,7 @@ impl<'source> Collector<'_, 'source>
             }
             let _generators = table.generators.insert(family, generators);
         }
-        for (name, &slot) in &self.collected.operation_names {
+        for (&(_, name), &slot) in &self.collected.operation_names {
             if let Some(entry) = self.collected.slots.get(slot.0) {
                 let _callee = table
                     .callees

@@ -32,6 +32,7 @@ use gandr_surface_corpus::produced_refusal;
 use gandr_surface_diagnostics::Diagnostic;
 use gandr_surface_diagnostics::Failures;
 use gandr_surface_diagnostics::Severity;
+use gandr_surface_diagnostics::SourceStart;
 use gandr_surface_diagnostics::Spellings;
 use gandr_surface_diagnostics::Subject;
 use gandr_surface_diagnostics::Unsettlement;
@@ -45,6 +46,7 @@ use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -198,8 +200,10 @@ pub struct Entries<'step>
 {
     /// The source's path.
     path: &'step Path,
-    /// The source's text.
+    /// The text the step's spans are measured against.
     text: SourceText<'step>,
+    /// Where the source's own text starts in `text`.
+    start: SourceStart,
     /// The verb the walk runs under.
     verb: Verb,
     /// Where each lint reports its findings.
@@ -256,19 +260,26 @@ pub fn entries<'step>(
     verb: Verb,
 ) -> Entries<'step>
 {
-    let (path, text, cursor) = match *step {
-        Step::Fault { path, .. } => (path, SourceText::from(""), Cursor::Done),
+    let (path, text, base, cursor) = match *step {
+        Step::Fault { path, .. } => (
+            path,
+            SourceText::from(""),
+            ByteOffset::from(0_usize),
+            Cursor::Done,
+        ),
         Step::Source {
             path,
             text,
+            base,
             ref composed,
             standing,
             ..
-        } => (path, text, cursor(verb, standing, composed)),
+        } => (path, text, base, cursor(verb, standing, composed)),
     };
     Entries {
         path,
         text,
+        start: SourceStart::of(text, base),
         verb,
         lints: Lints::default(),
         cursor,
@@ -686,6 +697,28 @@ impl Iterator for Entries<'_>
     #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
+        let start = self.start;
+        self.reached().map(|diagnostic| diagnostic.rebased(start))
+    }
+}
+
+impl Entries<'_>
+{
+    /// The next diagnostic, measured against the step's whole text.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Entries::next`], before the diagnostic is measured from
+    ///   the source's own start.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witnesses of [`Entries::next`].
+    /// - witness: `entry::tests::each_verb_prints_its_entries`
+    #[spec(ensures: |ref ret| ret.as_ref().is_none_or(|diagnostic| diagnostic.path.as_path() == self.path))]
+    fn reached(&mut self) -> Option<Diagnostic>
+    {
         match core::mem::replace(&mut self.cursor, Cursor::Done) {
             Cursor::Done => None,
             Cursor::Last(Last::Line(refusal)) => {
@@ -792,6 +825,7 @@ mod tests
             path,
             root,
             text,
+            base: ByteOffset::from(0_usize),
             composed: compose(
                 grammar,
                 root.corpus_root(),

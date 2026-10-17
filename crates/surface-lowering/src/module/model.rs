@@ -410,7 +410,7 @@ impl<'source> Collector<'_, 'source>
         let presented = self
             .collected
             .by_name
-            .get(&(Container::TopLevel, name))
+            .get(&(self.collected.top(form.span.start()), name))
             .and_then(|&position| self.collected.slots.get(position.0))
             .filter(|slot| {
                 slot.introduced_by.span.end() <= form.span.start()

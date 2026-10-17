@@ -192,6 +192,7 @@ def wrong = "text" ;
             path,
             root,
             text,
+            base: gandr_surface_syntax::ByteOffset::from(0_usize),
             composed: compose(
                 &grammar,
                 root.corpus_root(),
@@ -569,6 +570,7 @@ def wrong = "text" ;
             path: Path::new("broken.gandr"),
             root: SourceRoot::Strict,
             text: SourceText::from("def"),
+            base: gandr_surface_syntax::ByteOffset::from(0_usize),
             composed: compose(
                 &grammar,
                 SourceRoot::Strict.corpus_root(),

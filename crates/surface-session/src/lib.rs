@@ -177,6 +177,7 @@ pub use crate::session::Admitted;
 pub use crate::session::CandidateIndex;
 pub use crate::session::ImportRow;
 pub use crate::session::KernelCheckpoint;
+pub use crate::session::Laying;
 pub use crate::session::Persistence;
 pub use crate::session::Reopened;
 pub use crate::session::Resumed;

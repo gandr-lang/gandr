@@ -157,9 +157,13 @@ use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::Laid;
+use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_dispatcher::laid;
+use gandr_surface_dispatcher::lay_out;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RoleTable;
@@ -168,11 +172,14 @@ use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::CandidateIndex;
 use gandr_surface_session::FormCensus;
+use gandr_surface_session::Laying;
 use gandr_surface_session::Session;
 use gandr_surface_session::SessionFault;
 use gandr_surface_session::Submission;
+use gandr_surface_syntax::ByteOffset as SyntaxOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::inline::Forms;
@@ -550,12 +557,35 @@ pub fn recheck(
         },
     };
     let mut form = Maybe::Absent(formless::Absent::Unparsed);
-    let outcome = session.judge_reading(text, |tree| {
+    // A document that imports a sibling is judged over it, laid out as the
+    // walk lays its file out; the caret and the form it is in are measured
+    // from the document's own start.
+    let laid = laid_out(uri, session.root(), text);
+    let base = match laid {
+        Maybe::Present(ref laid) => laid.base,
+        Maybe::Absent(_) => SyntaxOffset::from(0_usize),
+    };
+    let read = |tree: &SyntaxTree<'_>| {
         form = match caret {
-            Maybe::Present(at) => caret_form(tree, at),
+            Maybe::Present(at) => {
+                let at = SyntaxOffset::from(usize::from(at).saturating_add(usize::from(base)));
+                match caret_form(tree, at) {
+                    Maybe::Present(span) => own(span, base),
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
+                }
+            },
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
-    });
+    };
+    let outcome = match laid {
+        Maybe::Present(ref laid) => session.judge_unit_reading(
+            SourceText::from(laid.text.as_str()),
+            &laid.unit,
+            laid.base,
+            read,
+        ),
+        Maybe::Absent(_) => session.judge_reading(text, read),
+    };
     let submission = match outcome {
         Ok(submission) => submission,
         Err(fault) => return unchecked(Diagnostic::at_origin(fault.to_string())),
@@ -734,8 +764,24 @@ pub fn trial(
                 .collect();
         },
     };
+    let root = session.root();
+    let laid: Vec<Maybe<Laid, laid::Absent>> = candidates
+        .iter()
+        .map(|&candidate| laid_out(uri, root, candidate))
+        .collect();
+    let members: Vec<(SourceText<'_>, Laying<'_>)> = candidates
+        .iter()
+        .zip(&laid)
+        .map(|(&candidate, laid)| match *laid {
+            Maybe::Present(ref laid) => (SourceText::from(laid.text.as_str()), Laying::Member {
+                unit: &laid.unit,
+                base: laid.base,
+            }),
+            Maybe::Absent(_) => (candidate, Laying::Alone),
+        })
+        .collect();
     session
-        .trial(candidates)
+        .trial_unit(&members)
         .into_iter()
         .map(|tried| {
             let candidate = tried.candidate();
@@ -760,6 +806,69 @@ pub fn trial(
             }
         })
         .collect()
+}
+
+/// The import closure the document at `uri`, written as `text` under `root`,
+/// is judged in: the dispatcher's [`lay_out`] under the process's grammar.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`lay_out`] of the document's path; [`laid::Absent::Alone`] when
+///   the grammar did not build.
+/// - provides: the unit a recheck and a trial judge a document in.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every corpus source, an importer among them, publishes
+///   the diagnostics the walk yields for its file.
+/// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+#[spec(ensures: |ref ret| match *ret {
+    Maybe::Present(ref laid) => laid.text.get(usize::from(laid.base) ..) == Some(text.as_ref()),
+    Maybe::Absent(_) => true,
+})]
+fn laid_out(
+    uri: &DocumentUri,
+    root: SourceRoot,
+    text: SourceText<'_>,
+) -> Maybe<Laid, laid::Absent>
+{
+    grammar().map_or(Maybe::Absent(laid::Absent::Alone), |grammar| {
+        lay_out(grammar, &uri.path(), root, text)
+    })
+}
+
+/// `span`, a form of the unit a document is judged in, as the document's own
+/// text measures it from `base`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `span` moved back by `base` bytes; [`formless::Absent::Between`]
+///   for a form before the document, a sibling's.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every corpus source, an importer among them, publishes
+///   the diagnostics the walk yields for its file.
+/// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(moved) => usize::from(moved.start()).saturating_add(usize::from(base)) == usize::from(span.start()),
+    Maybe::Absent(_) => usize::from(span.start()) < usize::from(base) || usize::from(span.end()) < usize::from(base),
+})]
+fn own(
+    span: ByteSpan,
+    base: SyntaxOffset,
+) -> Maybe<ByteSpan, formless::Absent>
+{
+    let moved = |at: SyntaxOffset| usize::from(at).checked_sub(usize::from(base));
+    match (moved(span.start()), moved(span.end())) {
+        (Some(start), Some(end)) => {
+            ByteSpan::new(SyntaxOffset::from(start), SyntaxOffset::from(end))
+                .map_or(Maybe::Absent(formless::Absent::Between), Maybe::Present)
+        },
+        (Some(_) | None, _) => Maybe::Absent(formless::Absent::Between),
+    }
 }
 
 /// The diagnostics `submission`, the judgement of `text` at `uri`, publishes
@@ -1107,6 +1216,7 @@ mod tests
             path: std::path::Path::new("force.gandr"),
             root,
             text,
+            base: gandr_surface_syntax::ByteOffset::from(0_usize),
             composed: gandr_surface_dispatcher::compose(
                 &pbg,
                 root.corpus_root(),

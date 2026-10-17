@@ -139,14 +139,18 @@ use gandr_storage_artifact::ArtifactRecordSet;
 use gandr_storage_artifact::build;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_storage_records::TreeParams;
+use gandr_surface_dispatcher::classify;
+use gandr_surface_dispatcher::lay_out;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweringBudget;
-use gandr_surface_lowering::lower_module;
+use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::lower_unit;
 use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
 
 use crate::fixture::declarations;
 use crate::refusal::Refusal;
@@ -492,15 +496,16 @@ fn class_of(
 }
 
 /// The source at `path` under `root`, parsed, lowered, checked, readmitted and
-/// exported.
+/// exported — over the siblings it imports, laid out by the dispatcher's
+/// `lay_out`, when it imports any.
 ///
 /// # Specification
 /// - requires: `path` is a readable UTF-8 corpus source and `pbg` is its
 ///   grammar; the caller supplies the root it was listed under.
 /// - ensures: a whole-source lowering refusal offers nothing. Otherwise
-///   preserves the root, declaration admission order, boundary classes,
-///   withheld dependencies and exactly the names admitted as definitions or
-///   assumptions alongside their artifact.
+///   preserves the root, declaration admission order — an importer's siblings
+///   first — boundary classes, withheld dependencies and exactly the names
+///   admitted as definitions or assumptions alongside their artifact.
 /// - panics: on unreadable source, parser failure, an engine fault, or
 ///   inconsistent checker/readmission positions.
 ///
@@ -563,15 +568,23 @@ fn export(
     root: Root,
 ) -> Swept
 {
-    let text = fs::read_to_string(&path)
+    let read = fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{}: the source reads: {error}", path.display()));
+    // An importer is exported over the siblings it imports, laid out as the
+    // walk lays it out, so its artifact holds theirs first.
+    let laid = lay_out(pbg, &path, classify(&path), SourceText::from(read.as_str()));
+    let (text, unit) = match laid {
+        Maybe::Present(laid) => (laid.text, laid.unit),
+        Maybe::Absent(_) => (read, Unit::single()),
+    };
     let tree = parse(pbg, SourceText::from(text.as_str()))
         .unwrap_or_else(|fault| panic!("{}: the parser commits a tree: {fault}", path.display()))
         .into_tree();
     let mut arena = CoreArena::new();
-    let module = match lower_module(
+    let module = match lower_unit(
         pbg,
         &tree,
+        &unit,
         &mut arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),

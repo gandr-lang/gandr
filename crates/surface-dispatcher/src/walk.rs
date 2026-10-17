@@ -93,15 +93,18 @@ use gandr_surface_corpus::Settlement;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::Unit;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::closure::lay_out;
 use crate::compose::ComposeFault;
 use crate::compose::Composed;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
 use crate::compose::judge_lowering;
-use crate::compose::lower_source;
+use crate::compose::lower_unit_source;
 use crate::report::RunReport;
 use crate::root::SourceRoot;
 use crate::root::classify;
@@ -269,9 +272,12 @@ pub enum Step<'walk>
         path: &'walk Path,
         /// The root the source sits under.
         root: SourceRoot,
-        /// The source's text, which every span of `composed` is measured
-        /// against.
+        /// The text every span of `composed` is measured against: the
+        /// source's own, or the unit its import closure lays out, the source
+        /// last.
         text: SourceText<'walk>,
+        /// Where the source's own text starts in `text`.
+        base: ByteOffset,
         /// What the source became.
         composed: Composed<'walk>,
         /// How it stands against its root.
@@ -365,13 +371,16 @@ enum Forked<'text>
 {
     /// The source could not be classified or read.
     Unreadable(std::io::Error),
-    /// The source was read and carried through [`lower_source`].
+    /// The source was read and carried through [`lower_unit_source`].
     Lowered
     {
         /// The root its canonical path sits under.
         root: SourceRoot,
-        /// Its text, which every span of `lowering` is measured against.
+        /// The text every span of `lowering` is measured against: the
+        /// source's, or its closure's unit.
         text: SourceText<'text>,
+        /// Where the source's own text starts in `text`.
+        base: ByteOffset,
         /// What parsing and lowering it came to.
         lowering: Result<Lowering<'text>, ComposeFault<'text>>,
         /// The lowerings performed: one, unless the parse failed.
@@ -697,14 +706,20 @@ impl Walk
                             Forked::Lowered {
                                 root,
                                 text,
+                                base,
                                 lowering,
                                 lowerings,
                             } => {
                                 self.report.lowerings_mut().absorb(lowerings);
                                 let composed = lowering.and_then(|lowering| {
-                                    judge_lowering(root.corpus_root(), (lowering, text), grant)
+                                    judge_lowering(
+                                        root.corpus_root(),
+                                        (lowering, text),
+                                        grant,
+                                        base,
+                                    )
                                 });
-                                settled(&mut self.report, path, root, text, composed)
+                                settled(&mut self.report, path, root, (text, base), composed)
                             },
                         }
                     },
@@ -995,18 +1010,39 @@ impl Walk
                 };
             },
         };
+        let laid = lay_out(
+            grammar,
+            &self.traversal.path,
+            root,
+            SourceText::from(self.text.as_str()),
+        );
+        let (unit, base) = match laid {
+            Maybe::Present(laid) => {
+                self.text = laid.text;
+                (laid.unit, laid.base)
+            },
+            Maybe::Absent(_) => (Unit::single(), ByteOffset::from(0_usize)),
+        };
         let text = SourceText::from(self.text.as_str());
-        let composed = lower_source(grammar, text, self.report.lowerings_mut())
-            .and_then(|lowering| judge_lowering(root.corpus_root(), (lowering, text), &self.grant));
-        settled(&mut self.report, &self.traversal.path, root, text, composed)
+        let composed = lower_unit_source(grammar, text, &unit, self.report.lowerings_mut())
+            .and_then(|lowering| {
+                judge_lowering(root.corpus_root(), (lowering, text), &self.grant, base)
+            });
+        settled(
+            &mut self.report,
+            &self.traversal.path,
+            root,
+            (text, base),
+            composed,
+        )
     }
 }
 
 /// The step a source composed under `root` makes, counted into `report`.
 ///
 /// # Specification
-/// - requires: `composed` is what the source at `path`, read as `text` under
-///   `root`, became.
+/// - requires: `composed` is what the source at `path`, read under `root`,
+///   became over `text`, its own text starting at `base`.
 /// - ensures: a composition is a [`Step::Source`] with its standing, counted as
 ///   read; a fault is a [`Step::Fault`] of [`SourceFault::Compose`], counted as
 ///   faulted.
@@ -1038,7 +1074,7 @@ fn settled<'step>(
     report: &mut RunReport,
     path: &'step Path,
     root: SourceRoot,
-    text: SourceText<'step>,
+    (text, base): (SourceText<'step>, ByteOffset),
     composed: Result<Composed<'step>, ComposeFault<'step>>,
 ) -> Step<'step>
 {
@@ -1050,6 +1086,7 @@ fn settled<'step>(
                 path,
                 root,
                 text,
+                base,
                 composed,
                 standing,
             }
@@ -1070,8 +1107,9 @@ fn settled<'step>(
 /// # Specification
 /// - requires: `text` is the empty slot for this source alone.
 /// - ensures: a source that cannot be classified or read is
-///   [`Forked::Unreadable`]; otherwise its text fills `text` and it is
-///   [`Forked::Lowered`] with its root, what [`lower_source`] made of it and
+///   [`Forked::Unreadable`]; otherwise its import closure is laid out, the
+///   unit's text fills `text` and it is [`Forked::Lowered`] with its root,
+///   where its own text starts, what [`lower_unit_source`] made of the unit and
 ///   the lowerings that took, exactly as the serial walk's composition would
 ///   lower it.
 /// - fails: never; a fault is carried in the answer.
@@ -1098,12 +1136,18 @@ fn fork<'text>(
     match read_source(path, &mut read) {
         Err(error) => Forked::Unreadable(error),
         Ok(root) => {
+            let laid = lay_out(grammar, path, root, SourceText::from(read.as_str()));
+            let (read, unit, base) = match laid {
+                Maybe::Present(laid) => (laid.text, laid.unit, laid.base),
+                Maybe::Absent(_) => (read, Unit::single(), ByteOffset::from(0_usize)),
+            };
             let text = SourceText::from(text.get_or_init(|| read).as_str());
             let mut lowerings = LoweringCount::default();
-            let lowering = lower_source(grammar, text, &mut lowerings);
+            let lowering = lower_unit_source(grammar, text, &unit, &mut lowerings);
             Forked::Lowered {
                 root,
                 text,
+                base,
                 lowering,
                 lowerings,
             }
@@ -1899,5 +1943,128 @@ pub mod tests
         assert_eq!(root, SourceRoot::Pending);
         assert_eq!(standing, Standing::Lowered);
         assert_eq!(text, source);
+    }
+
+    #[test]
+    fn an_importer_is_judged_over_its_sibling()
+    {
+        let scratch = Scratch::new(Path::new("importers"));
+        // The bytes of each declaration segment of a kernel artifact, in
+        // admission order.
+        let segments = |image: &[u8]| -> Vec<Vec<u8>> {
+            let decoded =
+                gandr_kernel_term::decode(image.into()).expect("the kernel's export decodes");
+            let mut start = usize::from(decoded.segments().header_end());
+            let mut cut = Vec::new();
+            for &end in decoded.segments().declaration_ends() {
+                let end = usize::from(end);
+                cut.push(image.get(start .. end).unwrap_or_default().to_vec());
+                start = end;
+            }
+            cut
+        };
+        let base = "@[ checks ]\ndata Point : Type {\n  Here : Point;\n}\n\n@[ checks ]\ndef here \
+                    : Point ;\ndef here = Here ;\n";
+        scratch.file(Path::new("fixture/base.gandr"), SourceText::from(base));
+        for side in ["left", "right"] {
+            scratch.file(
+                Path::new(&format!("fixture/{side}.gandr")),
+                SourceText::from(
+                    format!(
+                        "import \"./base.gandr\" ;\n\n@[ checks ]\ndef {side} : Point ;\ndef \
+                         {side} = here ;\n"
+                    )
+                    .as_str(),
+                ),
+            );
+        }
+        // A diamond: the top reaches the base through both sides, and names
+        // it too, since an import brings in its source's own declarations and
+        // not what that source imports.
+        scratch.file(
+            Path::new("fixture/top.gandr"),
+            SourceText::from(
+                "import \"./left.gandr\" ;\nimport \"./right.gandr\" ;\nimport \"./base.gandr\" \
+                 ;\n\n@[ checks ]\ndef top : Point ;\ndef top = left ;\n",
+            ),
+        );
+        let mut walk = Walk::new(vec![scratch.0.join("fixture")]);
+        let mut judged = Vec::new();
+        while let Maybe::Present(step) = walk.step() {
+            let Step::Source {
+                path,
+                text,
+                base: own,
+                composed:
+                    crate::compose::Composed::Settled {
+                        ref report,
+                        kernel: Maybe::Present(ref kernel),
+                        ..
+                    },
+                standing,
+                ..
+            } = step
+            else {
+                panic!("each source is judged and admitted: {step:?}");
+            };
+            let name = path
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned());
+            assert_eq!(standing, Standing::Settled, "{name:?} settles");
+            let declared: Vec<String> = report
+                .declarations()
+                .iter()
+                .map(|declaration| declaration.name().to_string())
+                .collect();
+            judged.push((
+                name.unwrap_or_default(),
+                (<&str>::from(text).to_owned(), own),
+                declared,
+                segments(kernel.as_ref()),
+            ));
+        }
+        let find = |wanted: &str| {
+            judged
+                .iter()
+                .find(|&&(ref name, ..)| name == wanted)
+                .unwrap_or_else(|| panic!("{wanted} is walked"))
+        };
+        let &(_, _, ref base_declared, ref base_segments) = find("base");
+        assert_eq!(
+            base_declared,
+            &["Point", "here"],
+            "the base reports its own declarations"
+        );
+        for side in ["left", "right"] {
+            let &(_, (ref text, own), ref declared, ref segments) = find(side);
+            assert_eq!(
+                text.get(.. usize::from(own)),
+                Some(format!("{base}\n").as_str()),
+                "{side} is judged after the base it imports"
+            );
+            assert_eq!(
+                declared,
+                &[side],
+                "{side} reports its own declaration alone"
+            );
+            assert_eq!(
+                segments.get(.. base_segments.len()),
+                Some(base_segments.as_slice()),
+                "{side}'s certificate holds the base's declarations as the base's own does, \
+                 byte for byte, first"
+            );
+        }
+        let &(_, (ref top, _), ref declared, ref top_segments) = find("top");
+        assert_eq!(
+            top.matches("data Point").count(),
+            1_usize,
+            "a base reached by two paths is laid out once"
+        );
+        assert_eq!(declared, &["top"]);
+        assert_eq!(
+            top_segments.get(.. base_segments.len()),
+            Some(base_segments.as_slice()),
+            "the diamond's top admits the base once, first"
+        );
     }
 }

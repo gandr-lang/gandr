@@ -25,6 +25,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Width` and `Threads`: how many threads a walk lowers its sources on, the host's physical performance cores by default.
 - `compose`, `Composed`, `ComposeFault` and `LoweringCount`: the composition.
 - `lower_source`, `lower_parsed`, `Lowering`, `Lowered` and `judge_module`: the composition's two halves, for a caller that keeps the lowered module beside the verdicts; `lower_parsed` lowers a parse the caller made.
+- `lay_out`, `Laid`, `laid::Absent`, `lower_unit_source`, `lower_parsed_unit` and `judge_member`: an importer composed over its import closure.
 - `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`, for a caller that renders the report before the kernel is offered the module.
 - `spellings` and `failures` on `Composed::Settled`: the diagnostics model's `Spellings` of the types a module's checker refusals compare and its failures name, spelled while its arena was at hand, and the `Failures` the checking machine kept for each refused body, by admission position.
 - `Entries` and `entries`: what one step prints under a verb, in order, each a diagnostic the diagnostics model builds — refusals, unsettled declarations, goals, shadowing warnings, lint findings and ledger lines.
@@ -100,7 +101,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Topic | Module |
 | ----- | ------ |
 | Routing, optional tracing | [`src/lib.rs`](src/lib.rs) |
-| One composition, the kernel's re-derivation | [`compose`](src/compose.rs) |
+| One composition, the kernel's re-derivation, an importer over its siblings | [`compose`](src/compose.rs), [`closure`](src/closure.rs) |
 | The run stage, native universe-path boundaries | [`evaluate`](src/evaluate.rs) |
 | What each verb prints of a step | [`entry`](src/entry.rs) |
 | Forking by source, judgement in walk order | [`walk`](src/walk.rs) |

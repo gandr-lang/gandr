@@ -102,6 +102,10 @@ impl LoweringRefusal<'_>
             | Self::DuplicateSignature { .. }
             | Self::DuplicateDefinition { .. }
             | Self::DuplicateImportAlias { .. }
+            | Self::ImportUnresolved { .. }
+            | Self::ImportCycle { .. }
+            | Self::ImportShadows { .. }
+            | Self::UnexportedName { .. }
             | Self::ShadowedBuiltin { .. }
             | Self::MalformedLiteral { .. }
             | Self::MalformedForm { .. }
@@ -138,6 +142,10 @@ impl LoweringRefusal<'_>
             | Self::DuplicateSignature { .. }
             | Self::DuplicateDefinition { .. }
             | Self::DuplicateImportAlias { .. }
+            | Self::ImportUnresolved { .. }
+            | Self::ImportCycle { .. }
+            | Self::ImportShadows { .. }
+            | Self::UnexportedName { .. }
             | Self::ShadowedBuiltin { .. }
             | Self::MalformedLiteral { .. }
             | Self::MalformedForm { .. }
@@ -229,7 +237,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 39_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 43_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -390,6 +398,25 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("windHom"),
             },
+            LoweringRefusal::ImportUnresolved {
+                span: empty,
+                refused: empty,
+            },
+            LoweringRefusal::ImportCycle {
+                span: empty,
+                refused: empty,
+            },
+            LoweringRefusal::ImportShadows {
+                span: empty,
+                name: SurfaceName::from("Circle"),
+                import: empty,
+                other: empty,
+            },
+            LoweringRefusal::UnexportedName {
+                span: empty,
+                name: SurfaceName::from("pending"),
+                declared: empty,
+            },
         ]
     }
 
@@ -436,6 +463,10 @@ mod tests
             FailureClass::Unrepresentable,
             FailureClass::Unrepresentable,
             FailureClass::EngineFault,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

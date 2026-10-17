@@ -12,22 +12,25 @@ mod namespace
 {
     use anodized::spec;
     use gandr_core_term::CoreArena;
-    use gandr_surface_grammar::NamedKind;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
-    use gandr_surface_lowering::Ending;
-    use gandr_surface_lowering::FormFault;
-    use gandr_surface_lowering::FormName;
+    use gandr_surface_lowering::DeclarationOutcome;
+    use gandr_surface_lowering::ImportBinding;
     use gandr_surface_lowering::ImportDeclaration;
     use gandr_surface_lowering::ImportIndex;
+    use gandr_surface_lowering::ImportResolution;
+    use gandr_surface_lowering::ImportTarget;
     use gandr_surface_lowering::ImportUri;
     use gandr_surface_lowering::LoweredModule;
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::ModuleImports;
-    use gandr_surface_lowering::Repair;
+    use gandr_surface_lowering::SourceIndex;
     use gandr_surface_lowering::SurfaceName;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::UnitSource;
     use gandr_surface_lowering::lower_module;
+    use gandr_surface_lowering::lower_unit;
     use gandr_surface_lowering::namespace::Binding;
     use gandr_surface_lowering::namespace::Collision;
     use gandr_surface_lowering::namespace::DottedName;
@@ -632,7 +635,7 @@ mod namespace
     /// - hypothesis: L3 — complete and missing-alias imports reach lowering
     ///   with their original spans rather than a synthetic replacement source.
     /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-    /// - witness: `namespace::namespace::source_import_without_alias_becomes_a_refusal`
+    /// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
     #[spec(
         ensures: |ret| ret.source() == source && ret.grammar() == pbg.fingerprint(),
     )]
@@ -1193,24 +1196,28 @@ mod namespace
             module
                 .imports()
                 .iter()
-                .map(|import| (import.uri().as_ref(), import.alias()))
-                .collect::<Vec<(&str, SurfaceName<'_>)>>(),
+                .map(|import| (import.uri().as_ref(), import.binding()))
+                .collect::<Vec<(&str, ImportBinding<'_>)>>(),
             Vec::from([
-                ("file:///lib/parse.gandr", SurfaceName::from("parse")),
-                ("file:///lib/list.gandr", SurfaceName::from("list_ext")),
+                (
+                    "file:///lib/parse.gandr",
+                    ImportBinding::Aliased(SurfaceName::from("parse"))
+                ),
+                (
+                    "file:///lib/list.gandr",
+                    ImportBinding::Aliased(SurfaceName::from("list_ext"))
+                ),
             ]),
             "imports keep source order and their written operands"
         );
+        let Maybe::Present(scope) = module.import_scope(SourceIndex::from(0_usize))
+        else {
+            panic!("the source binds two aliases");
+        };
         assert_eq!(
             (
-                module
-                    .import_scope()
-                    .resolve(&path("parse"))
-                    .map(|binding| binding.data),
-                module
-                    .import_scope()
-                    .resolve(&path("list_ext"))
-                    .map(|binding| binding.data),
+                scope.resolve(&path("parse")).map(|binding| binding.data),
+                scope.resolve(&path("list_ext")).map(|binding| binding.data),
             ),
             (
                 Maybe::Present(ImportIndex::from(0_usize)),
@@ -1219,7 +1226,7 @@ mod namespace
             "each alias resolves to its import's source position"
         );
         assert_eq!(
-            module.import_scope().export(),
+            scope.export(),
             &Trie::empty(),
             "imports do not re-export their bindings"
         );
@@ -1239,15 +1246,21 @@ mod namespace
             module.imports(),
             [ImportDeclaration::new(
                 ImportUri::from(String::from("file:///no/such/\"place\".gandr")),
-                SurfaceName::from("far"),
+                ImportBinding::Aliased(SurfaceName::from("far")),
                 span,
+                SourceIndex::from(0_usize),
+                ImportResolution::Foreign,
             )]
             .as_slice(),
-            "the address is kept with its escapes decoded and nothing resolved, so an address \
-             naming nothing still lowers"
+            "a scheme address is kept with its escapes decoded and nothing resolved, so an \
+             address naming nothing still lowers"
         );
+        let Maybe::Present(scope) = module.import_scope(SourceIndex::from(0_usize))
+        else {
+            panic!("the source binds an alias");
+        };
         assert_eq!(
-            listing_of(module.import_scope().visible()),
+            listing_of(scope.visible()),
             Vec::from([(String::from("far"), ImportIndex::from(0_usize), span)]),
             "the alias is the one binding, to the import's position, tagged with its bytes"
         );
@@ -1311,19 +1324,24 @@ mod namespace
     {
         let first = bytes(0_usize, 43_usize);
         let second = bytes(44_usize, 86_usize);
+        let source = SourceIndex::from(0_usize);
         let mut imports = ModuleImports::new();
         imports
             .bind(ImportDeclaration::new(
                 ImportUri::from(String::from("file:///lib/parse.gandr")),
-                SurfaceName::from("parse"),
+                ImportBinding::Aliased(SurfaceName::from("parse")),
                 first,
+                source,
+                ImportResolution::Foreign,
             ))
             .expect("a fresh alias binds");
         let refused = imports
             .bind(ImportDeclaration::new(
                 ImportUri::from(String::from("file:///lib/list.gandr")),
-                SurfaceName::from("parse"),
+                ImportBinding::Aliased(SurfaceName::from("parse")),
                 second,
+                source,
+                ImportResolution::Foreign,
             ))
             .expect_err("two imports must not silently shadow at one alias");
 
@@ -1336,13 +1354,14 @@ mod namespace
             },
             "the import policy's shadow rejection names both imports"
         );
+        let Maybe::Present(scope) = imports.scope(source)
+        else {
+            panic!("the first alias stays bound");
+        };
         assert_eq!(
             (
                 imports.declarations().len(),
-                imports
-                    .scope()
-                    .resolve(&path("parse"))
-                    .map(|binding| binding.data),
+                scope.resolve(&path("parse")).map(|binding| binding.data),
             ),
             (1_usize, Maybe::Present(ImportIndex::from(0_usize))),
             "a refused import is not kept and leaves the first binding in place"
@@ -1350,26 +1369,327 @@ mod namespace
     }
 
     #[test]
-    fn source_import_without_alias_becomes_a_refusal()
+    fn an_unqualified_import_binds_no_alias()
     {
         let pbg = grammar();
-        let refused = lowered(
+        let module = lowered(
             &pbg,
-            &parsed(
-                &pbg,
-                SourceText::from("import \"file:///lib/parse.gandr\" ;"),
-            ),
+            &parsed(&pbg, SourceText::from("import \"./parse.gandr\" ;")),
         )
-        .expect_err("an import with no alias refuses the module");
+        .expect("an import with no alias lowers");
+
+        assert_eq!(
+            module.imports(),
+            [ImportDeclaration::new(
+                ImportUri::from(String::from("./parse.gandr")),
+                ImportBinding::Unqualified,
+                bytes(0_usize, 24_usize),
+                SourceIndex::from(0_usize),
+                ImportResolution::Path(ImportTarget::Unresolved),
+            )]
+            .as_slice(),
+            "a path read alone names no source of its unit"
+        );
+        assert!(
+            matches!(
+                module.import_scope(SourceIndex::from(0_usize)),
+                Maybe::Absent(_)
+            ),
+            "an unqualified import binds no alias"
+        );
+    }
+
+    #[test]
+    fn an_unqualified_import_answers_a_name_its_source_declares()
+    {
+        let pbg = grammar();
+        let (text, unit) = laid(&[
+            (
+                SourceText::from(
+                    "data Point : Type { One : Point; }\ndef one : Point ;\ndef one = One ;",
+                ),
+                &[],
+            ),
+            (
+                SourceText::from(
+                    "import \"./base.gandr\" ;\ndef again : Point ;\ndef again = one ;\ndef \
+                     made : Point ;\ndef made = One ;",
+                ),
+                &[ImportTarget::Source(SourceIndex::from(0_usize))],
+            ),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+
+        let refusals: Vec<String> = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                    Some(format!("{refusal:?}"))
+                }
+                else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            refusals,
+            Vec::<String>::new(),
+            "the importer's type head, value and constructor resolve in the base"
+        );
+        assert_eq!(
+            module.declarations().len(),
+            4_usize,
+            "the family, `one`, `again` and `made` are declared once each"
+        );
+    }
+
+    #[test]
+    fn two_imports_binding_one_name_refuse_its_use()
+    {
+        let pbg = grammar();
+        let (text, unit) = laid(&[
+            (SourceText::from("def one : Integer ;\ndef one = 1 ;"), &[]),
+            (SourceText::from("def one : Integer ;\ndef one = 2 ;"), &[]),
+            (
+                SourceText::from(
+                    "import \"./left.gandr\" ;\nimport \"./right.gandr\" ;\ndef both : \
+                     Integer ;\ndef both = one ;",
+                ),
+                &[
+                    ImportTarget::Source(SourceIndex::from(0_usize)),
+                    ImportTarget::Source(SourceIndex::from(1_usize)),
+                ],
+            ),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+
+        let refused: Vec<String> = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                if let DeclarationOutcome::Refused(LoweringRefusal::ImportShadows {
+                    name, ..
+                }) = declaration.outcome()
+                {
+                    Some(String::from(name.as_ref()))
+                }
+                else {
+                    None
+                }
+            })
+            .collect();
         assert_eq!(
             refused,
-            LoweringRefusal::MalformedForm {
-                span: bytes(32_usize, 32_usize),
-                form: FormName::from(NamedKind("import_declaration")),
-                fault: FormFault::Repaired(Repair::Unended(Ending::Unnamed)),
-            },
-            "the end the parser appended where the alias belongs refuses the import, by its form"
+            Vec::from([String::from("one")]),
+            "the use of a name two imports bind is refused, naming it"
         );
+    }
+
+    #[test]
+    fn a_pending_declaration_is_not_exported()
+    {
+        let pbg = grammar();
+        let (text, unit) = laid(&[
+            (SourceText::from("def owed : Integer ;"), &[]),
+            (
+                SourceText::from(
+                    "import \"./base.gandr\" ;\ndef again : Integer ;\ndef again = owed ;",
+                ),
+                &[ImportTarget::Source(SourceIndex::from(0_usize))],
+            ),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+
+        assert!(
+            module.declarations().iter().any(|declaration| matches!(
+                declaration.outcome(),
+                DeclarationOutcome::Refused(LoweringRefusal::UnexportedName { name, .. })
+                    if name.as_ref() == "owed"
+            )),
+            "a signature without a definition is not exported, and its use refuses by name"
+        );
+    }
+
+    #[test]
+    fn an_aliased_import_qualifies_its_source_s_names()
+    {
+        let pbg = grammar();
+        let (text, unit) = laid(&[
+            (
+                SourceText::from(
+                    "data Point : Type { One : Point; }\ndef one : Point ;\ndef one = One ;",
+                ),
+                &[],
+            ),
+            (
+                SourceText::from(
+                    "import \"./base.gandr\" as base ;\ndef again : base.Point ;\ndef again = \
+                     base.one ;\ndef lost : Integer ;\ndef lost = base.two ;",
+                ),
+                &[ImportTarget::Source(SourceIndex::from(0_usize))],
+            ),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+
+        let refusals: Vec<(String, String)> = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                    Some((
+                        String::from(declaration.name().as_ref()),
+                        format!("{refusal:?}"),
+                    ))
+                }
+                else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(refusals.len(), 1_usize, "only `lost` refuses: {refusals:?}");
+        assert!(
+            refusals
+                .iter()
+                .any(|&(ref name, ref refusal)| name == "lost"
+                    && refusal.starts_with("UnknownMember")
+                    && refusal.contains("\"two\"")),
+            "a name the imported source does not declare is refused by name: {refusals:?}"
+        );
+    }
+
+    #[test]
+    fn an_unresolved_import_refuses_its_source()
+    {
+        let pbg = grammar();
+        let (text, unit) = laid(&[(
+            SourceText::from("import \"./nowhere.gandr\" ;\ndef one : Integer ;\ndef one = 1 ;"),
+            &[ImportTarget::Unresolved],
+        )]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+
+        assert!(
+            matches!(
+                module.declarations(),
+                [declaration] if matches!(
+                    declaration.outcome(),
+                    DeclarationOutcome::Refused(LoweringRefusal::ImportUnresolved { span, .. })
+                        if span == bytes(0_usize, 26_usize)
+                )
+            ),
+            "every declaration of the source is refused, naming the import"
+        );
+    }
+
+    #[test]
+    fn a_declaration_an_import_binds_again_is_refused()
+    {
+        let pbg = grammar();
+        let (text, unit) = laid(&[
+            (SourceText::from("def one : Integer ;\ndef one = 1 ;"), &[]),
+            (
+                SourceText::from(
+                    "import \"./base.gandr\" ;\ndef one : Integer ;\ndef one = 2 ;\ndef two : \
+                     Integer ;\ndef two = 2 ;",
+                ),
+                &[ImportTarget::Source(SourceIndex::from(0_usize))],
+            ),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+
+        let refused: Vec<(String, ByteSpan)> = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                if let DeclarationOutcome::Refused(LoweringRefusal::ImportShadows {
+                    other, ..
+                }) = declaration.outcome()
+                {
+                    Some((String::from(declaration.name().as_ref()), other))
+                }
+                else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            refused,
+            Vec::from([(String::from("one"), bytes(4_usize, 7_usize))]),
+            "the importer's `one` is refused, naming the base's; `two` stands"
+        );
+    }
+
+    /// The unit text of `sources` laid end to end, one newline apart, and the
+    /// unit that says where each starts and what its path imports name.
+    ///
+    /// # Specification
+    /// - requires: each source imports only earlier ones.
+    /// - ensures: each source starts one byte after the one before it ends.
+    /// - provides: a several-source fixture.
+    /// - fails: never.
+    /// - panics: when a source imports a later one.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witnesses resolve across the sources it lays.
+    /// - witness: `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    #[spec(
+        ensures: |ret| ret.1.sources().len() == sources.len()
+            && sources.iter().all(|&(source, _)| ret.0.contains(<&str>::from(source))),
+    )]
+    fn laid(sources: &[(SourceText<'_>, &[ImportTarget])]) -> (String, Unit)
+    {
+        let mut text = String::new();
+        let mut laid = Vec::with_capacity(sources.len());
+        for &(source, imports) in sources {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            laid.push(UnitSource::new(
+                ByteOffset::from(text.len()),
+                imports.to_vec(),
+            ));
+            text.push_str(<&str>::from(source));
+        }
+        let unit = Unit::new(laid).expect("each source imports an earlier one");
+        (text, unit)
+    }
+
+    /// `tree`, molded over the text `unit` lays out, lowered under `pbg`.
+    ///
+    /// # Specification
+    /// - requires: `tree` was parsed from the text [`laid`] made with `unit`.
+    /// - ensures: as [`lowered`], over the unit.
+    /// - provides: the several-source lowering fixture.
+    /// - fails: preserves the lowering's refusal.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witnesses of [`laid`].
+    /// - witness: `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    #[spec(
+        ensures: |ret| matches!(ret, Err(LoweringRefusal::GrammarMismatch { .. })) == (tree.grammar() != pbg.fingerprint()),
+    )]
+    fn lowered_unit<'source>(
+        pbg: &Pbg,
+        tree: &SyntaxTree<'source>,
+        unit: &Unit,
+    ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
+    {
+        let mut arena = CoreArena::new();
+        lower_unit(
+            pbg,
+            tree,
+            unit,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
     }
 
     #[test]

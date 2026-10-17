@@ -1,0 +1,13 @@
+// An import whose path names no source in the root refuses the source that
+// writes it (#434): `circle-elim.gandr` imports `circle-base.gandr`, which
+// sits beside it; here the sibling is absent.
+
+// The sibling this source would read, which the directory does not hold.
+import "./circle-absent.gandr" ;
+
+/// A declaration of the importer, refused with its import: what it reads
+/// could be the absent sibling's.
+@[ refuses("ImportUnresolved") ]
+data Point : Type {
+  Here : Point;
+}

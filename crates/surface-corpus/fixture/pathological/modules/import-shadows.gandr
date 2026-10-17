@@ -1,0 +1,13 @@
+// A declaration an unqualified import already binds is refused (#434): the
+// circle is `circle-base.gandr`'s, and a source importing it states it once
+// more. The importer's own `Circle` would hide the one every imported
+// declaration reads.
+
+// The circle, unqualified.
+import "../../model/identity/circle-base.gandr" ;
+
+/// The circle stated again over the imported one, refused naming both.
+@[ refuses("ImportShadows") ]
+data Circle : Type {
+  Base : Circle;
+}

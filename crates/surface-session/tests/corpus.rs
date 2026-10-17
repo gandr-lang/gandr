@@ -17,9 +17,11 @@ use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::lay_out;
 use gandr_surface_session::KernelCheckpoint;
 use gandr_surface_session::Session;
 use gandr_surface_session::admitted;
+use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::common::GRAMMAR;
@@ -50,6 +52,7 @@ fn every_source_submits_as_the_walk_composes_it()
             path,
             root,
             text,
+            base,
             composed,
             standing,
         } = step
@@ -69,7 +72,24 @@ fn every_source_submits_as_the_walk_composes_it()
             InMemoryBlockStore::default(),
             backend(),
         );
-        let submission = match session.submit(text) {
+        // An importer is submitted over the siblings it imports, laid out as
+        // the walk lays it out.
+        let own = <&str>::from(text)
+            .get(usize::from(base) ..)
+            .unwrap_or_default();
+        let submitted = match lay_out(grammar, path, root, SourceText::from(own)) {
+            Maybe::Present(laid) => {
+                assert_eq!(
+                    (laid.text.as_str(), laid.base),
+                    (<&str>::from(text), base),
+                    "{}: the session lays the source out as the walk does",
+                    path.display()
+                );
+                session.submit_unit(text, &laid.unit, base)
+            },
+            Maybe::Absent(_) => session.submit(text),
+        };
+        let submission = match submitted {
             Ok(submission) => submission,
             Err(fault) => panic!("{}: the session faulted: {fault}", path.display()),
         };
@@ -96,6 +116,7 @@ fn every_source_submits_as_the_walk_composes_it()
             path: submitted_path,
             root: submitted_root,
             text: submitted_text,
+            base: submitted_base,
             composed: submitted_composed,
             standing: submitted_standing,
         } = submission.into_step(path)
@@ -105,6 +126,7 @@ fn every_source_submits_as_the_walk_composes_it()
         assert_eq!(submitted_path, path, "the step is at the walked path");
         assert_eq!(submitted_root, root, "{}: the root", path.display());
         assert_eq!(submitted_text, text, "{}: the text", path.display());
+        assert_eq!(submitted_base, base, "{}: the base", path.display());
         assert_eq!(
             submitted_composed,
             composed,

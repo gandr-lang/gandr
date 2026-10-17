@@ -1854,7 +1854,7 @@ mod tests
               "data ${1:type_identifier} { \\}"
               "codata ${1:type_identifier} { \\}"
               "module ${1:type_identifier} { ${2:member} \\}"
-              "import \"\" as ${1:identifier};"
+              "import \"\";"
               "op infixl ${1:number} \"\";"
               "rec { \\}"
               "@[${1:identifier}]"

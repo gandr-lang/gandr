@@ -197,6 +197,7 @@ mod diagnostics
             path,
             root,
             text,
+            base: gandr_surface_syntax::ByteOffset::from(0_usize),
             composed: compose(
                 &grammar,
                 root.corpus_root(),
@@ -1405,6 +1406,53 @@ mod diagnostics
     }
 
     #[test]
+    fn an_importer_s_refusal_is_located_in_its_own_text()
+    {
+        let scratch = Scratch::new(Path::new("importer"));
+        let user = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = missing ;\n";
+        scratch.file(
+            Path::new("strict/base.gandr"),
+            SourceText::from("def one : Integer ;\ndef one = 1 ;\n"),
+        );
+        scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
+        let mut walk = Walk::new(vec![scratch.0.clone()]);
+        let mut found = Vec::new();
+        while let Maybe::Present(step) = walk.step() {
+            found.extend(
+                entries(&step, Verb::Check(Goals::Reported))
+                    .filter(|diagnostic| diagnostic.path.ends_with("user.gandr")),
+            );
+        }
+        let [ref refusal] = *found.as_slice()
+        else {
+            panic!("the importer reports its one refusal: {found:?}");
+        };
+        assert_eq!(
+            refusal.span,
+            Maybe::Present(nth(SourceText::from(user), SourceText::from("missing"))[0]),
+            "the span is measured in the importer's own text, not the unit's"
+        );
+        let Maybe::Present(primary) = refusal.primary()
+        else {
+            panic!("the refusal is located");
+        };
+        assert_eq!(
+            (primary.locus.line, primary.locus.column),
+            (3_usize, 11_usize),
+            "its line and column are the importer's own"
+        );
+        let Maybe::Present(ref excerpt) = refusal.excerpt
+        else {
+            panic!("the refusal quotes its line");
+        };
+        assert_eq!(
+            (excerpt.line, excerpt.text.lines().next()),
+            (3_usize, Some("def two = missing ;")),
+            "the excerpt is the importer's line, not the sibling's"
+        );
+    }
+
+    #[test]
     fn one_refusal_details_each_verbosity()
     {
         let diagnostic = only(Path::new("force.gandr"), SourceText::from(FORCE));
@@ -1612,7 +1660,8 @@ mod diagnostics
     }
 
     /// The malformed-form sweep: each pathological fixture cut short at every
-    /// word, each cut's malformed form reporting its parse error alone.
+    /// word of its own text (an importer's, not its closure's), each cut's
+    /// malformed form reporting its parse error alone.
     mod sweeps
     {
         use alloc::collections::BTreeSet;
@@ -1659,14 +1708,18 @@ mod diagnostics
             let mut walk = Walk::new(vec![root]);
             let mut repaired = 0_usize;
             while let Maybe::Present(step) = walk.step() {
-                let Step::Source { path, text, .. } = step
+                let Step::Source {
+                    path, text, base, ..
+                } = step
                 else {
                     continue;
                 };
                 if !visited.contains(path) {
                     continue;
                 }
-                let whole = text.as_ref();
+                let whole = <&str>::from(text)
+                    .get(usize::from(base) ..)
+                    .expect("an importer's own text starts at its base");
                 let cuts = whole
                     .match_indices([' ', '\n'])
                     .map(|(at, _)| at.saturating_add(1_usize))
@@ -1687,6 +1740,7 @@ mod diagnostics
                         path,
                         root: SourceRoot::Fixture,
                         text: typed,
+                        base: gandr_surface_syntax::ByteOffset::from(0_usize),
                         composed,
                         standing: Standing::Unsettled,
                     };

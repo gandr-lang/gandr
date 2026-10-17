@@ -506,7 +506,7 @@ mod modules
     #[spec(
         ensures: |ret| {
             let prefix: &[SurfaceName<'_>] = match declaration.container() {
-                | gandr_surface_lowering::Container::TopLevel => &[],
+                | gandr_surface_lowering::Container::TopLevel(_) => &[],
                 | gandr_surface_lowering::Container::Module(index) => module
                     .structures()
                     .get(usize::from(index))
@@ -555,7 +555,7 @@ mod modules
                         role == declaration.role()
                             && {
                                 let prefix: &[SurfaceName<'_>] = match declaration.container() {
-                                    | gandr_surface_lowering::Container::TopLevel => &[],
+                                    | gandr_surface_lowering::Container::TopLevel(_) => &[],
                                     | gandr_surface_lowering::Container::Module(index) => lowered
                                         .module
                                         .structures()
@@ -645,7 +645,7 @@ mod modules
             ret.role() == role
                 && {
                     let prefix: &[SurfaceName<'_>] = match ret.container() {
-                        | gandr_surface_lowering::Container::TopLevel => &[],
+                        | gandr_surface_lowering::Container::TopLevel(_) => &[],
                         | gandr_surface_lowering::Container::Module(index) => lowered
                             .module
                             .structures()
@@ -701,7 +701,7 @@ mod modules
     /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
     #[spec(
         ensures: |ret| {
-            lowered.module.declarations().iter().any(|declaration| declaration.role() == Role::Declared && { let prefix: &[SurfaceName<'_>] = match declaration.container() { gandr_surface_lowering::Container::TopLevel => &[], gandr_surface_lowering::Container::Module(index) => lowered.module.structures().get(usize::from(index)).map_or(&[], LoweredStructure::path), }; path.as_ref().split('.').eq(prefix.iter().map(AsRef::as_ref).chain(core::iter::once(declaration.name().as_ref()))) } && matches!(declaration.outcome(), DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } if body == ret))
+            lowered.module.declarations().iter().any(|declaration| declaration.role() == Role::Declared && { let prefix: &[SurfaceName<'_>] = match declaration.container() { gandr_surface_lowering::Container::TopLevel(_) => &[], gandr_surface_lowering::Container::Module(index) => lowered.module.structures().get(usize::from(index)).map_or(&[], LoweredStructure::path), }; path.as_ref().split('.').eq(prefix.iter().map(AsRef::as_ref).chain(core::iter::once(declaration.name().as_ref()))) } && matches!(declaration.outcome(), DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } if body == ret))
         },
     )]
     fn body_of<Path>(
@@ -746,7 +746,7 @@ mod modules
                 declaration.role() == Role::Declared
                     && {
                         let prefix: &[SurfaceName<'_>] = match declaration.container() {
-                            | gandr_surface_lowering::Container::TopLevel => &[],
+                            | gandr_surface_lowering::Container::TopLevel(_) => &[],
                             | gandr_surface_lowering::Container::Module(index) => lowered
                                 .module
                                 .structures()
@@ -800,7 +800,7 @@ mod modules
     /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
     #[spec(
         ensures: |ret| {
-            lowered.module.declarations().iter().any(|declaration| declaration.role() == role && { let prefix: &[SurfaceName<'_>] = match declaration.container() { gandr_surface_lowering::Container::TopLevel => &[], gandr_surface_lowering::Container::Module(index) => lowered.module.structures().get(usize::from(index)).map_or(&[], LoweredStructure::path), }; path.as_ref().split('.').eq(prefix.iter().map(AsRef::as_ref).chain(core::iter::once(declaration.name().as_ref()))) } && matches!(declaration.outcome(), DeclarationOutcome::Completed { declared_type, .. } | DeclarationOutcome::Uncompleted { declared_type } if declared_type == ret))
+            lowered.module.declarations().iter().any(|declaration| declaration.role() == role && { let prefix: &[SurfaceName<'_>] = match declaration.container() { gandr_surface_lowering::Container::TopLevel(_) => &[], gandr_surface_lowering::Container::Module(index) => lowered.module.structures().get(usize::from(index)).map_or(&[], LoweredStructure::path), }; path.as_ref().split('.').eq(prefix.iter().map(AsRef::as_ref).chain(core::iter::once(declaration.name().as_ref()))) } && matches!(declaration.outcome(), DeclarationOutcome::Completed { declared_type, .. } | DeclarationOutcome::Uncompleted { declared_type } if declared_type == ret))
         },
     )]
     fn declared_type_of<Path>(

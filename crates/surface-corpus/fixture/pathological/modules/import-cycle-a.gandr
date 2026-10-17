@@ -1,0 +1,12 @@
+// Two sources importing each other refuse every member of the cycle (#434):
+// neither can be checked before the other. `import-cycle-b.gandr` is the
+// other member.
+
+// The other member, which imports this one.
+import "./import-cycle-b.gandr" ;
+
+/// A declaration of the first member, refused with the cycle.
+@[ refuses("ImportCycle") ]
+data Left : Type {
+  L : Left;
+}

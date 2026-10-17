@@ -23,6 +23,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 
 - **The session.** `Session`, `Session::new`, `Session::submit`, `Session::last`, `Session::stream`, `Session::lowerings`, `Session::into_store`; `Submission`, `Resumed`, `Persistence`, `resumed::Absent`, `SessionFault`.
 - **The judgement before the admission.** `Session::judge`, `Session::admit`, `Admitted`, `admitted::Absent`, `admission::Absent`: a revision's report and resume before its kernel admission, and the admission after.
+- **A document that imports a sibling.** `Session::judge_unit_reading`, `Session::submit_unit`, `Session::trial_unit`, `Laying`, `Submission::base`: the document judged over the import closure the dispatcher's `lay_out` lays it out in, its own declarations reported, as `gandr check` reports its file.
 - **The form store.** `Submission::forms`, `FormCensus`, `FormCount`, `Session::with_width`: each submission's forms and how many were molded rather than taken up.
 - **Trials.** `Session::trial`, `Trial`, `CandidateIndex`, `resumed::Absent::Tried`, `FormStore::parse_held`: candidate revisions judged against the latest accepted state without submitting any, each as a fresh session judges it, ranked, the session unchanged.
 - **The step a face renders.** `Submission::into_step`: the submission as the dispatcher's `Step::Source`.

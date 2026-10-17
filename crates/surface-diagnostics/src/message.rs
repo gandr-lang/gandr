@@ -222,6 +222,21 @@ fn lowered(
         LoweringRefusal::DuplicateImportAlias { alias, .. } => {
             write!(f, "two imports are both named `{alias}`")
         },
+        LoweringRefusal::ImportUnresolved { .. } => f.write_str(
+            "this import names no source the root holds, so this source's declarations are not read",
+        ),
+        LoweringRefusal::ImportCycle { .. } => f.write_str(
+            "this import leads back to this source, so its declarations are not read",
+        ),
+        LoweringRefusal::ImportShadows { name, .. } => {
+            write!(f, "`{name}` is bound by an import and again in this source")
+        },
+        LoweringRefusal::UnexportedName { name, .. } => {
+            write!(
+                f,
+                "`{name}` is declared in the imported source without a definition, so it is not exported"
+            )
+        },
         LoweringRefusal::ShadowedBuiltin { name, .. } => {
             write!(
                 f,
@@ -968,6 +983,25 @@ mod tests
                 span,
                 alias: name,
                 first: span,
+            },
+            LoweringRefusal::ImportUnresolved {
+                span,
+                refused: span,
+            },
+            LoweringRefusal::ImportCycle {
+                span,
+                refused: span,
+            },
+            LoweringRefusal::ImportShadows {
+                span,
+                name,
+                import: span,
+                other: span,
+            },
+            LoweringRefusal::UnexportedName {
+                span,
+                name,
+                declared: span,
             },
             LoweringRefusal::ShadowedBuiltin { span, name },
             LoweringRefusal::OutOfFragment {

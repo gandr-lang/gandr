@@ -140,6 +140,10 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         | LoweringRefusal::DuplicateImportAlias { .. }
         | LoweringRefusal::DuplicateAttribute { .. } => "written again here",
         LoweringRefusal::ShadowedBuiltin { .. } => "shadows a builtin",
+        LoweringRefusal::ImportUnresolved { .. } => "names no source this root holds",
+        LoweringRefusal::ImportCycle { .. } => "leads back to this source",
+        LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
+        LoweringRefusal::UnexportedName { .. } => "declared without a definition",
         LoweringRefusal::OutOfFragment { boundary, .. } => match boundary {
             FragmentBoundary::Reserved => "a reserved form",
             FragmentBoundary::Unadmitted => "a form the fragment does not admit",

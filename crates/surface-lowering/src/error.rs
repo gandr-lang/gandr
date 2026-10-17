@@ -700,6 +700,55 @@ pub enum LoweringRefusal<'source>
         first: ByteSpan,
     },
 
+    /// A declaration of a source whose path import names no source the run
+    /// lowers: nothing at the path, a path outside the importer's root, or a
+    /// source refused as a whole.
+    ImportUnresolved
+    {
+        /// The bytes the import covers.
+        span: ByteSpan,
+        /// The bytes of the refused declaration's name.
+        refused: ByteSpan,
+    },
+
+    /// A declaration of a source whose imports lead back to it.
+    ImportCycle
+    {
+        /// The bytes of the import that is an edge of the cycle.
+        span: ByteSpan,
+        /// The bytes of the refused declaration's name.
+        refused: ByteSpan,
+    },
+
+    /// A name two sources bind for one source: an unqualified import binding
+    /// a name the importer declares, or two unqualified imports binding one
+    /// name.
+    ImportShadows
+    {
+        /// The bytes refused: the importer's declaration of the name, or a
+        /// use of a name two imports bind.
+        span: ByteSpan,
+        /// The name bound twice.
+        name: SurfaceName<'source>,
+        /// The bytes of the import binding it.
+        import: ByteSpan,
+        /// The bytes of the other binding: the importer's declaration, or
+        /// the other import.
+        other: ByteSpan,
+    },
+
+    /// A name an unqualified import answers with a declaration its source
+    /// does not export: one with a signature and no definition.
+    UnexportedName
+    {
+        /// The bytes the use covers.
+        span: ByteSpan,
+        /// The name as it was written.
+        name: SurfaceName<'source>,
+        /// The bytes of the declaration's name in its own source.
+        declared: ByteSpan,
+    },
+
     /// A declared name or a binder over a builtin, under the policy that
     /// forbids shadowing one; or a family named as a builtin type the grammar
     /// spells as a tile of its own, under either policy.
@@ -1100,6 +1149,20 @@ impl fmt::Display for LoweringRefusal<'_>
                 f,
                 "the import alias `{alias}` is already bound by an earlier import: {ONE_SOURCE}"
             ),
+            Self::ImportUnresolved { .. } => f.write_str(
+                "this source's import names no source its root holds that lowers, so none of its declarations is read",
+            ),
+            Self::ImportCycle { .. } => f.write_str(
+                "this source's import is an edge of an import cycle, so none of its declarations is read",
+            ),
+            Self::ImportShadows { name, .. } => write!(
+                f,
+                "`{name}` is bound by an import and by another binding of this source"
+            ),
+            Self::UnexportedName { name, .. } => write!(
+                f,
+                "`{name}` is declared by an imported source without a definition, so it is not exported"
+            ),
             Self::ShadowedBuiltin { name, .. } => write!(
                 f,
                 "`{name}` shadows a builtin name, which the active policy forbids"
@@ -1294,6 +1357,10 @@ impl LoweringRefusal<'_>
             | Self::DuplicateSignature { span, .. }
             | Self::DuplicateDefinition { span, .. }
             | Self::DuplicateImportAlias { span, .. }
+            | Self::ImportUnresolved { span, .. }
+            | Self::ImportCycle { span, .. }
+            | Self::ImportShadows { span, .. }
+            | Self::UnexportedName { span, .. }
             | Self::ShadowedBuiltin { span, .. }
             | Self::OutOfFragment { span, .. }
             | Self::GradedBridge { span, .. }
@@ -1387,7 +1454,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 36_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 40_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1554,6 +1621,25 @@ mod tests
                 span: s(67_usize, 68_usize),
                 name: SurfaceName::from("windHom"),
             },
+            LoweringRefusal::ImportUnresolved {
+                span: s(69_usize, 70_usize),
+                refused: s(0_usize, 1_usize),
+            },
+            LoweringRefusal::ImportCycle {
+                span: s(71_usize, 72_usize),
+                refused: s(0_usize, 1_usize),
+            },
+            LoweringRefusal::ImportShadows {
+                span: s(73_usize, 74_usize),
+                name: SurfaceName::from("Circle"),
+                import: s(0_usize, 1_usize),
+                other: s(2_usize, 3_usize),
+            },
+            LoweringRefusal::UnexportedName {
+                span: s(75_usize, 76_usize),
+                name: SurfaceName::from("pending"),
+                declared: s(0_usize, 1_usize),
+            },
         ]
     }
 
@@ -1601,6 +1687,10 @@ mod tests
             s(63_usize, 64_usize),
             s(65_usize, 66_usize),
             s(67_usize, 68_usize),
+            s(69_usize, 70_usize),
+            s(71_usize, 72_usize),
+            s(73_usize, 74_usize),
+            s(75_usize, 76_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

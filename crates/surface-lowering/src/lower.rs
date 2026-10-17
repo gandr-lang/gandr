@@ -563,6 +563,8 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::import::ImportBinding;
+use crate::import::ImportResolution;
 use crate::import::ModuleImports;
 use crate::module::Collected;
 use crate::module::ComponentScope;
@@ -623,6 +625,9 @@ use crate::resolve::binder_site;
 use crate::resolve::binder_type;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
+use crate::unit::ImportTarget;
+use crate::unit::SourceIndex;
+use crate::unit::Unit;
 
 mod access;
 
@@ -1947,6 +1952,18 @@ enum Resolved
     },
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a path's head reads no aliased import.
+    mod alias_member {
+        /// The reason the head is no alias.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The head names no alias of a path import of the source.
+            Unaliased,
+        }
+    }
+}
+
 impl Resolved
 {
     /// The plan of the value the name stands for in term position.
@@ -2892,13 +2909,45 @@ struct Sink<'run>
     identities: BTreeMap<ComputationId, identity::Identity>,
 }
 
-/// Lower one module into `arena`, declaring its names over `outermost`.
+/// Lower one source into `arena`, declaring its names over `outermost`: the
+/// unit of one source, whose path imports resolve to nothing.
 ///
 /// # Specification
-/// - requires: `tree` was molded under `pbg` over the source being lowered;
-///   `arena` is the arena the lowered module's ids are read against; `budget`
-///   bounds the work; `outermost` holds the seed tables and the shadow policy
-///   the module's names are declared against.
+/// - requires: as [`lower_unit`].
+/// - ensures: [`lower_unit`] over [`Unit::single`].
+/// - provides: the lowering of a source read alone.
+/// - fails: as [`lower_unit`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`lower_unit`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — every witness of [`lower_unit`] runs through this entry.
+/// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |module| {
+    usize::from(module.origins().declaration_count()) == module.declarations().len()
+}))]
+#[inline]
+pub fn lower_module<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    arena: &mut CoreArena,
+    budget: LoweringBudget,
+    outermost: Recognition,
+) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
+{
+    lower_unit(pbg, tree, &Unit::single(), arena, budget, outermost)
+}
+
+/// Lower the sources `unit` lays end to end in `tree` into `arena`, declaring
+/// their names over `outermost`.
+///
+/// # Specification
+/// - requires: `tree` was molded under `pbg` over the unit's text, its sources
+///   starting where `unit` says; `arena` is the arena the lowered module's ids
+///   are read against; `budget` bounds the work; `outermost` holds the seed
+///   tables and the shadow policy the module's names are declared against.
 /// - ensures: one declaration per distinct declared name, in admission order,
 ///   each carrying its admission position, the content identity of each of its
 ///   declaration forms, an origin token, and what its declarations amount to —
@@ -2909,11 +2958,14 @@ struct Sink<'run>
 ///   and types alike, the force, thunk, returner, quote and decode the lowering
 ///   inserted marked as inserted, and every attribute the module carries is
 ///   resolved against the registry and filed under the content identity of the
-///   declaration form it decorates. Every import is kept in source order with
-///   its alias bound in the import scope and no address resolved. Every
-///   declared name is declared over `outermost` in admission order, tagged with
-///   its name's bytes, and every lambda, parameter and `run` binder is reported
-///   against it; the outermost scope is returned with the module.
+///   declaration form it decorates. Every import is kept in source order, its
+///   alias, when it has one, bound in its source's scope, its path resolved as
+///   `unit` says. A top-level name is declared in its own source's scope, and a
+///   source's name nothing there answers is answered by the sources it imports
+///   unqualified (the `import` module). Every declared name is declared over
+///   `outermost` in admission order, tagged with its name's bytes, and every
+///   lambda, parameter and `run` binder is reported against it; the outermost
+///   scope is returned with the module.
 /// - provides: the whole surface-to-core step, in one pass over one tree with
 ///   one strictness and one verdict per name.
 /// - fails: [`LoweringRefusal::GrammarMismatch`] when the tree was molded under
@@ -3014,7 +3066,7 @@ struct Sink<'run>
 /// - witness: `lower::tests::a_module_past_the_allowance_is_refused`
 /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
 /// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
-/// - witness: `namespace::namespace::source_import_without_alias_becomes_a_refusal`
+/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
 /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
 /// - witness: `recognition::recognition::a_shadowed_builtin_is_reported_as_a_warning`
 /// - witness: `recognition::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
@@ -3051,9 +3103,10 @@ struct Sink<'run>
     },
 )]
 #[inline]
-pub fn lower_module<'source>(
+pub fn lower_unit<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
+    unit: &Unit,
     arena: &mut CoreArena,
     budget: LoweringBudget,
     outermost: Recognition,
@@ -3100,8 +3153,9 @@ pub fn lower_module<'source>(
         },
     }
     let mut fuel = Fuel::new(budget);
-    let collected = collect(pbg, tree, &mut fuel)?;
+    let collected = collect(pbg, tree, unit, &mut fuel)?;
     let mut lowerer = Lowerer::new(pbg, tree, collected, fuel, outermost);
+    lowerer.refuse_imports();
     lowerer.declare();
     lowerer.seed()?;
     lowerer.survey()?;
@@ -3340,6 +3394,121 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
+    /// Refuse what a source's imports forbid: every declaration of a source
+    /// with an import that resolved to no source, or that is an edge of a
+    /// cycle, and every top-level declaration or constructor of a source that
+    /// an unqualified import binds again.
+    ///
+    /// # Specification
+    /// - requires: the collection pass has run.
+    /// - ensures: each slot whose name stands in a source with a path import
+    ///   resolved to [`ImportTarget::Unresolved`] or [`ImportTarget::Cycle`]
+    ///   holds [`LoweringRefusal::ImportUnresolved`] or
+    ///   [`LoweringRefusal::ImportCycle`] at its declaration form, naming the
+    ///   import; each top-level declared name, and each family whose
+    ///   constructor, a source unqualified-imports from another holds
+    ///   [`LoweringRefusal::ImportShadows`] at its name, naming the import and
+    ///   the imported declaration. The import itself, and every source without
+    ///   such an import, is untouched.
+    /// - provides: the per-declaration refusal the corpus pins an import's
+    ///   failure by.
+    /// - fails: never; a refusal is carried by its declaration.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an unresolved import, a cycle and a shadowing
+    ///   declaration each refuse the importer's declarations by name, in the
+    ///   corpus's pathological twins.
+    /// - witness: `namespace::namespace::an_unresolved_import_refuses_its_source`
+    /// - witness: `namespace::namespace::a_declaration_an_import_binds_again_is_refused`
+    #[spec(
+        captures: before = self.collected.slots.len(),
+        ensures: self.collected.slots.len() == before,
+    )]
+    fn refuse_imports(&mut self)
+    {
+        let collected = &self.collected;
+        let named_at = |slot: SlotIndex| {
+            collected
+                .slots
+                .get(usize::from(slot))
+                .map(|found| found.named.span)
+        };
+        let mut refusals: Vec<(SlotIndex, LoweringRefusal<'source>)> = Vec::new();
+        for import in collected.imports.declarations() {
+            let source = import.source();
+            let (ImportResolution::Path(target), span) = (import.resolution(), import.span())
+            else {
+                continue;
+            };
+            let imported = match target {
+                ImportTarget::Source(imported) => imported,
+                ImportTarget::Unresolved | ImportTarget::Cycle => {
+                    for (index, slot) in collected.slots.iter().enumerate() {
+                        if collected.unit.source_at(slot.named.span.start()) != source {
+                            continue;
+                        }
+                        let refused = slot.named.span;
+                        refusals.push((SlotIndex::from(index), match target {
+                            ImportTarget::Cycle => LoweringRefusal::ImportCycle { span, refused },
+                            ImportTarget::Unresolved | ImportTarget::Source(_) => {
+                                LoweringRefusal::ImportUnresolved { span, refused }
+                            },
+                        }));
+                    }
+                    continue;
+                },
+            };
+            if import.binding() != ImportBinding::Unqualified {
+                continue;
+            }
+            let bound_in_import = |name: SurfaceName<'source>| {
+                collected
+                    .by_name
+                    .get(&(Container::TopLevel(imported), name))
+                    .copied()
+                    .and_then(named_at)
+                    .or_else(|| {
+                        collected
+                            .constructors
+                            .get(&(imported, name))
+                            .map(|constructor| constructor.named.span)
+                    })
+            };
+            for (index, slot) in collected.slots.iter().enumerate() {
+                if slot.container != Container::TopLevel(source) || slot.role != Role::Declared {
+                    continue;
+                }
+                if let Some(other) = bound_in_import(slot.name) {
+                    refusals.push((SlotIndex::from(index), LoweringRefusal::ImportShadows {
+                        span: slot.named.span,
+                        name: slot.name,
+                        import: span,
+                        other,
+                    }));
+                }
+            }
+            for (&(owner, name), constructor) in &collected.constructors {
+                if owner != source {
+                    continue;
+                }
+                if let Some(other) = bound_in_import(name) {
+                    refusals.push((constructor.family, LoweringRefusal::ImportShadows {
+                        span: constructor.named.span,
+                        name,
+                        import: span,
+                        other,
+                    }));
+                }
+            }
+        }
+        for (index, refusal) in refusals {
+            if let Some(slot) = self.collected.slots.get_mut(usize::from(index)) {
+                slot.refuse(slot.introduced_by.node, refusal);
+            }
+        }
+    }
+
     /// Declare every top-level name over the outermost scope: each top-level
     /// declaration, then each top-level module with the namespace it exports.
     ///
@@ -3391,7 +3560,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && self.collected.slots.iter().enumerate().skip(before.0).all(
                     |(index, slot)| {
                         slot.role == Role::Held
-                            && slot.container == Container::TopLevel
+                            && matches!(slot.container, Container::TopLevel(_))
                             && usize::from(slot.constant) == index
                             && matches!(
                                 slot.refusal,
@@ -3410,7 +3579,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn declare(&mut self)
     {
         for slot in &mut self.collected.slots {
-            if slot.container != Container::TopLevel || slot.role != Role::Declared {
+            if !matches!(slot.container, Container::TopLevel(_)) || slot.role != Role::Declared {
                 continue;
             }
             let site = slot.named.span;
@@ -3432,7 +3601,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut tops: Vec<StructureIndex> = Vec::new();
         let mut shadowing: Vec<StructureIndex> = Vec::new();
         for (position, structure) in self.collected.structures.iter().enumerate() {
-            if structure.container != Container::TopLevel {
+            if !matches!(structure.container, Container::TopLevel(_)) {
                 continue;
             }
             match structure.stratum {
@@ -3623,7 +3792,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let held = SlotIndex::from(self.collected.slots.len());
         let mut slot = DeclarationSlot {
             name,
-            container: Container::TopLevel,
+            container: self.collected.top(named.span.start()),
             role: Role::Held,
             constant: ConstantIndex::from(usize::from(held)),
             introduced_by: declared_by,
@@ -4682,11 +4851,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(Maybe::Absent(named::Absent::Unresolved));
         };
-        let mut container = self
-            .collected
-            .slots
-            .get(usize::from(own))
-            .map_or(Container::TopLevel, |slot| slot.container);
+        let mut container = self.collected.slots.get(usize::from(own)).map_or_else(
+            || self.collected.top(site.at.span.start()),
+            |slot| slot.container,
+        );
         loop {
             self.fuel.spend()?;
             if let Some(&target) = self.collected.by_name.get(&(container, name))
@@ -4725,7 +4893,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             let Container::Module(module) = container
             else {
-                if let Some(&target) = self.collected.operation_names.get(&name)
+                let source = self.collected.unit.source_at(site.at.span.start());
+                if let Some(&target) = self.collected.operation_names.get(&(source, name))
                     && target < own
                     && let Some(entry) = self.collected.slots.get(usize::from(target))
                 {
@@ -4734,13 +4903,199 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         declared: Maybe::Absent(binder_type::Absent::Untyped),
                     }));
                 }
-                return Ok(Maybe::Absent(named::Absent::Unresolved));
+                return self.imported(site, source, name);
             };
             container = self
                 .collected
                 .structures
                 .get(usize::from(module))
-                .map_or(Container::TopLevel, |structure| structure.container);
+                .map_or_else(
+                    || self.collected.top(site.at.span.start()),
+                    |structure| structure.container,
+                );
+        }
+    }
+
+    /// What the sources `source` imports unqualified answer `name`, used at
+    /// `site`, with.
+    ///
+    /// # Specification
+    /// - requires: `site` is the name's own node, in `source`.
+    /// - ensures: the constant and written signature type of the top-level
+    ///   declaration one imported source declares under `name`, or the
+    ///   unresolved absence when none does.
+    /// - provides: the import fallback of [`Self::resolve_name`].
+    /// - fails: [`LoweringRefusal::ImportShadows`] when two imports declare the
+    ///   name, naming both; [`LoweringRefusal::UnexportedName`] when the
+    ///   declaration has a signature and no definition, which its source does
+    ///   not export.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::ImportShadows`] and
+    /// [`LoweringRefusal::UnexportedName`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name one import answers, a name two answer and a
+    ///   pending declaration, each asserted exactly.
+    /// - witness: `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    /// - witness: `namespace::namespace::two_imports_binding_one_name_refuse_its_use`
+    /// - witness: `namespace::namespace::a_pending_declaration_is_not_exported`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(_) => true,
+        Err(LoweringRefusal::ImportShadows { name: found, .. } | LoweringRefusal::UnexportedName { name: found, .. }) => {
+            found.as_ref() == name.as_ref()
+        },
+        Err(_) => false,
+    })]
+    fn imported(
+        &self,
+        site: Site,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<Resolved, named::Absent>, LoweringRefusal<'source>>
+    {
+        let (target, _import) = match self.collected.imported_slot(source, name) {
+            Ok(Maybe::Present(found)) => found,
+            Ok(Maybe::Absent(_)) => return Ok(Maybe::Absent(named::Absent::Unresolved)),
+            Err(ambiguity) => {
+                return Err(LoweringRefusal::ImportShadows {
+                    span: site.at.span,
+                    name,
+                    import: ambiguity.import,
+                    other: ambiguity.other,
+                });
+            },
+        };
+        self.exported(site, name, target)
+    }
+
+    /// The declaration at `target`, which another source exports under
+    /// `name`, read at `site`.
+    ///
+    /// # Specification
+    /// - requires: `target` is a top-level declaration of a source the site's
+    ///   source imports.
+    /// - ensures: its constant and written signature type; the unresolved
+    ///   absence for a slot the collection does not hold.
+    /// - fails: [`LoweringRefusal::UnexportedName`] for a declaration with a
+    ///   signature and no definition.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnexportedName`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witnesses of [`Self::imported`].
+    /// - witness: `namespace::namespace::a_pending_declaration_is_not_exported`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(Maybe::Present(Resolved::Declaration { constant, .. })) => self
+            .collected
+            .slots
+            .get(usize::from(target))
+            .is_some_and(|entry| entry.constant == constant),
+        Ok(Maybe::Absent(_)) => self.collected.slots.get(usize::from(target)).is_none(),
+        Err(LoweringRefusal::UnexportedName { name: found, .. }) => found.as_ref() == name.as_ref(),
+        Ok(Maybe::Present(_)) | Err(_) => false,
+    })]
+    fn exported(
+        &self,
+        site: Site,
+        name: SurfaceName<'source>,
+        target: SlotIndex,
+    ) -> Result<Maybe<Resolved, named::Absent>, LoweringRefusal<'source>>
+    {
+        let Some(entry) = self.collected.slots.get(usize::from(target))
+        else {
+            return Ok(Maybe::Absent(named::Absent::Unresolved));
+        };
+        if let Maybe::Absent(_) = entry.definition {
+            return Err(LoweringRefusal::UnexportedName {
+                span: site.at.span,
+                name,
+                declared: entry.named.span,
+            });
+        }
+        let declared = match entry.signature {
+            Maybe::Present(Half {
+                operand: Operand::Written(written),
+                ..
+            }) => Maybe::Present(written.node),
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+        };
+
+        Ok(Maybe::Present(Resolved::Declaration {
+            constant: entry.constant,
+            declared,
+        }))
+    }
+
+    /// What `alias.selected`, written at `site`, names when `alias` is the
+    /// alias of a path import of the site's source.
+    ///
+    /// # Specification
+    /// - requires: `alias` is the head of the one-link path at `site` and
+    ///   `selected` its selected name.
+    /// - ensures: the top-level declaration the imported source declares under
+    ///   the selected name; the unaliased absence when `alias` is no alias of
+    ///   the source or names an import of an address no source of the unit
+    ///   answers. A constructor is not selected through an alias: a selected
+    ///   name is lowercase, so a qualified constructor does not parse.
+    /// - provides: the qualified reading of an aliased import.
+    /// - fails: [`LoweringRefusal::UnknownMember`] for a name the imported
+    ///   source does not declare; [`LoweringRefusal::UnexportedName`] for one
+    ///   it declares without a definition.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMember`] and
+    /// [`LoweringRefusal::UnexportedName`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an aliased family and value each read from the
+    ///   imported source, and an undeclared member refused by name.
+    /// - witness: `namespace::namespace::an_aliased_import_qualifies_its_source_s_names`
+    #[spec(ensures: |ref ret| matches!(
+        *ret,
+        Ok(_) | Err(LoweringRefusal::UnknownMember { .. } | LoweringRefusal::UnexportedName { .. })
+    ))]
+    fn aliased_member(
+        &self,
+        site: Site,
+        alias: Placed,
+        selected: Placed,
+    ) -> Result<Maybe<Resolved, alias_member::Absent>, LoweringRefusal<'source>>
+    {
+        let source = self.collected.unit.source_at(site.at.span.start());
+        let module = self.name_at(alias);
+        let Maybe::Present(import) = self.collected.imports.aliased(source, module)
+        else {
+            return Ok(Maybe::Absent(alias_member::Absent::Unaliased));
+        };
+        let ImportResolution::Path(ImportTarget::Source(target)) = import.resolution()
+        else {
+            return Ok(Maybe::Absent(alias_member::Absent::Unaliased));
+        };
+        let member = self.name_at(selected);
+        let unknown = LoweringRefusal::UnknownMember {
+            span: selected.span,
+            module,
+            member,
+        };
+        let Some(&slot) = self
+            .collected
+            .by_name
+            .get(&(Container::TopLevel(target), member))
+        else {
+            return Err(unknown);
+        };
+        let read = Site {
+            at: selected,
+            ..site
+        };
+        match self.exported(read, member, slot)? {
+            Maybe::Present(resolved) => Ok(Maybe::Present(resolved)),
+            Maybe::Absent(_) => Err(unknown),
         }
     }
 
@@ -6647,6 +7002,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if self.selection(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
+        let (head, selected) = Self::link(site, &pieces.pieces, site.at.span)?;
+        let named = match self.tree.node(head.node) {
+            Some(node) => matches!(shape_of(self.pbg, node)?, Shape::Form {
+                former: Former::Name,
+                ..
+            }),
+            None => false,
+        };
+        if named && let Maybe::Present(resolved) = self.aliased_member(site, head, selected)? {
+            let none = Stretch {
+                start: self.operands.len(),
+                end: self.operands.len(),
+            };
+            if let Resolved::Declaration { constant, .. } = resolved
+                && let Maybe::Present(arity) = self.data_family(constant)
+            {
+                return self.family(site, constant, arity, none);
+            }
+            let frame = self.require(site, Produced::Value)?;
+            let plan = self.resolved_term(site, frame, resolved);
+            self.plan(site, plan);
+            return Ok(());
+        }
         let _frame = self.require(site, Produced::Value)?;
         let mut links: Vec<(Placed, Placed)> = Vec::new();
         let (mut target, member) = Self::link(site, &pieces.pieces, site.at.span)?;
@@ -7147,11 +7525,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(Maybe::Absent(named::Absent::Unresolved));
         };
-        let mut container = self
-            .collected
-            .slots
-            .get(usize::from(own))
-            .map_or(Container::TopLevel, |slot| slot.container);
+        let mut container = self.collected.slots.get(usize::from(own)).map_or_else(
+            || self.collected.top(site.at.span.start()),
+            |slot| slot.container,
+        );
         while let Container::Module(module) = container
             && let Some(structure) = self.collected.structures.get(usize::from(module))
         {
@@ -7186,7 +7563,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   member names, the type member a transparently ascribed abstract
     ///   component reads, the atom an opaquely ascribed one's abstract type
     ///   declares, or an instance's manifest type. The chain is walked by an
-    ///   explicit loop, and its links are left unread.
+    ///   explicit loop, and its links are left unread. A one-link path whose
+    ///   head is the alias of a path import reads the type the imported source
+    ///   declares under the member, as a static application of it.
     /// - provides: the governed reading of a type path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a type a governing module or a
@@ -7216,7 +7595,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..)))
+                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Data(..)))
                 )
         },
     )]
@@ -7229,6 +7608,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut links: Vec<(Placed, Placed)> = Vec::new();
         let (mut target, member) = Self::type_link(site, &pieces.pieces, site.at.span)?;
         links.push((target, member));
+        let headed = match self.tree.node(target.node) {
+            Some(node) => matches!(shape_of(self.pbg, node)?, Shape::Form {
+                former: Former::TypeHead,
+                ..
+            }),
+            None => false,
+        };
+        if headed && let Maybe::Present(resolved) = self.aliased_member(site, target, member)? {
+            let none = Stretch {
+                start: self.operands.len(),
+                end: self.operands.len(),
+            };
+            return self.static_application(site, resolved, none);
+        }
         let mut chain = Pieces::new();
         let head = loop {
             self.fuel.spend()?;
@@ -11644,7 +12037,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             PathResolution::Complete(_)
                         ) || self.collected.by_name.keys().any(|&(_, held)| held == name)
                             || self.collected.modules.keys().any(|&(_, held)| held == name)
-                            || self.collected.constructors.contains_key(&name);
+                            || self
+                                .collected
+                                .constructors
+                                .keys()
+                                .any(|&(_, held)| held == name);
                     if !declared {
                         slot.refuse(written.at.node, LoweringRefusal::UnresolvedDocLink {
                             span: link.span(),
@@ -14041,6 +14438,7 @@ mod tests
     use crate::resolve::HeadArity;
     use crate::resolve::OperandCount;
     use crate::resolve::SurfaceName;
+    use crate::unit::Unit;
 
     /// The module the parser and the lowering make of `source`, which both
     /// must accept.
@@ -15543,7 +15941,7 @@ mod tests
         );
         let mut arena = CoreArena::new();
         let mut fuel = Fuel::new(LoweringBudget::DEFAULT);
-        let collected = super::collect(&pbg, &tree, &mut fuel).unwrap();
+        let collected = super::collect(&pbg, &tree, &Unit::single(), &mut fuel).unwrap();
         let mut lowerer = super::Lowerer::new(&pbg, &tree, collected, fuel, Recognition::default());
         lowerer.declare();
         lowerer.seed().unwrap();

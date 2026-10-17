@@ -17,6 +17,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::SurfaceName;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -362,6 +363,7 @@ impl Script
                         path: &self.path,
                         root,
                         text: source,
+                        base: ByteOffset::from(0_usize),
                         composed,
                         standing,
                     },

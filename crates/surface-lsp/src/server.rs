@@ -55,6 +55,7 @@ use core::ops::ControlFlow;
 use core::time::Duration;
 use std::io::BufRead;
 use std::io::Write;
+use std::path::Path;
 use std::sync::mpsc::Sender;
 use std::time::Instant;
 
@@ -315,14 +316,17 @@ impl HeldText
         self.reading.get_or_init(|| Reading::of(self.source()))
     }
 
-    /// What the hovers of the text held read, made now when no hover has asked
-    /// since it last changed.
+    /// What the hovers of the text held, the document at `path`, read, made
+    /// now when no hover has asked since it last changed.
     ///
     /// # Specification
     /// trivial.
-    fn hovering(&self) -> &Hovering
+    fn hovering(
+        &self,
+        path: &Path,
+    ) -> &Hovering
     {
-        self.hovering.get_or_init(|| hovering(self.source()))
+        self.hovering.get_or_init(|| hovering(self.source(), path))
     }
 }
 
@@ -2063,7 +2067,7 @@ impl Workspace
                     document.text.source(),
                     session,
                     document.text.reading(),
-                    document.text.hovering(),
+                    document.text.hovering(&uri.path()),
                     position,
                     style,
                 )

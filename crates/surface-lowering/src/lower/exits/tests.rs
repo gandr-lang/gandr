@@ -37,6 +37,7 @@ use crate::module::collect;
 use crate::namespace::Recognition;
 use crate::origin::Labelled;
 use crate::resolve::SurfaceName;
+use crate::unit::Unit;
 
 /// The naturals every witness matches on.
 const NAT: &str = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n";
@@ -89,7 +90,7 @@ pub(in crate::lower) fn assert_surveyed(
     let pbg = grammar();
     let tree = parsed(&pbg, source);
     let mut fuel = Fuel::new(LoweringBudget::DEFAULT);
-    let collected = collect(&pbg, &tree, &mut fuel).expect("the module collects");
+    let collected = collect(&pbg, &tree, &Unit::single(), &mut fuel).expect("the module collects");
     let mut lowerer = Lowerer::new(&pbg, &tree, collected, fuel, Recognition::default());
     lowerer
         .survey()

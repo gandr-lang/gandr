@@ -59,8 +59,11 @@
 //!
 //! # Imports are collected beside the declarations
 //!
-//! `import "URI" as name ;` is kept in source order and its alias bound in the
-//! module's import scope as it is read; no address is resolved.
+//! `import "<path>" ;` and `import "<path>" as name ;` are kept in source
+//! order, under the source that writes them, and an alias is bound in that
+//! source's import scope as it is read; the [`Unit`] says what
+//! each path import resolved to, and a name the source does not declare is
+//! read through its resolved imports (the `import` module).
 //!
 //! # A data declaration is one more slot
 //!
@@ -273,8 +276,10 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::import::ImportBinding;
 use crate::import::ImportDeclaration;
 use crate::import::ImportIndex;
+use crate::import::ImportResolution;
 use crate::import::ImportUri;
 use crate::import::ModuleImports;
 use crate::lower::Fuel;
@@ -289,6 +294,10 @@ use crate::origin::OriginTable;
 use crate::origin::OriginToken;
 use crate::origin::Provenance;
 use crate::resolve::SurfaceName;
+use crate::unit::ImportTarget;
+use crate::unit::PathImportOrdinal;
+use crate::unit::SourceIndex;
+use crate::unit::Unit;
 
 mod data;
 
@@ -584,8 +593,8 @@ impl From<StructureIndex> for usize
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Container
 {
-    /// The source's top level.
-    TopLevel,
+    /// The top level of this source of the unit.
+    TopLevel(SourceIndex),
     /// The body of this module.
     Module(StructureIndex),
 }
@@ -1250,18 +1259,21 @@ pub struct Collected<'source>
     pub scopes: Vec<(NodeIndex, ComponentScope)>,
     /// The imports, in source order, with their aliases bound.
     pub imports: ModuleImports<'source>,
+    /// The sources the tree lays end to end, and what their imports name.
+    pub unit: Unit,
     /// The data declarations, in source order.
     pub data: Vec<DataForm>,
     /// The words of the data declarations' loops, one per point, in the order
     /// they are admitted.
     pub words: Vec<WordsForm>,
-    /// Every constructor a data declaration declares, by name.
-    pub constructors: BTreeMap<SurfaceName<'source>, Constructor>,
+    /// Every constructor a data declaration declares, by the source declaring
+    /// it and its name.
+    pub constructors: BTreeMap<(SourceIndex, SurfaceName<'source>), Constructor>,
     /// Each callable operation's plan, by its slot.
     pub operations: BTreeMap<SlotIndex, crate::operation::OperationPlan>,
-    /// Each callable operation's slot, by name: operations are declared at
-    /// the top level only.
-    pub operation_names: BTreeMap<SurfaceName<'source>, SlotIndex>,
+    /// Each callable operation's slot, by the source declaring it and its
+    /// name: operations are declared at the top level only.
+    pub operation_names: BTreeMap<(SourceIndex, SurfaceName<'source>), SlotIndex>,
     /// Each abstract component's slot — the abstract type an opaque
     /// ascription declares, or the witness checking the kind a transparent
     /// one states — with what the slot is built from.
@@ -1288,6 +1300,29 @@ pub struct Collected<'source>
     /// `Sig`, the presentation code, when a `sign` block that refuses
     /// nothing has minted it.
     pub sig: Maybe<SigSlot, sig_slot::Absent>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a source's imports answer no name.
+    pub mod imported {
+        /// The reason nothing answers.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No source the source imports unqualified declares the name.
+            Unbound,
+        }
+    }
+}
+
+/// Two unqualified imports of one source binding one name to two
+/// declarations.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Ambiguity
+{
+    /// The bytes of the later import.
+    pub import: ByteSpan,
+    /// The bytes of the earlier import.
+    pub other: ByteSpan,
 }
 
 quenchant_shape::reason_enum! {
@@ -1385,6 +1420,149 @@ impl<'source> Collected<'source>
             .get(usize::from(position))
             .copied()
             .unwrap_or(Maybe::Absent(slot_owner::Absent::Unowned))
+    }
+
+    /// The top level of the source whose text holds `offset`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn top(
+        &self,
+        offset: ByteOffset,
+    ) -> Container
+    {
+        Container::TopLevel(self.unit.source_at(offset))
+    }
+
+    /// The top-level declaration `source`'s unqualified imports answer `name`
+    /// with, and the import that answers it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot one source `source` imports unqualified declares at
+    ///   its top level under `name`, with that import's bytes; two such imports
+    ///   answering two slots are [`Ambiguity`], naming both imports; an import
+    ///   whose address did not resolve to a source of the unit answers nothing.
+    ///   Imports are not re-exported: only the imported source's own
+    ///   declarations answer.
+    /// - provides: the import fallback of every top-level name lookup.
+    /// - fails: [`Ambiguity`] for two imports binding one name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Ambiguity`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name one import binds, a name two bind, and a name
+    ///   only an import of the imported source binds, each answered exactly.
+    /// - witness: `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    /// - witness: `namespace::namespace::two_imports_binding_one_name_refuse_its_use`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(Maybe::Present((slot, _))) => self.slots.get(usize::from(slot)).is_some(),
+        Ok(Maybe::Absent(_)) => true,
+        Err(ref ambiguity) => ambiguity.import != ambiguity.other,
+    })]
+    pub fn imported_slot(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<(SlotIndex, ByteSpan), imported::Absent>, Ambiguity>
+    {
+        self.through_imports(source, |target| {
+            self.by_name
+                .get(&(Container::TopLevel(target), name))
+                .copied()
+        })
+    }
+
+    /// The constructor `source`'s unqualified imports answer `name` with, and
+    /// the import that answers it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::imported_slot`], over the constructors each
+    ///   imported source declares.
+    /// - provides: the import fallback of constructor lookup.
+    /// - fails: [`Ambiguity`] for two imports binding one constructor name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Ambiguity`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an imported family's constructor in a case arm and a
+    ///   value, answered exactly.
+    /// - witness: `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(_) => true,
+        Err(ref ambiguity) => ambiguity.import != ambiguity.other,
+    })]
+    pub fn imported_constructor(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<(Constructor, ByteSpan), imported::Absent>, Ambiguity>
+    {
+        self.through_imports(source, |target| {
+            self.constructors.get(&(target, name)).copied()
+        })
+    }
+
+    /// What `lookup` answers in the sources `source` imports unqualified.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::imported_slot`], `lookup` standing for the table
+    ///   read in each imported source.
+    /// - fails: [`Ambiguity`] for two imports answering two values.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Ambiguity`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the two entries above.
+    /// - witness: `namespace::namespace::two_imports_binding_one_name_refuse_its_use`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(_) => true,
+        Err(ref ambiguity) => ambiguity.import != ambiguity.other,
+    })]
+    fn through_imports<Found, Lookup>(
+        &self,
+        source: SourceIndex,
+        lookup: Lookup,
+    ) -> Result<Maybe<(Found, ByteSpan), imported::Absent>, Ambiguity>
+    where
+        Found: Copy + Eq,
+        Lookup: Fn(SourceIndex) -> Option<Found>,
+    {
+        let mut answered: Maybe<(Found, ByteSpan), imported::Absent> =
+            Maybe::Absent(imported::Absent::Unbound);
+        for import in self.imports.of(source) {
+            let (ImportBinding::Unqualified, ImportResolution::Path(ImportTarget::Source(target))) =
+                (import.binding(), import.resolution())
+            else {
+                continue;
+            };
+            let Some(found) = lookup(target)
+            else {
+                continue;
+            };
+            match answered {
+                Maybe::Present((held, first)) if held != found => {
+                    return Err(Ambiguity {
+                        import: import.span(),
+                        other: first,
+                    });
+                },
+                Maybe::Present(_) => {},
+                Maybe::Absent(_) => answered = Maybe::Present((found, import.span())),
+            }
+        }
+
+        Ok(answered)
     }
 
     /// Give `position` to `slot`.
@@ -1758,7 +1936,7 @@ enum Tail<'source>
 /// - witness: `modules::modules::module_members_admit_in_source_order`
 /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
 /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `namespace::namespace::source_import_without_alias_becomes_a_refusal`
+/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
 /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
 struct Collector<'run, 'source>
 {
@@ -1772,6 +1950,8 @@ struct Collector<'run, 'source>
     collected: Collected<'source>,
     /// The scratch reading of the declaration form being collected.
     pieces: Pieces,
+    /// The next path import's ordinal in each source that has written one.
+    ordinals: BTreeMap<SourceIndex, PathImportOrdinal>,
 }
 
 /// Pair every signature with its definition, in one pass over the module.
@@ -1829,7 +2009,7 @@ struct Collector<'run, 'source>
 /// - witness: `module::tests::a_trailing_attribute_block_refuses_the_module`
 /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
 /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `namespace::namespace::source_import_without_alias_becomes_a_refusal`
+/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
 /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
 #[spec(
     ensures: |ret| {
@@ -1861,7 +2041,7 @@ struct Collector<'run, 'source>
                     .iter()
                     .enumerate()
                     .all(|(index, module)| match module.container {
-                        | Container::TopLevel => true,
+                        | Container::TopLevel(_) => true,
                         | Container::Module(parent) => parent.0 < index,
                     })
         })
@@ -1871,6 +2051,7 @@ struct Collector<'run, 'source>
 pub fn collect<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
+    unit: &Unit,
     fuel: &mut Fuel,
 ) -> Result<Collected<'source>, LoweringRefusal<'source>>
 {
@@ -1901,6 +2082,7 @@ pub fn collect<'source>(
             modules: BTreeMap::new(),
             scopes: Vec::new(),
             imports: ModuleImports::new(),
+            unit: unit.clone(),
             data: Vec::new(),
             words: Vec::new(),
             constructors: BTreeMap::new(),
@@ -1917,6 +2099,7 @@ pub fn collect<'source>(
             sig: Maybe::Absent(sig_slot::Absent::Unminted),
         },
         pieces: Pieces::new(),
+        ordinals: BTreeMap::new(),
     };
     let mut root = Pieces::new();
     read_pieces(pbg, tree, tree.root(), &mut root)?;
@@ -1927,6 +2110,14 @@ pub fn collect<'source>(
     for piece in root.pieces {
         collector.fuel.spend()?;
         let child = piece.placed();
+        // An attribute block decorates the form after it in its own source:
+        // one standing at a source's end decorates nothing.
+        if let Some(&stray) = decorations.first()
+            && collector.collected.unit.source_at(stray.span.start())
+                != collector.collected.unit.source_at(child.span.start())
+        {
+            collector.module_child(stray)?;
+        }
         let former = collector.root_former(child)?;
         if former == Former::AttributeBlock {
             decorations.push(child);
@@ -1988,6 +2179,230 @@ pub fn collect<'source>(
     collector.stray_expectations();
 
     Ok(collector.collected)
+}
+
+/// Whether an import's address names a scheme or a path.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Address
+{
+    /// `scheme:…`: a letter, then letters, digits, `+`, `-` or `.`, then a
+    /// colon (RFC 3986 § 3.1).
+    Scheme,
+    /// Anything else: a path relative to the importing source.
+    Path,
+}
+
+impl Address
+{
+    /// What `uri` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Address::Scheme`] exactly when `uri` opens with an RFC 3986
+    ///   scheme and its colon; [`Address::Path`] otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `file:` URL, a relative path, a path holding a
+    ///   colon after a slash and a scheme opening with a digit each classify
+    ///   exactly.
+    /// - witness: `module::tests::an_address_names_a_scheme_or_a_path`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret == Self::Path || uri.as_ref().contains(':'))]
+    pub fn of(uri: &ImportUri) -> Self
+    {
+        let text = uri.as_ref();
+        let Some(colon) = text.find(':')
+        else {
+            return Self::Path;
+        };
+        let scheme = text.get(.. colon).unwrap_or_default();
+        let mut characters = scheme.chars();
+        let opens = characters
+            .next()
+            .is_some_and(|first| first.is_ascii_alphabetic());
+        let rest = characters
+            .all(|later| later.is_ascii_alphanumeric() || matches!(later, '+' | '-' | '.'));
+        if opens && rest {
+            Self::Scheme
+        }
+        else {
+            Self::Path
+        }
+    }
+}
+
+/// One import as its tiles spell it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenImport
+{
+    /// The address, its escapes decoded.
+    pub uri: ImportUri,
+    /// The alias, when one is written.
+    pub alias: Maybe<Placed, unaliased::Absent>,
+    /// The bytes the import covers.
+    pub span: ByteSpan,
+    /// What the address names.
+    pub address: Address,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an import has no alias.
+    pub mod unaliased {
+        /// The reason none is written.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The import binds its sibling's exports unqualified.
+            Unqualified,
+        }
+    }
+}
+
+/// Read one import form's pieces.
+///
+/// # Specification
+/// - requires: `pieces` is the reading of the import `import`.
+/// - ensures: the import the tiles `import " … " (as name)? ;` spell, in that
+///   order with nothing after them.
+/// - provides: the reading the collection and [`written_imports`] share.
+/// - fails: [`LoweringRefusal::MalformedForm`] naming `form` for a repair or a
+///   tile out of place.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal::MalformedForm`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact address decoding with and without an alias, and a
+///   tile out of place, distinguish reading from binding refusal.
+/// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref entry) => entry.span == import.span,
+        | Err(LoweringRefusal::MalformedForm { form: found, .. }) => found == form,
+        | Err(_) => false,
+    },
+)]
+fn read_import<'source>(
+    tree: &SyntaxTree<'source>,
+    import: Placed,
+    form: FormName,
+    pieces: &Pieces,
+) -> Result<WrittenImport, LoweringRefusal<'source>>
+{
+    if let Maybe::Present(repaired) = pieces.repair {
+        return Err(repaired.refusal(form));
+    }
+    let out_of_place = |cursor: &Cursor<'_>| LoweringRefusal::MalformedForm {
+        span: cursor.here(),
+        form,
+        fault: FormFault::MisplacedTile,
+    };
+    let mut cursor = Cursor::new(&pieces.pieces, import.span);
+    for opening in [TileName::IMPORT, TileName::QUOTE] {
+        if let Maybe::Absent(_) = cursor.tile(opening) {
+            return Err(out_of_place(&cursor));
+        }
+    }
+    let mut written = String::new();
+    loop {
+        let piece = match cursor.tile(TileName::STRING_FRAGMENT) {
+            Maybe::Present(fragment) => fragment,
+            Maybe::Absent(_) => match cursor.tile(TileName::ESCAPE_SEQUENCE) {
+                Maybe::Present(escape) => escape,
+                Maybe::Absent(_) => break,
+            },
+        };
+        if let Some(text) = tree.fragment(piece.node) {
+            written.push_str(text.as_ref());
+        }
+    }
+    if let Maybe::Absent(_) = cursor.tile(TileName::QUOTE) {
+        return Err(out_of_place(&cursor));
+    }
+    let alias = match cursor.tile(TileName::AS) {
+        Maybe::Present(_) => match cursor.tile(TileName::IDENTIFIER) {
+            Maybe::Present(alias) => Maybe::Present(alias),
+            Maybe::Absent(_) => return Err(out_of_place(&cursor)),
+        },
+        Maybe::Absent(_) => Maybe::Absent(unaliased::Absent::Unqualified),
+    };
+    if let Maybe::Absent(_) = cursor.tile(TileName::SEMICOLON) {
+        return Err(out_of_place(&cursor));
+    }
+    if let Maybe::Present(_) = cursor.peek() {
+        return Err(out_of_place(&cursor));
+    }
+    let uri = ImportUri::from(decode_escapes(SourceFragment::from(written.as_str())));
+    let address = Address::of(&uri);
+
+    Ok(WrittenImport {
+        uri,
+        alias,
+        span: import.span,
+        address,
+    })
+}
+
+/// Every import `tree`'s root writes, in source order, read as the collection
+/// reads it.
+///
+/// # Specification
+/// - requires: `tree` was molded under `pbg`.
+/// - ensures: one entry per import form at the root, in source order; every
+///   other root child is passed over.
+/// - provides: what a caller reads to lay out a [`Unit`] before lowering it:
+///   the sources an import names, without collecting a declaration.
+/// - fails: [`LoweringRefusal::MalformedForm`] for a repaired root or an import
+///   out of shape, and [`LoweringRefusal::UnknownMold`] for a mold the grammar
+///   does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal::MalformedForm`] and [`LoweringRefusal::UnknownMold`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source with an unqualified and an aliased import
+///   between two declarations lists exactly the two imports.
+/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.windows(2).all(|pair| match *pair {
+    [ref first, ref second] => first.span.start() < second.span.start(),
+    _ => false,
+})))]
+#[inline]
+pub fn written_imports<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+) -> Result<Vec<WrittenImport>, LoweringRefusal<'source>>
+{
+    let mut root = Pieces::new();
+    read_pieces(pbg, tree, tree.root(), &mut root)?;
+    if let Maybe::Present(repaired) = root.repair {
+        return Err(repaired.refusal(FormName::ROOT));
+    }
+    let mut found = Vec::new();
+    let mut pieces = Pieces::new();
+    for piece in root.pieces {
+        let child = piece.placed();
+        let Some(node) = tree.node(child.node)
+        else {
+            continue;
+        };
+        if let Shape::Form {
+            former: Former::Import,
+            name,
+            ..
+        } = shape_of(pbg, node)?
+        {
+            read_pieces(pbg, tree, child.node, &mut pieces)?;
+            found.push(read_import(tree, child, name, &pieces)?);
+        }
+    }
+
+    Ok(found)
 }
 
 impl<'source> Collector<'_, 'source>
@@ -2165,7 +2580,7 @@ impl<'source> Collector<'_, 'source>
             return;
         };
         let name = self.name_of(named);
-        let position = self.admit(Container::TopLevel, name, child, named);
+        let position = self.admit(self.collected.top(child.span.start()), name, child, named);
         self.collected.own(child.node, position);
         let mut attributes = Vec::new();
         let mut attributed = Ok(());
@@ -2280,7 +2695,8 @@ impl<'source> Collector<'_, 'source>
                 node: child.node,
                 span,
             };
-            let _held = self.refuse_held(Container::TopLevel, name, introduced, named, refusal);
+            let top = self.collected.top(child.span.start());
+            let _held = self.refuse_held(top, name, introduced, named, refusal);
         }
     }
 
@@ -2405,7 +2821,8 @@ impl<'source> Collector<'_, 'source>
                 node: child.node,
                 span,
             };
-            let held = self.held(Container::TopLevel, name, introduced, named);
+            let top = self.collected.top(child.span.start());
+            let held = self.held(top, name, introduced, named);
             if let Some(slot) = self.collected.slots.get_mut(held.0) {
                 slot.signature = Maybe::Present(Half {
                     declaration: child,
@@ -2481,7 +2898,7 @@ impl<'source> Collector<'_, 'source>
             Some(_) => Ok(()),
             None => self.mint_sig(named),
         };
-        let position = self.admit(Container::TopLevel, name, child, named);
+        let position = self.admit(self.collected.top(child.span.start()), name, child, named);
         self.collected.own(child.node, position);
         let mut attributes = Vec::new();
         let mut attributed = Ok(());
@@ -2524,7 +2941,8 @@ impl<'source> Collector<'_, 'source>
                 node: child.node,
                 span,
             };
-            let held = self.held(Container::TopLevel, name, introduced, named);
+            let top = self.collected.top(child.span.start());
+            let held = self.held(top, name, introduced, named);
             if let Some(slot) = self.collected.slots.get_mut(held.0) {
                 slot.signature = Maybe::Present(Half {
                     declaration: child,
@@ -2581,21 +2999,23 @@ impl<'source> Collector<'_, 'source>
                 first,
             })
         };
+        let top = self.collected.top(named.span.start());
         if let Some(slot) = self
             .collected
             .by_name
-            .get(&(Container::TopLevel, code))
+            .get(&(top, code))
             .and_then(|&position| self.collected.slots.get(position.0))
         {
             return taken(code, slot.introduced_by.span);
         }
+        let source = self.collected.unit.source_at(named.span.start());
         for constructor in SIG_CONSTRUCTORS {
             let name = SurfaceName::from(constructor);
-            if let Some(entry) = self.collected.constructors.get(&name) {
+            if let Some(entry) = self.collected.constructors.get(&(source, name)) {
                 return taken(name, entry.named.span);
             }
         }
-        let slot = self.admit(Container::TopLevel, code, named, named);
+        let slot = self.admit(top, code, named, named);
         if let Some(entry) = self.collected.slots.get_mut(slot.0) {
             entry.definition = Maybe::Present(Half {
                 declaration: named,
@@ -2608,16 +3028,17 @@ impl<'source> Collector<'_, 'source>
         {
             let arity = constructor.arity().inputs.len();
             arities.push(arity);
-            let _fresh = self
-                .collected
-                .constructors
-                .insert(SurfaceName::from(name), Constructor {
+            let source = self.collected.unit.source_at(named.span.start());
+            let _fresh = self.collected.constructors.insert(
+                (source, SurfaceName::from(name)),
+                Constructor {
                     family: slot,
                     form: Generators::Presentation,
                     tag,
                     arity,
                     named,
-                });
+                },
+            );
         }
         self.collected.sig = Maybe::Present(SigSlot { slot, arities });
 
@@ -2676,24 +3097,28 @@ impl<'source> Collector<'_, 'source>
     {
         let mut pieces = core::mem::take(&mut self.pieces);
         read_pieces(self.pbg, self.tree, declaration.node, &mut pieces)?;
-        let outcome = self.read_declaration(Container::TopLevel, declaration, &pieces, decorations);
+        let top = self.collected.top(declaration.span.start());
+        let outcome = self.read_declaration(top, declaration, &pieces, decorations);
         self.pieces = pieces;
 
         outcome
     }
 
-    /// Collect one import, `import "URI" as name ;`, of form `form`.
+    /// Collect one import, `import "URI" ;` or `import "URI" as name ;`, of
+    /// form `form`.
     ///
     /// # Specification
     /// - requires: `import` is an import form named `form`.
     /// - ensures: the import's address — the text between its quotes with its
-    ///   escapes decoded — its alias and its bytes are kept after every earlier
-    ///   import, and its alias is bound in the import scope.
+    ///   escapes decoded — its binding, its bytes, its source and what its
+    ///   address came to are kept after every earlier import, and its alias,
+    ///   when it has one, is bound in its source's scope. An address with a
+    ///   scheme is [`ImportResolution::Foreign`]; a path is the unit's target
+    ///   for the source's next path import.
     /// - provides: the import half of [`collect`].
     /// - fails: [`LoweringRefusal::MalformedForm`] for a repair or a tile out
-    ///   of place — an import with no alias included — and
-    ///   [`LoweringRefusal::DuplicateImportAlias`] for an alias an earlier
-    ///   import binds.
+    ///   of place, and [`LoweringRefusal::DuplicateImportAlias`] for an alias
+    ///   an earlier import of its source binds.
     /// - panics: none.
     ///
     /// # Errors
@@ -2702,12 +3127,12 @@ impl<'source> Collector<'_, 'source>
     /// [`LoweringRefusal::UnknownMold`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two imports, an escaped address, an import with no
-    ///   alias and two imports of one alias, each asserted as the exact import
+    /// - hypothesis: L3 — two imports, an escaped address, an unqualified
+    ///   import and two imports of one alias, each asserted as the exact import
     ///   list or refusal over the parsed source.
     /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
     /// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
-    /// - witness: `namespace::namespace::source_import_without_alias_becomes_a_refusal`
+    /// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
     /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
     #[spec(
         captures: before = (
@@ -2737,95 +3162,30 @@ impl<'source> Collector<'_, 'source>
     {
         let mut pieces = core::mem::take(&mut self.pieces);
         read_pieces(self.pbg, self.tree, import.node, &mut pieces)?;
-        let outcome = self.read_import(import, form, &pieces);
+        let outcome = read_import(self.tree, import, form, &pieces);
         self.pieces = pieces;
-        let declaration = outcome?;
-
-        self.collected.imports.bind(declaration)
-    }
-
-    /// Read one import form's pieces.
-    ///
-    /// # Specification
-    /// - requires: `pieces` is the reading of the import `import`.
-    /// - ensures: the declaration the tiles `import " … " as name ;` spell, in
-    ///   that order with nothing after them.
-    /// - provides: the reading half of [`Self::import`].
-    /// - fails: [`LoweringRefusal::MalformedForm`] naming `form` for a repair
-    ///   or a tile out of place.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`LoweringRefusal::MalformedForm`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — exact address decoding and alias binding, a missing
-    ///   alias and a repeated alias distinguish reading from binding refusal.
-    /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-    /// - witness: `namespace::namespace::source_import_without_alias_becomes_a_refusal`
-    /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
-    #[spec(
-        ensures: |ret| match ret {
-            | Ok(ref entry) => entry.span() == import.span,
-            | Err(LoweringRefusal::MalformedForm { form: found, .. }) => found == form,
-            | Err(_) => false,
-        },
-    )]
-    fn read_import(
-        &self,
-        import: Placed,
-        form: FormName,
-        pieces: &Pieces,
-    ) -> Result<ImportDeclaration<'source>, LoweringRefusal<'source>>
-    {
-        if let Maybe::Present(repaired) = pieces.repair {
-            return Err(repaired.refusal(form));
-        }
-        let out_of_place = |cursor: &Cursor<'_>| LoweringRefusal::MalformedForm {
-            span: cursor.here(),
-            form,
-            fault: FormFault::MisplacedTile,
+        let written = outcome?;
+        let source = self.collected.unit.source_at(import.span.start());
+        let resolution = match written.address {
+            Address::Scheme => ImportResolution::Foreign,
+            Address::Path => {
+                let ordinal = self.ordinals.entry(source).or_default();
+                let target = self.collected.unit.target(source, *ordinal);
+                *ordinal = ordinal.next();
+                ImportResolution::Path(target)
+            },
         };
-        let mut cursor = Cursor::new(&pieces.pieces, import.span);
-        for opening in [TileName::IMPORT, TileName::QUOTE] {
-            if let Maybe::Absent(_) = cursor.tile(opening) {
-                return Err(out_of_place(&cursor));
-            }
-        }
-        let mut written = String::new();
-        loop {
-            let piece = match cursor.tile(TileName::STRING_FRAGMENT) {
-                Maybe::Present(fragment) => fragment,
-                Maybe::Absent(_) => match cursor.tile(TileName::ESCAPE_SEQUENCE) {
-                    Maybe::Present(escape) => escape,
-                    Maybe::Absent(_) => break,
-                },
-            };
-            if let Some(text) = self.tree.fragment(piece.node) {
-                written.push_str(text.as_ref());
-            }
-        }
-        for closing in [TileName::QUOTE, TileName::AS] {
-            if let Maybe::Absent(_) = cursor.tile(closing) {
-                return Err(out_of_place(&cursor));
-            }
-        }
-        let Maybe::Present(alias) = cursor.tile(TileName::IDENTIFIER)
-        else {
-            return Err(out_of_place(&cursor));
+        let binding = match written.alias {
+            Maybe::Present(alias) => ImportBinding::Aliased(self.name_of(alias)),
+            Maybe::Absent(_) => ImportBinding::Unqualified,
         };
-        if let Maybe::Absent(_) = cursor.tile(TileName::SEMICOLON) {
-            return Err(out_of_place(&cursor));
-        }
-        if let Maybe::Present(_) = cursor.peek() {
-            return Err(out_of_place(&cursor));
-        }
-        let uri = ImportUri::from(decode_escapes(SourceFragment::from(written.as_str())));
 
-        Ok(ImportDeclaration::new(
-            uri,
-            self.name_of(alias),
+        self.collected.imports.bind(ImportDeclaration::new(
+            written.uri,
+            binding,
             import.span,
+            source,
+            resolution,
         ))
     }
 
@@ -3870,7 +4230,7 @@ impl<'source> Collector<'_, 'source>
                 && self.collected.owner.len() == before.2
                 && self.collected.structures.get(before.1 ..).is_some_and(|appended| {
                     appended.iter().zip(before.1 ..).all(|(module, index)| match module.container {
-                        | Container::TopLevel => true,
+                        | Container::TopLevel(_) => true,
                         | Container::Module(parent) => parent.0 < index,
                     })
                 })
@@ -3885,8 +4245,9 @@ impl<'source> Collector<'_, 'source>
         read_pieces(self.pbg, self.tree, module.node, &mut pieces)?;
         let mut stack = Vec::new();
         let opened_at = StructureIndex(self.collected.structures.len());
-        match self.header(module, &pieces, Container::TopLevel)? {
-            Header::Opened(opened) => self.open(Container::TopLevel, module, opened, &mut stack),
+        let top = self.collected.top(module.span.start());
+        match self.header(module, &pieces, top)? {
+            Header::Opened(opened) => self.open(top, module, opened, &mut stack),
             Header::Applied(applied) => {
                 self.apply(module, &applied);
                 return Ok(());
@@ -3896,7 +4257,7 @@ impl<'source> Collector<'_, 'source>
                 named,
                 refusal,
             } => {
-                let _held = self.refuse_held(Container::TopLevel, name, module, named, refusal);
+                let _held = self.refuse_held(top, name, module, named, refusal);
             },
             Header::Unnamed(refusal) => return Err(refusal),
         }
@@ -4003,7 +4364,7 @@ impl<'source> Collector<'_, 'source>
                 if label == TileName::TYPE_IDENTIFIER || label == TileName::IDENTIFIER =>
             {
                 let _name = cursor.read();
-                if label == TileName::IDENTIFIER && container == Container::TopLevel {
+                if label == TileName::IDENTIFIER && matches!(container, Container::TopLevel(_)) {
                     let name = self.name_of(at);
                     return Ok(Header::Refused {
                         name,
@@ -6776,7 +7137,7 @@ impl<'source> LoweredStructure<'source>
 /// - witness: `modules::modules::module_members_admit_in_source_order`
 /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
 /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `namespace::namespace::source_import_without_alias_becomes_a_refusal`
+/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
 /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
 /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -7184,7 +7545,7 @@ impl<'source> LoweredModule<'source>
     #[spec(
         ensures: |ret| {
             let prefix = match declaration.container() {
-                | Container::TopLevel => &[][..],
+                | Container::TopLevel(_) => &[][..],
                 | Container::Module(index) => self
                     .structures
                     .get(index.0)
@@ -7204,7 +7565,7 @@ impl<'source> LoweredModule<'source>
     ) -> Vec<SurfaceName<'source>>
     {
         let mut path = match declaration.container() {
-            Container::TopLevel => Vec::new(),
+            Container::TopLevel(_) => Vec::new(),
             Container::Module(structure) => self
                 .structures
                 .get(structure.0)
@@ -7250,7 +7611,7 @@ impl<'source> LoweredModule<'source>
     #[spec(
         ensures: |ret| {
             let prefix = |declaration: &LoweredDeclaration<'source>| match declaration.container() {
-                | Container::TopLevel => &[][..],
+                | Container::TopLevel(_) => &[][..],
                 | Container::Module(index) => self
                     .structures
                     .get(index.0)
@@ -7317,17 +7678,19 @@ impl<'source> LoweredModule<'source>
         self.imports.declarations()
     }
 
-    /// The scope the imports' aliases are bound in: each alias resolves to
-    /// its import's position, tagged with the import's bytes, and the export
-    /// is empty.
+    /// The scope `source`'s import aliases are bound in: each alias resolves
+    /// to its import's position, tagged with the import's bytes, and the
+    /// export is empty.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
-    pub const fn import_scope(&self) -> &Scope<ImportIndex, ByteSpan>
+    pub fn import_scope(
+        &self,
+        source: SourceIndex,
+    ) -> Maybe<&Scope<ImportIndex, ByteSpan>, crate::import::alias_scope::Absent>
     {
-        self.imports.scope()
+        self.imports.scope(source)
     }
 
     /// The outermost scope after the module: the seed tables it was lowered
@@ -7503,6 +7866,7 @@ mod tests
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Address;
     use super::Container;
     use super::DeclarationSlot;
     use super::Half;
@@ -7524,9 +7888,12 @@ mod tests
     use crate::fixture::span;
     use crate::form::FormName;
     use crate::form::Placed;
+    use crate::import::ImportUri;
     use crate::lower::Fuel;
     use crate::lower::LoweringBudget;
     use crate::resolve::SurfaceName;
+    use crate::unit::SourceIndex;
+    use crate::unit::Unit;
 
     /// A tank generous enough for a fixture-sized module.
     ///
@@ -7572,6 +7939,33 @@ mod tests
                 form: FormName::MODULE,
                 fault: FormFault::ExtraOperand
             })
+        );
+    }
+
+    #[test]
+    fn an_address_names_a_scheme_or_a_path()
+    {
+        let of = |uri: &str| Address::of(&ImportUri::from(alloc::string::String::from(uri)));
+        assert_eq!(
+            of("file:///far.gandr"),
+            Address::Scheme,
+            "a URL names its scheme"
+        );
+        assert_eq!(of("./circle-base.gandr"), Address::Path, "a relative path");
+        assert_eq!(
+            of("./a:b.gandr"),
+            Address::Path,
+            "a colon after a slash opens no scheme"
+        );
+        assert_eq!(
+            of("1file:far.gandr"),
+            Address::Path,
+            "a scheme opens with a letter"
+        );
+        assert_eq!(
+            of("git+ssh:repo"),
+            Address::Scheme,
+            "a scheme continues with letters, digits, `+`, `-` and `.`"
         );
     }
 
@@ -7628,7 +8022,7 @@ mod tests
     {
         let pbg = grammar();
         let tree = parsed(&pbg, SourceText::from("def x = 1 ; def y = 2 ;"));
-        let mut collected = collect(&pbg, &tree, &mut tank()).unwrap();
+        let mut collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let [ref first, ref second] = *collected.slots.as_slice()
         else {
             panic!("two declared names have two slots");
@@ -7683,7 +8077,7 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let pbg = grammar();
         let tree = parsed(&pbg, SourceText::from("def x : Integer ; def x = 3 ;"));
-        let collected = collect(&pbg, &tree, &mut tank()).unwrap();
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
 
         assert_eq!(
             collected.slots.len(),
@@ -7723,7 +8117,7 @@ mod tests
             &pbg,
             SourceText::from("def x = 3 ; def y = 4 ; def x : Integer ;"),
         );
-        let collected = collect(&pbg, &tree, &mut tank()).unwrap();
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
 
         assert_eq!(
             collected.slots.len(),
@@ -7755,7 +8149,7 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let pbg = grammar();
         let tree = parsed(&pbg, SourceText::from("def x : Integer ; def x : Unit ;"));
-        let collected = collect(&pbg, &tree, &mut tank()).unwrap();
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let slot = collected.slots.first().unwrap();
 
         assert_eq!(
@@ -7785,7 +8179,7 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let pbg = grammar();
         let tree = parsed(&pbg, SourceText::from("def x = 3 ; def x = 4 ;"));
-        let collected = collect(&pbg, &tree, &mut tank()).unwrap();
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let slot = collected.slots.first().unwrap();
 
         assert_eq!(
@@ -7811,7 +8205,7 @@ mod tests
         let tree = parsed(&pbg, SourceText::from("3 ;"));
 
         assert_eq!(
-            collect(&pbg, &tree, &mut tank()).unwrap_err(),
+            collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap_err(),
             LoweringRefusal::OutOfFragment {
                 span: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
                 form: FormName::from(NamedKind("number")),
@@ -7827,7 +8221,7 @@ mod tests
     {
         let pbg = grammar();
         let tree = parsed(&pbg, SourceText::from("def x = ;"));
-        let collected = collect(&pbg, &tree, &mut tank()).unwrap();
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let slot = collected.slots.first().unwrap();
 
         assert_eq!(
@@ -7871,7 +8265,7 @@ mod tests
         let tree = made.module(at(0_usize, 11_usize), &[declaration]);
 
         assert_eq!(
-            collect(&pbg, &tree, &mut tank()).unwrap_err(),
+            collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap_err(),
             LoweringRefusal::OutOfFragment {
                 span: at(4_usize, 5_usize),
                 form: FormName::from(NamedKind("number")),
@@ -7889,7 +8283,7 @@ mod tests
         let tree = parsed(&pbg, SourceText::from("def x = 3 ; @[ checks ]"));
 
         assert_eq!(
-            collect(&pbg, &tree, &mut tank()).unwrap_err(),
+            collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap_err(),
             LoweringRefusal::OutOfFragment {
                 span: span(ByteOffset::from(12_usize), ByteOffset::from(23_usize)),
                 form: FormName::from(NamedKind("attribute_block")),
@@ -7906,7 +8300,7 @@ mod tests
     {
         let pbg = grammar();
         let tree = parsed(&pbg, SourceText::from("@[ checks ] @[ owes ] def x = 3 ;"));
-        let collected = collect(&pbg, &tree, &mut tank()).unwrap();
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let slot = collected.slots.first().unwrap();
         let names: Vec<SurfaceName<'_>> =
             slot.attributes.iter().map(|written| written.name).collect();
@@ -7958,7 +8352,7 @@ mod tests
             &pbg,
             SourceText::from("module M { @[ checks ] @[ owes ] def x = 3 ; }"),
         );
-        let collected = collect(&pbg, &tree, &mut tank()).unwrap();
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let slot = collected
             .slots
             .iter()
@@ -7995,7 +8389,7 @@ mod tests
         };
         let mut slot = DeclarationSlot {
             name: SurfaceName::from("x"),
-            container: Container::TopLevel,
+            container: Container::TopLevel(SourceIndex::from(0_usize)),
             role: Role::Declared,
             constant: ConstantIndex::from(0_usize),
             introduced_by: introduced,

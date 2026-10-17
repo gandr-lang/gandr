@@ -1424,22 +1424,30 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The constructor `name`, written at `site`, names: one of a data family
-    /// admitted strictly before the declaration `site` belongs to.
+    /// admitted strictly before the declaration `site` belongs to, declared
+    /// in `site`'s own source or, when that declares none, in one source it
+    /// imports unqualified.
     ///
     /// # Specification
     /// - requires: `site` is the name's node or the form holding it.
-    /// - ensures: the constructor entered under `name` when its family's
+    /// - ensures: the constructor entered under `name` in the site's source, or
+    ///   else the one its unqualified imports answer, when its family's
     ///   admission position is strictly earlier than the site's declaration's;
-    ///   otherwise the unnamed absence.
+    ///   otherwise the unnamed absence, two imports answering included.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a constructor of an earlier family resolves, and a
-    ///   name no family declares does not.
+    /// - hypothesis: L3 — a constructor of an earlier family resolves, a name
+    ///   no family declares does not, and an imported family's constructor
+    ///   resolves in its importer.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
+    /// - witness: `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`
     #[spec(ensures: |ret| match ret {
-        | Maybe::Present(found) => self.collected.constructors.get(&name) == Some(&found),
+        | Maybe::Present(found) => matches!(
+            self.collected.owner_of(site.at.node),
+            Maybe::Present(own) if found.family < own
+        ),
         | Maybe::Absent(_) => true,
     })]
     pub(super) fn constructor_named(
@@ -1448,12 +1456,25 @@ impl<'source> Lowerer<'_, 'source>
         name: SurfaceName<'source>,
     ) -> Maybe<Constructor, constructed::Absent>
     {
-        match (
-            self.collected.constructors.get(&name),
-            self.collected.owner_of(site.at.node),
-        ) {
-            (Some(&found), Maybe::Present(own)) if found.family < own => Maybe::Present(found),
-            _ => Maybe::Absent(constructed::Absent::Unnamed),
+        let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        else {
+            return Maybe::Absent(constructed::Absent::Unnamed);
+        };
+        let source = self.collected.unit.source_at(site.at.span.start());
+        let found = match self.collected.constructors.get(&(source, name)) {
+            Some(&found) => found,
+            None => match self.collected.imported_constructor(source, name) {
+                Ok(Maybe::Present((found, _import))) => found,
+                Ok(Maybe::Absent(_)) | Err(_) => {
+                    return Maybe::Absent(constructed::Absent::Unnamed);
+                },
+            },
+        };
+        if found.family < own {
+            Maybe::Present(found)
+        }
+        else {
+            Maybe::Absent(constructed::Absent::Unnamed)
         }
     }
 
@@ -2121,10 +2142,15 @@ impl<'source> Lowerer<'_, 'source>
         let mut found = None;
         for (index, words) in self.collected.words.iter().enumerate() {
             let family = Generators::Written(words.family);
+            let Some(declared) = self.collected.slots.get(usize::from(words.slot))
+            else {
+                continue;
+            };
+            let source = self.collected.unit.source_at(declared.named.span.start());
             let tag_of = |name: SourceFragment<'source>| {
                 self.collected
                     .constructors
-                    .get(&SurfaceName::from(name))
+                    .get(&(source, SurfaceName::from(name)))
                     .filter(|constructor| constructor.form == family)
                     .map(|constructor| (constructor.tag, constructor.arity))
             };
@@ -2974,36 +3000,46 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Declared::Binder);
         };
-        let mut container = self
-            .collected
-            .slots
-            .get(usize::from(own))
-            .map_or(crate::module::Container::TopLevel, |slot| slot.container);
+        let mut container = self.collected.slots.get(usize::from(own)).map_or_else(
+            || self.collected.top(at.span.start()),
+            |slot| slot.container,
+        );
+        let is_loop = |target: SlotIndex| {
+            matches!(
+                self.collected
+                    .slots
+                    .get(usize::from(target))
+                    .map(|slot| slot.definition),
+                Some(Maybe::Present(Half {
+                    operand: Operand::Loop { .. },
+                    ..
+                }))
+            )
+        };
         loop {
             self.fuel.spend()?;
             if let Some(&target) = self.collected.by_name.get(&(container, name))
-                && let Some(Maybe::Present(Half {
-                    operand: Operand::Loop { .. },
-                    ..
-                })) = self
-                    .collected
-                    .slots
-                    .get(usize::from(target))
-                    .map(|slot| slot.definition)
+                && is_loop(target)
             {
                 return Ok(Declared::Loop);
             }
-            let crate::module::Container::Module(module) = container
-            else {
-                return Ok(Declared::Binder);
+            let module = match container {
+                crate::module::Container::Module(module) => module,
+                crate::module::Container::TopLevel(source) => {
+                    return Ok(match self.collected.imported_slot(source, name) {
+                        Ok(Maybe::Present((target, _import))) if is_loop(target) => Declared::Loop,
+                        Ok(_) | Err(_) => Declared::Binder,
+                    });
+                },
             };
             container = self
                 .collected
                 .structures
                 .get(usize::from(module))
-                .map_or(crate::module::Container::TopLevel, |structure| {
-                    structure.container
-                });
+                .map_or_else(
+                    || self.collected.top(at.span.start()),
+                    |structure| structure.container,
+                );
         }
     }
 
