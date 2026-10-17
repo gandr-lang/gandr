@@ -10,13 +10,16 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 
+use super::Alike;
 use super::CodeComparison;
 use super::ConstantReading;
 use super::compare_codes;
+use super::motives_alike;
 use crate::arena::DomainArena;
 use crate::arena::DomainValueId;
 use crate::arena::ValueClosureId;
 use crate::closure::Environment;
+use crate::closure::ValueBody;
 use crate::domain::BinderLevel;
 use crate::domain::DomainValue;
 use crate::domain::Elimination;
@@ -538,6 +541,47 @@ fn a_quoted_variable_is_read_through_the_environment()
         CodeComparison::Apart,
         compare_rigidly(&core, &domain, reads_x_near, reads_y_near),
         "and one index that the environments resolve to two variables is apart"
+    );
+}
+
+#[test]
+fn motives_written_apart_are_alike_read_through_their_environments_650()
+{
+    // #650: `c. Path(Unit, c, x)` written twice, once over `[x]` reading `x`
+    // past the motive's binder as `#1` and once over `[x, y]` as `#2`, is one
+    // family though the bodies and the depths differ; the first body over
+    // `[y]` reads another variable and is not.
+    let mut core = CoreArena::new();
+    let unit = core.value_type_unit();
+    let family = |core: &mut CoreArena, far: u32| {
+        let endpoint = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let captured = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(far));
+        core.value_type_path(unit, endpoint, captured)
+    };
+    let (near, far) = (family(&mut core, 1), family(&mut core, 2));
+
+    let mut domain = DomainArena::new();
+    let x = variable(&mut domain, BinderLevel::from(0_u32));
+    let y = variable(&mut domain, BinderLevel::from(1_u32));
+    let motive = |domain: &mut DomainArena, body, bound: &[DomainValueId]| {
+        let mut environment = Environment::new();
+        for &value in bound {
+            environment.extend(Zone::Intuitionistic, value);
+        }
+        domain.value_closure_node(ValueBody::ValueType(body), environment)
+    };
+    let over_x = motive(&mut domain, near, &[x]);
+    let over_x_far = motive(&mut domain, far, &[x, y]);
+    let over_y = motive(&mut domain, near, &[y]);
+    assert_eq!(
+        Alike::Same,
+        motives_alike(&core, &domain, over_x, over_x_far).expect("both motives resolve"),
+        "two bodies reading one captured variable past the binder are one family"
+    );
+    assert_eq!(
+        Alike::Different,
+        motives_alike(&core, &domain, over_x, over_y).expect("both motives resolve"),
+        "and one body over two different captures is not"
     );
 }
 
