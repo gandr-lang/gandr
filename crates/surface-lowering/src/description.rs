@@ -540,7 +540,7 @@ impl<'pieces> Run<'pieces>
 ///   incorrectly global refusal; a `sign` with a keyword in a member's
 ///   classifier slot is refused once, at the keyword.
 /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
-/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer`
+/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer_293`
 #[inline]
 #[spec(ensures: |result| result.as_ref().map_or(true, |report| report.declarations.iter().all(|entry| tree.node(entry.at.node).is_some())))]
 pub fn elaborate_descriptions<'source>(

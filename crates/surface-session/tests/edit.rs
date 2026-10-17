@@ -549,7 +549,7 @@ fn multi_point_edit_localizes_to_the_common_ancestor()
 /// `diff`'s identity clause, `ret.0.is_empty() == (old.items == new.items)` —
 /// and an `apply` that loses the component.
 #[test]
-fn growing_a_tuple_replaces_it()
+fn growing_a_tuple_replaces_it_325()
 {
     let revision = |component: &str| {
         snapshot(&format!(

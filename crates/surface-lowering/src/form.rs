@@ -1081,7 +1081,7 @@ pub enum Repair
 /// # Adequacy
 /// - hypothesis: L3 — the keyword `type` in a `sign` member's classifier slot
 ///   is read with `Type` offered.
-/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer`
+/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer_293`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StrayKeyword
 {
@@ -2072,7 +2072,7 @@ fn nested_repair<'source>(
 /// - hypothesis: L3 — the keyword `type` grouted in a classifier slot reads
 ///   with `Type` offered, at the keyword's own bytes; reading it as a missing
 ///   term, or offering nothing, changes the observation.
-/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer`
+/// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer_293`
 #[spec(ensures: |ret| shape == GroutShape::Convex || matches!(ret, Repair::Grout(_)))]
 fn grouted(
     pbg: &Pbg,

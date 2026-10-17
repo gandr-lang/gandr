@@ -1550,7 +1550,7 @@ fn inferred_runs(
 /// # Adequacy
 /// - hypothesis: L3 — a fold nesting its call and its bound twin, each refused
 ///   by the rule it tells apart, refuse at one case block.
-/// - witness: `entry::tests::a_second_run_refusal_is_located_where_its_bound_spelling_is`
+/// - witness: `entry::tests::a_second_run_refusal_is_located_where_its_bound_spelling_is_380`
 #[spec(captures: [declarations = origins.declaration_count(), recorded = origins.recorded_count()],
     ensures: origins.declaration_count() == declarations && origins.recorded_count() >= recorded)]
 fn located(

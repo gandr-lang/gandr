@@ -1066,7 +1066,7 @@ fn a_nested_call_runs_with_the_effects_its_returner_performs()
 }
 
 #[test]
-fn a_pure_run_a_type_reads_stands_as_what_it_returns()
+fn a_pure_run_a_type_reads_stands_as_what_it_returns_444()
 {
     let mut arena = CoreArena::new();
     let (function, identity) = integer_function(&mut arena);

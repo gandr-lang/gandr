@@ -2032,7 +2032,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — both positions of a dependent pair, the second's type
     ///   reading the first, and a third position refused.
-    /// - witness: `lower::arity::tests::a_selection_by_position_projects_a_pair`
+    /// - witness: `lower::arity::tests::a_selection_by_position_projects_a_pair_401`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Select(_, Observed { count: 2, .. }))))]
     pub(super) fn positional(
         &mut self,

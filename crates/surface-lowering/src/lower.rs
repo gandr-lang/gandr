@@ -2395,7 +2395,7 @@ enum Lowered
 /// # Adequacy
 /// - hypothesis: L3 — a function whose halves the mint left unminted owes a
 ///   declaration and is refused by name.
-/// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name`
+/// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name_455`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Owed
 {
@@ -8190,7 +8190,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — as [`Self::universe_of`], and a path type at a
     ///   levelled universe; a level past the constants, refused at its numeral.
     /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
-    /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types`
+    /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types_402`
     /// - witness: `lower::tests::a_universe_level_past_the_constants_is_refused_at_its_numeral`
     fn universe_tiles(
         &self,
@@ -8660,7 +8660,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a continuation type written over two returners, read
     ///   back out of the arena with its input and output in order.
-    /// - witness: `lower::tests::a_written_stack_type_lowers_to_its_continuation_type`
+    /// - witness: `lower::tests::a_written_stack_type_lowers_to_its_continuation_type_401`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -10052,7 +10052,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   quoted in a body past an unmentioned parameter reads its binders at
     ///   their indices in the body; a grouped type head stands for what it
     ///   groups.
-    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
     /// - witness: `lower::tests::a_quote_in_a_body_reads_past_an_unmentioned_parameter`
     /// - witness: `lower::tests::a_type_head_answers_at_what_it_stands_for`
     #[spec(
@@ -13166,7 +13166,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   to vanish.
     /// - witness: `modules::modules::functors::a_functor_body_never_reaches_the_kernel`
     /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
-    /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name`
+    /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name_455`
     #[spec(
         ensures: |ret| match self.collected.stratum_of(slot.container) {
             | Stratum::Module => match self.own_outcome(position, slot) {
@@ -13233,7 +13233,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a function whose halves the mint left unminted owes a
     ///   declaration; reading a top-level `oper` as owing one would refuse
     ///   every such declaration across the corpus.
-    /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name`
+    /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name_455`
     #[spec(
         ensures: |ret| (ret == Owed::Owed) == [slot.signature, slot.definition].into_iter().any(|half| match half {
             | Maybe::Present(Half { operand: Operand::Signature, .. }) | Maybe::Absent(_) => false,
@@ -15711,7 +15711,7 @@ mod tests
     }
 
     #[test]
-    fn a_written_stack_type_lowers_to_its_continuation_type()
+    fn a_written_stack_type_lowers_to_its_continuation_type_401()
     {
         let mut arena = CoreArena::new();
         let module = lowered(
@@ -16722,7 +16722,7 @@ mod tests
     }
 
     #[test]
-    fn a_declaration_minting_neither_half_is_refused_by_name()
+    fn a_declaration_minting_neither_half_is_refused_by_name_455()
     {
         let pbg = grammar();
         let tree = parsed(
@@ -18475,7 +18475,7 @@ mod tests
     }
 
     #[test]
-    fn a_keyword_in_a_classifier_slot_is_read_with_its_offer()
+    fn a_keyword_in_a_classifier_slot_is_read_with_its_offer_293()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let pbg = grammar();
