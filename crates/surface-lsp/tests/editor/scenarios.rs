@@ -838,7 +838,7 @@ pub(super) struct Hovered
 ///   through this, and the goldens pin every answer of five sources.
 /// - witness: `editor::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
 /// - witness: `editor::editor::shapes::the_headline_sources_hover_as_their_goldens`
-/// - witness: `editor::editor::scenarios::a_line_comment_holds_the_newline_closing_it`
+/// - witness: `editor::editor::scenarios::a_line_comment_holds_the_newline_closing_it_456`
 #[spec(ensures: |ret| ret.len() == source.text.chars().count().saturating_add(1))]
 pub(super) fn hovered(
     grammar: &Pbg,
@@ -1250,7 +1250,7 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
 /// no position the sweep counts (#456): every position from the `//` through
 /// the line's end is a comment's, and the next line's first is not.
 #[test]
-fn a_line_comment_holds_the_newline_closing_it()
+fn a_line_comment_holds_the_newline_closing_it_456()
 {
     let text = "// a note\ndata Unit : Type { Tt : Unit; }\n";
     let source = Source {
