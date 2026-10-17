@@ -1,14 +1,11 @@
 // `p then q` moves `p` along `q` in `y. Path(A, a, y)`, and that transport
 // appends on its first word whatever `q` is: the empty word is the unit, and
 // a letter stays first (#422). Two definitions whose composites are one
-// transport, stuck on its two parameters, name one path (#440).
+// transport, stuck on its two parameters, name one path (#440). The
+// composite and its unit laws are the HoTT book's Lemmas 2.1.2 and 2.1.4.
 
-/// The circle: one point and one loop.
-@[ checks ]
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
-}
+// The circle.
+import "./circle-base.gandr" ;
 
 /// The composite of two loops at the point.
 @[ checks ]
@@ -49,7 +46,7 @@ def other(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path
 
 /// The composite with its two paths swapped.
 @[ checks ]
-def flip(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+def compSwapped(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
   q then p
 }
 
@@ -75,6 +72,6 @@ def letterThroughNames(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base
 /// The transports along `p` and along `q` are not one: the swapped composite
 /// is another path.
 @[ refuses("EndpointMismatch") ]
-def swapped(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(p, q), flip(p, q)) {
+def swapped(p : Path(Circle, Base, Base), q : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), comp(p, q), compSwapped(p, q)) {
   here(comp(p, q))
 }

@@ -2,67 +2,47 @@
 // endpoint that applies a function to another call waits on the inner call
 // once the outer one unfolds, and conversion unfolds that call next; over a
 // presented type the inner call stands under a constructor the outer call
-// built, and the normal form reads it before the rules run.
+// built, and the normal form reads it before the rules run. Conversion is
+// definitional equality by computation (Martin-Löf, _Intuitionistic Type
+// Theory_, Bibliopolis, 1984).
 
-/// Natural numbers, free: every constructor term is its own value.
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
-}
+// The free naturals, the presented integers and their steps `up` and `down`.
+import "./circle-base.gandr" ;
 
-/// Doubling by structural recursion.
-def rec double(n : Nat) -> -F Nat {
+/// Doubling the free naturals by structural recursion.
+@[ checks ]
+def rec doubleNat(n : Nat) -> -F Nat {
   case n {
     Zero => return Zero,
-    Succ(p) => { run d <- double[<](p); return Succ(Succ(d)) }
+    Succ(p) => { run d <- doubleNat[<](p); return Succ(Succ(d)) }
   }
 }
 
 /// Doubling twice: the outer call's case waits on the inner call, which
 /// conversion unfolds in turn.
 @[ checks ]
-def quadrupled : Path(Nat, double(double(Succ(Zero))), Succ(Succ(Succ(Succ(Zero))))) ;
+def quadrupled : Path(Nat, doubleNat(doubleNat(Succ(Zero))), Succ(Succ(Succ(Succ(Zero))))) ;
 def quadrupled = here(Succ(Succ(Succ(Succ(Zero))))) ;
 
 /// The nested call's value is four, not three.
 @[ refuses("EndpointMismatch") ]
-def miscounted : Path(Nat, double(double(Succ(Zero))), Succ(Succ(Succ(Zero)))) ;
+def miscounted : Path(Nat, doubleNat(doubleNat(Succ(Zero))), Succ(Succ(Succ(Zero)))) ;
 def miscounted = here(Succ(Succ(Succ(Zero)))) ;
 
-/// The integers presented by zero, a successor and a predecessor, which
-/// cancel each other.
-data Int : Type {
-  Z : Int;
-  S : (n : Int) --> Int;
-  P : (n : Int) --> Int;
-  rule S(P(n)) <=> n;
-  rule P(S(n)) <=> n;
-}
-
-/// One step up.
-def turn(n : Int) -> -F Int {
-  return S(n)
-}
-
-/// One step down.
-def unturn(n : Int) -> -F Int {
-  return P(n)
-}
-
-/// `turn(unturn(Z))` is `S` over the held call `unturn(Z)`; read, that call
-/// is `P(Z)`, and `S(P(Z))` rewrites to `Z`.
+/// `up(down(Z))` is `S` over the held call `down(Z)`; read, that call is
+/// `P(Z)`, and `S(P(Z))` rewrites to `Z`.
 @[ checks ]
-def turned_back : Path(Int, turn(unturn(Z)), Z) ;
+def turned_back : Path(Int, up(down(Z)), Z) ;
 def turned_back = here(Z) ;
 
 /// The same law at every integer: the inner call's argument is a variable,
 /// and the rule cancels around it.
 @[ checks ]
-def turn_unturn(n : Int) -> -F Path(Int, turn(unturn(n)), n) {
+def turn_unturn(n : Int) -> -F Path(Int, up(down(n)), n) {
   return here(n)
 }
 
 /// Reading the inner call cancels a step; it does not add one.
 @[ refuses("EndpointMismatch") ]
-def overturned : Path(Int, turn(unturn(Z)), S(Z)) ;
+def overturned : Path(Int, up(down(Z)), S(Z)) ;
 def overturned = here(S(Z)) ;

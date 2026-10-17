@@ -1,22 +1,26 @@
+// Reflexivity is a congruence for conversion (the HoTT book's § 1.12, `refl`,
+// under judgmental equality): two reflexivities are one path when their
+// points convert, at every level, and a parameter is no reflexivity.
+
 /// A declared reflexivity.
 @[ checks ]
-def two : Path(Integer, 2, 2) ;
-def two = here(2) ;
+def refl_two : Path(Integer, 2, 2) ;
+def refl_two = here(2) ;
 
 /// Two reflexivities convert when their points do.
 @[ checks ]
-def two_is_here : Path(Path(Integer, 2, 2), two, here(2)) ;
+def two_is_here : Path(Path(Integer, 2, 2), refl_two, here(2)) ;
 def two_is_here = here(here(2)) ;
 
-/// `here(two)` at that path.
+/// `here(refl_two)` at that path.
 @[ checks ]
-def here_two : Path(Path(Integer, 2, 2), two, here(2)) ;
-def here_two = here(two) ;
+def here_two : Path(Path(Integer, 2, 2), refl_two, here(2)) ;
+def here_two = here(refl_two) ;
 
 /// Points one unfolding apart, one level up.
 @[ checks ]
-def here_two_up : Path(Path(Path(Integer, 2, 2), two, here(2)), here(two), here(here(2))) ;
-def here_two_up = here(here(two)) ;
+def here_two_up : Path(Path(Path(Integer, 2, 2), refl_two, here(2)), here(refl_two), here(here(2))) ;
+def here_two_up = here(here(refl_two)) ;
 
 /// A parameter does not unfold to `here(2)`.
 @[ refuses("EndpointMismatch") ]
