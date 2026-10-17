@@ -814,6 +814,7 @@ fn spike_value(right: &Level) -> Option<LevelValue>
 ///   validates.
 /// - witness: `order::tests::perturbed_witness_missing_bound_is_rejected`
 /// - witness: `order::tests::perturbed_witness_stray_bound_is_rejected`
+/// - witness: `order::tests::a_misplaced_bound_is_stray_below_the_atom_and_missing_above_it`
 /// - witness: `order::tests::perturbed_witness_offset_mismatch_is_rejected`
 /// - witness: `order::tests::false_witness_insufficient_bound_is_rejected`
 /// - witness: `order::tests::perturbed_witness_absent_constant_atom_is_rejected`
@@ -976,6 +977,7 @@ mod tests
     use super::EvidenceError;
     use super::LeqRefutation;
     use super::LeqWitness;
+    use super::OrderComparison;
     use super::Strictness;
     use super::validate_refutation;
     use super::validate_witness;
@@ -1251,6 +1253,44 @@ mod tests
             Err(EvidenceError::StrayAtomBound { variable: x() }),
             "a bound over an absent left atom must be rejected"
         );
+    }
+
+    #[test]
+    fn a_misplaced_bound_is_stray_below_the_atom_and_missing_above_it()
+    {
+        let bound = |variable| AtomBound {
+            variable,
+            left_offset: LevelOffset::from(0_u64),
+            right_offset: LevelOffset::from(0_u64),
+        };
+        let both = Level::var(x()).max(&Level::var(y()));
+        for (left, written, expected) in [
+            (Level::var(y()), x(), EvidenceError::StrayAtomBound {
+                variable: x(),
+            }),
+            (Level::var(x()), y(), EvidenceError::MissingAtomBound {
+                variable: x(),
+            }),
+        ] {
+            let forged = LeqWitness {
+                strict: Strictness::NON_STRICT,
+                atoms: vec![bound(written)],
+                constant: ConstantBound::Constant,
+            };
+            assert_eq!(validate_witness(&left, &both, &forged), Err(expected));
+        }
+    }
+
+    #[test]
+    fn a_comparison_negates_to_its_opposite()
+    {
+        for answer in [false, true] {
+            assert_eq!(
+                bool::from(!OrderComparison::from(answer)),
+                !answer,
+                "{answer} negates"
+            );
+        }
     }
 
     #[test]
