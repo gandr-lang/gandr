@@ -183,6 +183,7 @@ enum Family
 ///   kernel derives the same, `run q <- cong(looped, p); cong(looped, q)` stays
 ///   apart from it, and over a free circle the identity chain stays apart too.
 /// - witness: `fusion::tests::a_cong_chain_composing_to_the_identity_is_its_path`
+/// - witness: `fusion::tests::a_chain_fuses_only_through_links_whose_image_is_the_point`
 #[spec(captures: before = u64::from(*fuel), ensures: |ret| u64::from(*fuel) <= before
     && match ret {
         Ok(Fusion::Fused(path)) => domain.value(path).is_some(),

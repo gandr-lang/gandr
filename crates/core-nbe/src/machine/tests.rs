@@ -5677,3 +5677,317 @@ fn stuck_splits_compare_by_arity_and_body()
         assert_eq!(world.traced(sides).0, expected, "{sides:?}");
     }
 }
+
+/// A goal comparing `unit` with itself at the floor, nothing frozen, still to
+/// classify.
+///
+/// # Specification
+/// trivial.
+fn bare_goal(unit: crate::DomainValueId) -> super::Goal
+{
+    super::Goal {
+        left: super::Slot::Ready(crate::Glued::Value(unit)),
+        right: super::Slot::Ready(crate::Glued::Value(unit)),
+        depth: crate::BinderLevel::FLOOR,
+        frozen: super::Frozen::default(),
+        chain: super::Chain::default(),
+        next: super::Next::Classify,
+    }
+}
+
+#[test]
+fn a_dependency_is_needed_exactly_while_a_needed_waiter_holds_it()
+{
+    let core = CoreArena::new();
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let unit = domain.value_unit(crate::TermFace::Reduced);
+    let mut scheduler = super::Scheduler::<NullMemo>::new(
+        &core,
+        &mut domain,
+        definitions,
+        MachineSettings::default(),
+        gandr_kernel_conversion_trace::SinkActivity::Inactive,
+        NullMemo,
+    );
+    let waiter = scheduler
+        .start_goal(bare_goal(unit))
+        .expect("a goal is admitted");
+    let dependency = scheduler
+        .start_goal(bare_goal(unit))
+        .expect("a goal is admitted");
+    let demand = |scheduler: &super::Scheduler<'_, NullMemo>| {
+        scheduler
+            .process(dependency)
+            .expect("the dependency is live")
+            .demand
+    };
+    assert_eq!(
+        Ok(super::Outcome::Pending),
+        scheduler.depend(waiter, dependency)
+    );
+    assert_eq!(
+        super::Demand(0_u32),
+        demand(&scheduler),
+        "a dormant waiter passes on no need"
+    );
+    scheduler.need(waiter).expect("the waiter is live");
+    assert_eq!(
+        super::Demand(1_u32),
+        demand(&scheduler),
+        "its first need wakes what it waits on"
+    );
+    scheduler.need(waiter).expect("the waiter is live");
+    assert_eq!(
+        super::Demand(1_u32),
+        demand(&scheduler),
+        "a second need passes nothing on"
+    );
+    scheduler.unneed(waiter).expect("the waiter is live");
+    assert_eq!(
+        super::Demand(1_u32),
+        demand(&scheduler),
+        "returning one of two needs keeps the dependency needed"
+    );
+    scheduler.unneed(waiter).expect("the waiter is live");
+    assert_eq!(
+        super::Demand(0_u32),
+        demand(&scheduler),
+        "returning the last releases it"
+    );
+}
+
+#[test]
+fn a_finished_process_releases_only_the_needs_it_passed_and_wakes_only_needed_waiters()
+{
+    let core = CoreArena::new();
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let unit = domain.value_unit(crate::TermFace::Reduced);
+    let mut scheduler = super::Scheduler::<NullMemo>::new(
+        &core,
+        &mut domain,
+        definitions,
+        MachineSettings::default(),
+        gandr_kernel_conversion_trace::SinkActivity::Inactive,
+        NullMemo,
+    );
+    let mut started = || {
+        scheduler
+            .start_goal(bare_goal(unit))
+            .expect("a goal is admitted")
+    };
+    let [needed, dormant, dependency] = [started(), started(), started()];
+    for waiter in [needed, dormant] {
+        assert_eq!(
+            Ok(super::Outcome::Pending),
+            scheduler.depend(waiter, dependency)
+        );
+    }
+    scheduler.need(needed).expect("the waiter is live");
+    let settled = super::Outcome::Settled(super::Settled::Convertible);
+    let demand = |scheduler: &super::Scheduler<'_, NullMemo>| {
+        scheduler
+            .process(dependency)
+            .expect("the dependency is live")
+            .demand
+    };
+
+    let other = scheduler
+        .start_goal(bare_goal(unit))
+        .expect("a goal is admitted");
+    assert_eq!(
+        Ok(super::Outcome::Pending),
+        scheduler.depend(other, dependency)
+    );
+    scheduler
+        .finish(other, settled)
+        .expect("the process is live");
+    assert_eq!(
+        super::Demand(1_u32),
+        demand(&scheduler),
+        "a process that passed on no need returns none"
+    );
+    scheduler
+        .finish(dependency, settled)
+        .expect("the process is live");
+    assert_eq!(
+        Some(&super::Queued::Absent),
+        scheduler.queued.get(dormant.0),
+        "a dormant waiter stays asleep when what it waits on answers"
+    );
+    assert_eq!(
+        Some(&super::Queued::Present),
+        scheduler.queued.get(needed.0),
+        "a needed one is queued"
+    );
+
+    let holder = scheduler
+        .start_goal(bare_goal(unit))
+        .expect("a goal is admitted");
+    let held = scheduler
+        .start_goal(bare_goal(unit))
+        .expect("a goal is admitted");
+    assert_eq!(Ok(super::Outcome::Pending), scheduler.depend(holder, held));
+    scheduler.need(holder).expect("the holder is live");
+    scheduler
+        .finish(holder, settled)
+        .expect("the process is live");
+    assert_eq!(
+        super::Demand(0_u32),
+        scheduler
+            .process(held)
+            .expect("the dependency is live")
+            .demand,
+        "a needed process returns the need it passed when it answers"
+    );
+}
+
+#[test]
+fn the_run_passes_over_unneeded_work_and_takes_a_unit_share_at_once()
+{
+    let core = CoreArena::new();
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let unit = domain.value_unit(crate::TermFace::Reduced);
+    let mut scheduler = super::Scheduler::<NullMemo>::new(
+        &core,
+        &mut domain,
+        definitions,
+        MachineSettings::default(),
+        gandr_kernel_conversion_trace::SinkActivity::Inactive,
+        NullMemo,
+    );
+    let dormant = scheduler
+        .start_goal(bare_goal(unit))
+        .expect("a goal is admitted");
+    let root = scheduler
+        .start_goal(bare_goal(unit))
+        .expect("a goal is admitted");
+    let behind = scheduler
+        .start_goal(bare_goal(unit))
+        .expect("a goal is admitted");
+    scheduler.enqueue(dormant).expect("the process is live");
+    scheduler.enqueue(root).expect("the process is live");
+    scheduler.need(behind).expect("the process is live");
+    assert_eq!(Ok(MachineVerdict::Convertible), scheduler.run(root));
+    let process = |id| scheduler.process(id).expect("the process is live");
+    assert_eq!(
+        super::Outcome::Pending,
+        process(dormant).outcome,
+        "a queued process nothing needs takes no turn"
+    );
+    assert_eq!(
+        super::Credit(0_u32),
+        process(behind).credit,
+        "a root of share one takes its turn at its first pop, before the process queued \
+         behind it is reached"
+    );
+}
+
+#[test]
+fn a_run_under_a_budget_equal_to_its_steps_answers()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let returned = core.computation_return(unit);
+    let body = core.value_thunk(returned);
+    let head = core.value_constant(Name::Zero.constant());
+    let forced = core.computation_force(head);
+    let expected = core.computation_return(unit);
+    let world = World::new(core, &[(Name::Zero, body)]);
+    let sides = Sides::Computations(forced, expected);
+    let under = |budget| {
+        MachineSettings::new(
+            SchedulingPolicy::default(),
+            GranularityPolicy::default(),
+            StepBudget::from(budget),
+        )
+    };
+    let ample = world.run_under(under(1_000_u64), sides, &mut NullSink);
+    assert_eq!(MachineVerdict::Convertible, ample.verdict());
+    assert!(
+        u64::from(ample.steps()) > 0_u64,
+        "forcing the definition is charged"
+    );
+    let exact = world.run_under(under(u64::from(ample.steps())), sides, &mut NullSink);
+    assert_eq!(
+        MachineVerdict::Convertible,
+        exact.verdict(),
+        "spending exactly the budget is not exceeding it"
+    );
+}
+
+#[test]
+fn a_decomposition_waits_only_while_no_premise_refutes_and_one_is_pending()
+{
+    use crate::resharing::SupportSides;
+    use crate::rules::Subgoal;
+
+    let core = CoreArena::new();
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let [
+        unit,
+        refuted_left,
+        refuted_right,
+        open_left,
+        open_right,
+        alone_left,
+        alone_right,
+    ] = [(); 7].map(|()| domain.value_unit(crate::TermFace::Reduced));
+    let mut scheduler = super::Scheduler::<ResharingMemo>::new(
+        &core,
+        &mut domain,
+        definitions,
+        MachineSettings::default(),
+        gandr_kernel_conversion_trace::SinkActivity::Inactive,
+        ResharingMemo::new(),
+    );
+    let refuted = scheduler
+        .start_fresh(
+            SupportSides::Heads(
+                crate::Glued::Value(refuted_left),
+                crate::Glued::Value(refuted_right),
+            ),
+            crate::BinderLevel::FLOOR,
+        )
+        .expect("a goal is admitted");
+    scheduler
+        .finish(
+            refuted,
+            super::Outcome::Settled(super::Settled::NotConvertible),
+        )
+        .expect("the premise is live");
+    let pair = (crate::Glued::Value(unit), crate::Glued::Value(unit));
+    let mut decomposed = |subgoals| {
+        let mut goal = bare_goal(unit);
+        let parent = scheduler
+            .start_goal(bare_goal(unit))
+            .expect("a goal is admitted");
+        scheduler
+            .decompose(parent, &mut goal, pair, subgoals, super::Collapse::Allowed)
+            .expect("the premises start")
+    };
+    assert_eq!(
+        super::Turn::Again,
+        decomposed(Vec::from([
+            Subgoal::Values(refuted_left, refuted_right),
+            Subgoal::Values(open_left, open_right),
+        ])),
+        "a recalled refutation is polled at once, though a sibling is pending"
+    );
+    assert_eq!(
+        super::Turn::Wait,
+        decomposed(Vec::from([Subgoal::Values(alone_left, alone_right)])),
+        "a pending premise alone is waited on"
+    );
+}

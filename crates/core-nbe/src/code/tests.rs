@@ -1034,3 +1034,185 @@ fn native_types_compare_identity_labels_and_value_arguments()
         CodeComparison::Apart
     );
 }
+
+#[test]
+fn a_type_former_written_twice_is_one_code()
+{
+    use alloc::sync::Arc;
+
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    use gandr_core_term::effect::capability::CapabilityGrade;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::session::PayloadCount;
+    use gandr_core_term::session::PayloadSlot;
+    use gandr_core_term::session::Protocol;
+    use gandr_core_term::session::ProtocolState;
+    use gandr_core_term::session::ProtocolSyntax;
+    use gandr_core_term::session::SessionType;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+
+    let mut core = CoreArena::new();
+    let unit = core.value_type_unit();
+    let protocol = Arc::new(
+        Protocol::new(
+            alloc::vec![
+                ProtocolSyntax::Send {
+                    payload: PayloadSlot::from(0_usize),
+                    next: ProtocolState::from(1_usize),
+                },
+                ProtocolSyntax::End,
+            ],
+            ProtocolState::from(0_usize),
+            PayloadCount::from(1_usize),
+        )
+        .expect("a send then an end is a protocol"),
+    );
+    let session =
+        SessionType::new(protocol, Arc::from([unit])).expect("one payload fills one slot");
+    let ended = session
+        .at(ProtocolState::from(1_usize))
+        .expect("the end is a state");
+    let stage = Stage::At(StageId::from(0_usize));
+    let level = Level::zero().succ().expect("level one exists");
+    let written = |core: &mut CoreArena| {
+        let signature = EffectSig::new(EffectName::from("Probe"), alloc::vec![EffectOp {
+            name: OperationName::from("ask"),
+            payload: unit,
+            reply: unit,
+        }])
+        .expect("one operation is a signature");
+        let unit = core.value_type_unit();
+        let unit_quote = core.value_quote(unit);
+        let lifted_code = core.value_lift(level.clone(), unit_quote);
+        [
+            core.value_type_capability(
+                EffectRow::singleton(signature),
+                CapabilityGrade::Durable,
+                Region::Held,
+            ),
+            core.value_type_lift(unit, level.clone()),
+            core.value_type_session(session.clone()),
+            core.value_type_staged(unit, stage),
+            core.value_type_element(lifted_code, Level::zero()),
+        ]
+        .map(|ty| core.value_quote(ty))
+    };
+    let first = written(&mut core);
+    let second = written(&mut core);
+    let ended = core.value_type_session(ended);
+    let ended = core.value_quote(ended);
+    let mut domain = DomainArena::new();
+    let ended = code_of(&core, &mut domain, ended, &[]);
+    for (former, (left, right)) in [
+        "a capability",
+        "a lift",
+        "a session",
+        "a staged type",
+        "a lifted code",
+    ]
+    .into_iter()
+    .zip(first.into_iter().zip(second))
+    {
+        let left = code_of(&core, &mut domain, left, &[]);
+        let right = code_of(&core, &mut domain, right, &[]);
+        assert_eq!(
+            CodeComparison::Equal,
+            compare_rigidly(&core, &domain, left, right),
+            "{former} compares by its parts, not its node"
+        );
+        if former == "a session" {
+            assert_eq!(
+                CodeComparison::Apart,
+                compare_rigidly(&core, &domain, left, ended),
+                "and a session is apart from its own protocol at another state"
+            );
+        }
+    }
+}
+
+#[test]
+fn first_order_arguments_compare_by_shape_and_arity()
+{
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+
+    use gandr_core_term::ConstructorTag;
+    use gandr_core_term::FieldLabel;
+    use gandr_core_term::Summand;
+
+    let mut core = CoreArena::new();
+    let name = ConstantIndex::from(0_usize);
+    let arguments = |core: &mut CoreArena| {
+        let unit = core.value_unit();
+        let nil = core.value_list_nil();
+        let constructor_type = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        [
+            nil,
+            core.value_list_cons(unit, nil),
+            core.value_tuple(&[unit, unit]),
+            core.value_injection(Summand::from(1_usize), unit),
+            core.value_constructor(
+                constructor_type,
+                ConstructorTag::from(0_usize),
+                Vec::from([unit]),
+            ),
+        ]
+        .map(|argument| {
+            let indexed = core.value_type_data(name, Vec::from([argument]));
+            core.value_quote(indexed)
+        })
+    };
+    let first = arguments(&mut core);
+    let second = arguments(&mut core);
+    let unit = core.value_unit();
+    let single = core.value_tuple(&[unit]);
+    let single = core.value_type_data(name, Vec::from([single]));
+    let single = core.value_quote(single);
+    let variable = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let held = core.value_type_data(name, Vec::from([variable]));
+    let held = core.value_quote(held);
+    let unit_term = core.value_unit();
+    let labelled = core.value_record(BTreeMap::from([(
+        FieldLabel::from(String::from("x")),
+        unit_term,
+    )]));
+
+    let mut domain = DomainArena::new();
+    let pair = code_of(&core, &mut domain, first[2], &[]);
+    let single = code_of(&core, &mut domain, single, &[]);
+    assert_eq!(
+        CodeComparison::Apart,
+        compare_rigidly(&core, &domain, pair, single),
+        "a pair is apart from a one-tuple"
+    );
+    for (argument, (left, right)) in ["nil", "a cons", "a pair", "an injection", "a constructor"]
+        .into_iter()
+        .zip(first.into_iter().zip(second))
+    {
+        let left = code_of(&core, &mut domain, left, &[]);
+        let right = code_of(&core, &mut domain, right, &[]);
+        assert_eq!(
+            CodeComparison::Equal,
+            compare_rigidly(&core, &domain, left, right),
+            "{argument} written twice is one argument"
+        );
+    }
+    let records = [0_u32, 1_u32].map(|_| {
+        let unit = domain.value_unit(TermFace::Reduced);
+        let fields = domain.hold_fields([unit]);
+        let record = domain
+            .value_record(labelled, fields, TermFace::Reduced)
+            .expect("the fields are live");
+        code_of(&core, &mut domain, held, &[record])
+    });
+    assert_eq!(
+        CodeComparison::Equal,
+        compare_rigidly(&core, &domain, records[0], records[1]),
+        "a held record is one argument with its twin"
+    );
+}

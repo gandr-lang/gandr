@@ -734,6 +734,7 @@ pub fn head(
 /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on`
 /// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation`
 /// - witness: `live::tests::a_comparison_that_meets_a_hole_declines`
+/// - witness: `rules::tests::a_returned_endpoint_over_a_frozen_call_is_indeterminate_on_that_side`
 #[spec(ensures: |ret| match held_call(domain, computation) {
     | Err(fault) => ret == Err(fault),
     | Ok(None) => ret == Ok(Head::Indeterminate),
@@ -1207,6 +1208,7 @@ enum Constants
 /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
 /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
+/// - witness: `rules::tests::a_defined_head_meets_its_frozen_twin_only_at_one_constant_and_arity`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |planned|
     matches!(planned, Constants::NoneDefined) != matches!(heads,
         (Neutrality::Neutral(_, Head::Defined(_) | Head::Endpoint(_)), _)
@@ -1803,6 +1805,11 @@ fn payload(
 /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
 /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
 /// - witness: `identity::tests::reflexivities_convert_by_points_a_definition_relates`
+/// - witness: `rules::tests::each_former_decomposes_against_its_twin_at_another_id`
+/// - witness: `rules::tests::two_flows_of_different_formers_are_planned_apart`
+/// - witness: `rules::tests::a_record_with_more_labels_than_fields_is_refused_by_the_plan_on_either_side`
+/// - witness: `rules::tests::two_path_products_of_one_path_share_a_convertible_plan`
+/// - witness: `rules::tests::two_literals_held_apart_with_one_payload_are_convertible`
 #[spec(ensures: |ret| (match early_values(domain, left, right) {
     Ok(Early::Identical) => ret == Ok(Plan::Shared(Settled::Convertible)),
     Ok(Early::Apart) => ret == Ok(Plan::Shared(Settled::NotConvertible)),

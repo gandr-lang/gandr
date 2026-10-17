@@ -1,10 +1,16 @@
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
+use gandr_core_term::FieldLabel;
+use gandr_core_term::Summand;
 use gandr_core_term::Zone;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GlobalIndex;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
@@ -21,9 +27,11 @@ use crate::arena::DomainArena;
 use crate::arena::DomainCompId;
 use crate::arena::DomainValueId;
 use crate::closure::Environment;
+use crate::closure::ValueBody;
 use crate::domain::BinderLevel;
 use crate::domain::CompTermFace;
 use crate::domain::Elimination;
+use crate::domain::FlowFormer;
 use crate::domain::NeutralHead;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
@@ -603,4 +611,236 @@ fn a_payload_read_refuses_nonliteral_and_missing_nodes()
         }),
         super::Walk::new(&core, &domain).payload(nonliteral)
     );
+}
+
+/// A thunk both sides of a fixture share: one id agrees with itself, and its
+/// flexible guard leaves any value holding it to the structural walk.
+///
+/// # Specification
+/// trivial.
+fn shared_thunk(
+    core: &mut CoreArena,
+    domain: &mut DomainArena,
+) -> DomainValueId
+{
+    let suspended = closure(core, domain);
+    domain.value_thunk(suspended, TermFace::Reduced)
+}
+
+#[test]
+fn each_former_agrees_with_its_twin_at_another_id()
+{
+    let mut core = CoreArena::new();
+    let mut domain = DomainArena::new();
+    let thunk = shared_thunk(&mut core, &mut domain);
+    let unit = domain.value_unit(TermFace::Reduced);
+
+    let unit_type = core.value_type_unit();
+    let datatype = domain.value_closure_node(ValueBody::ValueType(unit_type), Environment::new());
+    let constructor = |domain: &mut DomainArena, tag: usize| {
+        let fields = domain.hold_fields([thunk]);
+        domain.value_constructor(
+            datatype,
+            ConstructorTag::from(tag),
+            fields,
+            TermFace::Reduced,
+        )
+    };
+    let label = FieldLabel::from(String::from("x"));
+    let unit_term = core.value_unit();
+    let labelled = core.value_record(BTreeMap::from([(label, unit_term)]));
+    let record = |domain: &mut DomainArena| {
+        let fields = domain.hold_fields([unit]);
+        domain
+            .value_record(labelled, fields, TermFace::Reduced)
+            .expect("the fields are live")
+    };
+    let lift = |domain: &mut DomainArena| {
+        let target = domain.hold_level(Level::zero());
+        domain.value_lift(target, thunk, TermFace::Reduced)
+    };
+    let pairs = [
+        (
+            "a constructor",
+            constructor(&mut domain, 0),
+            constructor(&mut domain, 0),
+        ),
+        ("a record", record(&mut domain), record(&mut domain)),
+        (
+            "a flow",
+            domain.value_flow(FlowFormer::Then, [thunk, thunk], TermFace::Reduced),
+            domain.value_flow(FlowFormer::Then, [thunk, thunk], TermFace::Reduced),
+        ),
+        (
+            "an injection",
+            domain.value_injection(Summand::from(1_usize), thunk, TermFace::Reduced),
+            domain.value_injection(Summand::from(1_usize), thunk, TermFace::Reduced),
+        ),
+        ("a lift", lift(&mut domain), lift(&mut domain)),
+    ];
+    for (former, left, right) in pairs {
+        assert_eq!(
+            Ok(Settlement::StructurallyEqual),
+            convert_values(&core, &domain, left, right),
+            "{former} agrees with one of its own tag, labels, former, summand or level over \
+             the same parts"
+        );
+    }
+}
+
+#[test]
+fn two_flows_of_different_formers_are_apart_over_the_same_parts()
+{
+    let mut core = CoreArena::new();
+    let mut domain = DomainArena::new();
+    let thunk = shared_thunk(&mut core, &mut domain);
+    let then = domain.value_flow(FlowFormer::Then, [thunk, thunk], TermFace::Reduced);
+    let product = domain.value_flow(FlowFormer::Product, [thunk, thunk], TermFace::Reduced);
+    assert_eq!(
+        Ok(Settlement::StructurallyApart),
+        convert_values(&core, &domain, then, product)
+    );
+}
+
+#[test]
+fn a_record_with_more_labels_than_fields_is_refused_on_either_side()
+{
+    let mut core = CoreArena::new();
+    let mut domain = DomainArena::new();
+    let unit = domain.value_unit(TermFace::Reduced);
+    let unit_term = core.value_unit();
+    let narrow = core.value_record(BTreeMap::from([(
+        FieldLabel::from(String::from("x")),
+        unit_term,
+    )]));
+    let wide = core.value_record(BTreeMap::from([
+        (FieldLabel::from(String::from("x")), unit_term),
+        (FieldLabel::from(String::from("y")), unit_term),
+    ]));
+    let fields = domain.hold_fields([unit]);
+    let formed = domain
+        .value_record(narrow, fields, TermFace::Reduced)
+        .expect("the fields are live");
+    let fields = domain.hold_fields([unit]);
+    let malformed = domain
+        .value_record(wide, fields, TermFace::Reduced)
+        .expect("the fields are live");
+    for (left, right) in [(malformed, formed), (formed, malformed)] {
+        assert_eq!(
+            Err(super::ConversionFault::MachineInvariant),
+            convert_values(&core, &domain, left, right)
+        );
+    }
+}
+
+#[test]
+fn a_neutral_one_bind_short_of_its_twin_waits_for_return_eta()
+{
+    let mut core = CoreArena::new();
+    let mut domain = DomainArena::new();
+    let continuation = closure(&mut core, &mut domain);
+    let bound = stuck_comp(
+        &mut domain,
+        variable(),
+        Vec::from([Elimination::Force, Elimination::Bind(continuation)]),
+        Unfolding::Rigid,
+    );
+    let forced = stuck_comp(
+        &mut domain,
+        variable(),
+        Vec::from([Elimination::Force]),
+        Unfolding::Rigid,
+    );
+    assert_eq!(
+        Ok(Settlement::Deferred(Deferral::Binder)),
+        convert_computations(&core, &domain, bound, forced)
+    );
+}
+
+#[test]
+fn two_cases_over_as_many_branches_compare_their_branches()
+{
+    let mut core = CoreArena::new();
+    let mut domain = DomainArena::new();
+    let branch = closure(&mut core, &mut domain);
+    let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let unit_type = core.value_type_unit();
+    let motive = core.comp_type_returner(unit_type);
+    let produced = core.value_unit();
+    let returned = core.computation_return(produced);
+    let data_case = core.computation_data_case(scrutinee, motive, Vec::from([returned]));
+    let data_case = domain.comp_closure_node(data_case, Environment::new());
+    let case = Elimination::Case(domain.hold_branches([branch, branch]));
+    let other_case = Elimination::Case(domain.hold_branches([branch, branch]));
+    let (data, other_data) = (
+        Elimination::DataCase(data_case),
+        Elimination::DataCase(data_case),
+    );
+    for (former, left, right) in [("case", case, other_case), ("data case", data, other_data)] {
+        let left = stuck_comp(&mut domain, variable(), Vec::from([left]), Unfolding::Rigid);
+        let right = stuck_comp(
+            &mut domain,
+            variable(),
+            Vec::from([right]),
+            Unfolding::Rigid,
+        );
+        assert_eq!(
+            Ok(Settlement::StructurallyEqual),
+            convert_computations(&core, &domain, left, right),
+            "two {former} spines of one branch count over one branch agree"
+        );
+    }
+}
+
+#[test]
+fn two_path_products_agree_component_by_component()
+{
+    let mut domain = DomainArena::new();
+    let core = CoreArena::new();
+    let path = stuck(&mut domain, variable(), Unfolding::Rigid);
+    let left = domain.value_path_product(path, path, TermFace::Reduced);
+    let right = domain.value_path_product(path, path, TermFace::Reduced);
+    assert_eq!(
+        Ok(gandr_core_term::CertificateEquality::Equal),
+        super::equal_paths(&core, &domain, left, right)
+    );
+}
+
+#[test]
+fn a_neutral_path_agrees_only_at_its_own_head_with_no_spine()
+{
+    let mut core = CoreArena::new();
+    let mut domain = DomainArena::new();
+    let one = literal(&mut core, &mut domain, String::from("1"));
+    let other_head = NeutralHead::Variable {
+        zone: Zone::Intuitionistic,
+        level: BinderLevel::from(1_u32),
+    };
+    let path = stuck(&mut domain, variable(), Unfolding::Rigid);
+    let again = stuck(&mut domain, variable(), Unfolding::Rigid);
+    let elsewhere = stuck(&mut domain, other_head, Unfolding::Rigid);
+    let applied = domain
+        .neutral_node(
+            variable(),
+            Vec::from([Elimination::StaticApply(one)]),
+            Unfolding::Rigid,
+        )
+        .expect("a variable is rigid");
+    let applied = domain
+        .value_neutral(applied, TermFace::Reduced)
+        .expect("a static spine stands as a value");
+    let equal = Ok(gandr_core_term::CertificateEquality::Equal);
+    let different = Ok(gandr_core_term::CertificateEquality::Different);
+    for (left, right, expected, reading) in [
+        (path, again, equal, "one head and no spine"),
+        (path, elsewhere, different, "two heads"),
+        (applied, again, different, "a spine on the left"),
+        (again, applied, different, "a spine on the right"),
+    ] {
+        assert_eq!(
+            expected,
+            super::equal_paths(&core, &domain, left, right),
+            "{reading}"
+        );
+    }
 }

@@ -30,6 +30,7 @@ use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::RuleVariable;
 use gandr_kernel_term::TermArena;
 
+use self::Letter::Collapse;
 use self::Letter::Loop;
 use self::Letter::Unloop;
 use crate::arena::DomainArena;
@@ -48,7 +49,8 @@ use crate::machine::decide;
 use crate::presented::Presented;
 
 /// A letter of the circle, and the definition applying it: `looped` at
-/// constant 1 applies `loop`, `unlooped` at constant 2 applies `unloop`.
+/// constant 1 applies `loop`, `unlooped` at constant 2 applies `unloop`, and
+/// `collapsed` at constant 3 sends every word to the rigid constant 4.
 ///
 /// # Specification
 /// trivial.
@@ -59,20 +61,23 @@ enum Letter
     Loop,
     /// `unloop`, at tag 2.
     Unloop,
+    /// No constructor: the image of every word is a rigid constant.
+    Collapse,
 }
 
 impl Letter
 {
-    /// The constructor's tag.
+    /// The constructor's tag, `None` for the letter that applies none.
     ///
     /// # Specification
     /// trivial.
-    fn tag(self) -> ConstructorTag
+    fn tag(self) -> Option<ConstructorTag>
     {
-        ConstructorTag::from(match self {
-            Self::Loop => 1_usize,
-            Self::Unloop => 2,
-        })
+        match self {
+            Self::Loop => Some(ConstructorTag::from(1_usize)),
+            Self::Unloop => Some(ConstructorTag::from(2_usize)),
+            Self::Collapse => None,
+        }
     }
 
     /// The constant of the definition applying the letter.
@@ -84,8 +89,19 @@ impl Letter
         ConstantIndex::from(match self {
             Self::Loop => 1_usize,
             Self::Unloop => 2,
+            Self::Collapse => 3,
         })
     }
+}
+
+/// Which path the second link carries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Along
+{
+    /// The path the bind binds, as a link does.
+    Bound,
+    /// The chain's own path, from outside the bind.
+    Outer,
 }
 
 /// Whether the circle's rules are recorded for a run.
@@ -121,6 +137,8 @@ struct Spelled
     outer: Letter,
     /// The second link's left endpoint.
     start: Start,
+    /// The path the second link carries.
+    along: Along,
 }
 
 /// The circle's two rules: `loop(unloop(x)) ~> x` and
@@ -130,8 +148,8 @@ struct Spelled
 /// trivial.
 fn circle() -> Presentation
 {
-    let looped = RuleNode::Constructor(Loop.tag());
-    let unlooped = RuleNode::Constructor(Unloop.tag());
+    let looped = RuleNode::Constructor(Loop.tag().expect("a word letter"));
+    let unlooped = RuleNode::Constructor(Unloop.tag().expect("a word letter"));
     let x = RuleNode::Variable(RuleVariable::from(0_u32));
     Presentation::new(alloc::vec![
         PresentedRule::new([looped, unlooped, x].into(), [x].into()),
@@ -159,7 +177,11 @@ fn core_terms(
         Start::Base => base,
         Start::Bound => path,
     };
-    let second = gandr_core_term::identity::cong(core, own, outer, start, path);
+    let along = match spelled.along {
+        Along::Bound => path,
+        Along::Outer => core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32)),
+    };
+    let second = gandr_core_term::identity::cong(core, own, outer, start, along);
     let chain = core.computation_bind(first, second);
     [chain, core.computation_return(path)]
 }
@@ -174,8 +196,13 @@ fn core_letter(
 ) -> gandr_core_term::ValueId
 {
     let own = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let occurrence = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let word = core.value_constructor(own, letter.tag(), alloc::vec![occurrence]);
+    let word = match letter.tag() {
+        Some(tag) => {
+            let occurrence = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            core.value_constructor(own, tag, alloc::vec![occurrence])
+        },
+        None => core.value_constant(ConstantIndex::from(4_usize)),
+    };
     let returned = core.computation_return(word);
     let lambda = core.computation_lambda(returned);
     core.value_thunk(lambda)
@@ -206,9 +233,14 @@ fn decided(
     let mut core = CoreArena::new();
     let looped = core_letter(&mut core, Loop);
     let unlooped = core_letter(&mut core, Unloop);
+    let collapsed = core_letter(&mut core, Collapse);
     let [chain_term, returned] = core_terms(&mut core, spelled);
     let mut chain = LoweredChain::new();
-    for (letter, body, global) in [(Loop, looped, 0_u32), (Unloop, unlooped, 1)] {
+    for (letter, body, global) in [
+        (Loop, looped, 0_u32),
+        (Unloop, unlooped, 1),
+        (Collapse, collapsed, 2),
+    ] {
         let _height = chain
             .define(
                 letter.constant(),
@@ -300,7 +332,8 @@ fn replayed(
     let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
     let letter = |arena: &mut TermArena, letter: Letter| {
         let occurrence = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let word = arena.value_constructor(own, letter.tag(), alloc::vec![occurrence]);
+        let tag = letter.tag().expect("a word letter");
+        let word = arena.value_constructor(own, tag, alloc::vec![occurrence]);
         let returned = arena.computation_return(word);
         let lambda = arena.computation_lambda(returned);
         arena.value_thunk(lambda)
@@ -365,6 +398,7 @@ fn a_cong_chain_composing_to_the_identity_is_its_path()
         inner: Unloop,
         outer: Loop,
         start: Start::Base,
+        along: Along::Bound,
     };
     for sides in [Sides::Computations, Sides::Endpoints] {
         let (verdict, decisions) = decided(Circle::Presented, &identity, sides);
@@ -383,6 +417,7 @@ fn a_cong_chain_composing_to_the_identity_is_its_path()
         inner: Loop,
         outer: Loop,
         start: Start::Base,
+        along: Along::Bound,
     };
     assert_ne!(
         decided(Circle::Presented, &twice, Sides::Computations).0,
@@ -398,10 +433,38 @@ fn a_cong_chain_composing_to_the_identity_is_its_path()
         inner: Unloop,
         outer: Loop,
         start: Start::Bound,
+        along: Along::Bound,
     };
     assert_ne!(
         decided(Circle::Presented, &reading, Sides::Computations).0,
         MachineVerdict::Convertible,
         "a link whose family reads the path its bind binds is no link"
+    );
+}
+
+#[test]
+fn a_chain_fuses_only_through_links_whose_image_is_the_point()
+{
+    let outside = Spelled {
+        inner: Unloop,
+        outer: Loop,
+        start: Start::Base,
+        along: Along::Outer,
+    };
+    assert_ne!(
+        decided(Circle::Presented, &outside, Sides::Computations).0,
+        MachineVerdict::Convertible,
+        "a second link carrying the chain's own path rather than the bound one is no link"
+    );
+    let collapsing = Spelled {
+        inner: Unloop,
+        outer: Collapse,
+        start: Start::Base,
+        along: Along::Bound,
+    };
+    assert_ne!(
+        decided(Circle::Presented, &collapsing, Sides::Computations).0,
+        MachineVerdict::Convertible,
+        "a chain whose image is a rigid constant with no spine is not the point"
     );
 }

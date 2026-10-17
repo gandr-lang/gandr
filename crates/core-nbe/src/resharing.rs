@@ -337,6 +337,7 @@ impl MemoKey for GoalSupport
     ///   word loses the shared bucket.
     /// - witness: `resharing::tests::support_identity_and_digest_survive_forcing_without_conflating_inputs`
     /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+    /// - witness: `resharing::tests::supports_of_different_content_are_remembered_in_different_buckets`
     #[inline]
     #[spec(ensures: |ret| ret == self.digest)]
     fn digest(&self) -> ContentDigest

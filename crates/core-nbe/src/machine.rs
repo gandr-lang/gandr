@@ -1762,6 +1762,7 @@ where
     ///   false cycle.
     /// - witness: `machine::tests::missing_processes_refuse_without_creating_waits`
     /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    /// - witness: `machine::tests::a_dependency_is_needed_exactly_while_a_needed_waiter_holds_it`
     #[spec(
         captures: [observed = self.processes.get(dependency.0).map(|process| process.outcome)],
         ensures: |ret| match observed {
@@ -1891,6 +1892,7 @@ where
     /// - witness: `machine::tests::a_refutation_outranks_a_decline`
     /// - witness: `machine::tests::a_goal_resting_on_itself_declines_on_the_cycle`
     /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+    /// - witness: `machine::tests::a_dependency_is_needed_exactly_while_a_needed_waiter_holds_it`
     #[spec(
         captures: [before = self.processes.get(id.0).map(|process| process.demand.0)],
         ensures: |ret| match before {
@@ -1941,6 +1943,7 @@ where
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_refutation_outranks_a_decline`
     /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    /// - witness: `machine::tests::a_finished_process_releases_only_the_needs_it_passed_and_wakes_only_needed_waiters`
     #[spec(
         ensures: |ret| ret.is_err() || self.processes.get(id.0).is_some_and(|process|
             process.outcome == outcome && matches!(process.work, Work::Spent)
@@ -2064,6 +2067,8 @@ where
     /// - witness: `machine::tests::step_counter_overflow_cannot_disable_the_budget_backstop`
     /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
     /// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
+    /// - witness: `machine::tests::the_run_passes_over_unneeded_work_and_takes_a_unit_share_at_once`
+    /// - witness: `machine::tests::a_run_under_a_budget_equal_to_its_steps_answers`
     #[spec(
         ensures: |ret| match ret {
             Ok(MachineVerdict::Convertible) => self.processes.get(root.0).is_some_and(|process| process.outcome == Outcome::Settled(Settled::Convertible)),
@@ -2845,6 +2850,7 @@ where
     /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
     /// - witness: `machine::tests::a_refutation_outranks_a_decline`
     /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
+    /// - witness: `machine::tests::a_decomposition_waits_only_while_no_premise_refutes_and_one_is_pending`
     #[spec(
         captures: [count = subgoals.len()],
         ensures: |ret| match ret {

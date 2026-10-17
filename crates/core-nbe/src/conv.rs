@@ -878,6 +878,9 @@ impl<'run> Walk<'run>
     /// - witness: `conv::tests::a_pair_needing_an_unfolding_or_a_binder_is_deferred`
     /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
     /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
+    /// - witness: `conv::tests::each_former_agrees_with_its_twin_at_another_id`
+    /// - witness: `conv::tests::two_flows_of_different_formers_are_apart_over_the_same_parts`
+    /// - witness: `conv::tests::a_record_with_more_labels_than_fields_is_refused_on_either_side`
     #[spec(
         captures: entry_goals = self.goals.len(),
         ensures: |ret| self.goals.len() >= entry_goals
@@ -1445,6 +1448,8 @@ impl<'run> Walk<'run>
     /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
     /// - witness: `conv::tests::identical_truncated_neutrals_and_closures_are_refused`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
+    /// - witness: `conv::tests::a_neutral_one_bind_short_of_its_twin_waits_for_return_eta`
+    /// - witness: `conv::tests::two_cases_over_as_many_branches_compare_their_branches`
     #[spec(ensures: |ret| if self.domain.neutral(left).is_some() && self.domain.neutral(right).is_some() {
         ret.is_ok() && (left != right || ret == Ok(Local::Agree))
             && (ret != Ok(Local::Agree) || self.domain.neutral(left).zip(self.domain.neutral(right)).is_some_and(|(one, other)|
@@ -1762,6 +1767,8 @@ impl<'run> Walk<'run>
 /// # Adequacy
 /// - hypothesis: L3 — normalization never equates different translator syntax.
 /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
+/// - witness: `conv::tests::two_path_products_agree_component_by_component`
+/// - witness: `conv::tests::a_neutral_path_agrees_only_at_its_own_head_with_no_spine`
 #[spec(ensures: |ret| match (domain.value(left), domain.value(right)) {
     (Some(&DomainValue::PathCertificate { certificate: a, .. }), Some(&DomainValue::PathCertificate { certificate: b, .. })) => matches!(ret, Ok(answer) if answer == gandr_core_term::equal_certificate_syntax(core, a, b)),
     (None, _) | (_, None) => matches!(ret, Err(ConversionFault::Domain(DomainFault::Dangling))),

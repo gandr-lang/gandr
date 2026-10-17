@@ -441,3 +441,79 @@ fn assembly_preserves_formers_payloads_and_child_order()
         walk.assemble(OverlayId::Value(pair))
     );
 }
+
+/// A walk over `overlay` with nothing surveyed, queued or open but the empty
+/// scope.
+///
+/// # Specification
+/// trivial.
+fn fresh(overlay: &mut Overlay) -> Walk<'_>
+{
+    Walk {
+        overlay,
+        policy: DuplicationPolicy::default(),
+        reached: BTreeMap::new(),
+        tasks: Vec::new(),
+        results: Vec::new(),
+        frames: Vec::new(),
+        scopes: Vec::from([ScopeCell {
+            binding: Binding::Empty,
+            parent: ScopeId::EMPTY,
+        }]),
+        cursors: Vec::new(),
+    }
+}
+
+#[test]
+fn a_share_is_spine_only_where_an_escape_reaches_inside_the_inner_frames()
+{
+    use super::BinderDepth;
+    use super::InnerFrames;
+    use super::Reach;
+    use super::RibSite;
+    use super::ShareDistance;
+    use crate::free::Outward;
+    use crate::policy::SharedPart;
+
+    let mut overlay = Overlay::new();
+    let unit = overlay
+        .mint_value(ValueNode::Grafted(ValueGraft::Unit))
+        .expect("the unit is closed");
+    let node = OverlayId::Value(unit);
+    let mut walk = fresh(&mut overlay);
+    let _absent = walk.reached.insert(node, Reach {
+        reads: Outward::default(),
+        escapes: Outward::single(ShareDistance::from(2_u32)),
+    });
+    let site = |inner| RibSite {
+        depth: BinderDepth(0_u32),
+        inner: InnerFrames(inner),
+    };
+    assert_eq!(
+        Ok(SharedPart::Rib),
+        walk.part(node, site(2_u32)),
+        "an escape as far as the inner frames reach leaves a rib"
+    );
+    assert_eq!(
+        Ok(SharedPart::Spine),
+        walk.part(node, site(3_u32)),
+        "one that stops inside them is spine"
+    );
+}
+
+#[test]
+fn a_walk_that_ends_with_a_frame_open_is_refused()
+{
+    use super::Taken;
+
+    let mut overlay = Overlay::new();
+    let unit = overlay
+        .mint_value(ValueNode::Grafted(ValueGraft::Unit))
+        .expect("the unit is closed");
+    let mut walk = fresh(&mut overlay);
+    walk.frames.push(Taken(0_u32));
+    assert_eq!(
+        Err(DuplicationFault::MachineInvariant),
+        walk.run(OverlayId::Value(unit))
+    );
+}

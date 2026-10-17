@@ -374,6 +374,38 @@ fn cong_along_the_loop_reads_both_arguments_of_a_diagonal_464()
 }
 
 #[test]
+fn cong_along_the_loop_reads_a_call_bound_into_the_next()
+{
+    let mut core = CoreArena::new();
+    let circle = circle(&mut core);
+    let chain = chain(&circle, Count::Recorded);
+    let flip = core.value_constant(ConstantIndex::from(FLIP));
+    let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = core.computation_force(flip);
+    let inner = core.computation_application(forced, moving);
+    // Under the bind the bound result is the innermost variable.
+    let outer = core.computation_application(forced, moving);
+    let bound = core.computation_bind(inner, outer);
+    let through = core.value_returned(bound);
+    // `cong(y. ⟨x ← flip(y); flip(x)⟩, loop)`: the loop through the flip and
+    // then the flip again, the inverse of the inverse.
+    let family = core.value_type_path(circle.carrier, circle.point, through);
+    let cong = core.computation_path_transport(family, circle.named, circle.empty);
+    let looped = core.computation_return(circle.letter);
+    let inverted = core.computation_return(circle.inverse);
+    assert_eq!(
+        decided(&core, &chain, (cong, looped)),
+        Some(MachineVerdict::Convertible),
+        "the image of the loop through a flip bound into a flip is the loop"
+    );
+    assert_eq!(
+        decided(&core, &chain, (cong, inverted)),
+        Some(MachineVerdict::NotConvertible),
+        "and not its inverse"
+    );
+}
+
+#[test]
 fn a_word_appends_on_its_first_word()
 {
     let mut core = CoreArena::new();
