@@ -18,6 +18,7 @@ use gandr_core_sequent::CommandId;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Store;
+use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_stencils::Fuel;
 use gandr_runtime_stencils::Runtime;
 use gandr_runtime_stencils::Status;
@@ -25,6 +26,9 @@ use gandr_runtime_stencils::Word;
 
 use crate::executor::Program;
 use crate::function::Unbound;
+use crate::host;
+use crate::host::Calls;
+use crate::host::Codes;
 use crate::lower::Form;
 use crate::lower::Lowered;
 use crate::lower::lower;
@@ -35,7 +39,9 @@ use crate::native::Emitted;
 #[cfg(gandr_patcher)]
 use crate::native::Native;
 use crate::transfer::Sites;
+use crate::transfer::Tables;
 use crate::transfer::TransferRefusal;
+use crate::transfer::observed;
 use crate::transfer::transfer;
 
 /// The environment variable the policy is read from.
@@ -132,6 +138,12 @@ pub enum Declined
     Uncached,
     /// A case met a constructor no arm answers: the machine's stuck answer.
     Unmatched,
+    /// An observation met a value it does not observe, or a host call refused
+    /// its operands: the machine's stuck answer, which it names.
+    Stuck,
+    /// An observation — a force, an application, a case — met the opaque
+    /// constant: the machine's stuck answer at it, which blames the constant.
+    Opaque(ConstantIndex),
     /// The run spent its fuel, or a region past its bound.
     Exhausted(Status),
     /// The answer could not be moved into the store.
@@ -336,6 +348,7 @@ fn run_executor(
     });
     run(
         Code::Executor(&program),
+        Codes::Executor(&program, &lowered.function),
         lowered,
         &sites,
         arena,
@@ -455,6 +468,10 @@ fn run_emitted(
     });
     run(
         Code::Native(emitted.entry, emitted.halt),
+        Codes::Native {
+            labels: &emitted.labels,
+            stubs: &emitted.stubs,
+        },
         lowered,
         &sites,
         arena,
@@ -473,6 +490,7 @@ fn run_emitted(
 /// As [`evaluate_on`].
 fn run(
     code: Code<'_>,
+    codes: Codes<'_>,
     lowered: &Lowered,
     sites: &Sites<'_>,
     arena: &CommandArena,
@@ -504,7 +522,16 @@ fn run(
             let frame_limit = frames.wrapping_add(buffers.frames.len());
             let base = frames.wrapping_add(2);
             let window = buffers.window.as_mut_ptr();
-            let mut runtime = Runtime::new(heap, heap_limit, frame_limit, base, fuel);
+            let mut calls = Calls::new(lowered, codes);
+            let mut runtime = Runtime::new(
+                heap,
+                heap_limit,
+                frame_limit,
+                base,
+                fuel,
+                host::enter,
+                Word::from_pointer(&raw mut calls),
+            );
             let answer = match code {
                 #[cfg(gandr_patcher)]
                 // SAFETY: the entry is a copy the emitter patched in a region
@@ -528,9 +555,13 @@ fn run(
             };
             match runtime.status() {
                 Ok(Status::Halted) => {
+                    let tables = Tables {
+                        heads: &lowered.heads,
+                        literals: calls.literals(),
+                    };
                     // SAFETY: the run halted; its heap and the function's
                     // constants are live until this closure returns.
-                    return unsafe { transfer(answer, sites, arena, store) }
+                    return unsafe { transfer(answer, sites, tables, arena, store) }
                         .map_err(Declined::from);
                 },
                 Ok(Status::HeapExhausted) if buffers.heap.len() < HEAP_BOUND => {
@@ -541,7 +572,19 @@ fn run(
                     let doubled = buffers.frames.len().saturating_mul(2);
                     buffers.frames.resize(doubled, Word::ZERO);
                 },
-                Ok(Status::Unmatched) => return Err(Declined::Unmatched),
+                Ok(status @ (Status::Unmatched | Status::Stuck)) => {
+                    // SAFETY: both exits return the value they observed, or
+                    // zero when a host call refused, and the heap is live.
+                    if let Some(constant) = unsafe { observed(answer) } {
+                        return Err(Declined::Opaque(constant));
+                    }
+                    return Err(if status == Status::Unmatched {
+                        Declined::Unmatched
+                    }
+                    else {
+                        Declined::Stuck
+                    });
+                },
                 Ok(status) => return Err(Declined::Exhausted(status)),
                 Err(_unknown) => return Err(Declined::Exhausted(Status::Running)),
             }

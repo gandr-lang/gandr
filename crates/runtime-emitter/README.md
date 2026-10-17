@@ -38,7 +38,7 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 
 - **A host with a patcher for native code.** macOS on arm64 and Linux on x86-64; every other host runs the executor, with the same answers.
 - **Executable memory.** macOS grants `MAP_JIT` to an unsigned or ad-hoc signed binary; a hardened-runtime binary needs the `com.apple.security.cs.allow-jit` entitlement. Linux needs `memfd_create` and a mapping below 2 GiB.
-- **Defined constants.** Every constant a command reaches is defined in the `Definitions` given; an opaque one is declined.
+- **Defined constants.** Every constant a command reaches is defined in the `Definitions` given; an opaque one is carried as itself, and a run that observes it stops naming the constant, which the dispatcher blames as the L machine would.
 
 ## Examples
 

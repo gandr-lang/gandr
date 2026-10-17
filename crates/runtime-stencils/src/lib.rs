@@ -31,8 +31,8 @@
 //!
 //! Every stencil has one signature, [`Stencil`]: five arguments under the
 //! `preserve_none` convention, which LLVM passes in registers the callee need
-//! not save, so a chain of stencils keeps them pinned and no stencil has a
-//! prologue.
+//! not save, so a chain of stencils keeps them pinned and no stencil but
+//! `call` has a prologue.
 //!
 //! | Argument | Holds | aarch64 | x86-64 |
 //! | -------- | ----- | ------- | ------ |
@@ -55,8 +55,39 @@
 //! | `HOLE_A`, `HOLE_B` | an undefined static whose address the patcher writes | the current instruction's operand |
 //! | `hole_next` | a branch the patcher aims at the next copy | the next instruction |
 //! | `hole_alt` | a branch the patcher aims at a label | the instruction's `alt` |
-//! | `hole_heap_exhausted`, `hole_frames_exhausted`, `hole_fuel_exhausted` | a branch the patcher aims at the region's shared exit | the exit stencil |
+//! | `hole_heap_exhausted`, `hole_frames_exhausted`, `hole_fuel_exhausted`, `hole_stuck` | a branch the patcher aims at the region's shared exit | the exit stencil |
 //! | a code word in hand | a native address, called | an instruction's address, dispatched |
+//!
+//! # The host call
+//!
+//! A primitive leaves the stencils for the host through one stencil, `call`,
+//! and the same seam is the shape a foreign call takes at the host boundary
+//! (#327). The lowering numbers each distinct callee of a function and
+//! pushes the call's arguments, left to right, as it pushes a constructor's
+//! fields; `call` pops them, writes the heap's top, the frame region's top
+//! and the window to the [`Runtime`] record and makes an ordinary platform
+//! call to the record's [`Host`] entry with the record, the callee's number
+//! and the first two arguments. The host answers with a value it allocated
+//! on the heap through the record, or refuses ([`Refusal`]): an answer past
+//! a region's limit grows the region and runs again, as any allocation
+//! does, and operands the callee does not take stop the run stuck. The call
+//! is indirect through the record, so the stencil carries no relocation and
+//! both builds share it; LLVM saves what the platform convention clobbers
+//! around the call, the one stencil that has a prologue. The alternative was
+//! a stencil per primitive, which puts host arithmetic — unbounded integers
+//! among it — inside the stencil object, where no allocation and no call can
+//! live.
+//!
+//! Control takes the same seam. An operation, a shift, a replay and every
+//! memory form are host calls that read and rewrite the frame region: the
+//! host moves the frame region's top and may name a code word and window to
+//! continue at, where an operation's clause or an aborted view's unwind
+//! starts. A handler's frame is an ordinary frame resuming at its return
+//! clause, a reset's resumes at the shared `pop` copy and an aborted view's
+//! answer frame at `answer_frame`, so the stencils hold no control
+//! transition of their own; the alternative, a stencil per capture and
+//! replay, would copy windows of sizes only the lowering knows inside code
+//! that cannot call.
 //!
 //! # The authoring rules
 //!
@@ -68,14 +99,17 @@
 //! - **No two stencils share a body.** LLVM merges identical functions into one
 //!   symbol, leaving the other stencil with no bytes; the generator refuses an
 //!   empty stencil, so a duplicate fails the build.
-//! - **A stencil calls nothing.** No `memcpy` (the crate is `#![no_builtins]`),
-//!   no panic path (arithmetic wraps and the object is built with overflow
-//!   checks and debug assertions off), no constant pool: a relocation to
-//!   anything but a hole fails the build.
-//! - **Every backward jump spends fuel.** Lowered code is straight-line between
-//!   code-word jumps — a frame's resumption, a closure's entry — so `resume!`
-//!   decrements the run's fuel and exits with [`Status::FuelExhausted`] at
-//!   zero: a divergent program stops.
+//! - **A stencil calls nothing but the host.** No `memcpy` (the crate is
+//!   `#![no_builtins]`), no panic path (arithmetic wraps and the object is
+//!   built with overflow checks and debug assertions off), no constant pool: a
+//!   relocation to anything but a hole fails the build. `call` reaches the host
+//!   through a pointer the record holds, which needs none.
+//! - **Every unbounded jump spends fuel.** Lowered code is straight-line
+//!   between code-word jumps — a frame's resumption, a closure's entry — so
+//!   `resume!` decrements the run's fuel and exits with
+//!   [`Status::FuelExhausted`] at zero: a divergent program stops. A fold's
+//!   `jump` back to its test runs once per cell of a list the heap already
+//!   holds, so it is bounded without fuel.
 //!
 //! # The feature gates
 //!
@@ -282,6 +316,48 @@ impl From<Word> for u64
     }
 }
 
+/// The host's entry, which a call stencil enters through the runtime record:
+/// the seam where a run leaves the stencils' convention for the platform's.
+///
+/// The call stencil passes the record, the call's entry in the run's host
+/// table — the lowering numbers each distinct callee of a function — and its
+/// first two arguments, unused ones zero; every argument lies at
+/// [`Runtime::frame_top`], popped but intact while the host runs. The host
+/// reads the heap's top and limit from the record, allocates its answer
+/// there, writes the new top back with [`Runtime::set_heap_top`] and returns
+/// the answer; when it cannot, it writes [`Status::HeapExhausted`],
+/// [`Status::FramesExhausted`] or [`Status::Stuck`] with [`Runtime::refuse`]
+/// and returns anything, and the stencil takes that exit. A control
+/// operation also reads the frame region's top and the window in reach, may
+/// move the top with [`Runtime::set_frame_top`] — a capture removes frames, a
+/// replay pushes them — and may name the code word and window the run
+/// continues at with [`Runtime::jump`], where the stencil goes instead of its
+/// next instruction. The host's own state rides in [`Runtime::context`].
+///
+/// # Specification
+/// - requires: the host never unwinds across the call, and leaves every word
+///   below the heap's top as it found it.
+/// - executable: none — a contract on a function the host supplies.
+pub type Host =
+    extern "C" fn(runtime: *mut Runtime, entry: Word, first: Word, second: Word) -> Word;
+
+/// Why a host call refused.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Refusal
+{
+    /// The answer would pass the heap region's limit: the run grows the heap
+    /// and runs again.
+    Heap,
+    /// The frames a replay pushes would pass the frame region's limit: the
+    /// run grows the region and runs again.
+    Frames,
+    /// The operands are not the callee's: the run is stuck.
+    Operands,
+}
+
 /// The record every stencil reaches through its first register.
 ///
 /// One record per run, owned by the host that enters emitted code or the
@@ -302,7 +378,7 @@ pub struct Runtime
     frame_limit: *mut Word,
     /// The base mark: the frame region's height above the sentinel frame.
     frame_base: *mut Word,
-    /// The heap pointer when the run exited.
+    /// The heap pointer when the run exited, or across a host call.
     heap_top: *mut Word,
     /// Why the run exited, as a status word.
     status: Word,
@@ -310,13 +386,26 @@ pub struct Runtime
     fuel: Word,
     /// The executor's current instruction; emitted code never reads it.
     instruction: *const Instruction,
+    /// The host's entry, which every call stencil enters.
+    host: Host,
+    /// The host's own state, which no stencil reads.
+    context: Word,
+    /// The frame region's top across a host call.
+    frame_top: *mut Word,
+    /// The window in reach across a host call.
+    environment: *mut Word,
+    /// The code word a host call continues at, or zero for the next
+    /// instruction.
+    jump: Word,
+    /// The window the code word continues in.
+    jump_window: *mut Word,
 }
 
 impl Runtime
 {
     /// A record for a run over the heap region `[heap, heap_limit)` and the
     /// frame region whose limit is `frame_limit` and whose base mark is
-    /// `frame_base`.
+    /// `frame_base`, whose calls enter `host` with `context` in reach.
     ///
     /// # Specification
     /// - requires: the heap region's start is at or below its limit, and
@@ -340,6 +429,8 @@ impl Runtime
         frame_limit: *mut Word,
         frame_base: *mut Word,
         fuel: Fuel,
+        host: Host,
+        context: Word,
     ) -> Self
     {
         Self {
@@ -350,7 +441,178 @@ impl Runtime
             status: layout::STATUS_RUNNING,
             fuel: Word(usize::from(fuel)),
             instruction: core::ptr::null(),
+            host,
+            context,
+            frame_top: frame_base,
+            environment: core::ptr::null_mut(),
+            jump: Word::ZERO,
+            jump_window: core::ptr::null_mut(),
         }
+    }
+
+    /// The host's state, as the record was made with it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn context(&self) -> Word
+    {
+        self.context
+    }
+
+    /// One past the heap region's last word: the bound a host allocation
+    /// stays below.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn heap_limit(&self) -> *mut Word
+    {
+        self.heap_limit
+    }
+
+    /// Move the heap's top to `top`, past a host call's allocations.
+    ///
+    /// # Specification
+    /// - requires: `top` lies between the top the call found and the heap's
+    ///   limit.
+    /// - ensures: [`Self::heap_top`] is `top`.
+    /// - executable: none — the requirement is about the host's allocations.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named primitive programs allocate their answers
+    ///   through the host and compare them with the L machine's; a top left
+    ///   behind lets the next allocation overwrite the answer.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    #[inline]
+    pub const fn set_heap_top(
+        &mut self,
+        top: *mut Word,
+    )
+    {
+        self.heap_top = top;
+    }
+
+    /// The frame region's base mark, above the sentinel frame: no capture
+    /// reaches below it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn frame_base(&self) -> *mut Word
+    {
+        self.frame_base
+    }
+
+    /// One past the frame region's last word: the bound a replay stays below.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn frame_limit(&self) -> *mut Word
+    {
+        self.frame_limit
+    }
+
+    /// The frame region's top as a host call found it, its arguments popped.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn frame_top(&self) -> *mut Word
+    {
+        self.frame_top
+    }
+
+    /// Move the frame region's top to `top`: below the frames a capture
+    /// takes, above those a replay pushes.
+    ///
+    /// # Specification
+    /// - requires: `top` lies between the base mark and the frame region's
+    ///   limit, every frame below it whole.
+    /// - ensures: [`Self::frame_top`] is `top`.
+    /// - executable: none — the requirement is about the region's frames.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the corpus's handlers capture and resume; a top left
+    ///   where the call found it resumes the captured frames twice.
+    /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+    #[inline]
+    pub const fn set_frame_top(
+        &mut self,
+        top: *mut Word,
+    )
+    {
+        self.frame_top = top;
+    }
+
+    /// The window in reach where the host call stands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn environment(&self) -> *mut Word
+    {
+        self.environment
+    }
+
+    /// Continue the run at `code` in `window` once the host call returns,
+    /// its answer in hand, one unit of fuel spent.
+    ///
+    /// # Specification
+    /// - requires: `code` is a code word of the running function and `window`
+    ///   holds the slots its block reads.
+    /// - ensures: the call stencil resumes at `code` rather than its next
+    ///   instruction.
+    /// - executable: none — where the run continues is observed only by running
+    ///   it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — an operation's clause and an aborted view's unwind
+    ///   are entered this way; a jump ignored runs the instruction after the
+    ///   call, which takes the stuck exit.
+    /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+    #[inline]
+    pub const fn jump(
+        &mut self,
+        code: Word,
+        window: *mut Word,
+    )
+    {
+        self.jump = code;
+        self.jump_window = window;
+    }
+
+    /// Refuse a host call for `refusal`: the call stencil takes the heap exit
+    /// for [`Refusal::Heap`], the frame exit for [`Refusal::Frames`], the
+    /// stuck exit for [`Refusal::Operands`].
+    ///
+    /// # Specification
+    /// - ensures: [`Self::status`] reads [`Status::HeapExhausted`] for
+    ///   [`Refusal::Heap`], [`Status::FramesExhausted`] for
+    ///   [`Refusal::Frames`], [`Status::Stuck`] for [`Refusal::Operands`].
+    /// - executable: none — the exit taken is observed only by running it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a host refusing each way takes the exit it names.
+    /// - witness: `tests::exits::a_host_call_answers_or_names_its_exit`
+    #[inline]
+    pub const fn refuse(
+        &mut self,
+        refusal: Refusal,
+    )
+    {
+        self.status = match refusal {
+            Refusal::Heap => layout::STATUS_HEAP_EXHAUSTED,
+            Refusal::Frames => layout::STATUS_FRAMES_EXHAUSTED,
+            Refusal::Operands => layout::STATUS_STUCK,
+        };
     }
 
     /// Why the run exited.

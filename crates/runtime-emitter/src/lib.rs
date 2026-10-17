@@ -70,9 +70,12 @@
 //! the run is declined. A run enters through `enter` or `execute` with a
 //! fresh [`gandr_runtime_stencils::Runtime`] record and a halting sentinel
 //! frame under the base mark, and returns when an exit stencil writes its
-//! status. Emitted code carries no unwind tables and calls nothing, so
-//! nothing unwinds through it; that seam is where a Rust host — the
-//! dispatcher today — calls emitted code.
+//! status. Emitted code carries no unwind tables and calls only the host
+//! entry, `host::enter`, which never unwinds: it evaluates primitives and
+//! answers control — operations, captures, replays, reified stacks and the
+//! memory forms — over the run's frame region, by the tables the lowering
+//! wrote. That seam is where a Rust host — the dispatcher today — calls
+//! emitted code, and where emitted code calls back.
 //!
 //! # The compile host retired
 //!
@@ -100,6 +103,7 @@ extern crate alloc;
 
 mod executor;
 mod function;
+mod host;
 mod lower;
 #[cfg(gandr_patcher)]
 mod native;

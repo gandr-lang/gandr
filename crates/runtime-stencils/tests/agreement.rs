@@ -72,8 +72,9 @@ fn a_patcher_host_runs_native()
 }
 
 /// The named programs — a return, a bind, a case, a constructor, their
-/// composition, and answers that suspend a function or a thunk — halt on
-/// both tiers with the machine's answer.
+/// composition, answers that suspend a function or a thunk, primitive calls
+/// and a resumed reified stack — halt on both tiers with the machine's
+/// answer.
 #[test]
 fn the_named_programs_agree_on_both_executors()
 {
@@ -124,7 +125,7 @@ fn the_generated_programs_agree_on_both_executors()
                     tier,
                 ) {
                     Verdict::Agreed => halted = halted.saturating_add(1),
-                    Verdict::BothUnmatched => {},
+                    Verdict::BothUnmatched | Verdict::BothStuck | Verdict::BothOpaque => {},
                     Verdict::Declined(declined) => {
                         panic!("seed {seed} budget {budget} on {tier:?}: declined {declined:?}")
                     },
@@ -138,8 +139,8 @@ fn the_generated_programs_agree_on_both_executors()
 /// Every declaration of the model corpus that states a `runs` outcome,
 /// outside the pathological twins, gives the machine's evaluation on each
 /// tier, or is declined: by the form the lowering refuses, or as an
-/// unmatched case exactly where the machine sticks. The declines are counted
-/// by reason and printed.
+/// unmatched case or a stuck observation exactly where the machine sticks.
+/// The answers are counted by engine, the declines by reason, and printed.
 #[test]
 fn the_corpus_runs_items_agree_on_both_executors()
 {
@@ -152,7 +153,7 @@ fn the_corpus_runs_items_agree_on_both_executors()
         &[Engine::Executor]
     };
     let mut stated = 0_usize;
-    let mut answered = 0_usize;
+    let mut answered = vec![0_usize; engines.len()];
     let mut declined: BTreeMap<String, usize> = BTreeMap::new();
     while let Maybe::Present(step) = walk.step() {
         let Step::Source {
@@ -185,13 +186,11 @@ fn the_corpus_runs_items_agree_on_both_executors()
             let expected = program
                 .evaluate_on(constant, Engine::Machine)
                 .expect("the machine never declines");
-            for &engine in engines {
+            for (&engine, count) in engines.iter().zip(answered.iter_mut()) {
                 match program.evaluate_on(constant, engine) {
                     Ok(evaluation) => {
                         assert_eq!(expected, evaluation, "{item} on {engine:?}");
-                        if engine == engines[0] {
-                            answered = answered.saturating_add(1);
-                        }
+                        *count = count.saturating_add(1);
                     },
                     Err(Declined::Unmatched) => {
                         assert!(
@@ -199,19 +198,23 @@ fn the_corpus_runs_items_agree_on_both_executors()
                             "{item} on {engine:?}: unmatched where the machine gave {expected}"
                         );
                     },
+                    Err(Declined::Stuck) => {
+                        assert!(
+                            matches!(expected, Evaluation::Stuck(_) | Evaluation::Blamed(_)),
+                            "{item} on {engine:?}: stuck where the machine gave {expected}"
+                        );
+                    },
                     Err(Declined::Lowering(form)) => {
-                        if engine == engines[0] {
-                            *declined.entry(format!("{form:?}")).or_default() += 1;
-                        }
+                        *declined.entry(format!("{engine:?} {form:?}")).or_default() += 1;
                     },
                     Err(other) => panic!("{item} on {engine:?}: declined {other:?}"),
                 }
             }
         }
     }
-    println!(
-        "runs items {stated}, answered on {:?} {answered}, declined {declined:?}",
-        engines[0]
+    println!("runs items {stated}, answered {answered:?} on {engines:?}, declined {declined:?}");
+    assert!(
+        answered.iter().all(|&count| count > 0),
+        "the corpus states runs each tier answers"
     );
-    assert!(answered > 0, "the corpus states runs the tiers answer");
 }

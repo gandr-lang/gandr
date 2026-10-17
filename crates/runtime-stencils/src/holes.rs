@@ -62,6 +62,15 @@ unsafe extern "rust-preserve-none" {
         environment: *mut Word,
         value: Word,
     ) -> Word;
+    /// The exit taken when an observation meets a value it does not observe,
+    /// or a host call refuses its operands.
+    pub safe fn hole_stuck(
+        runtime: *mut Runtime,
+        heap: *mut Word,
+        frames: *mut Word,
+        environment: *mut Word,
+        value: Word,
+    ) -> Word;
 }
 
 /// The operand holes: their addresses are the operands, never their contents.
@@ -211,6 +220,28 @@ pub extern "rust-preserve-none" fn hole_fuel_exhausted(
 ) -> Word
 {
     become crate::transitions::stencil_fuel_exhausted(runtime, heap, frames, environment, value)
+}
+
+/// The stuck exit, taken directly.
+///
+/// # Specification
+/// - ensures: as `stencil_stuck`.
+/// - executable: none — an exit runs inside a chain of tail calls.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an executor run that forces an opaque constant exits by
+///   name.
+/// - witness: `tests::exits::an_opaque_observation_exits_stuck`
+#[cfg(not(gandr_stencil_object))]
+pub extern "rust-preserve-none" fn hole_stuck(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    become crate::transitions::stencil_stuck(runtime, heap, frames, environment, value)
 }
 
 /// The current instruction, for an operand read.

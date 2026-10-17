@@ -23,6 +23,8 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::primitive::Arguments;
+use gandr_core_term::primitive::PRELUDE;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
@@ -83,9 +85,12 @@ fn innermost(core: &mut CoreArena) -> ValueId
 }
 
 /// The named programs: the five positive-core programs a return, a bind, a
-/// case, a constructor and their composition answer, and three whose answer
+/// case, a constructor and their composition answer; three whose answer
 /// suspends a computation — a function, a thunk and a pair holding one — so
-/// a closure's site, captures and environment are compared too.
+/// a closure's site, captures and environment are compared too; three
+/// primitive calls, answering an integer, an integer past 64 bits and a
+/// boolean; and a reified stack resumed, its application frame and its bind
+/// frame, which reads a variable bound outside the stack.
 ///
 /// # Specification
 /// trivial.
@@ -206,6 +211,47 @@ pub fn named() -> Vec<Program>
         core,
         root,
     });
+    for (name, primitive, left, right) in [
+        ("add 2 3", "add", 2_i64, 3_i64),
+        ("mul 2^62 4", "mul", 0x4000_0000_0000_0000_i64, 4_i64),
+        ("lt 1 2", "lt", 1_i64, 2_i64),
+    ] {
+        let mut core = CoreArena::new();
+        let left = integer(&mut core, Integer(left));
+        let right = integer(&mut core, Integer(right));
+        let row = *PRELUDE
+            .iter()
+            .find(|row| row.name().as_ref() == primitive)
+            .expect("a prelude row");
+        let root = core.computation_primitive(row, Arguments::Binary([left, right]));
+        programs.push(Program { name, core, root });
+    }
+
+    let mut core = CoreArena::new();
+    let two = integer(&mut core, Integer(2));
+    let three = integer(&mut core, Integer(3));
+    let bound = core.computation_return(two);
+    let head = innermost(&mut core);
+    let outer = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let pair = core.value_tuple(&[head, outer]);
+    let bind = core.computation_return(pair);
+    let stack = core.value_reify(
+        [
+            gandr_core_term::control::StackFrame::Apply(three),
+            gandr_core_term::control::StackFrame::Bind(bind),
+        ]
+        .into(),
+    );
+    let argument = innermost(&mut core);
+    let identity_return = core.computation_return(argument);
+    let identity = core.computation_lambda(identity_return);
+    let resumed = core.computation_resume(stack, identity);
+    let root = core.computation_bind(bound, resumed);
+    programs.push(Program {
+        name: "y <- return 2; resume [apply 3, bind x. return (x, y)] { fn z. return z }",
+        core,
+        root,
+    });
     programs
 }
 
@@ -239,6 +285,11 @@ pub enum Verdict
     Agreed,
     /// Both stuck at a constructor no arm answers.
     BothUnmatched,
+    /// Both stuck where an observation met no closure or a primitive refused
+    /// its operands.
+    BothStuck,
+    /// Both stuck observing the same opaque constant, which the run names.
+    BothOpaque,
     /// The tier declined a form the machine runs.
     Declined(Declined),
 }
@@ -278,7 +329,9 @@ pub fn agree(
 /// - ensures: [`Verdict::Agreed`] when both halt and the answers are equal
 ///   value by value, readback succeeding for the run's exactly when it succeeds
 ///   for the machine's; [`Verdict::BothUnmatched`] when both stick at an
-///   unmatched constructor; [`Verdict::Declined`] for a form the lowering
+///   unmatched constructor; [`Verdict::BothOpaque`] when the run names the
+///   opaque constant the machine stuck observing; [`Verdict::BothStuck`] when
+///   both stick elsewhere; [`Verdict::Declined`] for a form the lowering
 ///   refuses; a panic naming the difference otherwise.
 /// - executable: none — the comparison is the suite's oracle; a predicate over
 ///   it would be the walk itself.
@@ -319,6 +372,25 @@ pub fn agree_with(
         (Outcome::Stuck(Stuck::Unmatched { .. }), Err(Declined::Unmatched)) => {
             Verdict::BothUnmatched
         },
+        (Outcome::Stuck(stuck), Err(Declined::Opaque(constant))) => {
+            let observed = if let Stuck::Unobservable { value, .. }
+            | Stuck::ResumedNonStack { value, .. }
+            | Stuck::Unmatched { value, .. }
+            | Stuck::NonScalar(value) = stuck
+            {
+                machine.store().value(value)
+            }
+            else {
+                None
+            };
+            assert_eq!(
+                Some(&HeapValue::Opaque(constant)),
+                observed,
+                "{name}: the run names a constant the machine did not observe"
+            );
+            Verdict::BothOpaque
+        },
+        (Outcome::Stuck(_), Err(Declined::Stuck)) => Verdict::BothStuck,
         (_, Err(declined @ Declined::Lowering(_))) => Verdict::Declined(declined),
         (outcome, ran) => panic!("{name}: the machine gave {outcome:?}, the run {ran:?}"),
     }

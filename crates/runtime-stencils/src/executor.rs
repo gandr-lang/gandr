@@ -128,6 +128,8 @@ stencils! {
     InvokeForceValue => stencil_invoke_force_value,
     /// `stencil_apply_frame`: the application frames' shared stub.
     ApplyFrame => stencil_apply_frame,
+    /// `stencil_argument_frame`: the fold cell frames' shared stub.
+    ArgumentFrame => stencil_argument_frame,
     /// `stencil_pushf`.
     Pushf => stencil_pushf,
     /// `stencil_push_apply`.
@@ -144,6 +146,19 @@ stencils! {
     MatchTag => stencil_match_tag,
     /// `stencil_mark`.
     Mark => stencil_mark,
+    /// `stencil_select_field`.
+    SelectField => stencil_select_field,
+    /// `stencil_select_component`.
+    SelectComponent => stencil_select_component,
+    /// `stencil_jump`.
+    Jump => stencil_jump,
+    /// `stencil_pop`: also the reset frames' shared stub.
+    Pop => stencil_pop,
+    /// `stencil_call`.
+    Call => stencil_call,
+    /// `stencil_answer_frame`: the aborted accesses' answer frames' shared
+    /// stub.
+    AnswerFrame => stencil_answer_frame,
     /// `stencil_halt`: also the sentinel frame's code.
     Halt => stencil_halt,
     /// `stencil_unmatched`.
@@ -154,6 +169,8 @@ stencils! {
     FramesExhausted => stencil_frames_exhausted,
     /// `stencil_fuel_exhausted`.
     FuelExhausted => stencil_fuel_exhausted,
+    /// `stencil_stuck`.
+    Stuck => stencil_stuck,
 }
 
 impl Instruction

@@ -1,0 +1,1030 @@
+//! The host a run's call stencils enter: the primitives, evaluated by the
+//! prelude's own evaluator over operands read from the heap, and the control
+//! operations, which read and rewrite the frame region.
+//!
+//! A call names its callee by its number in the function's callee table and
+//! passes up to two operands. An integer operand is a machine-word integer
+//! or a literal the run's literal table holds; a boolean is an injection of
+//! the empty tuple, the left one true. The answer is allocated where the call
+//! stencil's heap pointer stood, as a constructor stencil would allocate it:
+//! an integer past 64 bits joins the literal table and is answered by its
+//! entry. Operands the callee does not take, or an evaluation the prelude
+//! refuses (a division by zero), stop the run stuck, where the L machine
+//! names the refusal.
+//!
+//! # Control
+//!
+//! The host finds frames by their code words. A handler's frame resumes at
+//! its return clause's label and a reset's at the shared reset stub; every
+//! other frame resumes either at a shared stub, its second word a value, or
+//! at a label of the function, its second word the window the label's block
+//! reads, whose slot count the lowering recorded.
+//!
+//! - An operation scans down from the top for its handler — the nearest
+//!   delimiter decides, or the handler whose window holds the capability —
+//!   captures the frames from that handler's up, writes the payload into the
+//!   handler's window and continues at the clause with the stack in hand. A
+//!   shift captures from the nearest reset's frame up.
+//! - A capture copies each window its frames resume in into the stack, once
+//!   however many frames share it, so neither the live run nor a replay sees
+//!   the other's writes. A replay pushes the frames back above the top and
+//!   copies each window afresh, moving each mark into the captured frames by
+//!   the distance the frames moved; a mark at or below the captured frames'
+//!   base names a frame of the tail and stays.
+//! - A held binding and a view are cells, so a write-back reaches every window
+//!   that copied the binding. A view holds the value lent, how it ended and the
+//!   held cell; its access's frame, popped, writes a resumed value back and
+//!   passes the answer on, or saves the answer in an answer frame and continues
+//!   at the unwind.
+//!
+//! An operation no handler of the run answers — one offered to the host, or
+//! one through a capability the host holds — and a view ended twice or never
+//! stop the run stuck: the L machine runs the command and names them.
+
+use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::OperationName;
+use gandr_core_term::primitive::Primitive;
+use gandr_core_term::primitive::Scalar;
+use gandr_kernel_term::IntegerLiteral;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::Magnitude;
+use gandr_kernel_term::Side;
+use gandr_kernel_term::Sign;
+use gandr_kernel_term::Summand;
+use gandr_runtime_stencils::Arity;
+use gandr_runtime_stencils::Family;
+use gandr_runtime_stencils::Header;
+use gandr_runtime_stencils::Kind;
+use gandr_runtime_stencils::Refusal;
+use gandr_runtime_stencils::Runtime;
+use gandr_runtime_stencils::Tag;
+use gandr_runtime_stencils::Word;
+
+use crate::executor::Program;
+use crate::function::Function;
+use crate::function::Label;
+use crate::function::Slots;
+use crate::function::Stub;
+use crate::lower::Callee;
+use crate::lower::Clause;
+use crate::lower::Handler;
+use crate::lower::Lowered;
+use crate::lower::Reach;
+use crate::lower::Reified;
+use crate::lower::Slot;
+use crate::lower::integer_word;
+
+/// A view's state: no eliminator has run.
+const OPEN: usize = 0;
+/// A view's state: resumed, its value to be written back.
+const RESUMED: usize = 1;
+/// A view's state: aborted.
+const ABORTED: usize = 2;
+
+/// The word of a cell holding its value: a held binding's and a view's.
+const VALUE: usize = 1;
+/// The word of a view holding its state.
+const STATE: usize = 2;
+/// The word of a view holding the value a resume writes back.
+const WRITTEN: usize = 3;
+/// The word of a view holding the held cell it writes back to.
+const HELD: usize = 4;
+
+/// A stack's words before its frames: the header, the captured frames' base
+/// and top.
+const STACK_PREFIX: usize = 3;
+
+/// Where a run's code words are: what the host compares frames' codes with
+/// and continues at.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+pub enum Codes<'run>
+{
+    /// Emitted code: each label's address by label, and each of
+    /// [`Stub::ALL`]'s shared copy.
+    Native
+    {
+        /// Each label's address.
+        labels: &'run [Word],
+        /// Each stub's address.
+        stubs: &'run [Word; Stub::ALL.len()],
+    },
+    /// An executor program and the function it was built from.
+    Executor(&'run Program, &'run Function),
+}
+
+impl Codes<'_>
+{
+    /// The code word of `label`; zero for a label never bound.
+    ///
+    /// # Specification
+    /// trivial.
+    fn label(
+        self,
+        label: Label,
+    ) -> Word
+    {
+        match self {
+            Self::Native { labels, .. } => labels
+                .get(usize::from(label))
+                .copied()
+                .unwrap_or(Word::ZERO),
+            Self::Executor(program, function) => {
+                program.code(function, label).unwrap_or(Word::ZERO)
+            },
+        }
+    }
+
+    /// The code word of `stub`'s shared copy.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stub(
+        self,
+        stub: Stub,
+    ) -> Word
+    {
+        match self {
+            Self::Native { stubs, .. } => stub.of(stubs),
+            Self::Executor(program, _) => program.stub(stub),
+        }
+    }
+}
+
+/// One run's host state: the function's callees, handlers and frame
+/// windows, where its code is, and the literals the run holds — the
+/// function's own, then those its calls made.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+pub struct Calls<'run>
+{
+    /// The callees, by the number a call stencil passes.
+    callees: &'run [Callee],
+    /// The handlers the function installs.
+    handlers: &'run [Handler],
+    /// Each frame label with its window's slot count.
+    windows: &'run [(Label, Slots)],
+    /// Where the run's code is.
+    codes: Codes<'run>,
+    /// The literals, by the family a literal object names.
+    literals: Vec<Literal>,
+}
+
+impl<'run> Calls<'run>
+{
+    /// The state of a run of `lowered` whose code is at `codes`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new(
+        lowered: &'run Lowered,
+        codes: Codes<'run>,
+    ) -> Self
+    {
+        Self {
+            callees: &lowered.callees,
+            handlers: &lowered.handlers,
+            windows: &lowered.windows,
+            codes,
+            literals: lowered.literals.clone(),
+        }
+    }
+
+    /// The literals the run holds, by the family a literal object names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn literals(&self) -> &[Literal]
+    {
+        &self.literals
+    }
+
+    /// The integer or boolean the operand `word` addresses.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for an object that is neither.
+    fn scalar(
+        &self,
+        word: Word,
+    ) -> Result<Scalar, Refusal>
+    {
+        let object = word.to_pointer::<Word>();
+        // SAFETY: an operand is a positive value, which addresses an object.
+        let header = Header::from_word(unsafe { *object });
+        match header.kind() {
+            Ok(Kind::Integer) => {
+                // SAFETY: an integer object holds its bits in its second word.
+                let bits = unsafe { *object.wrapping_add(1) };
+                Ok(Scalar::Integer(integer_literal(bits)))
+            },
+            Ok(Kind::Literal) => match usize::try_from(header.family())
+                .ok()
+                .and_then(|entry| self.literals.get(entry))
+            {
+                Some(&Literal::Integer(ref integer)) => Ok(Scalar::Integer(integer.clone())),
+                Some(&(Literal::Text(_) | Literal::Numeric(_))) | None => Err(Refusal::Operands),
+            },
+            Ok(Kind::Injection) if usize::from(header.arity()) == 1 => {
+                // SAFETY: an injection holds its one field after its header.
+                let field = unsafe { *object.wrapping_add(1) }.to_pointer::<Word>();
+                // SAFETY: a field is a positive value, which addresses an
+                // object.
+                let inner = Header::from_word(unsafe { *field });
+                let side = Side::try_from(Summand::from(usize::from(header.tag())))
+                    .map_err(|_summand| Refusal::Operands)?;
+                if inner.kind() == Ok(Kind::Tuple) && usize::from(inner.arity()) == 0 {
+                    Ok(Scalar::Boolean(side))
+                }
+                else {
+                    Err(Refusal::Operands)
+                }
+            },
+            Ok(_) | Err(_) => Err(Refusal::Operands),
+        }
+    }
+
+    /// Answer the call of callee `entry` on `first` and `second`, as many of
+    /// them as the callee takes.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for an operand the callee does not take, an
+    /// evaluation the prelude refuses or a control operation the run cannot
+    /// answer; [`Refusal::Heap`] or [`Refusal::Frames`] past a region's limit.
+    fn call(
+        &mut self,
+        runtime: &mut Runtime,
+        entry: Word,
+        first: Word,
+        second: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let callees = self.callees;
+        match *callees.get(usize::from(entry)).ok_or(Refusal::Operands)? {
+            Callee::Primitive(primitive) => self.primitive(runtime, primitive, first, second),
+            Callee::Perform {
+                ref signature,
+                ref operation,
+                reach,
+            } => {
+                let (capability, payload) = match reach {
+                    Reach::Nearest => (None, first),
+                    Reach::Capability => (Some(first), second),
+                };
+                self.perform(runtime, signature, operation, capability, payload)
+            },
+            Callee::Shift => self.shift(runtime),
+            Callee::Replay => self.replay(runtime, first),
+            Callee::Hold => allocate_cell(runtime, &[first]),
+            Callee::Access => {
+                let held = cell(first)?;
+                // SAFETY: a cell holds its value first.
+                let lent = unsafe { *held.wrapping_add(VALUE) };
+                allocate_cell(runtime, &[lent, Word::from(OPEN), Word::ZERO, first])
+            },
+            Callee::Resumed => {
+                settle(first, Word::from(RESUMED), second)?;
+                unit(runtime)
+            },
+            Callee::Aborted => {
+                settle(first, Word::from(ABORTED), Word::ZERO)?;
+                unit(runtime)
+            },
+            Callee::Ended { unwind } => self.ended(runtime, unwind, first, second),
+            Callee::Reify(ref shape) => self.reify(runtime, shape),
+        }
+    }
+
+    /// Evaluate `callee` on `first` and, for a binary primitive, `second`,
+    /// allocating the answer on `runtime`'s heap.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::call`].
+    fn primitive(
+        &mut self,
+        runtime: &mut Runtime,
+        callee: Primitive,
+        first: Word,
+        second: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let operands = if callee.arguments().len() == 2 {
+            Vec::from([self.scalar(first)?, self.scalar(second)?])
+        }
+        else {
+            Vec::from([self.scalar(first)?])
+        };
+        let borrowed: Vec<Scalar<&IntegerLiteral>> =
+            operands.iter().map(Scalar::borrowed).collect();
+        let answer = callee
+            .evaluate(&borrowed)
+            .map_err(|_error| Refusal::Operands)?;
+        let width = |_overflow| Refusal::Operands;
+        match answer {
+            Scalar::Integer(integer) => {
+                if let Some(bits) = integer_word(&integer) {
+                    let header = Header::new(
+                        Kind::Integer,
+                        Tag::try_from(0_usize).map_err(width)?,
+                        Arity::try_from(1_usize).map_err(width)?,
+                        Family::UNNAMED,
+                    );
+                    allocate(runtime, &[header.word(), bits])
+                }
+                else {
+                    let entry = self.literals.len();
+                    let header = Header::new(
+                        Kind::Literal,
+                        Tag::try_from(0_usize).map_err(width)?,
+                        Arity::try_from(0_usize).map_err(width)?,
+                        Family::try_from(entry).map_err(width)?,
+                    );
+                    let answer = allocate(runtime, &[header.word()])?;
+                    self.literals.push(Literal::Integer(integer));
+                    Ok(answer)
+                }
+            },
+            Scalar::Boolean(side) => {
+                let unit = Header::new(
+                    Kind::Tuple,
+                    Tag::try_from(0_usize).map_err(width)?,
+                    Arity::try_from(0_usize).map_err(width)?,
+                    Family::UNNAMED,
+                );
+                let injection = Header::new(
+                    Kind::Injection,
+                    Tag::try_from(usize::from(Summand::from(side))).map_err(width)?,
+                    Arity::try_from(1_usize).map_err(width)?,
+                    Family::UNNAMED,
+                );
+                let held = allocate(runtime, &[unit.word()])?;
+                allocate(runtime, &[injection.word(), held])
+            },
+        }
+    }
+
+    /// The handler whose frame resumes at `code`, when one does.
+    ///
+    /// # Specification
+    /// trivial.
+    fn handler(
+        &self,
+        code: Word,
+    ) -> Option<&'run Handler>
+    {
+        let codes = self.codes;
+        self.handlers
+            .iter()
+            .find(|handler| codes.label(handler.label) == code)
+    }
+
+    /// The slot count of the window a frame resuming at `code` holds second,
+    /// or none for a frame holding a value there.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a code the function never pushes.
+    fn window(
+        &self,
+        code: Word,
+    ) -> Result<Option<Slots>, Refusal>
+    {
+        let codes = self.codes;
+        if Stub::ALL.iter().any(|&stub| codes.stub(stub) == code) {
+            return Ok(None);
+        }
+        self.windows
+            .iter()
+            .find(|&&(label, _)| codes.label(label) == code)
+            .map(|&(_, slots)| Some(slots))
+            .ok_or(Refusal::Operands)
+    }
+
+    /// Perform `operation` of `signature` through `capability`, or by the
+    /// nearest delimiter when there is none: capture from its handler's
+    /// frame up, write `payload` into the handler's window and continue at
+    /// the clause with the stack in hand.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] when no handler of the run answers: the nearest
+    /// delimiter handles another interface or lacks the operation, or the
+    /// capability is the host's.
+    fn perform(
+        &self,
+        runtime: &mut Runtime,
+        signature: &EffectName,
+        operation: &OperationName,
+        capability: Option<Word>,
+        payload: Word,
+    ) -> Result<Word, Refusal>
+    {
+        if let Some(capability) = capability
+            && kind(capability)? != Kind::Capability
+        {
+            return Err(Refusal::Operands);
+        }
+        let reset = self.codes.stub(Stub::Reset);
+        let base = runtime.frame_base();
+        let mut frame = runtime.frame_top();
+        let mut selected: Option<(*mut Word, *mut Word, &Clause)> = None;
+        while frame > base {
+            frame = frame.wrapping_sub(2);
+            // SAFETY: every two words from the base mark to the top are a
+            // frame.
+            let code = unsafe { *frame };
+            if capability.is_none() && code == reset {
+                break;
+            }
+            let Some(handler) = self.handler(code)
+            else {
+                continue;
+            };
+            // SAFETY: a handler's frame holds its window second.
+            let window = unsafe { *frame.wrapping_add(1) }.to_pointer::<Word>();
+            let installed = handler
+                .capability
+                .map(|slot| slot_in(window, slot))
+                .transpose()?
+                // SAFETY: the capability's slot lies inside the handler's
+                // window.
+                .map(|at| unsafe { *at });
+            if capability.is_some() && installed != capability {
+                continue;
+            }
+            if handler.signature == *signature {
+                selected = handler
+                    .clauses
+                    .iter()
+                    .find(|clause| clause.operation == *operation)
+                    .map(|clause| (frame, window, clause));
+            }
+            break;
+        }
+        let (frame, window, clause) = selected.ok_or(Refusal::Operands)?;
+        let stack = self.capture(runtime, frame)?;
+        runtime.set_frame_top(frame);
+        let at = slot_in(window, clause.payload)?;
+        // SAFETY: the payload's slot lies inside the handler's window.
+        unsafe {
+            *at = payload;
+        }
+        runtime.jump(self.codes.label(clause.label), window);
+        Ok(stack)
+    }
+
+    /// Capture from the nearest reset's frame up; answers the stack.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] when no reset is reachable.
+    fn shift(
+        &self,
+        runtime: &mut Runtime,
+    ) -> Result<Word, Refusal>
+    {
+        let reset = self.codes.stub(Stub::Reset);
+        let base = runtime.frame_base();
+        let mut frame = runtime.frame_top();
+        while frame > base {
+            frame = frame.wrapping_sub(2);
+            // SAFETY: every two words from the base mark to the top are a
+            // frame.
+            if unsafe { *frame } == reset {
+                let stack = self.capture(runtime, frame)?;
+                runtime.set_frame_top(frame);
+                return Ok(stack);
+            }
+        }
+        Err(Refusal::Operands)
+    }
+
+    /// Copy the frames from `from` to the top into a stack.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a frame the function never pushes; as
+    /// [`stack`] otherwise.
+    fn capture(
+        &self,
+        runtime: &mut Runtime,
+        from: *mut Word,
+    ) -> Result<Word, Refusal>
+    {
+        let top = runtime.frame_top();
+        let mut frames = Vec::new();
+        let mut cursor = from;
+        while cursor < top {
+            // SAFETY: every two words from the base mark to the top are a
+            // frame.
+            let code = unsafe { *cursor };
+            // SAFETY: as above.
+            let word = unsafe { *cursor.wrapping_add(1) };
+            frames.push(Frame {
+                code,
+                word,
+                window: self.window(code)?,
+            });
+            cursor = cursor.wrapping_add(2);
+        }
+        stack(
+            runtime,
+            Word::from_pointer(from),
+            Word::from_pointer(top),
+            &frames,
+        )
+    }
+
+    /// Build the reified stack `shape` describes, innermost first: each
+    /// application frame takes the call's next argument, which lie popped at
+    /// the frame region's top in order, and each bind frame resumes at its
+    /// label in a copy of the window in reach. No frame of the region is in
+    /// it, so a replay moves no mark.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a bind label the function never pushes; as
+    /// [`stack`] otherwise.
+    fn reify(
+        &self,
+        runtime: &mut Runtime,
+        shape: &[Reified],
+    ) -> Result<Word, Refusal>
+    {
+        let window = Word::from_pointer(runtime.environment());
+        let arguments = runtime.frame_top();
+        let mut remaining = shape
+            .iter()
+            .filter(|&&frame| frame == Reified::Apply)
+            .count();
+        let mut frames = Vec::with_capacity(shape.len());
+        for &frame in shape.iter().rev() {
+            frames.push(match frame {
+                Reified::Apply => {
+                    remaining = remaining.saturating_sub(1);
+                    Frame {
+                        code: self.codes.stub(Stub::Apply),
+                        // SAFETY: the call's arguments lie at the top, popped
+                        // but intact while the host runs.
+                        word: unsafe { *arguments.wrapping_add(remaining) },
+                        window: None,
+                    }
+                },
+                Reified::Bind(label) => {
+                    let code = self.codes.label(label);
+                    Frame {
+                        code,
+                        word: window,
+                        window: self.window(code)?,
+                    }
+                },
+            });
+        }
+        stack(runtime, Word::ZERO, Word::ZERO, &frames)
+    }
+
+    /// Push the frames of `stack` above the top, each window copied afresh
+    /// and each mark into the captured frames moved with them; answers the
+    /// stack.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a value that is no stack;
+    /// [`Refusal::Frames`] or [`Refusal::Heap`] past a region's limit.
+    fn replay(
+        &self,
+        runtime: &mut Runtime,
+        stack: Word,
+    ) -> Result<Word, Refusal>
+    {
+        if kind(stack)? != Kind::Stack {
+            return Err(Refusal::Operands);
+        }
+        let object = stack.to_pointer::<Word>();
+        // SAFETY: a stack's first words are its header and its captured
+        // frames' base and top.
+        let header = Header::from_word(unsafe { *object });
+        // SAFETY: as above.
+        let low = usize::from(unsafe { *object.wrapping_add(1) });
+        // SAFETY: as above.
+        let high = usize::from(unsafe { *object.wrapping_add(2) });
+        let count = usize::from(header.arity());
+        let base = runtime.frame_top();
+        let top = base.wrapping_add(count.saturating_mul(2));
+        if top > runtime.frame_limit() {
+            return Err(Refusal::Frames);
+        }
+        let mut copies: Vec<(Word, Word)> = Vec::new();
+        for index in 0 .. count {
+            let at = object.wrapping_add(STACK_PREFIX.saturating_add(index.saturating_mul(2)));
+            // SAFETY: the stack holds its frames after its prefix.
+            let code = unsafe { *at };
+            // SAFETY: as above.
+            let word = unsafe { *at.wrapping_add(1) };
+            let resumed = match self.window(code)? {
+                None => word,
+                Some(slots) => {
+                    if let Some(&(_, fresh)) = copies.iter().find(|&&(held, _)| held == word) {
+                        fresh
+                    }
+                    else {
+                        let stored = word.to_pointer::<Word>();
+                        let mut words = Vec::with_capacity(slots.0);
+                        for slot in 0 .. slots.0 {
+                            // SAFETY: the stored window holds its slots.
+                            let held = unsafe { *stored.wrapping_add(slot) };
+                            let address = usize::from(held);
+                            words.push(if address > low && address <= high {
+                                Word::from_pointer(
+                                    base.wrapping_byte_add(address.wrapping_sub(low)),
+                                )
+                            }
+                            else {
+                                held
+                            });
+                        }
+                        let fresh = allocate(runtime, &words)?;
+                        copies.push((word, fresh));
+                        fresh
+                    }
+                },
+            };
+            let frame = base.wrapping_add(index.saturating_mul(2));
+            // SAFETY: the frames fit below the region's limit.
+            unsafe {
+                *frame = code;
+            }
+            // SAFETY: as above.
+            unsafe {
+                *frame.wrapping_add(1) = resumed;
+            }
+        }
+        runtime.set_frame_top(top);
+        Ok(stack)
+    }
+
+    /// Pop an access's frame with `answer` in hand and the view `view`: a
+    /// resumed view's value is written into its held cell and the answer
+    /// passes on; an aborted one's answer is saved in an answer frame and the
+    /// run continues at `unwind`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a view never ended; [`Refusal::Frames`]
+    /// past the frame region's limit.
+    fn ended(
+        &self,
+        runtime: &mut Runtime,
+        unwind: Label,
+        answer: Word,
+        view: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let object = cell(view)?;
+        // SAFETY: a view holds its state, the value written back and its held
+        // cell after its value.
+        let state = usize::from(unsafe { *object.wrapping_add(STATE) });
+        // SAFETY: as above.
+        let written = unsafe { *object.wrapping_add(WRITTEN) };
+        // SAFETY: as above.
+        let held = unsafe { *object.wrapping_add(HELD) };
+        match state {
+            RESUMED => {
+                let target = cell(held)?;
+                // SAFETY: a cell holds its value first.
+                unsafe {
+                    *target.wrapping_add(VALUE) = written;
+                }
+                Ok(answer)
+            },
+            ABORTED => {
+                let top = runtime.frame_top();
+                let next = top.wrapping_add(2);
+                if next > runtime.frame_limit() {
+                    return Err(Refusal::Frames);
+                }
+                let code = self.codes.stub(Stub::Answer);
+                // SAFETY: the frame fits below the region's limit.
+                unsafe {
+                    *top = code;
+                }
+                // SAFETY: as above.
+                unsafe {
+                    *top.wrapping_add(1) = answer;
+                }
+                runtime.set_frame_top(next);
+                runtime.jump(self.codes.label(unwind), runtime.environment());
+                Ok(answer)
+            },
+            _ => Err(Refusal::Operands),
+        }
+    }
+}
+
+/// A frame a stack holds: its code word, its second word, and the slot count
+/// of the window that word addresses, when it addresses one.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Frame
+{
+    /// The code the frame resumes.
+    code: Word,
+    /// Its second word: a window or a value.
+    word: Word,
+    /// The window's slot count, or none for a value.
+    window: Option<Slots>,
+}
+
+/// Allocate a stack of `frames`, bottom first, captured from the region
+/// `[base, top)`: each window the frames resume in is copied once after
+/// them, however many frames share it.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Operands`] for more frames than the arity field holds;
+/// [`Refusal::Heap`] past the heap's limit.
+fn stack(
+    runtime: &mut Runtime,
+    base: Word,
+    top: Word,
+    frames: &[Frame],
+) -> Result<Word, Refusal>
+{
+    let object = runtime.heap_top();
+    let mut copies: Vec<(Word, Slots, usize)> = Vec::new();
+    let mut length = STACK_PREFIX.saturating_add(frames.len().saturating_mul(2));
+    for frame in frames {
+        if let Some(slots) = frame.window
+            && !copies.iter().any(|&(held, ..)| held == frame.word)
+        {
+            copies.push((frame.word, slots, length));
+            length = length.saturating_add(slots.0);
+        }
+    }
+    let arity = Arity::try_from(frames.len()).map_err(|_overflow| Refusal::Operands)?;
+    let mut words = Vec::with_capacity(length);
+    words.push(object_header(Kind::Stack, arity)?);
+    words.push(base);
+    words.push(top);
+    for frame in frames {
+        words.push(frame.code);
+        words.push(
+            copies
+                .iter()
+                .find(|&&(held, ..)| frame.window.is_some() && held == frame.word)
+                .map_or(frame.word, |&(_, _, offset)| {
+                    Word::from_pointer(object.wrapping_add(offset))
+                }),
+        );
+    }
+    for &(word, slots, _) in &copies {
+        let window = word.to_pointer::<Word>();
+        for slot in 0 .. slots.0 {
+            // SAFETY: the window holds the slots its frame's block reads.
+            words.push(unsafe { *window.wrapping_add(slot) });
+        }
+    }
+    allocate(runtime, &words)
+}
+
+/// The kind of the object `word` addresses.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Operands`] for a header no kind names.
+fn kind(word: Word) -> Result<Kind, Refusal>
+{
+    // SAFETY: a value addresses an object, whose first word is its header.
+    Header::from_word(unsafe { *word.to_pointer::<Word>() })
+        .kind()
+        .map_err(|_unknown| Refusal::Operands)
+}
+
+/// The header word of an object of `kind` with `fields` fields.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Operands`] never in practice: a zero tag fits.
+fn object_header(
+    kind: Kind,
+    fields: Arity,
+) -> Result<Word, Refusal>
+{
+    let tag = Tag::try_from(0_usize).map_err(|_overflow| Refusal::Operands)?;
+    Ok(Header::new(kind, tag, fields, Family::UNNAMED).word())
+}
+
+/// The cell `word` addresses.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Operands`] for an object that is no cell.
+fn cell(word: Word) -> Result<*mut Word, Refusal>
+{
+    if kind(word)? == Kind::Cell {
+        Ok(word.to_pointer::<Word>())
+    }
+    else {
+        Err(Refusal::Operands)
+    }
+}
+
+/// Allocate a cell holding `words` after its header.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Heap`] past the heap's limit.
+fn allocate_cell(
+    runtime: &mut Runtime,
+    words: &[Word],
+) -> Result<Word, Refusal>
+{
+    let fields = Arity::try_from(words.len()).map_err(|_overflow| Refusal::Operands)?;
+    let mut object = Vec::with_capacity(words.len().saturating_add(1));
+    object.push(object_header(Kind::Cell, fields)?);
+    object.extend_from_slice(words);
+    allocate(runtime, &object)
+}
+
+/// End the view `view` in `state`, recording `written` for a resume.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Operands`] for a view already ended.
+fn settle(
+    view: Word,
+    state: Word,
+    written: Word,
+) -> Result<(), Refusal>
+{
+    let object = cell(view)?;
+    // SAFETY: a view holds its state and the value written back after its
+    // value.
+    if usize::from(unsafe { *object.wrapping_add(STATE) }) != OPEN {
+        return Err(Refusal::Operands);
+    }
+    // SAFETY: as above.
+    unsafe {
+        *object.wrapping_add(STATE) = state;
+    }
+    // SAFETY: as above.
+    unsafe {
+        *object.wrapping_add(WRITTEN) = written;
+    }
+    Ok(())
+}
+
+/// Allocate the unit an eliminator answers.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Heap`] past the heap's limit.
+fn unit(runtime: &mut Runtime) -> Result<Word, Refusal>
+{
+    let fields = Arity::try_from(0_usize).map_err(|_overflow| Refusal::Operands)?;
+    allocate(runtime, &[object_header(Kind::Tuple, fields)?])
+}
+
+/// The slot `slot` of `window`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Operands`] for a slot past the address width.
+fn slot_in(
+    window: *mut Word,
+    slot: Slot,
+) -> Result<*mut Word, Refusal>
+{
+    let offset = usize::try_from(slot.0).map_err(|_overflow| Refusal::Operands)?;
+    Ok(window.wrapping_add(offset))
+}
+
+/// Allocate `words` at `runtime`'s heap top, and answer their address.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Heap`] when the words would pass the heap's limit.
+fn allocate(
+    runtime: &mut Runtime,
+    words: &[Word],
+) -> Result<Word, Refusal>
+{
+    let top = runtime.heap_top();
+    let next = top.wrapping_add(words.len());
+    if next > runtime.heap_limit() {
+        return Err(Refusal::Heap);
+    }
+    for (offset, &word) in words.iter().enumerate() {
+        // SAFETY: the words fit below the heap's limit, in the region the run
+        // owns.
+        unsafe {
+            *top.wrapping_add(offset) = word;
+        }
+    }
+    runtime.set_heap_top(next);
+    Ok(Word::from_pointer(top))
+}
+
+/// The integer literal whose two's-complement bits `bits` holds.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub fn integer_literal(bits: Word) -> IntegerLiteral
+{
+    let integer = i64::from(bits);
+    let sign = if integer < 0_i64 {
+        Sign::Negative
+    }
+    else {
+        Sign::NonNegative
+    };
+    let magnitude = Magnitude::from_decimal_text(integer.unsigned_abs().to_string())
+        .unwrap_or_else(Magnitude::zero);
+    IntegerLiteral::new(sign, magnitude)
+}
+
+/// The host entry every call stencil of a run enters: [`Calls::call`] on the
+/// state the record's context addresses.
+///
+/// # Specification
+/// - requires: the record's context addresses the run's live [`Calls`].
+/// - ensures: as [`gandr_runtime_stencils::Host`]'s contract states.
+/// - executable: none — the entry runs inside a chain of tail calls no
+///   predicate observes.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a differential against the L machine over corpus programs
+///   calling primitives on both tiers.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+pub extern "C" fn enter(
+    runtime: *mut Runtime,
+    entry: Word,
+    first: Word,
+    second: Word,
+) -> Word
+{
+    // SAFETY: the call stencil passes the run's live record, which no other
+    // reference reaches during the call.
+    let record = unsafe { &mut *runtime };
+    let calls = record.context().to_pointer::<Calls<'_>>();
+    // SAFETY: the run made the record with its live state as the context.
+    let state = unsafe { &mut *calls };
+    match state.call(record, entry, first, second) {
+        Ok(answer) => answer,
+        Err(refusal) => {
+            record.refuse(refusal);
+            Word::ZERO
+        },
+    }
+}

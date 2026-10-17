@@ -7,13 +7,18 @@
 //! | ---------- | -------- |
 //! | a value delivered | `ret`, `halt`, `unmatched` |
 //! | a binder loaded as a continuation | `pushk`, `bind`, `alias`, `alias_top` |
-//! | constructor dispatch | `match`, `field`, `match_tag` |
+//! | constructor dispatch | `match`, `field`, `match_tag`, `select_field` |
 //! | constructor introduction | `push`, `ctor1`, `ctor2`, `ctor3`, `ctor_n`, `const` |
 //! | a variable read | `var` |
 //! | a closure introduced and entered | `closure`, `enter_apply`, `enter_force`, `enter_fix` |
-//! | an observation | `invoke_apply`, `invoke_force`, `invoke_force_value`, `apply_frame` |
+//! | an observation | `invoke_apply`, `invoke_force`, `invoke_force_value`, `apply_frame`, `argument_frame` |
 //! | an observation's continuation loaded | `pushf`, `push_apply`, `push_force`, `push_fields`, `shrink`, `shrink_top`, `mark` |
-//! | an exit | `heap_exhausted`, `frames_exhausted`, `fuel_exhausted` |
+//! | a loop | `jump` |
+//! | an exit | `heap_exhausted`, `frames_exhausted`, `fuel_exhausted`, `stuck` |
+//!
+//! An observation checks that it observes a closure: an opaque constant, or
+//! any other object, takes the stuck exit rather than a code word it does not
+//! hold.
 //!
 //! Operand A and B are the instruction's two holes; each stencil's
 //! documentation says which it reads and as what. A window slot, a field
@@ -27,6 +32,7 @@ use crate::holes::hole_alt;
 use crate::holes::hole_frames_exhausted;
 use crate::holes::hole_heap_exhausted;
 use crate::holes::hole_next;
+use crate::holes::hole_stuck;
 use crate::holes::operand;
 use crate::holes::resume;
 use crate::layout;
@@ -639,23 +645,38 @@ entry!(
 );
 
 /// Observe the closure `function` by application to `argument`: enter its
-/// code with the closure in the environment register.
+/// code with the closure in the environment register; take the stuck exit,
+/// `function` in hand, when `function` is no closure.
 macro_rules! apply {
-    ($runtime:ident, $heap:expr, $frames:expr, $function:expr, $argument:expr) => {{
+    (
+        $runtime:ident, $heap:expr, $frames:expr, $environment:expr, $function:expr, $argument:expr
+    ) => {{
         let function: Word = $function;
+        let argument: Word = $argument;
         let object = function.to_pointer::<Word>();
+        // SAFETY: a positive value in hand addresses an object.
+        let header = usize::from(unsafe { *object });
+        if header & layout::KIND_MASK != layout::KIND_CLOSURE {
+            become hole_stuck($runtime, $heap, $frames, $environment, function)
+        }
         // SAFETY: a closure's second word is its entry's code word.
         let code = unsafe { *object.wrapping_add(1) };
-        resume!(code, $runtime, $heap, $frames, object, $argument)
+        resume!(code, $runtime, $heap, $frames, object, argument)
     }};
 }
 
 /// Observe the closure `thunk` by a force: enter its code with the closure
-/// in the environment register.
+/// in the environment register; take the stuck exit, `thunk` in hand, when
+/// `thunk` is no closure.
 macro_rules! force {
-    ($runtime:ident, $heap:expr, $frames:expr, $thunk:expr) => {{
+    ($runtime:ident, $heap:expr, $frames:expr, $environment:expr, $thunk:expr) => {{
         let thunk: Word = $thunk;
         let object = thunk.to_pointer::<Word>();
+        // SAFETY: a positive value in hand addresses an object.
+        let header = usize::from(unsafe { *object });
+        if header & layout::KIND_MASK != layout::KIND_CLOSURE {
+            become hole_stuck($runtime, $heap, $frames, $environment, thunk)
+        }
         // SAFETY: a closure's second word is its entry's code word.
         let code = unsafe { *object.wrapping_add(1) };
         resume!(code, $runtime, $heap, $frames, object, Word::ZERO)
@@ -691,7 +712,7 @@ pub extern "rust-preserve-none" fn stencil_invoke_apply(
     let argument_slot = environment.wrapping_add(operand!(runtime, B));
     // SAFETY: the lowering assigned slot B inside the window.
     let argument = unsafe { *argument_slot };
-    apply!(runtime, heap, frames, function, argument)
+    apply!(runtime, heap, frames, environment, function, argument)
 }
 
 /// Force the thunk in slot A.
@@ -720,7 +741,7 @@ pub extern "rust-preserve-none" fn stencil_invoke_force(
     let slot = environment.wrapping_add(operand!(runtime, A));
     // SAFETY: the lowering assigned slot A inside the window.
     let thunk = unsafe { *slot };
-    force!(runtime, heap, frames, thunk)
+    force!(runtime, heap, frames, environment, thunk)
 }
 
 /// Force the thunk in hand. A force frame resumes here, so it is also the
@@ -742,11 +763,11 @@ pub extern "rust-preserve-none" fn stencil_invoke_force_value(
     runtime: *mut Runtime,
     heap: *mut Word,
     frames: *mut Word,
-    _environment: *mut Word,
+    environment: *mut Word,
     value: Word,
 ) -> Word
 {
-    force!(runtime, heap, frames, value)
+    force!(runtime, heap, frames, environment, value)
 }
 
 /// The shared stub an application frame resumes: the function arrives in
@@ -776,8 +797,42 @@ pub extern "rust-preserve-none" fn stencil_apply_frame(
         runtime,
         heap,
         frames,
+        environment,
         value,
         Word::from_pointer(environment)
+    )
+}
+
+/// The shared stub a fold's cell frame resumes: the folded tail arrives in
+/// hand as the argument, the closure that answers the cell in the frame's
+/// second word, which is the environment register on resumption.
+///
+/// # Specification
+/// - requires: the environment register holds a closure.
+/// - ensures: as [`stencil_invoke_apply`], the value in hand the argument.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a differential against the L machine over corpus programs
+///   folding native lists of more than one cell.
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_argument_frame(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    apply!(
+        runtime,
+        heap,
+        frames,
+        environment,
+        Word::from_pointer(environment),
+        value
     )
 }
 
@@ -1078,6 +1133,278 @@ pub extern "rust-preserve-none" fn stencil_mark(
     become hole_next(runtime, heap, frames, environment, value)
 }
 
+/// Select a record's field by label: operand A addresses the selection's
+/// table, whose first word counts the head entries after it, each the
+/// labelled field's position plus one in the record of that head, or zero
+/// when the head has no such field. The field in hand at `hole_alt`; the
+/// next instruction, with the record still in hand, when the head names no
+/// such field.
+///
+/// # Specification
+/// - requires: the value register addresses an object.
+/// - ensures: control reaches `hole_alt` with the labelled field in hand
+///   exactly when the object's family names a head entry that carries the
+///   label.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a differential against the L machine over corpus programs
+///   selecting record fields; a wrong position selects the wrong field.
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_select_field(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let object = value.to_pointer::<Word>();
+    // SAFETY: a positive value in hand addresses an object.
+    let header = usize::from(unsafe { *object });
+    let entry = header.wrapping_shr(layout::FAMILY_SHIFT).wrapping_sub(1);
+    let table = address!(runtime, A).to_pointer::<Word>();
+    // SAFETY: the table's first word is its entry count.
+    let count = usize::from(unsafe { *table });
+    if entry < count {
+        // SAFETY: the entry is below the count, so its word lies in the table.
+        let position = usize::from(unsafe { *table.wrapping_add(entry.wrapping_add(1)) });
+        if position != 0 {
+            // SAFETY: a non-zero entry names a field of the head it indexes.
+            let field = unsafe { *object.wrapping_add(position) };
+            become hole_alt(runtime, heap, frames, environment, field)
+        }
+    }
+    become hole_next(runtime, heap, frames, environment, value)
+}
+
+/// Continue at `hole_alt` unconditionally: a fold's step back to its test.
+///
+/// # Specification
+/// - ensures: control reaches `hole_alt` with the registers unchanged.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a differential against the L machine over corpus programs
+///   folding native lists; a fold that never steps back answers its first cell
+///   alone.
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_jump(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    become hole_alt(runtime, heap, frames, environment, value)
+}
+
+/// Select a tuple's component A: the component in hand at `hole_alt`; the
+/// next instruction, with the value still in hand, when the value is no
+/// tuple or holds no component A.
+///
+/// # Specification
+/// - requires: the value register addresses an object.
+/// - ensures: control reaches `hole_alt` with component A in hand exactly when
+///   the object is a tuple of more than A components.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a differential against the L machine over corpus programs
+///   projecting tuple components; a wrong offset selects a neighbour.
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_select_component(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let object = value.to_pointer::<Word>();
+    // SAFETY: a positive value in hand addresses an object.
+    let header = usize::from(unsafe { *object });
+    let component = operand!(runtime, A);
+    let arity = header.wrapping_shr(layout::ARITY_SHIFT) & layout::ARITY_MASK;
+    if header & layout::KIND_MASK == layout::KIND_TUPLE && component < arity {
+        // SAFETY: the tuple holds more than `component` fields.
+        let field = unsafe { *object.wrapping_add(component.wrapping_add(1)) };
+        become hole_alt(runtime, heap, frames, environment, field)
+    }
+    become hole_next(runtime, heap, frames, environment, value)
+}
+
+/// Deliver the value in hand to the frame region's top frame: resume it in
+/// its window. A loaded selection's block ends here, its continuation's
+/// frames below.
+///
+/// # Specification
+/// - requires: a frame — the sentinel at the least — lies below the frame
+///   region's top.
+/// - ensures: control resumes at the popped frame's code in its window, one
+///   unit of fuel spent; or the fuel exit is taken.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a differential against the L machine over corpus programs
+///   whose selection meets a loaded continuation.
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_pop(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    _environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let frame = frames.wrapping_sub(2);
+    // SAFETY: two words below the top are a frame.
+    let code = unsafe { *frame };
+    // SAFETY: as above.
+    let resumed = unsafe { *frame.wrapping_add(1) }.to_pointer::<Word>();
+    resume!(code, runtime, heap, frame, resumed, value)
+}
+
+/// Call the host: operand A is the call's entry in the run's host table,
+/// operand B the count of arguments pushed before it, the first pushed
+/// first. The first two pass as the host's operands; every argument lies at
+/// the frame region's top the host reads, popped but intact while it runs.
+/// The heap's top, the frame region's top and the window cross in the
+/// runtime record; the host's answer arrives in hand at the next
+/// instruction, or at the code word the host named, or the status the host
+/// wrote names the exit.
+///
+/// # Specification
+/// - requires: B arguments lie below the frame region's top; the record's host
+///   entry follows [`crate::Host`]'s contract.
+/// - ensures: the arguments are popped; the host's answer is in hand, the
+///   heap's and the frame region's tops are the host's, and control is at the
+///   code word the host named, one unit of fuel spent, or else at the next
+///   instruction; or the heap or frame exit is taken when the host wrote that
+///   status, the stuck exit when it wrote any other.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a differential against the L machine over corpus programs
+///   calling primitives, unary and binary, booleans and integers past 64 bits
+///   among the answers, and performing operations their handlers answer.
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_call(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let count = operand!(runtime, B);
+    let base = frames.wrapping_sub(count);
+    let first = if count > 0_usize {
+        // SAFETY: the lowering pushed the first argument at the base.
+        unsafe { *base }
+    }
+    else {
+        Word::ZERO
+    };
+    let second = if count > 1_usize {
+        // SAFETY: a second argument lies above the first.
+        unsafe { *base.wrapping_add(1) }
+    }
+    else {
+        Word::ZERO
+    };
+    // SAFETY: the runtime record outlives the run.
+    unsafe {
+        (*runtime).heap_top = heap;
+    }
+    // SAFETY: as above.
+    unsafe {
+        (*runtime).frame_top = base;
+    }
+    // SAFETY: as above.
+    unsafe {
+        (*runtime).environment = environment;
+    }
+    // SAFETY: as above.
+    let host = unsafe { (*runtime).host };
+    let answer = host(runtime, Word::from(operand!(runtime, A)), first, second);
+    // SAFETY: as above; the host wrote the heap's and the frame region's new
+    // tops, its status and where the run continues.
+    let top = unsafe { (*runtime).heap_top };
+    // SAFETY: as above.
+    let frames = unsafe { (*runtime).frame_top };
+    // SAFETY: as above.
+    let status = unsafe { (*runtime).status };
+    // SAFETY: as above.
+    let jump = unsafe { (*runtime).jump };
+    if status == layout::STATUS_RUNNING {
+        if jump == Word::ZERO {
+            become hole_next(runtime, top, frames, environment, answer)
+        }
+        // SAFETY: as above.
+        unsafe {
+            (*runtime).jump = Word::ZERO;
+        }
+        // SAFETY: as above.
+        let window = unsafe { (*runtime).jump_window };
+        resume!(jump, runtime, top, frames, window, answer);
+    }
+    if status == layout::STATUS_HEAP_EXHAUSTED {
+        become hole_heap_exhausted(runtime, top, frames, environment, value)
+    }
+    if status == layout::STATUS_FRAMES_EXHAUSTED {
+        become hole_frames_exhausted(runtime, top, frames, environment, value)
+    }
+    // A refusal observed no value: the stuck exit's word is zero.
+    become hole_stuck(runtime, top, frames, environment, Word::ZERO)
+}
+
+/// Answer the value an aborted access's frame saved: the frame resumes here,
+/// the saved answer as its window word, when its unwind delivers its unit,
+/// and the answer goes on to the frame below, as the L machine's answer
+/// frame discards the unwind's unit.
+///
+/// # Specification
+/// - requires: a frame — the sentinel at the least — lies below the frame
+///   region's top.
+/// - ensures: control resumes at that frame's code in its window with the saved
+///   answer in hand, one unit of fuel spent; or the fuel exit is taken.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a differential against the L machine over corpus programs
+///   aborting a view; an answer frame passing the unit on answers the unit.
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_answer_frame(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    _value: Word,
+) -> Word
+{
+    let answer = Word::from_pointer(environment);
+    let frame = frames.wrapping_sub(2);
+    // SAFETY: two words below the top are a frame.
+    let code = unsafe { *frame };
+    // SAFETY: as above.
+    let resumed = unsafe { *frame.wrapping_add(1) }.to_pointer::<Word>();
+    resume!(code, runtime, heap, frame, resumed, answer)
+}
+
 /// Generate an exit: record the status and the heap's top, and return the
 /// value in hand to the entry.
 macro_rules! exit {
@@ -1140,4 +1467,10 @@ exit!(
     layout::STATUS_FUEL_EXHAUSTED,
     "The exit a code-word jump takes when the run's fuel is spent.",
     "- witness: `tests::exits::a_run_without_fuel_exits_by_name`"
+);
+exit!(
+    stencil_stuck,
+    layout::STATUS_STUCK,
+    "The exit an observation takes on a value it does not observe, that value in hand, and a host call on operands it refuses, zero in hand.",
+    "- witness: `tests::exits::an_opaque_observation_exits_stuck`"
 );

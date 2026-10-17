@@ -975,13 +975,14 @@ impl<'source> Program<'source>
     }
 
     /// Run the commands on a tier the choice names, forcing a suspended
-    /// answer, and spell the terminal.
+    /// answer, and spell the terminal; or blame the opaque constant a run
+    /// observed or answers outside any suspension, as the machine's run does.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// The tier's [`Declined`].
+    /// The tier's [`Declined`], but for [`Declined::Opaque`], which blames.
     fn tiered(
         &self,
         constant: ConstantIndex,
@@ -1000,10 +1001,24 @@ impl<'source> Program<'source>
                 evaluate_on(tier, &self.arena, &self.definitions, root, fuel, store)
             },
         };
-        let terminal = run(returned, &mut store)?;
+        let answer = |root, store: &mut Store| match run(root, store) {
+            Ok(terminal) => Ok(match Self::opaque_within(store, terminal) {
+                Maybe::Present(met) => Err(self.met(met)),
+                Maybe::Absent(carried::Absent::Carried) => Ok(terminal),
+            }),
+            Err(Declined::Opaque(met)) => Ok(Err(self.met(met))),
+            Err(declined) => Err(declined),
+        };
+        let terminal = match answer(returned, &mut store)? {
+            Ok(terminal) => terminal,
+            Err(blamed) => return Ok(blamed),
+        };
         let terminal = match store.value(terminal) {
             Some(&(HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. })) => {
-                run(forced, &mut store)?
+                match answer(forced, &mut store)? {
+                    Ok(forced) => forced,
+                    Err(blamed) => return Ok(blamed),
+                }
             },
             Some(
                 &(HeapValue::Literal(_)
@@ -1297,7 +1312,7 @@ impl<'source> Program<'source>
     ) -> Result<HeapValueId, Evaluation<'source>>
     {
         match outcome {
-            Outcome::Halted(value) => match Self::opaque_within(machine, value) {
+            Outcome::Halted(value) => match Self::opaque_within(machine.store(), value) {
                 Maybe::Present(constant) => Err(self.met(constant)),
                 Maybe::Absent(carried::Absent::Carried) => Ok(value),
             },
@@ -1352,20 +1367,20 @@ impl<'source> Program<'source>
     ///   order; a goal underneath an unforced thunk remains unobserved.
     /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
-    #[spec(ensures: |ret| match machine.store().value(value) {
+    #[spec(ensures: |ret| match store.value(value) {
         Some(&HeapValue::Opaque(constant)) => ret == Maybe::Present(constant),
         Some(&HeapValue::Constructed { .. }) => true,
         Some(&(HeapValue::Stack { .. } | HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. } | HeapValue::Capability)) | None =>
             matches!(ret, Maybe::Absent(carried::Absent::Carried)),
     })]
     fn opaque_within(
-        machine: &Machine<'_>,
+        store: &Store,
         value: HeapValueId,
     ) -> Maybe<ConstantIndex, carried::Absent>
     {
         let mut pending = Vec::from([value]);
         while let Some(id) = pending.pop() {
-            match machine.store().value(id) {
+            match store.value(id) {
                 Some(&HeapValue::Opaque(constant)) => return Maybe::Present(constant),
                 Some(&HeapValue::Constructed { ref fields, .. }) => {
                     pending.extend(fields.iter().rev().copied());
@@ -1867,8 +1882,6 @@ mod tests
     use gandr_core_sequent::MachineFault;
     use gandr_core_sequent::Stuck;
     use gandr_kernel_term::ConstantIndex;
-    use gandr_runtime_emitter::Declined;
-    use gandr_runtime_emitter::Form;
     use gandr_runtime_emitter::PATCHER;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_grammar::built_in;
@@ -1996,10 +2009,9 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
         }
     }
 
-    /// Every engine spells a run as the machine does: values, functions,
-    /// thunks and applications answer on each tier with the machine's
-    /// evaluation, and a text, which no stencil builds, is declined by name
-    /// rather than answered wrongly.
+    /// Every engine spells a run as the machine does: values, a text,
+    /// functions, thunks and applications answer on each tier with the
+    /// machine's evaluation.
     #[test]
     fn every_engine_spells_a_run_alike()
     {
@@ -2028,16 +2040,7 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
                 .expect("the machine never declines");
             for &engine in tiers {
                 let ran = values.evaluate_on(constant, engine);
-                if name == Maybe::Present(SurfaceName::from("greeting")) {
-                    assert_eq!(
-                        Err(Declined::Lowering(Form::NonIntegerLiteral)),
-                        ran,
-                        "{engine:?} declines the text by name"
-                    );
-                }
-                else {
-                    assert_eq!(Ok(&expected), ran.as_ref(), "{name:?} on {engine:?}");
-                }
+                assert_eq!(Ok(&expected), ran.as_ref(), "{name:?} on {engine:?}");
             }
         }
     }

@@ -170,12 +170,13 @@ struct Tail(usize);
 
 /// The hole symbols, without the platform prefix, and the variant each
 /// becomes in the table.
-const HOLES: [(&str, &str); 7] = [
+const HOLES: [(&str, &str); 8] = [
     ("hole_next", "Next"),
     ("hole_alt", "Alt"),
     ("hole_heap_exhausted", "HeapExhausted"),
     ("hole_frames_exhausted", "FramesExhausted"),
     ("hole_fuel_exhausted", "FuelExhausted"),
+    ("hole_stuck", "Stuck"),
     ("HOLE_A", "A"),
     ("HOLE_B", "B"),
 ];

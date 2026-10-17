@@ -11,7 +11,7 @@
 //! | 0–3 | kind | [`Kind`] |
 //! | 4–15 | tag | a summand position, a constructor ordinal, a closure's [`Flavour`] |
 //! | 16–31 | arity | the field count, or a closure's capture count |
-//! | 32–63 | family | a data constructor's family declaration plus one, zero when the core names none |
+//! | 32–63 | family | a data constructor's family declaration, a head's or a literal's entry in its table, or an opaque constant, each plus one; zero when none is named |
 //!
 //! A case arm compares the low 32 bits against one immediate operand and the
 //! family against the other, so a header a stencil tests is two operands
@@ -19,6 +19,13 @@
 //! machine matches by ordinal. A closure is `[header, code, capture…]`: the
 //! code word is the entry its observation jumps to, the captures a copy of
 //! the creating window's first slots.
+//!
+//! Three kinds only the host reads, as the host makes them. A capability is
+//! compared by its address alone. A stack is `[header, base, top, frame…,
+//! window…]`, the arity its frame count: the frames a capture took from the
+//! region `[base, top)`, each window a frame resumes in copied after them. A
+//! cell is a held binding's or a view's mutable words, which a linear
+//! variable reads its first field of.
 
 use crate::Word;
 
@@ -39,20 +46,47 @@ pub enum Kind
     Data,
     /// A closure: a code word and its captures.
     Closure,
+    /// A constructor head the stencils compare only by identity — a record
+    /// with its labels, a native list's nil or cell, a lift, a recorded run —
+    /// whose family names its entry in the function's head table.
+    Head,
+    /// A literal no machine word holds — text, a numeric, an integer past 64
+    /// bits — whose family names its entry in the run's literal table.
+    Literal,
+    /// A constant with no body, carried as itself; its family names it.
+    Opaque,
+    /// A capability a handler introduced, compared by its address.
+    Capability,
+    /// A captured stack: its frames and the windows they resume in.
+    Stack,
+    /// A linear binding's mutable words: the value held first.
+    Cell,
 }
 
 /// The header bits of [`Kind::Integer`].
 const KIND_INTEGER: usize = 0;
 /// The header bits of [`Kind::Tuple`].
-const KIND_TUPLE: usize = 1;
+pub const KIND_TUPLE: usize = 1;
 /// The header bits of [`Kind::Injection`].
 const KIND_INJECTION: usize = 2;
 /// The header bits of [`Kind::Data`].
 pub const KIND_DATA: usize = 3;
 /// The header bits of [`Kind::Closure`].
 pub const KIND_CLOSURE: usize = 4;
+/// The header bits of [`Kind::Head`].
+const KIND_HEAD: usize = 5;
+/// The header bits of [`Kind::Literal`].
+const KIND_LITERAL: usize = 6;
+/// The header bits of [`Kind::Opaque`].
+const KIND_OPAQUE: usize = 7;
+/// The header bits of [`Kind::Capability`].
+const KIND_CAPABILITY: usize = 8;
+/// The header bits of [`Kind::Stack`].
+const KIND_STACK: usize = 9;
+/// The header bits of [`Kind::Cell`].
+const KIND_CELL: usize = 10;
 /// The kind's bits in a header.
-const KIND_MASK: usize = 0xF;
+pub const KIND_MASK: usize = 0xF;
 /// Where the tag starts in a header.
 pub const TAG_SHIFT: u32 = 4;
 /// The tag's bits, shifted down.
@@ -362,6 +396,12 @@ impl Header
             Kind::Injection => KIND_INJECTION,
             Kind::Data => KIND_DATA,
             Kind::Closure => KIND_CLOSURE,
+            Kind::Head => KIND_HEAD,
+            Kind::Literal => KIND_LITERAL,
+            Kind::Opaque => KIND_OPAQUE,
+            Kind::Capability => KIND_CAPABILITY,
+            Kind::Stack => KIND_STACK,
+            Kind::Cell => KIND_CELL,
         };
         let family = usize::try_from(family.0).unwrap_or(0);
         Self(Word(
@@ -431,6 +471,12 @@ impl Header
             KIND_INJECTION => Ok(Kind::Injection),
             KIND_DATA => Ok(Kind::Data),
             KIND_CLOSURE => Ok(Kind::Closure),
+            KIND_HEAD => Ok(Kind::Head),
+            KIND_LITERAL => Ok(Kind::Literal),
+            KIND_OPAQUE => Ok(Kind::Opaque),
+            KIND_CAPABILITY => Ok(Kind::Capability),
+            KIND_STACK => Ok(Kind::Stack),
+            KIND_CELL => Ok(Kind::Cell),
             _ => Err(UnknownKind(self.0)),
         }
     }
@@ -477,6 +523,9 @@ pub enum Status
     FramesExhausted,
     /// The run spent its fuel: as many code-word jumps as its budget allows.
     FuelExhausted,
+    /// An observation met a value it does not observe — an opaque constant —
+    /// or a host call refused its operands; the L machine names which.
+    Stuck,
 }
 
 /// The status word of [`Status::Running`].
@@ -491,6 +540,8 @@ pub const STATUS_HEAP_EXHAUSTED: Word = Word(3);
 pub const STATUS_FRAMES_EXHAUSTED: Word = Word(4);
 /// The status word of [`Status::FuelExhausted`].
 pub const STATUS_FUEL_EXHAUSTED: Word = Word(5);
+/// The status word of [`Status::Stuck`].
+pub const STATUS_STUCK: Word = Word(6);
 
 /// A status word no exit writes.
 ///
@@ -518,6 +569,7 @@ impl TryFrom<Word> for Status
             STATUS_HEAP_EXHAUSTED => Ok(Self::HeapExhausted),
             STATUS_FRAMES_EXHAUSTED => Ok(Self::FramesExhausted),
             STATUS_FUEL_EXHAUSTED => Ok(Self::FuelExhausted),
+            STATUS_STUCK => Ok(Self::Stuck),
             other => Err(UnknownStatus(other)),
         }
     }

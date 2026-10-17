@@ -65,6 +65,8 @@ pub enum HoleSymbol
     FramesExhausted,
     /// The fuel exit.
     FuelExhausted,
+    /// The stuck exit.
+    Stuck,
     /// The first operand.
     A,
     /// The second operand.

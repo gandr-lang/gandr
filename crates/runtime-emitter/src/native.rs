@@ -124,14 +124,14 @@ struct Shared
     frames: Address,
     /// `stencil_fuel_exhausted`.
     fuel: Address,
-    /// `stencil_apply_frame`.
-    apply: Address,
-    /// `stencil_invoke_force_value`.
-    force: Address,
+    /// `stencil_stuck`.
+    stuck: Address,
+    /// Each of [`Stub::ALL`], in its order.
+    stubs: [Address; Stub::ALL.len()],
 }
 
 /// An emitted function: where it starts, where each label landed, and the
-/// halt of its region.
+/// halt and stubs of its region.
 ///
 /// # Specification
 /// trivial.
@@ -145,6 +145,8 @@ pub struct Emitted
     pub labels: Vec<Word>,
     /// The halt the sentinel frame resumes.
     pub halt: Word,
+    /// Each of [`Stub::ALL`]'s shared copy, in its order.
+    pub stubs: [Word; Stub::ALL.len()],
 }
 
 /// The executable regions emitted code lives in.
@@ -161,14 +163,19 @@ pub struct Native
     offsets: Vec<Offset>,
 }
 
-/// The shared copies, in layout order.
-const SHARED: [StencilId; 6] = [
+/// The shared copies, in layout order: the exits, then each of
+/// [`Stub::ALL`].
+const SHARED: [StencilId; 5_usize.wrapping_add(Stub::ALL.len())] = [
     StencilId::Halt,
     StencilId::HeapExhausted,
     StencilId::FramesExhausted,
     StencilId::FuelExhausted,
-    StencilId::ApplyFrame,
-    StencilId::InvokeForceValue,
+    StencilId::Stuck,
+    Stub::Apply.stencil(),
+    Stub::Force.stencil(),
+    Stub::Argument.stencil(),
+    Stub::Reset.stencil(),
+    Stub::Answer.stencil(),
 ];
 
 impl Native
@@ -325,6 +332,7 @@ impl Native
             entry: Word::from(base.0),
             labels,
             halt: Word::from(shared.halt.0),
+            stubs: shared.stubs.map(|address| Word::from(address.0)),
         })
     }
 
@@ -343,20 +351,31 @@ impl Native
             .reserve(shared_bytes())
             .map_err(|_full| EmitRefusal::Oversized)?;
         let base = region.address(reservation);
-        let mut addresses = [Address(0); 6];
+        let mut addresses = [Address(0); SHARED.len()];
         let mut start = 0_usize;
         for (address, stencil) in addresses.iter_mut().zip(SHARED) {
             *address = Address(base.0.wrapping_add(start));
             start = start.saturating_add(code(stencil).bytes.len());
         }
-        let [halt, heap, frames, fuel, apply, force] = addresses;
+        let [
+            halt,
+            heap,
+            frames,
+            fuel,
+            stuck,
+            apply,
+            force,
+            argument,
+            reset,
+            answer,
+        ] = addresses;
         let shared = Shared {
             halt,
             heap,
             frames,
             fuel,
-            apply,
-            force,
+            stuck,
+            stubs: [apply, force, argument, reset, answer],
         };
         region.write(
             reservation,
@@ -381,6 +400,7 @@ impl Native
                             HoleSymbol::HeapExhausted => Ok(Value::Address(shared.heap)),
                             HoleSymbol::FramesExhausted => Ok(Value::Address(shared.frames)),
                             HoleSymbol::FuelExhausted => Ok(Value::Address(shared.fuel)),
+                            HoleSymbol::Stuck => Ok(Value::Address(shared.stuck)),
                             HoleSymbol::Next | HoleSymbol::Alt | HoleSymbol::A | HoleSymbol::B => {
                                 Err(EmitRefusal::Operand)
                             },
@@ -451,6 +471,7 @@ where
         HoleSymbol::HeapExhausted => Value::Address(shared.heap),
         HoleSymbol::FramesExhausted => Value::Address(shared.frames),
         HoleSymbol::FuelExhausted => Value::Address(shared.fuel),
+        HoleSymbol::Stuck => Value::Address(shared.stuck),
         HoleSymbol::A | HoleSymbol::B => match operand {
             // An immediate is patched biased by one, which the stencil
             // subtracts: a static's address is never null, and the compiler
@@ -460,8 +481,7 @@ where
             },
             Operand::Code(target) => Value::Address(label(target)?),
             Operand::Data(offset) => Value::Address(constant(offset)),
-            Operand::Stub(Stub::Apply) => Value::Address(shared.apply),
-            Operand::Stub(Stub::Force) => Value::Address(shared.force),
+            Operand::Stub(stub) => Value::Address(stub.of(&shared.stubs)),
             Operand::Unused => return Err(EmitRefusal::Operand),
         },
     })
@@ -500,7 +520,8 @@ where
             | HoleSymbol::Alt
             | HoleSymbol::HeapExhausted
             | HoleSymbol::FramesExhausted
-            | HoleSymbol::FuelExhausted => Operand::Unused,
+            | HoleSymbol::FuelExhausted
+            | HoleSymbol::Stuck => Operand::Unused,
         };
         let value = resolve(hole.symbol, operand)?;
         let site = Address(pc.0.wrapping_add(hole.offset.0));
