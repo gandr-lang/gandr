@@ -2,11 +2,44 @@
 //!
 //! # One lowering, one verdict set
 //!
-//! A source is lowered exactly once per run, under one strictness, and every
-//! declaration gets one verdict: the checker's, settled against what the
+//! A composition is lowered exactly once per step, under one strictness, and
+//! every declaration gets one verdict: the checker's, settled against what the
 //! declaration states. The one call into the lowering sits in a private module
 //! that counts it, and [`LoweringCount`] is the projection through which a run
-//! shows it lowered each source once.
+//! shows it lowered each step once.
+//!
+//! # An importer is composed over its siblings
+//!
+//! A source that imports a sibling by path is composed as the unit the
+//! `closure` module lays out — its import closure, in dependency order, the
+//! importer last — lowered into one arena, checked against one environment in
+//! which the siblings' declarations are the prefix, and admitted with the
+//! siblings' certificates replayed first; [`judge_member`] then reports the
+//! importer's own declarations alone. The siblings are settled when the walk
+//! reaches them in their own right.
+//!
+//! - Recorded design: one arena and one kernel environment per import-connected
+//!   component, its members in dependency order, each sibling lowered and
+//!   checked once and its export the importer's prefix by constant, components
+//!   with no import between them on the pool's threads as now.
+//! - Change: the unit is the importer's closure rather than its component. The
+//!   walk streams one source at a time, and the closure is what can be read
+//!   from disk at that source; a component needs every member reached before
+//!   any is judged, which cuts across the walk's order and its stop. Every
+//!   source that imports nothing is composed exactly as before.
+//! - Cost: a sibling is lowered and checked once more per importer that reaches
+//!   it. Its declarations are the same constants and its certificate the same
+//!   bytes in each closure (the witness below), so the repetition is time,
+//!   never a second meaning.
+//! - Reversal (#436, as the corpus's circle sources come onto one base): judge
+//!   each component once, its members level by level in topological order with
+//!   the members of one level in parallel, and project the one composition onto
+//!   each member.
+//!
+//! Witness: `walk::tests::an_importer_is_judged_over_its_sibling` — the
+//! base's certificate segments are byte-identical in its own composition and
+//! in each importer's, a diamond lays the base out once, and each importer
+//! reports its own declarations alone.
 //!
 //! # The kernel re-derives every acceptance
 //!
@@ -135,6 +168,7 @@ use gandr_core_checker::Declaration;
 use gandr_core_checker::HostGrant;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::Nesting;
+use gandr_core_checker::ObligationCount;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::SealSite;
 use gandr_core_checker::SealingSite;
@@ -158,15 +192,19 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::InferredRun;
+use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::Sealing;
+use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -622,14 +660,15 @@ mod lowering
     use gandr_surface_lowering::LoweredModule;
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
-    use gandr_surface_lowering::lower_module;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::lower_unit;
     use gandr_surface_lowering::namespace::Recognition;
     use gandr_surface_syntax::SyntaxTree;
 
     use super::LoweringCount;
 
-    /// Lower `tree` into `arena` against the empty outermost scope, counting
-    /// the lowering in `lowerings`.
+    /// Lower the sources `unit` lays out in `tree` into `arena` against the
+    /// empty outermost scope, counting the lowering in `lowerings`.
     ///
     /// # Specification
     /// - requires: `tree` was molded under `grammar`.
@@ -656,14 +695,16 @@ mod lowering
     pub(super) fn lower<'source>(
         grammar: &Pbg,
         tree: &SyntaxTree<'source>,
+        unit: &Unit,
         arena: &mut CoreArena,
         lowerings: &mut LoweringCount,
     ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
     {
         *lowerings = LoweringCount(lowerings.0.saturating_add(1_usize));
-        lower_module(
+        lower_unit(
             grammar,
             tree,
+            unit,
             arena,
             LoweringBudget::DEFAULT,
             Recognition::default(),
@@ -834,10 +875,82 @@ pub fn lower_parsed<'source>(
     lowerings: &mut LoweringCount,
 ) -> Result<Lowering<'source>, ComposeFault<'source>>
 {
+    lower_parsed_unit(grammar, parsed, &Unit::single(), lowerings)
+}
+
+/// Parse and lower the sources `unit` lays end to end in `source`:
+/// [`lower_source`] over a unit of several sources.
+///
+/// # Specification
+/// - requires: `source` is the text `unit` lays out.
+/// - ensures: as [`lower_source`], the sources' names resolved within the unit
+///   as its imports say.
+/// - provides: the lowering the walk performs for a source that imports a
+///   sibling (the `closure` module).
+/// - fails: as [`lower_source`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`lower_source`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fixture importer lowers over its sibling and settles.
+/// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+#[inline]
+#[spec(
+    captures: [before = lowerings.0],
+    ensures: |ref ret| lowerings.0 == if matches!(ret, Err(ComposeFault::Parse(_))) {
+        before
+    } else {
+        before.saturating_add(1)
+    },
+)]
+pub fn lower_unit_source<'source>(
+    grammar: &Pbg,
+    source: SourceText<'source>,
+    unit: &Unit,
+    lowerings: &mut LoweringCount,
+) -> Result<Lowering<'source>, ComposeFault<'source>>
+{
+    let parsed = parse(grammar, source).map_err(ComposeFault::Parse)?;
+    lower_parsed_unit(grammar, parsed, unit, lowerings)
+}
+
+/// Lower the sources `unit` lays end to end in the tree `parsed` committed:
+/// [`lower_unit_source`] past its parse.
+///
+/// # Specification
+/// - requires: `grammar` is the checked grammar `parsed` was committed under,
+///   over the text `unit` lays out.
+/// - ensures: as [`lower_parsed`], over the unit.
+/// - provides: the lowering of a session's document beside the siblings it
+///   imports.
+/// - fails: as [`lower_parsed`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`lower_parsed`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — every witness of [`lower_parsed`] lowers through here.
+/// - witness: `compose::tests::each_composition_lowers_once`
+/// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+#[inline]
+#[spec(
+    captures: [before = lowerings.0],
+    ensures: lowerings.0 == before.saturating_add(1),
+)]
+pub fn lower_parsed_unit<'source>(
+    grammar: &Pbg,
+    parsed: ParseResult<'source>,
+    unit: &Unit,
+    lowerings: &mut LoweringCount,
+) -> Result<Lowering<'source>, ComposeFault<'source>>
+{
     let obligations = parsed.obligations().to_vec();
     let tree = parsed.into_tree();
     let mut arena = CoreArena::new();
-    let lowered = match lowering::lower(grammar, &tree, &mut arena, lowerings) {
+    let lowered = match lowering::lower(grammar, &tree, unit, &mut arena, lowerings) {
         Ok(module) => Lowered::Module { module, arena },
         Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
             return Err(ComposeFault::Lowering(refusal));
@@ -898,9 +1011,58 @@ pub fn lower_parsed<'source>(
 )]
 pub fn judge<'source>(
     root: CorpusRoot,
+    (module, text): (LoweredModule<'source>, SourceText<'source>),
+    arena: CoreArena,
+    grant: &HostGrant,
+) -> Judged<'source>
+{
+    judge_member(
+        root,
+        (module, text),
+        arena,
+        grant,
+        ByteOffset::from(0_usize),
+    )
+}
+
+/// Judge and settle one lowered unit, reporting the source that starts at
+/// `base`: [`judge`] projected onto one member of the unit.
+///
+/// # Specification
+/// - requires: as [`judge`]; `base` is where the reported source starts in
+///   `text`, every source after it in the unit being its own.
+/// - ensures: the unit is judged, built and admitted whole, as [`judge`] judges
+///   a module; the settled composition reports, of the declarations, refusals,
+///   shadowed builtins, inferred exits and inferred runs, those written from
+///   `base` on, and of the ledger, the obligations those declarations owe. The
+///   origins, spellings, failures, program and kernel artifact are the unit's.
+/// - provides: an importer's composition over the siblings it imports, which
+///   the walk settles when it reaches them in their own right.
+/// - fails: never; a settle fault is carried.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an importer judged over its sibling reports its own
+///   declarations alone and settles.
+/// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+#[inline]
+#[must_use]
+#[spec(
+    captures: [expected_declarations = module.declarations().len()],
+    ensures: |ret| match ret.settled {
+        Ok(Composed::Settled { ref report, .. }) =>
+            report.declarations().len() <= expected_declarations
+                && report.declarations().iter().all(|declaration| declaration.span().start() >= base),
+        Ok(Composed::Refused(_)) => false,
+        Err(_) => true,
+    },
+)]
+pub fn judge_member<'source>(
+    root: CorpusRoot,
     (mut module, text): (LoweredModule<'source>, SourceText<'source>),
     mut arena: CoreArena,
     grant: &HostGrant,
+    base: ByteOffset,
 ) -> Judged<'source>
 {
     let declarations = adapt(&module);
@@ -912,8 +1074,33 @@ pub fn judge<'source>(
     let mut program = Program::new(&arena, &module, &verdicts);
     let settled = match settle(root, &arena, &module, &verdicts, &mut program) {
         Ok(report) => {
+            let own = |span: ByteSpan| span.start() >= base;
+            let report = if usize::from(base) == 0_usize {
+                report
+            }
+            else {
+                let first = module
+                    .declarations()
+                    .iter()
+                    .find(|declaration| own(declaration.span()))
+                    .map_or_else(
+                        || ConstantIndex::from(usize::MAX),
+                        LoweredDeclaration::constant,
+                    );
+                let owed = verdicts
+                    .ledger()
+                    .entries()
+                    .iter()
+                    .filter(|entry| entry.absence().constant() >= first)
+                    .count();
+                report.from_offset(base, ObligationCount::from(owed))
+            };
             let exercised = Exercised::of(&arena, &module, &report);
-            let unstatable = unstatable(&module);
+            let mut unstatable = unstatable(&module);
+            unstatable.retain(|refusal| match refusal.span() {
+                Maybe::Present(span) => own(span),
+                Maybe::Absent(_) => true,
+            });
             let failures = Failures::of(&verdicts);
             located(module.origins_mut(), &verdicts);
             let spellings = Spellings::of(
@@ -923,9 +1110,12 @@ pub fn judge<'source>(
                 &failures,
                 (module.origins(), text),
             );
-            let shadowed = module.recognition().shadowed().to_vec();
-            let inferred = module.inferred_exits().to_vec();
-            let runs = inferred_runs(&module, &verdicts);
+            let mut shadowed = module.recognition().shadowed().to_vec();
+            shadowed.retain(|shadow| own(shadow.span));
+            let mut inferred = module.inferred_exits().to_vec();
+            inferred.retain(|exit| own(exit.span));
+            let mut runs = inferred_runs(&module, &verdicts);
+            runs.retain(|run| own(run.span));
             Ok(Composed::Settled {
                 report,
                 exercised,
@@ -1157,7 +1347,12 @@ pub fn compose<'source>(
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
     let lowering = lower_source(grammar, source, lowerings)?;
-    judge_lowering(root, (lowering, source), &HostGrant::UNBOUNDED)
+    judge_lowering(
+        root,
+        (lowering, source),
+        &HostGrant::UNBOUNDED,
+        ByteOffset::from(0_usize),
+    )
 }
 
 /// Judge what the lowering made of one source, its obligations given up.
@@ -1165,8 +1360,9 @@ pub fn compose<'source>(
 /// # Specification
 /// - requires: the lowering read the text beside it; `root` is the corpus root
 ///   the source sits under.
-/// - ensures: a module the lowering read is judged by [`judge_module`] under
-///   `grant`; a whole-source refusal is [`Composed::Refused`].
+/// - ensures: a module the lowering read is judged by [`judge_member`] at
+///   `base` under `grant` and admitted; a whole-source refusal is
+///   [`Composed::Refused`].
 /// - provides: the half of [`compose()`] that stays in walk order when a wider
 ///   walk lowers its sources on several threads.
 /// - fails: as [`judge_module`].
@@ -1196,10 +1392,13 @@ pub fn judge_lowering<'source>(
     root: CorpusRoot,
     (lowering, text): (Lowering<'source>, SourceText<'source>),
     grant: &HostGrant,
+    base: ByteOffset,
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
     match lowering.into_lowered() {
-        Lowered::Module { module, arena } => judge_module(root, (module, text), arena, grant),
+        Lowered::Module { module, arena } => {
+            judge_member(root, (module, text), arena, grant, base).admit()
+        },
         Lowered::Refused(refusal) => Ok(Composed::Refused(refusal)),
     }
 }

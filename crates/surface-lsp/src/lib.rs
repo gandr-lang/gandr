@@ -129,7 +129,7 @@
 //! | on-type formatting | `textDocument/onTypeFormatting` | declined: a form's layout is decided once the form is whole, which range formatting at the cursor already serves on request |
 //! | code actions, code lenses | `textDocument/codeAction`, `codeLens` | served for model proposals: a quick fix applying each checked fill, a lens counting a range's checked fills |
 //! | commands | `workspace/executeCommand` | blocked: no command the pipeline produces |
-//! | document links | `textDocument/documentLink` | blocked: imports bind an alias and resolve no address |
+//! | document links | `textDocument/documentLink` | blocked: a path import resolves to its sibling's file, which the dispatcher's `lay_out` reads, but the server answers no link request yet |
 //! | document colours | `textDocument/documentColor`, `colorPresentation` | declined: gandr has no colour literals |
 //! | inline values | `textDocument/inlineValue` | declined: they serve a debugger, and gandr has no debug adapter |
 //! | monikers | `textDocument/moniker` | declined: no cross-repository index reads them |

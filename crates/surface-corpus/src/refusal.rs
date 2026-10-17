@@ -415,6 +415,14 @@ pub enum RefusalName
     DuplicateDefinition,
     /// A second import of one alias.
     DuplicateImportAlias,
+    /// A declaration of a source whose path import resolves to no source.
+    ImportUnresolved,
+    /// A declaration of a source whose imports lead back to it.
+    ImportCycle,
+    /// A name an import binds and another binding of the source binds too.
+    ImportShadows,
+    /// A name an import answers with a declaration its source does not export.
+    UnexportedName,
     /// A declared name or binder over a builtin, under the reject policy; a
     /// family named as a builtin type the grammar spells as a tile, always.
     ShadowedBuiltin,
@@ -583,7 +591,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 141_usize] = [
+    pub const VOCABULARY: [Self; 145_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -649,6 +657,10 @@ impl RefusalName
         Self::DuplicateSignature,
         Self::DuplicateDefinition,
         Self::DuplicateImportAlias,
+        Self::ImportUnresolved,
+        Self::ImportCycle,
+        Self::ImportShadows,
+        Self::UnexportedName,
         Self::ShadowedBuiltin,
         Self::OutOfFragment,
         Self::GradedBridge,
@@ -751,7 +763,9 @@ impl RefusalName
         (Self::UnresolvedDocLink, b"UnresolvedDocLink") |
         (Self::UnresolvedTypeHead, b"UnresolvedTypeHead") | (Self::DuplicateSignature,
         b"DuplicateSignature") | (Self::DuplicateDefinition, b"DuplicateDefinition") |
-        (Self::DuplicateImportAlias, b"DuplicateImportAlias") | (Self::ShadowedBuiltin,
+        (Self::DuplicateImportAlias, b"DuplicateImportAlias") | (Self::ImportUnresolved,
+        b"ImportUnresolved") | (Self::ImportCycle, b"ImportCycle") | (Self::ImportShadows,
+        b"ImportShadows") | (Self::UnexportedName, b"UnexportedName") | (Self::ShadowedBuiltin,
         b"ShadowedBuiltin") | (Self::OutOfFragment, b"OutOfFragment") |
         (Self::GradedBridge, b"GradedBridge") | (Self::MalformedLiteral,
         b"MalformedLiteral") | (Self::MalformedForm, b"MalformedForm") |
@@ -916,6 +930,10 @@ impl RefusalName
             Self::DuplicateSignature => "DuplicateSignature",
             Self::DuplicateDefinition => "DuplicateDefinition",
             Self::DuplicateImportAlias => "DuplicateImportAlias",
+            Self::ImportUnresolved => "ImportUnresolved",
+            Self::ImportCycle => "ImportCycle",
+            Self::ImportShadows => "ImportShadows",
+            Self::UnexportedName => "UnexportedName",
             Self::PathCode => "PathCode",
             Self::EndpointMismatch => "EndpointMismatch",
             Self::CompoundEndpoint => "CompoundEndpoint",
@@ -1153,6 +1171,12 @@ impl Refusal<'_>
         RefusalName::DuplicateDefinition) |
         (Self::Lowering(LoweringRefusal::DuplicateImportAlias { .. }),
         RefusalName::DuplicateImportAlias) |
+        (Self::Lowering(LoweringRefusal::ImportUnresolved { .. }),
+        RefusalName::ImportUnresolved) |
+        (Self::Lowering(LoweringRefusal::ImportCycle { .. }), RefusalName::ImportCycle) |
+        (Self::Lowering(LoweringRefusal::ImportShadows { .. }), RefusalName::ImportShadows) |
+        (Self::Lowering(LoweringRefusal::UnexportedName { .. }),
+        RefusalName::UnexportedName) |
         (Self::Lowering(LoweringRefusal::ShadowedBuiltin { .. }),
         RefusalName::ShadowedBuiltin) | (Self::Lowering(LoweringRefusal::OutOfFragment {
         .. }) | Self::Checking(CheckRefusal::OutOfFragment { .. }),
@@ -1373,7 +1397,11 @@ impl Refusal<'_>
         RefusalName::UnresolvedTypeHead) | (LoweringRefusal::DuplicateSignature { .. },
         RefusalName::DuplicateSignature) | (LoweringRefusal::DuplicateDefinition { .. },
         RefusalName::DuplicateDefinition) | (LoweringRefusal::DuplicateImportAlias { ..
-        }, RefusalName::DuplicateImportAlias) | (LoweringRefusal::ShadowedBuiltin { .. },
+        }, RefusalName::DuplicateImportAlias) | (LoweringRefusal::ImportUnresolved { .. },
+        RefusalName::ImportUnresolved) | (LoweringRefusal::ImportCycle { .. },
+        RefusalName::ImportCycle) | (LoweringRefusal::ImportShadows { .. },
+        RefusalName::ImportShadows) | (LoweringRefusal::UnexportedName { .. },
+        RefusalName::UnexportedName) | (LoweringRefusal::ShadowedBuiltin { .. },
         RefusalName::ShadowedBuiltin) | (LoweringRefusal::OutOfFragment { .. },
         RefusalName::OutOfFragment) | (LoweringRefusal::GradedBridge { .. },
         RefusalName::GradedBridge) | (LoweringRefusal::MalformedLiteral { .. },
@@ -1420,6 +1448,10 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::DuplicateSignature { .. } => RefusalName::DuplicateSignature,
         LoweringRefusal::DuplicateDefinition { .. } => RefusalName::DuplicateDefinition,
         LoweringRefusal::DuplicateImportAlias { .. } => RefusalName::DuplicateImportAlias,
+        LoweringRefusal::ImportUnresolved { .. } => RefusalName::ImportUnresolved,
+        LoweringRefusal::ImportCycle { .. } => RefusalName::ImportCycle,
+        LoweringRefusal::ImportShadows { .. } => RefusalName::ImportShadows,
+        LoweringRefusal::UnexportedName { .. } => RefusalName::UnexportedName,
         LoweringRefusal::ShadowedBuiltin { .. } => RefusalName::ShadowedBuiltin,
         LoweringRefusal::OutOfFragment { .. } => RefusalName::OutOfFragment,
         LoweringRefusal::GradedBridge { .. } => RefusalName::GradedBridge,

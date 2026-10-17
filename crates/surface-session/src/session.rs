@@ -4,12 +4,12 @@
 //! # Lowered once, judged whole, resumed beside it
 //!
 //! A submission lowers its revision once. The lowered module goes two ways:
-//! the dispatcher's [`judge`] judges and settles it, which is the report — the
-//! same verdicts `gandr check` gives the text — and the item source's
-//! [`program`] offers the same declarations to the incremental checker, which
-//! adopts every checkpoint that still answers, judges the rest and persists
-//! the set. A revision the lowering refuses as a whole is reported and leaves
-//! the session as it was.
+//! the dispatcher's [`judge`](gandr_surface_dispatcher::judge) judges and
+//! settles it, which is the report — the same verdicts `gandr check` gives the
+//! text — and the item source's [`program`] offers the same declarations to the
+//! incremental checker, which adopts every checkpoint that still answers,
+//! judges the rest and persists the set. A revision the lowering refuses as a
+//! whole is reported and leaves the session as it was.
 //!
 //! # The kernel admission runs after the report exists
 //!
@@ -326,18 +326,22 @@ use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Width;
-use gandr_surface_dispatcher::judge;
+use gandr_surface_dispatcher::judge_member;
 use gandr_surface_dispatcher::lower_parsed;
+use gandr_surface_dispatcher::lower_parsed_unit;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationCount;
 use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::ImportIndex;
 use gandr_surface_lowering::ImportUri;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::SourceIndex;
+use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::documentation;
 use gandr_surface_lowering::namespace::NamePath;
 use gandr_surface_lowering::namespace::Scope;
 use gandr_surface_parser::ObligationInstance;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SourceText;
@@ -551,13 +555,14 @@ impl Imports
         }
     }
 
-    /// The import scope `module` declared.
+    /// The import scope `module` declared in its source at `own`.
     ///
     /// # Specification
     /// - requires: the module’s import scope and declarations belong to the
-    ///   same lowering.
-    /// - ensures: preserves every import URI and source span in declaration
-    ///   order and copies the alias scope that names those rows.
+    ///   same lowering; `own` is the revision's own source in its unit.
+    /// - ensures: preserves every import URI and source span the source at
+    ///   `own` writes, in declaration order, and copies the alias scope that
+    ///   names those rows.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -567,28 +572,28 @@ impl Imports
     /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
     #[spec(
         ensures: |ret| {
-    ret.rows.len() == module.imports().len()
-        && ret
-            .rows
-            .iter()
-            .zip(module.imports())
-            .all(|(row, declaration)| {
-                row.uri == *declaration.uri() && row.span == declaration.span()
-            })
+    ret.rows.len() == module.imports().iter().filter(|declaration| declaration.source() == own).count()
 },
     )]
-    fn of(module: &LoweredModule<'_>) -> Self
+    fn of(
+        module: &LoweredModule<'_>,
+        own: SourceIndex,
+    ) -> Self
     {
         Self {
             rows: module
                 .imports()
                 .iter()
+                .filter(|declaration| declaration.source() == own)
                 .map(|declaration| ImportRow {
                     uri: declaration.uri().clone(),
                     span: declaration.span(),
                 })
                 .collect(),
-            scope: module.import_scope().clone(),
+            scope: match module.import_scope(own) {
+                Maybe::Present(scope) => scope.clone(),
+                Maybe::Absent(_) => Scope::new(),
+            },
         }
     }
 
@@ -822,9 +827,11 @@ pub struct Submission<'text>
 {
     /// The root the session's source sits under.
     root: SourceRoot,
-    /// The revision's text, which every span of `composed` is measured
-    /// against.
+    /// The text judged, which every span of `composed` is measured against:
+    /// the revision, laid after the siblings it imports when it imports any.
     text: SourceText<'text>,
+    /// Where the revision's own text starts in `text`.
+    base: ByteOffset,
     /// What the revision became: the composition `gandr check` gives the same
     /// text.
     composed: Composed<'text>,
@@ -855,7 +862,7 @@ impl<'text> Submission<'text>
         self.root
     }
 
-    /// The revision's text.
+    /// The text judged: the revision, after the siblings it imports.
     ///
     /// # Specification
     /// trivial.
@@ -864,6 +871,18 @@ impl<'text> Submission<'text>
     pub const fn text(&self) -> SourceText<'text>
     {
         self.text
+    }
+
+    /// Where the revision's own text starts in [`text`](Self::text): zero
+    /// unless it imports a sibling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn base(&self) -> ByteOffset
+    {
+        self.base
     }
 
     /// What the revision became.
@@ -984,7 +1003,7 @@ impl<'text> Submission<'text>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a [`Step::Source`] at `path` carrying this submission's root,
-    ///   text, composition and standing unchanged.
+    ///   text, base, composition and standing unchanged.
     /// - provides: the diagnostics a face renders, through the renderer the
     ///   batch verbs use.
     /// - panics: none.
@@ -996,11 +1015,11 @@ impl<'text> Submission<'text>
     ///   scalar observations without copying the composition.
     /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
     #[spec(
-        captures: before = (self.root, self.text, self.standing),
+        captures: before = (self.root, self.text, self.base, self.standing),
         ensures: |ret| {
     matches!(
-        ret, Step::Source { path : found, root, text, standing, .. } if found == path &&
-        root == before.0 && text == before.1 && standing == before.2
+        ret, Step::Source { path : found, root, text, base, standing, .. } if found == path &&
+        root == before.0 && text == before.1 && base == before.2 && standing == before.3
     )
 },
     )]
@@ -1017,6 +1036,7 @@ impl<'text> Submission<'text>
             path,
             root: self.root,
             text: self.text,
+            base: self.base,
             composed: self.composed,
             standing: self.standing,
         }
@@ -1656,7 +1676,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                     Maybe::Absent(reason) => Maybe::Absent(unrestored(reason)),
                 };
                 (
-                    Imports::of(&module),
+                    Imports::of(&module, SourceIndex::from(0_usize)),
                     Snapshot::of(&program, module.origins()),
                     documentation_of(&module),
                     restored,
@@ -1738,7 +1758,43 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
         Blocks: BlockStore,
     {
-        let mut submission = self.judge(revision)?;
+        self.submit_unit(revision, &Unit::single(), ByteOffset::from(0_usize))
+    }
+
+    /// Submit `revision`, the text `unit` lays out with the document's own
+    /// text from `base` on: [`judge_unit_reading`](Self::judge_unit_reading)
+    /// it, then [`admit`](Self::admit) it.
+    ///
+    /// # Specification
+    /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
+    /// - ensures: as [`submit`](Self::submit), over the unit: the composition
+    ///   `gandr check` gives the document's file, kernel artifact included.
+    /// - provides: a document that imports a sibling, submitted as the walk
+    ///   composes it.
+    /// - fails: as [`submit`](Self::submit).
+    /// - panics: none.
+    /// - executable: none — [`submit`](Self::submit) states the clauses and
+    ///   submits through this.
+    ///
+    /// # Errors
+    /// As [`submit`](Self::submit).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source, an importer among them, submits
+    ///   as the walk composes it.
+    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    #[inline]
+    pub fn submit_unit<'text>(
+        &mut self,
+        revision: SourceText<'text>,
+        unit: &Unit,
+        base: ByteOffset,
+    ) -> Result<Submission<'text>, SessionFault<'text>>
+    where
+        Store: CheckpointStore,
+        Blocks: BlockStore,
+    {
+        let mut submission = self.judge_unit_reading(revision, unit, base, |_| ())?;
         if let Maybe::Present(admitted) = self
             .admit()
             .map_err(|fault| SessionFault::Compose(ComposeFault::Readmission(fault)))?
@@ -1764,19 +1820,20 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   holds the revision's forms; the submission carries how many forms were
     ///   molded. The parse is lowered exactly once, and the lowering count is
     ///   one more. A revision the lowering reads is judged and settled by the
-    ///   dispatcher's [`judge`] — the composition `gandr check` gives the same
-    ///   text under the same root, its kernel artifact not yet exported — and
-    ///   the same declarations are submitted to the incremental checker, which
-    ///   resumes from the latest accepted revision and persists the new
-    ///   checkpoints; the submission carries the [`diff`] of the latest
-    ///   accepted revision's snapshot and this one's, and no kernel checkpoint
-    ///   yet ([`admitted::Absent::Pending`]); the session then holds the
-    ///   revision's resume, import scope and snapshot, and its admission. A
-    ///   revision the lowering refuses as a whole is reported as
-    ///   [`Composed::Refused`] with no resume, no edits and no kernel
-    ///   checkpoint, and leaves no admission. Its accepted state is unchanged,
-    ///   but the lowering attempt is counted. Either way the submission carries
-    ///   the parse's completion obligations, in source order.
+    ///   dispatcher's [`judge`](gandr_surface_dispatcher::judge) — the
+    ///   composition `gandr check` gives the same text under the same root, its
+    ///   kernel artifact not yet exported — and the same declarations are
+    ///   submitted to the incremental checker, which resumes from the latest
+    ///   accepted revision and persists the new checkpoints; the submission
+    ///   carries the [`diff`] of the latest accepted revision's snapshot and
+    ///   this one's, and no kernel checkpoint yet
+    ///   ([`admitted::Absent::Pending`]); the session then holds the revision's
+    ///   resume, import scope and snapshot, and its admission. A revision the
+    ///   lowering refuses as a whole is reported as [`Composed::Refused`] with
+    ///   no resume, no edits and no kernel checkpoint, and leaves no admission.
+    ///   Its accepted state is unchanged, but the lowering attempt is counted.
+    ///   Either way the submission carries the parse's completion obligations,
+    ///   in source order.
     /// - provides: the interactive half of a submission: everything a face
     ///   renders, before the kernel has been offered anything.
     /// - fails: [`SessionFault::Compose`] when the parse or the lowering
@@ -1932,15 +1989,68 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
         Read: FnOnce(&SyntaxTree<'text>),
     {
+        self.judge_unit_reading(revision, &Unit::single(), ByteOffset::from(0_usize), read)
+    }
+
+    /// Judge `revision`, the text `unit` lays out — the document after the
+    /// siblings it imports, its own text from `base` on — as
+    /// [`judge_reading`](Self::judge_reading) judges a document alone.
+    ///
+    /// A document that imports a sibling is judged over it, as the walk judges
+    /// the source: the siblings are the prefix of the unit's constants, so the
+    /// incremental checker resumes over them unchanged while the revision's
+    /// own declarations change, and the form store takes their forms up from
+    /// the revision before.
+    ///
+    /// # Specification
+    /// - requires: `revision` is the text `unit` lays out, its last source
+    ///   starting at `base`.
+    /// - ensures: what [`judge_reading`](Self::judge_reading) ensures of a
+    ///   revision, over the unit: `read` is called once with the tree of
+    ///   `revision`; the submission's text is `revision` and its base `base`;
+    ///   its composition reports the declarations, refusals, shadowed builtins,
+    ///   inferred exits and runs written from `base` on, as the dispatcher's
+    ///   [`judge_member`] projects it, and its completion obligations are those
+    ///   from `base` on; the import scope held is the revision's own. Exactly
+    ///   [`judge_reading`](Self::judge_reading) at offset zero of
+    ///   [`Unit::single`].
+    /// - provides: an editor's judgement of a document that imports a sibling,
+    ///   whose diagnostics are those `gandr check` gives the file.
+    /// - fails: as [`judge`](Self::judge).
+    /// - panics: only by propagating a panic of `read`.
+    /// - executable: none — the clauses are [`judge`](Self::judge)'s over the
+    ///   unit, which judges through this.
+    ///
+    /// # Errors
+    /// As [`judge`](Self::judge).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source, an importer among them, submits
+    ///   as the walk composes it.
+    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    #[inline]
+    pub fn judge_unit_reading<'text, Read>(
+        &mut self,
+        revision: SourceText<'text>,
+        unit: &Unit,
+        base: ByteOffset,
+        read: Read,
+    ) -> Result<Submission<'text>, SessionFault<'text>>
+    where
+        Store: CheckpointStore,
+        Read: FnOnce(&SyntaxTree<'text>),
+    {
+        let own = SourceIndex::from(unit.sources().len().saturating_sub(1_usize));
         self.admission = Maybe::Absent(admission::Absent::Idle);
         let (parsed, forms) = self
             .forms
             .parse(&self.grammar, revision, self.threads)
             .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
         read(parsed.tree());
-        let lowering = lower_parsed(&self.grammar, parsed, &mut self.lowerings)
+        let lowering = lower_parsed_unit(&self.grammar, parsed, unit, &mut self.lowerings)
             .map_err(SessionFault::Compose)?;
         let mut obligations = lowering.obligations().to_vec();
+        obligations.retain(|obligation| obligation.span.start() >= base);
         obligations.sort_by_key(|obligation| obligation.span);
         let (module, arena) = match lowering.into_lowered() {
             Lowered::Module { module, arena } => (module, arena),
@@ -1949,6 +2059,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 return Ok(Submission {
                     root: self.root,
                     text: revision,
+                    base,
                     standing: Standing::of(self.root, &composed),
                     composed,
                     resumed: Maybe::Absent(resumed::Absent::RefusedWhole),
@@ -1963,14 +2074,15 @@ impl<Store, Blocks> Session<Store, Blocks>
         // report assembled from the resume's own verdicts, which retires the
         // whole-module judgement and this copy with it.
         let mut items = program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
-        let imports = Imports::of(&module);
+        let imports = Imports::of(&module, own);
         let documentation = documentation_of(&module);
         let snapshot = Snapshot::of(&items, module.origins());
-        let (settled, admission) = judge(
+        let (settled, admission) = judge_member(
             self.root.corpus_root(),
             (module, revision),
             arena,
             &HostGrant::UNBOUNDED,
+            base,
         )
         .into_parts();
         let composed = match settled {
@@ -2003,6 +2115,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         Ok(Submission {
             root: self.root,
             text: revision,
+            base,
             standing: Standing::of(self.root, &composed),
             composed,
             resumed: Maybe::Present(Resumed {
@@ -2024,19 +2137,20 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - requires: each candidate is the whole text of the session's source.
     /// - ensures: one trial per candidate. Each candidate is parsed through the
     ///   form store without changing it ([`FormStore::parse_held`]), lowered,
-    ///   and judged and settled by the dispatcher's [`judge`], so its
-    ///   composition, standing and completion obligations are those
-    ///   [`judge`](Self::judge) gives the same text in a session that has
-    ///   accepted nothing; it carries no resume and no edits
-    ///   ([`resumed::Absent::Tried`]) and no kernel checkpoint
-    ///   ([`admitted::Absent::Pending`], or [`admitted::Absent::RefusedWhole`]
-    ///   for a revision refused as a whole). The trials are ranked: a
-    ///   composition the lowering read before one it refused whole, and both
-    ///   before a fault; then fewer refused declarations, so a wrong fill ranks
-    ///   below one that leaves a goal; then fewer unsettled declarations, fewer
-    ///   owed obligations and fewer parse repairs; then the candidates' own
-    ///   order. The session is unchanged: its form store, resume, snapshot,
-    ///   imports, documentation, lowering count and admission are as they were.
+    ///   and judged and settled by the dispatcher's
+    ///   [`judge`](gandr_surface_dispatcher::judge), so its composition,
+    ///   standing and completion obligations are those [`judge`](Self::judge)
+    ///   gives the same text in a session that has accepted nothing; it carries
+    ///   no resume and no edits ([`resumed::Absent::Tried`]) and no kernel
+    ///   checkpoint ([`admitted::Absent::Pending`], or
+    ///   [`admitted::Absent::RefusedWhole`] for a revision refused as a whole).
+    ///   The trials are ranked: a composition the lowering read before one it
+    ///   refused whole, and both before a fault; then fewer refused
+    ///   declarations, so a wrong fill ranks below one that leaves a goal; then
+    ///   fewer unsettled declarations, fewer owed obligations and fewer parse
+    ///   repairs; then the candidates' own order. The session is unchanged: its
+    ///   form store, resume, snapshot, imports, documentation, lowering count
+    ///   and admission are as they were.
     /// - provides: the batch a solving loop checks its drafts in — a model's
     ///   fills for a hole, a body's rewrites — with the latest accepted state
     ///   left for the edit that wins.
@@ -2080,6 +2194,39 @@ impl<Store, Blocks> Session<Store, Blocks>
     pub fn trial<'text>(
         &self,
         candidates: &[SourceText<'text>],
+    ) -> Vec<Trial<'text>>
+    {
+        let laid: Vec<(SourceText<'text>, Laying<'_>)> = candidates
+            .iter()
+            .map(|&candidate| (candidate, Laying::Alone))
+            .collect();
+        self.trial_unit(&laid)
+    }
+
+    /// Judge each of `candidates` — each a text its [`Laying`]'s unit lays
+    /// out, a candidate document after the siblings it imports — as
+    /// [`trial`](Self::trial) judges candidates alone.
+    ///
+    /// # Specification
+    /// - requires: each candidate is laid out as its laying says.
+    /// - ensures: what [`trial`](Self::trial) ensures, each candidate lowered
+    ///   over its unit and its composition projected from its base on as
+    ///   [`judge_unit_reading`](Self::judge_unit_reading) projects it.
+    /// - provides: an editor's trial of fills in a document that imports a
+    ///   sibling.
+    /// - fails: as [`trial`](Self::trial).
+    /// - panics: as [`trial`](Self::trial).
+    /// - executable: none — [`trial`](Self::trial) states the clauses and
+    ///   trials through this.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the trial witnesses, each candidate alone.
+    /// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
+    #[inline]
+    #[must_use]
+    pub fn trial_unit<'text>(
+        &self,
+        candidates: &[(SourceText<'text>, Laying<'_>)],
     ) -> Vec<Trial<'text>>
     {
         let (grammar, forms, root) = (&self.grammar, &self.forms, self.root);
@@ -2440,15 +2587,64 @@ where
     }
 }
 
+/// Where a trial's candidate sits in the text it is judged in.
+///
+/// # Specification
+/// - requires: nothing; a carrier.
+/// - ensures: names the unit a candidate is the last source of and where its
+///   own text starts, or that it is judged alone.
+/// - provides: what [`Session::trial_unit`] judges each candidate under.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — a carrier with no invariant of its own.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the trial witnesses judge each candidate alone.
+/// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
+#[derive(Clone, Copy, Debug)]
+pub enum Laying<'unit>
+{
+    /// The candidate is the whole text judged.
+    Alone,
+    /// The candidate is the last source of `unit`, its own text from `base`
+    /// on.
+    Member
+    {
+        /// The unit the candidate is laid out in.
+        unit: &'unit Unit,
+        /// Where the candidate's own text starts.
+        base: ByteOffset,
+    },
+}
+
+impl Laying<'_>
+{
+    /// Where the candidate's own text starts: zero alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn base(self) -> ByteOffset
+    {
+        match self {
+            Self::Alone => ByteOffset::from(0_usize),
+            Self::Member { base, .. } => base,
+        }
+    }
+}
+
 /// One candidate of a trial, judged against the session's grammar, form store
 /// and root and kept nowhere.
 ///
 /// # Specification
-/// - requires: `forms` is the session's form store and `root` its root.
-/// - ensures: `candidate` is parsed through `forms` without changing it, on
-///   `threads` threads, lowered under a count of its own, and judged and
-///   settled by the dispatcher's [`judge`]; the submission carries the
-///   composition, standing and completion obligations [`Session::judge`] gives
+/// - requires: `forms` is the session's form store and `root` its root;
+///   `laid`'s candidate is laid out as its laying says.
+/// - ensures: the candidate is parsed through `forms` without changing it, on
+///   `threads` threads, lowered alone or over its laying's unit under a count
+///   of its own, and judged and settled by the dispatcher's [`judge_member`]
+///   from its laying's base on; the submission carries the composition,
+///   standing and completion obligations [`Session::judge_unit_reading`] gives
 ///   the text in a session that has accepted nothing, no resume and no edits
 ///   ([`resumed::Absent::Tried`]), and no kernel checkpoint.
 /// - fails: [`SessionFault::Compose`] when the parse or the lowering faults or
@@ -2464,7 +2660,8 @@ where
 ///   fresh session's judgement of it.
 /// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|submission|
-    submission.root == root && submission.text == candidate
+    submission.root == root && submission.text == laid.0
+        && submission.base == laid.1.base()
         && submission.standing == Standing::of(root, &submission.composed)
         && matches!(submission.resumed, Maybe::Absent(resumed::Absent::Tried))
         && matches!(submission.edits, Maybe::Absent(resumed::Absent::Tried))
@@ -2473,16 +2670,24 @@ fn try_candidate<'text>(
     grammar: &Pbg,
     forms: &FormStore,
     root: SourceRoot,
-    candidate: SourceText<'text>,
+    laid: (SourceText<'text>, Laying<'_>),
     threads: Threads,
 ) -> Result<Submission<'text>, SessionFault<'text>>
 {
+    let (candidate, laying) = laid;
+    let base = laying.base();
     let (parsed, census) = forms
         .parse_held(grammar, candidate, threads)
         .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
-    let lowering = lower_parsed(grammar, parsed, &mut LoweringCount::default())
-        .map_err(SessionFault::Compose)?;
+    let lowering = match laying {
+        Laying::Alone => lower_parsed(grammar, parsed, &mut LoweringCount::default()),
+        Laying::Member { unit, .. } => {
+            lower_parsed_unit(grammar, parsed, unit, &mut LoweringCount::default())
+        },
+    }
+    .map_err(SessionFault::Compose)?;
     let mut obligations = lowering.obligations().to_vec();
+    obligations.retain(|obligation| obligation.span.start() >= base);
     obligations.sort_by_key(|obligation| obligation.span);
     let (composed, kernel) = match lowering.into_lowered() {
         Lowered::Refused(refusal) => (
@@ -2490,11 +2695,12 @@ fn try_candidate<'text>(
             Maybe::Absent(admitted::Absent::RefusedWhole),
         ),
         Lowered::Module { module, arena } => {
-            let (settled, admission) = judge(
+            let (settled, admission) = judge_member(
                 root.corpus_root(),
                 (module, candidate),
                 arena,
                 &HostGrant::UNBOUNDED,
+                base,
             )
             .into_parts();
             let composed = settled.map_err(|fault| {
@@ -2509,6 +2715,7 @@ fn try_candidate<'text>(
     Ok(Submission {
         root,
         text: candidate,
+        base,
         standing: Standing::of(root, &composed),
         composed,
         resumed: Maybe::Absent(resumed::Absent::Tried),

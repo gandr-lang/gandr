@@ -609,6 +609,60 @@ impl fmt::Display for Detail
     }
 }
 
+/// Where one source's own text starts in the text a diagnostic was built
+/// over: its byte offset and the newlines before it.
+///
+/// # Specification
+/// - requires: constructed by [`SourceStart::of`] or as the default.
+/// - ensures: `lines` counts the newlines of the built-over text before `base`.
+/// - provides: what [`Diagnostic::rebased`] moves a diagnostic back by.
+/// - executable: none — a data type; [`SourceStart::of`] states its check.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an importer laid after its sibling reports its refusal at
+///   its own line, column and bytes.
+/// - witness: `diagnostics::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SourceStart
+{
+    /// The offset of the source's first byte.
+    base: ByteOffset,
+    /// The newlines before `base`.
+    lines: usize,
+}
+
+impl SourceStart
+{
+    /// The source starting at `base` in `text`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `base`, with the newlines of `text` before it; none when
+    ///   `base` is past the text or splits a character.
+    /// - provides: the start a unit's diagnostics are rebased by.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witness of [`SourceStart`].
+    /// - witness: `diagnostics::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.base == base
+        && ret.lines == text.as_ref().get(.. usize::from(base)).map_or(0_usize, |before| before.matches('\n').count()))]
+    pub fn of(
+        text: SourceText<'_>,
+        base: ByteOffset,
+    ) -> Self
+    {
+        let lines = text
+            .as_ref()
+            .get(.. usize::from(base))
+            .map_or(0_usize, |before| before.matches('\n').count());
+        Self { base, lines }
+    }
+}
+
 /// One diagnostic: a refusal, an unsettled declaration, a goal, a warning, a
 /// lint's finding or a ledger line, with everything a face shows of it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -675,6 +729,113 @@ impl Diagnostic
             (Maybe::Absent(reason), _) => Maybe::Absent(reason),
             (Maybe::Present(_), _) => Maybe::Absent(report_span::Absent::OutsideText),
         }
+    }
+
+    /// This diagnostic as the source that starts at `start` in the text it
+    /// was built over shows it: its bytes and its lines measured from there.
+    ///
+    /// # Specification
+    /// - requires: `start` was taken of the text this diagnostic was built
+    ///   over, at the start of a line.
+    /// - ensures: unchanged at offset zero. Otherwise every span, locus and
+    ///   excerpt at or after the start is moved back by its bytes and lines; an
+    ///   annotation before it is dropped, a context's locus there is outside
+    ///   the text, a primary span there leaves the diagnostic unlocated, a fix
+    ///   there is not proposed, and an excerpt is cut to the lines from the
+    ///   start on, or dropped when it ends before it.
+    /// - provides: the diagnostic of one source of a unit that lays its imports
+    ///   before it, located in that source's own file.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an importer's refusal is reported at its own line and
+    ///   column.
+    /// - witness: `diagnostics::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
+    #[inline]
+    #[must_use]
+    #[spec(
+        captures: [before = self.span],
+        ensures: |ret| usize::from(start.base) != 0_usize || ret.span == before,
+    )]
+    pub fn rebased(
+        mut self,
+        start: SourceStart,
+    ) -> Self
+    {
+        let SourceStart { base, lines } = start;
+        if usize::from(base) == 0_usize {
+            return self;
+        }
+        let shifted = |span: ByteSpan| {
+            let start = usize::from(span.start()).checked_sub(usize::from(base))?;
+            let end = usize::from(span.end()).checked_sub(usize::from(base))?;
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
+        };
+        let moved = |locus: Locus| {
+            Some(Locus {
+                span: shifted(locus.span)?,
+                line: locus.line.checked_sub(lines)?,
+                column: locus.column,
+            })
+        };
+        self.span = match self.span {
+            Maybe::Present(span) => shifted(span).map_or(
+                Maybe::Absent(report_span::Absent::OutsideText),
+                Maybe::Present,
+            ),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        self.annotations = core::mem::take(&mut self.annotations)
+            .into_iter()
+            .filter_map(|annotation| {
+                Some(DiagnosticAnnotation {
+                    locus: moved(annotation.locus)?,
+                    ..annotation
+                })
+            })
+            .collect();
+        for context in &mut self.contexts {
+            if let Maybe::Present(locus) = context.locus {
+                context.locus = moved(locus).map_or(
+                    Maybe::Absent(context_locus::Absent::OutsideText),
+                    Maybe::Present,
+                );
+            }
+        }
+        if let Maybe::Present(ref fix) = self.fix
+            && let Some(span) = shifted(fix.span)
+        {
+            let replacement = fix.replacement.clone();
+            self.fix = Maybe::Present(Fix { span, replacement });
+        }
+        else if let Maybe::Present(_) = self.fix {
+            self.fix = Maybe::Absent(fix::Absent::Unproposed);
+        }
+        if let Maybe::Present(excerpt) = core::mem::replace(
+            &mut self.excerpt,
+            Maybe::Absent(report_span::Absent::OutsideText),
+        ) {
+            let cut = usize::from(base).saturating_sub(usize::from(excerpt.start));
+            let dropped = excerpt
+                .text
+                .get(.. cut)
+                .map_or(0_usize, |prefix| prefix.matches('\n').count());
+            if let Some(kept) = excerpt.text.get(cut ..)
+                && !kept.is_empty()
+                && let Some(start) = usize::from(excerpt.start)
+                    .saturating_add(cut)
+                    .checked_sub(usize::from(base))
+                && let Some(line) = excerpt.line.saturating_add(dropped).checked_sub(lines)
+            {
+                self.excerpt = Maybe::Present(Excerpt {
+                    text: String::from(kept),
+                    start: ByteOffset::from(start),
+                    line,
+                });
+            }
+        }
+        self
     }
 
     /// The lines a rendering at `verbosity` closes with, after the note.

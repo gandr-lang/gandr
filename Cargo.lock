@@ -688,6 +688,7 @@ dependencies = [
  "gandr-kernel-term",
  "gandr-storage-artifact",
  "gandr-storage-records",
+ "gandr-surface-dispatcher",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-parser",

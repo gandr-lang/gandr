@@ -47,10 +47,8 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// printer fidelity: a selection by position `p.0`, a path type whose carrier
-/// is a universe reading its endpoints as types, and the scoped capability
-/// `Cap {…} at c`.
-const BUILT_IN_FINGERPRINT: u64 = 0x5b42_f41a_90bb_98d8;
+/// the unqualified path import `import "<path>" ;` (#434).
+const BUILT_IN_FINGERPRINT: u64 = 0x86ef_32aa_576e_a971;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block

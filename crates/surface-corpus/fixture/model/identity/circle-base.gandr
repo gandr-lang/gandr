@@ -1,0 +1,148 @@
+// The circle's shared declarations, written once and imported by every
+// circle source (`import "./circle-base.gandr" ;`): the empty type, the
+// circle and the presented integers, the winding number and spinning with
+// their round trips and the equivalence `winding` they make (the book's
+// § 8.1, `Path(Circle, Base, Base) ≃ Int`), and the maps out of the circle
+// the circle sources state their laws over, after cubical Agda's
+// `Cubical/HITs/S1/Base.agda`. `circle.gandr` states what the equivalence
+// computes; this source states only what the others read.
+
+/// The type with no element.
+@[ checks ]
+data Empty : Type {}
+
+/// The circle: one point and a loop at it, bound as `loop : Path(Circle,
+/// Base, Base)`.
+@[ checks ]
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+/// The integers as a presented type: a successor and a predecessor that
+/// cancel.
+@[ checks ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
+
+/// One successor more.
+@[ checks ]
+def up(n : Int) -> -F Int {
+  S(n)
+}
+
+/// One predecessor more.
+@[ checks ]
+def down(n : Int) -> -F Int {
+  P(n)
+}
+
+/// The winding number (cubical's `winding`): a loop counts one up, its
+/// inverse one down. It respects the cancellations by `Int`'s rules.
+@[ checks ]
+def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
+  case p {
+    here => Z,
+    loop ∷ q => S(wind[<](q)),
+    back(loop) ∷ q => P(wind[<](q))
+  }
+}
+
+/// Spinning a count (cubical's `intLoop`): a successor is one more loop, a
+/// predecessor one more inverse. It respects `Int`'s rules by the
+/// cancellations.
+@[ checks ]
+def rec spin(n : Int) -> -F Path(Circle, Base, Base) {
+  case n {
+    Z => here(Base),
+    S(x) => loop ∷ spin[<](x),
+    P(x) => back(loop) ∷ spin[<](x)
+  }
+}
+
+/// One loop more: the cons a path between words is carried along.
+@[ checks ]
+def loopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  loop ∷ p
+}
+
+/// One inverse loop more.
+@[ checks ]
+def unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+  back(loop) ∷ p
+}
+
+/// Spinning undoes winding at every loop (cubical's `decodeEncode` at the
+/// point), by induction over the words: each arm carries the round trip at
+/// the rest along the letter it reads.
+@[ checks ]
+def rec sect(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), spin(wind(p)), p) {
+  case p {
+    here => here(here(Base)),
+    loop ∷ q => cong(loopOn, sect[<](q)),
+    back(loop) ∷ q => cong(unloopOn, sect[<](q))
+  }
+}
+
+/// Winding undoes spinning at every count (cubical's `windingIntLoop`), by
+/// induction over the presented integers, a successor carried along `up` and
+/// a predecessor along `down`.
+@[ checks ]
+def rec retr(n : Int) -> -F Path(Int, wind(spin(n)), n) {
+  case n {
+    Z => here(Z),
+    S(x) => cong(up, retr[<](x)),
+    P(x) => cong(down, retr[<](x))
+  }
+}
+
+/// The loops at the point and the presented integers are equivalent, by
+/// `wind` and `spin` with the two round trips at a variable (the book's
+/// Theorem 8.1.9). The later entries read `to` and `back`, so the record is
+/// their dependent pairs nested to the right.
+@[ checks ]
+def winding : #{to : +U (Path(Circle, Base, Base) -> -F Int), back : +U (Int -> -F Path(Circle, Base, Base)), sect : (p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), back(to(p)), p), retr : (n : Int) => Path(Int, to(back(n)), n)} ;
+def winding = #{wind, #{spin, #{sect, retr}}} ;
+
+/// Every point's loop (cubical's `rotLoop`; the book's Lemma 6.4.2 element):
+/// the loop at the point, carried along the loop by conjugation to itself.
+@[ checks ]
+def selfloop(x : Circle) -> -F Path(Circle, x, x) {
+  case x {
+    Base => loop
+  }
+}
+
+/// Every point's reflexivity, which conjugation fixes as well.
+@[ checks ]
+def selfrefl(x : Circle) -> -F Path(Circle, x, x) {
+  case x {
+    Base => here(Base)
+  }
+}
+
+/// The circle's flip (cubical's `invLooper`): the point to itself and the
+/// loop to its inverse, the loop arm choosing the image.
+@[ checks ]
+def invLooper(x : Circle) -> -F Circle {
+  case x {
+    Base => Base,
+    loop => back(loop)
+  }
+}
+
+/// The circle's multiplication (cubical's `_·_`, the book's § 8.5.2 μ): the
+/// point is the unit, and the loop rotates the other argument by its own
+/// loop.
+@[ checks ]
+def mul(a : Circle, b : Circle) -> -F Circle {
+  case a {
+    Base => b,
+    loop => selfloop(b)
+  }
+}

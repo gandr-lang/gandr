@@ -15,7 +15,9 @@ publish.workspace = true
 # parse, lower and check a driver runs; the library never names the parser.
 # The kernel export suite commits each corpus source's kernel artifact as
 # records and reads it back through the record plane, and replays a tampered
-# artifact through the kernel to name its refusal.
+# artifact through the kernel to name its refusal. A source that imports a
+# sibling is exported over its import closure as the dispatcher lays it out,
+# a dev-dependency cycle as `gandr-surface-diagnostics`'s.
 # The comment gate is a test target, not a library dependency: the library
 # never names the parser. `CORPUS_COMMENTS_WRITE_LEDGER=1` rewrites the ledger.
 [[test]]
@@ -45,6 +47,7 @@ gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-core.workspace = true
 gandr-storage-artifact.workspace = true
 gandr-storage-records.workspace = true
+gandr-surface-dispatcher.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-parser.workspace = true
 

@@ -413,8 +413,8 @@ fn declarations(
     out.push(module);
 
     // --- module `import` -------------------------------
-    // `import "URI" as name ;`. The URI is a plain string literal, so a new
-    // scheme needs no grammar change.
+    // `import "URI" ;` and `import "URI" as name ;`. The URI is a plain string
+    // literal, so a new scheme needs no grammar change.
     out.push(r(
         RuleName("import_declaration"),
         Provenance("import_declaration"),
@@ -423,8 +423,7 @@ fn declarations(
         seq([
             t(TileLabel("import")),
             dq_string(),
-            t(TileLabel("as")),
-            t(TileLabel("identifier")),
+            opt(seq([t(TileLabel("as")), t(TileLabel("identifier"))])),
             t(TileLabel(";")),
         ]),
     ));

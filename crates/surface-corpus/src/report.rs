@@ -48,6 +48,7 @@ use anodized::spec;
 use gandr_core_checker::ObligationCount;
 use gandr_core_term::FailureClass;
 use gandr_surface_lowering::DeclarationCount;
+use gandr_surface_syntax::ByteOffset;
 use quenchant_shape::shape::Maybe;
 
 use crate::expectation::Membership;
@@ -936,6 +937,38 @@ impl<'source> SettleReport<'source>
         self.ledger
     }
 
+    /// The report of the declarations written from `start` on, owing
+    /// `ledger`: one source's share of a unit that lays its siblings before
+    /// it.
+    ///
+    /// # Specification
+    /// - requires: `ledger` is what the kept declarations' verdicts owe.
+    /// - ensures: the root, the declarations whose span starts at or after
+    ///   `start` in admission order, and `ledger`.
+    /// - provides: the importer's report over the unit it was judged in.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an importer's settled report holds its own
+    ///   declarations alone.
+    /// - witness: `report::tests::a_report_from_an_offset_keeps_the_declarations_written_from_there`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.ledger == ledger
+        && ret.declarations.iter().all(|declaration| declaration.span().start() >= start))]
+    pub fn from_offset(
+        mut self,
+        start: ByteOffset,
+        ledger: ObligationCount,
+    ) -> Self
+    {
+        self.declarations
+            .retain(|declaration| declaration.span().start() >= start);
+        self.ledger = ledger;
+        self
+    }
+
     /// The run's counts.
     ///
     /// # Specification
@@ -1159,6 +1192,7 @@ fn obligations_sum(
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::String;
     use alloc::string::ToString as _;
     use alloc::vec::Vec;
     use core::fmt;
@@ -1166,6 +1200,7 @@ mod tests
     use gandr_core_checker::ObligationCount;
     use gandr_core_term::FailureClass;
     use gandr_surface_lowering::DeclarationCount;
+    use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::SourceText;
 
     use super::ClassCounts;
@@ -1347,6 +1382,32 @@ mod tests
         assert_eq!(
             total, before,
             "an empty tally changes no count, including saturated ones"
+        );
+    }
+
+    #[test]
+    fn a_report_from_an_offset_keeps_the_declarations_written_from_there()
+    {
+        let source = "def first = 1 ;\ndef second = 2 ;";
+        let start = source
+            .find("def second")
+            .expect("the second declaration is written");
+        let report = settled(CorpusRoot::Fixture, SourceText::from(source))
+            .from_offset(ByteOffset::from(start), ObligationCount::from(3_usize));
+        let names: Vec<String> = report
+            .declarations()
+            .iter()
+            .map(|declaration| declaration.name().to_string())
+            .collect();
+        assert_eq!(
+            names,
+            ["second"],
+            "a declaration before the offset, a sibling's, is dropped"
+        );
+        assert_eq!(
+            report.ledger,
+            ObligationCount::from(3_usize),
+            "the ledger is the one the importer's own verdicts owe"
         );
     }
 

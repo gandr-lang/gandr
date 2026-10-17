@@ -1,0 +1,10 @@
+// The second member of the cycle `import-cycle-a.gandr` opens (#434).
+
+// The first member, which imports this one.
+import "./import-cycle-a.gandr" ;
+
+/// A declaration of the second member, refused with the cycle.
+@[ refuses("ImportCycle") ]
+data Right : Type {
+  R : Right;
+}

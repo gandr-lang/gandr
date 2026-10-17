@@ -34,7 +34,9 @@ mod entries
     use gandr_surface_dispatcher::Step;
     use gandr_surface_dispatcher::TypeTable;
     use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::lay_out;
     use gandr_surface_dispatcher::lower_source;
+    use gandr_surface_dispatcher::lower_unit_source;
     use gandr_surface_grammar::MoldDef;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::Sort;
@@ -48,6 +50,7 @@ mod entries
     use gandr_surface_syntax::Node;
     use gandr_surface_syntax::NodeIndex;
     use gandr_surface_syntax::NodeLabel;
+    use gandr_surface_syntax::SourceText;
     use gandr_surface_syntax::SyntaxTree;
     use quenchant_shape::shape::Maybe;
 
@@ -475,7 +478,9 @@ mod entries
         while let Maybe::Present(step) = walk.step() {
             let Step::Source {
                 path,
+                root,
                 text,
+                base,
                 composed,
                 ..
             } = step
@@ -485,7 +490,26 @@ mod entries
             if path.components().any(|part| part.as_os_str() == "pending") {
                 continue;
             }
-            let (Ok(table), Ok(parsed)) = (TypeTable::of(&grammar, text), parse(&grammar, text))
+            // An importer is typed over its closure, as the hover types it:
+            // the table and the tree are its own text's, the lowering the
+            // unit's, whose constants the report names.
+            let Some(own) = <&str>::from(text).get(usize::from(base) ..)
+            else {
+                continue;
+            };
+            let laid = lay_out(&grammar, path, root, SourceText::from(own));
+            let (table, lowering) = match laid {
+                Maybe::Present(ref laid) => (
+                    TypeTable::of_unit(&grammar, text, &laid.unit, laid.base),
+                    lower_unit_source(&grammar, text, &laid.unit, &mut LoweringCount::default()),
+                ),
+                Maybe::Absent(_) => (
+                    TypeTable::of(&grammar, text),
+                    lower_source(&grammar, text, &mut LoweringCount::default()),
+                ),
+            };
+            let text = SourceText::from(own);
+            let (Ok(table), Ok(parsed)) = (table, parse(&grammar, text))
             else {
                 continue;
             };
@@ -506,7 +530,7 @@ mod entries
                     .collect(),
                 Composed::Refused(_) => BTreeSet::new(),
             };
-            if let Ok(lowering) = lower_source(&grammar, text, &mut LoweringCount::default())
+            if let Ok(lowering) = lowering
                 && let Lowered::Module { ref module, .. } = lowering.into_lowered()
             {
                 for declaration in module.declarations() {

@@ -1,42 +1,82 @@
-//! Imports: `import "URI" as name ;`, kept as a source-ordered declaration
-//! and bound by its alias in the module's import scope.
+//! Imports: `import "<path>" ;` and `import "<path>" as name ;`, kept as
+//! source-ordered declarations, resolved against the sources of the
+//! [`Unit`](crate::Unit) the importer is lowered in.
 //!
-//! An import resolves no address. Its URI is kept decoded, as written, for
-//! the pass that will resolve it. What the lowering does now is the namespace
-//! half: the import's own namespace is one binding at the root, the import's
-//! position, and `as name` is [`Modifier::alias_as`] — the checked
-//! `renaming . name` — run over it before the result is imported into the
-//! module's import scope. The scope's visible namespace then answers each
-//! alias with the import it names, and its export stays empty, because an
-//! import is not a re-export.
+//! # An import resolves a sibling source
 //!
-//! # One alias, one source
+//! An address with no scheme is a path relative to the importing source. The
+//! dispatcher reads the importer's closure — every source it reaches through
+//! path imports, each once — and lays it out as one text, each source after
+//! every source it imports and the importer last; the [`Unit`](crate::Unit)
+//! records where each source starts and what each of its path imports, in
+//! source order, resolved to: an earlier source, a path naming nothing in the
+//! root ([`ImportTarget::Unresolved`]), or an edge of a cycle
+//! ([`ImportTarget::Cycle`]). The unit is parsed as one tree and lowered into
+//! one arena: each top-level declaration and constructor is collected under
+//! its own source (`Container::TopLevel`), so the sibling's declarations are
+//! the prefix of the importer's constants, checked and admitted first, and a
+//! reference to one lowers to its constant. Nothing is copied into the
+//! importer, and the kernel replays the sibling's certificate before the
+//! importer's, which refers to it by content.
 //!
-//! The import scope is settled by a policy that refuses every shadow, so two
-//! imports binding one alias refuse the module, naming both, rather than a
-//! later import silently hiding an earlier one.
+//! A name a source does not declare is looked up through its resolved
+//! imports. The export of a source is its top-level declarations and its
+//! constructors under their families — not what it imports, since an import
+//! is not a re-export. `import "<path>" ;` brings the export in unqualified;
+//! `import "<path>" as m ;` binds `m` in the import scope and answers
+//! `m.Name` with the export's `Name`, as a term and as a type head. A
+//! declaration with no definition is not exported: a use refuses
+//! `UnexportedName` naming it. A declaration its source refuses is not
+//! exported either: its constant has no type, and a use is refused
+//! `UnknownConstant` at the use, as a use of a refused declaration of the
+//! source's own is. An address with a scheme is bound and not resolved, as
+//! before.
 //!
-//! # Imports bind an alias and resolve nothing
+//! # Refusals by name
 //!
-//! `import "URI" as name ;` is kept in source order as an `ImportDeclaration` —
-//! the address with its escapes decoded, the alias, the bytes — and its alias
-//! bound in the module's import scope: the import's one root binding, its
-//! position, run through `alias_as` (`renaming . name`) and imported, so the
-//! visible namespace answers each alias and the export stays empty. The import
-//! policy refuses every shadow, so a second import of one alias refuses the
-//! module as `DuplicateImportAlias`, naming the first; an import out of shape,
-//! a missing alias included, is `MalformedForm`. No address is resolved and an
-//! alias is not a term name. Reversal: when module resolution lands, the
-//! address resolves to an export namespace and the import runs its modifier
-//! over that instead of a root binding.
+//! - `ImportUnresolved` and `ImportCycle`: every declaration of a source whose
+//!   import names nothing in the root, or closes a cycle, is refused at the
+//!   import, naming it — no declaration of such a source can be trusted to read
+//!   what its author meant. A sibling the lowering refuses as a whole refuses
+//!   its importer whole, with the sibling's refusal.
+//! - `ImportShadows`: a top-level declaration or constructor an unqualified
+//!   import already binds is refused at the declaration, naming the import; two
+//!   unqualified imports binding one name refuse a use of it, naming both, and
+//!   leave every other name of both usable.
+//! - `DuplicateImportAlias`: two imports binding one alias refuse the module,
+//!   naming the first, rather than a later import silently hiding an earlier
+//!   one.
 //!
-//! The source reader refuses an import without an alias. Rebinding an alias is
-//! refused even when the URI is identical; refusal preserves the inventory and
-//! namespace and leaves the next import position available. Witnesses:
-//! `namespace::namespace::source_import_without_alias_becomes_a_refusal`,
+//! The recorded design refuses an ambiguous unqualified import outright; this
+//! refuses the use instead, as Haskell refuses an ambiguous occurrence and
+//! not the import: a source that imports two siblings sharing one helper's
+//! name stays usable for everything else, and the refusal still names both
+//! sources where the name is read.
+//!
+//! # Alternatives and reversal
+//!
+//! - An export table per source, each source lowered into its own arena and the
+//!   importer reading the table: declined, because the checker, the program and
+//!   the kernel each read one arena and one environment, and a second arena per
+//!   sibling would need every constant translated between them.
+//! - A forest lowerer, one tree per source: declined, because the collector,
+//!   the namespace engine and the origin table already address one tree;
+//!   concatenation keeps them as they are and scopes names by source.
+//! - Reversal: when packages land, an address names an export namespace
+//!   (`Modifier` runs over it, `| only …` included), and a unit becomes a
+//!   package's import-connected component judged once.
+//!
+//! Witnesses:
+//! `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`,
+//! `namespace::namespace::an_aliased_import_qualifies_its_source_s_names`,
+//! `namespace::namespace::two_imports_binding_one_name_refuse_its_use`,
+//! `namespace::namespace::a_pending_declaration_is_not_exported`,
+//! `namespace::namespace::an_unresolved_import_refuses_its_source`,
+//! `namespace::namespace::a_declaration_an_import_binds_again_is_refused`,
 //! `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal` and
 //! `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`.
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
@@ -59,6 +99,8 @@ use crate::namespace::ScopeError;
 use crate::namespace::Segment;
 use crate::namespace::Trie;
 use crate::resolve::SurfaceName;
+use crate::unit::ImportTarget;
+use crate::unit::SourceIndex;
 
 /// The reason the import policy gives for refusing a second binding of one
 /// alias.
@@ -142,12 +184,36 @@ impl fmt::Display for ImportUri
     }
 }
 
-/// One `import "URI" as name ;`, as the source wrote it.
+/// What an import binds in its source: the sibling's exports by their own
+/// names, or the sibling itself under an alias.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ImportBinding<'source>
+{
+    /// `import "…" ;`: each export answers by its own name.
+    Unqualified,
+    /// `import "…" as name ;`: each export answers as `name.Export`.
+    Aliased(SurfaceName<'source>),
+}
+
+/// What an import's address came to.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ImportResolution
+{
+    /// An address with a scheme: kept as written and resolved by no pass of
+    /// this lowering.
+    Foreign,
+    /// A path, relative to the importing source, and what the unit's caller
+    /// resolved it to.
+    Path(ImportTarget),
+}
+
+/// One `import "URI" ;` or `import "URI" as name ;`, as the source wrote it,
+/// with what its address came to.
 ///
 /// # Specification
-/// - requires: the caller supplies a decoded URI, alias and source span
-///   belonging to the same import declaration.
-/// - ensures: all three components are retained without resolving the URI.
+/// - requires: the caller supplies a decoded URI, binding, span, source and
+///   resolution belonging to the same import declaration.
+/// - ensures: every component is retained as given.
 /// - provides: source-associated import metadata.
 /// - fails: construction does not validate source association or addresses.
 /// - panics: none.
@@ -159,20 +225,25 @@ impl fmt::Display for ImportUri
 ///   exact alias and span, even when no such address exists. Raw constructors
 ///   remain able to represent caller-supplied metadata.
 /// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ImportDeclaration<'source>
 {
     /// The address the import names.
     uri: ImportUri,
-    /// The alias it binds.
-    alias: SurfaceName<'source>,
+    /// What it binds.
+    binding: ImportBinding<'source>,
     /// The bytes the import covers.
     span: ByteSpan,
+    /// The source of the unit that wrote it.
+    source: SourceIndex,
+    /// What its address came to.
+    resolution: ImportResolution,
 }
 
 impl<'source> ImportDeclaration<'source>
 {
-    /// The import of `uri` as `alias`, written over `span`.
+    /// The import of `uri` binding `binding`, written over `span` in
+    /// `source`, its address come to `resolution`.
     ///
     /// # Specification
     /// trivial.
@@ -180,11 +251,19 @@ impl<'source> ImportDeclaration<'source>
     #[must_use]
     pub const fn new(
         uri: ImportUri,
-        alias: SurfaceName<'source>,
+        binding: ImportBinding<'source>,
         span: ByteSpan,
+        source: SourceIndex,
+        resolution: ImportResolution,
     ) -> Self
     {
-        Self { uri, alias, span }
+        Self {
+            uri,
+            binding,
+            span,
+            source,
+            resolution,
+        }
     }
 
     /// The address the import names.
@@ -198,15 +277,15 @@ impl<'source> ImportDeclaration<'source>
         &self.uri
     }
 
-    /// The alias the import binds.
+    /// What the import binds.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn alias(&self) -> SurfaceName<'source>
+    pub const fn binding(&self) -> ImportBinding<'source>
     {
-        self.alias
+        self.binding
     }
 
     /// The bytes the import covers.
@@ -219,18 +298,65 @@ impl<'source> ImportDeclaration<'source>
     {
         self.span
     }
+
+    /// The source of the unit that wrote the import.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn source(&self) -> SourceIndex
+    {
+        self.source
+    }
+
+    /// What the import's address came to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn resolution(&self) -> ImportResolution
+    {
+        self.resolution
+    }
 }
 
-/// A module's imports: the declarations in source order, and the scope their
-/// aliases are bound in.
+quenchant_shape::reason_enum! {
+    /// Why a source has no alias scope.
+    pub mod alias_scope {
+        /// The reason no scope is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The source binds no alias.
+            Unaliased,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an alias names no import.
+    pub mod aliased {
+        /// The reason the alias answers nothing.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No import of the source binds the alias.
+            Unbound,
+        }
+    }
+}
+
+/// A unit's imports: the declarations in source order, and the scope each
+/// source's aliases are bound in.
 ///
 /// # Specification
-/// - requires: nothing; the empty collection starts with an empty scope.
-/// - ensures: declarations remain in successful binding order; visible aliases
-///   correspond to their declaration indices and spans; the export remains
-///   empty. A rejected duplicate leaves both collections unchanged.
-/// - provides: an import inventory and its read-only namespace view.
-/// - fails: duplicate aliases are refused by bind, without address lookup.
+/// - requires: nothing; the empty collection holds no scope.
+/// - ensures: declarations remain in successful binding order; each source's
+///   visible aliases correspond to its aliased declarations' indices and spans;
+///   no export is ever bound. A rejected duplicate leaves both collections
+///   unchanged.
+/// - provides: an import inventory and its read-only namespace views.
+/// - fails: an alias a source already binds is refused by bind.
 /// - panics: allocation failure follows the allocator policy.
 /// - executable: none — type refinements require the disabled logic feature;
 ///   bind checks list/namespace counts and append metadata.
@@ -239,22 +365,23 @@ impl<'source> ImportDeclaration<'source>
 /// - hypothesis: L3 — distinct parsed aliases resolve to successive declaration
 ///   positions with an empty export. Repeating the same URI and alias still
 ///   refuses, preserves the entire state and leaves the next position
-///   available.
+///   available; one alias in two sources binds in each.
 /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
 /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
+/// - witness: `import::tests::each_source_binds_its_own_aliases`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ModuleImports<'source>
 {
     /// The imports, in source order.
     declarations: Vec<ImportDeclaration<'source>>,
-    /// The scope each alias is bound in, to its import's position, tagged
-    /// with the import's bytes.
-    scope: Scope<ImportIndex, ByteSpan>,
+    /// The scope each source's aliases are bound in, to their imports'
+    /// positions, tagged with the imports' bytes.
+    scopes: BTreeMap<SourceIndex, Scope<ImportIndex, ByteSpan>>,
 }
 
 impl<'source> ModuleImports<'source>
 {
-    /// No import, and an empty scope.
+    /// No import, and no scope.
     ///
     /// # Specification
     /// trivial.
@@ -276,31 +403,103 @@ impl<'source> ModuleImports<'source>
         &self.declarations
     }
 
-    /// The scope the aliases are bound in.
+    /// The scope `source`'s aliases are bound in.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the scope of every alias `source` binds;
+    ///   [`alias_scope::Absent::Unaliased`] when it binds none.
+    /// - provides: the namespace view an alias resolves through.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two sources binding one alias each answer their own,
+    ///   and a source binding none answers unaliased.
+    /// - witness: `import::tests::each_source_binds_its_own_aliases`
+    #[inline]
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) != self.scopes.contains_key(&source))]
+    pub fn scope(
+        &self,
+        source: SourceIndex,
+    ) -> Maybe<&Scope<ImportIndex, ByteSpan>, alias_scope::Absent>
+    {
+        self.scopes.get(&source).map_or(
+            Maybe::Absent(alias_scope::Absent::Unaliased),
+            Maybe::Present,
+        )
+    }
+
+    /// The import `source` binds `alias` to.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the declaration whose alias `alias` is among `source`'s
+    ///   imports; [`aliased::Absent::Unbound`] when none is.
+    /// - provides: the qualifier a path `alias.Name` is resolved through.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one alias bound in two sources answers each source's
+    ///   own import, and an alias another source binds answers nothing.
+    /// - witness: `import::tests::each_source_binds_its_own_aliases`
+    #[inline]
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(found) => found.source == source && found.binding == ImportBinding::Aliased(alias),
+        Maybe::Absent(_) => true,
+    })]
+    pub fn aliased(
+        &self,
+        source: SourceIndex,
+        alias: SurfaceName<'source>,
+    ) -> Maybe<&ImportDeclaration<'source>, aliased::Absent>
+    {
+        let Maybe::Present(scope) = self.scope(source)
+        else {
+            return Maybe::Absent(aliased::Absent::Unbound);
+        };
+        let path = NamePath::from(Vec::from([Segment::from(alias.as_ref())]));
+        match scope.resolve(&path) {
+            Maybe::Present(bound) => self
+                .declarations
+                .get(usize::from(bound.data))
+                .map_or(Maybe::Absent(aliased::Absent::Unbound), Maybe::Present),
+            Maybe::Absent(_) => Maybe::Absent(aliased::Absent::Unbound),
+        }
+    }
+
+    /// The imports `source` writes, in source order.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
-    pub const fn scope(&self) -> &Scope<ImportIndex, ByteSpan>
+    pub fn of(
+        &self,
+        source: SourceIndex,
+    ) -> impl Iterator<Item = &ImportDeclaration<'source>>
     {
-        &self.scope
+        self.declarations
+            .iter()
+            .filter(move |declaration| declaration.source == source)
     }
 
-    /// Bind `declaration`'s alias to its position, and keep it.
+    /// Keep `declaration`, binding its alias, when it has one, in its
+    /// source's scope.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success the declaration is the last kept, at position `n`
-    ///   for the `n` kept before it, and the visible namespace binds its alias
-    ///   to that position, tagged with its bytes; the export is never touched.
-    ///   The binding is the import's root binding run through
+    ///   for the `n` kept before it; an aliased one's source scope binds its
+    ///   alias to that position, tagged with its bytes, and no export is ever
+    ///   touched. The binding is the import's root binding run through
     ///   [`Modifier::alias_as`] and imported under a policy that refuses every
-    ///   shadow.
-    /// - provides: the import lowering: an alias in scope, no address resolved.
+    ///   shadow. An unqualified import binds no alias.
+    /// - provides: the import collection.
     /// - fails: [`LoweringRefusal::DuplicateImportAlias`] at the declaration's
-    ///   bytes, naming the first import's, when an earlier import binds the
-    ///   alias; the declarations and the scope are left as they were.
+    ///   bytes, naming the first import's, when an earlier import of its source
+    ///   binds the alias; the declarations and the scopes are left as they
+    ///   were.
     /// - panics: none.
     ///
     /// # Errors
@@ -309,14 +508,15 @@ impl<'source> ModuleImports<'source>
     /// # Adequacy
     /// - hypothesis: L3 — parsed imports retain URI, alias, span and visible
     ///   position. A duplicate names both sources; an identical URI does not
-    ///   bypass refusal or consume the next position. The predicate observes
-    ///   counts and append metadata without cloning the namespace; witnesses
-    ///   check the exact bindings and the complete rejected state.
+    ///   bypass refusal or consume the next position; one alias in two sources
+    ///   binds in each. Witnesses check the exact bindings and the complete
+    ///   rejected state.
     /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
     /// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
     /// - witness: `namespace::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
     /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
     /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
+    /// - witness: `import::tests::each_source_binds_its_own_aliases`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -325,25 +525,23 @@ impl<'source> ModuleImports<'source>
         )
     )]
     #[spec(
-        captures: before = (self.declarations.len(), declaration.alias, declaration.span),
+        captures: before = (self.declarations.len(), declaration.binding, declaration.span),
         ensures: |ret| {
-            usize::from(self.scope.export().binding_count()) == 0_usize
-                && usize::from(self.scope.visible().binding_count()) == self.declarations.len()
+            self.scopes.values().all(|scope| usize::from(scope.export().binding_count()) == 0_usize)
                 && match ret {
                     | Ok(()) => {
                         before.0.checked_add(1_usize) == Some(self.declarations.len())
                             && self
                                 .declarations
                                 .last()
-                                .is_some_and(|last| (last.alias, last.span) == (before.1, before.2))
+                                .is_some_and(|last| (last.binding, last.span) == (before.1, before.2))
                     },
                     | Err(LoweringRefusal::DuplicateImportAlias { span, alias, first }) => {
                         self.declarations.len() == before.0
-                            && (span, alias) == (before.2, before.1)
-                            && self
-                                .declarations
-                                .iter()
-                                .any(|held| held.alias == alias && held.span == first)
+                            && (span, ImportBinding::Aliased(alias)) == (before.2, before.1)
+                            && self.declarations.iter().any(|held| {
+                                held.binding == ImportBinding::Aliased(alias) && held.span == first
+                            })
                     },
                     | Err(_) => false,
                 }
@@ -355,28 +553,41 @@ impl<'source> ModuleImports<'source>
         declaration: ImportDeclaration<'source>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        let ImportBinding::Aliased(written) = declaration.binding
+        else {
+            self.declarations.push(declaration);
+            return Ok(());
+        };
         let index = ImportIndex(self.declarations.len());
-        let alias = Segment::from(declaration.alias.as_ref());
+        let alias = Segment::from(written.as_ref());
         let mut root = Trie::empty();
         let _fresh = root.insert(&NamePath::root(), Binding::new(index, declaration.span));
         let mut policy = OneSource;
+        let mut scope = self
+            .scopes
+            .get(&declaration.source)
+            .cloned()
+            .unwrap_or_default();
         let bound = match Modifier::alias_as(alias.clone()).apply(root, &mut policy) {
-            Ok(qualified) => self
-                .scope
-                .import_subtree(&NamePath::root(), qualified, &mut policy),
+            Ok(qualified) => scope.import_subtree(&NamePath::root(), qualified, &mut policy),
             Err(rejection) => Err(ScopeError::from(rejection)),
         };
         if let Err(_shadowed) = bound {
-            let first = match self.scope.resolve(&NamePath::from(Vec::from([alias]))) {
-                Maybe::Present(held) => held.tag,
+            let path = NamePath::from(Vec::from([alias]));
+            let first = match self.scope(declaration.source) {
+                Maybe::Present(held) => match held.resolve(&path) {
+                    Maybe::Present(binding) => binding.tag,
+                    Maybe::Absent(_) => declaration.span,
+                },
                 Maybe::Absent(_) => declaration.span,
             };
             return Err(LoweringRefusal::DuplicateImportAlias {
                 span: declaration.span,
-                alias: declaration.alias,
+                alias: written,
                 first,
             });
         }
+        let _replaced = self.scopes.insert(declaration.source, scope);
         self.declarations.push(declaration);
         Ok(())
     }
@@ -493,10 +704,13 @@ mod tests
     use alloc::string::String;
 
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
     use quenchant_shape::shape::Maybe;
 
+    use super::ImportBinding;
     use super::ImportDeclaration;
     use super::ImportIndex;
+    use super::ImportResolution;
     use super::ImportUri;
     use super::ModuleImports;
     use crate::error::LoweringRefusal;
@@ -505,29 +719,31 @@ mod tests
     use crate::namespace::NamePath;
     use crate::namespace::Segment;
     use crate::resolve::SurfaceName;
+    use crate::unit::SourceIndex;
 
     #[test]
     fn an_identical_import_is_still_a_duplicate_and_preserves_the_next_position()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let aliased = |uri: &str, alias: &'static str, at: ByteSpan, source: usize| {
+            ImportDeclaration::new(
+                ImportUri::from(String::from(uri)),
+                ImportBinding::Aliased(SurfaceName::from(alias)),
+                at,
+                SourceIndex::from(source),
+                ImportResolution::Foreign,
+            )
+        };
         let first = at(0_usize, 10_usize);
         let repeated = at(11_usize, 21_usize);
         let later = at(22_usize, 32_usize);
         let mut imports = ModuleImports::new();
         imports
-            .bind(ImportDeclaration::new(
-                ImportUri::from(String::from("file:///same.gandr")),
-                SurfaceName::from("same"),
-                first,
-            ))
+            .bind(aliased("file:///same.gandr", "same", first, 0_usize))
             .unwrap();
         let before = imports.clone();
         assert_eq!(
-            imports.bind(ImportDeclaration::new(
-                ImportUri::from(String::from("file:///same.gandr")),
-                SurfaceName::from("same"),
-                repeated,
-            )),
+            imports.bind(aliased("file:///same.gandr", "same", repeated, 0_usize)),
             Err(LoweringRefusal::DuplicateImportAlias {
                 span: repeated,
                 alias: SurfaceName::from("same"),
@@ -536,15 +752,15 @@ mod tests
         );
         assert_eq!(imports, before);
         imports
-            .bind(ImportDeclaration::new(
-                ImportUri::from(String::from("file:///next.gandr")),
-                SurfaceName::from("next"),
-                later,
-            ))
+            .bind(aliased("file:///next.gandr", "next", later, 0_usize))
             .unwrap();
         let next = NamePath::from(alloc::vec::Vec::from([Segment::from("next")]));
+        let Maybe::Present(scope) = imports.scope(SourceIndex::from(0_usize))
+        else {
+            panic!("the source binds aliases");
+        };
         assert_eq!(
-            imports.scope().resolve(&next),
+            scope.resolve(&next),
             Maybe::Present(&Binding::new(ImportIndex::from(1_usize), later))
         );
         assert_eq!(imports.declarations().len(), 2_usize);
@@ -552,9 +768,51 @@ mod tests
             imports.declarations().last().unwrap().uri().as_ref(),
             "file:///next.gandr"
         );
-        assert_eq!(
-            usize::from(imports.scope().export().binding_count()),
-            0_usize
-        );
+        assert_eq!(usize::from(scope.export().binding_count()), 0_usize);
+    }
+
+    #[test]
+    fn each_source_binds_its_own_aliases()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let aliased = |uri: &str, alias: &'static str, at: ByteSpan, source: usize| {
+            ImportDeclaration::new(
+                ImportUri::from(String::from(uri)),
+                ImportBinding::Aliased(SurfaceName::from(alias)),
+                at,
+                SourceIndex::from(source),
+                ImportResolution::Foreign,
+            )
+        };
+        let mut imports = ModuleImports::new();
+        imports
+            .bind(aliased("./a.gandr", "m", at(0_usize, 5_usize), 0_usize))
+            .unwrap();
+        imports
+            .bind(aliased("./b.gandr", "m", at(10_usize, 15_usize), 1_usize))
+            .unwrap();
+        imports
+            .bind(ImportDeclaration::new(
+                ImportUri::from(String::from("./c.gandr")),
+                ImportBinding::Unqualified,
+                at(16_usize, 20_usize),
+                SourceIndex::from(1_usize),
+                ImportResolution::Foreign,
+            ))
+            .unwrap();
+        let named = |source: usize| match imports
+            .aliased(SourceIndex::from(source), SurfaceName::from("m"))
+        {
+            Maybe::Present(found) => Some(found.uri().as_ref()),
+            Maybe::Absent(_) => None,
+        };
+        assert_eq!(named(0_usize), Some("./a.gandr"));
+        assert_eq!(named(1_usize), Some("./b.gandr"));
+        assert_eq!(named(2_usize), None);
+        assert!(matches!(
+            imports.scope(SourceIndex::from(2_usize)),
+            Maybe::Absent(super::alias_scope::Absent::Unaliased)
+        ));
+        assert_eq!(imports.of(SourceIndex::from(1_usize)).count(), 2_usize);
     }
 }

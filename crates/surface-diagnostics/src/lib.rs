@@ -127,6 +127,7 @@ pub use crate::model::Locus;
 pub use crate::model::Message;
 pub use crate::model::MessageKey;
 pub use crate::model::Severity;
+pub use crate::model::SourceStart;
 pub use crate::model::binding;
 pub use crate::model::context_locus;
 pub use crate::model::expression;

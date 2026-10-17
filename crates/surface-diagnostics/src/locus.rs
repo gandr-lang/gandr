@@ -490,8 +490,13 @@ impl Annotations
                 | LoweringRefusal::DuplicateImportAlias { first, .. }
                 | LoweringRefusal::DuplicateAttribute { first, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::First }),
-                LoweringRefusal::ForwardMemberReference { declared, .. } =>
+                LoweringRefusal::ForwardMemberReference { declared, .. }
+                | LoweringRefusal::UnexportedName { declared, .. }
+                | LoweringRefusal::ImportUnresolved { refused: declared, .. }
+                | LoweringRefusal::ImportCycle { refused: declared, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: declared, label: Label::Declared }),
+                LoweringRefusal::ImportShadows { import, .. } =>
+                    ret.context[0_usize] == Maybe::Present(Annotation { span: import, label: Label::First }),
                 LoweringRefusal::RulesDiverge { first, .. } | LoweringRefusal::RulesUndecided { first, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::Overlaps }),
                 LoweringRefusal::UnresolvedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::UnresolvedTypeHead { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::LowercaseModuleName { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::ForNeedsListCase { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => ret.context[0_usize] == Maybe::Absent(report_context::Absent::Unnamed),
@@ -514,12 +519,21 @@ impl Annotations
                 span: first,
                 label: Label::First,
             }),
-            LoweringRefusal::ForwardMemberReference { declared, .. } => {
-                Maybe::Present(Annotation {
-                    span: declared,
-                    label: Label::Declared,
-                })
-            },
+            LoweringRefusal::ForwardMemberReference { declared, .. }
+            | LoweringRefusal::UnexportedName { declared, .. }
+            | LoweringRefusal::ImportUnresolved {
+                refused: declared, ..
+            }
+            | LoweringRefusal::ImportCycle {
+                refused: declared, ..
+            } => Maybe::Present(Annotation {
+                span: declared,
+                label: Label::Declared,
+            }),
+            LoweringRefusal::ImportShadows { import, .. } => Maybe::Present(Annotation {
+                span: import,
+                label: Label::First,
+            }),
             LoweringRefusal::RulesDiverge { first, .. }
             | LoweringRefusal::RulesUndecided { first, .. } => Maybe::Present(Annotation {
                 span: first,

@@ -9,47 +9,8 @@
 // stand bare where no path type is written: each reads its path's type off
 // the words it acts on.
 
-/// The circle: one point and a loop at it.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
-}
-
-/// The integers, a constant family's fibre.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
-}
-
-/// Every point's loop: the loop at the point, carried along the loop by
-/// conjugation to itself (the book's Lemma 6.4.2 element).
-@[ checks ]
-def selfloop(x : Circle) -> -F Path(Circle, x, x) {
-  case x {
-    Base => loop
-  }
-}
-
-/// Every point's reflexivity, which conjugation fixes as well.
-@[ checks ]
-def selfrefl(x : Circle) -> -F Path(Circle, x, x) {
-  case x {
-    Base => here(Base)
-  }
-}
-
-/// The circle's flip: the point to itself and the loop to its inverse, the
-/// loop arm choosing the image.
-@[ checks ]
-def invLooper(x : Circle) -> -F Circle {
-  case x {
-    Base => Base,
-    loop => back(loop)
-  }
-}
+// The circle, the integers, every point's loop and reflexivity, and the flip.
+import "./circle-base.gandr" ;
 
 /// The flip twice is the identity, at every point: the answer at `Base` is
 /// reflexivity, and carried along the loop it is conjugated by the flip's

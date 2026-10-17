@@ -153,11 +153,10 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(parameter_path::Absent::Outside);
         };
-        let mut container = self
-            .collected
-            .slots
-            .get(usize::from(own))
-            .map_or(Container::TopLevel, |slot| slot.container);
+        let mut container = self.collected.slots.get(usize::from(own)).map_or_else(
+            || self.collected.top(site.at.span.start()),
+            |slot| slot.container,
+        );
         while let Container::Module(module) = container
             && let Some(structure) = self.collected.structures.get(usize::from(module))
         {

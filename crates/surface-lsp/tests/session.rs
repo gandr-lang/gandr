@@ -840,17 +840,23 @@ mod session
         let mut expected = BTreeMap::new();
         let mut sources = Vec::new();
         while let Maybe::Present(step) = walk.step() {
-            let Step::Source { path, text, .. } = step
+            let Step::Source {
+                path, text, base, ..
+            } = step
             else {
                 panic!("every corpus path is carried through the pipeline");
             };
-            let index = LineIndex::new(text.as_ref().into());
+            // An importer's text is its closure's; the editor holds its own.
+            let own = <&str>::from(text)
+                .get(usize::from(base) ..)
+                .expect("a source's own text starts inside its unit's");
+            let index = LineIndex::new(own.into());
             let reports = entries(&step, Verb::Check(Goals::Reported))
                 .map(|diagnostic| rendered(&diagnostic, &index))
                 .collect::<Vec<_>>();
             let source = Source {
                 uri: uri(path),
-                text: text.as_ref().to_owned(),
+                text: own.to_owned(),
             };
             let _prior = expected.insert(source.uri.clone(), reports);
             sources.push(source);

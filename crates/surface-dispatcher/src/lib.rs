@@ -109,6 +109,7 @@
 
 extern crate alloc;
 
+mod closure;
 mod compose;
 mod entry;
 mod evaluate;
@@ -129,6 +130,9 @@ pub use gandr_core_checker::HostGrant;
 pub use gandr_core_term::effect::OperationName;
 pub use gandr_core_term::effect::host::AuthorityError;
 
+pub use crate::closure::Laid;
+pub use crate::closure::laid;
+pub use crate::closure::lay_out;
 pub use crate::compose::Admission;
 pub use crate::compose::ComposeFault;
 pub use crate::compose::Composed;
@@ -140,9 +144,12 @@ pub use crate::compose::adapt;
 pub use crate::compose::admitted;
 pub use crate::compose::compose;
 pub use crate::compose::judge;
+pub use crate::compose::judge_member;
 pub use crate::compose::judge_module;
 pub use crate::compose::lower_parsed;
+pub use crate::compose::lower_parsed_unit;
 pub use crate::compose::lower_source;
+pub use crate::compose::lower_unit_source;
 pub use crate::entry::Entries;
 pub use crate::entry::entries;
 pub use crate::evaluate::Evaluation;

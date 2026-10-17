@@ -89,10 +89,12 @@
 //! travels as an opaque token a checker echoes back, which keeps spans and
 //! names out of the core.
 //!
-//! **Imports bind an alias and resolve nothing.** `import "URI" as name ;` is
-//! kept in source order and its alias bound in the module's import scope by
-//! the namespace engine's `alias_as`; the address waits for the pass that
-//! resolves it.
+//! **An import brings a sibling's declarations in.** `import "<path>" ;` and
+//! `import "<path>" as name ;` are kept in source order; [`lower_unit`] lowers
+//! the sources a [`Unit`] lays end to end into one arena, each path import
+//! resolved to an earlier source, so a sibling's declarations are the prefix of
+//! its importer's constants. The [`import`] module states the
+//! mechanism, the refusals and the reversal.
 //!
 //! # Two sweeps, no recursion
 //!
@@ -321,6 +323,7 @@ pub mod namespace;
 mod operation;
 mod origin;
 mod resolve;
+mod unit;
 
 pub use crate::attribute::AttributeEntry;
 pub use crate::attribute::AttributeRegistry;
@@ -354,10 +357,14 @@ pub use crate::form::Repair;
 pub use crate::form::StrayKeyword;
 pub use crate::form::TileName;
 pub use crate::form::former_of;
+pub use crate::import::ImportBinding;
 pub use crate::import::ImportDeclaration;
 pub use crate::import::ImportIndex;
+pub use crate::import::ImportResolution;
 pub use crate::import::ImportUri;
 pub use crate::import::ModuleImports;
+pub use crate::import::alias_scope;
+pub use crate::import::aliased;
 pub use crate::lower::AskedRuns;
 pub use crate::lower::Exit;
 pub use crate::lower::Explicitness;
@@ -369,6 +376,8 @@ pub use crate::lower::NestedSite;
 pub use crate::lower::RunOperand;
 pub use crate::lower::RunSpelling;
 pub use crate::lower::lower_module;
+pub use crate::lower::lower_unit;
+pub use crate::module::Address;
 pub use crate::module::Coerced;
 pub use crate::module::ComponentPlace;
 pub use crate::module::Container;
@@ -387,7 +396,10 @@ pub use crate::module::Sealing;
 pub use crate::module::Stratum;
 pub use crate::module::StructureIndex;
 pub use crate::module::ValueComponent;
+pub use crate::module::WrittenImport;
 pub use crate::module::manifest_type;
+pub use crate::module::unaliased;
+pub use crate::module::written_imports;
 pub use crate::origin::ArmOrigin;
 pub use crate::origin::CaseOrigin;
 pub use crate::origin::Insertion;
@@ -414,3 +426,9 @@ pub use crate::resolve::TypeFormer;
 pub use crate::resolve::binder_site;
 pub use crate::resolve::type_atom;
 pub use crate::resolve::type_former;
+pub use crate::unit::ImportTarget;
+pub use crate::unit::PathImportOrdinal;
+pub use crate::unit::SourceIndex;
+pub use crate::unit::Unit;
+pub use crate::unit::UnitFault;
+pub use crate::unit::UnitSource;

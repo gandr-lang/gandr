@@ -103,12 +103,15 @@
 
 use alloc::format;
 use alloc::string::String;
+use std::path::Path;
 
 use anodized::spec;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::Subject;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::TypedSpan;
+use gandr_surface_dispatcher::classify;
+use gandr_surface_dispatcher::lay_out;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
@@ -162,14 +165,17 @@ pub struct Hovering
     table: TypeTable,
 }
 
-/// What the hovers of `text` read, built under the process's grammar: one
-/// typed run per text, rather than one per hover.
+/// What the hovers of `text`, the document at `path`, read, built under the
+/// process's grammar: one typed run per text, rather than one per hover.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`TypeTable::of`] over `text`, the empty table when the grammar
-///   did not build or the text did not parse.
-/// - provides: what a document copy keeps for its hovers.
+/// - ensures: [`TypeTable::of_unit`] over the import closure the dispatcher's
+///   [`lay_out`] lays `text` out in when it imports a sibling by path, else
+///   [`TypeTable::of`] over `text`; the empty table when the grammar did not
+///   build or the text did not parse.
+/// - provides: what a document copy keeps for its hovers; a name an import
+///   brings in types at its use as its declaration does.
 /// - fails: never; a refusal answers the empty table.
 /// - panics: none.
 /// - executable: none — the table is the dispatcher's typed run, whose own
@@ -179,14 +185,27 @@ pub struct Hovering
 /// # Adequacy
 /// - hypothesis: L3 — a hover over every kind of position reads what this
 ///   builds, so a table of another text, or an empty one, changes a typed
-///   answer.
+///   answer; a hover on an imported name in a corpus importer answers its type.
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
+/// - witness: `hover::tests::an_imported_name_hovers_its_declaration_s_type`
 #[must_use]
-pub fn hovering(text: SourceText<'_>) -> Hovering
+pub fn hovering(
+    text: SourceText<'_>,
+    path: &Path,
+) -> Hovering
 {
     let table = grammar().map_or_else(
         |_| TypeTable::default(),
-        |grammar| TypeTable::of(grammar, text).unwrap_or_default(),
+        |grammar| match lay_out(grammar, path, classify(path), text) {
+            Maybe::Present(laid) => TypeTable::of_unit(
+                grammar,
+                SourceText::from(laid.text.as_str()),
+                &laid.unit,
+                laid.base,
+            )
+            .unwrap_or_default(),
+            Maybe::Absent(_) => TypeTable::of(grammar, text).unwrap_or_default(),
+        },
     );
     Hovering { table }
 }
@@ -685,7 +704,7 @@ mod tests
             text,
             &session,
             &Reading::of(text),
-            &hovering(text),
+            &hovering(text, std::path::Path::new("")),
             position,
             style,
         ) {
@@ -717,6 +736,38 @@ mod tests
     fn fenced(block: SourceText<'_>) -> String
     {
         format!("```gandr\n{}\n```", <&str>::from(block))
+    }
+
+    #[test]
+    fn an_imported_name_hovers_its_declaration_s_type()
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/model/identity/circle-elim.gandr");
+        let written = std::fs::read_to_string(&path).expect("the corpus importer is read");
+        let text = SourceText::from(written.as_str());
+        let at = written
+            .find("Circle) -> -F Path")
+            .expect("a parameter's type names the circle");
+        let index = LineIndex::new(written.as_str().into());
+        let position =
+            Position::of_byte(&index, RenderOffset::from(at)).expect("the name is on a boundary");
+        let session = checked(text);
+        let shown = hover(
+            text,
+            &session,
+            &Reading::of(text),
+            &hovering(text, &path),
+            position,
+            PLAIN,
+        );
+        assert_eq!(
+            match shown {
+                Maybe::Present(shown) => Ok(shown.contents.value),
+                Maybe::Absent(reason) => Err(reason),
+            },
+            Ok(fenced(SourceText::from("Circle : Type"))),
+            "`Circle`, which `circle-base.gandr` declares, answers as its own source's type"
+        );
     }
 
     #[test]

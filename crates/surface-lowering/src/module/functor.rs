@@ -792,20 +792,11 @@ impl<'source> Collector<'_, 'source>
         applied: &Applied<'source>,
     )
     {
+        let top = self.collected.top(form.span.start());
         let refuse = |collector: &mut Self, refusal| {
-            let _held = collector.refuse_held(
-                Container::TopLevel,
-                applied.name,
-                form,
-                applied.named,
-                refusal,
-            );
+            let _held = collector.refuse_held(top, applied.name, form, applied.named, refusal);
         };
-        if let Some(&first) = self
-            .collected
-            .modules
-            .get(&(Container::TopLevel, applied.name))
-        {
+        if let Some(&first) = self.collected.modules.get(&(top, applied.name)) {
             let first = self
                 .collected
                 .structures
@@ -903,7 +894,7 @@ impl<'source> Collector<'_, 'source>
         let mut current = match self
             .collected
             .modules
-            .get(&(Container::TopLevel, head_name))
+            .get(&(self.collected.top(head.span.start()), head_name))
             .copied()
         {
             Some(found)
@@ -1050,7 +1041,7 @@ impl<'source> Collector<'_, 'source>
         };
         self.collected.structures.push(Structure {
             name: applied.name,
-            container: Container::TopLevel,
+            container: self.collected.top(form.span.start()),
             declared_by: form,
             named: applied.named,
             ascription: body.ascription.clone(),
@@ -1064,10 +1055,10 @@ impl<'source> Collector<'_, 'source>
             coerced: body.coerced,
             stratum: Stratum::Instance(index),
         });
-        let _fresh = self
-            .collected
-            .modules
-            .insert((Container::TopLevel, applied.name), structure);
+        let _fresh = self.collected.modules.insert(
+            (self.collected.top(form.span.start()), applied.name),
+            structure,
+        );
         let container = Container::Module(structure);
         let mut matched = Vec::with_capacity(found.len());
         for (component, &argued) in template.components.iter().zip(found) {
@@ -1113,7 +1104,7 @@ impl<'source> Collector<'_, 'source>
                 Container::Module(parent) => images
                     .get(&parent)
                     .map_or(entry.container, |&image| Container::Module(image)),
-                Container::TopLevel => Container::TopLevel,
+                Container::TopLevel(_) => self.collected.top(form.span.start()),
             };
             let image = StructureIndex(self.collected.structures.len());
             self.collected.structures.push(Structure {
@@ -1149,7 +1140,7 @@ impl<'source> Collector<'_, 'source>
                     .images
                     .get(&owner)
                     .map_or(slot.container, |&image| Container::Module(image)),
-                Container::TopLevel => Container::TopLevel,
+                Container::TopLevel(_) => self.collected.top(form.span.start()),
             };
             let minted = SlotIndex(self.collected.slots.len());
             self.collected.slots.push(DeclarationSlot {

@@ -625,6 +625,7 @@ mod corpus
                                     path,
                                     root,
                                     text,
+                                    base,
                                     composed,
                                     standing,
                                 },
@@ -632,13 +633,20 @@ mod corpus
                                     path: serial_path,
                                     root: serial_root,
                                     text: serial_text,
+                                    base: serial_base,
                                     composed: serial_composed,
                                     standing: serial_standing,
                                 },
                             ) => {
                                 assert_eq!(
-                                    (path, root, text, standing),
-                                    (serial_path, serial_root, serial_text, serial_standing),
+                                    (path, root, text, base, standing),
+                                    (
+                                        serial_path,
+                                        serial_root,
+                                        serial_text,
+                                        serial_base,
+                                        serial_standing
+                                    ),
                                     "the visit at {width:?} reaches the serial walk's source"
                                 );
                                 assert!(

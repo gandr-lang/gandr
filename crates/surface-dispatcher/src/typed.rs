@@ -135,6 +135,7 @@ use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::PatternReading;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
+use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::described::DescribedRole;
 use gandr_surface_parser::parse;
 use gandr_surface_pretty::BinderIndex;
@@ -163,6 +164,7 @@ use crate::compose::LoweringCount;
 use crate::compose::adapt;
 use crate::compose::compose;
 use crate::compose::lower_source;
+use crate::compose::lower_unit_source;
 use crate::evaluate::Evaluation;
 
 quenchant_shape::reason_enum! {
@@ -882,6 +884,33 @@ fn term_subject(
     }
 }
 
+/// `span` as the source starting at `base` measures it, when it lies there.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `span` moved back by `base` bytes when it starts at or past
+///   `base`; `None` before it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an importer's use types at its own offset and a sibling's
+///   entries are not kept.
+/// - witness: `typed::tests::an_imported_name_types_at_its_use`
+#[spec(ensures: |ret| ret.is_none_or(|moved| {
+    usize::from(moved.start()).saturating_add(usize::from(base)) == usize::from(span.start())
+        && usize::from(moved.end()).saturating_add(usize::from(base)) == usize::from(span.end())
+}))]
+fn own(
+    span: ByteSpan,
+    base: ByteOffset,
+) -> Option<ByteSpan>
+{
+    let start = usize::from(span.start()).checked_sub(usize::from(base))?;
+    let end = usize::from(span.end()).checked_sub(usize::from(base))?;
+    ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
+}
+
 impl TypeTable
 {
     /// Type every node of `source` a face can point at.
@@ -939,7 +968,46 @@ impl TypeTable
         source: SourceText<'source>,
     ) -> Result<Self, ComposeFault<'source>>
     {
-        let lowering = lower_source(grammar, source, &mut LoweringCount::default())?;
+        Self::of_unit(grammar, source, &Unit::single(), ByteOffset::from(0_usize))
+    }
+
+    /// Type every node of the source starting at `base` in `source`, the text
+    /// `unit` lays out: [`of`](Self::of) over a source lowered beside the
+    /// siblings it imports.
+    ///
+    /// # Specification
+    /// - requires: `grammar` is the checked grammar; `source` is the text
+    ///   `unit` lays out, and `base` starts its last source.
+    /// - ensures: as [`of`](Self::of) over the whole unit, keeping the entries
+    ///   and rule orientations at or past `base`, each moved back by `base`
+    ///   bytes, so the table answers offsets into the last source's own text;
+    ///   declarations are keyed by form, which no offset moves. Unchanged at
+    ///   offset zero over [`Unit::single`].
+    /// - provides: what an editor answers inside a document that imports a
+    ///   sibling: an imported name types as its declaration does.
+    /// - fails: as [`of`](Self::of).
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`of`](Self::of).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name a sibling declares types at its use in the
+    ///   importer, at the importer's own offset.
+    /// - witness: `typed::tests::an_imported_name_types_at_its_use`
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.entries.iter().all(|entry|
+        usize::from(entry.span.end())
+            <= <&str>::from(source).len().saturating_sub(usize::from(base))))
+        || ret.is_err())]
+    #[inline]
+    pub fn of_unit<'source>(
+        grammar: &Pbg,
+        source: SourceText<'source>,
+        unit: &Unit,
+        base: ByteOffset,
+    ) -> Result<Self, ComposeFault<'source>>
+    {
+        let lowering = lower_unit_source(grammar, source, unit, &mut LoweringCount::default())?;
         let Lowered::Module { module, mut arena } = lowering.into_lowered()
         else {
             return Ok(Self::default());
@@ -1393,9 +1461,20 @@ impl TypeTable
                         ChosenDirection::RightToLeft
                     },
                 };
-                orientations.push((span, note));
+                if let Some(span) = own(span, base) {
+                    orientations.push((span, note));
+                }
             }
         }
+        let entries = entries
+            .into_iter()
+            .filter_map(|entry| {
+                Some(Entry {
+                    span: own(entry.span, base)?,
+                    ..entry
+                })
+            })
+            .collect();
         Ok(Self {
             entries,
             declared,
@@ -2988,6 +3067,47 @@ mod tests
             ty: String::from(<&str>::from(ty)),
             expected: Maybe::Absent(checked_against::Absent::Agreed),
         })
+    }
+
+    #[test]
+    fn an_imported_name_types_at_its_use()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        let sibling =
+            "data Point : Type {\n  Here : Point;\n}\ndef here : Point ;\ndef here = Here ;";
+        let importer =
+            SourceText::from("import \"./point.gandr\" ;\ndef there : Point ;\ndef there = here ;");
+        let laid = format!("{sibling}\n{}", <&str>::from(importer));
+        let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ])
+        .expect("the unit's sources start in order");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+            .expect("the unit parses");
+        let at = |needle: &'static str| answer(&table, importer, SourceText::from(needle));
+        assert_eq!(
+            at("here ;"),
+            agreed(Subject::Term, SourceText::from("Point")),
+            "the sibling's definition types at its use, at the importer's own offset"
+        );
+        assert_eq!(
+            at("Point ;"),
+            agreed(Subject::Type, SourceText::from("Type")),
+            "the sibling's family is a written type in the importer"
+        );
+        assert!(
+            table
+                .spans()
+                .all(|span| usize::from(span.end()) <= <&str>::from(importer).len()),
+            "no entry of the sibling is kept"
+        );
     }
 
     #[test]
