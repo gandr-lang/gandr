@@ -2835,6 +2835,13 @@ struct Lowerer<'run, 'source>
     /// Each recursive call, by its head: the instantiation whose claim checks
     /// it.
     descents: BTreeMap<NodeIndex, native::Descent>,
+    /// The reading of the form being classified, or unread between forms: a
+    /// value a type reads is filed in [`Self::type_read`].
+    reader: Reading,
+    /// Every position read as a value by a type — a type-position call's
+    /// argument, and its own operands in turn — whose quote stays in the
+    /// enclosing type's telescope rather than carried into a term's context.
+    type_read: BTreeSet<NodeIndex>,
     /// Each head of a call of no arguments, beside the call: such a call is
     /// its head's force, so the force carries the call's origin.
     nullary: BTreeMap<NodeIndex, NodeIndex>,
@@ -3382,6 +3389,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             constructors: Vec::new(),
             recursions: BTreeMap::new(),
             descents: BTreeMap::new(),
+            reader: Reading::Unread,
+            type_read: BTreeSet::new(),
             nullary: BTreeMap::new(),
             operated: BTreeMap::new(),
             presented: BTreeMap::new(),
@@ -4420,8 +4429,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Err(site.out(FragmentBoundary::Reserved));
         }
         let mut pieces = core::mem::take(&mut self.pieces);
+        // A value standing inside a type reads its own operands inside it too.
+        self.reader = if self.type_read.contains(&position) || self.in_type.contains(&position) {
+            Reading::ValueType(reading.frame())
+        }
+        else {
+            reading
+        };
         let outcome = read_pieces(self.pbg, self.tree, position, &mut pieces)
             .and_then(|()| self.classify_form(site, former, &pieces));
+        self.reader = Reading::Unread;
         self.pieces = pieces;
 
         outcome
@@ -9249,6 +9266,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(held) = self.readings.get_mut(usize::from(position)) {
             *held = reading;
         }
+        // A value a type reads — a type-position call's argument — stands in
+        // that type's telescope, which the enclosing type carries as a whole.
+        if let (Reading::Value(_), Family::Type) = (reading, self.reader.family()) {
+            let _first = self.type_read.insert(position);
+        }
     }
 
     /// Record `plan` for the form at `site`.
@@ -9653,14 +9675,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: the plan is taken and minted as [`Self::mint_at`] states; a
-    ///   node with no plan left is left as it is.
+    ///   type a term quotes is carried from its telescope into the term's
+    ///   context before the quote wraps it, while a value a type reads stays in
+    ///   the type's telescope; a node with no plan left is left as it is.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor awaiting its family's application is
-    ///   minted at its slot's type once the application reaches it.
+    ///   minted at its slot's type once the application reaches it, and a type
+    ///   quoted in a body past an unmentioned parameter reads its binders at
+    ///   their indices in the body.
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
+    /// - witness: `lower::tests::a_quote_in_a_body_reads_past_an_unmentioned_parameter`
     #[spec(
         captures: before = (
             matches!(
@@ -9712,6 +9739,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if stands_in && let Maybe::Present(Lowered::ValueType(id)) = minted {
             sink.origins.record_stand_in(id, origin);
         }
+        // A type a term quotes was minted in its telescope, which counts a
+        // typed binder only once a type names it; the term's context binds
+        // every binder, so the quote is carried into it (#540). A value a type
+        // reads stays in that type's telescope.
+        let minted = match (bridge, minted) {
+            (Bridge::Inserted(Insertion::Quote), Maybe::Present(Lowered::ValueType(quoted)))
+                if !self.type_read.contains(&position) && !self.in_type.contains(&position) =>
+            {
+                let frame = self.reading(position).frame();
+                Maybe::Present(Lowered::ValueType(
+                    self.relocate_value_type(quoted, frame, sink, origin),
+                ))
+            },
+            (Bridge::Inserted(Insertion::Quote), Maybe::Present(Lowered::CompType(quoted)))
+                if !self.type_read.contains(&position) && !self.in_type.contains(&position) =>
+            {
+                let frame = self.reading(position).frame();
+                Maybe::Present(Lowered::CompType(
+                    self.relocate_comp_type(quoted, frame, sink, origin),
+                ))
+            },
+            (_, minted) => minted,
+        };
         // A call of no arguments is its head's force, so that force is the
         // call the source wrote: it answers at the call, not at the head.
         let called = self
@@ -15218,6 +15268,85 @@ mod tests
             comp_decoded(result),
             code,
             "and a result naming it is that computation type, with no returner"
+        );
+    }
+
+    /// #540: a type a body quotes reads a parameter past one no type names at
+    /// its index in the body, where every parameter binds.
+    #[test]
+    fn a_quote_in_a_body_reads_past_an_unmentioned_parameter()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def endo(a : Type, n : Integer) -> -F Type { return (a => a) } def lifted(a : \
+                 Type, n : Integer) -> -F Type[-] { return (a -> -F a) }",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let returned = |arena: &CoreArena, at: usize| {
+            let Some(&Value::Thunk(suspended)) = arena.value(body_of(lowered[at]))
+            else {
+                panic!("the body is a thunk");
+            };
+            let Some(&Computation::Lambda(over_a)) = arena.computation(suspended)
+            else {
+                panic!("over `a`");
+            };
+            let Some(&Computation::Lambda(over_n)) = arena.computation(over_a)
+            else {
+                panic!("and over `n`");
+            };
+            let Some(&Computation::Return(quote)) = arena.computation(over_n)
+            else {
+                panic!("returning the quote");
+            };
+            quote
+        };
+        let past_n = Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(1_u32),
+        };
+
+        let Some(&Value::Quote(quoted)) = arena.value(returned(&arena, 0_usize))
+        else {
+            panic!("`a => a` is a quoted value type");
+        };
+        let Some(&ValueType::Thunk(arrow)) = arena.value_type(quoted)
+        else {
+            panic!("the thunked arrow");
+        };
+        let Some(&CompType::Arrow { domain, .. }) = arena.comp_type(arrow)
+        else {
+            panic!("an arrow");
+        };
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(domain)
+        else {
+            panic!("whose domain decodes `a`");
+        };
+        assert_eq!(
+            arena.value(code),
+            Some(&past_n),
+            "`a` is read past `n`, which the body binds though no type names it"
+        );
+
+        let Some(&Value::QuoteComputation(quoted)) = arena.value(returned(&arena, 1_usize))
+        else {
+            panic!("`a -> -F a` is a quoted computation type");
+        };
+        let Some(&CompType::Arrow { domain, .. }) = arena.comp_type(quoted)
+        else {
+            panic!("an arrow");
+        };
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(domain)
+        else {
+            panic!("whose domain decodes `a`");
+        };
+        assert_eq!(
+            arena.value(code),
+            Some(&past_n),
+            "and so is a computation type's"
         );
     }
 
