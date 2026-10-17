@@ -625,6 +625,7 @@ mod tests
     {
         let options = gandr_surface_format::FormatOptions {
             page: gandr_surface_format::PageWidth::from(40_u32),
+            ..gandr_surface_format::FormatOptions::default()
         };
         let outcome = dispatch(Invocation::Format {
             paths: vec![

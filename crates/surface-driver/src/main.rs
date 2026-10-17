@@ -35,6 +35,7 @@
 //! | `gandr fmt <paths>` | the path of each source whose layout changed, written back over it | a path that cannot be read or written back, names no source, or holds a source the formatter refuses |
 //! | `gandr fmt --check <paths>` | the path of each source out of layout; nothing is written | as `fmt`, and any source out of layout |
 //! | `gandr fmt --width <columns> <paths>` | as `fmt`, laid out at that page width instead of 100 | as `fmt` |
+//! | `gandr fmt --form <explicit\|sugared> <paths>` | as `fmt`, asking for that spelling: a source declaring a form with `@[ form(…) ]` keeps its own, and one declaring none is refused, since no layout changes a token | as `fmt` |
 //! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
 //! | `gandr lsp` | the language server's frames on standard output, until `exit`, served by the workspace's hub on Unix | a session ended before `shutdown` |
 //! | `gandr lsp --standalone` | as `lsp`, served in its own process | as `lsp` |
@@ -277,6 +278,7 @@ use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::WorldName;
 use gandr_surface_dispatcher::entries;
+use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::PageWidth;
 use gandr_surface_lsp::Capabilities;
@@ -534,6 +536,12 @@ enum Command
         /// The page width, in columns. Defaults to 100.
         #[arg(long, value_name = "COLUMNS")]
         width: Option<u32>,
+        /// The spelling each source is laid out in; a source's own
+        /// `@[ form(…) ]` declaration wins. A source declaring none is
+        /// refused a form, since the formatter keeps every token as written.
+        /// Defaults to each source's own spelling.
+        #[arg(long, value_enum)]
+        form: Option<FormName>,
         /// The threads the sources are laid out on.
         #[command(flatten)]
         jobs: Jobs,
@@ -622,6 +630,16 @@ enum LintName
     /// performs an effect.
     #[value(name = "explicit-runs=effects")]
     EffectfulRuns,
+}
+
+/// A spelling `fmt --form` asks for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum FormName
+{
+    /// The core's explicit spelling.
+    Explicit,
+    /// The surface's sugared spelling.
+    Sugared,
 }
 
 /// The lints `names` enable everywhere, each widening the reach the others
@@ -777,14 +795,20 @@ fn main() -> ExitCode
         Some(Command::Fmt {
             check,
             width,
+            form,
             jobs,
             paths,
         }) => (
             Invocation::Format {
                 paths,
-                options: width.map_or_else(FormatOptions::default, |columns| FormatOptions {
-                    page: PageWidth::from(columns),
-                }),
+                options: FormatOptions {
+                    page: width.map_or_else(|| FormatOptions::default().page, PageWidth::from),
+                    form: match form {
+                        None => Form::Source,
+                        Some(FormName::Explicit) => Form::Explicit,
+                        Some(FormName::Sugared) => Form::Sugared,
+                    },
+                },
                 rewrite: if check {
                     Rewrite::Check
                 }

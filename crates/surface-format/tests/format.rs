@@ -11,6 +11,8 @@ mod tests
     use std::path::Path;
 
     use expect_test::expect_file;
+    use gandr_surface_format::Form;
+    use gandr_surface_format::FormatError;
     use gandr_surface_format::FormatOptions;
     use gandr_surface_format::Formatted;
     use gandr_surface_format::Layout;
@@ -47,7 +49,11 @@ mod tests
     ) -> Formatted
     {
         let parsed = parse(grammar, source.into()).expect("every source parses");
-        format(grammar, &parsed, FormatOptions { page: width.into() }).expect("the source formats")
+        let options = FormatOptions {
+            page: width.into(),
+            ..FormatOptions::default()
+        };
+        format(grammar, &parsed, options).expect("the source formats")
     }
 
     /// The text of `source` formatted at a page of `width` columns.
@@ -263,6 +269,72 @@ mod tests
             ],
             "a form's piece runs from its first token to its trailing comment"
         );
+    }
+
+    /// A source in the core's explicit spelling, its head declaring it:
+    /// every run, force and thunk written out.
+    const EXPLICIT: &str = "@[ form(explicit) ]\ndef  shown : +U (-F Integer) ;\ndef shown = \
+                            thunk {   run n <- force one ;  become read(n) } ;\n";
+
+    /// #492: the gate's invariant made visible. The formatter keeps every
+    /// token, so a source spelled in the explicit form comes back in the
+    /// explicit form, laid out, under every option: its declaration wins over
+    /// an option asking for the sugared form.
+    #[test]
+    fn an_explicit_source_keeps_its_explicit_spelling()
+    {
+        let grammar = grammar();
+        let kept = "@[ form(explicit) ]\ndef shown : +U (-F Integer) ;\ndef shown = thunk { run n \
+                    <- force one ; become read(n) } ;\n";
+        let imported = "import \"./base.gandr\" ;\n";
+        for (written, expected) in [
+            (String::from(EXPLICIT), String::from(kept)),
+            (format!("{imported}{EXPLICIT}"), format!("{imported}{kept}")),
+        ] {
+            let parsed =
+                parse(&grammar, SourceText::from(written.as_str())).expect("the source parses");
+            for form in [Form::Source, Form::Explicit, Form::Sugared] {
+                let options = FormatOptions {
+                    form,
+                    ..FormatOptions::default()
+                };
+                assert_eq!(
+                    format(&grammar, &parsed, options).map(Formatted::into_text),
+                    Ok(expected.clone()),
+                    "{form}: the explicit spelling is kept, its declaration after any import"
+                );
+            }
+        }
+    }
+
+    /// #492: a form the source does not declare is refused by name, since
+    /// laying the source out in it would change its tokens.
+    #[test]
+    fn a_form_the_source_does_not_declare_is_refused()
+    {
+        let grammar = grammar();
+        let undeclared = EXPLICIT
+            .strip_prefix("@[ form(explicit) ]\n")
+            .unwrap_or_default();
+        let parsed = parse(&grammar, SourceText::from(undeclared)).expect("the source parses");
+        let laid = |form: Form| {
+            let options = FormatOptions {
+                form,
+                ..FormatOptions::default()
+            };
+            format(&grammar, &parsed, options).map(Formatted::into_text)
+        };
+        assert!(
+            laid(Form::Source).is_ok(),
+            "the source's own spelling is laid out"
+        );
+        for form in [Form::Explicit, Form::Sugared] {
+            assert_eq!(
+                laid(form),
+                Err(FormatError::Form(form)),
+                "{form} is refused"
+            );
+        }
     }
 
     /// The formatter's sweep: every corpus source keeps its meaning and

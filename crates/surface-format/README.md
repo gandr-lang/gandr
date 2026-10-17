@@ -35,6 +35,7 @@ The source formatter: a parsed gandr source laid out at a page width through `ga
 - The layout of a form. Witnesses: `format::tests::a_long_declaration_breaks_its_parameters_before_its_type`, `format::tests::a_block_breaks_one_item_per_line_when_it_does_not_fit`, `format::tests::attributes_and_documentation_keep_their_lines`, `format::tests::a_continuation_line_indents_under_its_statement`, `format::tests::strings_shell_blocks_and_holes_are_copied_as_written`.
 - `Formatted`, `Piece`, `Layout`: the text, and each top-level form's source and formatted spans, for an editor that applies a formatting change form by form.
 - `FormatOptions`, and `PageWidth` re-exported from `gandr-surface-layout`.
+- `Form`: the spelling a source is laid out in, asked for by `FormatOptions::form` and declared at a source's head with `@[ form(explicit) ]` or `@[ form(sugared) ]`, the declaration winning; the formatter keeps every token, so it lays out only the source's own spelling and refuses any other by name (crate docs, § The form a source is spelled in). Witnesses: `format::tests::an_explicit_source_keeps_its_explicit_spelling`, `format::tests::a_form_the_source_does_not_declare_is_refused`.
 - `FormatError`, `Change`: why a source was not formatted.
 
 ## Expected features
