@@ -1,0 +1,82 @@
+// Descent on the parameter a definition's matches take apart (#518). A
+// recursive definition descends on the parameter the innermost match above
+// each of its claims scrutinises: the first one, with the accumulator after it
+// varying from call to call, or a value rebuilt from the match's fields, so
+// long as it stands below the parameter the match took apart. The parameters
+// before the staged one are passed unchanged; descent on two parameters at
+// once is the sized rung's (#392). What refuses is in
+// `../../pathological/data/descent.gandr`. `Nat` is shared with
+// `data-recursive.gandr`.
+
+/// Natural numbers, the data every definition here descends on.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// Addition by recursion on the first argument, the second an accumulator
+/// each call grows: `plus(Succ(p), n) = plus(p, Succ(n))`.
+@[ checks ]
+def rec plusFirst(m : Nat, n : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => plusFirst[<](p, Succ(n))
+  }
+}
+
+/// Half a number, rounded down: the inner match takes apart the outer one's
+/// field, so the call on its field still descends on `n`.
+@[ checks ]
+def rec half(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(m) => case m {
+      Zero => Zero,
+      Succ(q) => Succ(half[<](q))
+    }
+  }
+}
+
+/// Fibonacci numbers: the first call rebuilds `Succ(q)` from the inner
+/// match's field, a value below `n` though not one of its fields.
+@[ checks ]
+def rec fib(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(m) => case m {
+      Zero => Succ(Zero),
+      Succ(q) => { run a <- fib[<](Succ(q)); run b <- fib[<](q); plusFirst(a, b) }
+    }
+  }
+}
+
+/// Two.
+@[ runs("Succ(Succ(Zero))") ]
+def two : Nat ;
+def two = Succ(Succ(Zero)) ;
+
+/// Three.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def three : Nat ;
+def three = Succ(two) ;
+
+/// Four.
+@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
+def four : Nat ;
+def four = Succ(three) ;
+
+/// Two and three by the accumulator: five.
+@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
+def five : +U (-F Nat) ;
+def five = thunk { plusFirst(two, three) } ;
+
+/// Half of four.
+@[ runs("Succ(Succ(Zero))") ]
+def halved : +U (-F Nat) ;
+def halved = thunk { half(four) } ;
+
+/// The fourth Fibonacci number, three.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def fibbed : +U (-F Nat) ;
+def fibbed = thunk { fib(four) } ;

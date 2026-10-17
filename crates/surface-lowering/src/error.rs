@@ -257,13 +257,13 @@ pub enum FragmentBoundary
     /// written result that lowers, `then` where no written flow type is either,
     /// or a transport or ride whose motive is no static abstraction.
     Unannotated,
+    /// The form is a recursive call passing, where one of the definition's
+    /// unchanging parameters stands, something other than that parameter: the
+    /// parameters before the one the definition descends on stay unchanged.
+    NonUniform,
     /// The form is `cong` at a constructor, which is not a function: `cong`
     /// maps a path by a function definition.
     NotAFunction,
-    /// The form is a recursive call passing, where one of the definition's
-    /// unchanging parameters stands, something other than that parameter: only
-    /// the last parameter descends.
-    NonUniform,
     /// The form is a function exit, `return` or `become`, a loop exit,
     /// `break` or `continue`, or a loop, standing where no path through a
     /// function's, a lambda's or a thunk's body passes: a call's head, an
@@ -314,13 +314,14 @@ impl fmt::Display for FragmentBoundary
                 f.write_str("applies its family to an index, which the fragment does not read")
             },
             Self::Unannotated => f.write_str("needs a type the source does not state"),
+            Self::NonUniform => f.write_str(
+                "passes something other than the parameter itself where an earlier parameter \
+                 stands; only the parameter the definition descends on and the ones after it \
+                 vary",
+            ),
             Self::NotAFunction => {
                 f.write_str("maps a path by a constructor, which is not a function")
             },
-            Self::NonUniform => f.write_str(
-                "passes something other than the parameter itself where an earlier parameter \
-                 stands; only the last parameter descends",
-            ),
             Self::NotInTail => f.write_str(
                 "stands where no path through a function, a lambda, a thunk or a copattern \
                  clause body passes; an exit leaves, and a loop runs, only on such a path",
@@ -975,6 +976,19 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// A recursive definition whose claims descend on two parameters: one
+    /// stands under a match on one parameter, another under a match on a
+    /// different one, and a definition stages one.
+    DescentOnSeveralParameters
+    {
+        /// The bytes the claim that disagrees covers.
+        span: ByteSpan,
+        /// The parameter the earlier claims descend on.
+        staged: SurfaceName<'source>,
+        /// The parameter this claim descends on.
+        claimed: SurfaceName<'source>,
+    },
+
     /// The rest of a block after a statement whose every path exits: no path
     /// reaches it.
     Unreachable
@@ -1245,7 +1259,14 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::UnmarkedSelfReference { name, .. } => write!(
                 f,
                 "`{name}` names its own recursive definition without a claim; write \
-                 `{name}[<](…)` to recurse on a field of the last parameter"
+                 `{name}[<](…)` to recurse on a field of the parameter its match scrutinises"
+            ),
+            Self::DescentOnSeveralParameters {
+                staged, claimed, ..
+            } => write!(
+                f,
+                "this claim descends on `{claimed}`, and an earlier one on `{staged}`; a \
+                 recursive definition descends on one parameter"
             ),
             Self::Unreachable { .. } => f.write_str(
                 "no path reaches this code: every path through the statement before it exits",
@@ -1381,6 +1402,7 @@ impl LoweringRefusal<'_>
             | Self::LowercaseModuleName { span, .. }
             | Self::NonExhaustiveMatch { span }
             | Self::UnmarkedSelfReference { span, .. }
+            | Self::DescentOnSeveralParameters { span, .. }
             | Self::Unreachable { span }
             | Self::OutsideLoop { span, .. }
             | Self::AcrossHandler { span, .. }

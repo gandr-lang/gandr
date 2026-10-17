@@ -188,7 +188,7 @@ pub enum Insertion
     /// native or sum case, a field lambda, a literal test, or a binding an arm
     /// body is read under.
     Match,
-    /// The fixpoint a recursive function closes over its last parameter's
+    /// The fixpoint a recursive function closes over its staged parameter's
     /// lambda, binding the function's own name; and the joint fixpoint a
     /// mutual block's recursive functions share, with its sum case, its
     /// ascription and the injection each member and each call through a

@@ -30,6 +30,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use super::ParameterAt;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
@@ -523,7 +524,7 @@ fn variable(index: DeBruijnIndex) -> Value
 }
 
 #[test]
-fn a_recursive_function_closes_a_fixpoint_over_its_last_parameter()
+fn a_recursive_function_closes_a_fixpoint_over_its_staged_parameter()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
@@ -568,7 +569,7 @@ fn a_recursive_function_closes_a_fixpoint_over_its_last_parameter()
     );
     let Some(&Computation::Lambda(cased)) = arena.computation(body)
     else {
-        panic!("the fixpoint closes the last parameter's lambda");
+        panic!("the fixpoint closes the staged parameter's lambda");
     };
     let Some(&Computation::DataCase {
         scrutinee,
@@ -576,7 +577,7 @@ fn a_recursive_function_closes_a_fixpoint_over_its_last_parameter()
         ..
     }) = arena.computation(cased)
     else {
-        panic!("the body cases on the last parameter");
+        panic!("the body cases on the staged parameter");
     };
     assert_eq!(
         arena.value(scrutinee),
@@ -631,6 +632,210 @@ fn a_recursive_function_closes_a_fixpoint_over_its_last_parameter()
         "a recursive function claiming nothing is partial"
     );
     assert_accepted(&judged(&module, &mut arena));
+}
+
+/// The body of `name` in `module`, opened past the lambdas outside its
+/// fixpoint: how many there are, and the fixpoint.
+///
+/// # Specification
+/// trivial.
+fn fixpoint_of(
+    arena: &CoreArena,
+    module: &LoweredModule<'_>,
+    name: SurfaceName<'_>,
+) -> (ParameterAt, ComputationId)
+{
+    let Some(&Value::Thunk(mut computation)) = arena.value(body_named(module, name))
+    else {
+        panic!("`{name:?}` lowers to a thunk");
+    };
+    let mut outside = ParameterAt(0);
+    while let Some(&Computation::Lambda(under)) = arena.computation(computation) {
+        outside = ParameterAt(outside.0.saturating_add(1));
+        computation = under;
+    }
+    (outside, computation)
+}
+
+#[test]
+fn a_definition_descends_on_the_parameter_its_cases_scrutinise()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec plus(m : Nat, n : Nat) -> -F Nat {{ case m {{ Zero => return n, Succ(p) => plus[<](p, Succ(n)) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("plus"));
+    assert_eq!(
+        outside,
+        ParameterAt(0),
+        "the scrutinised first parameter leaves none outside the fixpoint"
+    );
+    let Some(&Computation::Fixpoint {
+        body,
+        evidence: FixpointEvidence::StructuralDescent,
+    }) = arena.computation(fixpoint)
+    else {
+        panic!("the fixpoint stages its first binder");
+    };
+    let Some(&Computation::Lambda(later)) = arena.computation(body)
+    else {
+        panic!("the fixpoint closes the scrutinised parameter's lambda");
+    };
+    let Some(&Computation::Lambda(cased)) = arena.computation(later)
+    else {
+        panic!("the accumulator's lambda stands under it");
+    };
+    let Some(&Computation::DataCase {
+        scrutinee,
+        ref branches,
+        ..
+    }) = arena.computation(cased)
+    else {
+        panic!("the body cases on the first parameter");
+    };
+    assert_eq!(
+        arena.value(scrutinee),
+        Some(&variable(DeBruijnIndex::from(1_u32))),
+        "past the accumulator"
+    );
+    let [_, successor] = **branches
+    else {
+        panic!("one branch per constructor");
+    };
+    let calls: Vec<ComputationId> = reachable(&arena, successor)
+        .into_iter()
+        .filter(|&at| {
+            matches!(arena.computation(at), Some(&Computation::Application(head, _)) if matches!(arena.computation(head), Some(Computation::Application(..))))
+        })
+        .collect();
+    let [call] = *calls
+    else {
+        panic!("one recursive call over two arguments: {calls:?}");
+    };
+    let Some(&Computation::Application(inner, accumulated)) = arena.computation(call)
+    else {
+        panic!("the call applies the accumulator last");
+    };
+    let Some(&Computation::Application(head, field)) = arena.computation(inner)
+    else {
+        panic!("and the field first");
+    };
+    assert!(
+        matches!(arena.computation(head), Some(&Computation::Force(forced)) if arena.value(forced) == Some(&variable(DeBruijnIndex::from(3_u32)))),
+        "the head forces the fixpoint's binder, past the field and both parameters"
+    );
+    assert_eq!(
+        arena.value(field),
+        Some(&variable(DeBruijnIndex::from(0_u32)))
+    );
+    assert!(
+        matches!(arena.value(accumulated), Some(Value::Constructor { fields, .. }) if fields.as_slice().len() == 1),
+        "the accumulator varies: {:?}",
+        arena.value(accumulated)
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_rebuilt_argument_descends_on_the_same_position()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec halve(n : Nat) -> -F Nat {{ case n {{ Zero => return Zero, Succ(m) => case m {{ Zero => return Zero, Succ(q) => {{ run h <- halve[<](Succ(q)); return Succ(h) }} }} }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("halve"));
+    assert_eq!(outside, ParameterAt(0));
+    assert!(
+        matches!(
+            arena.computation(fixpoint),
+            Some(&Computation::Fixpoint {
+                evidence: FixpointEvidence::StructuralDescent,
+                ..
+            })
+        ),
+        "a match on the parameter's field keeps the parameter's position"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn claims_under_cases_on_two_parameters_are_refused_by_name()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec both(m : Nat, n : Nat) -> -F Nat {{ case m {{ Zero => case n {{ Zero => return Zero, Succ(q) => both[<](m, q) }}, Succ(p) => both[<](p, n) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let start = source.rfind("both[<]").unwrap_or_default();
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("both")),
+        LoweringRefusal::DescentOnSeveralParameters {
+            span: crate::fixture::span(
+                gandr_surface_syntax::ByteOffset::from(start),
+                gandr_surface_syntax::ByteOffset::from(start.saturating_add(7_usize)),
+            ),
+            staged: SurfaceName::from("n"),
+            claimed: SurfaceName::from("m"),
+        },
+        "the first claim stages `n`; the second, under the match on `m`, names both"
+    );
+}
+
+#[test]
+fn an_unapplied_claim_lowers_to_the_self_binder()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec loose(n : Nat) -> -F Nat {{ run held <- pure loose[<]; return n }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("loose"));
+    assert_eq!(outside, ParameterAt(0));
+    let Some(&Computation::Fixpoint {
+        body,
+        evidence: FixpointEvidence::StructuralDescent,
+    }) = arena.computation(fixpoint)
+    else {
+        panic!("the claim makes the fixpoint claim descent");
+    };
+    let returned: Vec<ValueId> = reachable(&arena, body)
+        .into_iter()
+        .filter_map(|at| match arena.computation(at) {
+            Some(&Computation::Return(value)) => Some(value),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        returned
+            .iter()
+            .any(|&value| arena.value(value) == Some(&variable(DeBruijnIndex::from(1_u32)))),
+        "`pure loose[<]` returns the fixpoint's binder, past the parameter: {returned:?}"
+    );
+}
+
+#[test]
+fn a_definition_without_a_case_on_a_parameter_stages_its_last()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec count(n : Nat, m : Nat) -> -F Nat {{ run k <- pure m; case k {{ Zero => return n, Succ(p) => count[<](n, p) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("count"));
+    assert_eq!(
+        outside,
+        ParameterAt(1),
+        "a match on no parameter stages the last; the first stays outside"
+    );
+    assert!(matches!(
+        arena.computation(fixpoint),
+        Some(&Computation::Fixpoint {
+            evidence: FixpointEvidence::StructuralDescent,
+            ..
+        })
+    ));
 }
 
 /// A rose tree's node and forest, one block, measured by two functions that
@@ -886,7 +1091,7 @@ fn only_the_descent_claim_heads_a_recursive_call()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def rec ahead(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become ahead[>](p) }} }}\ndef rec both(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become both[<, >](p) }} }}\ndef other(n : Nat) -> -F Nat {{ return n }}\ndef rec borrowed(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become other[<](p) }} }}\ndef rec loose(n : Nat) -> -F Nat {{ run held <- pure loose[<]; return n }}\n"
+        "{NAT}def rec ahead(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become ahead[>](p) }} }}\ndef rec both(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become both[<, >](p) }} }}\ndef other(n : Nat) -> -F Nat {{ return n }}\ndef rec borrowed(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => become other[<](p) }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let declined = |name: &'static str, boundary: FragmentBoundary| {
@@ -908,10 +1113,6 @@ fn only_the_descent_claim_heads_a_recursive_call()
     assert!(
         declined("borrowed", FragmentBoundary::Unadmitted),
         "a claim names the recursive function it stands in"
-    );
-    assert!(
-        declined("loose", FragmentBoundary::Unadmitted),
-        "a claim stands at the head of a call"
     );
 }
 

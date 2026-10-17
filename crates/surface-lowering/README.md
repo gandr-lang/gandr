@@ -26,7 +26,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `LoweredModule`, `LoweredDeclaration`, `DeclarationOutcome` and `DeclarationCount`: one declaration per name, in admission order.
 - `DataIndex`, `DeclarationOutcome::Data` and `LoweredModule::data`: a data declaration lowered to its native signature, its constructors applied to their fields and its values matched by a decision tree of native eliminations.
 - `CaseOrigin`, `ArmOrigin`, `PatternSpan`, `OriginTable::case` and `OriginTable::cases`: per match, its pattern table, the syntax nodes of its scrutinee, patterns and bodies, and each pattern's span.
-- `def rec` and the descent claim `f[<]`: a recursive function lowered to one fixpoint over its last parameter, its evidence the claim the source writes, and `Insertion::Fixpoint` marking the inserted fixpoint.
+- `def rec` and the descent claim `f[<]`: a recursive function lowered to one fixpoint over the parameter its matches take apart, its evidence the claim the source writes, and `Insertion::Fixpoint` marking the inserted fixpoint.
 - `type_atom`, `type_former`, `TypeAtom`, `TypeFormer`, `HeadArity` and `OperandCount`: the type-head tables by arity.
 - `Scope`, `ScopeId`, `Frame`, `Bound`, `Mentioned`, `SurfaceName` and `binder_site::Absent`: the flat binder chain names resolve through, each frame carrying the type its binder was written with, whether a type names it, the span it was written at and the zone it binds in.
 - `OriginTable::binding` and `OriginTable::bindings`: the use-to-binder map, each core variable the lowering minted with the span of the binder it resolves to.

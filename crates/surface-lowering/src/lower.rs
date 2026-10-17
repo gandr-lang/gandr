@@ -191,9 +191,9 @@
 //! would put a second tree between the grammar and the lowering. Reversal: when
 //! the tail grows a form whose meaning is not a chain of lambdas, that form is
 //! lowered by its own plan, and the chain stays the reading of the explicit
-//! parameters. A recursive tail is the first such form: one fixpoint over its
-//! last parameter (the `lower::native` module), the chain kept for the
-//! parameters before it.
+//! parameters. A recursive tail is the first such form: one fixpoint over the
+//! parameter its matches take apart and the ones after it (the `lower::native`
+//! module), the chain kept for the parameters before it.
 //!
 //! # A block binds each statement over the next
 //!
@@ -2064,8 +2064,8 @@ struct Function
     result: Maybe<NodeIndex, stated::Absent>,
     /// The body.
     block: Block,
-    /// The frame binding the function's own name, between the last parameter
-    /// and the ones before it, when the tail recurses.
+    /// The frame binding the function's own name, between the staged
+    /// parameter and the ones before it, when the tail recurses.
     recursion: Maybe<ScopeId, recursion::Absent>,
 }
 
@@ -2884,6 +2884,12 @@ struct Lowerer<'run, 'source>
     constructors: Vec<Vec<String>>,
     /// Each recursive function's own name, by the frame that binds it.
     recursions: BTreeMap<ScopeId, native::Recursion>,
+    /// Each recursive function's parameter, by the frame it binds: the
+    /// function and the parameter's position, which a match on it stages.
+    staged_parameters: BTreeMap<ScopeId, native::Scrutiny>,
+    /// Each node under an arm of a match on a recursive function's
+    /// parameter: the innermost such match's function and position.
+    scrutinised: BTreeMap<NodeIndex, native::Scrutiny>,
     /// Each recursive call, by its head: the instantiation whose claim checks
     /// it.
     descents: BTreeMap<NodeIndex, native::Descent>,
@@ -3445,6 +3451,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             data: Vec::new(),
             constructors: Vec::new(),
             recursions: BTreeMap::new(),
+            staged_parameters: BTreeMap::new(),
+            scrutinised: BTreeMap::new(),
             descents: BTreeMap::new(),
             injected: BTreeMap::new(),
             reader: Reading::Unread,
@@ -4191,6 +4199,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.inherit_payload(position);
             self.inherit_scope(position);
             self.inherit_type(position);
+            self.inherit_scrutiny(position);
             if let Err(refusal) = self.classify_node(position) {
                 if refusal.classify() == FailureClass::EngineFault {
                     return Err(refusal);
@@ -4200,6 +4209,48 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
 
         Ok(())
+    }
+
+    /// Give every child of `position` the match on a recursive function's
+    /// parameter `position` stands under, unless a match of its own records
+    /// one.
+    ///
+    /// # Specification
+    /// - requires: `position` is visited in ascending arena order, so its own
+    ///   record is set when its children are reached; a match records its arm
+    ///   bodies when it is classified, after this hands its own record down.
+    /// - ensures: every child of a recorded node carries a record, its own when
+    ///   it had one and its parent's otherwise; a node under several such
+    ///   matches carries the innermost's.
+    /// - provides: the scrutiny a claim reads, however deep under its arm.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a claim nested in a call, a constructor and a
+    ///   statement under an arm reads its match's record; under two nested
+    ///   matches, the inner one's.
+    /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
+    /// - witness: `lower::native::tests::claims_under_cases_on_two_parameters_are_refused_by_name`
+    #[spec(
+        captures: before = self.scrutinised.get(&position).copied(),
+        ensures: |_| {
+            self.scrutinised.get(&position).copied() == before
+                && before.is_none_or(|_| self.tree.children(position).all(|child| self.scrutinised.contains_key(&child)))
+        },
+    )]
+    fn inherit_scrutiny(
+        &mut self,
+        position: NodeIndex,
+    )
+    {
+        let Some(&seen) = self.scrutinised.get(&position)
+        else {
+            return;
+        };
+        for child in self.tree.children(position) {
+            let _held = self.scrutinised.entry(child).or_insert(seen);
+        }
     }
 
     /// Give every unowned child of `position` the declaration its parent
@@ -6015,12 +6066,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   opens on `(`.
     /// - ensures: each parameter binds in a frame extending the one before it,
     ///   left to right, with its type, when written, read as a value type under
-    ///   the frame before it and recorded on the binder; a recursive tail binds
-    ///   its own name in one more frame, between its last parameter and the
+    ///   the frame before it and recorded on the binder; a recursive tail
+    ///   stages the parameter [`Self::staged_by_body`] reads off its body and
+    ///   binds its own name in one more frame, between that parameter and the
     ///   ones before it, typed by the declaration form so no telescope counts
-    ///   it, and records the parameters before it as the ones every recursive
-    ///   call passes unchanged; the result, when written, is read at the result
-    ///   position under the last parameter's frame, as the block is, and
+    ///   it, records the parameters before it as the ones every recursive call
+    ///   passes unchanged, and records each parameter's position as the one a
+    ///   match on it scrutinises; the result, when written, is read at the
+    ///   result position under the last parameter's frame, as the block is, and
     ///   recorded as the answer of the block's last computation and of every
     ///   statement whose local ends continue the block; the block is read as a
     ///   body a path runs through; the form is planned as the function's
@@ -6030,9 +6083,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - fails: yields the unadmitted refusal for a parameter spelled as a type
     ///   or a type variable, and, as a recursive tail, for one with no
     ///   parameter to descend on; a fault naming the function form for a
-    ///   parameter list, a type or a result out of shape; the block's own
-    ///   refusal; and the unreachable refusal for statements after one every
-    ///   path of which exits.
+    ///   parameter list, a type or a result out of shape; a form fault reading
+    ///   a recursive tail's body ahead; the block's own refusal; and the
+    ///   unreachable refusal for statements after one every path of which
+    ///   exits.
     /// - panics: none.
     ///
     /// # Errors
@@ -6049,7 +6103,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
     /// - witness: `lower::native::tests::a_match_takes_its_answer_from_the_function_result`
-    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
+    /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
     #[spec(
         captures: parameters = self.parameters.len(),
         ensures: |ret| {
@@ -6093,6 +6148,31 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let start = self.parameters.len();
         let mut frame = Frame::Outermost;
         let mut recursion = Maybe::Absent(recursion::Absent::Plain);
+        // A recursive tail stages the parameter its body's matches take
+        // apart, read off the syntax ahead before anything binds.
+        let staged = match (recursive, named) {
+            (Maybe::Present(_), Maybe::Present(own)) => {
+                let mut ahead = cursor.clone();
+                let mut names = Vec::new();
+                let mut roots = Vec::new();
+                let mut listed = true;
+                while let Maybe::Present(piece) = ahead.read() {
+                    match piece {
+                        Piece::Tile { label, at } if listed && label == TileName::IDENTIFIER => {
+                            names.push(self.name_at(at));
+                        },
+                        Piece::Tile { label, .. } if label == TileName::PAREN_CLOSE => {
+                            listed = false;
+                        },
+                        Piece::Operand(operand) if !listed => roots.push(operand.node),
+                        Piece::Tile { .. } | Piece::Operand(_) => {},
+                    }
+                }
+                let own = self.name_at(own);
+                Some(self.staged_by_body(own, &names, &roots)?)
+            },
+            _ => None,
+        };
         loop {
             let binder = match cursor.peek() {
                 Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => {
@@ -6123,16 +6203,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             let name = self.name_at(binder);
             self.note_binder(binder, name)?;
-            let mut ahead = cursor.clone();
-            let _comma = ahead.tile(TileName::COMMA);
-            if let (Maybe::Present(_), Maybe::Present(own), Maybe::Present(_)) =
-                (recursive, named, ahead.at(TileName::PAREN_CLOSE))
+            if let (Maybe::Present(own), Some(staged)) = (named, staged)
+                && self.parameters.len().saturating_sub(start) == staged.0
             {
                 let own_site = Maybe::Present(own.span);
                 let named = own.node;
                 let own = self.name_at(own);
                 let bound = self.scope.extend_typed(frame, own, site.at.node, own_site);
                 let _first = self.recursions.insert(bound, native::Recursion {
+                    parameters: Stretch { start, end: start },
                     uniform: Stretch {
                         start,
                         end: self.parameters.len(),
@@ -6171,6 +6250,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
             start,
             end: self.parameters.len(),
         };
+        if let Maybe::Present(own) = recursion
+            && let Some(held) = self.recursions.get_mut(&own)
+        {
+            held.parameters = parameters;
+            for (position, parameter) in stretch(&self.parameters, parameters).iter().enumerate() {
+                let scrutiny = native::Scrutiny {
+                    recursion: own,
+                    position: native::ParameterAt(position),
+                };
+                let _first = self.staged_parameters.insert(parameter.frame, scrutiny);
+            }
+        }
         let result = match cursor.tile(TileName::ARROW) {
             Maybe::Present(_) => {
                 let result = function.one(cursor.operands())?;
@@ -6922,9 +7013,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a value, all in its own frame, and is planned as the head applied to
     ///   the arguments left to right; a call whose head is an instantiation, a
     ///   recursive call, records every argument for the head's claim to check
-    ///   and reads and applies its last alone, the one its fixpoint takes; a
-    ///   call of no arguments is its head, whose force [`Self::mint_at`] marks
-    ///   as the call the source wrote.
+    ///   and reads and applies those from the staged parameter's on, the ones
+    ///   its fixpoint takes; a call of no arguments is its head, whose force
+    ///   [`Self::mint_at`] marks as the call the source wrote.
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
     /// - fails: yields the wrong-sort refusal outside computation position, and
@@ -6943,7 +7034,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
-    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
     /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
     /// - witness: `lower::identity::tests::a_bound_name_shadows_an_identity_operation`
     /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
@@ -6958,8 +7049,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         let descends = self.descents.get(&head).is_some_and(|descent| {
                             descent.arguments == Stretch { start, end } && descent.call == site
                         });
-                        (arguments.start == start
-                            || (descends && arguments.start == end.saturating_sub(1).max(start)))
+                        (arguments.start == start || (descends && arguments.start >= start))
                             && arguments.end == end
                             && self.reading(head) == Reading::Head(site.reading.frame())
                             && self.operands.get(arguments.start ..).is_some_and(|appended| {
@@ -7051,8 +7141,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 call: site,
                 arguments: written,
             });
+            let leading = self.leading_parameters(frame, head)?.0;
             Stretch {
-                start: written.end.saturating_sub(1).max(written.start),
+                start: written.start.saturating_add(leading).min(written.end),
                 end: written.end,
             }
         }
@@ -11752,15 +11843,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: `(x1: A1, …, xn: An) -> C { b }` mints its body as `thunk (λ
     ///   … λ. b)`, one lambda per parameter with the binder tile's origin and
     ///   the thunk marked as inserted at the declaration form; a recursive tail
-    ///   closes its last parameter's lambda by a fixpoint marked as inserted at
-    ///   the declaration form, its binder named where the function's own name
-    ///   is written, `thunk (λ … λ. fix. λ. b)`, claiming structural descent
-    ///   when a call claims it and partial otherwise; its declared type is `+U
-    ///   (A1 -> … -> An -> C)`, one arrow per parameter with the binder tile's
-    ///   origin and `+U` the declaration form's, an arrow dependent where a
-    ///   later type names its parameter; a tail missing a parameter or result
-    ///   type mints the body alone; nothing is minted when the block did not
-    ///   lower.
+    ///   closes its staged parameter's lambda by a fixpoint marked as inserted
+    ///   at the declaration form, its binder named where the function's own
+    ///   name is written, `thunk (λ … λ. fix. λ … λ. b)`, claiming structural
+    ///   descent when a call claims it and partial otherwise; its declared type
+    ///   is `+U (A1 -> … -> An -> C)`, one arrow per parameter with the binder
+    ///   tile's origin and `+U` the declaration form's, an arrow dependent
+    ///   where a later type names its parameter; a tail missing a parameter or
+    ///   result type mints the body alone; nothing is minted when the block did
+    ///   not lower.
     /// - provides: the function tail's two halves, from one reading.
     /// - fails: never.
     /// - panics: none.
@@ -11772,7 +11863,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     /// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
     /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
-    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
@@ -11809,7 +11900,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Present(evidence) => Some(evidence),
             Maybe::Absent(_) => None,
         };
-        for parameter in parameters.iter().rev() {
+        let staged = match function.recursion {
+            Maybe::Present(scope) => self.recursions.get(&scope).map_or(0, |recursion| {
+                stretch(&self.parameters, recursion.uniform).len()
+            }),
+            Maybe::Absent(_) => 0,
+        };
+        for (position, parameter) in parameters.iter().enumerate().rev() {
             let Maybe::Present(binder) = self.origin_at(parameter.binder)
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
@@ -11818,7 +11915,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             sink.origins.record_computation(id, binder);
             sink.origins.record_binder(id, binder);
             body = id;
-            if let Some(evidence) = fixpoint.take() {
+            if position == staged
+                && let Some(evidence) = fixpoint.take()
+            {
                 let closed = sink.arena.computation_fixpoint(body, evidence);
                 sink.origins
                     .record_computation(closed, origin.inserted(Insertion::Fixpoint));

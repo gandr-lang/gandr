@@ -774,9 +774,9 @@ impl Typed
 /// instantiated from.
 ///
 /// # Specification
-/// - ensures: the function's parameters, its arity, whether it recurses, its
-///   written result and whether that is a returner, the arguments the call
-///   applies, and whether it is a recursive call's descent.
+/// - ensures: the function's parameters, its arity, the parameter it stages
+///   when it recurses, its written result and whether that is a returner, the
+///   arguments the call applies, and whether it is a recursive call's descent.
 /// - executable: none — the coordinates hold no tree to check them against.
 ///
 /// # Adequacy
@@ -791,19 +791,19 @@ struct Callee
     parameters: Stretch,
     /// How many arguments the function takes.
     arity: usize,
-    /// Whether a recursive tail binds its own name between its last
-    /// parameter and the ones before it.
-    recursive: bool,
+    /// The staged parameter's position, when a recursive tail binds its own
+    /// name between that parameter and the ones before it.
+    recursive: Option<usize>,
     /// The written result: a tail's computation type, or a signature's
     /// value type.
     result: NodeIndex,
     /// Whether the result is a computation type, a returner over the path.
     returned: bool,
     /// The arguments the call applies, in the lowerer's operand store: every
-    /// one, or a descent's last.
+    /// one, or a descent's from the staged parameter's on.
     arguments: Stretch,
     /// Whether the head is a recursive call's descent claim, which passes
-    /// the parameters before the last as themselves.
+    /// the parameters before the staged one as themselves.
     descends: bool,
 }
 
@@ -2533,7 +2533,7 @@ impl<'source> Lowerer<'_, 'source>
                     Some(&Plan::Variable(_, binder)) if self.recursions.contains_key(&binder) => {
                         let tail = match self.scope.declared(binder) {
                             Maybe::Present(tail) => match self.plans.get(usize::from(tail)) {
-                                Some(&Plan::Function(function)) => Self::tail_callee(function),
+                                Some(&Plan::Function(function)) => self.tail_callee(function),
                                 _ => None,
                             },
                             Maybe::Absent(_) => None,
@@ -2542,7 +2542,7 @@ impl<'source> Lowerer<'_, 'source>
                     },
                     _ => (None, false),
                 };
-                // A descent passes the parameters before the last as the
+                // A descent passes the parameters before the staged one as the
                 // variables they are in the body, which a type never binds.
                 let descends_in_type = descends && self.in_type.contains(&at);
                 match callee {
@@ -2589,7 +2589,10 @@ impl<'source> Lowerer<'_, 'source>
         constant: ConstantIndex,
     ) -> Option<Callee>
     {
-        if let Some(callee) = self.function_of(constant).and_then(Self::tail_callee) {
+        if let Some(callee) = self
+            .function_of(constant)
+            .and_then(|function| self.tail_callee(function))
+        {
             return Some(callee);
         }
         let Maybe::Present(Half {
@@ -2616,7 +2619,7 @@ impl<'source> Lowerer<'_, 'source>
         Some(Callee {
             parameters,
             arity,
-            recursive: false,
+            recursive: None,
             result,
             returned: false,
             arguments: none,
@@ -2627,9 +2630,9 @@ impl<'source> Lowerer<'_, 'source>
     /// What a call of the function tail `function` reads its result off.
     ///
     /// # Specification
-    /// - ensures: the tail's parameters, whether it recurses and its written
-    ///   result, a returner, when it writes one; the call's own fields left
-    ///   empty.
+    /// - ensures: the tail's parameters, the parameter it stages when it
+    ///   recurses and its written result, a returner, when it writes one; the
+    ///   call's own fields left empty.
     /// - fails: none for a tail with no written result.
     /// - panics: none.
     ///
@@ -2637,7 +2640,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::callee_of`].
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     #[spec(ensures: |ret| ret.is_none_or(|callee| callee.returned))]
-    fn tail_callee(function: Function) -> Option<Callee>
+    fn tail_callee(
+        &self,
+        function: Function,
+    ) -> Option<Callee>
     {
         let Maybe::Present(result) = function.result
         else {
@@ -2650,7 +2656,12 @@ impl<'source> Lowerer<'_, 'source>
                 .parameters
                 .end
                 .saturating_sub(function.parameters.start),
-            recursive: matches!(function.recursion, Maybe::Present(_)),
+            recursive: match function.recursion {
+                Maybe::Present(scope) => Some(self.recursions.get(&scope).map_or(0, |recursion| {
+                    super::stretch(&self.parameters, recursion.uniform).len()
+                })),
+                Maybe::Absent(_) => None,
+            },
             result,
             returned: true,
             arguments: none,
@@ -3441,8 +3452,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the written path type, under its returner for a tail, with
     ///   each binder the result's telescope counts replaced by its argument,
     ///   the innermost first: the applied arguments in order, and for a descent
-    ///   the parameters before the last as the variables they are where the
-    ///   call stands.
+    ///   the parameters before the staged one as the variables they are where
+    ///   the call stands.
     /// - fails: [`synthesised::Absent::Unread`] when the result or an argument
     ///   did not lower, the arguments do not match the arity, a frame other
     ///   than a binder of the function counts in the result's telescope, a
@@ -3482,7 +3493,11 @@ impl<'source> Lowerer<'_, 'source>
         let applied = super::stretch(&self.operands, callee.arguments);
         let mut arguments = Vec::with_capacity(callee.arity);
         if callee.descends {
-            let (Some((_, leading)), &[last]) = (parameters.split_last(), applied)
+            let staged = callee.recursive.unwrap_or(0);
+            let (Some(leading), true) = (
+                parameters.get(.. staged),
+                applied.len() == parameters.len().saturating_sub(staged),
+            )
             else {
                 return unread;
             };
@@ -3496,30 +3511,24 @@ impl<'source> Lowerer<'_, 'source>
                     ),
                 ));
             }
-            let Maybe::Present(last) = self.value_at(last)
+        }
+        else if applied.len() != callee.arity {
+            return unread;
+        }
+        for &argument in applied {
+            let Maybe::Present(value) = self.value_at(argument)
             else {
                 return unread;
             };
-            arguments.push(as_endpoint(sink.arena, last));
-        }
-        else {
-            if applied.len() != callee.arity {
-                return unread;
-            }
-            for &argument in applied {
-                let Maybe::Present(value) = self.value_at(argument)
-                else {
-                    return unread;
-                };
-                arguments.push(as_endpoint(sink.arena, value));
-            }
+            arguments.push(as_endpoint(sink.arena, value));
         }
         // The result's chain, innermost first: the binders from the last,
-        // the frame a recursive tail binds its own name at between the last
-        // and the ones before it.
+        // the frame a recursive tail binds its own name at between the staged
+        // parameter and the ones before it.
         let mut chain: Vec<Option<usize>> = (0 .. parameters.len()).rev().map(Some).collect();
-        if callee.recursive {
-            chain.insert(1_usize.min(chain.len()), None);
+        if let Some(staged) = callee.recursive {
+            let at = parameters.len().saturating_sub(staged).min(chain.len());
+            chain.insert(at, None);
         }
         let binds: Vec<bool> = self.scope.telescope_binders(from).collect();
         if binds.len() != chain.len() {

@@ -708,7 +708,7 @@ fn is_whole_unsigned_body(
             LoweringRefusal::UnresolvedName { .. } => Some(Row::UndefinedTermName),
             LoweringRefusal::UnresolvedTypeHead { .. } => Some(Row::UndefinedTypeHead),
             LoweringRefusal::OutOfFragment { boundary: FragmentBoundary::Reserved, .. } => Some(Row::ReservedForm),
-            LoweringRefusal::ImportUnresolved { .. } | LoweringRefusal::ImportCycle { .. } | LoweringRefusal::ImportShadows { .. } | LoweringRefusal::UnexportedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::DuplicateSignature { .. } | LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateImportAlias { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::DuplicateAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::ForwardMemberReference { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::LowercaseModuleName { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::ForNeedsListCase { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::RulesDiverge { .. } | LoweringRefusal::RulesUndecided { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => None,
+            LoweringRefusal::ImportUnresolved { .. } | LoweringRefusal::ImportCycle { .. } | LoweringRefusal::ImportShadows { .. } | LoweringRefusal::UnexportedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::DuplicateSignature { .. } | LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateImportAlias { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::DuplicateAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::ForwardMemberReference { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::LowercaseModuleName { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::DescentOnSeveralParameters { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::ForNeedsListCase { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::RulesDiverge { .. } | LoweringRefusal::RulesUndecided { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => None,
         };
         Row::ALL.into_iter().all(|row| rows.count(row)
             == if selected == Some(row) { DeclarationCount::from(1_usize) } else { before.count(row) })
@@ -733,8 +733,8 @@ fn lowering_row(
                 | FragmentBoundary::Arity(_)
                 | FragmentBoundary::Indexed
                 | FragmentBoundary::Unannotated
-                | FragmentBoundary::NotAFunction
                 | FragmentBoundary::NonUniform
+                | FragmentBoundary::NotAFunction
                 | FragmentBoundary::NotInTail
                 | FragmentBoundary::JoinsBlock
                 | FragmentBoundary::EmptyList
@@ -771,6 +771,7 @@ fn lowering_row(
         | LoweringRefusal::LowercaseModuleName { .. }
         | LoweringRefusal::NonExhaustiveMatch { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
+        | LoweringRefusal::DescentOnSeveralParameters { .. }
         | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::OutsideLoop { .. }
         | LoweringRefusal::AcrossHandler { .. }

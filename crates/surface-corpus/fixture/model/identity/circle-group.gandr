@@ -46,12 +46,13 @@ def rec spinHom(a : Int, b : Int) -> -F Path(Path(Circle, Base, Base), spin(plus
 }
 
 /// Winding a composite is summing the windings (cubical's `winding-hom`), by
-/// induction on the first loop, written last because a recursion descends
-/// its last parameter, and summed with `wind(q)` first because the sum
-/// descends its second summand: `here(wind(q))` on the empty word, and the
-/// recursive call carried along `up` or `down`. The composite in its type is
-/// read off the parameters' written types (#423), and the kernel reads its
-/// endpoint `plus(wind(q), wind(p))` as the call it returns (#424).
+/// induction on the first loop, written last so its match stands directly
+/// under the recursion, where the checkers read it as a fold, and summed with
+/// `wind(q)` first because the sum descends its second summand:
+/// `here(wind(q))` on the empty word, and the recursive call carried along
+/// `up` or `down`. The composite in its type is read off the parameters'
+/// written types (#423), and the kernel reads its endpoint
+/// `plus(wind(q), wind(p))` as the call it returns (#424).
 @[ checks ]
 def rec windHom(q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) -> -F Path(Int, wind(p then q), plus(wind(q), wind(p))) {
   case p {
