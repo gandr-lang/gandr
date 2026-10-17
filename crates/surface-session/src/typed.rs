@@ -36,6 +36,7 @@ use gandr_core_incremental::Reference;
 use gandr_core_incremental::Resume;
 use gandr_core_incremental::Typing;
 use gandr_core_incremental::submitted;
+use gandr_core_term::support::PlacementError;
 use gandr_surface_pretty::ContentSource;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;
@@ -121,9 +122,10 @@ pub fn type_of(
 /// - requires: nothing.
 /// - ensures: a checked or owed value by its signature, a synthesised value by
 ///   its produced classifier, and a native declaration by its declared
-///   universe, each laid out through [`present_type`] over a [`ContentSource`];
-///   a refused item, an unsigned owed or checked one, and a refused layout are
-///   each absences naming their reason.
+///   universe, each projected to its de Bruijn table and laid out through
+///   [`present_type`] over a [`ContentSource`]; a refused item, an unsigned
+///   owed or checked one, and a refused projection or layout are each absences
+///   naming their reason.
 /// - provides: the one spelling both lookups share.
 /// - fails: never.
 /// - panics: none.
@@ -148,16 +150,26 @@ fn spelled_type(
 ) -> Maybe<Presentation, spelled::Absent>
 {
     let content = checkpoint.content();
-    let laid_out = |nodes: &[ContentNode], root: NodeIndex| {
-        present_type(&ContentSource::from(nodes), root, page, Form::Sugared).map_or(
+    let laid_out = |projected: Result<Vec<ContentNode>, PlacementError>| {
+        let Ok(nodes) = projected
+        else {
+            return Maybe::Absent(spelled::Absent::Unpresentable);
+        };
+        present_type(
+            &ContentSource::from(nodes.as_slice()),
+            NodeIndex::from(0_usize),
+            page,
+            Form::Sugared,
+        )
+        .map_or(
             Maybe::Absent(spelled::Absent::Unpresentable),
             Maybe::Present,
         )
     };
     match *checkpoint.typing() {
         Typing::Data => match *(content.declaration()) {
-            DeclarationRoots::Data(ref roots) => laid_out(content.nodes(), roots.kind),
-            DeclarationRoots::Abstract(roots) => laid_out(content.nodes(), roots.kind),
+            DeclarationRoots::Data(ref roots) => laid_out(content.debruijn(roots.kind)),
+            DeclarationRoots::Abstract(roots) => laid_out(content.debruijn(roots.kind)),
             DeclarationRoots::Value { .. } | DeclarationRoots::World => {
                 Maybe::Absent(spelled::Absent::Unpresentable)
             },
@@ -166,7 +178,7 @@ fn spelled_type(
             DeclarationRoots::Value {
                 signature: Maybe::Present(ref root),
                 ..
-            } => laid_out(content.nodes(), *root),
+            } => laid_out(content.debruijn(*root)),
             DeclarationRoots::Value {
                 signature: Maybe::Absent(_),
                 ..
@@ -175,7 +187,7 @@ fn spelled_type(
                 Maybe::Absent(spelled::Absent::Unpresentable)
             },
         },
-        Typing::Synthesised { ref produced, .. } => laid_out(produced.nodes(), NodeIndex::from(0)),
+        Typing::Synthesised { ref produced, .. } => laid_out(produced.debruijn()),
         Typing::Refused(_) => Maybe::Absent(spelled::Absent::Refused),
     }
 }

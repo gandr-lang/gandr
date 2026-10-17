@@ -27,11 +27,14 @@ path = "tests/lib.rs"
 # sits below storage. The file backend needs `std`. A univalence statement's
 # stratum and descriptions persist in the site crate's vocabulary and the
 # description names.
+# The content table's interner indexes its nodes in a `hashbrown` table under
+# `foldhash`'s fixed seed, the grammar's label-index pair.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
+foldhash.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-check-memo.workspace = true
@@ -40,6 +43,7 @@ gandr-kernel-term.workspace = true
 gandr-theory-levitation.workspace = true
 gandr-theory-orders.workspace = true
 gandr-theory-sites.workspace = true
+hashbrown.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]

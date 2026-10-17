@@ -30,7 +30,7 @@ crates/
 ├── core-nbe/                      the glued value domain, evaluation, readback, conversion and native path transport; the sharing overlay, its erasure and its measure; strict meta-level staging
 ├── core-sequent/                  the command IL a core program is focused into, the outcome a run answers in and the store its answer is read back from
 ├── core-session/                  contractive binary session types, coinductive relation search, endpoint replay and certified recorded-run transport
-├── core-term/                     core syntax with native universe paths and the one unified context
+├── core-term/                     core syntax with native universe paths, the one unified context and the co-de Bruijn carrier
 ├── kernel-check-memo/             the check-memo seam a checker consults
 ├── kernel-conversion-trace/       the conversion-decision vocabulary and its sink
 ├── kernel-core/                   checking, conversion, admission and memoization; Path_U, identity and bridge recursion, higher fields, funext, Flow_U, guarded List observations and session-certificate replay; stage formation and replay

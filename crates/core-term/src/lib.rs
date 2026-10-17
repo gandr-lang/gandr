@@ -33,6 +33,11 @@
 //! - [`world`] holds the located vocabulary: the handle type `A at w`, the
 //!   capability `cap_w` a migration spends, and the computations `hold`, `leta`
 //!   and `migrate [w]`, one former each beside the rest of the core.
+//! - [`support`] is the co-de Bruijn carrier: a two-zone [`support::Thinning`]
+//!   selects a node's support from its scope, a [`support::Cover`] embeds each
+//!   child's support in its parent's, and placing the edges from a root's
+//!   support recovers the de Bruijn term. The incremental content table keys
+//!   and footprints its nodes by it; the kernel term stays de Bruijn.
 //! - [`FailureClass`] is the four-class vocabulary every refusal of the core
 //!   pipeline answers to, whichever crate produced it.
 //!
@@ -61,6 +66,34 @@
 //!   which has no projections for a path at a Σ to read.
 //! - Reversal: an n-ary Σ telescope former subsumes the product; a former keyed
 //!   by labels carries the surface's labels into the core.
+//!
+//! # The co-de Bruijn carrier
+//!
+//! [`support`] keeps a term's syntactic support on the term. A selection is a
+//! [`support::Thinning`]: per zone, the de Bruijn indices of a scope it keeps,
+//! strictly ascending, read as an embedding of a compact scope into the one
+//! it was selected from. A cover is one thinning per child of a node,
+//! embedding the child's compact scope into the node's extended by the
+//! binders the child's slot crosses, so a node's scope is exactly the
+//! variables beneath it and one subterm under different unused binders is
+//! one compact node. Placing every edge from a root's thinning recovers the
+//! de Bruijn term, refusing an index past `u32` instead of saturating.
+//!
+//! - Choice: the carrier lives here, beside the zones and binder depths it is
+//!   stated over, so every core vocabulary that adopts co-de Bruijn scoping
+//!   shares one algebra and one witness set; the incremental content table is
+//!   its first consumer, and the kernel term and the kernel wire stay de
+//!   Bruijn.
+//! - Alternatives: the carrier in the content table's crate, which the next
+//!   consumers would depend on or copy; a crate of its own, apart from the
+//!   zones it is stated over.
+//! - Reversal: a consumer whose zones are not `Γ; Σ` moves the carrier into a
+//!   crate of its own.
+//!
+//! Selections are sparse, and the bitset is the alternative: a measured
+//! workload of dense supports reverses that. The support is syntactic and
+//! over-approximates dependence; it keys, footprints and schedules, and never
+//! decides a strengthening.
 //!
 //! # Specification attributes
 //!
@@ -150,6 +183,7 @@ pub mod pattern;
 pub mod primitive;
 mod rewrite;
 pub mod session;
+pub mod support;
 mod syntax;
 pub mod ua;
 pub mod world;

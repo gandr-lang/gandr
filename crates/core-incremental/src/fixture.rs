@@ -681,3 +681,30 @@ pub fn every_former(noise: Noise) -> Program
 
     Program::new(arena, items).expect("positions ascend")
 }
+
+/// The type content of the de Bruijn table `raw`, rooted at its first entry.
+///
+/// # Specification
+/// trivial.
+pub fn type_content(raw: &[crate::content::ContentNode]) -> crate::content::TypeContent
+{
+    crate::content::TypeContent::tabulated(raw, crate::boundary::NodeIndex::from(0_usize))
+}
+
+/// The unlocated content of an item whose roots `declaration` index the de
+/// Bruijn table `raw`.
+///
+/// # Specification
+/// trivial.
+pub fn item_content(
+    reference: crate::region::Reference,
+    declaration: &crate::content::DeclarationRoots,
+    raw: &[crate::content::ContentNode],
+) -> crate::content::ItemContent
+{
+    let roots: Vec<crate::boundary::NodeIndex> = declaration.iter().map(|(root, _)| root).collect();
+    let tabled = crate::content::tabled(raw, &roots);
+    let declaration = declaration.renumbered(|root| tabled.of(root));
+    let placements = tabled.supports(&roots);
+    crate::content::ItemContent::from_parts(reference, declaration, tabled.nodes, placements)
+}

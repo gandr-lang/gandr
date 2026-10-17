@@ -14,9 +14,15 @@
 //! their sorts — and a decoded value is written again and compared with its
 //! input, so a payload that parses but is not the one canonical spelling of
 //! its value is refused rather than accepted under a second address. A table
-//! is also checked to be numbered by discovery from its roots, which writing
-//! it again would not reveal. Counts read from the input never size an
-//! allocation: a corrupted count fails at the end of the input instead.
+//! is also checked to be numbered by discovery from its roots, acyclic,
+//! listing no node twice and every cover the exact minimal cover of its node,
+//! none of which writing it again would reveal. A cover's arity is its
+//! former's and an edge's widths, like a root support's, are the scope of the
+//! node it selects for, so none of them is written: a table is its formers
+//! and scopes, then every edge's indices. The references each node carries
+//! are not written but rebuilt from the checked table. Counts read from the
+//! input never size an allocation: a corrupted count fails at the end of the
+//! input instead.
 //!
 //! # One canonical encoding
 //!
@@ -70,6 +76,8 @@ use gandr_core_term::session::RecursionIndex;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::session::SessionRelation;
 use gandr_core_term::session::SessionType;
+use gandr_core_term::support::Scope;
+use gandr_core_term::support::Thinning;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_strata::LevelOffset;
@@ -114,6 +122,7 @@ use crate::footprint::Footprint;
 use crate::footprint::HoleMark;
 use crate::region::ItemKey;
 use crate::region::Reference;
+use crate::support::SupportedNode;
 use crate::typing::EndpointSite;
 use crate::typing::Form;
 use crate::typing::Linearity;
@@ -124,10 +133,10 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0b";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0c";
 
 /// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x07";
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x08";
 
 /// The decoder's cap on a level atom's offset.
 ///
@@ -3130,14 +3139,16 @@ where
     Out: Sink,
 {
     write_data_roots(writer, content.roots())?;
-    write_nodes(writer, content.nodes())
+    write_nodes(writer, content.nodes())?;
+    write_placements(writer, content.placements());
+    Ok(())
 }
 
 /// Read and validate a complete nominal signature table.
 ///
 /// # Specification
 /// - ensures: every signature root is a value type in a discovery-numbered
-///   table.
+///   supported table, with one support of its widths per root.
 /// - fails: malformed, ill-sorted or noncanonical content.
 /// - panics: none.
 ///
@@ -3154,7 +3165,10 @@ fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataCont
         root_of_sort(&nodes, root, Sort::ValueType)?;
     }
     check_discovery(&nodes, roots.iter())?;
-    Ok(crate::content::DataContent::from_parts(roots, nodes))
+    let placements = read_placements(reader, &nodes, roots.iter())?;
+    Ok(crate::content::DataContent::from_parts(
+        roots, nodes, placements,
+    ))
 }
 
 /// Write an inline interface in canonical operation order.
@@ -4021,26 +4035,29 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
         .map_err(|_overflow| CodecError::Corrupt)
 }
 
-/// Write a table.
+/// Write a supported table: its count, each node's former and scope, then
+/// every node's edges in node and child order. A cover holds one edge per
+/// child of its former and an edge is as wide as its child's scope, so
+/// neither a cover's arity nor an edge's widths is written.
 ///
 /// # Specification
 /// - ensures: successful tables contain no unresolved node; an unsupported
-///   refusal names the first one.
+///   refusal names the first one. The references each node carries are not
+///   written: a reader rebuilds them.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — nested unresolved nodes in all four sorts retain the
-///   precise refusal. Structural validation is a reader responsibility:
-///   encoding a raw table does not certify its child extents, child sorts or
-///   discovery order.
+///   precise refusal; a written table reads back equal. Structural validation
+///   is a reader responsibility.
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
-/// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
 #[spec(
     ensures: |ret| match ret {
         | Ok(()) => nodes
             .iter()
-            .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+            .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
         | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
-            nodes.iter().find_map(|node| match *node {
+            nodes.iter().find_map(|node| match *node.former() {
                 | ContentNode::Unresolved(found) => Some(found),
                 | _ => None,
             }) == Some(sort)
@@ -4051,49 +4068,223 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
 )]
 fn write_nodes<Out>(
     writer: &mut Writer<'_, Out>,
-    nodes: &[ContentNode],
+    nodes: &[SupportedNode],
 ) -> Result<(), CodecError>
 where
     Out: Sink,
 {
     writer.count(Count(nodes.len()))?;
     for node in nodes {
-        write_node(writer, node)?;
+        write_node(writer, node.former())?;
+        write_scope(writer, node.scope())?;
+    }
+    for node in nodes {
+        for edge in node.cover() {
+            write_selection(writer, edge);
+        }
     }
     Ok(())
 }
 
-/// Read a table and check every child is in range and has its required sort.
+/// Write a selection's indices, the intuitionistic zone's and then the
+/// linear zone's; its widths are the scope the reader already holds.
+///
+/// # Specification
+/// - ensures: one word per selected index, intuitionistic first.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a table with covers in both zones round-trips.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+fn write_selection<Out>(
+    writer: &mut Writer<'_, Out>,
+    thinning: &Thinning,
+) where
+    Out: Sink,
+{
+    for zone in [Zone::Intuitionistic, Zone::Linear] {
+        for &index in thinning.indices(zone) {
+            writer.word(Word(u64::from(u32::from(index))));
+        }
+    }
+}
+
+/// Read a selection of `scope`'s widths.
+///
+/// # Specification
+/// - ensures: as many indices per zone as `scope` is wide there, as written.
+/// - fails: [`CodecError::Corrupt`] for an index past `u32`, a zone whose
+///   indices do not strictly ascend, or input that ends first.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a descending forged root support is refused.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| match ret {
+    Ok(ref selected) => selected.scope() == scope,
+    Err(error) => error == CodecError::Corrupt,
+})]
+fn read_selection(
+    reader: &mut Reader<'_>,
+    scope: Scope,
+) -> Result<Thinning, CodecError>
+{
+    let mut zones: [Vec<DeBruijnIndex>; 2] = [Vec::new(), Vec::new()];
+    for (zone, selected) in [Zone::Intuitionistic, Zone::Linear]
+        .into_iter()
+        .zip(&mut zones)
+    {
+        for _ in 0 .. usize::from(scope.width(zone)) {
+            let word = reader.word()?;
+            let index = u32::try_from(word.0).map_err(|_overflow| CodecError::Corrupt)?;
+            selected.push(DeBruijnIndex::from(index));
+        }
+    }
+    let [intuitionistic, linear] = zones;
+    Thinning::from_ascending(intuitionistic, linear).map_err(|_unordered| CodecError::Corrupt)
+}
+
+/// Write a scope's two widths as one word: the intuitionistic width in its
+/// low half, the linear width in its high half.
+///
+/// # Specification
+/// - ensures: one word.
+/// - fails: [`CodecError::Unrepresentable`] for a width past `u32`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a table with scopes in both zones round-trips.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_ok() == [Zone::Intuitionistic, Zone::Linear].into_iter()
+    .all(|zone| u32::try_from(usize::from(scope.width(zone))).is_ok()))]
+fn write_scope<Out>(
+    writer: &mut Writer<'_, Out>,
+    scope: Scope,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let half = |zone: Zone| {
+        u32::try_from(usize::from(scope.width(zone)))
+            .map(u32::to_le_bytes)
+            .map_err(|_overflow| CodecError::Unrepresentable)
+    };
+    let [i0, i1, i2, i3] = half(Zone::Intuitionistic)?;
+    let [l0, l1, l2, l3] = half(Zone::Linear)?;
+    writer.word(Word(u64::from_le_bytes([i0, i1, i2, i3, l0, l1, l2, l3])));
+    Ok(())
+}
+
+/// Read a scope's two widths from one word.
+///
+/// # Specification
+/// - ensures: the low half as the intuitionistic width, the high half as the
+///   linear width.
+/// - fails: [`CodecError::Corrupt`] for input that ends first.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a table with scopes in both zones round-trips.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor == before.saturating_add(8))]
+fn read_scope(reader: &mut Reader<'_>) -> Result<Scope, CodecError>
+{
+    let [i0, i1, i2, i3, l0, l1, l2, l3] = reader.word()?.0.to_le_bytes();
+    let width = |half: [u8; 4]| {
+        usize::try_from(u32::from_le_bytes(half))
+            .map(BinderDepth::from)
+            .map_err(|_overflow| CodecError::Corrupt)
+    };
+    Ok(Scope::new(
+        width([i0, i1, i2, i3])?,
+        width([l0, l1, l2, l3])?,
+    ))
+}
+
+/// Write each root's support, in root order; each is as wide as its root's
+/// scope, so neither the count nor the widths is written.
+///
+/// # Specification
+/// - ensures: each support's indices, in root order.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an item, a type and a data signature round-trip their
+///   root supports.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+fn write_placements<Out>(
+    writer: &mut Writer<'_, Out>,
+    placements: &[Thinning],
+) where
+    Out: Sink,
+{
+    for placement in placements {
+        write_selection(writer, placement);
+    }
+}
+
+/// Read one support per root of `nodes`, each as wide as its root's scope.
+///
+/// # Specification
+/// - ensures: one support per root, in root order, each with its root's widths.
+/// - fails: [`CodecError::Corrupt`] for a root out of range or a malformed
+///   support.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an item, a type and a data signature round-trip their
+///   root supports; a descending root support is refused.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(captures: [count = roots.clone().count()], ensures: |ret| ret.as_ref().map_or(true, |placements| placements.len() == count))]
+fn read_placements<Roots>(
+    reader: &mut Reader<'_>,
+    nodes: &[SupportedNode],
+    roots: Roots,
+) -> Result<Vec<Thinning>, CodecError>
+where
+    Roots: Iterator<Item = NodeIndex> + Clone,
+{
+    roots
+        .map(|root| {
+            let node = nodes.get(usize::from(root)).ok_or(CodecError::Corrupt)?;
+            read_selection(reader, node.scope())
+        })
+        .collect()
+}
+
+/// Read a supported table and rebuild it: every node's former and scope,
+/// then each edge as wide as its child's scope; every child in range and of
+/// its required sort, the table acyclic, every cover the exact minimal cover
+/// of its node, no node twice, and every node's references recomputed.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: successful nodes are resolved and every child index names its
-///   required sort. Discovery order and reachability are checked by the caller.
-/// - fails: [`CodecError::Corrupt`] for malformed nodes or invalid children,
-///   and [`CodecError::LevelOffsetTooLarge`] for an offset at the decoder cap.
+/// - ensures: successful nodes are resolved, every child index names its
+///   required sort, and each node carries the references beneath it. Discovery
+///   order and reachability are checked by the caller.
+/// - fails: [`CodecError::Corrupt`] for malformed nodes, invalid children, a
+///   cycle or a forged cover; [`CodecError::NonCanonical`] for a node listed
+///   twice; [`CodecError::LevelOffsetTooLarge`] for an offset at the decoder
+///   cap.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — out-of-range and wrong-sort children are refused
-///   independently of root validation; the predicate also checks table length.
+///   independently of root validation; widened scopes, edges past their scope,
+///   unused slots, duplicates and cycles are refused.
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
 #[spec(
-    captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(ref nodes) => {
             nodes.iter().all(|node| {
-                !matches!(*node, ContentNode::Unresolved(_))
-                    && node.children().iter().all(|(child, sort)| {
+                !matches!(*node.former(), ContentNode::Unresolved(_))
+                    && node.former().children().iter().all(|(child, sort)| {
                         nodes
                             .get(usize::from(child))
                             .is_some_and(|found| found.sort() == sort)
                     })
-            }) && u64::try_from(nodes.len()).is_ok_and(|count| {
-                before
-                    .checked_add(8)
-                    .and_then(|end| reader.bytes.get(before .. end))
-                    == Some(count.to_le_bytes().as_slice())
             })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -4102,23 +4293,35 @@ where
         | Err(error) => matches!(error,CodecError::Corrupt | CodecError::NonCanonical),
     },
 )]
-fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
+fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<SupportedNode>, CodecError>
 {
     let count = reader.count()?;
-    let mut nodes = Vec::new();
+    let mut formers = Vec::new();
+    let mut scopes = Vec::new();
     for _ in 0 .. count.0 {
-        let node = read_node(reader)?;
-        nodes.push(node);
+        formers.push(read_node(reader)?);
+        scopes.push(read_scope(reader)?);
     }
-    for node in &nodes {
-        for (child, sort) in node.children().iter() {
-            match nodes.get(usize::from(child)) {
-                Some(found) if found.sort() == sort => {},
-                Some(_) | None => return Err(CodecError::Corrupt),
-            }
+    let mut parts = Vec::with_capacity(formers.len());
+    for (former, &scope) in formers.into_iter().zip(&scopes) {
+        let children = former.children();
+        let mut cover = Vec::with_capacity(children.iter().count());
+        for (child, _) in children.iter() {
+            let width = *scopes.get(usize::from(child)).ok_or(CodecError::Corrupt)?;
+            cover.push(read_selection(reader, width)?);
         }
+        parts.push(crate::support::NodeParts {
+            former,
+            cover,
+            scope,
+        });
     }
-    Ok(nodes)
+    crate::support::assemble(parts).map_err(|fault| match fault {
+        crate::support::TableFault::Duplicate => CodecError::NonCanonical,
+        crate::support::TableFault::Child
+        | crate::support::TableFault::Cycle
+        | crate::support::TableFault::Cover(_) => CodecError::Corrupt,
+    })
 }
 
 /// Check that `nodes` is numbered by discovery from `roots`, in order.
@@ -4133,15 +4336,15 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — swapped and unreachable entries are refused; empty
-///   tables, repeated roots and a reachable cycle are accepted. The predicate
-///   uses a scalar contiguous-frontier oracle, not a second allocated queue or
-///   visited set.
+/// - hypothesis: L3 — swapped and unreachable entries and a table numbered from
+///   another root are refused; empty tables and repeated roots are accepted.
+///   The predicate uses a scalar contiguous-frontier oracle, not a second
+///   allocated queue or visited set.
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
-/// - witness: `codec::tests::discovery_accepts_cycles_repeated_roots_and_empty_tables`
+/// - witness: `codec::tests::discovery_accepts_repeated_roots_and_empty_tables`
 #[spec(
     requires: nodes.iter().all(|node| {
-        node.children()
+        node.former().children()
             .iter()
             .all(|(child, _)| usize::from(child) < nodes.len())
     }),
@@ -4165,7 +4368,7 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
                 if index >= next {
                     break 'discovery Err(CodecError::NonCanonical);
                 }
-                for (child, _) in node.children().iter() {
+                for (child, _) in node.former().children().iter() {
                     let child = usize::from(child);
                     if child > next {
                         break 'discovery Err(CodecError::NonCanonical);
@@ -4180,7 +4383,7 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
     },
 )]
 fn check_discovery<Roots>(
-    nodes: &[ContentNode],
+    nodes: &[SupportedNode],
     roots: Roots,
 ) -> Result<(), CodecError>
 where
@@ -4210,7 +4413,7 @@ where
     }
     while let Some(index) = queue.pop_front() {
         let node = nodes.get(usize::from(index)).ok_or(CodecError::Corrupt)?;
-        for (child, _) in node.children().iter() {
+        for (child, _) in node.former().children().iter() {
             discover(child, &mut queue)?;
         }
     }
@@ -4256,13 +4459,13 @@ where
             && content
                 .nodes()
                 .iter()
-                .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+                .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
         | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
             content.locus() == crate::content::Locus::Located
                 || matches!(*content.declaration(), crate::content::DeclarationRoots::World)
         },
         | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
-            content.nodes().iter().find_map(|node| match *node {
+            content.nodes().iter().find_map(|node| match *node.former() {
                 | ContentNode::Unresolved(found) => Some(found),
                 | _ => None,
             }) == Some(sort)
@@ -4333,15 +4536,18 @@ where
             return Err(CodecError::Unsupported(UnsupportedPersistence::Located));
         },
     }
-    write_nodes(writer, content.nodes())
+    write_nodes(writer, content.nodes())?;
+    write_placements(writer, content.placements());
+    Ok(())
 }
 
 /// Read an item's content.
 ///
 /// # Specification
 /// - fails: as [`read_nodes`] and [`check_discovery`], and
-///   [`CodecError::Corrupt`] for a signature root that is no value type or a
-///   body root that is no value.
+///   [`CodecError::Corrupt`] for a signature root that is no value type, a body
+///   root that is no value, or root supports that are not one per root of the
+///   root's widths.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -4352,14 +4558,15 @@ where
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref content) => {
             let nodes = content.nodes();
             let roots = content.declaration().iter();
             nodes.iter().all(|node| {
-                !matches!(*node, ContentNode::Unresolved(_))
-                    && node.children().iter().all(|(child, sort)| {
+                !matches!(*node.former(), ContentNode::Unresolved(_))
+                    && node.former().children().iter().all(|(child, sort)| {
                         nodes
                             .get(usize::from(child))
                             .is_some_and(|found| found.sort() == sort)
@@ -4386,7 +4593,7 @@ where
                     if index >= next {
                         break 'discovery Err(CodecError::NonCanonical);
                     }
-                    for (child, _) in node.children().iter() {
+                    for (child, _) in node.former().children().iter() {
                         let child = usize::from(child);
                         if child > next {
                             break 'discovery Err(CodecError::NonCanonical);
@@ -4464,7 +4671,13 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
         root_of_sort(&nodes, root, sort)?;
     }
     check_discovery(&nodes, declaration.iter().map(|(root, _)| root))?;
-    Ok(ItemContent::from_parts(reference, declaration, nodes))
+    let placements = read_placements(reader, &nodes, declaration.iter().map(|(root, _)| root))?;
+    Ok(ItemContent::from_parts(
+        reference,
+        declaration,
+        nodes,
+        placements,
+    ))
 }
 
 /// Require that the root `root` of `nodes` has sort `sort`.
@@ -4491,7 +4704,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
     },
 )]
 fn root_of_sort(
-    nodes: &[ContentNode],
+    nodes: &[SupportedNode],
     root: NodeIndex,
     sort: Sort,
 ) -> Result<(), CodecError>
@@ -4513,14 +4726,17 @@ fn write_type<Out>(
 where
     Out: Sink,
 {
-    write_nodes(writer, content.nodes())
+    write_nodes(writer, content.nodes())?;
+    write_selection(writer, content.root());
+    Ok(())
 }
 
 /// Read a type's content.
 ///
 /// # Specification
 /// - fails: as [`read_nodes`] and [`check_discovery`], and
-///   [`CodecError::Corrupt`] for an empty table or a root that is no type.
+///   [`CodecError::Corrupt`] for an empty table, a root that is no type or a
+///   root support of other widths than the root's.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -4529,17 +4745,18 @@ where
 ///   children and canonical discovery from root zero, without re-encoding or
 ///   allocating another traversal state.
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
 /// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref content) => {
             let nodes = content.nodes();
             matches!(
-                nodes.first().map(ContentNode::sort),
+                nodes.first().map(SupportedNode::sort),
                 Some(Sort::ValueType | Sort::CompType)
             ) && nodes.iter().all(|node| {
-                !matches!(*node, ContentNode::Unresolved(_))
-                    && node.children().iter().all(|(child, sort)| {
+                !matches!(*node.former(), ContentNode::Unresolved(_))
+                    && node.former().children().iter().all(|(child, sort)| {
                         nodes
                             .get(usize::from(child))
                             .is_some_and(|found| found.sort() == sort)
@@ -4562,7 +4779,7 @@ where
                     if index >= next {
                         break 'discovery Err(CodecError::NonCanonical);
                     }
-                    for (child, _) in node.children().iter() {
+                    for (child, _) in node.former().children().iter() {
                         let child = usize::from(child);
                         if child > next {
                             break 'discovery Err(CodecError::NonCanonical);
@@ -4585,12 +4802,18 @@ where
 fn read_type(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
 {
     let nodes = read_nodes(reader)?;
-    match nodes.first().map(ContentNode::sort) {
+    match nodes.first().map(SupportedNode::sort) {
         Some(Sort::ValueType | Sort::CompType) => {},
         Some(Sort::Value | Sort::Computation) | None => return Err(CodecError::Corrupt),
     }
-    check_discovery(&nodes, core::iter::once(NodeIndex::from(0_usize)))?;
-    Ok(TypeContent::from_nodes(nodes))
+    let root = NodeIndex::from(0_usize);
+    check_discovery(&nodes, core::iter::once(root))?;
+    let scope = nodes
+        .first()
+        .map(SupportedNode::scope)
+        .ok_or(CodecError::Corrupt)?;
+    let placement = read_selection(reader, scope)?;
+    Ok(TypeContent::from_parts(nodes, placement))
 }
 
 /// Write a set of references, ascending.
@@ -5404,7 +5627,7 @@ where
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
 #[spec(
     ensures: |ret| {
-        let tables: [&[ContentNode]; 2] = match *refusal {
+        let tables: [&[SupportedNode]; 2] = match *refusal {
             | Refusal::TypeMismatch {
                 ref synthesised,
                 ref expected,
@@ -5439,9 +5662,9 @@ where
             | Ok(()) => tables
                 .into_iter()
                 .flatten()
-                .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+                .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
             | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
-                tables.into_iter().flatten().find_map(|node| match *node {
+                tables.into_iter().flatten().find_map(|node| match *node.former() {
                     | ContentNode::Unresolved(found) => Some(found),
                     | _ => None,
                 }) == Some(sort)
@@ -6563,7 +6786,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 .map_err(|_overflow| CodecError::Unrepresentable)
         },
         | _ => {
-            let tables: [&[ContentNode]; 2] = match *typing {
+            let tables: [&[SupportedNode]; 2] = match *typing {
                 | Typing::Synthesised { ref produced, .. } => [produced.nodes(), &[]],
                 | Typing::Refused(ref refusal) => match *refusal {
             Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} => [found.nodes(),&[]],
@@ -6613,9 +6836,9 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 | Ok(()) => tables
                     .into_iter()
                     .flatten()
-                    .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+                    .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
                 | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
-                    tables.into_iter().flatten().find_map(|node| match *node {
+                    tables.into_iter().flatten().find_map(|node| match *node.former() {
                         | ContentNode::Unresolved(found) => Some(found),
                         | _ => None,
                     }) == Some(sort)
@@ -6731,8 +6954,8 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
 #[spec(
     ensures: |ret| match ret {
-        Ok(()) => answer.nodes().iter().all(|node| !matches!(node,ContentNode::Unresolved(_))),
-        Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node) {
+        Ok(()) => answer.nodes().iter().all(|node| !matches!(*node.former(),ContentNode::Unresolved(_))),
+        Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
 ContentNode::Unresolved(ref found) => Some(*found),
 ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
@@ -6785,7 +7008,7 @@ where
         | Ok(Answer::Typed(ref ty)) => {
             reader.bytes.get(before) == Some(&1)
                 && matches!(
-                    ty.nodes().first().map(ContentNode::sort),
+                    ty.nodes().first().map(SupportedNode::sort),
                     Some(Sort::ValueType | Sort::CompType)
                 )
         },
@@ -6827,7 +7050,7 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
 #[spec(
     ensures: |ret| {
         let typing = checkpoint.typing();
-        let tables: [&[ContentNode]; 2] = match *typing {
+        let tables: [&[SupportedNode]; 2] = match *typing {
             | Typing::Synthesised { ref produced, .. } => [produced.nodes(), &[]],
             | Typing::Refused(ref refusal) => match *refusal {
             | Refusal::TypeMismatch {
@@ -6875,12 +7098,12 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
             .chain(tables.into_iter().flatten());
         match ret {
             | Ok(()) => checkpoint.content().locus() == crate::content::Locus::Unlocated
-                && nodes.all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+                && nodes.all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
             | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
                 checkpoint.content().locus() == crate::content::Locus::Located
             },
             | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
-                nodes.find_map(|node| match *node {
+                nodes.find_map(|node| match *node.former() {
                     | ContentNode::Unresolved(found) => Some(found),
                     | _ => None,
                 }) == Some(sort)
@@ -6997,7 +7220,7 @@ fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError
 /// - witness: `codec::tests::encoding_bounds_levels_in_every_auxiliary_type_table`
 #[spec(
     ensures: |ret| match ret {
-        | Ok(()) => checkpoint.content().nodes().iter().all(|node| match *node {
+        | Ok(()) => checkpoint.content().nodes().iter().all(|node| match *node.former() {
             | ContentNode::ValueLift { ref target, .. }
             | ContentNode::TypeLift { ref target, .. }
             | ContentNode::Element { ref target, .. }
@@ -7163,7 +7386,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
         | ContentNode::ComputationElement { ref target, .. }
         | ContentNode::Universe {
             level: ref target, ..
-        }) = *node
+        }) = *node.former()
         else {
             continue;
         };
@@ -7361,7 +7584,7 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
             && contents
                 .iter()
                 .flat_map(ItemContent::nodes)
-                .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+                .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
         | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
             contents.iter().any(|content| content.locus() == crate::content::Locus::Located)
         },
@@ -7369,7 +7592,7 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
             contents
                 .iter()
                 .flat_map(ItemContent::nodes)
-                .find_map(|node| match *node {
+                .find_map(|node| match *node.former() {
                     | ContentNode::Unresolved(found) => Some(found),
                     | _ => None,
                 })
