@@ -1,258 +1,241 @@
-1:1-1:11 @[ checks ] ⇒ Nat : Type @1:1-2:1
-2:1-2:4 data ⇒ Nat : Type @2:1-2:17
-2:6-2:8 Nat ⇒ Nat : Type @2:6-2:9
-2:10-2:10 : ⇒ Nat : Type @2:1-2:17
-2:12-2:15 Type ⇒ Type : Type[+, 1] @2:12-2:16
-2:17-2:17 { ⇒ ∅
-3:3-3:6 Zero ⇒ Zero : Nat @3:3-3:7
-3:8-3:8 : ⇒ ∅
-3:10-3:12 Nat ⇒ Nat : Type @3:10-3:13
-3:13-3:13 ; ⇒ ∅
-4:3-4:6 Succ ⇒ Succ : Nat => Nat @4:3-4:7
-4:8-4:10 : ( ⇒ ∅
-4:11-4:11 n ⇒ n : Nat @4:11-4:12
-4:13-4:13 : ⇒ ∅
-4:15-4:17 Nat ⇒ Nat : Type @4:15-4:18
-4:18-4:22 ) --> ⇒ ∅
-4:24-4:26 Nat ⇒ Nat : Type @4:24-4:27
-4:27-5:1 ;⏎} ⇒ ∅
-7:1-7:11 @[ checks ] ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @7:1-8:1
-8:1-8:3 def ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @8:1-8:156
-8:5-8:11 reduced ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @8:5-8:12
-8:13-8:13 : ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @8:1-8:156
-8:15-8:19 Path( ⇒ Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) : Type @8:15-8:155
-8:20-8:22 Nat ⇒ Nat : Type @8:20-8:23
-8:23-8:23 , ⇒ Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) : Type @8:15-8:155
-8:25-8:34 transport( ⇒ -F Nat @8:25-8:142
-8:35-8:38 +U ( ⇒ +U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat) : Type @8:35-8:87
-8:39-8:39 ( ⇒ (y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @8:39-8:86
-8:40-8:40 y ⇒ y : Nat @8:40-8:41
-8:42-8:42 : ⇒ (y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @8:39-8:86
-8:44-8:46 Nat ⇒ Nat : Type @8:44-8:47
-8:47-8:50 ) -> ⇒ (y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @8:39-8:86
-8:52-8:52 ( ⇒ (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @8:52-8:86
-8:53-8:53 z ⇒ z : Path(Nat, Zero, y) @8:53-8:54
-8:55-8:55 : ⇒ (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @8:52-8:86
-8:57-8:61 Path( ⇒ Path(Nat, Zero, y) : Type @8:57-8:75
-8:62-8:64 Nat ⇒ Nat : Type @8:62-8:65
-8:65-8:65 , ⇒ Path(Nat, Zero, y) : Type @8:57-8:75
-8:67-8:70 Zero ⇒ Zero : Nat @8:67-8:71
-8:71-8:71 , ⇒ Path(Nat, Zero, y) : Type @8:57-8:75
-8:73-8:73 y ⇒ y : Nat @8:73-8:74
-8:74-8:74 ) ⇒ Path(Nat, Zero, y) : Type @8:57-8:75
-8:75-8:78 ) -> ⇒ (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @8:52-8:86
-8:80-8:81 -F ⇒ -F Nat : Type[-] @8:80-8:86
-8:83-8:85 Nat ⇒ Nat : Type @8:83-8:86
-8:86-8:86 ) ⇒ +U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat) : Type @8:35-8:87
-8:87-8:87 , ⇒ -F Nat @8:25-8:142
-8:89-8:93 here( ⇒ Path(Nat, Zero, Zero) @8:89-8:99
-8:94-8:97 Zero ⇒ Zero : Nat @8:94-8:98
-8:98-8:98 ) ⇒ Path(Nat, Zero, Zero) @8:89-8:99
-8:99-8:99 , ⇒ -F Nat @8:25-8:142
-8:101-8:105 here( ⇒ Path(Nat, Zero, Zero) @8:101-8:111
-8:106-8:109 Zero ⇒ Zero : Nat @8:106-8:110
-8:110-8:110 ) ⇒ Path(Nat, Zero, Zero) @8:101-8:111
-8:111-8:111 , ⇒ -F Nat @8:25-8:142
-8:113-8:117 here( ⇒ Path(Path(Nat, Zero, Zero), here(Zero), here(Zero)) @8:113-8:129
-8:118-8:122 here( ⇒ Path(Nat, Zero, Zero) @8:118-8:128
-8:123-8:126 Zero ⇒ Zero : Nat @8:123-8:127
-8:127-8:127 ) ⇒ Path(Nat, Zero, Zero) @8:118-8:128
-8:128-8:128 ) ⇒ Path(Path(Nat, Zero, Zero), here(Zero), here(Zero)) @8:113-8:129
-8:129-8:129 , ⇒ -F Nat @8:25-8:142
-8:131-8:135 Succ( ⇒ Succ(Zero) : Nat @8:131-8:141
-8:136-8:139 Zero ⇒ Zero : Nat @8:136-8:140
-8:140-8:140 ) ⇒ Succ(Zero) : Nat @8:131-8:141
-8:141-8:141 ) ⇒ -F Nat @8:25-8:142
-8:142-8:142 , ⇒ Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) : Type @8:15-8:155
-8:144-8:148 Succ( ⇒ Succ(Zero) : Nat @8:144-8:154
-8:149-8:152 Zero ⇒ Zero : Nat @8:149-8:153
-8:153-8:153 ) ⇒ Succ(Zero) : Nat @8:144-8:154
-8:154-8:154 ) ⇒ Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) : Type @8:15-8:155
-8:155-8:155 ; ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @8:1-8:156
-9:1-9:3 def ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:1-9:32
-9:5-9:11 reduced ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:5-9:12
-9:13-9:13 = ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:1-9:32
-9:15-9:19 here( ⇒ Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:15-9:31
-9:20-9:24 Succ( ⇒ Succ(Zero) : Nat @9:20-9:30
-9:25-9:28 Zero ⇒ Zero : Nat @9:25-9:29
-9:29-9:29 ) ⇒ Succ(Zero) : Nat @9:20-9:30
-9:30-9:30 ) ⇒ Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:15-9:31
-9:31-9:31 ; ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @9:1-9:32
-11:1-11:11 @[ checks ] ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @11:1-12:1
-12:1-12:3 def ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @12:1-12:71
-12:5-12:12 flipped( ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @12:5-12:12
-12:13-12:13 a ⇒ a : Nat @12:13-12:14
-12:14-12:14 : ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @12:1-12:71
-12:16-12:18 Nat ⇒ Nat : Type @12:16-12:19
-12:19-12:19 , ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @12:1-12:71
-12:21-12:21 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a) @12:21-12:22
-12:22-12:22 : ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @12:1-12:71
-12:24-12:26 Nat ⇒ Nat : Type @12:24-12:27
-12:27-12:27 , ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @12:1-12:71
-12:29-12:29 q ⇒ q : Path(Nat, a, b) @12:29-12:30
-12:30-12:30 : ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @12:1-12:71
-12:32-12:36 Path( ⇒ Path(Nat, a, b) : Type @12:32-12:47
-12:37-12:39 Nat ⇒ Nat : Type @12:37-12:40
-12:40-12:40 , ⇒ Path(Nat, a, b) : Type @12:32-12:47
-12:42-12:42 a ⇒ a : Nat @12:42-12:43
-12:43-12:43 , ⇒ Path(Nat, a, b) : Type @12:32-12:47
-12:45-12:45 b ⇒ b : Nat @12:45-12:46
-12:46-12:46 ) ⇒ Path(Nat, a, b) : Type @12:32-12:47
-12:47-12:50 ) -> ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @12:1-12:71
-12:52-12:53 -F ⇒ -F Path(Nat, b, a) : Type[-] @12:52-12:70
-12:55-12:59 Path( ⇒ Path(Nat, b, a) : Type @12:55-12:70
-12:60-12:62 Nat ⇒ Nat : Type @12:60-12:63
-12:63-12:63 , ⇒ Path(Nat, b, a) : Type @12:55-12:70
-12:65-12:65 b ⇒ b : Nat @12:65-12:66
-12:66-12:66 , ⇒ Path(Nat, b, a) : Type @12:55-12:70
-12:68-12:68 a ⇒ a : Nat @12:68-12:69
-12:69-12:69 ) ⇒ Path(Nat, b, a) : Type @12:55-12:70
-12:71-13:8 {⏎  become ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @12:1-14:2
-13:10-13:19 transport( ⇒ -F Path(Nat, b, a) @13:10-13:112
-13:20-13:23 +U ( ⇒ +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a)) : Type @13:20-13:81
-13:24-13:24 ( ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @13:24-13:80
-13:25-13:25 y ⇒ y : Nat @13:25-13:26
-13:27-13:27 : ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @13:24-13:80
-13:29-13:31 Nat ⇒ Nat : Type @13:29-13:32
-13:32-13:35 ) -> ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @13:24-13:80
-13:37-13:37 ( ⇒ (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @13:37-13:80
-13:38-13:38 z ⇒ z : Path(Nat, a, y) @13:38-13:39
-13:40-13:40 : ⇒ (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @13:37-13:80
-13:42-13:46 Path( ⇒ Path(Nat, a, y) : Type @13:42-13:57
-13:47-13:49 Nat ⇒ Nat : Type @13:47-13:50
-13:50-13:50 , ⇒ Path(Nat, a, y) : Type @13:42-13:57
-13:52-13:52 a ⇒ a : Nat @13:52-13:53
-13:53-13:53 , ⇒ Path(Nat, a, y) : Type @13:42-13:57
-13:55-13:55 y ⇒ y : Nat @13:55-13:56
-13:56-13:56 ) ⇒ Path(Nat, a, y) : Type @13:42-13:57
-13:57-13:60 ) -> ⇒ (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @13:37-13:80
-13:62-13:63 -F ⇒ -F Path(Nat, y, a) : Type[-] @13:62-13:80
-13:65-13:69 Path( ⇒ Path(Nat, y, a) : Type @13:65-13:80
-13:70-13:72 Nat ⇒ Nat : Type @13:70-13:73
-13:73-13:73 , ⇒ Path(Nat, y, a) : Type @13:65-13:80
-13:75-13:75 y ⇒ y : Nat @13:75-13:76
-13:76-13:76 , ⇒ Path(Nat, y, a) : Type @13:65-13:80
-13:78-13:78 a ⇒ a : Nat @13:78-13:79
-13:79-13:79 ) ⇒ Path(Nat, y, a) : Type @13:65-13:80
-13:80-13:80 ) ⇒ +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a)) : Type @13:20-13:81
-13:81-13:81 , ⇒ -F Path(Nat, b, a) @13:10-13:112
-13:83-13:83 q ⇒ q : Path(Nat, a, b) @13:83-13:84
-13:84-13:84 , ⇒ -F Path(Nat, b, a) @13:10-13:112
-13:86-13:90 here( ⇒ Path(Nat, a, a) @13:86-13:93
-13:91-13:91 a ⇒ a : Nat @13:91-13:92
-13:92-13:92 ) ⇒ Path(Nat, a, a) @13:86-13:93
-13:93-13:93 , ⇒ -F Path(Nat, b, a) @13:10-13:112
-13:95-13:99 here( ⇒ Path(Path(Nat, a, b), q, q) @13:95-13:102
-13:100-13:100 q ⇒ q : Path(Nat, a, b) @13:100-13:101
-13:101-13:101 ) ⇒ Path(Path(Nat, a, b), q, q) @13:95-13:102
-13:102-13:102 , ⇒ -F Path(Nat, b, a) @13:10-13:112
-13:104-13:108 here( ⇒ Path(Nat, a, a) @13:104-13:111
-13:109-13:109 a ⇒ a : Nat @13:109-13:110
-13:110-13:110 ) ⇒ Path(Nat, a, a) @13:104-13:111
-13:111-13:111 ) ⇒ -F Path(Nat, b, a) @13:10-13:112
-14:1-14:1 } ⇒ flipped : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a)) @12:1-14:2
-16:1-16:23 @[ refuses("NotOver") ] ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @16:1-17:1
-17:1-17:3 def ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:1-17:66
-17:5-17:11 astray( ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:5-17:11
-17:12-17:12 a ⇒ a : Nat @17:12-17:13
-17:13-17:13 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:1-17:66
-17:15-17:17 Nat ⇒ Nat : Type @17:15-17:18
-17:18-17:18 , ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:1-17:66
-17:20-17:20 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @17:20-17:21
-17:21-17:21 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:1-17:66
-17:23-17:25 Nat ⇒ Nat : Type @17:23-17:26
-17:26-17:26 , ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:1-17:66
-17:28-17:28 q ⇒ q : Path(Nat, a, b) @17:28-17:29
-17:29-17:29 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:1-17:66
-17:31-17:35 Path( ⇒ Path(Nat, a, b) : Type @17:31-17:46
-17:36-17:38 Nat ⇒ Nat : Type @17:36-17:39
-17:39-17:39 , ⇒ Path(Nat, a, b) : Type @17:31-17:46
-17:41-17:41 a ⇒ a : Nat @17:41-17:42
-17:42-17:42 , ⇒ Path(Nat, a, b) : Type @17:31-17:46
-17:44-17:44 b ⇒ b : Nat @17:44-17:45
-17:45-17:45 ) ⇒ Path(Nat, a, b) : Type @17:31-17:46
-17:46-17:46 , ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:1-17:66
-17:48-17:48 v ⇒ v : Nat -> -F Nat @17:48-17:49
-17:49-17:49 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:1-17:66
-17:51-17:53 Nat ⇒ Nat : Type @17:51-17:54
-17:54-17:57 ) -> ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:1-17:66
-17:59-17:60 -F ⇒ -F Nat : Type[-] @17:59-17:65
-17:62-17:64 Nat ⇒ Nat : Type @17:62-17:65
-17:66-18:8 {⏎  become ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:1-19:2
-18:10-18:19 transport( ⇒ ?⏎⏎checked against⏎⏎-F Nat @18:10-18:100
-18:20-18:23 +U ( ⇒ +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat) : Type @18:20-18:69
-18:24-18:24 ( ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat : Type[-] @18:24-18:68
-18:25-18:25 y ⇒ y : Nat @18:25-18:26
-18:27-18:27 : ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat : Type[-] @18:24-18:68
-18:29-18:31 Nat ⇒ Nat : Type @18:29-18:32
-18:32-18:35 ) -> ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat : Type[-] @18:24-18:68
-18:37-18:37 ( ⇒ (z : Path(Nat, a, y)) -> -F Nat : Type[-] @18:37-18:68
-18:38-18:38 z ⇒ z : Path(Nat, a, y) @18:38-18:39
-18:40-18:40 : ⇒ (z : Path(Nat, a, y)) -> -F Nat : Type[-] @18:37-18:68
-18:42-18:46 Path( ⇒ Path(Nat, a, y) : Type @18:42-18:57
-18:47-18:49 Nat ⇒ Nat : Type @18:47-18:50
-18:50-18:50 , ⇒ Path(Nat, a, y) : Type @18:42-18:57
-18:52-18:52 a ⇒ a : Nat @18:52-18:53
-18:53-18:53 , ⇒ Path(Nat, a, y) : Type @18:42-18:57
-18:55-18:55 y ⇒ y : Nat @18:55-18:56
-18:56-18:56 ) ⇒ Path(Nat, a, y) : Type @18:42-18:57
-18:57-18:60 ) -> ⇒ (z : Path(Nat, a, y)) -> -F Nat : Type[-] @18:37-18:68
-18:62-18:63 -F ⇒ -F Nat : Type[-] @18:62-18:68
-18:65-18:67 Nat ⇒ Nat : Type @18:65-18:68
-18:68-18:68 ) ⇒ +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat) : Type @18:20-18:69
-18:69-18:69 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @18:10-18:100
-18:71-18:71 q ⇒ q : Path(Nat, a, b) @18:71-18:72
-18:72-18:72 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @18:10-18:100
-18:74-18:78 here( ⇒ Path(Nat, a, a) @18:74-18:81
-18:79-18:79 a ⇒ a : Nat @18:79-18:80
-18:80-18:80 ) ⇒ Path(Nat, a, a) @18:74-18:81
-18:81-18:81 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @18:10-18:100
-18:83-18:87 here( ⇒ Path(Path(Nat, a, a), here(a), here(a)) @18:83-18:96
-18:88-18:92 here( ⇒ Path(Nat, a, a) @18:88-18:95
-18:93-18:93 a ⇒ a : Nat @18:93-18:94
-18:94-18:94 ) ⇒ Path(Nat, a, a) @18:88-18:95
-18:95-18:95 ) ⇒ Path(Path(Nat, a, a), here(a), here(a)) @18:83-18:96
-18:96-18:99 , v) ⇒ ?⏎⏎checked against⏎⏎-F Nat @18:10-18:100
-19:1-19:1 } ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @17:1-19:2
-21:1-21:29 @[ refuses("ShapeMismatc… ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @21:1-22:1
-22:1-22:3 def ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:1-22:64
-22:5-22:9 flat( ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:5-22:9
-22:10-22:10 a ⇒ a : (a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @22:10-22:11
-22:11-22:11 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:1-22:64
-22:13-22:15 Nat ⇒ Nat : Type @22:13-22:16
-22:16-22:16 , ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:1-22:64
-22:18-22:18 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @22:18-22:19
-22:19-22:19 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:1-22:64
-22:21-22:23 Nat ⇒ Nat : Type @22:21-22:24
-22:24-22:24 , ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:1-22:64
-22:26-22:26 q ⇒ q : Path(Nat, a, b) @22:26-22:27
-22:27-22:27 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:1-22:64
-22:29-22:33 Path( ⇒ Path(Nat, a, b) : Type @22:29-22:44
-22:34-22:36 Nat ⇒ Nat : Type @22:34-22:37
-22:37-22:37 , ⇒ Path(Nat, a, b) : Type @22:29-22:44
-22:39-22:39 a ⇒ a : Nat @22:39-22:40
-22:40-22:40 , ⇒ Path(Nat, a, b) : Type @22:29-22:44
-22:42-22:42 b ⇒ b : Nat @22:42-22:43
-22:43-22:43 ) ⇒ Path(Nat, a, b) : Type @22:29-22:44
-22:44-22:44 , ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:1-22:64
-22:46-22:46 v ⇒ v : Nat -> -F Nat @22:46-22:47
-22:47-22:47 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:1-22:64
-22:49-22:51 Nat ⇒ Nat : Type @22:49-22:52
-22:52-22:55 ) -> ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:1-22:64
-22:57-22:58 -F ⇒ -F Nat : Type[-] @22:57-22:63
-22:60-22:62 Nat ⇒ Nat : Type @22:60-22:63
-22:64-23:8 {⏎  become ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:1-24:2
-23:10-23:19 transport( ⇒ ?⏎⏎checked against⏎⏎-F Nat @23:10-23:57
-23:20-23:23 +U ( ⇒ +U ((y : Nat) -> -F Nat) : Type @23:20-23:44
-23:24-23:24 ( ⇒ (y : Nat) -> -F Nat : Type[-] @23:24-23:43
-23:25-23:25 y ⇒ y : Nat @23:25-23:26
-23:27-23:27 : ⇒ (y : Nat) -> -F Nat : Type[-] @23:24-23:43
-23:29-23:31 Nat ⇒ Nat : Type @23:29-23:32
-23:32-23:35 ) -> ⇒ (y : Nat) -> -F Nat : Type[-] @23:24-23:43
-23:37-23:38 -F ⇒ -F Nat : Type[-] @23:37-23:43
-23:40-23:42 Nat ⇒ Nat : Type @23:40-23:43
-23:43-23:43 ) ⇒ +U ((y : Nat) -> -F Nat) : Type @23:20-23:44
-23:44-23:44 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @23:10-23:57
-23:46-23:46 q ⇒ q : Path(Nat, a, b) @23:46-23:47
-23:47-23:56 , v, v, v) ⇒ ?⏎⏎checked against⏎⏎-F Nat @23:10-23:57
-24:1-24:1 } ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat) @22:1-24:2
+8:1-8:30 import "./circle-base.ga… ⇒ ∅
+11:1-11:11 @[ checks ] ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @11:1-12:1
+12:1-12:3 def ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:1-12:156
+12:5-12:11 reduced ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:5-12:12
+12:13-12:13 : ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:1-12:156
+12:15-12:19 Path( ⇒ Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) : Type @12:15-12:155
+12:20-12:22 Nat ⇒ Nat : Type @12:20-12:23
+12:23-12:23 , ⇒ Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) : Type @12:15-12:155
+12:25-12:34 transport( ⇒ -F Nat @12:25-12:142
+12:35-12:38 +U ( ⇒ +U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat) : Type @12:35-12:87
+12:39-12:39 ( ⇒ (y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @12:39-12:86
+12:40-12:40 y ⇒ y : Nat @12:40-12:41
+12:42-12:42 : ⇒ (y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @12:39-12:86
+12:44-12:46 Nat ⇒ Nat : Type @12:44-12:47
+12:47-12:50 ) -> ⇒ (y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @12:39-12:86
+12:52-12:52 ( ⇒ (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @12:52-12:86
+12:53-12:53 z ⇒ z : Path(Nat, Zero, y) @12:53-12:54
+12:55-12:55 : ⇒ (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @12:52-12:86
+12:57-12:61 Path( ⇒ Path(Nat, Zero, y) : Type @12:57-12:75
+12:62-12:64 Nat ⇒ Nat : Type @12:62-12:65
+12:65-12:65 , ⇒ Path(Nat, Zero, y) : Type @12:57-12:75
+12:67-12:70 Zero ⇒ Zero : Nat @12:67-12:71
+12:71-12:71 , ⇒ Path(Nat, Zero, y) : Type @12:57-12:75
+12:73-12:73 y ⇒ y : Nat @12:73-12:74
+12:74-12:74 ) ⇒ Path(Nat, Zero, y) : Type @12:57-12:75
+12:75-12:78 ) -> ⇒ (z : Path(Nat, Zero, y)) -> -F Nat : Type[-] @12:52-12:86
+12:80-12:81 -F ⇒ -F Nat : Type[-] @12:80-12:86
+12:83-12:85 Nat ⇒ Nat : Type @12:83-12:86
+12:86-12:86 ) ⇒ +U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat) : Type @12:35-12:87
+12:87-12:87 , ⇒ -F Nat @12:25-12:142
+12:89-12:93 here( ⇒ Path(Nat, Zero, Zero) @12:89-12:99
+12:94-12:97 Zero ⇒ Zero : Nat @12:94-12:98
+12:98-12:98 ) ⇒ Path(Nat, Zero, Zero) @12:89-12:99
+12:99-12:99 , ⇒ -F Nat @12:25-12:142
+12:101-12:105 here( ⇒ Path(Nat, Zero, Zero) @12:101-12:111
+12:106-12:109 Zero ⇒ Zero : Nat @12:106-12:110
+12:110-12:110 ) ⇒ Path(Nat, Zero, Zero) @12:101-12:111
+12:111-12:111 , ⇒ -F Nat @12:25-12:142
+12:113-12:117 here( ⇒ Path(Path(Nat, Zero, Zero), here(Zero), here(Zero)) @12:113-12:129
+12:118-12:122 here( ⇒ Path(Nat, Zero, Zero) @12:118-12:128
+12:123-12:126 Zero ⇒ Zero : Nat @12:123-12:127
+12:127-12:127 ) ⇒ Path(Nat, Zero, Zero) @12:118-12:128
+12:128-12:128 ) ⇒ Path(Path(Nat, Zero, Zero), here(Zero), here(Zero)) @12:113-12:129
+12:129-12:129 , ⇒ -F Nat @12:25-12:142
+12:131-12:135 Succ( ⇒ Succ(Zero) : Nat @12:131-12:141
+12:136-12:139 Zero ⇒ Zero : Nat @12:136-12:140
+12:140-12:140 ) ⇒ Succ(Zero) : Nat @12:131-12:141
+12:141-12:141 ) ⇒ -F Nat @12:25-12:142
+12:142-12:142 , ⇒ Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) : Type @12:15-12:155
+12:144-12:148 Succ( ⇒ Succ(Zero) : Nat @12:144-12:154
+12:149-12:152 Zero ⇒ Zero : Nat @12:149-12:153
+12:153-12:153 ) ⇒ Succ(Zero) : Nat @12:144-12:154
+12:154-12:154 ) ⇒ Path(Nat, transport(+U ((y : Nat) -> (z : Path(Nat, Zero, y)) -> -F Nat), here(Zero), here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) : Type @12:15-12:155
+12:155-12:155 ; ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:1-12:156
+13:1-13:3 def ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @13:1-13:32
+13:5-13:11 reduced ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @13:5-13:12
+13:13-13:13 = ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @13:1-13:32
+13:15-13:19 here( ⇒ Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @13:15-13:31
+13:20-13:24 Succ( ⇒ Succ(Zero) : Nat @13:20-13:30
+13:25-13:28 Zero ⇒ Zero : Nat @13:25-13:29
+13:29-13:29 ) ⇒ Succ(Zero) : Nat @13:20-13:30
+13:30-13:30 ) ⇒ Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @13:15-13:31
+13:31-13:31 ; ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero)) @13:1-13:32
+17:1-17:11 @[ checks ] ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @17:1-18:1
+18:1-18:3 def ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @18:1-18:72
+18:5-18:13 reversed( ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @18:5-18:13
+18:14-18:14 a ⇒ a : Nat @18:14-18:15
+18:15-18:15 : ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @18:1-18:72
+18:17-18:19 Nat ⇒ Nat : Type @18:17-18:20
+18:20-18:20 , ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @18:1-18:72
+18:22-18:22 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a) @18:22-18:23
+18:23-18:23 : ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @18:1-18:72
+18:25-18:27 Nat ⇒ Nat : Type @18:25-18:28
+18:28-18:28 , ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @18:1-18:72
+18:30-18:30 q ⇒ q : Path(Nat, a, b) @18:30-18:31
+18:31-18:31 : ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @18:1-18:72
+18:33-18:37 Path( ⇒ Path(Nat, a, b) : Type @18:33-18:48
+18:38-18:40 Nat ⇒ Nat : Type @18:38-18:41
+18:41-18:41 , ⇒ Path(Nat, a, b) : Type @18:33-18:48
+18:43-18:43 a ⇒ a : Nat @18:43-18:44
+18:44-18:44 , ⇒ Path(Nat, a, b) : Type @18:33-18:48
+18:46-18:46 b ⇒ b : Nat @18:46-18:47
+18:47-18:47 ) ⇒ Path(Nat, a, b) : Type @18:33-18:48
+18:48-18:51 ) -> ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @18:1-18:72
+18:53-18:54 -F ⇒ -F Path(Nat, b, a) : Type[-] @18:53-18:71
+18:56-18:60 Path( ⇒ Path(Nat, b, a) : Type @18:56-18:71
+18:61-18:63 Nat ⇒ Nat : Type @18:61-18:64
+18:64-18:64 , ⇒ Path(Nat, b, a) : Type @18:56-18:71
+18:66-18:66 b ⇒ b : Nat @18:66-18:67
+18:67-18:67 , ⇒ Path(Nat, b, a) : Type @18:56-18:71
+18:69-18:69 a ⇒ a : Nat @18:69-18:70
+18:70-18:70 ) ⇒ Path(Nat, b, a) : Type @18:56-18:71
+18:72-19:8 {⏎  become ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @18:1-20:2
+19:10-19:19 transport( ⇒ -F Path(Nat, b, a) @19:10-19:112
+19:20-19:23 +U ( ⇒ +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a)) : Type @19:20-19:81
+19:24-19:24 ( ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @19:24-19:80
+19:25-19:25 y ⇒ y : Nat @19:25-19:26
+19:27-19:27 : ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @19:24-19:80
+19:29-19:31 Nat ⇒ Nat : Type @19:29-19:32
+19:32-19:35 ) -> ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @19:24-19:80
+19:37-19:37 ( ⇒ (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @19:37-19:80
+19:38-19:38 z ⇒ z : Path(Nat, a, y) @19:38-19:39
+19:40-19:40 : ⇒ (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @19:37-19:80
+19:42-19:46 Path( ⇒ Path(Nat, a, y) : Type @19:42-19:57
+19:47-19:49 Nat ⇒ Nat : Type @19:47-19:50
+19:50-19:50 , ⇒ Path(Nat, a, y) : Type @19:42-19:57
+19:52-19:52 a ⇒ a : Nat @19:52-19:53
+19:53-19:53 , ⇒ Path(Nat, a, y) : Type @19:42-19:57
+19:55-19:55 y ⇒ y : Nat @19:55-19:56
+19:56-19:56 ) ⇒ Path(Nat, a, y) : Type @19:42-19:57
+19:57-19:60 ) -> ⇒ (z : Path(Nat, a, y)) -> -F Path(Nat, y, a) : Type[-] @19:37-19:80
+19:62-19:63 -F ⇒ -F Path(Nat, y, a) : Type[-] @19:62-19:80
+19:65-19:69 Path( ⇒ Path(Nat, y, a) : Type @19:65-19:80
+19:70-19:72 Nat ⇒ Nat : Type @19:70-19:73
+19:73-19:73 , ⇒ Path(Nat, y, a) : Type @19:65-19:80
+19:75-19:75 y ⇒ y : Nat @19:75-19:76
+19:76-19:76 , ⇒ Path(Nat, y, a) : Type @19:65-19:80
+19:78-19:78 a ⇒ a : Nat @19:78-19:79
+19:79-19:79 ) ⇒ Path(Nat, y, a) : Type @19:65-19:80
+19:80-19:80 ) ⇒ +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a)) : Type @19:20-19:81
+19:81-19:81 , ⇒ -F Path(Nat, b, a) @19:10-19:112
+19:83-19:83 q ⇒ q : Path(Nat, a, b) @19:83-19:84
+19:84-19:84 , ⇒ -F Path(Nat, b, a) @19:10-19:112
+19:86-19:90 here( ⇒ Path(Nat, a, a) @19:86-19:93
+19:91-19:91 a ⇒ a : Nat @19:91-19:92
+19:92-19:92 ) ⇒ Path(Nat, a, a) @19:86-19:93
+19:93-19:93 , ⇒ -F Path(Nat, b, a) @19:10-19:112
+19:95-19:99 here( ⇒ Path(Path(Nat, a, b), q, q) @19:95-19:102
+19:100-19:100 q ⇒ q : Path(Nat, a, b) @19:100-19:101
+19:101-19:101 ) ⇒ Path(Path(Nat, a, b), q, q) @19:95-19:102
+19:102-19:102 , ⇒ -F Path(Nat, b, a) @19:10-19:112
+19:104-19:108 here( ⇒ Path(Nat, a, a) @19:104-19:111
+19:109-19:109 a ⇒ a : Nat @19:109-19:110
+19:110-19:110 ) ⇒ Path(Nat, a, a) @19:104-19:111
+19:111-19:111 ) ⇒ -F Path(Nat, b, a) @19:10-19:112
+20:1-20:1 } ⇒ reversed : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a))⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @18:1-20:2
+23:1-23:23 @[ refuses("NotOver") ] ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @23:1-24:1
+24:1-24:3 def ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:1-24:66
+24:5-24:11 astray( ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:5-24:11
+24:12-24:12 a ⇒ a : Nat @24:12-24:13
+24:13-24:13 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:1-24:66
+24:15-24:17 Nat ⇒ Nat : Type @24:15-24:18
+24:18-24:18 , ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:1-24:66
+24:20-24:20 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @24:20-24:21
+24:21-24:21 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:1-24:66
+24:23-24:25 Nat ⇒ Nat : Type @24:23-24:26
+24:26-24:26 , ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:1-24:66
+24:28-24:28 q ⇒ q : Path(Nat, a, b) @24:28-24:29
+24:29-24:29 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:1-24:66
+24:31-24:35 Path( ⇒ Path(Nat, a, b) : Type @24:31-24:46
+24:36-24:38 Nat ⇒ Nat : Type @24:36-24:39
+24:39-24:39 , ⇒ Path(Nat, a, b) : Type @24:31-24:46
+24:41-24:41 a ⇒ a : Nat @24:41-24:42
+24:42-24:42 , ⇒ Path(Nat, a, b) : Type @24:31-24:46
+24:44-24:44 b ⇒ b : Nat @24:44-24:45
+24:45-24:45 ) ⇒ Path(Nat, a, b) : Type @24:31-24:46
+24:46-24:46 , ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:1-24:66
+24:48-24:48 v ⇒ v : Nat -> -F Nat @24:48-24:49
+24:49-24:49 : ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:1-24:66
+24:51-24:53 Nat ⇒ Nat : Type @24:51-24:54
+24:54-24:57 ) -> ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:1-24:66
+24:59-24:60 -F ⇒ -F Nat : Type[-] @24:59-24:65
+24:62-24:64 Nat ⇒ Nat : Type @24:62-24:65
+24:66-25:8 {⏎  become ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:1-26:2
+25:10-25:19 transport( ⇒ ?⏎⏎checked against⏎⏎-F Nat @25:10-25:100
+25:20-25:23 +U ( ⇒ +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat) : Type @25:20-25:69
+25:24-25:24 ( ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat : Type[-] @25:24-25:68
+25:25-25:25 y ⇒ y : Nat @25:25-25:26
+25:27-25:27 : ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat : Type[-] @25:24-25:68
+25:29-25:31 Nat ⇒ Nat : Type @25:29-25:32
+25:32-25:35 ) -> ⇒ (y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat : Type[-] @25:24-25:68
+25:37-25:37 ( ⇒ (z : Path(Nat, a, y)) -> -F Nat : Type[-] @25:37-25:68
+25:38-25:38 z ⇒ z : Path(Nat, a, y) @25:38-25:39
+25:40-25:40 : ⇒ (z : Path(Nat, a, y)) -> -F Nat : Type[-] @25:37-25:68
+25:42-25:46 Path( ⇒ Path(Nat, a, y) : Type @25:42-25:57
+25:47-25:49 Nat ⇒ Nat : Type @25:47-25:50
+25:50-25:50 , ⇒ Path(Nat, a, y) : Type @25:42-25:57
+25:52-25:52 a ⇒ a : Nat @25:52-25:53
+25:53-25:53 , ⇒ Path(Nat, a, y) : Type @25:42-25:57
+25:55-25:55 y ⇒ y : Nat @25:55-25:56
+25:56-25:56 ) ⇒ Path(Nat, a, y) : Type @25:42-25:57
+25:57-25:60 ) -> ⇒ (z : Path(Nat, a, y)) -> -F Nat : Type[-] @25:37-25:68
+25:62-25:63 -F ⇒ -F Nat : Type[-] @25:62-25:68
+25:65-25:67 Nat ⇒ Nat : Type @25:65-25:68
+25:68-25:68 ) ⇒ +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat) : Type @25:20-25:69
+25:69-25:69 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @25:10-25:100
+25:71-25:71 q ⇒ q : Path(Nat, a, b) @25:71-25:72
+25:72-25:72 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @25:10-25:100
+25:74-25:78 here( ⇒ Path(Nat, a, a) @25:74-25:81
+25:79-25:79 a ⇒ a : Nat @25:79-25:80
+25:80-25:80 ) ⇒ Path(Nat, a, a) @25:74-25:81
+25:81-25:81 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @25:10-25:100
+25:83-25:87 here( ⇒ Path(Path(Nat, a, a), here(a), here(a)) @25:83-25:96
+25:88-25:92 here( ⇒ Path(Nat, a, a) @25:88-25:95
+25:93-25:93 a ⇒ a : Nat @25:93-25:94
+25:94-25:94 ) ⇒ Path(Nat, a, a) @25:88-25:95
+25:95-25:95 ) ⇒ Path(Path(Nat, a, a), here(a), here(a)) @25:83-25:96
+25:96-25:99 , v) ⇒ ?⏎⏎checked against⏎⏎-F Nat @25:10-25:100
+26:1-26:1 } ⇒ astray : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A lift whose path is not over `q` is refused. @24:1-26:2
+29:1-29:29 @[ refuses("ShapeMismatc… ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @29:1-30:1
+30:1-30:3 def ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:1-30:64
+30:5-30:9 flat( ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:5-30:9
+30:10-30:10 a ⇒ a : (a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @30:10-30:11
+30:11-30:11 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:1-30:64
+30:13-30:15 Nat ⇒ Nat : Type @30:13-30:16
+30:16-30:16 , ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:1-30:64
+30:18-30:18 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @30:18-30:19
+30:19-30:19 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:1-30:64
+30:21-30:23 Nat ⇒ Nat : Type @30:21-30:24
+30:24-30:24 , ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:1-30:64
+30:26-30:26 q ⇒ q : Path(Nat, a, b) @30:26-30:27
+30:27-30:27 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:1-30:64
+30:29-30:33 Path( ⇒ Path(Nat, a, b) : Type @30:29-30:44
+30:34-30:36 Nat ⇒ Nat : Type @30:34-30:37
+30:37-30:37 , ⇒ Path(Nat, a, b) : Type @30:29-30:44
+30:39-30:39 a ⇒ a : Nat @30:39-30:40
+30:40-30:40 , ⇒ Path(Nat, a, b) : Type @30:29-30:44
+30:42-30:42 b ⇒ b : Nat @30:42-30:43
+30:43-30:43 ) ⇒ Path(Nat, a, b) : Type @30:29-30:44
+30:44-30:44 , ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:1-30:64
+30:46-30:46 v ⇒ v : Nat -> -F Nat @30:46-30:47
+30:47-30:47 : ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:1-30:64
+30:49-30:51 Nat ⇒ Nat : Type @30:49-30:52
+30:52-30:55 ) -> ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:1-30:64
+30:57-30:58 -F ⇒ -F Nat : Type[-] @30:57-30:63
+30:60-30:62 Nat ⇒ Nat : Type @30:60-30:63
+30:64-31:8 {⏎  become ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:1-32:2
+31:10-31:19 transport( ⇒ ?⏎⏎checked against⏎⏎-F Nat @31:10-31:57
+31:20-31:23 +U ( ⇒ +U ((y : Nat) -> -F Nat) : Type @31:20-31:44
+31:24-31:24 ( ⇒ (y : Nat) -> -F Nat : Type[-] @31:24-31:43
+31:25-31:25 y ⇒ y : Nat @31:25-31:26
+31:27-31:27 : ⇒ (y : Nat) -> -F Nat : Type[-] @31:24-31:43
+31:29-31:31 Nat ⇒ Nat : Type @31:29-31:32
+31:32-31:35 ) -> ⇒ (y : Nat) -> -F Nat : Type[-] @31:24-31:43
+31:37-31:38 -F ⇒ -F Nat : Type[-] @31:37-31:43
+31:40-31:42 Nat ⇒ Nat : Type @31:40-31:43
+31:43-31:43 ) ⇒ +U ((y : Nat) -> -F Nat) : Type @31:20-31:44
+31:44-31:44 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @31:10-31:57
+31:46-31:46 q ⇒ q : Path(Nat, a, b) @31:46-31:47
+31:47-31:56 , v, v, v) ⇒ ?⏎⏎checked against⏎⏎-F Nat @31:10-31:57
+32:1-32:1 } ⇒ flat : +U ((a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat)⏎⏎A family that reads no path is the wrong shape for a dependent transport. @30:1-32:2

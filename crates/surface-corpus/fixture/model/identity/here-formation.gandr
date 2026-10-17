@@ -1,15 +1,23 @@
+// Reflexivity, the HoTT book's § 1.12 (`refl`), written `here`: a path
+// formed at a point, read at its synthesised type or checked against a
+// written one, and handed through a function as a value.
+
+/// Reflexivity at four, its type synthesised.
 @[ checks ]
 def four_eq_four = here(4);
 
+/// A path between four and itself, given back.
 @[ checks ]
 def cast(p: Path(Integer, 4, 4)) -> -F(Path(Integer, 4, 4)) {
   return p
 }
 
+/// Reflexivity at four, checked against its written type.
 @[ checks ]
 def checked : Path(Integer, 4, 4);
 def checked = here(4);
 
+/// Reflexivity at four handed through `cast` by a run.
 @[ checks ]
 def cast_four : +U (-F Path(Integer, 4, 4));
 def cast_four = thunk { become cast(four_eq_four) };

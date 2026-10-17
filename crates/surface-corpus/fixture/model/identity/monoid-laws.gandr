@@ -1,0 +1,32 @@
+// The monoid laws of integer addition are not definitional (the HoTT book's
+// § 1.12, `refl` at judgmental equality): conversion leaves arithmetic on a
+// variable to the runtime, so reflexivity does not reach either unit law or
+// associativity, and each is refused at its endpoints.
+
+/// The unit of the sum.
+@[ runs("0") ]
+def neutral = 0;
+
+/// The sum of two integers.
+@[ checks ]
+def combine(x: Integer, y: Integer) -> -F Integer {
+  become x + y
+}
+
+/// Zero on the left, not by reflexivity.
+@[ refuses("EndpointMismatch") ]
+def unitL(x: Integer) -> -F Path(Integer, combine(neutral, x), x) {
+  return here(x)
+}
+
+/// Zero on the right, not by reflexivity.
+@[ refuses("EndpointMismatch") ]
+def unitR(x: Integer) -> -F Path(Integer, combine(x, neutral), x) {
+  return here(x)
+}
+
+/// Associativity, not by reflexivity.
+@[ refuses("EndpointMismatch") ]
+def assoc(x: Integer, y: Integer, z: Integer) -> -F Path(Integer, combine(combine(x, y), z), combine(x, combine(y, z))) {
+  return here(combine(combine(x, y), z))
+}

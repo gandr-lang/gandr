@@ -1,9 +1,13 @@
-@[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
-}
+// Transport in a family over a point and a path to it from a fixed one, the
+// motive of based path induction (the HoTT book's § 1.12.1), whose element
+// is itself a path that reads the path transported along: reflexivity at
+// reflexivity carried to reflexivity at `q`.
 
+// The free naturals.
+import "./circle-base.gandr" ;
+
+/// Reflexivity at `q`, by transport along `q` in the family of each path's
+/// reflexivity.
 @[ checks ]
 def looped(a: Nat, b: Nat, q: Path(Nat, a, b)) -> -F Path(Path(Nat, a, b), q, q) {
   become transport(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Path(Nat, a, y), z, z)), q, here(a), here(q), here(here(a)))

@@ -6,15 +6,8 @@
 // eliminated by a match of no arm. The book reaches the same fact through a
 // universe and univalence; here it is the apartness rule at the words.
 
-/// The type with no element.
-data Empty : Type {}
-
-/// The circle: one point and a loop at it, bound as `loop : Path(Circle,
-/// Base, Base)`.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
-}
+// The empty type and the circle.
+import "./circle-base.gandr" ;
 
 /// The loop is not the empty word.
 @[ checks ]

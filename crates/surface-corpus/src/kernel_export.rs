@@ -60,31 +60,33 @@
 //! replay refusal.
 //!
 //! `kernel_export::kernel_presented_readmission::a_circle_read_without_or_against_its_rules_is_refused_by_name`
-//! readmits `fixture/model/identity/loop-space.gandr`, whose `cancelled`
-//! relates `Loop(Unloop(Loop(Base)))` to `Loop(Base)` by reflexivity alone:
-//! the kernel reads both endpoints by their normal forms under the circle's
-//! rules. A twin whose circle carries no rules is refused at `cancelled`,
-//! naming the endpoint the point does not reach; a twin whose circle carries a
-//! rule that grows its word is refused at the circle, naming the rule and its
-//! fault.
+//! readmits `fixture/model/identity/loop-space.gandr`, whose `cancelled_word`
+//! relates `Loop(Unloop(Loop(Nil)))` to `Loop(Nil)` by reflexivity alone: the
+//! kernel reads both endpoints by their normal forms under the words' rules. A
+//! twin whose `Words` carries no rules is refused at `cancelled_word`, naming
+//! the endpoint the point does not reach; a twin whose `Words` carries a rule
+//! that grows its word is refused at `Words`, naming the rule and its fault.
 //!
 //! `kernel_export::kernel_presented_readmission::a_section_at_a_variable_readmits_and_a_tampered_twin_is_refused_by_name`
 //! readmits the round trips at a variable at both strata:
-//! `fixture/model/identity/loop-space.gandr`'s `sect`, a fold into
-//! `Path(Circle, spin(wind(c)), c)`, and
-//! `fixture/model/identity/circle.gandr`'s, a fold over the words into
-//! `Path(Path(Circle, Base, Base), spin(wind(p)), p)`, each with respect
-//! obligations that are cong chains the kernel reads as their paths, then
-//! `retr` and the equivalence `winding` that holds them. A twin whose `sect`
-//! carries the loop's path along the inverse is refused at `sect`, naming the
+//! `fixture/model/identity/loop-space.gandr`'s `sectWords`, a fold into
+//! `Path(Words, spinWords(windWords(c)), c)`, and the identity base's `sect`,
+//! which `fixture/model/identity/circle.gandr` imports, a fold over the words
+//! into `Path(Path(Circle, Base, Base), spin(wind(p)), p)`, each with respect
+//! obligations that are cong chains the kernel reads as their paths, then the
+//! retraction and the equivalence that holds them (`retrWords` and
+//! `wordsWinding`; `retr` and `winding`). A twin whose section carries the
+//! loop's path along the inverse is refused at the section, naming the
 //! computation type its loop arm does not answer.
 //!
 //! `kernel_export::kernel_open_fold_readmission::a_step_case_read_through_a_swapped_fold_is_refused_by_name`
-//! readmits `fixture/model/identity/open-fold.gandr`, whose `unfolded` relates
-//! `wind(Loop(x))` to `S(wind(x))` at a variable: the kernel reads the `Loop`
-//! arm's bind over the stuck `wind(x)` itself. A twin whose fold swaps its two
-//! loop arms still respects the circle's rules and readmits, and is refused at
-//! `unfolded`, naming the endpoint the point no longer reaches.
+//! readmits `fixture/model/identity/open-fold.gandr`, whose `wind_unfolded`
+//! relates `windWords(Loop(x))` to `S(windWords(x))` at a variable: the kernel
+//! reads the `Loop` arm's bind over the stuck `windWords(x)` itself. A twin
+//! whose fold swaps its two loop arms still respects the words' rules and
+//! readmits, and, replayed up to the fold and then the step case alone, is
+//! refused at `wind_unfolded`, naming the endpoint the point no longer
+//! reaches.
 //!
 //! `kernel_export::kernel_presented_readmission::a_loop_readmits_as_its_words_and_dropped_cancellations_are_refused_by_name`
 //! readmits `fixture/model/identity/circle.gandr`, whose `loop : Base <-> Base`
@@ -1477,7 +1479,7 @@ mod kernel_presented_readmission
         let declarations = decoded.declarations().to_vec();
         let arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
-            .expect("the circle readmits, `cancelled` by its endpoints' normal forms");
+            .expect("the circle readmits, `cancelled_word` by its endpoints' normal forms");
         let position = |name: &str| {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
             let named = StructuredName::from(vec![segment]);
@@ -1486,8 +1488,8 @@ mod kernel_presented_readmission
                 .position(|marked| *marked.declaration().name() == named)
                 .unwrap_or_else(|| panic!("`{name}` crossed"))
         };
-        let circle = position("Circle");
-        let cancelled = position("cancelled");
+        let circle = position("Words");
+        let cancelled = position("cancelled_word");
         // The declarations with the circle presented by `presentation`.
         let presenting = |presentation: Presentation| {
             let mut twin = declarations.clone();
@@ -1842,16 +1844,23 @@ mod kernel_presented_readmission
     fn a_section_at_a_variable_readmits_and_a_tampered_twin_is_refused_by_name()
     {
         let pbg = built_in().expect("the built-in grammar builds");
-        // The loop space on terms, and the book's circle, whose `sect` is the
-        // same fold one stratum up, over the words.
-        for path in [
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/fixture/model/identity/loop-space.gandr"
+        // The loop space on terms, and the book's circle, whose `sect` (written
+        // in the identity base it imports) is the same fold one stratum up,
+        // over the words. Each names its section, retraction and winding.
+        for (path, [sect, retr, winding]) in [
+            (
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/fixture/model/identity/loop-space.gandr"
+                ),
+                ["sectWords", "retrWords", "wordsWinding"],
             ),
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/fixture/model/identity/circle.gandr"
+            (
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/fixture/model/identity/circle.gandr"
+                ),
+                ["sect", "retr", "winding"],
             ),
         ] {
             let Swept::Exported(exported) = export(&pbg, PathBuf::from(path), Root::Fixture)
@@ -1869,7 +1878,7 @@ mod kernel_presented_readmission
                     .position(|marked| *marked.declaration().name() == named)
                     .unwrap_or_else(|| panic!("`{name}` crossed from {path}"))
             };
-            let (sect, _retr, _winding) = (position("sect"), position("retr"), position("winding"));
+            let (sect, _retr, _winding) = (position(sect), position(retr), position(winding));
             Environment::replay(arena.clone(), &declarations).unwrap_or_else(|refusal| {
                 panic!(
                     "the round trips at a variable readmit from {path}, each respect \
@@ -1905,9 +1914,9 @@ mod kernel_presented_readmission
                 panic!("`sect` cases on its argument");
             };
             // The twin carries the loop's path along the inverse: the loop
-            // arm then relates `Unloop(spin(wind(x)))` to `Unloop(x)`, or
-            // `back(loop) ∷ spin(wind(q))` to `back(loop) ∷ q`, not the motive
-            // at the loop.
+            // arm then relates `Unloop(spinWords(windWords(x)))` to
+            // `Unloop(x)`, or `back(loop) ∷ spin(wind(q))` to `back(loop) ∷ q`,
+            // not the motive at the loop.
             let tampered = vec![branches[0], branches[2], branches[2]];
             let case = arena.computation_data_case(scrutinee, motive, tampered);
             let lambda = arena.computation_lambda(case);
@@ -1973,7 +1982,7 @@ mod kernel_open_fold_readmission
         let declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
-            .expect("open-fold readmits, `unfolded` by the bind its endpoint reads through");
+            .expect("open-fold readmits, `wind_unfolded` by the bind its endpoint reads through");
         let position = |name: &str| {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
             let named = StructuredName::from(vec![segment]);
@@ -1982,8 +1991,8 @@ mod kernel_open_fold_readmission
                 .position(|marked| *marked.declaration().name() == named)
                 .unwrap_or_else(|| panic!("`{name}` crossed"))
         };
-        let wind = position("wind");
-        let unfolded = position("unfolded");
+        let wind = position("windWords");
+        let unfolded = position("wind_unfolded");
         let marked = &declarations[wind];
         let DeclarationContent::Def { declared, body } = *marked.declaration().content()
         else {
@@ -2013,8 +2022,8 @@ mod kernel_open_fold_readmission
             panic!("`wind` cases on its argument");
         };
         // The twin's `Loop` arm returns `P(n)` and its `Unloop` arm `S(n)`: it
-        // still respects both cancellations, but `wind(Loop(x))` now reads as
-        // `P(wind(x))`, which `unfolded`'s dialogue does not meet.
+        // still respects both cancellations, but `windWords(Loop(x))` now
+        // reads as `P(windWords(x))`, which `wind_unfolded` does not meet.
         let swapped = vec![branches[0], branches[2], branches[1]];
         let case = arena.computation_data_case(scrutinee, motive, swapped);
         let lambda = arena.computation_lambda(case);
@@ -2023,11 +2032,20 @@ mod kernel_open_fold_readmission
         let twin_declaration = DeclarationBuilder::new(&mut arena)
             .def(marked.declaration().levels().clone(), declared, body)
             .named(marked.declaration().name().clone());
-        let mut twin = declarations.clone();
+        // The twin replays the declarations up to the fold, then the step case
+        // alone: the loop space's closed runs of the fold that stand between
+        // them (`wound_twice` first) would refuse the swap at a closed word,
+        // before the reading at a variable is reached.
+        let mut twin = declarations[..= wind].to_vec();
         twin[wind] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        twin.push(declarations[unfolded].clone());
         let refusal = Environment::replay(arena, &twin)
-            .expect_err("the swapped fold reads `wind(Loop(x))` as a predecessor");
-        assert_eq!(usize::from(refusal.position()), unfolded);
+            .expect_err("the swapped fold reads `windWords(Loop(x))` as a predecessor");
+        assert_eq!(
+            usize::from(refusal.position()),
+            wind + 1,
+            "the step case refuses"
+        );
         assert!(
             matches!(
                 refusal.error(),

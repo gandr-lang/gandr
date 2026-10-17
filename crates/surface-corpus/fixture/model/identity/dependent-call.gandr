@@ -2,24 +2,14 @@
 // after it reads stands there as what it returns: a dependent record's first
 // component under the second's type, and a dependent function's argument
 // under the parameters after it (#426). A parameter function under `cong`
-// answers at its own span (#443).
+// answers at its own span (#443). The records are the HoTT book's dependent
+// pairs (§ 1.6), and the maps out of the circle follow cubical Agda's
+// `IsoFunSpaceS¹` (`Cubical/HITs/S1/Properties.agda`).
 
-/// The circle: one point and one loop.
-@[ checks ]
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
-}
-
-/// The integers, presented by successor and predecessor.
-@[ checks ]
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
-}
+// The circle and the integers.
+import "./circle-base.gandr" ;
+// The map a point and a loop there determine, `fromLoopAt`.
+import "./circle-rotation.gandr" ;
 
 /// A map's image of the loop, at the map's image of the point: `cong` of the
 /// parameter `f` along the loop.
@@ -28,10 +18,12 @@ def loopImage(f : +U[ω] (Circle -> -F Int)) -> -F Path(Int, f(Base), f(Base)) {
   cong(f, loop)
 }
 
-/// A map out of the circle as a point and a loop there: the second
-/// component's type reads the first, the call `f(Base)` (#426).
+/// A map out of the circle as a point and a loop there, the loop through
+/// `loopImage`: the second component's type reads the first, the call
+/// `f(Base)` (#426). `circle-rotation.gandr`'s `toLoop` writes the loop as
+/// `cong(f, loop)` itself.
 @[ checks ]
-def toLoop(f : +U[ω] (Circle -> -F Int)) -> -F (#{point : Int, around : Path(Int, point, point)}) {
+def toLoopThroughImage(f : +U[ω] (Circle -> -F Int)) -> -F (#{point : Int, around : Path(Int, point, point)}) {
   #{f(Base), loopImage(f)}
 }
 
@@ -39,12 +31,6 @@ def toLoop(f : +U[ω] (Circle -> -F Int)) -> -F (#{point : Int, around : Path(In
 @[ refuses("TypeMismatch") ]
 def toOtherLoop(f : +U[ω] (Circle -> -F Int), g : +U[ω] (Circle -> -F Int)) -> -F (#{point : Int, around : Path(Int, point, point)}) {
   #{f(Base), loopImage(g)}
-}
-
-/// The map a point and a loop there determine.
-@[ checks ]
-def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> -F Int {
-  case c { Base => x, loop => p }
 }
 
 /// A record's projections as the arguments of that map: the second

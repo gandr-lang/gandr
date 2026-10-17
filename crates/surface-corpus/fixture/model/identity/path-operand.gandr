@@ -4,28 +4,22 @@
 // call by its own function's result, and `cong` over a parameter function by
 // that function's written result, which may read the parameters before it.
 // In a body and in a type alike, none of these needs a stated type (#423).
+// The operations are the HoTT book's inverse and composite (Lemmas 2.1.1 and
+// 2.1.2) and `ap` (Lemma 2.2.1).
 
-/// The circle: a point and a loop at it.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
-}
+// The circle and the free naturals.
+import "./circle-base.gandr" ;
 
-/// The naturals, for the paths a recursion builds.
-data Nat : Type {
-  Z : Nat;
-  S : (x : Nat) --> Nat;
-}
-
-/// One successor more.
-def up(n : Nat) -> -F Nat {
-  S(n)
+/// One successor more, the naturals' step for the paths a recursion builds.
+@[ checks ]
+def next(n : Nat) -> -F Nat {
+  Succ(n)
 }
 
 /// A parameter's inverse, read at the parameter's written type, then the
 /// parameter again.
 @[ checks ]
-def undone(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+def backThen(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
   back(p) then p
 }
 
@@ -37,26 +31,26 @@ def stated(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p 
 
 /// A loop walked twice.
 @[ checks ]
-def twice(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+def walkTwice(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
   p then p
 }
 
-/// A call's inverse, read at the result `twice` writes, then the loop.
+/// A call's inverse, read at the result `walkTwice` writes, then the loop.
 @[ checks ]
 def untwice(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
-  back(twice(p)) then loop
+  back(walkTwice(p)) then loop
 }
 
 /// A call composed in a type (#423).
 @[ checks ]
-def thrice(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), twice(p) then p, twice(p) then p) {
-  here(twice(p) then p)
+def thrice(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), walkTwice(p) then p, walkTwice(p) then p) {
+  here(walkTwice(p) then p)
 }
 
 /// A call of a declaration whose own type holds a derived operation: that
 /// type is read before the operation over it.
 @[ checks ]
-def unthrice(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), twice(p) then p, twice(p) then p) {
+def unthrice(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), walkTwice(p) then p, walkTwice(p) then p) {
   back(thrice(p))
 }
 
@@ -66,16 +60,16 @@ def stay : (a : Nat) => Path(Nat, a, a) ;
 
 /// A call of a signature, read at the result it states.
 @[ checks ]
-def stayUp(a : Nat) -> -F Path(Nat, S(a), S(a)) {
-  cong(up, stay(a)) then here(S(a))
+def stayUp(a : Nat) -> -F Path(Nat, Succ(a), Succ(a)) {
+  cong(next, stay(a)) then here(Succ(a))
 }
 
 /// A recursive call, read at its function's own result.
 @[ checks ]
 def rec still(b : Nat) -> -F Path(Nat, b, b) {
   case b {
-    Z => here(Z),
-    S(x) => cong(up, still[<](x)) then here(S(x))
+    Zero => here(Zero),
+    Succ(x) => cong(next, still[<](x)) then here(Succ(x))
   }
 }
 

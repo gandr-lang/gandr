@@ -3,25 +3,8 @@
 // or a predecessor brought out of its left, and the sum commuting.
 // `circle-group.gandr` reads these laws through the winding number.
 
-/// The integers as a presented type: a successor and a predecessor that
-/// cancel.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
-}
-
-/// One successor more.
-def up(n : Int) -> -F Int {
-  S(n)
-}
-
-/// One predecessor more.
-def down(n : Int) -> -F Int {
-  P(n)
-}
+// The integers, one successor more and one predecessor more.
+import "./circle-base.gandr" ;
 
 /// The sum of two integers (cubical's `_+_` on `ℤ`), by recursion on the
 /// second. It respects `Int`'s rules: at `S(P(x))` it builds `S(P(plus(a,
@@ -73,7 +56,7 @@ def rec plusZ(b : Int) -> -F Path(Int, plus(Z, b), b) {
 /// each step the recursive call carried along `up` or `down` and then the
 /// summand brought out of the left. The arms compose to no conversion of the
 /// answer at `x`, yet `Int` is a set, so its rules are respected by their
-/// endpoints alone.
+/// endpoints alone (#427).
 @[ checks ]
 def rec plusComm(a : Int, b : Int) -> -F Path(Int, plus(a, b), plus(b, a)) {
   case b {
