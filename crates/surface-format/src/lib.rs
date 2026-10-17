@@ -12,12 +12,38 @@
 //! source's, or [`format`] refuses with [`FormatError::Changed`] and returns
 //! nothing.
 //!
+//! # The form a source is spelled in
+//!
+//! A source is spelled in the surface's sugared form or in the core's
+//! explicit form, every thunk, force, run and exit written out. Since the
+//! formatter keeps every token, it lays a source out in the spelling the
+//! source was written in and never re-sugars an explicit source: that is the
+//! invariant the corpus's formatting gate rests on. [`FormatOptions::form`]
+//! asks for a [`Form`] — [`Form::Explicit`] or [`Form::Sugared`], or
+//! [`Form::Source`], the source's own spelling, by default — and a source
+//! states its own at its head, as an entry of an attribute block on its first
+//! declaration, after its imports: `@[ form(explicit) ]` or
+//! `@[ form(sugared) ]`, an attribute the lowering registers and files
+//! without lowering its word. The declaration wins
+//! over the option, so one command lays out sources of both spellings. An
+//! option asking for a form a source does not declare is refused with
+//! [`FormatError::Form`], naming the form: no layout here changes a source's
+//! tokens, so a form the source does not state cannot be kept.
+//!
+//! - Choice: the form is the source's to state, and the formatter keeps it.
+//! - Alternative: a sugaring layout, rewriting the explicit form into the
+//!   sugared one; it would change tokens and digests, and the gate could no
+//!   longer tell a layout from an edit.
+//! - Reversal: a layout that sugars or desugars lands with its own digest
+//!   check, and the option then selects it for a source declaring no form.
+//!
 //! | item              | what it is                                              |
 //! | ----------------- | ------------------------------------------------------- |
 //! | [`format`]        | a parsed source formatted at a page width               |
 //! | [`Formatted`]     | the formatted text and where each top-level form landed |
 //! | [`Piece`]         | one top-level form's source span and formatted span     |
-//! | [`FormatOptions`] | the page width                                          |
+//! | [`FormatOptions`] | the page width and the form                             |
+//! | [`Form`]          | the spelling a source is laid out in                    |
 //! | [`FormatError`]   | why a source was not formatted                          |
 
 #![no_std]
@@ -54,17 +80,18 @@ use crate::leaf::Material;
 use crate::leaf::Owner;
 
 /// How a source is formatted.
-#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FormatOptions
 {
     /// The width a line is laid out to fit.
     pub page: PageWidth,
+    /// The spelling the source is laid out in, unless its head declares one.
+    pub form: Form,
 }
 
 impl Default for FormatOptions
 {
-    /// A page of 100 columns.
+    /// A page of 100 columns, in the source's own spelling.
     ///
     /// # Specification
     /// trivial.
@@ -73,7 +100,49 @@ impl Default for FormatOptions
     {
         Self {
             page: PageWidth::from(100_u32),
+            form: Form::Source,
         }
+    }
+}
+
+/// The spelling a source is laid out in.
+///
+/// The formatter keeps every token the source wrote, so the one spelling it
+/// lays out is the source's own. A source states which spelling it keeps with
+/// `@[ form(explicit) ]` or `@[ form(sugared) ]` in an attribute block of its
+/// first form; the declaration wins over [`FormatOptions::form`]. A form asked
+/// for by the options that the source does not declare is refused with
+/// [`FormatError::Form`]: laying a source out in a spelling it was not written
+/// in would change its tokens, and no layout here does.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Form
+{
+    /// The source's own spelling, every token kept.
+    #[default]
+    Source,
+    /// The core's explicit spelling: every binder, run and exit written out.
+    Explicit,
+    /// The surface's sugared spelling.
+    Sugared,
+}
+
+impl fmt::Display for Form
+{
+    /// The form's name, as the option and the declaration spell it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Source => "source",
+            Self::Explicit => "explicit",
+            Self::Sugared => "sugared",
+        })
     }
 }
 
@@ -91,6 +160,9 @@ pub enum FormatError
     Reparse(MeldError),
     /// The formatted text would have changed the source.
     Changed(Change),
+    /// The options asked for a spelling the source does not declare, which
+    /// the formatter cannot lay out without changing its tokens.
+    Form(Form),
 }
 
 /// What formatting would have changed.
@@ -146,6 +218,11 @@ impl fmt::Display for FormatError
             Self::Build(ref error) => write!(f, "the layout could not be built: {error}"),
             Self::Render(ref error) => write!(f, "the layout could not be rendered: {error}"),
             Self::Reparse(ref error) => write!(f, "the formatted text does not parse: {error}"),
+            Self::Form(form) => write!(
+                f,
+                "the source does not declare the {form} form, and the formatter keeps the \
+                 source's own spelling"
+            ),
             Self::Changed(Change::Meaning) => {
                 write!(f, "formatting would change what the source means")
             },
@@ -233,7 +310,8 @@ pub enum Layout
 /// [`FormatError::Reparse`] when it does not parse; either is a defect in
 /// the formatter, and no text is returned. A form whose brackets do not pair
 /// is [`FormatError::Unbalanced`]; a layout ceiling is
-/// [`FormatError::Build`] or [`FormatError::Render`].
+/// [`FormatError::Build`] or [`FormatError::Render`]. Options asking for a
+/// [`Form`] the source's head does not declare are [`FormatError::Form`].
 ///
 /// # Specification
 /// - requires: `parsed` was parsed under `grammar`.
@@ -247,7 +325,9 @@ pub enum Layout
 ///   other form is laid out at `options.page` as the crate root describes. The
 ///   text parses under `grammar` to the source's root digest, and formatting it
 ///   again returns it unchanged. One piece per top-level form, in order, spans
-///   it in the source and in the text.
+///   it in the source and in the text. The spelling is the source's own: a form
+///   the source declares wins over `options.form`, and `options.form` other
+///   than [`Form::Source`] with no declaration is refused.
 /// - provides: the text `gandr fmt` writes and the language server's formatting
 ///   edits.
 /// - fails: as `# Errors` states.
@@ -270,6 +350,8 @@ pub enum Layout
 /// - witness: `format::tests::a_form_written_against_the_one_before_starts_its_own_line`
 /// - witness: `format::tests::a_separator_written_on_the_next_line_joins_its_statement`
 /// - witness: `format::tests::a_source_split_evenly_between_endings_keeps_line_feeds`
+/// - witness: `format::tests::an_explicit_source_keeps_its_explicit_spelling`
+/// - witness: `format::tests::a_form_the_source_does_not_declare_is_refused`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
 pub fn format(
@@ -281,6 +363,9 @@ pub fn format(
     let tree = parsed.tree();
     let source = tree.source();
     let flat = leaf::flatten(grammar, tree, parsed.obligations());
+    if options.form != Form::Source && declared(&flat.leaves).is_none() {
+        return Err(FormatError::Form(options.form));
+    }
     let ending = Ending::of(source);
     let layout = LayoutOptions::try_new(
         options.page,
@@ -520,4 +605,62 @@ fn material<'leaves, 'source>(
         .iter()
         .filter(|leaf| leaf.material != Material::Whitespace)
         .map(|leaf| (leaf.material, leaf.text))
+}
+
+/// The form the source's head declares: `form(explicit)` or `form(sugared)`
+/// as an entry of an attribute block written before the source's first
+/// declaration, after its imports — the one place a block before a
+/// declaration stands, since a block before an import refuses the module.
+///
+/// # Specification
+/// - requires: `leaves` are a source's, in offset order.
+/// - ensures: the form named by the first `form` entry of the attribute blocks
+///   before the first token, outside an import, that no block holds; none when
+///   there is none, or it names neither form.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the declaration is read from the leaves' text, which a
+///   predicate over the answer would read again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source declaring the explicit form keeps it under
+///   either option, after an import as at its first line; the same source with
+///   no declaration is refused a form.
+/// - witness: `format::tests::an_explicit_source_keeps_its_explicit_spelling`
+/// - witness: `format::tests::a_form_the_source_does_not_declare_is_refused`
+fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
+{
+    let tokens: Vec<&str> = leaves
+        .iter()
+        .filter(|leaf| matches!(leaf.owner, Owner::Form(_)) && leaf.material == Material::Token)
+        .map(|leaf| <&str>::from(leaf.text))
+        .collect();
+    let mut depth = 0_usize;
+    let mut importing = false;
+    for (at, &token) in tokens.iter().enumerate() {
+        match token {
+            ";" if importing => importing = false,
+            _ if importing => {},
+            "import" if depth == 0 => importing = true,
+            "@[" => depth = depth.saturating_add(1),
+            "[" if depth > 0 => depth = depth.saturating_add(1),
+            "]" if depth > 0 => depth = depth.saturating_sub(1),
+            _ if depth == 0 => return None,
+            "form" if depth == 1 => {
+                if let (Some(&"("), Some(&word), Some(&")")) = (
+                    tokens.get(at.saturating_add(1)),
+                    tokens.get(at.saturating_add(2)),
+                    tokens.get(at.saturating_add(3)),
+                ) {
+                    return match word {
+                        "explicit" => Some(Form::Explicit),
+                        "sugared" => Some(Form::Sugared),
+                        _ => None,
+                    };
+                }
+            },
+            _ => {},
+        }
+    }
+    None
 }

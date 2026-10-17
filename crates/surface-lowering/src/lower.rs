@@ -3944,7 +3944,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   component's written kind as value types, a data declaration's
     ///   parameter types, universe and field types as value types under the
     ///   parameters before them, and an attribute's payload, a declaration's or
-    ///   a decorated module's, as a value when its form can stand as one; a
+    ///   a decorated module's, as a value when its form can stand as one and
+    ///   its schema is not a word schema, whose payload is read as written; a
     ///   witness's body, a member rather than a form, is read nowhere. Every
     ///   other node stays unread. Every written payload is marked as one,
     ///   whatever its form, and every signature type's root with the type
@@ -4074,8 +4075,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 continue;
             };
             payloads.push(payload.node);
+            let worded = matches!(
+                AttributeRegistry::lookup(attribute.name),
+                Maybe::Present((_, AttributeSchema::Word(_)))
+            );
             let (_shape, value) = self.payload_former(payload)?;
-            if value.0 {
+            if value.0 && !worded {
                 seeds.push((payload.node, Reading::Value(Frame::Outermost)));
             }
         }
@@ -12694,9 +12699,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the wrong one; nothing is filed for a payload the mint sweep left
     ///   unlowered, which is the case of a payload that itself refused; a text
     ///   where a marker-or-option schema stands is admitted only when it spells
-    ///   the option, and is ill-typed as another text otherwise; a `respects`
-    ///   or `entry` payload is admitted only when it names declarations, which
-    ///   the filing carries, and is ill-typed as another value otherwise.
+    ///   the option, and is ill-typed as another text otherwise; a bare word
+    ///   where a word schema stands is admitted only when it spells one of the
+    ///   schema's words, filed with no value, and is ill-typed as another word
+    ///   otherwise; a `respects` or `entry` payload is admitted only when it
+    ///   names declarations, which the filing carries, and is ill-typed as
+    ///   another value otherwise.
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the unknown-attribute refusal with its bounded
     ///   suggestion, the duplicate refusal naming the first spelling, the
@@ -12714,6 +12722,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_attribute_written_twice_for_one_name_is_refused`
     /// - witness: `lower::tests::an_unknown_attribute_is_refused_with_its_suggestion`
     /// - witness: `lower::tests::a_payload_of_the_wrong_form_is_refused`
+    /// - witness: `lower::tests::a_form_payload_is_read_as_one_of_its_words`
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     /// - witness: `attribute::tests::a_respects_payload_names_its_laws_in_written_order`
     #[spec(
@@ -12727,6 +12736,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         == Maybe::Present((entry.name(), entry.schema()))
                     && match (written.payload, entry.payload()) {
                         | (Payload::Unwritten, Maybe::Absent(payload::Absent::Marker)) => true,
+                        | (Payload::Written(_), Maybe::Absent(payload::Absent::Word)) => {
+                            matches!(entry.schema(), AttributeSchema::Word(_))
+                        },
                         | (Payload::Written(placed), Maybe::Present(value)) => {
                             self.value_at(placed.node) == Maybe::Present(value)
                         },
@@ -12776,6 +12788,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             {
                 PayloadForm::OtherText
             },
+            (AttributeSchema::Word(words), PayloadForm::Word, Payload::Written(placed))
+                if !words.contains(&self.text_at(placed).as_ref()) =>
+            {
+                PayloadForm::OtherWord
+            },
             (_, form, _) => form,
         };
         match payload_verdict(schema, form) {
@@ -12802,6 +12819,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let (value, named) = match written.payload {
             Payload::Unwritten => (Maybe::Absent(payload::Absent::Marker), Vec::new()),
+            Payload::Written(_) if matches!(schema, AttributeSchema::Word(_)) => {
+                (Maybe::Absent(payload::Absent::Word), Vec::new())
+            },
             Payload::Written(placed) => {
                 let Maybe::Present(value) = self.value_at(placed.node)
                 else {
@@ -18860,6 +18880,69 @@ mod tests
                 written: payload_form(Former::Number),
             },
             "a marker takes no payload, and one written is refused at the payload"
+        );
+    }
+
+    /// #492: `form` takes one of its words, read as written: `explicit` is
+    /// no declared name, and is filed with no value; a word it does not name
+    /// and a text are refused at the payload.
+    #[test]
+    fn a_form_payload_is_read_as_one_of_its_words()
+    {
+        use crate::attribute::PayloadForm;
+        use crate::attribute::RegisteredAttribute;
+        use crate::attribute::payload;
+
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("@[ form(explicit) ] def a : Integer ;"),
+            &mut arena,
+        );
+        let [ref declaration] = *module.declarations()
+        else {
+            panic!("one name is declared");
+        };
+        assert!(
+            !matches!(declaration.outcome(), DeclarationOutcome::Refused(_)),
+            "the word is not looked up in scope"
+        );
+        let Maybe::Present(key) = declaration.signature()
+        else {
+            panic!("the name has a signature");
+        };
+        let [ref entry] = *module.attributes().entries(key)
+        else {
+            panic!("one attribute is filed under the signature");
+        };
+        assert_eq!(
+            (entry.name(), entry.payload()),
+            (
+                RegisteredAttribute::FORM,
+                Maybe::Absent(payload::Absent::Word)
+            ),
+            "the entry is filed with no value"
+        );
+        let expected = schema_of(SurfaceName::from("form"));
+        assert_eq!(
+            refusal(SourceText::from("@[ form(lazy) ] def a = 3 ;")),
+            LoweringRefusal::IllTypedPayload {
+                span: at(8_usize, 12_usize),
+                name: RegisteredAttribute::FORM,
+                expected,
+                written: PayloadForm::OtherWord,
+            },
+            "a word `form` does not take is refused at the payload"
+        );
+        assert_eq!(
+            refusal(SourceText::from("@[ form(\"explicit\") ] def a = 3 ;")),
+            LoweringRefusal::IllTypedPayload {
+                span: at(8_usize, 18_usize),
+                name: RegisteredAttribute::FORM,
+                expected,
+                written: PayloadForm::Text,
+            },
+            "the word is no text"
         );
     }
 

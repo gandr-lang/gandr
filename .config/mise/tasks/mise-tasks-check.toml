@@ -12,9 +12,16 @@
 description = "Every gate"
 depends = ["check:*"]
 
+# Every corpus source stays in the gandr formatter's layout (#492): one
+# process over the corpus, every root under `crates/surface-corpus`, beside
+# rustfmt. The formatter keeps each token as written, so the explicit-form
+# sources keep their spelling.
 ["check:fmt"]
-description = "rustfmt, unchanged"
-run = "cargo fmt --all --check"
+description = "rustfmt and the gandr formatter, unchanged"
+run = [
+  "cargo fmt --all --check",
+  "cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check crates/surface-corpus",
+]
 
 ["check:clippy"]
 description = "The clippy half of the lint wall"
