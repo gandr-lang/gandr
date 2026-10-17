@@ -762,9 +762,16 @@ impl Token
 ///
 /// **`∷` is the word cons**: `g ∷ p` puts the letter `g` — a free cell, or
 /// its inverse `back(g)` — before the word `p` of a path type a `data`
-/// block's cells present. It is the one non-ASCII operator here; its UTF-8
-/// bytes extend no other tile, so its place in the table is free, and a byte
-/// sequence that spelled it before was a stray scalar the molder refused.
+/// block's cells present. Its UTF-8 bytes extend no other tile, so its place
+/// in the table is free, and a byte sequence that spelled it before was a
+/// stray scalar the molder refused.
+///
+/// **`≃`, `≅` and `⇝` relate two types**: the equivalence, the quasi-inverse
+/// and the flow. Like `∷` they extend no other tile. `<~>` and `~~>` are the
+/// ASCII spellings of `≃` and `⇝`, which the molder offers as those tiles;
+/// `~~>` extends the live `~>` and sits ahead of it, and `<~>` was the
+/// comparison `<` before a `~>` no slot takes, so neither re-munches anything
+/// written.
 ///
 /// **`:>` is the opaque-ascription tile**: `module M :> #{ …
 /// }` against transparent `module M : #{ … }`, the ML-family spelling. It
@@ -774,8 +781,8 @@ impl Token
 /// meaning: `:` is only ever followed by a type or a signature, and neither can
 /// begin with `>`, so no existing byte sequence re-munches.
 const MULTI_PUNCT: &[&str] = &[
-    "-->", "<->", "==>", "<=>", "∷", "/\\", "~>", "->", "<-", "=>", "==", "!=", "<=", ">=", "++",
-    "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>",
+    "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "/\\", "~>", "->", "<-", "=>",
+    "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>",
 ];
 
 /// UTF-8 bytes for U+00A0 NO-BREAK SPACE.
@@ -2974,8 +2981,9 @@ mod tests
             );
         }
         for operator in [
-            "-->", "<->", "==>", "<=>", "∷", "/\\", "~>", "->", "<-", "=>", "==", "!=", "<=", ">=",
-            "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>",
+            "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "/\\", "~>", "->", "<-",
+            "=>", "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[",
+            ":>",
         ] {
             assert_eq!(
                 super::punct_len(super::SourceBytes::from(operator.as_bytes()), zero)
@@ -3918,41 +3926,39 @@ mod tests
         );
     }
     #[test]
-    fn the_face_migration_leaves_the_directed_type_former_run_alone()
+    fn the_directed_type_former_munches_past_the_face_arrow()
     {
-        // `~~>` is the directed former on types, not yet in this table.
-        // Retiring `~>` as the rewrite-face former must not disturb how
-        // that byte run scans, because the two are one glyph apart and the
-        // point of the retirement was to dissolve that near-collision rather
-        // than manage it. The run still scans as a stray `~` followed by `~>`,
-        // so landing `~~>` remains the single entry inserted ahead of `~>` —
-        // the migration foreclosed nothing.
+        // `~~>` is the ASCII spelling of the directed former on types, one
+        // entry ahead of `~>`, which it extends: the run is one tile, and the
+        // shorter arrow still scans where it stands alone.
         assert_eq!(
             tiles(
-                SourceFragment::from("A ~~> B"),
-                &label(SourceFragment::from("A ~~> B"))
+                SourceFragment::from("A ~~> B ~> C"),
+                &label(SourceFragment::from("A ~~> B ~> C"))
             ),
             vec![
                 (Lexeme::UpperWord, "A".to_owned()),
-                (Lexeme::Unknown, "~".to_owned()),
-                (Lexeme::Punct, "~>".to_owned()),
+                (Lexeme::Punct, "~~>".to_owned()),
                 (Lexeme::UpperWord, "B".to_owned()),
+                (Lexeme::Punct, "~>".to_owned()),
+                (Lexeme::UpperWord, "C".to_owned()),
             ]
         );
-        // And the face arrow does not reach into it: `==>` beside `~~>`
-        // in one source keeps both readings.
+        // The face arrow does not reach into it, and the equivalence's ASCII
+        // spelling is one tile rather than `<` before `~>`.
         assert_eq!(
             tiles(
-                SourceFragment::from("a ==> b ~~> c"),
-                &label(SourceFragment::from("a ==> b ~~> c"))
+                SourceFragment::from("a ==> b ~~> c <~> d"),
+                &label(SourceFragment::from("a ==> b ~~> c <~> d"))
             ),
             vec![
                 (Lexeme::LowerWord, "a".to_owned()),
                 (Lexeme::Punct, "==>".to_owned()),
                 (Lexeme::LowerWord, "b".to_owned()),
-                (Lexeme::Unknown, "~".to_owned()),
-                (Lexeme::Punct, "~>".to_owned()),
+                (Lexeme::Punct, "~~>".to_owned()),
                 (Lexeme::LowerWord, "c".to_owned()),
+                (Lexeme::Punct, "<~>".to_owned()),
+                (Lexeme::LowerWord, "d".to_owned()),
             ]
         );
     }

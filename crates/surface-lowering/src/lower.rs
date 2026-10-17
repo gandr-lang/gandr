@@ -506,6 +506,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::Protocol;
 use gandr_core_term::session::SessionAction;
@@ -1231,7 +1232,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1280,6 +1281,7 @@ fn ending(former: Former) -> Ending
         | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
+        | Former::RelationType
         | Former::CapabilityType
         | Former::AtType
         | Former::Scope
@@ -1314,7 +1316,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1406,6 +1408,7 @@ fn iterating(former: Former) -> Ending
                     | Former::StaticAbstraction
                     | Former::ParenthesizedType
                     | Former::PathType
+                    | Former::RelationType
                     | Former::CapabilityType
                     | Former::AtType
                     | Former::SessionType,
@@ -1476,6 +1479,7 @@ const fn family_of(former: Former) -> Family
         | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
+        | Former::RelationType
         | Former::CapabilityType
         | Former::AtType
         | Former::SessionType => Family::Type,
@@ -2235,6 +2239,10 @@ enum Plan
     /// A directed identity type over its carrier and its two endpoints:
     /// `Flow(A, a, b)`.
     Flow(NodeIndex, NodeIndex, NodeIndex),
+    /// A relation between two types written infix, over its two operands:
+    /// value types for the equivalence and the quasi-inverse, codes for the
+    /// flow.
+    Relation(Relation, NodeIndex, NodeIndex),
     /// A first-class continuation's type over the computation types it runs
     /// from and to: `Stack(C, D)`.
     Stack(NodeIndex, NodeIndex),
@@ -4635,6 +4643,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::StaticAbstraction => self.static_abstraction(site, cursor),
             Former::ParenthesizedType => self.parenthesized_type(site, cursor),
             Former::PathType => self.path_type(site, cursor),
+            Former::RelationType => self.relation_type(site, cursor),
             Former::CapabilityType => self.capability_type(site, cursor),
             Former::AtType => self.at_type(site, cursor),
             Former::Scope => self.capability_scope(site, pieces),
@@ -8138,7 +8147,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Constructor(_)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Constructor(_)))
                 )
         },
     )]
@@ -8226,10 +8235,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   applied to three arguments is the path type [`Self::written_path`]
     ///   plans, one named `Flow` and applied to three the directed identity
     ///   type [`Self::flow_type`] plans, one named `Stack` and applied to two
-    ///   the continuation type [`Self::stack_type`] plans; any other head
-    ///   applied to one argument resolves against the unary table, stands at
-    ///   the sort its former produces, reads its argument at the sort the
-    ///   former takes, and is planned over it.
+    ///   the continuation type [`Self::stack_type`] plans, one named `Iso` and
+    ///   applied to two the quasi-inverse `A ≅ B` [`Self::relation_of`] plans;
+    ///   any other head applied to one argument resolves against the unary
+    ///   table, stands at the sort its former produces, reads its argument at
+    ///   the sort the former takes, and is planned over it.
     /// - provides: the one table of type formers written as an application, in
     ///   a type and where a value is read.
     /// - fails: yields the unresolved-head refusal for a head no former takes
@@ -8242,20 +8252,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a former's head, a head no former takes, a head
-    ///   written at two arguments, and a path type and a list type written as
-    ///   calls where a value is read, each asserted as the exact core node read
-    ///   back out of the arena or the exact refusal.
+    ///   written at two arguments, a path type and a list type written as calls
+    ///   where a value is read, and `Iso(A, B)` beside `A ≅ B`, each asserted
+    ///   as the exact core node read back out of the arena or the exact
+    ///   refusal.
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::an_applied_head_no_former_answers_is_refused`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    /// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
     #[spec(
         ensures: |ret| {
             self.operands.len() == written.start
                 && (ret.is_err()
                     || matches!(
                         self.plans.get(usize::from(site.at.node)),
-                        Some(&(Plan::Former(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..)))
+                        Some(&(Plan::Former(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Relation(..)))
                     ))
         },
     )]
@@ -8274,7 +8286,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .operands
             .get(start .. written.end)
             .and_then(|operands| <[NodeIndex; 3]>::try_from(operands).ok());
-        let stack = self
+        let pair = self
             .operands
             .get(start .. written.end)
             .and_then(|operands| <[NodeIndex; 2]>::try_from(operands).ok());
@@ -8289,10 +8301,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             return self.flow_type(site, written);
         }
-        if let Some(written) = stack
+        if let Some(written) = pair
             && name.as_ref() == STACK
         {
             return self.stack_type(site, written);
+        }
+        if let Some(written) = pair
+            && name.as_ref() == identity::ISO
+        {
+            return self.relation_of(site, Relation::Isomorphism, written);
         }
         let unresolved = |arity| LoweringRefusal::UnresolvedTypeHead {
             span: head.span,
@@ -8316,9 +8333,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `head` is the first operand of the call at `site`.
     /// - ensures: the head's name when it is a capitalised name spelling
-    ///   `Path`, `Flow`, `Stack` or a unary type former, and no constructor,
-    ///   binder, earlier declaration or stated type carries that name; the
-    ///   unformed absence for any other head.
+    ///   `Path`, `Flow`, `Stack`, `Iso` or a unary type former, and no
+    ///   constructor, binder, earlier declaration or stated type carries that
+    ///   name; the unformed absence for any other head.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
     ///   not hold; the refusals the name's resolution yields.
     /// - panics: none.
@@ -8364,7 +8381,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(unformed);
         };
         let name = self.name_at(head);
-        let spelled = [TileName::PATH.as_ref(), identity::FLOW, STACK].contains(&name.as_ref())
+        let spelled = [
+            TileName::PATH.as_ref(),
+            identity::FLOW,
+            STACK,
+            identity::ISO,
+        ]
+        .contains(&name.as_ref())
             || matches!(type_former(name), Maybe::Present(_));
         if !spelled {
             return Ok(unformed);
@@ -10000,6 +10023,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Former(TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run, _)
                 | Plan::Path(..)
                 | Plan::Flow(..)
+                | Plan::Relation(..)
                 | Plan::Stack(..)
                 | Plan::Data(..)
                 | Plan::Expansion(..)
@@ -10236,6 +10260,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
             Plan::Ride(motive, flow, value) => self.mint_ride((motive, flow, value), sink, origin),
             Plan::FlowThen(first, second) => self.mint_flow_then(first, second, sink, origin),
+            Plan::Relation(relation, left, right) => {
+                self.mint_relation(relation, [left, right], sink, origin)
+            },
             Plan::Arrow(..)
             | Plan::StaticPi(..)
             | Plan::Path(..)
@@ -11092,7 +11119,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Resume(..)
             | Plan::Recorded(_)
             | Plan::Ride(..)
-            | Plan::FlowThen(..) => Maybe::Absent(lowered::Absent::Unminted),
+            | Plan::FlowThen(..)
+            | Plan::Relation(..) => Maybe::Absent(lowered::Absent::Unminted),
         }
     }
 
@@ -13444,7 +13472,8 @@ impl Sink<'_>
                 | Insertion::Identity
                 | Insertion::Nested
                 | Insertion::Unwind
-                | Insertion::Model,
+                | Insertion::Model
+                | Insertion::Relation,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }
@@ -14227,6 +14256,7 @@ pub fn parse_literal(
         | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
+        | Former::RelationType
         | Former::CapabilityType
         | Former::AtType
         | Former::Scope

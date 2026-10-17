@@ -567,6 +567,18 @@ pub enum Former<'source, Node>
         /// The target endpoint.
         right: Node,
     },
+    /// A relation between two types written infix, `A ≃ B`, `A ≅ B` or
+    /// `A ⇝ B`: the type the relation abbreviates, spelled as written.
+    Relation
+    {
+        /// Which relation.
+        relation: gandr_core_term::identity::Relation,
+        /// The left operand: a value type for the equivalence and the
+        /// quasi-inverse, the code of one for the flow.
+        left: Node,
+        /// The right operand, read as the left one is.
+        right: Node,
+    },
     /// A recorded run, `recorded(sent(v), selected(l), closed)`: its moves in
     /// order, each send's and receive's payload a value the source answers by
     /// [`Source::component`] in move order.

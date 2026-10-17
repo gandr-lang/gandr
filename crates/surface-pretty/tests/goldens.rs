@@ -37,6 +37,7 @@ mod tests
     use gandr_core_term::ValueId;
     use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
+    use gandr_core_term::identity::Relation;
     use gandr_core_term::primitive::Arguments;
     use gandr_core_term::primitive::PRELUDE;
     use gandr_core_term::session::RecordedMove;
@@ -1213,7 +1214,10 @@ mod tests
     /// bridge, a decode as the code it reads, an abstract type by its name, a
     /// family bare when nullary and applied to its arguments otherwise, and a
     /// path type over its carrier and both endpoints. A free variable reads
-    /// its context binder's name, past the binders the type opens itself.
+    /// its context binder's name, past the binders the type opens itself. A
+    /// type the source records as a written relation spells as that relation,
+    /// its operands read off the forward map or the flow's codes; the same
+    /// record unrecorded spells as the record.
     #[test]
     fn every_type_former_spells_as_the_grammar_writes_it()
     {
@@ -1277,6 +1281,21 @@ mod tests
         let returns_between = core.comp_type_returner(between);
         let over_context = core.comp_type_pi(integer, returns_between);
         let unnamed = core.value_type_path(integer, inner, outer);
+        let returns_string = core.comp_type_returner(string);
+        let to_string = core.comp_type_arrow(integer, returns_string);
+        let forward = core.value_type_thunk(to_string);
+        let record = core.value_type_sigma(forward, unit);
+        let written = core.value_type_sigma(forward, unit);
+        let equivalence = core.value_type_sigma(forward, string_unit);
+        let universe = small_universe(&mut core);
+        let string_code = core.value_quote(string);
+        let directed = core.value_type_flow(universe, integer_code, string_code);
+        let mut relations = [
+            (record, Relation::Isomorphism),
+            (equivalence, Relation::Equivalence),
+            (directed, Relation::Flow),
+        ];
+        relations.sort_unstable_by_key(|&(id, _)| id);
         let source = CoreSource::new(&core, &names);
         for (root, spelling) in [
             (CoreNode::ValueType(integer), "Integer"),
@@ -1373,6 +1392,23 @@ mod tests
                 "a context binder named {unprintable:?} spells `?`"
             );
         }
+        let related = CoreSource::new(&core, &names).relating(&relations);
+        for (root, spelling) in [
+            (CoreNode::ValueType(record), "Integer ≅ String"),
+            (CoreNode::ValueType(equivalence), "Integer ≃ String"),
+            (CoreNode::ValueType(directed), "Integer ⇝ String"),
+        ] {
+            assert_eq!(
+                spelled(&related, Root::Type(root)),
+                faithful(Written(spelling)),
+                "{root:?} spells as the relation it was written as"
+            );
+        }
+        assert_eq!(
+            spelled(&related, Root::Type(CoreNode::ValueType(written))),
+            spelled(&source, Root::Type(CoreNode::ValueType(record))),
+            "the same record unrecorded spells as the record"
+        );
     }
 
     /// Each universe spells its sort and its constant level as the grammar

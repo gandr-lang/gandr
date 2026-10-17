@@ -177,6 +177,53 @@
 //! nominal move type the prelude declares was the alternative, which needs a
 //! constructor per payload type. Reversal: a run type whose moves are data
 //! the program declares.
+//!
+//! # Three relations between types abbreviate a record or a flow
+//!
+//! Beside `Path(A, a, b)` and `Flow(Type, A, B)`, three infix formers relate
+//! two types, in one band just above the arrow:
+//!
+//! - `A ≅ B`, also written `Iso(A, B)`, the quasi-inverse: the record `#{to :
+//!   +U (A -> -F B), back : +U (B -> -F A), sect : (a : A) => Path(A,
+//!   back(to(a)), a), retr : (b : B) => Path(B, to(back(b)), b)}`.
+//! - `A ≃ B`, also written `A <~> B`, the equivalence as the bi-invertible map:
+//!   `#{to : +U (A -> -F B), linv : #{g : +U (B -> -F A), sect : (a : A) =>
+//!   Path(A, g(to(a)), a)}, rinv : #{h : +U (B -> -F A), retr : (b : B) =>
+//!   Path(B, to(h(b)), b)}}`.
+//! - `A ⇝ B`, also written `A ~~> B`, the flow `Flow(Type, A, B)` between two
+//!   codes at the universe a bare `Type` names; `forward(f)` introduces it.
+//!
+//! Each mints exactly the core its written record or flow lowers to, so a
+//! value of the one is a value of the other and the kernel gains no node. The
+//! origin table records the relation against the type, and the printer
+//! spells the type back as the relation. The type is located at the relation
+//! as written; every node below it — the fields' types, the terms the round
+//! trips read, the flow's universe — at the relation as an insertion, since
+//! the source writes none of them, so a reader pointing at the relation is
+//! answered with the relation. A pattern at a parameter of either record
+//! type splits the record, by position or by label, the equivalence's two
+//! inverses each a record of its own.
+//!
+//! The equivalence is the bi-invertible map (_Homotopy Type Theory_, § 4.3),
+//! which is also the isomorphism simplicial homotopy type theory states for a
+//! Segal type (`isIso`; Gratzer, Weinberger and Buchholtz, _Directed
+//! univalence in simplicial homotopy type theory_, arXiv:2407.09146,
+//! Definition 2.7 and Remark 2.9), so a directed reading takes the same
+//! record. The alternative was contractible fibres, `#{to, fibres : (b : B)
+//! => <the fibre over b is contractible>}`. From a quasi-inverse, its
+//! contraction needs the half-adjoint coherence and path algebra under a
+//! transport's motive, and the identity fragment reads neither: the motive's
+//! composite refuses as needing a type annotation. Both records are
+//! propositions, which the lowering does not check. Reversal: contractible
+//! fibres once the h-level ladder supplies the coherence, the record changing
+//! here and in the corpus's `isoToEquiv`.
+//!
+//! The quasi-inverse is no proposition, so it is a former of its own rather
+//! than a second spelling of the equivalence; `isoToEquiv` and `equivToIso`
+//! relate the two in the corpus. Each former has one glyph, and its ASCII
+//! spelling is an alias the mold normalises, so the printer never chooses.
+//! `A ⇝ B` has no record: under directed univalence the structure of a hom
+//! between types is the function itself (op. cit., Definition 1.2).
 
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -190,14 +237,18 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_core_term::identity::Relation;
 use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionRelation;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -214,7 +265,10 @@ use super::Reading;
 use super::Sink;
 use super::Site;
 use super::Stretch;
+use super::Universe;
 use super::arguments;
+use super::arity::Dependent;
+use super::arity::Place;
 use super::closed;
 use super::exhausted;
 use super::exits::record_copies;
@@ -238,6 +292,7 @@ use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
+use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
 use crate::resolve::TypeFormer;
 use crate::resolve::type_former;
@@ -260,8 +315,110 @@ pub(super) const NIL: &str = "nil";
 /// earlier declaration at three arguments.
 pub(super) const FLOW: &str = "Flow";
 
+/// The quasi-inverse's head, `Iso(A, B)`, the spelling of `A ≅ B` as an
+/// application, resolved after every binder and earlier declaration at two
+/// arguments.
+pub(super) const ISO: &str = "Iso";
+
 /// A recorded run's close, a move written as a bare name.
 const CLOSED: &str = "closed";
+
+/// Where a round trip of a relation's record reads the forward map: past the
+/// other map and the trip's own point.
+const FORWARD_PAST_TWO: u32 = 2_u32;
+
+/// Where a round trip of a relation's record reads the map back: past the
+/// trip's own point.
+const OTHER_PAST_ONE: u32 = 1_u32;
+
+/// The record a relation between types abbreviates, or one of the records
+/// nested in it, as a pattern splits it: its labels in written order and
+/// whether each link binds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Layout
+{
+    /// `A ≅ B`: `#{to, back, sect, retr}`.
+    Isomorphism,
+    /// `A ≃ B`: `#{to, linv, rinv}`, `linv` and `rinv` records of their own.
+    Equivalence,
+    /// The equivalence's left inverse `linv`: `#{g, sect}`.
+    LeftInverse,
+    /// The equivalence's right inverse `rinv`: `#{h, retr}`.
+    RightInverse,
+}
+
+impl Layout
+{
+    /// The record's labels, in written order.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn fields(self) -> impl ExactSizeIterator<Item = SurfaceName<'static>>
+    {
+        let labels: &'static [&'static str] = match self {
+            Self::Isomorphism => &["to", "back", "sect", "retr"],
+            Self::Equivalence => &["to", "linv", "rinv"],
+            Self::LeftInverse => &["g", "sect"],
+            Self::RightInverse => &["h", "retr"],
+        };
+        labels.iter().map(|&label| SurfaceName::from(label))
+    }
+
+    /// Whether each field but the last binds a later one: every map does,
+    /// a round trip and an inverse do not.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) const fn links(self) -> &'static [Dependent]
+    {
+        match self {
+            Self::Isomorphism => &[Dependent(true), Dependent(true), Dependent(false)],
+            Self::Equivalence => &[Dependent(true), Dependent(false)],
+            Self::LeftInverse | Self::RightInverse => &[Dependent(true)],
+        }
+    }
+
+    /// The record nested at `place`, when the field there is one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the equivalence's left inverse at its second field and its
+    ///   right inverse at its third; the other-former absence for every other
+    ///   field.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pattern at an equivalence splits both inverses.
+    /// - witness: `lower::identity::tests::a_pattern_at_a_relation_splits_its_record`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || self == Self::Equivalence)]
+    pub(super) fn inner(
+        self,
+        place: Place,
+    ) -> Maybe<Self, related::Absent>
+    {
+        match (self, place.0) {
+            (Self::Equivalence, 1_usize) => Maybe::Present(Self::LeftInverse),
+            (Self::Equivalence, 2_usize) => Maybe::Present(Self::RightInverse),
+            _ => Maybe::Absent(related::Absent::Otherwise),
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a type states no relation's record.
+    pub(super) mod related {
+        /// The type is no equivalence or quasi-inverse.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The type is planned as another former, or as a flow.
+            Otherwise,
+        }
+    }
+}
 
 quenchant_shape::reason_enum! {
     /// Why a call's head names no identity operation.
@@ -1069,6 +1226,232 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Flow(carrier, left, right));
 
         Ok(())
+    }
+
+    /// Classify a relation between two types written infix: `A ≃ B` or its
+    /// ASCII spelling `A <~> B`, `A ≅ B`, and `A ⇝ B` or `A ~~> B`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a relation in type position, or in value position
+    ///   where a type is quoted.
+    /// - ensures: the relation its tile spells, over its two operands in order,
+    ///   as [`Self::relation_of`] plans it.
+    /// - fails: yields the misplaced-tile or extra-operand fault for a form out
+    ///   of shape, and the relation's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each relation, by its glyph and by its ASCII
+    ///   spelling, read back as the exact core type the written record or flow
+    ///   lowers to.
+    /// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Relation(..))))]
+    pub(super) fn relation_type(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let left = site.one(cursor.operands())?;
+        let (relation, tile) = [
+            (Relation::Equivalence, TileName::EQUIVALENCE),
+            (Relation::Isomorphism, TileName::ISOMORPHISM),
+            (Relation::Flow, TileName::UNIVERSE_FLOW),
+        ]
+        .into_iter()
+        .find(|&(_, tile)| matches!(cursor.at(tile), Maybe::Present(_)))
+        .unwrap_or((Relation::Flow, TileName::UNIVERSE_FLOW));
+        closed(site, &mut cursor, tile)?;
+        let right = site.one(cursor.operands())?;
+        exhausted(site, &cursor)?;
+        self.relation_of(site, relation, [left.node, right.node])
+    }
+
+    /// Classify the relation `relation` between the two types written at
+    /// `written`, infix or, for the quasi-inverse, as `Iso(A, B)`.
+    ///
+    /// # Specification
+    /// - requires: `written` holds the relation's two operands, in order.
+    /// - ensures: the form stands as a value type and is planned over its two
+    ///   operands. The equivalence and the quasi-inverse read both as value
+    ///   types under the form's frame; the flow reads both as endpoints
+    ///   standing inside a type, the codes of the types they spell, as
+    ///   `Flow(Type, A, B)` reads its endpoints.
+    /// - provides: the one planning step both spellings of a relation share.
+    /// - fails: yields the wrong-sort refusal where no value type is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::relation_type`], and `Iso(A, B)` read back
+    ///   as the type `A ≅ B` lowers to.
+    /// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::Relation(planned, left, right))
+                        if planned == relation && [left, right] == written
+                            && match relation {
+                                Relation::Flow => self.reading(left) == Reading::Value(site.reading.frame())
+                                    && self.reading(right) == Reading::Value(site.reading.frame())
+                                    && self.at_endpoint.contains(&left)
+                                    && self.at_endpoint.contains(&right),
+                                Relation::Isomorphism | Relation::Equivalence => self.reading(left) == Reading::ValueType(site.reading.frame())
+                                    && self.reading(right) == Reading::ValueType(site.reading.frame()),
+                            }
+                )
+        },
+    )]
+    pub(super) fn relation_of(
+        &mut self,
+        site: Site,
+        relation: Relation,
+        written: [NodeIndex; 2],
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::ValueType)?;
+        let [left, right] = written;
+        match relation {
+            Relation::Isomorphism | Relation::Equivalence => {
+                self.read(left, Reading::ValueType(frame));
+                self.read(right, Reading::ValueType(frame));
+            },
+            Relation::Flow => {
+                self.read(left, Reading::Value(frame));
+                self.read(right, Reading::Value(frame));
+                self.in_type.extend([left, right]);
+                self.at_endpoint.extend([left, right]);
+            },
+        }
+        self.plan(site, Plan::Relation(relation, left, right));
+
+        Ok(())
+    }
+
+    /// The record the type at `stated` abbreviates when it is written as an
+    /// equivalence or a quasi-inverse.
+    ///
+    /// # Specification
+    /// - requires: `stated` is a type's syntax node, already classified.
+    /// - ensures: through the transparent plans of parentheses,
+    ///   [`Layout::Isomorphism`] for `A ≅ B` or `Iso(A, B)` and
+    ///   [`Layout::Equivalence`] for `A ≃ B`; the other-former absence for a
+    ///   flow and for every other type.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each step follows a transparent plan to the child it stands for,
+    /// strictly deeper in the finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pattern at a parameter written with each relation
+    ///   splits its record, positionally and by label.
+    /// - witness: `lower::identity::tests::a_pattern_at_a_relation_splits_its_record`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Layout::Isomorphism | Layout::Equivalence)))]
+    pub(super) fn stated_relation(
+        &self,
+        stated: NodeIndex,
+    ) -> Maybe<Layout, related::Absent>
+    {
+        let mut at = stated;
+        loop {
+            match self.plans.get(usize::from(at)) {
+                Some(&Plan::Transparent(inner)) => at = inner,
+                Some(&Plan::Relation(Relation::Isomorphism, ..)) => {
+                    return Maybe::Present(Layout::Isomorphism);
+                },
+                Some(&Plan::Relation(Relation::Equivalence, ..)) => {
+                    return Maybe::Present(Layout::Equivalence);
+                },
+                _ => return Maybe::Absent(related::Absent::Otherwise),
+            }
+        }
+    }
+
+    /// Mint the relation `relation` over its two lowered operands: the record
+    /// type the equivalence or the quasi-inverse abbreviates, or the flow
+    /// between two codes at the universe a bare `Type` names.
+    ///
+    /// # Specification
+    /// - requires: both operands are already minted or absent.
+    /// - ensures: the quasi-inverse as [`quasi_inverse`] mints it, the
+    ///   equivalence as [`bi_invertible`] mints it, and the flow as `Flow(Type,
+    ///   A, B)` lowers; the type carries the written origin and every node
+    ///   minted below it the same origin as [`Insertion::Relation`], and the
+    ///   origin table records the relation against the type. Nothing when an
+    ///   operand did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::relation_type`].
+    /// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(Lowered::ValueType(id)) => sink.origins.relations().last() == Some(&(id, relation)),
+        Maybe::Present(_) => false,
+        Maybe::Absent(_) => true,
+    })]
+    pub(super) fn mint_relation(
+        &self,
+        relation: Relation,
+        written: [NodeIndex; 2],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let [left, right] = written;
+        let mark = sink.arena.watermark();
+        let minted = match relation {
+            Relation::Isomorphism => self.value_type_at(left).and_then(|from| {
+                self.value_type_at(right)
+                    .map(|to| quasi_inverse(sink.arena, from, to))
+            }),
+            Relation::Equivalence => self.value_type_at(left).and_then(|from| {
+                self.value_type_at(right)
+                    .map(|to| bi_invertible(sink.arena, from, to))
+            }),
+            Relation::Flow => self.value_at(left).and_then(|source| {
+                self.value_at(right).map(|target| {
+                    let universe = Universe::FUSS_FREE;
+                    let carrier = sink.arena.value_type_universe(
+                        Sort::Ground(universe.sort),
+                        Level::constant(universe.level),
+                    );
+                    sink.arena.value_type_flow(carrier, source, target)
+                })
+            }),
+        };
+        let below = origin.inserted(Insertion::Relation);
+        for id in sink.arena.values_since(mark) {
+            sink.origins.record_value(id, below);
+        }
+        for id in sink.arena.computations_since(mark) {
+            sink.origins.record_computation(id, below);
+        }
+        for id in sink.arena.value_types_since(mark) {
+            let at = if minted == Maybe::Present(id) {
+                origin
+            }
+            else {
+                below
+            };
+            sink.origins.record_value_type(id, at);
+        }
+        for id in sink.arena.comp_types_since(mark) {
+            sink.origins.record_comp_type(id, below);
+        }
+        minted.map(|id| {
+            sink.origins.record_relation(id, relation);
+            Lowered::ValueType(id)
+        })
     }
 
     /// The identity operation `head`, the head of a call written at `site`,
@@ -2386,7 +2769,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the path answer exactly when the walk from `answer` through
     ///   parenthesised types and one `-F` reaches a path type, and the flow
     ///   answer when it reaches a type application headed `Flow` at three
-    ///   arguments.
+    ///   arguments or a flow between types written `A ⇝ B`.
     /// - provides: the classification-time guarantee that a derived operation's
     ///   answer mints as `F (Path(A, a, b))` or `F (Flow(A, a, b))`.
     /// - fails: the unannotated refusal at `site` when the walk reaches another
@@ -2403,7 +2786,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `-F Path(…)`, a parenthesised `-F(Path(…))`, a flow
-    ///   answer, and an integer answer.
+    ///   answer written either way, and an integer answer.
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::a_derived_operation_needs_a_written_path_answer`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
@@ -2433,7 +2816,7 @@ impl<'source> Lowerer<'_, 'source>
                     returned = true;
                     (true, false)
                 },
-                Former::ParenthesizedType => (false, false),
+                Former::ParenthesizedType | Former::RelationType => (false, false),
                 Former::TypeApplication => (false, true),
                 Former::Name
                 | Former::Constructor
@@ -2512,8 +2895,19 @@ impl<'source> Lowerer<'_, 'source>
                 Piece::Tile { at, .. } => Some(at),
                 Piece::Operand(_) => None,
             });
+            let flows = scratch.pieces.iter().any(|piece| {
+                matches!(*piece, Piece::Tile { label, .. } if label == TileName::UNIVERSE_FLOW)
+            });
             self.scratch = scratch;
             read?;
+            if former == Former::RelationType {
+                return if flows {
+                    Ok(Answered::Flow)
+                }
+                else {
+                    Err(unannotated)
+                };
+            }
             if applied {
                 let flow = written == 3_usize
                     && keyword.is_some_and(|at| self.name_at(at).as_ref() == FLOW);
@@ -3524,4 +3918,160 @@ fn telescope(
     };
     let entry = arena.comp_type_pi(inner, body);
     arena.comp_type_pi(outer, entry)
+}
+
+/// The type of a map from `from` to `to`, `+U (from -> -F to)`, both read
+/// where the map stands.
+///
+/// # Specification
+/// - requires: `from` and `to` are value types of `arena` in one context.
+/// - ensures: the thunk of the arrow from `from` to the returner of `to`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`quasi_inverse`].
+/// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Thunk(_))))]
+fn map_type(
+    arena: &mut CoreArena,
+    from: ValueTypeId,
+    to: ValueTypeId,
+) -> ValueTypeId
+{
+    let returned = arena.comp_type_returner(to);
+    let arrow = arena.comp_type_arrow(from, returned);
+    arena.value_type_thunk(arrow)
+}
+
+/// Which round trip of a relation's record a type states, past the forward
+/// map and then the other.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Trip
+{
+    /// `other(to(x))`.
+    Section,
+    /// `to(other(x))`.
+    Retraction,
+}
+
+/// The type of a round trip over `carrier`, `(x : C) => Path(C,
+/// outer(inner(x)), x)`, its two maps the innermost two binders.
+///
+/// # Specification
+/// - requires: `carrier` is a value type of `arena` in a context `Γ`; the round
+///   trip stands in `Γ` extended by the forward map and then the other.
+/// - ensures: the thunk of the dependent arrow over `carrier` shifted past the
+///   two maps, returning the path over `carrier` shifted past the binder too,
+///   from the outer map of `trip` applied to the inner one applied to the bound
+///   point, each application the value its computation returns, to the bound
+///   point: the core the written `(x : C) => Path(C, outer(inner(x)), x)`
+///   lowers to.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`quasi_inverse`].
+/// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Thunk(_))))]
+fn round_trip(
+    arena: &mut CoreArena,
+    carrier: ValueTypeId,
+    trip: Trip,
+) -> ValueTypeId
+{
+    let (inner, outer) = match trip {
+        Trip::Section => (FORWARD_PAST_TWO, OTHER_PAST_ONE),
+        Trip::Retraction => (OTHER_PAST_ONE, FORWARD_PAST_TWO),
+    };
+    let past_maps = Binders::ONE.deeper();
+    let domain = gandr_core_term::shift_value_type(arena, carrier, past_maps);
+    let over = gandr_core_term::shift_value_type(arena, carrier, past_maps.deeper());
+    let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(inner));
+    let forced = arena.computation_force(first);
+    let applied = arena.computation_application(forced, point);
+    let midway = arena.value_returned(applied);
+    let second = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(outer));
+    let forced = arena.computation_force(second);
+    let applied = arena.computation_application(forced, midway);
+    let there = arena.value_returned(applied);
+    let back_at = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let path = arena.value_type_path(over, there, back_at);
+    let returned = arena.comp_type_returner(path);
+    let dependent = arena.comp_type_pi(domain, returned);
+    arena.value_type_thunk(dependent)
+}
+
+/// The record type `A ≅ B` abbreviates: a map, a map back, and the two round
+/// trips.
+///
+/// # Specification
+/// - requires: `from` and `to` are value types of `arena` in one context.
+/// - ensures: the core the written `#{to : +U (A -> -F B), back : +U (B -> -F
+///   A), sect : (a : A) => Path(A, back(to(a)), a), retr : (b : B) => Path(B,
+///   to(back(b)), b)}` lowers to: `Σ to. Σ back. sect × retr`, each occurrence
+///   of `A` and `B` shifted past the binders it stands under.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the relation and the written record over two base types
+///   and over two bound type codes are one type.
+/// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Sigma { .. })))]
+fn quasi_inverse(
+    arena: &mut CoreArena,
+    from: ValueTypeId,
+    to: ValueTypeId,
+) -> ValueTypeId
+{
+    let forward = map_type(arena, from, to);
+    let from_past = gandr_core_term::shift_value_type(arena, from, Binders::ONE);
+    let to_past = gandr_core_term::shift_value_type(arena, to, Binders::ONE);
+    let backward = map_type(arena, to_past, from_past);
+    let section = round_trip(arena, from, Trip::Section);
+    let retraction = round_trip(arena, to, Trip::Retraction);
+    let laws = arena.value_type_product(&[section, retraction]);
+    let rest = arena.value_type_sigma(backward, laws);
+    arena.value_type_sigma(forward, rest)
+}
+
+/// The record type `A ≃ B` abbreviates: a map with a left inverse and a right
+/// inverse, the bi-invertible map.
+///
+/// # Specification
+/// - requires: `from` and `to` are value types of `arena` in one context.
+/// - ensures: the core the written `#{to : +U (A -> -F B), linv : #{g : +U (B
+///   -> -F A), sect : (a : A) => Path(A, g(to(a)), a)}, rinv : #{h : +U (B ->
+///   -F A), retr : (b : B) => Path(B, to(h(b)), b)}}` lowers to: `Σ to. (Σ g.
+///   sect) × (Σ h. retr)`, each occurrence of `A` and `B` shifted past the
+///   binders it stands under.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`quasi_inverse`].
+/// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
+#[spec(ensures: |ret| matches!(arena.value_type(ret), Some(&ValueType::Sigma { .. })))]
+fn bi_invertible(
+    arena: &mut CoreArena,
+    from: ValueTypeId,
+    to: ValueTypeId,
+) -> ValueTypeId
+{
+    let forward = map_type(arena, from, to);
+    let from_past = gandr_core_term::shift_value_type(arena, from, Binders::ONE);
+    let to_past = gandr_core_term::shift_value_type(arena, to, Binders::ONE);
+    let left_map = map_type(arena, to_past, from_past);
+    let section = round_trip(arena, from, Trip::Section);
+    let left = arena.value_type_sigma(left_map, section);
+    let right_map = map_type(arena, to_past, from_past);
+    let retraction = round_trip(arena, to, Trip::Retraction);
+    let right = arena.value_type_sigma(right_map, retraction);
+    let inverses = arena.value_type_product(&[left, right]);
+    arena.value_type_sigma(forward, inverses)
 }

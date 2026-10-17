@@ -531,6 +531,14 @@ impl TileName
     pub const REVERSIBLE: Self = Self("<=>");
     /// The cons `g ∷ p` of a word and of a word's pattern.
     pub const CONS: Self = Self("∷");
+    /// The equivalence `A ≃ B` between two types, the tile its ASCII
+    /// spelling `<~>` molds too.
+    pub const EQUIVALENCE: Self = Self("≃");
+    /// The quasi-inverse `A ≅ B` between two types.
+    pub const ISOMORPHISM: Self = Self("≅");
+    /// The flow `A ⇝ B` between two types, the tile its ASCII spelling `~~>`
+    /// molds too.
+    pub const UNIVERSE_FLOW: Self = Self("⇝");
     /// The reserved operation-member keyword `op` of a data block.
     pub const OP: Self = Self("op");
     /// The reserved operation-member keyword `oper` of a data block, which
@@ -724,6 +732,10 @@ pub enum Former
     /// The element path type `Path(A, a, b)`: a value type over a carrier
     /// and two endpoint terms.
     PathType,
+    /// A relation between two types written infix: the equivalence `A ≃ B`
+    /// and the quasi-inverse `A ≅ B`, each the record type it abbreviates,
+    /// and the flow `A ⇝ B`, the directed identity `Flow(Type, A, B)`.
+    RelationType,
     /// The capability type `Cap[r]? {op, …}`: the authority to exercise the
     /// named host operations.
     CapabilityType,
@@ -787,7 +799,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 59_usize] = [
+    pub const ALL: [Self; 60_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -833,6 +845,7 @@ impl Former
         Self::StaticAbstraction,
         Self::ParenthesizedType,
         Self::PathType,
+        Self::RelationType,
         Self::CapabilityType,
         Self::Scope,
         Self::Declaration,
@@ -869,7 +882,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 69_usize] = [
+pub const FORMERS: [(&str, Former); 72_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -918,6 +931,9 @@ pub const FORMERS: [(&str, Former); 69_usize] = [
     ("static_abstraction", Former::StaticAbstraction),
     ("parenthesized_type", Former::ParenthesizedType),
     ("path_type", Former::PathType),
+    ("equivalence_type", Former::RelationType),
+    ("isomorphism_type", Former::RelationType),
+    ("universe_flow_type", Former::RelationType),
     ("capability_type", Former::CapabilityType),
     ("at_type", Former::AtType),
     ("handle_expression", Former::Scope),

@@ -18,6 +18,9 @@
 // Reversal: a cell between two distinct points, whose words spell neither
 // endpoint, would need its operations' path type written again.
 
+// The quasi-inverse made bi-invertible, which the equivalence is.
+import "./equivalence.gandr" ;
+
 /// The circle: one point and a loop at it, bound as `loop : Path(Circle,
 /// Base, Base)`.
 data Circle : Type {
@@ -153,11 +156,21 @@ def rec retr(n : Int) -> -F Path(Int, wind(spin(n)), n) {
   }
 }
 
-/// The loops at the point and the presented integers are equivalent, by
-/// `wind` and `spin` with the two round trips at a variable: the book's
-/// `Path(Circle, Base, Base) ≃ Int`, with nothing owed. The later entries read
-/// `to` and `back`, so the record is their dependent pairs nested to the
-/// right, and its value nests the same way.
+/// The loops at the point and the presented integers are a quasi-inverse, by
+/// `wind` and `spin` with the two round trips at a variable, nothing owed.
 @[ checks ]
-def winding : #{to : +U (Path(Circle, Base, Base) -> -F Int), back : +U (Int -> -F Path(Circle, Base, Base)), sect : (p : Path(Circle, Base, Base)) => Path(Path(Circle, Base, Base), back(to(p)), p), retr : (n : Int) => Path(Int, to(back(n)), n)} ;
-def winding = #{wind, #{spin, #{sect, retr}}} ;
+def windingIso : Path(Circle, Base, Base) ≅ Int ;
+def windingIso = #{wind, #{spin, #{sect, retr}}} ;
+
+/// The loops at the point and the presented integers are equivalent: the
+/// book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made
+/// bi-invertible, `spin` serving as both inverses. A value is a record, never
+/// a call, so the equivalence is written as the record `isoToEquiv` builds.
+@[ checks ]
+def winding : Path(Circle, Base, Base) ≃ Int ;
+def winding = #{wind, #{#{spin, sect}, #{spin, retr}}} ;
+
+/// The equivalence is `isoToEquiv` at the quasi-inverse, by conversion.
+@[ checks ]
+def windingByIso : Path(Path(Circle, Base, Base) ≃ Int, winding, isoToEquiv(Path(Circle, Base, Base), Int, windingIso)) ;
+def windingByIso = here(winding) ;

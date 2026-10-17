@@ -1735,6 +1735,11 @@ mod tests
                 " ${1:computation}; \\}",
             ),
             ("def g :", "", " ${1:type};"),
+            ("def g : Integer ≃", "", " ${1:type};"),
+            ("def g : Integer <~>", "", " ${1:type};"),
+            ("def g : Integer ≅", "", " ${1:type};"),
+            ("def g : Integer ⇝", "", " ${1:type};"),
+            ("def g : Integer ~~>", "", " ${1:type};"),
             (
                 "def f(x: Nat) -> -F Nat {\n  case x {",
                 " }\n}",

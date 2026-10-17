@@ -12,12 +12,15 @@ use gandr_core_checker::Verdict;
 use gandr_core_checker::body;
 use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
+use gandr_core_term::CertificateEquality;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
+use gandr_core_term::equal_type_syntax;
+use gandr_core_term::identity::Relation;
 use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionRelation;
 use gandr_kernel_term::DeBruijnIndex;
@@ -1372,5 +1375,128 @@ fn a_move_out_of_shape_is_refused()
             Some(FragmentBoundary::Unannotated),
         ],
         "an unknown move, a bare send, a send of two, a label that is a call and a named motive"
+    );
+}
+
+/// Each relation between types lowers to the type it abbreviates, in its
+/// glyph and its ASCII alias alike: the quasi-inverse and the bi-invertible
+/// map to the records written out, the flow to the flow at the universe. The
+/// written relation records which one it is, for the printer; the same type
+/// written out records nothing. The type is located at the relation as
+/// written, and what the lowering minted below it as the relation's
+/// insertion: the source wrote neither the record's fields nor the universe.
+#[test]
+fn a_relation_lowers_to_the_type_it_abbreviates()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def isoGlyph : Bool ≅ Integer;\n",
+            "def isoAlias : Iso(Bool, Integer);\n",
+            "def isoRecord : #{to : +U (Bool -> -F Integer), back : +U (Integer -> -F Bool), sect : (a : Bool) => Path(Bool, back(to(a)), a), retr : (b : Integer) => Path(Integer, to(back(b)), b)};\n",
+            "def equivGlyph : Bool ≃ Integer;\n",
+            "def equivAlias : Bool <~> Integer;\n",
+            "def equivRecord : #{to : +U (Bool -> -F Integer), linv : #{g : +U (Integer -> -F Bool), sect : (a : Bool) => Path(Bool, g(to(a)), a)}, rinv : #{h : +U (Integer -> -F Bool), retr : (b : Integer) => Path(Integer, to(h(b)), b)}};\n",
+            "def flowGlyph : Bool ⇝ Integer;\n",
+            "def flowAlias : Bool ~~> Integer;\n",
+            "def flowRecord : Flow(Type, Bool, Integer);\n",
+        )),
+        &mut arena,
+    );
+    let declared = |name: &str| match outcome_of(&module, name.into()) {
+        DeclarationOutcome::Uncompleted { declared_type } => declared_type,
+        other @ (DeclarationOutcome::Completed { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` is a signature: {other:?}"),
+    };
+    for (relation, former) in [
+        (Relation::Isomorphism, "iso"),
+        (Relation::Equivalence, "equiv"),
+        (Relation::Flow, "flow"),
+    ] {
+        let written = declared(&format!("{former}Record"));
+        for spelling in ["Glyph", "Alias"] {
+            let id = declared(&format!("{former}{spelling}"));
+            assert_eq!(
+                equal_type_syntax(&arena, id, written),
+                CertificateEquality::Equal,
+                "`{former}{spelling}` lowers to the type it abbreviates"
+            );
+            assert!(
+                module.origins().relations().contains(&(id, relation)),
+                "`{former}{spelling}` records its relation"
+            );
+            let below = match arena.value_type(id) {
+                Some(
+                    &(ValueType::Sigma { first, .. } | ValueType::Flow { carrier: first, .. }),
+                ) => first,
+                other => panic!("`{former}{spelling}` is a record or a flow: {other:?}"),
+            };
+            assert_eq!(
+                [id, below].map(|node| match module.origins().value_type(node) {
+                    Maybe::Present(origin) => Some(origin.provenance()),
+                    Maybe::Absent(_) => None,
+                }),
+                [
+                    Some(Provenance::Written),
+                    Some(Provenance::Inserted(Insertion::Relation))
+                ],
+                "`{former}{spelling}` is written, and what it abbreviates inserted"
+            );
+        }
+        assert!(
+            module
+                .origins()
+                .relations()
+                .iter()
+                .all(|&(id, _)| id != written),
+            "`{former}Record` is written out and records nothing"
+        );
+    }
+    let report = judged(&module, &mut arena);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Owed(_))),
+        "every relation forms a type the signature owes: {report:?}"
+    );
+}
+
+/// A pattern at a relation splits the record the relation abbreviates:
+/// positionally, nested as the equivalence's inverses nest, and by label,
+/// each part bound at its own type. A label read at the wrong inverse binds
+/// that inverse, and the checker refuses the type it answers.
+#[test]
+fn a_pattern_at_a_relation_splits_its_record()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { case i { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
+            "def forwardOf(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { case e { #{t, #{g, s}, #{h, r}} => return t } }\n",
+            "def leftOf(e : Bool <~> Integer) -> -F +U (Integer -> -F Bool) { case e { #{.linv = #{.g = g, .sect = s}} => return g } }\n",
+            "def backOf(i : Iso(Bool, Integer)) -> -F +U (Integer -> -F Bool) { case i { #{.back = k} => return k } }\n",
+        )),
+        &mut arena,
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def misread(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { case e { #{.rinv = #{.h = h}} => return h } }\n",
+        ),
+        &mut arena,
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            report.judged(),
+            [judged] if matches!(judged.verdict(), Verdict::Refused(_))
+        ),
+        "the right inverse runs from `Integer` to `Bool`: {report:?}"
     );
 }

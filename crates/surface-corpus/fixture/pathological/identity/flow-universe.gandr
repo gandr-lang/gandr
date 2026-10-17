@@ -1,0 +1,14 @@
+// A flow between types whose written endpoints disagree with its translator:
+// `A ⇝ B` abbreviates `Flow(Type, A, B)`, and `forward` introduces it at the
+// translator's own domain and codomain, so the relation written backwards is
+// refused where the flow is checked against it.
+
+// The old and the new schema and the translator between them.
+import "../../model/identity/flow-migration.gandr" ;
+
+/// The relation written from the new schema to the old over the translator
+/// from the old to the new, refused: its endpoints are the translator's
+/// reversed (#514).
+@[ refuses("TypeMismatch") ]
+def unshift : Schema.New ⇝ Schema.Old ;
+def unshift = forward(Schema.toNew) ;

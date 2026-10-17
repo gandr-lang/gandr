@@ -52,14 +52,37 @@
 //!
 //! # Built-in surface
 //!
-//! `built_in` is the gandr surface: 22 precedence groups and 20 tighter-than
+//! `built_in` is the gandr surface: 25 precedence groups and 23 tighter-than
 //! edges, then the term forms, the type-and-shell forms and the circuit forms.
 //! The groups form one expression chain, one pattern chain and one type chain
 //! whose union, intersection and lazy-product bands are mutually incomparable
-//! between the sum and arrow bands; the item group stands apart from all three.
-//! Its pinned shape is 2537 molds, 78 labels projected to more than one mold,
-//! and the fingerprint `0x4012_7ae2_0573_af0c`; a change to any form, group or
-//! edge moves the fingerprint, and the test pinning it states the change.
+//! between the sum band and the relations' band below them; the item group
+//! stands apart from all three. Its pinned shape is 2973 molds, 85 labels
+//! projected to more than one mold, and the fingerprint
+//! `0xee6f_487a_216c_e17c`; a change to any form, group or edge moves the
+//! fingerprint, and the test pinning it states the change.
+//!
+//! ### Relations between types are one infix band
+//!
+//! `A ≃ B`, `A ≅ B` and `A ⇝ B` — the equivalence, the quasi-inverse and the
+//! flow between two types — are three binary forms in one band,
+//! `type.equivalence`, nested to the right, below the union, intersection and
+//! lazy-product bands and above the arrows. Each glyph is the one tile of its
+//! form. The labeler offers the ASCII spellings `<~>` and `~~>` as the tiles
+//! `≃` and `⇝`, so an alias molds the glyph's form and prints back as the
+//! glyph. `≅` has no ASCII infix spelling: `Iso(A, B)` is its spelling as an
+//! application, a type head the lowering resolves as it resolves `Flow`.
+//!
+//! - Alternatives: the relations as type applications alone, `Iso(A, B)` and
+//!   `Flow(Type, A, B)`, which hide the relation in a head and an argument; an
+//!   ASCII tile per alias, a second mold per form whose spelling the printer
+//!   would have to choose; the arrows' band, where `A ≃ B -> C` would nest the
+//!   arrow into the relation.
+//! - Reversal: a relation that takes a third operand, a universe or a level, is
+//!   written as an application.
+//!
+//! The band moved the pinned shape from 2970 molds and the fingerprint
+//! `0x5b42_f41a_90bb_98d8`.
 //!
 //! ### Lists close on an optional separator
 //!
@@ -230,6 +253,7 @@ const PREC_GROUPS: &[(&str, Assoc)] = &[
     ("type.arrow", Assoc::Right),
     ("expression.cons", Assoc::Right),
     ("pattern.cons", Assoc::Right),
+    ("type.equivalence", Assoc::Right),
 ];
 
 /// The tighter-than edges between named groups, in the order the DAG lists
@@ -237,8 +261,12 @@ const PREC_GROUPS: &[(&str, Assoc)] = &[
 ///
 /// The word cons `∷` sits between the additive and comparison bands of the
 /// expression chain and between the atom and `as` bands of the pattern chain,
-/// right-associative in both, so `g ∷ h ∷ p` is `g ∷ (h ∷ p)`. Its two groups
-/// come last in [`PREC_GROUPS`], so every earlier group keeps its id.
+/// right-associative in both, so `g ∷ h ∷ p` is `g ∷ (h ∷ p)`. The relations
+/// between two types, `≃`, `≅` and `⇝`, sit below the union, intersection and
+/// lazy-product bands and above the arrows: `A * B ≃ C` relates the product,
+/// and `A ≃ B -> C` is an arrow out of the relation. Each group
+/// added after the first chains comes last in [`PREC_GROUPS`], so every
+/// earlier group keeps its id.
 const PREC_EDGES: &[(&str, &str)] = &[
     ("expression.atom", "expression.postfix"),
     ("expression.postfix", "expression.unary"),
@@ -257,11 +285,12 @@ const PREC_EDGES: &[(&str, &str)] = &[
     ("type.sum", "type.union"),
     ("type.sum", "type.intersection"),
     ("type.sum", "type.lazy_product"),
-    ("type.union", "type.arrow"),
-    ("type.intersection", "type.arrow"),
-    ("type.lazy_product", "type.arrow"),
+    ("type.union", "type.equivalence"),
+    ("type.intersection", "type.equivalence"),
+    ("type.lazy_product", "type.equivalence"),
     ("expression.cons", "expression.cmp"),
     ("pattern.cons", "pattern.as"),
+    ("type.equivalence", "type.arrow"),
 ];
 
 /// The named node kinds of the surface's tree-sitter grammar, ascending.
@@ -415,11 +444,13 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "cons_pattern",
     "continue_expression",
     "data_declaration",
+    "equivalence_type",
     "for_expression",
     "glob_expression",
     "handle_expression",
     "hold_statement",
     "import_declaration",
+    "isomorphism_type",
     "circuit_declaration",
     "labelled_sum_expression",
     "labelled_sum_pattern",
@@ -444,6 +475,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "type_path",
     "unknown_type",
     "universe_type",
+    "universe_flow_type",
     "value_function_type",
     "while_expression",
     // reserved / folded / diverged member surfaces (adaptation surfaces)

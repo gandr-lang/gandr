@@ -116,6 +116,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::constructor_classifier;
 use gandr_core_term::equal_type_reading;
+use gandr_core_term::identity::Relation;
 use gandr_core_term::instantiate_value_type_under;
 use gandr_core_term::pattern::Pattern;
 use gandr_core_term::pattern::PatternId;
@@ -572,6 +573,9 @@ struct Naming
     /// Each dependent arrow with where the name it binds is written,
     /// ascending by id.
     arrows: Vec<(CompTypeId, ByteSpan)>,
+    /// Each type written as a relation between types, with the relation,
+    /// ascending by id.
+    relations: Vec<(ValueTypeId, Relation)>,
     /// Each written use of a variable with where a name for its binder is
     /// written: first where the origin table records the binder a use
     /// resolves to, then the use itself, which a type's variables have and no
@@ -586,8 +590,8 @@ impl Naming
     /// # Specification
     /// - requires: `module` was lowered from `source`.
     /// - ensures: the source text, each value declaration's roots by its
-    ///   constant, the origin table's binders and dependent arrows, and its
-    ///   bindings then its written values as uses.
+    ///   constant, the origin table's binders, dependent arrows and relations,
+    ///   and its bindings then its written values as uses.
     /// - provides: the input of [`scopes`], kept for an answer.
     /// - fails: never.
     /// - panics: none.
@@ -652,11 +656,14 @@ impl Naming
             .iter()
             .map(|&(arrow, origin)| (arrow, origin.span()))
             .collect();
+        let mut relations = origins.relations().to_vec();
+        relations.sort_by_key(|&(related, _)| related);
         Self {
             text: String::from(<&str>::from(source)),
             roots,
             openers,
             arrows,
+            relations,
             uses,
         }
     }
@@ -674,6 +681,18 @@ impl Naming
             .get(usize::from(span.start()) .. usize::from(span.end()))
             .map(String::from)
     }
+}
+
+/// What a reprint's own lowering keeps beside the types it read, at their
+/// images in the table's arena: the name each dependent arrow binds and the
+/// relation each type was written as.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Read
+{
+    /// Each dependent arrow's image with the name it binds.
+    arrows: Vec<(CompTypeId, String)>,
+    /// Each related type's image with the relation it was written as.
+    relations: Vec<(ValueTypeId, Relation)>,
 }
 
 /// What the table keeps for a declaration: its type node, or the lowering's
@@ -1235,9 +1254,15 @@ impl TypeTable
             };
             // A model's derived type is located at the signature its header
             // names, which writes the name and nothing the type holds, so no
-            // term in it answers for those bytes (#477).
+            // term in it answers for those bytes (#477); nor does a term of
+            // the record a relation between types abbreviates, located at the
+            // relation, which writes the two types and nothing the record
+            // holds.
             if let Maybe::Present(origin) = origin
-                && origin.provenance() != Provenance::Inserted(Insertion::Model)
+                && !matches!(
+                    origin.provenance(),
+                    Provenance::Inserted(Insertion::Model | Insertion::Relation)
+                )
             {
                 let (subject, last) = term_subject(&arena, (first, last));
                 entries.push(Entry {
@@ -1823,13 +1848,14 @@ impl TypeTable
         form: Form,
     ) -> Maybe<Presentation, typing::Absent>
     {
-        self.spell_in(&self.arena, node, context, &[], page, form)
+        self.spell_in(&self.arena, node, context, &Read::default(), page, form)
     }
 
     /// `node` of `arena` spelled as [`Self::spell`] spells a node of the
     /// table's own arena: `arena` holds the table's nodes at their ids, so the
-    /// constants and constructors are named alike, and each dependent arrow
-    /// `read` names past them binds the name it holds.
+    /// constants and constructors are named alike, each dependent arrow
+    /// `read` names past them binds the name it holds, and each type `read`
+    /// relates spells as the relation it was written as.
     ///
     /// # Specification
     /// trivial.
@@ -1838,7 +1864,7 @@ impl TypeTable
         arena: &CoreArena,
         node: TypeNode,
         context: &Context,
-        read: &[(CompTypeId, String)],
+        read: &Read,
         page: PageWidth,
         form: Form,
     ) -> Maybe<Presentation, typing::Absent>
@@ -1869,15 +1895,25 @@ impl TypeTable
                     .map(|name| (arrow, Name::from(name)))
             })
             .chain(
-                read.iter()
+                read.arrows
+                    .iter()
                     .map(|&(arrow, ref name)| (arrow, Name::from(name.as_str()))),
             )
             .collect();
         arrows.sort_by_key(|&(arrow, _)| arrow);
+        let mut relations: Vec<(ValueTypeId, Relation)> = self
+            .naming
+            .relations
+            .iter()
+            .chain(&read.relations)
+            .copied()
+            .collect();
+        relations.sort_by_key(|&(related, _)| related);
         let constructors = self.families.naming(&names);
         let printer = CoreSource::new(arena, &names)
             .naming(&constructors)
             .naming_arrows(&arrows)
+            .relating(&relations)
             .within(&binders)
             .scoped(&regions);
         present_type(&printer, root(node), page, form)
@@ -2263,8 +2299,9 @@ impl TypeTable
             .collect();
         let mut lowered: BTreeMap<String, Result<ValueTypeId, String>> = BTreeMap::new();
         // The names the lowering keeps beside the read types' dependent
-        // arrows, at the arrows' images, so a reprint binds what was written.
-        let mut read_arrows: Vec<(CompTypeId, String)> = Vec::new();
+        // arrows, and the relations it records for the types written as one,
+        // at their images, so a reprint binds and spells what was written.
+        let mut read_back = Read::default();
         match lower_unit_source(
             grammar,
             SourceText::from(augmented.as_str()),
@@ -2301,7 +2338,12 @@ impl TypeTable
                         importer.comp_type_image(arrow),
                         augmented.get(usize::from(span.start()) .. usize::from(span.end())),
                     ) {
-                        read_arrows.push((image, String::from(name)));
+                        read_back.arrows.push((image, String::from(name)));
+                    }
+                }
+                for &(related, relation) in module.origins().relations() {
+                    if let Some(image) = importer.value_type_image(related) {
+                        read_back.relations.push((image, relation));
                     }
                 }
             },
@@ -2417,7 +2459,7 @@ impl TypeTable
                                 },
                             };
                             let context = under.map(|under| under.context).unwrap_or_default();
-                            match self.spell_in(&arena, again, &context, &read_arrows, page, form) {
+                            match self.spell_in(&arena, again, &context, &read_back, page, form) {
                                 Maybe::Present(again) => Maybe::Present(again.to_string()),
                                 Maybe::Absent(_) => Maybe::Absent(reprinted::Absent::Unspelled),
                             }

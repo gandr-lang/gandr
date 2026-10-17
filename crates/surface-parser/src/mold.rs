@@ -903,10 +903,10 @@ const KEYWORDS: &[&str] = &[
 ///
 ///
 /// # Adequacy
-/// - hypothesis: L3 — every lexeme menu, reserved and ordinary words, and
-///   canonical versus dialect shell openers expose exact label sequences.
-///   Dropping a generic alternative, widening a keyword or losing the source
-///   spelling changes the menu.
+/// - hypothesis: L3 — every lexeme menu, reserved and ordinary words, canonical
+///   versus dialect shell openers and the relation aliases `<~>` and `~~>`
+///   expose exact label sequences. Dropping a generic alternative, widening a
+///   keyword or losing the source spelling changes the menu.
 /// - witness: `mold::tests::keyword_and_identifier_share_a_word_menu`
 /// - witness: `mold::tests::literal_and_shell_menus_are_exact`
 #[inline]
@@ -982,6 +982,14 @@ pub fn candidate_labels<'text>(
             }
             else if text.starts_with("$!") && text.ends_with('{') {
                 labels.push(CandidateLabel::from("command_substitution_start"));
+            }
+            // The ASCII spellings of two relations between types offer the
+            // glyph's tile, so the alias molds the glyph's one form.
+            else if text == "<~>" {
+                labels.push(CandidateLabel::from("≃"));
+            }
+            else if text == "~~>" {
+                labels.push(CandidateLabel::from("⇝"));
             }
         },
         Lexeme::Space | Lexeme::Unknown => {},
@@ -3746,6 +3754,9 @@ mod tests
                 "command_substitution_start",
             ]),
             (Lexeme::Punct, "#!{", &["#!{", "#!{"]),
+            (Lexeme::Punct, "<~>", &["<~>", "≃"]),
+            (Lexeme::Punct, "~~>", &["~~>", "⇝"]),
+            (Lexeme::Punct, "≃", &["≃"]),
             (Lexeme::Space, " ", &[]),
             (Lexeme::Unknown, "~", &[]),
         ];

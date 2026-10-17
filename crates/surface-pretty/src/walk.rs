@@ -193,6 +193,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
+use gandr_core_term::identity::Relation;
 use gandr_core_term::session::ActionKind;
 use gandr_core_term::session::PayloadSlot;
 use gandr_core_term::session::Protocol;
@@ -223,6 +224,21 @@ use crate::former::Placement;
 use crate::former::Source;
 use crate::former::Unreadable;
 use crate::former::Unspelled;
+
+/// The glyph written between a relation's operands, after the space before
+/// it: the equivalence `≃`, the quasi-inverse `≅` and the flow between types
+/// `⇝`, one glyph per former, so the ASCII aliases never print.
+///
+/// # Specification
+/// trivial.
+const fn relation_glyph(relation: Relation) -> Glyphs<'static>
+{
+    Glyphs(match relation {
+        Relation::Isomorphism => " ≅",
+        Relation::Equivalence => " ≃",
+        Relation::Flow => " ⇝",
+    })
+}
 
 quenchant_shape::reason_enum! {
     /// Why a universe has no surface spelling.
@@ -340,7 +356,7 @@ enum Kind
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
-        | Former::Path { .. } | Former::Flow { .. } | Former::Data { .. } | Former::RunType(_)),
+        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Data { .. } | Former::RunType(_)),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -381,6 +397,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Capability { .. }
         | Former::Path { .. }
         | Former::Flow { .. }
+        | Former::Relation { .. }
         | Former::Data { .. }
         | Former::RunType(_) => Kind::ValueType,
         Former::Returner(_)
@@ -944,6 +961,16 @@ where
             left,
             right,
         } => Vec::from([value_type(carrier), value(left), value(right)]),
+        Former::Relation {
+            relation: Relation::Flow,
+            left,
+            right,
+        } => Vec::from([value(left), value(right)]),
+        Former::Relation {
+            relation: Relation::Isomorphism | Relation::Equivalence,
+            left,
+            right,
+        } => Vec::from([value_type(left), value_type(right)]),
         Former::ThunkType(child) | Former::QuoteComputation(child) => Vec::from([comp_type(child)]),
         Former::List(child)
         | Former::Returner(child)
@@ -1158,10 +1185,10 @@ fn below(
 /// A piece stands bare in a slot that admits its binding and is parenthesized
 /// in one that admits only tighter pieces. The order is the grammar's: an
 /// atom, then the bridges and the keyword-led computations, then a word's
-/// cons, then the infix `*`, `+` and `&` the sugared form writes, then `->`
-/// and `=>`, then a bind's
-/// statements. Every arity-shaped former is an atom, its entries between its
-/// own delimiters.
+/// cons, then the infix `*`, `+` and `&` the sugared form writes, then the
+/// relations `≃`, `≅` and `⇝` between types, then `->` and `=>`, then a
+/// bind's statements. Every arity-shaped former is an atom, its entries
+/// between its own delimiters.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Binding
 {
@@ -1182,6 +1209,8 @@ enum Binding
     Sum,
     /// `C & D`.
     Lazy,
+    /// `A ≃ B`, `A ≅ B` or `A ⇝ B`, nested to the right.
+    Relation,
     /// `A -> C`, `(x : A) -> C`, `A => B`, or the static abstraction `\a. v`,
     /// whose body runs as far right as an arrow's codomain.
     Arrow,
@@ -3000,6 +3029,7 @@ impl Walk<'_, '_>
                 | Former::Data { .. }
                 | Former::Constructor { .. }
                 | Former::Flow { .. }
+                | Former::Relation { .. }
                 | Former::Recorded { .. }
                 | Former::Returned(_)
                 | Former::Primitive { .. }
@@ -3507,6 +3537,7 @@ impl Walk<'_, '_>
             | Former::Run(_) => Some(Join::Prefix(Prefix::Run)),
             | Former::Path { .. }
             | Former::Flow { .. }
+            | Former::Relation { .. }
             | Former::Data { .. }
             | Former::Constructor { .. }
             | Former::Recorded { .. }
@@ -4302,6 +4333,14 @@ impl Walk<'_, '_>
             Former::Flow { .. } => {
                 let _ = parts.text("Flow").arguments(Arity(3_usize));
                 Binding::Atom
+            },
+            Former::Relation { relation, .. } => {
+                let _ = parts
+                    .piece(Binding::Lazy)
+                    .text(relation_glyph(relation).0)
+                    .part(Part::Space)
+                    .piece(Binding::Relation);
+                Binding::Relation
             },
             Former::Recorded { moves, .. } => {
                 let _ = parts.text("recorded(");

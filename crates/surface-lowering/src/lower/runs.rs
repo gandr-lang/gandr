@@ -378,6 +378,7 @@ fn operand_of(
         | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::PathType
+        | Former::RelationType
         | Former::Declaration
         | Former::AttributeBlock
         | Former::Import

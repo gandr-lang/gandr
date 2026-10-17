@@ -70,7 +70,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow", "item.singleton", "expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 53 && rules.iter().take(32).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(32).take(3).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(35).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow", "item.singleton", "expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 56 && rules.iter().take(35).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(35).take(3).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(38).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -100,7 +100,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 32 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 35 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -115,6 +115,7 @@ fn add_type_rules(
     let type_union = precs.prec(PrecName("type.union"))?;
     let type_intersection = precs.prec(PrecName("type.intersection"))?;
     let type_lazy_product = precs.prec(PrecName("type.lazy_product"))?;
+    let type_equivalence = precs.prec(PrecName("type.equivalence"))?;
     let type_arrow = precs.prec(PrecName("type.arrow"))?;
 
     rules.push(rule(
@@ -201,6 +202,30 @@ fn add_type_rules(
         ty,
         type_lazy_product,
         TileLabel("&"),
+    ));
+    // The three relations between two types, each infix in one band between
+    // `&` and the arrows, nested to the right: the coherent equivalence `A ≃
+    // B`, the quasi-inverse `A ≅ B` and the directed `A ⇝ B`, a flow between
+    // types. Each glyph is the one tile its form molds; the labeler offers
+    // the ASCII spellings `<~>` and `~~>` as the tiles `≃` and `⇝`, so an
+    // alias molds the same form.
+    rules.push(binary_infix_rule(
+        RuleName("equivalence_type"),
+        ty,
+        type_equivalence,
+        TileLabel("≃"),
+    ));
+    rules.push(binary_infix_rule(
+        RuleName("isomorphism_type"),
+        ty,
+        type_equivalence,
+        TileLabel("≅"),
+    ));
+    rules.push(binary_infix_rule(
+        RuleName("universe_flow_type"),
+        ty,
+        type_equivalence,
+        TileLabel("⇝"),
     ));
     rules.push(binary_infix_rule(
         RuleName("sum_type"),

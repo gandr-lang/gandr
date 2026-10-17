@@ -202,7 +202,10 @@ const OPERATORS: &[&str] = &[
     "|&",
     "||",
     "~>",
+    "⇝",
     "∷",
+    "≃",
+    "≅",
 ];
 
 /// The primitive type spellings, and the universe.

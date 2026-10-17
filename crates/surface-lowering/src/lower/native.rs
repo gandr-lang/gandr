@@ -332,6 +332,8 @@ use super::arity::Dependent;
 use super::closed;
 use super::exhausted;
 use super::exits;
+use super::identity::Layout;
+use super::identity::related;
 use super::lowered;
 use super::parse_literal;
 use super::recursion;
@@ -1222,6 +1224,22 @@ enum Head
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Punned(bool);
 
+/// Whether the places of a dependent record a pattern splits are written,
+/// each with its type, or are the fields of the record a relation between
+/// types abbreviates, which no syntax states.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Places
+{
+    /// The record is written, and each entry states its type.
+    Written,
+    /// The record is a relation's, or one nested in it: its fields' types are
+    /// the relation's.
+    Related(Layout),
+}
+
 /// Whether a word's letter is a loop's inverse rather than the loop.
 ///
 /// # Specification
@@ -1259,6 +1277,9 @@ struct Queued
     slot: PatternAt,
     /// The type its position states, when the source wrote one.
     stated: Maybe<NodeIndex, binder_type::Absent>,
+    /// The record of a relation between types its position holds, when no
+    /// syntax states it: a field of the record an equivalence abbreviates.
+    related: Maybe<Layout, related::Absent>,
     /// Whether `at` is a punned label.
     punned: Punned,
 }
@@ -3178,6 +3199,7 @@ impl<'source> Lowerer<'_, 'source>
             at: root,
             slot: first,
             stated,
+            related: Maybe::Absent(related::Absent::Otherwise),
             punned: Punned(false),
         }]);
         let mut pieces = Pieces::new();
@@ -3374,13 +3396,13 @@ impl<'source> Lowerer<'_, 'source>
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
             closed(here, &mut cursor, TileName::PAREN_OPEN)?;
             let entries = Self::tuple_entries(here, &mut cursor)?;
-            return self.components(here, queued.stated, &entries, patterns, work);
+            return self.components(here, queued, &entries, patterns, work);
         }
         if name == FormName::TELESCOPE_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
             closed(here, &mut cursor, TileName::RECORD)?;
             let entries = self.pattern_entries(here, &mut cursor)?;
-            return self.components(here, queued.stated, &entries, patterns, work);
+            return self.components(here, queued, &entries, patterns, work);
         }
         if name == FormName::LABELLED_SUM_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
@@ -3442,6 +3464,7 @@ impl<'source> Lowerer<'_, 'source>
                 at: field,
                 slot: UNWRITTEN,
                 stated: Maybe::Absent(binder_type::Absent::Untyped),
+                related: Maybe::Absent(related::Absent::Otherwise),
                 punned: Punned(false),
             })
             .collect();
@@ -3532,6 +3555,7 @@ impl<'source> Lowerer<'_, 'source>
             at: rest,
             slot: UNWRITTEN,
             stated: Maybe::Absent(binder_type::Absent::Untyped),
+            related: Maybe::Absent(related::Absent::Otherwise),
             punned: Punned(false),
         }];
 
@@ -3543,18 +3567,22 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The tuple or record shape of a telescope or tuple pattern's
-    /// `entries`, each component queued with the type `stated` writes for
+    /// `entries`, each component queued with the type `queued` states for
     /// it.
     ///
     /// # Specification
-    /// - requires: `entries` are the entries of the pattern at `here`.
+    /// - requires: `entries` are the entries of the pattern `queued` holds at
+    ///   `here`.
     /// - ensures: at a scrutinee written with a dependent record, labelled
     ///   entries and positional ones of its arity are its nested pairs, as
-    ///   [`Self::dependent_components`] reads them; otherwise positional
-    ///   entries, in index order, make a tuple and labelled ones a record of
-    ///   their labels; each component queued with the positional type of the
-    ///   same place, or the labelled type of the same label, of the telescope
-    ///   type `stated` writes, when it writes one.
+    ///   [`Self::dependent_components`] reads them; at one written as an
+    ///   equivalence or a quasi-inverse, as [`Self::stated_relation`] reads it,
+    ///   or at a record nested in one, so are those of the record it
+    ///   abbreviates, each component unstated; otherwise positional entries, in
+    ///   index order, make a tuple and labelled ones a record of their labels;
+    ///   each component queued with the positional type of the same place, or
+    ///   the labelled type of the same label, of the telescope type `queued`
+    ///   states, when it states one.
     /// - fails: the entries' arrangement refusals; the stated type's own
     ///   malformation; the unresolved-name refusal for a label the dependent
     ///   record lacks.
@@ -3565,19 +3593,24 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — positional, reordered and labelled telescope
-    ///   patterns, a tuple pattern, and patterns at a dependent record.
+    ///   patterns, a tuple pattern, patterns at a dependent record, and
+    ///   patterns at a relation.
     /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
     /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+    /// - witness: `lower::identity::tests::a_pattern_at_a_relation_splits_its_record`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Tuple { .. } | Matcher::Record { .. })))]
     fn components(
         &mut self,
         here: Site,
-        stated: Maybe<NodeIndex, binder_type::Absent>,
+        queued: Queued,
         entries: &[arity::Entry<'source>],
         patterns: &mut Written,
         work: &mut Vec<Queued>,
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
+        let Queued {
+            stated, related, ..
+        } = queued;
         let form = match stated {
             Maybe::Present(node) => {
                 self.stated_form(here, node, Former::TelescopeType, arity::Thunked(false))?
@@ -3596,7 +3629,45 @@ impl<'source> Lowerer<'_, 'source>
                 arity::Arranged::Labelled(_) => true,
             }
         {
-            return Self::dependent_components(here, typed, links, arranged, patterns, work);
+            return Self::dependent_components(
+                here,
+                typed,
+                links,
+                arranged,
+                Places::Written,
+                patterns,
+                work,
+            );
+        }
+        let layout = match (related, stated, &form) {
+            (Maybe::Present(layout), ..) => Maybe::Present(layout),
+            (Maybe::Absent(_), Maybe::Present(node), &Maybe::Absent(_)) => {
+                self.stated_relation(node)
+            },
+            (Maybe::Absent(reason), ..) => Maybe::Absent(reason),
+        };
+        if let Maybe::Present(layout) = layout
+            && match arranged {
+                arity::Arranged::Positional(ref entries) => entries.len() == layout.fields().len(),
+                arity::Arranged::Labelled(_) => true,
+            }
+        {
+            let typed: Vec<arity::Entry<'source>> = layout
+                .fields()
+                .map(|field| arity::Entry {
+                    key: arity::Key::Label(field, here.at),
+                    held: arity::Held::Operand(here.at),
+                })
+                .collect();
+            return Self::dependent_components(
+                here,
+                &typed,
+                layout.links(),
+                arranged,
+                Places::Related(layout),
+                patterns,
+                work,
+            );
         }
         let typed = form.map(|(_node, typed)| typed);
         let untyped = Maybe::Absent(binder_type::Absent::Untyped);
@@ -3604,6 +3675,7 @@ impl<'source> Lowerer<'_, 'source>
             at: entry.held.at(),
             slot: UNWRITTEN,
             stated,
+            related: Maybe::Absent(related::Absent::Otherwise),
             punned: Punned(matches!(entry.held, arity::Held::Punned(_))),
         };
         match arranged {
@@ -3665,13 +3737,15 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `typed` are the entries of the dependent record the
     ///   scrutinee's position states, `links` whether each but the last binds
-    ///   the ones after it, and `arranged` the pattern's entries: positional
-    ///   ones of the record's arity, or labelled ones.
+    ///   the ones after it, `arranged` the pattern's entries: positional ones
+    ///   of the record's arity, or labelled ones, and `places` whether the
+    ///   record's entries are written.
     /// - ensures: one tuple of two per link, the outermost returned and each
     ///   inner one a part after its parent: the link's entry, then the next
     ///   link or the last entry; a split of a link that binds is dependent; a
     ///   place no entry names is a wildcard; each written entry queued with its
-    ///   place's type, in written order.
+    ///   place's written type, or unstated at a relation's record, in written
+    ///   order.
     /// - fails: the unresolved-name refusal for a label the record lacks.
     /// - panics: none.
     ///
@@ -3680,15 +3754,17 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a positional and a labelled pattern at a dependent
-    ///   record of two, and a labelled one at a record of three naming two of
-    ///   its labels.
+    ///   record of two, a labelled one at a record of three naming two of its
+    ///   labels, and patterns at a relation's record.
     /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
+    /// - witness: `lower::identity::tests::a_pattern_at_a_relation_splits_its_record`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Tuple { fields, .. } if fields.end.saturating_sub(fields.start) == 2_usize)))]
     fn dependent_components(
         here: Site,
         typed: &[arity::Entry<'source>],
         links: &[Dependent],
         arranged: arity::Arranged<'source>,
+        places: Places,
         patterns: &mut Written,
         work: &mut Vec<Queued>,
     ) -> Result<Matcher, LoweringRefusal<'source>>
@@ -3726,11 +3802,18 @@ impl<'source> Lowerer<'_, 'source>
                 queued.push((written, Queued {
                     at: entry.held.at(),
                     slot,
-                    stated: typed
-                        .get(place)
-                        .map_or(Maybe::Absent(binder_type::Absent::Untyped), |component| {
+                    stated: match (places, typed.get(place)) {
+                        (Places::Written, Some(component)) => {
                             Maybe::Present(component.held.at().node)
-                        }),
+                        },
+                        (Places::Written, None) | (Places::Related(_), _) => {
+                            Maybe::Absent(binder_type::Absent::Untyped)
+                        },
+                    },
+                    related: match places {
+                        Places::Related(layout) => layout.inner(arity::Place(place)),
+                        Places::Written => Maybe::Absent(related::Absent::Otherwise),
+                    },
                     punned: Punned(matches!(entry.held, arity::Held::Punned(_))),
                 }));
             }
@@ -3840,6 +3923,7 @@ impl<'source> Lowerer<'_, 'source>
             at: payload,
             slot: UNWRITTEN,
             stated: Maybe::Present(entry.held.at().node),
+            related: Maybe::Absent(related::Absent::Otherwise),
             punned: Punned(false),
         }];
         let fields = allocated(patterns, work, &queued);

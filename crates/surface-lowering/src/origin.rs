@@ -104,6 +104,7 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::identity::Relation;
 use gandr_core_term::pattern::PatternId;
 use gandr_core_term::pattern::Patterns;
 use gandr_surface_syntax::ByteSpan;
@@ -148,8 +149,8 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the tag distinguishes force, thunk, returner, quote, decode,
-///   return, classifier, match, fixpoint, endpoint, identity, nested, unwind
-///   and model.
+///   return, classifier, match, fixpoint, endpoint, identity, nested, unwind,
+///   model and relation.
 /// - provides: the kind of an insertion recorded in an origin.
 /// - fails: not applicable to the tag itself.
 /// - panics: not applicable to the tag itself.
@@ -214,6 +215,11 @@ pub enum Insertion
     /// name: the source writes the name, never the type or the binders the
     /// type opens.
     Model,
+    /// A node of the record or the flow a relation between types abbreviates,
+    /// below the type itself, every one located at the relation: the source
+    /// writes `A ≃ B`, never the record's fields, the terms its round trips
+    /// read or the binders it opens.
+    Relation,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.
@@ -480,6 +486,9 @@ pub struct OriginTable
     /// Each written type head standing for a type minted elsewhere, which it
     /// adopts, with the head's origin, in the order lowered.
     stand_ins: Vec<(ValueTypeId, Origin)>,
+    /// Each relation written between two types, with the type it lowers to,
+    /// in the order lowered.
+    relations: Vec<(ValueTypeId, Relation)>,
 }
 
 /// Record one family's origin, keeping the vector ascending by id.
@@ -1529,6 +1538,44 @@ impl OriginTable
     pub fn stand_ins(&self) -> &[(ValueTypeId, Origin)]
     {
         &self.stand_ins
+    }
+
+    /// Record that `ty` is the type the relation `relation` was written as.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pair is appended, so [`Self::relations`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each of the three relations, written infix and as
+    ///   `Iso(A, B)`, answers at the type it lowers to.
+    /// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
+    #[spec(
+        captures: before = self.relations.len(),
+        ensures: self.relations.len() == before.saturating_add(1),
+    )]
+    #[inline]
+    pub fn record_relation(
+        &mut self,
+        ty: ValueTypeId,
+        relation: Relation,
+    )
+    {
+        self.relations.push((ty, relation));
+    }
+
+    /// Each relation written between two types, with the type it lowers to,
+    /// in the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn relations(&self) -> &[(ValueTypeId, Relation)]
+    {
+        &self.relations
     }
 }
 

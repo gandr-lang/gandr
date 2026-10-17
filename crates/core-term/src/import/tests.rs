@@ -50,6 +50,7 @@ fn an_imported_arrow_answers_its_image()
     let arrow = source.comp_type_pi(universe, returner);
     let thunk = source.value_type_thunk(arrow);
     let unreached = source.comp_type_returner(universe);
+    let unlisted = source.value_type_list(universe);
     let mut target = CoreArena::new();
     let _occupied = target.value_type_unit();
     let mut importer = TypeImporter::new(&source, &mut target);
@@ -72,6 +73,29 @@ fn an_imported_arrow_answers_its_image()
         importer.comp_type_image(unreached),
         None,
         "a node no import reached answers none"
+    );
+    assert_eq!(
+        importer.value_type_image(thunk),
+        Some(copied),
+        "the root answers its image"
+    );
+    let Some(&CompType::Pi { codomain, .. }) = importer.target.comp_type(image)
+    else {
+        panic!("a dependent arrow");
+    };
+    let Some(&CompType::Returner { result, .. }) = importer.target.comp_type(codomain)
+    else {
+        panic!("a returner");
+    };
+    assert_eq!(
+        importer.value_type_image(dependent),
+        Some(result),
+        "a value type inside the root answers its image"
+    );
+    assert_eq!(
+        importer.value_type_image(unlisted),
+        None,
+        "a value type no import reached answers none"
     );
 }
 
