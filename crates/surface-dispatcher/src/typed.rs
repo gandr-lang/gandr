@@ -96,6 +96,7 @@ use gandr_core_checker::TypeNode;
 use gandr_core_checker::Typings;
 use gandr_core_checker::level_of;
 use gandr_core_checker::type_module;
+use gandr_core_term::BinderDepth;
 use gandr_core_term::Binders;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
@@ -1088,8 +1089,12 @@ impl TypeTable
         // Each term's first and last type, when its last was kept, and the
         // declaration whose run first typed it: every typing in the order
         // kept, grouped by term with a sort, each group's first and last read
-        // off its ends.
-        let mut judged: Vec<(TermNode, usize, TypeNode, ConstantIndex)> = typed
+        // off its ends. A later typing under other binders than the first's —
+        // a result type's term judged again as a case's motive, under the
+        // case's binders — is no check of the term in its own context, and
+        // its type reads past the binders the term's standing names (#551),
+        // so it moves the term's place in the order but never its last type.
+        let mut judged: Vec<(TermNode, usize, TypeNode, BinderDepth, ConstantIndex)> = typed
             .iter()
             .flat_map(|(&constant, typings)| {
                 typings
@@ -1098,17 +1103,25 @@ impl TypeTable
                     .map(move |typing| (constant, typing))
             })
             .enumerate()
-            .map(|(finished, (constant, typing))| (typing.term, finished, typing.ty, constant))
+            .map(|(finished, (constant, typing))| {
+                (typing.term, finished, typing.ty, typing.depth, constant)
+            })
             .collect();
         judged.sort_unstable_by_key(|&(term, finished, ..)| (term, finished));
         let mut kept: Vec<(TermNode, TypeNode, TypeNode, usize, ConstantIndex)> = Vec::new();
-        for (term, finished, ty, constant) in judged {
+        let mut first_depth = BinderDepth::default();
+        for (term, finished, ty, depth, constant) in judged {
             match kept.last_mut() {
                 Some(&mut (held, _, ref mut last, ref mut at, _)) if held == term => {
-                    *last = ty;
+                    if depth == first_depth {
+                        *last = ty;
+                    }
                     *at = finished;
                 },
-                Some(_) | None => kept.push((term, ty, ty, finished, constant)),
+                Some(_) | None => {
+                    first_depth = depth;
+                    kept.push((term, ty, ty, finished, constant));
+                },
             }
         }
         let first_of = |term: TermNode| {
@@ -3417,6 +3430,29 @@ mod tests
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
             "the part names the pattern's own `a`, though the arm never uses it (#537)"
+        );
+    }
+
+    #[test]
+    fn a_term_re_formed_under_a_case_answers_at_its_own_type_551()
+    {
+        let source = SourceText::from(concat!(
+            "def made(a : Type, b : Type, i : #{to : +U (a -> -F b), back : +U (b -> -F a), ",
+            "sect : (x : a) => Path(a, back(to(x)), x), retr : (y : b) => Path(b, to(back(y)), y)}) ",
+            "-> -F #{to : +U (a -> -F b), linv : #{g : +U (b -> -F a), sect : (x : a) => Path(a, g(to(x)), x)}, ",
+            "rinv : #{h : +U (b -> -F a), retr : (y : b) => Path(b, to(h(y)), y)}} {\n",
+            "  case i {\n    #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}}\n  }\n}\n",
+        ));
+        let table = table(source);
+        assert_eq!(
+            answer(&table, source, SourceText::from("g(to(x))")),
+            Maybe::Present(Answer {
+                subject: Subject::Term,
+                ty: String::from("+U (b -> -F a)"),
+                expected: Maybe::Absent(checked_against::Absent::Agreed),
+            }),
+            "the case's motive judges the result type again under its binders, which is no \
+             check of the term in its own context (#551)"
         );
     }
 

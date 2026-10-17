@@ -7,6 +7,7 @@ use gandr_core_nbe::Fuel;
 use gandr_core_nbe::LoweredChain;
 use gandr_core_nbe::NeutralHead;
 use gandr_core_nbe::eval_value;
+use gandr_core_term::BinderDepth;
 use gandr_core_term::CompType;
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
@@ -144,6 +145,7 @@ fn a_typed_run_keeps_the_type_of_every_term_it_judged()
         Some(&Typing {
             term: TermNode::Value(pair),
             ty: TypeNode::Value(expected.id()),
+            depth,
         }),
         "the pair finishes last, at the type it was checked against"
     );
@@ -181,18 +183,21 @@ fn a_typed_run_keeps_the_type_of_every_term_it_judged()
     );
 
     let read = type_value(&mut context, identity, Direction::Check(formed_arrow));
+    let under = BinderDepth::from(usize::from(depth).saturating_add(1));
     assert!(
             read.typings().iter().any(|typing| typing.term == TermNode::Value(bound)
+                && typing.depth == under
                 && matches!(typing.ty, TypeNode::Value(found)
                     if context.arena().value_type(found) == Some(&ValueType::Base(BaseType::Integer)))),
-            "the variable under the lambda is kept at its binder's type: {read:?}"
+            "the variable under the lambda is kept at its binder's type, under its binder: {read:?}"
         );
     assert!(
         read.typings()
             .iter()
             .any(|typing| typing.term == TermNode::Computation(lambda)
-                && typing.ty == TypeNode::Computation(arrow)),
-        "the lambda is kept at the arrow it was checked against: {read:?}"
+                && typing.ty == TypeNode::Computation(arrow)
+                && typing.depth == depth),
+        "the lambda is kept at the arrow it was checked against, outside its binder: {read:?}"
     );
     assert_eq!(
         context.depth(Zone::Intuitionistic),

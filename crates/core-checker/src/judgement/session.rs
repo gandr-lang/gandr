@@ -867,6 +867,7 @@ impl Machine<'_, '_>
             self.context.keep_endpoint(Typing {
                 term: TermNode::Computation(at),
                 ty: TypeNode::Value(state),
+                depth: self.context.depth(Zone::Intuitionistic),
             });
         }
         let session = session_at(self.context, slot.state)?;

@@ -174,8 +174,8 @@ impl MarkEntry
     }
 }
 
-/// A term judgement a typed run finished: the term and the type it was judged
-/// at.
+/// A term judgement a typed run finished: the term, the type it was judged
+/// at, and how many intuitionistic binders were open where it was judged.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Typing
 {
@@ -183,6 +183,9 @@ pub struct Typing
     pub term: TermNode,
     /// The type the term was checked against, or the type it synthesised.
     pub ty: TypeNode,
+    /// The intuitionistic binders open where the judgement began: the context
+    /// [`Self::ty`] is read under.
+    pub depth: BinderDepth,
 }
 
 /// A type formation a typed run finished: the type and the level it formed
@@ -723,19 +726,21 @@ impl Machine<'_, '_>
         let height = self.frames.len();
         while let Some(&anchor) = self.anchors.last().filter(|anchor| anchor.frames >= height) {
             self.anchors.pop();
-            self.keep(anchor.goal, produced);
+            self.keep(anchor, produced);
         }
     }
 
-    /// While the context records typings, keep `goal`'s term with the type it
-    /// finished at: `produced` for a synthesis, the expected type for a check.
+    /// While the context records typings, keep `anchor`'s term with the type
+    /// it finished at — `produced` for a synthesis, the expected type for a
+    /// check — and the binder depth its goal began at.
     ///
     /// # Specification
-    /// - requires: `produced` is what `goal`'s judgement finished with.
+    /// - requires: `produced` is what `anchor`'s judgement finished with.
     /// - ensures: while the context records, a value or computation goal
     ///   checked against a type is kept with that type, and one synthesised is
-    ///   kept with the type it produced in its own family; nothing is kept for
-    ///   any other goal or result, or while the context does not record.
+    ///   kept with the type it produced in its own family, each at the depth
+    ///   the goal began at; nothing is kept for any other goal or result, or
+    ///   while the context does not record.
     /// - panics: none.
     /// - executable: none — the context's log has no observer short of the
     ///   typed run's result, which the witness reads.
@@ -743,18 +748,20 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a checked and a synthesised judgement, and a strict
     ///   run of the same term, separate the expected side, the produced side
-    ///   and the empty record.
+    ///   and the empty record; a term judged under its binders and again under
+    ///   more separates the depths.
     /// - witness: `judgement::elaboration::tests::a_typed_run_keeps_the_type_of_every_term_it_judged`
     fn keep(
         &mut self,
-        goal: Goal,
+        anchor: Anchor,
         produced: Produced,
     )
     {
         if self.context.recording() == Recording::Off {
             return;
         }
-        let typing = match (goal, produced) {
+        let depth = anchor.depth;
+        let typing = match (anchor.goal, produced) {
             (
                 Goal::Value {
                     term,
@@ -764,6 +771,7 @@ impl Machine<'_, '_>
             ) => Typing {
                 term: TermNode::Value(term),
                 ty: TypeNode::Value(expected),
+                depth,
             },
             (
                 Goal::Computation {
@@ -774,6 +782,7 @@ impl Machine<'_, '_>
             ) => Typing {
                 term: TermNode::Computation(term),
                 ty: TypeNode::Computation(expected),
+                depth,
             },
             (
                 Goal::Value {
@@ -784,6 +793,7 @@ impl Machine<'_, '_>
             ) => Typing {
                 term: TermNode::Value(term),
                 ty: TypeNode::Value(found),
+                depth,
             },
             (
                 Goal::Computation {
@@ -794,6 +804,7 @@ impl Machine<'_, '_>
             ) => Typing {
                 term: TermNode::Computation(term),
                 ty: TypeNode::Computation(found),
+                depth,
             },
             (
                 Goal::Value {
@@ -936,7 +947,7 @@ impl Machine<'_, '_>
             Goal::Form(_) | Goal::Stack { .. } => Err(CheckRefusal::MachineInvariant),
         };
         if let Ok(Step::Ascend(produced)) = step {
-            self.keep(anchor.goal, produced);
+            self.keep(anchor, produced);
         }
         step
     }
