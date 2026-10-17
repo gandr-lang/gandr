@@ -1,79 +1,18 @@
-@[ checks ]
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
-}
+// The folds over a list of naturals — its length, appending and mapping — in
+// each spelling an arm admits: a `return` after a `run`, the same with both
+// elided, the calls nested in the constructor, and a `run` written inside a
+// constructor's field. Each spelling of one fold runs to the same value, and
+// the polymorphic length of `recursive-lists.gandr` checks at the naturals. A
+// structural recursive call stands one stage below the list it was read from
+// (Abel, _Termination checking with types_, doi:10.1051/ita:2004015).
 
-@[ checks ]
-data List(a : Type) : Type {
-  Nil : List(a);
-  Cons : (head : a, tail : List(a)) --> List(a);
-}
+// The naturals, the numerals two and three, and the lists.
+import "./data-base.gandr" ;
 
-@[ checks ]
-def rec plus(n : Nat, m : Nat) -> -F Nat {
-  case m {
-    Zero => return n,
-    Succ(p) => { run r <- plus[<](n, p); return Succ(r) }
-  }
-}
+// The polymorphic length, read at the naturals.
+import "./recursive-lists.gandr" ;
 
-@[ checks ]
-def rec plus_elided(n : Nat, m : Nat) -> -F Nat {
-  case m {
-    Zero => n,
-    Succ(p) => { run r <- plus_elided[<](n, p); Succ(r) }
-  }
-}
-
-@[ checks ]
-def rec length(a : Type, xs : List(a)) -> -F Nat {
-  case xs {
-    Nil => return Zero,
-    Cons(x, rest) => { run r <- length[<](a, rest); return Succ(r) }
-  }
-}
-
-@[ checks ]
-def rec length_elided(a : Type, xs : List(a)) -> -F Nat {
-  case xs {
-    Nil => Zero,
-    Cons(x, rest) => { run r <- length_elided[<](a, rest); Succ(r) }
-  }
-}
-
-@[ checks ]
-def rec append(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
-  case xs {
-    Nil => return ys,
-    Cons(x, rest) => { run r <- append[<](a, ys, rest); return (Cons(x, r) : List(a)) }
-  }
-}
-
-@[ checks ]
-def rec append_elided(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
-  case xs {
-    Nil => ys,
-    Cons(x, rest) => { run r <- append_elided[<](a, ys, rest); (Cons(x, r) : List(a)) }
-  }
-}
-
-@[ checks ]
-def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
-  case xs {
-    Nil => return (Nil : List(b)),
-    Cons(x, rest) => { run y <- f(x); run r <- map[<](a, b, f, rest); return (Cons(y, r) : List(b)) }
-  }
-}
-
-@[ checks ]
-def rec map_elided(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
-  case xs {
-    Nil => (Nil : List(b)),
-    Cons(x, rest) => { run y <- f(x); run r <- map_elided[<](a, b, f, rest); (Cons(y, r) : List(b)) }
-  }
-}
-
+/// The length of a list of naturals, returned.
 @[ checks ]
 def rec length_nat(xs : List(Nat)) -> -F Nat {
   case xs {
@@ -82,6 +21,7 @@ def rec length_nat(xs : List(Nat)) -> -F Nat {
   }
 }
 
+/// The length of a list of naturals, the `return`s elided.
 @[ checks ]
 def rec length_nat_elided(xs : List(Nat)) -> -F Nat {
   case xs {
@@ -90,6 +30,7 @@ def rec length_nat_elided(xs : List(Nat)) -> -F Nat {
   }
 }
 
+/// Appending lists of naturals, returned.
 @[ checks ]
 def rec append_nat(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
   case xs {
@@ -98,6 +39,7 @@ def rec append_nat(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
   }
 }
 
+/// Appending lists of naturals, the `return`s elided.
 @[ checks ]
 def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
   case xs {
@@ -106,6 +48,7 @@ def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
   }
 }
 
+/// Mapping over a list of naturals, returned.
 @[ checks ]
 def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   case xs {
@@ -114,6 +57,7 @@ def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   }
 }
 
+/// Mapping over a list of naturals, the `return`s elided.
 @[ checks ]
 def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   case xs {
@@ -122,46 +66,7 @@ def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   }
 }
 
-@[ checks ]
-def rec plus_nested(n : Nat, m : Nat) -> -F Nat {
-  case m {
-    Zero => n,
-    Succ(p) => Succ(plus_nested[<](n, p))
-  }
-}
-
-@[ checks ]
-def rec plus_run(n : Nat, m : Nat) -> -F Nat {
-  case m {
-    Zero => n,
-    Succ(p) => Succ(run plus_run[<](n, p))
-  }
-}
-
-@[ checks ]
-def rec length_nested(a : Type, xs : List(a)) -> -F Nat {
-  case xs {
-    Nil => Zero,
-    Cons(x, rest) => Succ(length_nested[<](a, rest))
-  }
-}
-
-@[ checks ]
-def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
-  case xs {
-    Nil => ys,
-    Cons(x, rest) => (Cons(x, append_nested[<](a, ys, rest)) : List(a))
-  }
-}
-
-@[ checks ]
-def rec map_nested(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
-  case xs {
-    Nil => (Nil : List(b)),
-    Cons(x, rest) => (Cons(f(x), map_nested[<](a, b, f, rest)) : List(b))
-  }
-}
-
+/// Mapping over a list of naturals, both calls nested.
 @[ checks ]
 def rec map_nat_nested(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   case xs {
@@ -170,6 +75,7 @@ def rec map_nat_nested(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   }
 }
 
+/// Mapping over a list of naturals, both calls written `run` in the fields.
 @[ checks ]
 def rec map_nat_run(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   case xs {
@@ -178,82 +84,67 @@ def rec map_nat_run(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   }
 }
 
-@[ runs("Succ(Succ(Zero))") ]
-def two : Nat ;
-def two = Succ(Succ(Zero)) ;
-
-@[ runs("Succ(Succ(Succ(Zero)))") ]
-def three : Nat ;
-def three = Succ(two) ;
-
-@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
-def five : +U (-F Nat) ;
-def five = thunk { become plus(two, three) } ;
-
-@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
-def five_elided : +U (-F Nat) ;
-def five_elided = thunk { plus_elided(two, three) } ;
-
-@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
-def five_nested : +U (-F Nat) ;
-def five_nested = thunk { plus_nested(two, three) } ;
-
-@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
-def five_run : +U (-F Nat) ;
-def five_run = thunk { plus_run(two, three) } ;
-
-@[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
-def six : +U (-F Nat) ;
-def six = thunk { Succ(plus_nested(two, three)) } ;
-
+/// Two, then zero.
 @[ runs("Cons(Succ(Succ(Zero)), Cons(Zero, Nil))") ]
 def small : List(Nat) ;
 def small = (Cons(two, (Cons(Zero, (Nil : List(Nat))) : List(Nat))) : List(Nat)) ;
 
+/// The successor, returned.
 @[ runs("fn (a) { Succ(a) }") ]
 def bump : Nat => Nat ;
 def bump = thunk { fn (n) { return Succ(n) } } ;
 
+/// The successor, the `return` elided.
 @[ runs("fn (a) { Succ(a) }") ]
 def bump_elided : Nat => Nat ;
 def bump_elided = thunk { fn (n) { Succ(n) } } ;
 
+/// The length of `small`.
 @[ runs("Succ(Succ(Zero))") ]
 def counted : +U (-F Nat) ;
 def counted = thunk { become length_nat(small) } ;
 
+/// The length of `small`, the `return`s elided.
 @[ runs("Succ(Succ(Zero))") ]
 def counted_elided : +U (-F Nat) ;
 def counted_elided = thunk { length_nat_elided(small) } ;
 
+/// `small` with three appended at its head.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
 def joined : +U (-F List(Nat)) ;
 def joined = thunk { become append_nat(small, (Cons(three, (Nil : List(Nat))) : List(Nat))) } ;
 
+/// The same append, the `return`s elided.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
 def joined_elided : +U (-F List(Nat)) ;
 def joined_elided = thunk { append_nat_elided(small, (Cons(three, (Nil : List(Nat))) : List(Nat))) } ;
 
+/// Each element of `small` bumped.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
 def bumped : +U (-F List(Nat)) ;
 def bumped = thunk { become map_nat(bump, small) } ;
 
+/// The same map, the `return`s elided.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
 def bumped_elided : +U (-F List(Nat)) ;
 def bumped_elided = thunk { map_nat_elided(bump_elided, small) } ;
 
+/// The same map, the calls nested.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
 def bumped_nested : +U (-F List(Nat)) ;
 def bumped_nested = thunk { map_nat_nested(bump, small) } ;
 
+/// The same map, the calls run in the fields.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
 def bumped_run : +U (-F List(Nat)) ;
 def bumped_run = thunk { map_nat_run(bump, small) } ;
 
+/// The length of `small` at its element type, returned.
 @[ checks ]
 def lengthened : +U (-F Nat) ;
 def lengthened = thunk { become length(Nat, small) } ;
 
+/// The same length, the `return`s elided.
 @[ checks ]
 def lengthened_elided : +U (-F Nat) ;
 def lengthened_elided = thunk { length_elided(Nat, small) } ;

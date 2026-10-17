@@ -1,0 +1,63 @@
+// Addition on the naturals in each spelling an arm admits: a `return` after a
+// `run`, the same with both elided, the recursive call nested in the
+// constructor it returns (the base's `plus`), and a `run` written inside a
+// constructor's field. Each spelling runs to the same value. A structural
+// recursive call stands one stage below the term it was read from (Abel,
+// _Termination checking with types_, doi:10.1051/ita:2004015). The lists'
+// folds are `recursive-lists.gandr` and `recursive-nat-lists.gandr`.
+
+// The naturals, their addition with the recursive call nested, and the
+// numerals two and three.
+import "./data-base.gandr" ;
+
+/// Addition with the recursive call run and its result returned.
+@[ checks ]
+def rec plus_returned(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => return n,
+    Succ(p) => { run r <- plus_returned[<](n, p); return Succ(r) }
+  }
+}
+
+/// Addition with the `return`s elided.
+@[ checks ]
+def rec plus_elided(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => { run r <- plus_elided[<](n, p); Succ(r) }
+  }
+}
+
+/// Addition with the recursive call written `run` inside the successor.
+@[ checks ]
+def rec plus_run(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => n,
+    Succ(p) => Succ(run plus_run[<](n, p))
+  }
+}
+
+/// Two and three, added with the call returned.
+@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
+def five : +U (-F Nat) ;
+def five = thunk { become plus_returned(two, three) } ;
+
+/// Two and three, added with the `return`s elided.
+@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
+def five_elided : +U (-F Nat) ;
+def five_elided = thunk { plus_elided(two, three) } ;
+
+/// Two and three, added with the call nested.
+@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
+def five_nested : +U (-F Nat) ;
+def five_nested = thunk { plus(two, three) } ;
+
+/// Two and three, added with the call run in the field.
+@[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
+def five_run : +U (-F Nat) ;
+def five_run = thunk { plus_run(two, three) } ;
+
+/// One more than two and three, the nested addition inside a successor.
+@[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
+def six : +U (-F Nat) ;
+def six = thunk { Succ(plus(two, three)) } ;
