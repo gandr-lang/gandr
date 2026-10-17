@@ -447,6 +447,24 @@ impl<'source> DeclarationReport<'source>
         self.span
     }
 
+    /// The same report with its declaration at `span`: the bytes a face
+    /// measures from the start of the file it names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn at(
+        &self,
+        span: ByteSpan,
+    ) -> Self
+    {
+        Self {
+            span,
+            ..self.clone()
+        }
+    }
+
     /// The name's admission position.
     ///
     /// # Specification
