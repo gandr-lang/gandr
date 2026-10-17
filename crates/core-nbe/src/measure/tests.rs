@@ -743,3 +743,39 @@ fn the_measure_is_a_function_of_what_the_root_reaches()
         "while the padding measures as itself"
     );
 }
+
+#[test]
+fn a_measure_that_ends_with_a_leg_still_in_scope_is_refused()
+{
+    use alloc::vec::Vec;
+
+    use super::Measured;
+    use super::Measuring;
+    use super::Visit;
+
+    let mut overlay = Overlay::new();
+    let root = OverlayId::Value(unit(&mut overlay));
+    let measuring = |legs| Measuring {
+        overlay: &overlay,
+        visits: Vec::from([Visit::Enter(root)]),
+        legs,
+        results: Vec::new(),
+        shares: ShareCount::default(),
+        occurrences: OccurrenceCount::default(),
+        nodes: NodeCount::default(),
+    };
+    let leg = Measured {
+        expansion: ExpansionSize(1),
+        depth: ShareDepth(0),
+    };
+    assert_eq!(
+        Ok(leg),
+        measuring(Vec::new()).run(),
+        "the unit measures as one node under no share"
+    );
+    assert_eq!(
+        Err(MeasureFault::MachineInvariant),
+        measuring(Vec::from([leg])).run(),
+        "a leg no unbind closed is an unbalanced walk"
+    );
+}

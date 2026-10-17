@@ -724,6 +724,7 @@ impl Measuring<'_>
     ///   behind violates the completion predicate; dropping a visit changes the
     ///   independently observed root measure.
     /// - witness: `measure::measure::a_deep_overlay_is_measured_inside_a_small_stack`
+    /// - witness: `measure::tests::a_measure_that_ends_with_a_leg_still_in_scope_is_refused`
     #[spec(
         ensures: |ret| ret.map_or(true, |measured| self.visits.is_empty() && self.legs.is_empty() && self.results.is_empty() && measured.expansion.0 >= 1_u64 && measured.depth.0 <= self.shares.0)
     )]

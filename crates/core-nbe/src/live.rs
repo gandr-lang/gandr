@@ -342,6 +342,7 @@ pub enum Selection
 ///   injection is a mismatch.
 /// - witness: `live::tests::a_match_over_a_hole_answers_per_arm`
 /// - witness: `live::tests::a_determinate_match_binds_left_to_right`
+/// - witness: `live::tests::a_constructor_pattern_matches_its_own_tag_at_its_own_arity`
 #[spec(ensures: |ret| match ret {
     Ok(Matched::Satisfied(_)) => patterns.pattern(pattern).is_some() && domain.value(scrutinee).is_some(),
     Ok(Matched::Possibly | Matched::Refuted) => domain.value(scrutinee).is_some(),

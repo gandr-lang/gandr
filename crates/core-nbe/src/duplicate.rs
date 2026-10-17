@@ -1198,6 +1198,7 @@ impl Walk<'_>
     ///   but wrong reconstruction, and the deep witness catches host recursion.
     /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
     /// - witness: `teardown::teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack`
+    /// - witness: `duplicate::tests::a_walk_that_ends_with_a_frame_open_is_refused`
     #[spec(
         ensures: |ret| ret.map_or(true, |rebuilt| self.tasks.is_empty() && self.results.is_empty() && self.frames.is_empty() && rebuilt != root && self.overlay.validate(rebuilt).is_ok())
     )]
@@ -1364,6 +1365,7 @@ impl Walk<'_>
     ///   classification and the observed maximal-rib sharing.
     /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
     /// - witness: `duplicate::tests::surveys_lower_only_the_binders_above_each_child`
+    /// - witness: `duplicate::tests::a_share_is_spine_only_where_an_escape_reaches_inside_the_inner_frames`
     #[spec(
         ensures: |ret| ret == self.reached.get(&node).map(|reach| if reach.reads.holds(DeBruijnIndex::from(at.depth.0)) == Membership::Held || reach.escapes.least().is_some_and(|least| u32::from(least) < at.inner.0) { SharedPart::Spine } else { SharedPart::Rib }).ok_or(DuplicationFault::MachineInvariant)
     )]

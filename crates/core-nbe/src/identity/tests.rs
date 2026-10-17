@@ -466,6 +466,23 @@ fn transport_moves_a_list_through_a_universe_path()
 }
 
 #[test]
+fn transport_in_the_decoded_binder_along_a_stuck_path_stays_in_its_motive()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let truth = core.value_injection(Side::Left.into(), unit);
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let motive = core.value_type_element(bound, gandr_kernel_strata::Level::zero());
+    let path = stuck(&mut core, ConstantIndex::from(0_usize));
+    let transported = core.computation_path_transport(motive, path, truth);
+    assert_eq!(
+        normalises_to(&mut core, transported, transported),
+        CertificateEquality::Equal,
+        "only a universe path is handed to native transport; a stuck one keeps its motive"
+    );
+}
+
+#[test]
 fn a_compound_endpoint_stands_for_what_it_returns()
 {
     let mut core = CoreArena::new();
@@ -956,6 +973,25 @@ fn product_paths_are_componentwise()
 }
 
 #[test]
+fn a_product_endpoint_of_another_width_is_refused_on_either_side()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_type_unit();
+    let pair = core.value_type_product(&[unit, unit]);
+    let empty = core.value_unit();
+    let wide = core.value_tuple(&[empty, empty]);
+    let narrow = core.value_tuple(&[empty]);
+    let mut domain = DomainArena::new();
+    let [wide, narrow] = evaluated(&core, &mut domain, [wide, narrow]);
+    for (left, right) in [(wide, narrow), (narrow, wide)] {
+        assert_eq!(
+            fibre(&core, &domain, pair, left, right),
+            Err(super::IdentityFault::Domain(crate::DomainFault::Dangling))
+        );
+    }
+}
+
+#[test]
 fn list_paths_follow_the_constructors()
 {
     let mut core = CoreArena::new();
@@ -1256,6 +1292,13 @@ fn rides_compute_by_the_kernels_rows()
         normalises_to(&mut core, rode, expected),
         CertificateEquality::Equal,
         "any other value ridden in the singleton composes with the flow"
+    );
+    let diagonal = core.value_type_flow(text, moving, moving);
+    let rode = core.computation_ride(diagonal, flow, start);
+    assert_eq!(
+        normalises_to(&mut core, rode, rode),
+        CertificateEquality::Equal,
+        "a flow family whose source moves too is no singleton, and the ride stays stuck"
     );
 
     let rode = core.computation_ride(identity, flow, five);

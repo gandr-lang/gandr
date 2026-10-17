@@ -303,6 +303,7 @@ pub fn clause(
 /// - witness: `identity::tests::list_paths_follow_the_constructors`
 /// - witness: `identity::tests::function_paths_relate_inputs_to_results`
 /// - witness: `identity::tests::open_carriers_unfold_to_nothing`
+/// - witness: `identity::tests::a_product_endpoint_of_another_width_is_refused_on_either_side`
 #[spec(ensures: |ret| core.value_type(carrier).is_some() || ret == Err(IdentityFault::DanglingTerm))]
 #[inline]
 pub fn fibre(

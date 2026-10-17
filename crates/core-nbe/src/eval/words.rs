@@ -842,6 +842,7 @@ fn action(
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
 /// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
 /// - witness: `eval::words::tests::cong_along_the_loop_reads_both_arguments_of_a_diagonal_464`
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_a_call_bound_into_the_next`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| found.as_ref().is_none_or(|read| !read.leaves.is_empty()
     && read.leaves.iter().all(|&(node, position)| read.nodes.get(node).is_some_and(|node| position < node.arguments.len()))
     && matches!(core.value(endpoint), Some(&Value::Returned(_))))))]

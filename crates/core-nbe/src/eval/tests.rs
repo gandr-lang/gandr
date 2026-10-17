@@ -694,6 +694,92 @@ fn native_transport_sequences_product_components()
 }
 
 #[test]
+fn transport_along_univalence_is_refused_as_underived()
+{
+    use alloc::boxed::Box;
+    use alloc::sync::Arc;
+
+    use gandr_core_term::ua::Description;
+    use gandr_core_term::ua::Sides;
+    use gandr_core_term::ua::Stratum;
+
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let empty = || Description {
+        name: From::from("Point"),
+        generators: Box::from([]),
+    };
+    let sides = Arc::new(Sides {
+        source: empty(),
+        target: empty(),
+    });
+    let translator = core.value_record(alloc::collections::BTreeMap::new());
+    let stratum = Stratum {
+        degree: From::from(1_usize),
+        bound: From::from(4_usize),
+    };
+    let path = core.value_ua(stratum, sides, translator, translator);
+    let transported = core.computation_transport(path, unit);
+    let (chain, environment) = nothing_unfolds();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    assert_eq!(
+        Err(EvalFault::TransportedUnderived),
+        eval_computation(&core, &mut domain, definitions, ample(), transported),
+        "a univalence path carries no translator transport can run"
+    );
+}
+
+#[test]
+fn a_telescope_motive_has_a_body_only_when_its_result_type_lives()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_type_unit();
+    let mut elsewhere = CoreArena::new();
+    let mut dangling = elsewhere.value_type_unit();
+    for _ in 0_u8 .. 16 {
+        dangling = elsewhere.value_type_list(dangling);
+    }
+    let motive = |core: &mut CoreArena, result| {
+        let returned = core.comp_type_returner(result);
+        let entry = core.comp_type_pi(unit, returned);
+        core.comp_type_pi(unit, entry)
+    };
+    let held = motive(&mut core, unit);
+    assert_eq!(Ok(unit), super::telescope_body(&core, held));
+    let unheld = motive(&mut core, dangling);
+    assert_eq!(
+        Err(EvalFault::MachineInvariant),
+        super::telescope_body(&core, unheld),
+        "a result type the arena does not hold is no body"
+    );
+}
+
+#[test]
+fn a_held_endpoint_is_read_only_at_its_spine_root()
+{
+    let mut domain = DomainArena::new();
+    let argument = domain.value_unit(TermFace::Reduced);
+    let computation = domain.comp_return(argument, CompTermFace::Reduced);
+    let mut held = |spine| {
+        let neutral = domain
+            .neutral_node(NeutralHead::Returned(computation), spine, Unfolding::Rigid)
+            .expect("a returned computation heads a neutral");
+        domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .expect("a static application leaves a value")
+    };
+    let bare = held(Vec::new());
+    let applied = held(Vec::from([Elimination::StaticApply(argument)]));
+    assert_eq!(Ok(Some(computation)), super::held_endpoint(&domain, bare));
+    assert_eq!(
+        Ok(None),
+        super::held_endpoint(&domain, applied),
+        "an endpoint applied further is no longer the computation it holds"
+    );
+}
+
+#[test]
 fn a_case_picks_the_branch_the_injection_names()
 {
     let mut core = CoreArena::new();
@@ -1039,6 +1125,20 @@ fn a_held_endpoint_stays_at_its_definition()
         ),
         (inner.head(), inner.unfolding()),
         "held, the endpoint waits on `ident`, its body unforced"
+    );
+
+    let manifest = eval_value(
+        &core,
+        &mut domain,
+        definitions.reading_endpoints(Endpoints::Hold).manifest(),
+        ample(),
+        endpoint,
+    )
+    .expect("the manifest endpoint evaluates");
+    assert_eq!(
+        Some(TermFace::Source(unit)),
+        domain.value(manifest).map(DomainValue::face),
+        "the manifest reading of a held run runs the endpoint again"
     );
 }
 

@@ -947,6 +947,7 @@ impl<'run> Definitions<'run>
     ///   the chain's functions are read under this stance; a stance that does
     ///   not reach the reading leaves the chain stuck and the case refused.
     /// - witness: `fusion::tests::a_cong_chain_composing_to_the_identity_is_its_path`
+    /// - witness: `eval::tests::a_held_endpoint_stays_at_its_definition`
     #[inline]
     #[must_use]
     #[spec(
@@ -5253,6 +5254,7 @@ fn step_case_branches(
 ///   machine fault rather than panic under enforcement.
 /// - witness: `eval::tests::native_transport_sequences_product_components`
 /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
+/// - witness: `eval::tests::transport_along_univalence_is_refused_as_underived`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len(), path = machine.values.get(machine.values.len().saturating_sub(2)).copied(), value = machine.values.last().copied()],
     ensures: |ret| if values < 2 { ret == Err(EvalFault::MachineInvariant) && machine.values.is_empty() && machine.comps.len() == comps && machine.tasks.len() == tasks } else { ret.is_err() || match path.and_then(|id| domain.value(id)) {
@@ -5415,6 +5417,7 @@ fn step_transport(
 /// - witness: `identity::tests::transport_along_a_stuck_path_is_stuck`
 /// - witness: `identity::tests::transport_moves_a_list_through_a_universe_path`
 /// - witness: `eval::words::tests::a_word_appends_on_its_first_word`
+/// - witness: `identity::tests::transport_in_the_decoded_binder_along_a_stuck_path_stays_in_its_motive`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err()
@@ -6163,6 +6166,7 @@ fn step_telescope_transport(
 /// # Adequacy
 /// - hypothesis: L3 — the fibre transport of a two-arrow motive reads its body.
 /// - witness: `identity::tests::telescope_transport_along_here_replays_the_fibre`
+/// - witness: `eval::tests::a_telescope_motive_has_a_body_only_when_its_result_type_lives`
 #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|body| core.value_type(body).is_some()))]
 fn telescope_body(
     core: &CoreArena,
@@ -6789,6 +6793,7 @@ pub fn run_held(
 /// # Adequacy
 /// - hypothesis: L3 — as [`run_held`].
 /// - witness: `presented::tests::a_held_call_under_a_presented_constructor_reads_as_what_it_returns`
+/// - witness: `eval::tests::a_held_endpoint_is_read_only_at_its_spine_root`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |held| held.is_none_or(|computation| domain.computation(computation).is_some())))]
 pub fn held_endpoint(
     domain: &DomainArena,

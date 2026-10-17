@@ -615,3 +615,51 @@ fn a_determinate_match_binds_left_to_right()
         "a determinate scrutinee takes the first arm that matches"
     );
 }
+
+#[test]
+fn a_constructor_pattern_matches_its_own_tag_at_its_own_arity()
+{
+    use gandr_core_term::ConstructorTag;
+
+    let mut core = CoreArena::new();
+    let unit_type = core.value_type_unit();
+    let mut domain = DomainArena::new();
+    let datatype = domain.value_closure_node(
+        ValueBody::ValueType(unit_type),
+        crate::closure::Environment::new(),
+    );
+    let field = domain.value_unit(crate::TermFace::Reduced);
+    let fields = domain.hold_fields([field]);
+    let scrutinee = domain.value_constructor(
+        datatype,
+        ConstructorTag::from(1_usize),
+        fields,
+        crate::TermFace::Reduced,
+    );
+    let mut patterns = Patterns::new();
+    let binder = patterns.mint(Pattern::Binder);
+    let mut constructor = |tag: usize, arity: usize| {
+        patterns.mint(Pattern::Constructor {
+            tag: ConstructorTag::from(tag),
+            fields: vec![binder; arity],
+        })
+    };
+    let own = constructor(1, 1);
+    let other = constructor(0, 1);
+    let wider = constructor(1, 2);
+    assert_eq!(
+        match_pattern(&core, &domain, &patterns, own, scrutinee),
+        Ok(Matched::Satisfied(vec![field])),
+        "its own tag at its own arity binds its field"
+    );
+    assert_eq!(
+        match_pattern(&core, &domain, &patterns, other, scrutinee),
+        Ok(Matched::Refuted),
+        "another tag refutes"
+    );
+    assert_eq!(
+        match_pattern(&core, &domain, &patterns, wider, scrutinee),
+        Err(super::MatchFault::Mismatched),
+        "and its own tag at another arity is a mismatch"
+    );
+}

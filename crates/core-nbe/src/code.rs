@@ -1222,6 +1222,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
     /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
     /// - witness: `code::tests::native_classifier_endpoints_compare_in_order_and_refuse_a_missing_target`
     /// - witness: `code::tests::capability_types_compare_grade_region_and_authority_types`
+    /// - witness: `code::tests::a_type_former_written_twice_is_one_code`
     ///
     /// # Errors
     /// As above, and as [`Walk::atom`].
@@ -1832,6 +1833,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// - hypothesis: L3 — captured parameters agree with literal parameters
     ///   only by value.
     /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
+    /// - witness: `code::tests::first_order_arguments_compare_by_shape_and_arity`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret,Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant)))]
     fn first_order(
         &self,
@@ -1984,6 +1986,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// - hypothesis: L3 — fresh equal literals agree while changed labels and
     ///   arguments separate.
     /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
+    /// - witness: `code::tests::first_order_arguments_compare_by_shape_and_arity`
     #[spec(captures:[entry=pending.len()],ensures:|ret| ret.is_ok() || pending.len() == entry)]
     fn first_order_pair(
         &self,
@@ -2070,6 +2073,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     /// - hypothesis: L3 — nominal identities and unequal ordinary arguments
     ///   separate.
     /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
+    /// - witness: `code::tests::a_type_former_written_twice_is_one_code`
     #[spec(ensures: |ret| left_atom != right_atom || ret.is_err() || ret == Ok(Alike::Same))]
     fn equal_atoms(
         &mut self,

@@ -134,3 +134,32 @@ fn support_identity_and_digest_survive_forcing_without_conflating_inputs()
         );
     }
 }
+
+#[test]
+fn supports_of_different_content_are_remembered_in_different_buckets()
+{
+    use gandr_kernel_check_memo::CheckMemo as _;
+    use gandr_kernel_check_memo::MemoBucketCount;
+    use gandr_kernel_check_memo::OrderedMemo;
+
+    let mut core = CoreArena::new();
+    let value = core.value_unit();
+    let body = core.computation_return(value);
+    let mut domain = DomainArena::new();
+    let unit = domain.value_unit(crate::TermFace::Reduced);
+    let closure = domain.comp_closure_node(body, Environment::new());
+    let level = BinderLevel::FLOOR;
+    let mut memo = OrderedMemo::<GoalSupport, ()>::new();
+    for sides in [
+        SupportSides::Heads(crate::Glued::Value(unit), crate::Glued::Value(unit)),
+        SupportSides::Opened(closure, closure),
+    ] {
+        let support = GoalSupport::new(&domain, sides, level).expect("both sides live");
+        let _recorded = memo.remember(support, ()).expect("the memo has room");
+    }
+    assert_eq!(
+        MemoBucketCount::from(2_usize),
+        memo.bucket_count(),
+        "the digest spreads distinct content, so a recall scans only its own"
+    );
+}
