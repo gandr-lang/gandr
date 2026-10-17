@@ -19,7 +19,11 @@ def here_two = here(refl_two) ;
 
 /// Points one unfolding apart, one level up.
 @[ checks ]
-def here_two_up : Path(Path(Path(Integer, 2, 2), refl_two, here(2)), here(refl_two), here(here(2))) ;
+def here_two_up : Path(
+  Path(Path(Integer, 2, 2), refl_two, here(2)),
+  here(refl_two),
+  here(here(2))
+) ;
 def here_two_up = here(here(refl_two)) ;
 
 /// A parameter does not unfold to `here(2)`.

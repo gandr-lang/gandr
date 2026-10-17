@@ -65,13 +65,21 @@ def unwound_word = here(back(loop)) ;
 /// Transport in a family of paths from the point moves the endpoint: it
 /// post-composes with the loop.
 @[ checks ]
-def moved : Path(Path(Circle, Base, Base), transport(\x. Path(Circle, Base, x), loop, here(Base)), loop) ;
+def moved : Path(
+  Path(Circle, Base, Base),
+  transport(\x. Path(Circle, Base, x), loop, here(Base)),
+  loop
+) ;
 def moved = here(loop) ;
 
 /// Transport in the family of loops at each point conjugates by the loop,
 /// which fixes the loop.
 @[ checks ]
-def conjugated : Path(Path(Circle, Base, Base), transport(\x. Path(Circle, x, x), loop, loop), loop) ;
+def conjugated : Path(
+  Path(Circle, Base, Base),
+  transport(\x. Path(Circle, x, x), loop, loop),
+  loop
+) ;
 def conjugated = here(loop) ;
 
 /// Transport in a constant family is the identity.
@@ -82,5 +90,9 @@ def constant = here(Z) ;
 /// Transport in a family running its point through the flip is the flip's
 /// image of the loop, its inverse: the family's transport is its `cong`.
 @[ checks ]
-def flipped : Path(Path(Circle, Base, Base), transport(\x. Path(Circle, Base, invLooper(x)), loop, here(Base)), back(loop) ∷ here(Base)) ;
+def flipped : Path(
+  Path(Circle, Base, Base),
+  transport(\x. Path(Circle, Base, invLooper(x)), loop, here(Base)),
+  back(loop) ∷ here(Base)
+) ;
 def flipped = here(back(loop) ∷ here(Base)) ;

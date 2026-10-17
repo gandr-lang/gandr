@@ -16,13 +16,21 @@ def delay(x: Integer) -> -F (+U (-F Integer)) {
 
 /// Reflexivity at a suspended doubling, written out.
 @[ checks ]
-def delayed(a: Integer) -> -F Path(+U (-F Integer), thunk { become double(a) }, thunk { become double(a) }) {
+def delayed(a: Integer) -> -F Path(
+  +U (-F Integer),
+  thunk { become double(a) },
+  thunk { become double(a) }
+) {
   return here(thunk { become double(a) })
 }
 
 /// A path between integers carried along the suspended doubling.
 @[ checks ]
-def cong_delay(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(+U (-F Integer), delay(a), delay(b)) {
+def cong_delay(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(
+  +U (-F Integer),
+  delay(a),
+  delay(b)
+) {
   become cong(delay, p)
 }
 
