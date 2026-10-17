@@ -4391,4 +4391,34 @@ mod tests
             })
             .collect()
     }
+
+    /// #675: an equivalence written over function literals checks each law
+    /// at its maps put in; every type it prints reads back, the call of a
+    /// literal spelled as what it returns rather than as a call the type
+    /// grammar cannot read.
+    #[test]
+    fn a_type_instantiated_at_a_function_literal_reads_back_675()
+    {
+        let source = SourceText::from(
+            "def typeSelf : Type ≃ Type ;\ndef typeSelf = #{thunk { fn (x) { return x } }, \
+             #{#{thunk { fn (x) { return x } }, thunk { fn (x) { here(x) } }}, #{thunk { fn (y) \
+             { return y } }, thunk { fn (y) { here(y) } }}}} ;\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let trips: Vec<(String, RoundTrip)> = table(source)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        assert!(
+            trips
+                .iter()
+                .any(|&(ref spelled, _)| spelled == "(a : Type) -> -F Path(Type, a, a)"),
+            "a law's map spells its call as what it returns: {trips:?}"
+        );
+        assert!(
+            trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
+            "every printed type reads back: {trips:?}"
+        );
+    }
 }

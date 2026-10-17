@@ -1196,8 +1196,9 @@ enum Reading<'signatures>
     /// types as the path at their point, two session types by their protocols'
     /// behaviour, a decoded static redex as its reduct, as every checker reads
     /// them, a staged type as its base, which is all of it the surface
-    /// writes, and a call kept unelaborated as the value it returns, which is
-    /// all a printed `f(x)` says.
+    /// writes, a call kept unelaborated as the value it returns, which is
+    /// all a printed `f(x)` says, and a call of a function literal as the
+    /// value its body returns, which no surface call spells.
     Printed(&'signatures BTreeMap<ConstantIndex, alloc::sync::Arc<DataSignature>>),
 }
 
@@ -1301,16 +1302,19 @@ pub fn equal_type_syntax(
 ///   static abstraction applied to no more arguments than its chain has binders
 ///   is read as the decode of the abstraction's body instantiated at the
 ///   arguments, at most [`StaticSteps::ALLOWED`] times along one comparison; a
-///   call kept unelaborated is read as the value it returns; and a dependent
-///   arrow whose codomain names no binder is read as the plain arrow over its
-///   domain and its codomain strengthened.
+///   call of a function literal on no more arguments than the literal has
+///   abstractions, whose body returns, is read as the value it returns, on the
+///   same steps; a call kept unelaborated is read as the value it returns; and
+///   a dependent arrow whose codomain names no binder is read as the plain
+///   arrow over its domain and its codomain strengthened.
 /// - provides: the comparison a printed type's reading back is held to: a type
 ///   of words has no name the surface writes, and is spelled as the path type
 ///   it reads as; a session type at a state is spelled as the protocol from
 ///   that state, which reads back to a protocol at its root; a static redex the
-///   surface cannot apply is spelled as its reduct; a stage has no spelling,
-///   and a staged type is spelled as its base; a dependent arrow ignoring its
-///   binder has no spelling, and is spelled as the arrow.
+///   surface cannot apply is spelled as its reduct, and so is a call of a
+///   function literal; a stage has no spelling, and a staged type is spelled as
+///   its base; a dependent arrow ignoring its binder has no spelling, and is
+///   spelled as the arrow.
 /// - fails: returns `Different` on a dangling node.
 /// - panics: none.
 ///
@@ -1322,16 +1326,19 @@ pub fn equal_type_syntax(
 ///   session type past its first send against the rest of its protocol at its
 ///   root, and a recursive protocol against its unfolding, compare equal; a
 ///   differing payload or label stays different. A decoded redex against its
-///   reduct compares equal; against another type it stays different. A staged
-///   type, alone and as an arrow's domain, reads as its base where the syntax
-///   alone tells them apart, and stays different from another type. A path
-///   between a call returned reads as one between the call kept, and not as one
-///   between another call. A dependent arrow ignoring its binder reads as the
-///   arrow, in either order; one naming its binder stays different.
+///   reduct compares equal; against another type it stays different. A called
+///   function literal reads as the value its body returns, and a called name
+///   stays a call. A staged type, alone and as an arrow's domain, reads as its
+///   base where the syntax alone tells them apart, and stays different from
+///   another type. A path between a call returned reads as one between the call
+///   kept, and not as one between another call. A dependent arrow ignoring its
+///   binder reads as the arrow, in either order; one naming its binder stays
+///   different.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
 /// - witness: `syntax::tests::a_staged_type_reads_as_its_base_465`
+/// - witness: `syntax::tests::a_called_function_literal_reads_as_what_it_returns_675`
 /// - witness: `syntax::tests::a_kept_call_reads_as_the_value_it_returns`
 /// - witness: `syntax::tests::a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
@@ -1551,6 +1558,88 @@ fn decoded_comp_type(
         ty = arena.to_mut().comp_type_element(reduct, target);
     }
     ty
+}
+
+/// The value `value` reads as once a call of a function literal it stands
+/// for is reduced, while `steps` lasts.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a call standing as a value, nested or returned, whose head
+///   forces a thunk literal of at least as many abstractions as the call has
+///   arguments, the value the instantiated body returns, the first argument
+///   instantiating the outermost abstraction, taken again while it reduces and
+///   `steps` lasts, one step spent per reduction; `value` itself for every
+///   other value, and for a body that does more than return. The arena is
+///   copied the first time it is written.
+/// - provides: the dynamic β [`equal_type_reading`] reads through: a type
+///   instantiated at a function literal holds its call, which the surface
+///   cannot spell, and is printed as the value the call returns (#675).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: every turn of the outer loop spends one of `steps`; the inner
+///   loops run over the call's spine and its arguments.
+/// - measure: `steps`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call of a literal identity and one of a literal
+///   projection on two arguments read as the argument they return; a call of a
+///   named function and a literal whose body does more than return stay as
+///   written.
+/// - witness: `syntax::tests::a_called_function_literal_reads_as_what_it_returns_675`
+#[spec(ensures: |ret| ret == value || arena.value(ret).is_some())]
+fn called_reduct(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    value: ValueId,
+) -> ValueId
+{
+    let mut value = value;
+    let mut arguments = Vec::new();
+    let mut carried = Vec::new();
+    'reduce: while let Some(&(Value::Nested(call) | Value::Returned(call))) = arena.value(value) {
+        arguments.clear();
+        let mut head = call;
+        while let Some(&Computation::Application(function, argument)) = arena.computation(head) {
+            arguments.push(argument);
+            head = function;
+        }
+        let Some(&Computation::Force(thunk)) = arena.computation(head)
+        else {
+            break;
+        };
+        let Some(&Value::Thunk(mut body)) = arena.value(thunk)
+        else {
+            break;
+        };
+        if arguments.is_empty() {
+            break;
+        }
+        while let Some(argument) = arguments.pop() {
+            let Some(&Computation::Lambda(inner)) = arena.computation(body)
+            else {
+                break 'reduce;
+            };
+            carried.clear();
+            body = crate::rewrite::instantiate_computation_traced(
+                arena.to_mut(),
+                inner,
+                argument,
+                &mut carried,
+            );
+        }
+        let Some(&Computation::Return(result)) = arena.computation(body)
+        else {
+            break;
+        };
+        if steps.spend() == Spend::Exhausted {
+            break;
+        }
+        value = result;
+    }
+    value
 }
 
 quenchant_shape::reason_enum! {
@@ -1979,11 +2068,12 @@ fn session_children(
 ///   ([`read_as_words`]) agreeing outright, two session types whose protocols
 ///   behave alike from their states ([`session_children`]), a decoded static
 ///   redex read as its reduct ([`decoded_value_type`], [`decoded_comp_type`]),
-///   a call kept unelaborated read as the value it returns, as the lowering
-///   keeps it where a type after it reads it, and a dependent arrow whose
-///   codomain names no binder read as the plain arrow over its domain and its
-///   codomain strengthened; under [`Reading::Syntax`] no reduction is
-///   performed.
+///   a call of a function literal read as the value its body returns
+///   ([`called_reduct`]), a call kept unelaborated read as the value it
+///   returns, as the lowering keeps it where a type after it reads it, and a
+///   dependent arrow whose codomain names no binder read as the plain arrow
+///   over its domain and its codomain strengthened; under [`Reading::Syntax`]
+///   no reduction is performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
 ///   second traversal pretending to be an independent postcondition.
 ///
@@ -2030,7 +2120,11 @@ fn equal_syntax(
                 decoded_comp_type(&mut arena, &mut steps, a),
                 decoded_comp_type(&mut arena, &mut steps, b),
             ),
-            (Reading::Printed(_), V(..) | C(..)) | (Reading::Syntax, _) => goal,
+            (Reading::Printed(_), V(a, b)) => V(
+                called_reduct(&mut arena, &mut steps, a),
+                called_reduct(&mut arena, &mut steps, b),
+            ),
+            (Reading::Printed(_), C(..)) | (Reading::Syntax, _) => goal,
         };
         if !visited.insert(goal) {
             continue;
@@ -3534,6 +3628,94 @@ mod tests
             CertificateEquality::Different,
             "a call does not read as another call kept"
         );
+    }
+
+    /// #675: a type instantiated at a function literal holds its call, which
+    /// the surface prints as the value the call returns.
+    #[test]
+    fn a_called_function_literal_reads_as_what_it_returns_675()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let y = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        // `(thunk { fn (b) { return b } })(x)`.
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returns = arena.computation_return(bound);
+        let identity = arena.computation_lambda(returns);
+        let identity = arena.value_thunk(identity);
+        let forced = arena.computation_force(identity);
+        let called = arena.computation_application(forced, x);
+        let called = arena.value_nested(called);
+        // `(thunk { fn (a) { fn (b) { return a } } })(y)((… )(x))`: the first
+        // argument instantiates the outer abstraction, and the second is
+        // itself a call that reduces.
+        let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let first = arena.computation_return(outer);
+        let first = arena.computation_lambda(first);
+        let first = arena.computation_lambda(first);
+        let first = arena.value_thunk(first);
+        let forced_first = arena.computation_force(first);
+        let partly = arena.computation_application(forced_first, y);
+        let projected = arena.computation_application(partly, called);
+        let projected = arena.value_returned(projected);
+        // A call of a name, and a literal whose body does more than return.
+        let named = arena.computation_force(y);
+        let named = arena.computation_application(named, x);
+        let named = arena.value_nested(named);
+        let forced_body = arena.computation_force(bound);
+        let forcing = arena.computation_lambda(forced_body);
+        let forcing = arena.value_thunk(forcing);
+        let forcing = arena.computation_force(forcing);
+        let forcing = arena.computation_application(forcing, x);
+        let forcing = arena.value_nested(forcing);
+        let at = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, x);
+        let (called, projected, named, forcing, plain, other) = (
+            at(&mut arena, called),
+            at(&mut arena, projected),
+            at(&mut arena, named),
+            at(&mut arena, forcing),
+            at(&mut arena, x),
+            at(&mut arena, y),
+        );
+        for (left, right, what) in [
+            (
+                called,
+                plain,
+                "a called identity literal against its argument",
+            ),
+            (plain, called, "in either order"),
+            (
+                projected,
+                other,
+                "the first argument instantiates the outer abstraction",
+            ),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} reads as one type, which its syntax is not"
+            );
+        }
+        for (left, right, what) in [
+            (projected, plain, "the outer binder is not the inner one"),
+            (named, plain, "a call of a name stays a call"),
+            (
+                forcing,
+                plain,
+                "a body that does more than return stays a call",
+            ),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Different,
+                "{what}"
+            );
+        }
     }
 
     #[test]
