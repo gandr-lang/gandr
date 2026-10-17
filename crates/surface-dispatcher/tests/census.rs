@@ -30,7 +30,6 @@ mod census
     use gandr_surface_dispatcher::Width;
     use gandr_surface_dispatcher::lay_out;
     use gandr_surface_dispatcher::reprinted;
-    use gandr_surface_dispatcher::signed;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
     use gandr_surface_pretty::Form;
@@ -186,9 +185,10 @@ mod census
     }
 
     /// The printer as a fixed point over the values the corpus states: each
-    /// run value and normal form, printed, read back in its source and printed
-    /// again, is the same spelling after whitespace collapses. A spelling the
-    /// grammar reads as another value prints otherwise.
+    /// run value, printed, read back in its source and printed again, and each
+    /// normal form, read back under its block's rules and spelled again, is
+    /// the same spelling after whitespace collapses. A spelling the grammar
+    /// reads as another value prints otherwise.
     #[derive(Debug, Default)]
     struct Fixed
     {
@@ -201,25 +201,19 @@ mod census
 
     impl Fixed
     {
-        /// Read `spelled` back in `table`, signed as the run of the
-        /// declaration named `signed` returns it, and compare its reprint. The
-        /// name, not the walk's constant, crosses over: the walk numbers the
-        /// whole component's constants, the table its source's unit (#610).
+        /// Compare `spelled` with `again`, its reprint.
         ///
         /// # Specification
         /// trivial.
-        fn value(
+        fn compare(
             &mut self,
             path: &Path,
-            table: &TypeTable,
-            grammar: &Pbg,
-            signed: Maybe<Name<'_>, signed::Absent>,
             spelled: SourceText<'_>,
+            again: &Maybe<String, reprinted::Absent>,
         )
         {
             self.read = self.read.saturating_add(1);
-            let again = table.reprint_value(grammar, signed, spelled);
-            if !matches!(again, Maybe::Present(ref again) if collapsed(SourceText::from(again.as_str())) == collapsed(spelled))
+            if !matches!(*again, Maybe::Present(ref again) if collapsed(SourceText::from(again.as_str())) == collapsed(spelled))
             {
                 self.moved.push(format!(
                     "{}: `{spelled}` reprints as {again:?}",
@@ -284,21 +278,23 @@ mod census
                         })
                         .map(|declaration| declaration.name().to_string())
                         .collect();
-                    // Each normal form the corpus states, as the printer wrote it:
-                    // the side after `~>`.
+                    // Each normal form the corpus states, as the engine spelled
+                    // it: the side after `~>`, read back under the rules of the
+                    // block that states it (#669).
                     if let Some(ref table) = table {
                         for declaration in report.declarations() {
                             if let Stated::Verdict(Outcome::Normalizes(ref spelled)) =
                                 *declaration.stated()
                                 && let Some((_, normal)) = spelled.as_ref().split_once("~>")
                             {
-                                fixed.value(
-                                    path,
-                                    table,
+                                let block = declaration.name().to_string();
+                                let normal = SourceText::from(normal.trim());
+                                let again = table.reprint_normal_form(
                                     &grammar,
-                                    Maybe::Absent(signed::Absent::Unsigned),
-                                    SourceText::from(normal.trim()),
+                                    Name::from(block.as_str()),
+                                    normal,
                                 );
+                                fixed.compare(path, normal, &again);
                             }
                         }
                     }
@@ -321,14 +317,17 @@ mod census
                             if let Some(ref table) = table
                                 && value.presentation().unspelled().is_empty()
                             {
+                                // The name, not the walk's constant, crosses
+                                // over: the walk numbers the whole component's
+                                // constants, the table its source's unit (#610).
                                 let named = name.to_string();
-                                fixed.value(
-                                    path,
-                                    table,
+                                let spelled = SourceText::from(value.presentation().as_ref());
+                                let again = table.reprint_value(
                                     &grammar,
                                     Maybe::Present(Name::from(named.as_str())),
-                                    SourceText::from(value.presentation().as_ref()),
+                                    spelled,
                                 );
+                                fixed.compare(path, spelled, &again);
                             }
                         }
                     }

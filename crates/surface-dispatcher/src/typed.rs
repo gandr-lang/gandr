@@ -139,6 +139,7 @@ use gandr_surface_lowering::PatternReading;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_lowering::described::DescribedRole;
 use gandr_surface_parser::parse;
 use gandr_surface_pretty::BinderIndex;
@@ -2585,6 +2586,76 @@ impl TypeTable
         }
     }
 
+    /// The normal form `written` states for the block named `block`, read
+    /// back and spelled again: the fixed point of a `normalizes` row's right
+    /// side.
+    ///
+    /// A family's normal form is its constructors, a value the top level
+    /// names, so it reprints as [`Self::reprint_value`] reprints a value. A
+    /// `sign`'s is a term of its block, whose operations no top-level
+    /// declaration names (#669), so it is read as a call under the block's
+    /// rules and spelled again as the engine spells a normal form,
+    /// `spell(nf(read(spell(t))))`.
+    ///
+    /// # Specification
+    /// - requires: `grammar` is the grammar the table was built under.
+    /// - ensures: for a `data` family named `block`, or an operation one
+    ///   declares, [`Self::reprint_value`] of `written`, unsigned; for any
+    ///   other declaration named `block`, the spelling of
+    ///   [`LoweredModule::normal_form`]'s answer for `written` against it, in
+    ///   the table's own source lowered once in the unit the table was built
+    ///   in; [`reprinted::Absent::Unlowered`] when the lowering refuses the
+    ///   source, no declaration is named `block`, or the block reads no normal
+    ///   form for `written`.
+    /// - provides: the reprint a census compares a stated normal form with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sign's normal form reads back as written, a call
+    ///   reads to its normal form, and a name that is no block reads nothing;
+    ///   the census reads the corpus's family rows as values.
+    /// - witness: `typed::tests::a_sign_s_normal_form_reads_back_under_its_rules_669`
+    /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    #[inline]
+    #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
+    pub fn reprint_normal_form(
+        &self,
+        grammar: &Pbg,
+        block: Name<'_>,
+        written: SourceText<'_>,
+    ) -> Maybe<String, reprinted::Absent>
+    {
+        let Ok(Lowered::Module { module, .. }) = lower_unit_source(
+            grammar,
+            SourceText::from(self.naming.text.as_str()),
+            &self.unit,
+            &mut LoweringCount::default(),
+        )
+        .map(Lowering::into_lowered)
+        else {
+            return Maybe::Absent(reprinted::Absent::Unlowered);
+        };
+        let Some(declaration) = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_ref() == block.as_ref())
+        else {
+            return Maybe::Absent(reprinted::Absent::Unlowered);
+        };
+        if matches!(declaration.outcome(), DeclarationOutcome::Data(_))
+            || declaration.role() == Role::Operation
+        {
+            return self.reprint_value(grammar, Maybe::Absent(signed::Absent::Unsigned), written);
+        }
+        module
+            .normal_form(declaration, CallText::from(<&str>::from(written)))
+            .ok()
+            .map(|normal| normal.spelling())
+            .filter(|again| !again.is_empty())
+            .map_or(Maybe::Absent(reprinted::Absent::Unlowered), Maybe::Present)
+    }
+
     /// The thunk the declaration [`REPRINTED`] of `source` defines, lowered
     /// and its computation printed as a run's value prints.
     ///
@@ -3291,6 +3362,39 @@ mod tests
         assert!(
             !trips.is_empty() && trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
             "every printed type of the importer reads back beside its sibling: {trips:?}"
+        );
+    }
+
+    /// #669: a `sign`'s stated normal form is a term of the block, which a
+    /// top-level thunk cannot name. Read back under the block's rules it is
+    /// itself, and a call reads to the normal form the engine spells.
+    #[test]
+    fn a_sign_s_normal_form_reads_back_under_its_rules_669()
+    {
+        use gandr_surface_pretty::Name;
+
+        use super::reprinted;
+
+        let source = SourceText::from(
+            "sign Pointed {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  \
+             rule flipPt : flip(pt()) <=> pt();\n  rule flipFlip : flip(flip(p)) <=> p;\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = table(source);
+        let block = Name::from("Pointed");
+        let read = |written: &'static str| {
+            table.reprint_normal_form(&grammar, block, SourceText::from(written))
+        };
+        assert_eq!(read("pt"), Maybe::Present(String::from("pt")), "as written");
+        assert_eq!(
+            read("flip(flip(pt))"),
+            Maybe::Present(String::from("pt")),
+            "a call to its normal form"
+        );
+        assert_eq!(
+            table.reprint_normal_form(&grammar, Name::from("Absent"), SourceText::from("pt")),
+            Maybe::Absent(reprinted::Absent::Unlowered),
+            "no block of that name"
         );
     }
 
