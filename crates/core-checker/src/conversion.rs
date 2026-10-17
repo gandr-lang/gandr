@@ -38,6 +38,23 @@
 //! where a finer walk would accept it; the kernel admits no index that holds
 //! a hole either way.
 //!
+//! # A dependent arrow whose codomain ignores its binder is the plain arrow
+//!
+//! `(x : A) -> B` with `x` absent from `B` is `A -> B` (#577). The walk kept
+//! the two arrows apart by head, on the producer's promise to emit the
+//! dependent former only where the codomain names its binder; a family applied
+//! at its binder (`always(x)`) breaks that promise, since only reading the
+//! family's code shows that the codomain ignores `x`. A dependent arrow against
+//! a plain one now compares their domains, contravariantly as two arrows do,
+//! and the dependent codomain against the plain one weakened past the binder:
+//! the weakened codomain cannot name the binder, so the pair agrees exactly
+//! when the dependent codomain does not use it. The kernel and the
+//! normaliser's comparison of codes read the same rule. Alternatives:
+//! strengthening the dependent codomain, which needs an occurrence test the
+//! weakening does without, and rewriting a vacuous dependent arrow to the
+//! plain one where it is minted, which no producer can do before the family
+//! is read. Reversal: a core with one arrow former.
+//!
 //! # A stage is decided by the order
 //!
 //! A type refined at a stage of a structural fixpoint (`A^s`) is subsumed,
@@ -123,6 +140,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::Binders;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
@@ -134,6 +152,7 @@ use gandr_core_term::effect::RowInclusion;
 use gandr_core_term::effect::capability::RegionOrder;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::hole::Knowledge;
+use gandr_core_term::shift_comp_type;
 use gandr_kernel_core::stage_order::Fit;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;
@@ -666,7 +685,9 @@ fn endpoints_agree(
 ///   refused where the walk meets it.
 /// - ensures: [`Agreement::Convertible`] exactly when, reading each side at its
 ///   weak head at every position the walk reaches, either side is the unknown
-///   type, or both sides have the same former, universes and lifts the same
+///   type, or both sides have the same former, or one is a dependent arrow and
+///   the other a plain arrow whose codomain, weakened past the dependent
+///   binder, agrees with the dependent codomain, universes and lifts the same
 ///   sort and level, and rigid decodes the same level and the same code: two
 ///   codes agree when, each reduced at its head, either is a hole or a mark, or
 ///   they are the same variable or constant, quotes of agreeing types, static
@@ -694,8 +715,10 @@ fn endpoints_agree(
 ///   lifts differing only in level, two rigid decodes of different variables, a
 ///   decode of a defined code against its body beneath a former, static
 ///   instances rigid and defined, static lambdas alike and unlike, two rigid
-///   returned codes of one call at distinct ids, and a dangling id; the fast
-///   path is pinned against the structural decision by property.
+///   returned codes of one call at distinct ids, a dependent arrow against a
+///   plain one whose codomain ignores the binder, names it, or reads the
+///   ambient context past it, and a dangling id; the fast path is pinned
+///   against the structural decision by property.
 /// - witness: `conversion::tests::one_id_converts_without_being_read`
 /// - witness: `conversion::tests::equal_trees_at_distinct_ids_convert`
 /// - witness: `conversion::tests::differing_trees_are_apart_in_either_order`
@@ -710,6 +733,7 @@ fn endpoints_agree(
 /// - witness: `conversion::tests::a_row_meets_its_signatures_in_a_wider_row_by_name`
 /// - witness: `conversion::tests::invariant_capabilities_agree_on_authority_grade_and_region`
 /// - witness: `conversion::tests::a_path_type_is_apart_from_data_it_does_not_read_as`
+/// - witness: `conversion::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 #[spec(ensures: |ret| match root {
     | Pairing::Values(left, right) | Pairing::Assignable(left, right) | Pairing::SubValues(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) | Pairing::SubComps(left, right) if left == right => ret == Ok(Agreement::Convertible),
@@ -1217,6 +1241,43 @@ fn convert(
                             codomain: right_codomain,
                         },
                     ) => {
+                        pending.push(comps(left_codomain, right_codomain));
+                        pending.push(values(right_domain, left_domain));
+                        true
+                    },
+                    // A dependent arrow whose codomain ignores its binder is
+                    // the plain arrow over the same children (#577): the
+                    // arrow's codomain, read under the dependent arrow's
+                    // binder, cannot name it, so the two codomains agree
+                    // exactly when the dependent one does not use its binder.
+                    (
+                        CompTypeView::Pi {
+                            domain: left_domain,
+                            codomain: left_codomain,
+                        },
+                        CompTypeView::Arrow {
+                            domain: right_domain,
+                            codomain: right_codomain,
+                        },
+                    ) => {
+                        let right_codomain =
+                            shift_comp_type(context.arena_mut(), right_codomain, Binders::ONE);
+                        pending.push(comps(left_codomain, right_codomain));
+                        pending.push(values(right_domain, left_domain));
+                        true
+                    },
+                    (
+                        CompTypeView::Arrow {
+                            domain: left_domain,
+                            codomain: left_codomain,
+                        },
+                        CompTypeView::Pi {
+                            domain: right_domain,
+                            codomain: right_codomain,
+                        },
+                    ) => {
+                        let left_codomain =
+                            shift_comp_type(context.arena_mut(), left_codomain, Binders::ONE);
                         pending.push(comps(left_codomain, right_codomain));
                         pending.push(values(right_domain, left_domain));
                         true

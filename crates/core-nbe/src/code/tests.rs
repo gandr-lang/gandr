@@ -542,6 +542,72 @@ fn a_quoted_variable_is_read_through_the_environment()
 }
 
 #[test]
+fn a_vacuous_dependent_arrow_is_the_plain_arrow_577()
+{
+    // #577: `⌜U(Π(_ : Unit). F Unit)⌝` is `⌜U(Unit -> F Unit)⌝`, in either
+    // order, and over `x` the dependent `El(#1)` — `x` seen past the binder —
+    // is the plain `El(#0)`; the dependent `El(#0)` names its own binder and
+    // is apart from the plain one, which reads `x`.
+    let mut core = CoreArena::new();
+    let unit = core.value_type_unit();
+    let closed = core.comp_type_returner(unit);
+    let named = |core: &mut CoreArena, index: u32| {
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        core.comp_type_element(bound, Level::zero())
+    };
+    let (inner, outer) = (named(&mut core, 0), named(&mut core, 1));
+    let quote = |core: &mut CoreArena, arrow| {
+        let thunk = core.value_type_thunk(arrow);
+        core.value_quote(thunk)
+    };
+    let dependent = |core: &mut CoreArena, codomain| {
+        let pi = core.comp_type_pi(unit, codomain);
+        quote(core, pi)
+    };
+    let plain = |core: &mut CoreArena, codomain| {
+        let arrow = core.comp_type_arrow(unit, codomain);
+        quote(core, arrow)
+    };
+    let cases = [
+        (
+            dependent(&mut core, closed),
+            plain(&mut core, closed),
+            CodeComparison::Equal,
+            "a closed codomain ignores the binder",
+        ),
+        (
+            dependent(&mut core, outer),
+            plain(&mut core, inner),
+            CodeComparison::Equal,
+            "a codomain reading the environment past the binder ignores it",
+        ),
+        (
+            dependent(&mut core, inner),
+            plain(&mut core, inner),
+            CodeComparison::Apart,
+            "a codomain naming the binder does not ignore it",
+        ),
+    ];
+
+    let mut domain = DomainArena::new();
+    let x = variable(&mut domain, BinderLevel::from(0_u32));
+    for (one, other, expected, what) in cases {
+        let one = code_of(&core, &mut domain, one, &[x]);
+        let other = code_of(&core, &mut domain, other, &[x]);
+        assert_eq!(
+            compare_rigidly(&core, &domain, one, other),
+            expected,
+            "{what}"
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, other, one),
+            expected,
+            "{what}, in either order"
+        );
+    }
+}
+
+#[test]
 fn static_operators_compare_by_binder_and_spine()
 {
     let mut core = CoreArena::new();
@@ -860,6 +926,7 @@ fn stuck_prefixes_distinguish_heads_eliminations_and_refusals()
         walk.stuck(neutral, super::SpinePrefix(0))
     );
 }
+
 #[test]
 fn native_classifier_endpoints_compare_in_order_and_refuse_a_missing_target()
 {

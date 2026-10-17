@@ -16,7 +16,10 @@
 //!   closure. A decode whose code reads as a quote is the quoted type, read at
 //!   the quote's place: core-term and the kernel fire that rule when they mint
 //!   a decode, and an environment holds codes no mint saw, so the walk fires it
-//!   too. Equal walks are [`CodeComparison::Equal`].
+//!   too. Equal walks are [`CodeComparison::Equal`]. A dependent arrow against
+//!   a plain one crosses the dependent binder on its side alone, so the two
+//!   agree exactly when the dependent codomain does not name that binder: `(x :
+//!   A) -> B` with `x` absent from `B` is `A -> B` (#577).
 //! - **Rigidity.** Two codes that are not α-equal are [`CodeComparison::Apart`]
 //!   only when neither holds anything that could still unfold: a constant with
 //!   a body, a neutral stuck on an elimination, or a value no code can be. A
@@ -84,6 +87,20 @@
 //! decoding at evaluation, which gives types a weak head for this one rule.
 //! Reversal: as for codes, a type former that reduces, at which point the
 //! decode is one step of the rule table.
+//!
+//! A dependent arrow whose codomain ignores its binder is the plain arrow
+//! (#577). The walk compared the two arrows by head, which refused a family
+//! applied at its binder whose code evaluates to a constant type: the
+//! dependent former is all the producer can emit before the code is read. The
+//! change crosses the dependent binder alone, with the plain codomain left at
+//! its own place, so a variable the plain codomain reads resolves past the
+//! binder, and a use of the binder on the dependent side meets no binder on
+//! the other and separates; the checker's conversion and the kernel read the
+//! same rule. Alternatives: an occurrence test that strengthens the dependent
+//! codomain, which the one-sided crossing makes unnecessary, and rewriting a
+//! vacuous dependent arrow to the plain one at readback, which leaves every
+//! code minted elsewhere unreduced. Reversal: a representation with one arrow
+//! former, at which point the crossing is the only case.
 //!
 //! The duplication walk refuses a quote graft by name,
 //! `DuplicationFault::Quote`: no producer shares inside a type, so the overlay
@@ -1202,7 +1219,8 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
     ///   and otherwise [`Alike::Same`] with the children queued: type children
     ///   as nodes, a decode's code as an atom pair, a dependent arrow's
     ///   codomain and a dependent pair's second factor one shared binder
-    ///   further in.
+    ///   further in, and a dependent arrow against a plain one with the
+    ///   dependent codomain one binder further in alone (#577).
     /// - provides: the per-former step of the first pass.
     /// - fails: [`ConversionFault::MachineInvariant`] when a node does not
     ///   resolve, without appending partial child obligations.
@@ -1210,12 +1228,13 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a dependent arrow is equal only when its domain and
-    ///   bound codomain agree, unequal rigid formers and lift levels separate,
-    ///   two capability types agree only at one grade, one region and equal
-    ///   authority types, and decoded held quotes compare as their types. The
-    ///   predicate pins payload decisions and the number of queued premises;
-    ///   omitting a child or crossing the codomain under the wrong binder
-    ///   changes the witnesses.
+    ///   bound codomain agree, a dependent arrow is equal to a plain one only
+    ///   when its codomain does not name its binder, unequal rigid formers and
+    ///   lift levels separate, two capability types agree only at one grade,
+    ///   one region and equal authority types, and decoded held quotes compare
+    ///   as their types. The predicate pins payload decisions and the number of
+    ///   queued premises; omitting a child or crossing the codomain under the
+    ///   wrong binder changes the witnesses.
     /// - witness: `code::tests::two_quotes_of_one_type_are_equal`
     /// - witness: `code::tests::rigid_quotes_of_different_types_are_apart`
     /// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
@@ -1223,6 +1242,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
     /// - witness: `code::tests::native_classifier_endpoints_compare_in_order_and_refuse_a_missing_target`
     /// - witness: `code::tests::capability_types_compare_grade_region_and_authority_types`
     /// - witness: `code::tests::a_type_former_written_twice_is_one_code`
+    /// - witness: `code::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
     ///
     /// # Errors
     /// As above, and as [`Walk::atom`].
@@ -1306,7 +1326,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             CompType::Returner { effects: ref second, .. } if matching_effect_shapes(first, second) == Alike::Same => Ok((Alike::Same, 1_usize.saturating_add(first.types().count()), 0)),
                             CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) => Ok((Alike::Different, 0, 0)),
                         },
-                        CompType::With(..) | CompType::Arrow { .. } | CompType::Pi { .. } => if core::mem::discriminant(left) == core::mem::discriminant(right) { Ok((Alike::Same, 2, 0)) } else { Ok((Alike::Different, 0, 0)) },
+                        CompType::With(..) | CompType::Arrow { .. } | CompType::Pi { .. } => if core::mem::discriminant(left) == core::mem::discriminant(right) || matches!((left, right), (&CompType::Pi { .. }, &CompType::Arrow { .. }) | (&CompType::Arrow { .. }, &CompType::Pi { .. })) { Ok((Alike::Same, 2, 0)) } else { Ok((Alike::Different, 0, 0)) },
                         CompType::Element { code, ref target } => match *right {
                             CompType::Element { code: other_code, target: ref other_target } if target == other_target => {
                                 if let Ok((Node::CompType(_, here), Node::CompType(_, there))) = roots {
@@ -1731,6 +1751,47 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         let (inside, other_inside) = self.crossed(here, there);
                         pending.push((
                             Node::CompType(codomain, inside),
+                            Node::CompType(other_codomain, other_inside),
+                        ));
+                        pending.push((
+                            Node::ValueType(domain, here),
+                            Node::ValueType(other_domain, there),
+                        ));
+                        Ok(Alike::Same)
+                    },
+                    // #577: a dependent arrow against a plain one crosses the
+                    // dependent binder alone. The plain codomain keeps its own
+                    // place, so its variables are read past the binder, and
+                    // the pair agrees exactly when the dependent codomain does
+                    // not name it.
+                    (
+                        &CompType::Pi { domain, codomain },
+                        &CompType::Arrow {
+                            domain: other_domain,
+                            codomain: other_codomain,
+                        },
+                    ) => {
+                        let inside = self.crossed_alone(here);
+                        pending.push((
+                            Node::CompType(codomain, inside),
+                            Node::CompType(other_codomain, there),
+                        ));
+                        pending.push((
+                            Node::ValueType(domain, here),
+                            Node::ValueType(other_domain, there),
+                        ));
+                        Ok(Alike::Same)
+                    },
+                    (
+                        &CompType::Arrow { domain, codomain },
+                        &CompType::Pi {
+                            domain: other_domain,
+                            codomain: other_codomain,
+                        },
+                    ) => {
+                        let other_inside = self.crossed_alone(there);
+                        pending.push((
+                            Node::CompType(codomain, here),
                             Node::CompType(other_codomain, other_inside),
                         ));
                         pending.push((
