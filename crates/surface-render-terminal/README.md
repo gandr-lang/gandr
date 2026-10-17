@@ -34,22 +34,25 @@ The terminal face of the diagnostics model: one `Diagnostic` laid out as the loc
 ## Examples
 
 ```rust
+use core::ops::ControlFlow;
+
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_render_terminal::render;
-use quenchant_shape::shape::Maybe;
 
 let verb = Verb::Check(Goals::Gated);
-let mut walk = Walk::new(vec![std::path::PathBuf::from("broken.gandr")]);
-while let Maybe::Present(step) = walk.step() {
+let walk = Walk::new(vec![std::path::PathBuf::from("broken.gandr")]);
+let ControlFlow::Continue(_report) = walk.visit(Width::SERIAL, |step| -> ControlFlow<core::convert::Infallible> {
     for diagnostic in entries(&step, verb) {
         println!("{}", render(&diagnostic, RenderStyle::Plain, Verbosity::User));
     }
-}
+    ControlFlow::Continue(())
+});
 ```
 
 The crate's tests run with `cargo nextest run -p gandr-surface-render-terminal`; the crate-level example runs with `cargo test -p gandr-surface-render-terminal --doc`.

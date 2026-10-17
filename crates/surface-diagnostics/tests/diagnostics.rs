@@ -12,6 +12,8 @@ extern crate alloc;
 #[cfg(test)]
 mod diagnostics
 {
+    use core::convert::Infallible;
+    use core::ops::ControlFlow;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -48,6 +50,7 @@ mod diagnostics
     use gandr_surface_dispatcher::Step;
     use gandr_surface_dispatcher::Verb;
     use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::Width;
     use gandr_surface_dispatcher::compose;
     use gandr_surface_dispatcher::entries;
     use gandr_surface_grammar::built_in;
@@ -1430,14 +1433,17 @@ mod diagnostics
             SourceText::from("def one : Integer ;\ndef one = 1 ;\n"),
         );
         scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
-        let mut walk = Walk::new(vec![scratch.0.clone()]);
         let mut found = Vec::new();
-        while let Maybe::Present(step) = walk.step() {
-            found.extend(
-                entries(&step, Verb::Check(Goals::Reported))
-                    .filter(|diagnostic| diagnostic.path.ends_with("user.gandr")),
-            );
-        }
+        let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
+            Width::SERIAL,
+            |step| -> ControlFlow<Infallible> {
+                found.extend(
+                    entries(&step, Verb::Check(Goals::Reported))
+                        .filter(|diagnostic| diagnostic.path.ends_with("user.gandr")),
+                );
+                ControlFlow::Continue(())
+            },
+        );
         let [ref refusal] = *found.as_slice()
         else {
             panic!("the importer reports its one refusal: {found:?}");
@@ -1540,32 +1546,39 @@ mod diagnostics
             scratch.file(Path::new(relative), SourceText::from(text));
         }
         let printed = |verb: Verb| {
-            let mut walk = Walk::new(vec![scratch.0.clone()]);
             let mut printed = Vec::new();
-            while let Maybe::Present(step) = walk.step() {
-                for diagnostic in entries(&step, verb) {
-                    if diagnostic.severity == Severity::Ledger {
-                        let image: serde_json::Value = serde_json::from_str(&diagnostic.json())
-                            .expect("a ledger line's JSON image parses");
-                        assert_eq!(image["level"], "line");
-                        assert_eq!(
-                            image["line"],
-                            format!("{}: {}", diagnostic.path.display(), diagnostic.message.text)
+            let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
+                Width::SERIAL,
+                |step| -> ControlFlow<Infallible> {
+                    for diagnostic in entries(&step, verb) {
+                        if diagnostic.severity == Severity::Ledger {
+                            let image: serde_json::Value = serde_json::from_str(&diagnostic.json())
+                                .expect("a ledger line's JSON image parses");
+                            assert_eq!(image["level"], "line");
+                            assert_eq!(
+                                image["line"],
+                                format!(
+                                    "{}: {}",
+                                    diagnostic.path.display(),
+                                    diagnostic.message.text
+                                )
                                 .as_str(),
-                            "the JSON image carries the line as the terminal prints it"
-                        );
+                                "the JSON image carries the line as the terminal prints it"
+                            );
+                        }
+                        printed.push((
+                            diagnostic
+                                .path
+                                .strip_prefix(&scratch.0)
+                                .expect("within scratch")
+                                .to_path_buf(),
+                            diagnostic.severity,
+                            diagnostic.detail.class,
+                        ));
                     }
-                    printed.push((
-                        diagnostic
-                            .path
-                            .strip_prefix(&scratch.0)
-                            .expect("within scratch")
-                            .to_path_buf(),
-                        diagnostic.severity,
-                        diagnostic.detail.class,
-                    ));
-                }
-            }
+                    ControlFlow::Continue(())
+                },
+            );
             printed
         };
         let check = |hole: Severity, class: Class| {
@@ -1744,106 +1757,109 @@ mod diagnostics
             let root = gandr_workflow_sweep::corpus::directory()
                 .expect("the corpus is checked out beside this crate")
                 .join("fixture/pathological");
-            let mut walk = Walk::new(vec![root]);
             let mut repaired = 0_usize;
-            while let Maybe::Present(step) = walk.step() {
-                let Step::Source {
-                    path, text, base, ..
-                } = step
-                else {
-                    continue;
-                };
-                if !visited.contains(path) {
-                    continue;
-                }
-                let whole = <&str>::from(text)
-                    .get(usize::from(base) ..)
-                    .expect("an importer's own text starts at its base");
-                let cuts = whole
-                    .match_indices([' ', '\n'])
-                    .map(|(at, _)| at.saturating_add(1_usize))
-                    .chain([whole.len()]);
-                for cut in cuts {
-                    let typed =
-                        SourceText::from(whole.get(.. cut).expect("a cut at an ASCII byte"));
-                    let Ok(composed) = compose(
-                        &grammar,
-                        SourceRoot::Fixture.corpus_root(),
-                        typed,
-                        &mut LoweringCount::default(),
-                    )
-                    else {
-                        continue;
-                    };
-                    let step = Step::Source {
-                        path,
-                        root: SourceRoot::Fixture,
-                        text: typed,
-                        base: gandr_surface_syntax::ByteOffset::from(0_usize),
-                        composed,
-                        standing: Standing::Unsettled,
-                    };
+            let ControlFlow::Continue(_report) =
+                Walk::new(vec![root]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
                     let Step::Source {
-                        composed: Composed::Settled { ref report, .. },
-                        ..
+                        path, text, base, ..
                     } = step
                     else {
-                        continue;
+                        return ControlFlow::Continue(());
                     };
-                    let unsettled: Vec<_> = report
-                        .declarations()
-                        .iter()
-                        .filter(|declaration| declaration.settlement() == Settlement::Unsettled)
-                        .collect();
-                    let severities: Vec<Severity> = entries(&step, Verb::Check(Goals::Gated))
-                        .map(|diagnostic| diagnostic.severity)
-                        .filter(|&severity| matches!(severity, Severity::Error | Severity::Note))
-                        .collect();
-                    assert_eq!(
-                        severities.len(),
-                        unsettled.len(),
-                        "one entry per unsettled declaration"
-                    );
-                    for malformed in &unsettled {
-                        if !matches!(
-                            malformed.produced().refusal(),
-                            Maybe::Present(Refusal::Lowering(LoweringRefusal::MalformedForm {
-                                fault: FormFault::Repaired(_),
-                                ..
-                            }))
-                        ) {
+                    if !visited.contains(path) {
+                        return ControlFlow::Continue(());
+                    }
+                    let whole = <&str>::from(text)
+                        .get(usize::from(base) ..)
+                        .expect("an importer's own text starts at its base");
+                    let cuts = whole
+                        .match_indices([' ', '\n'])
+                        .map(|(at, _)| at.saturating_add(1_usize))
+                        .chain([whole.len()]);
+                    for cut in cuts {
+                        let typed =
+                            SourceText::from(whole.get(.. cut).expect("a cut at an ASCII byte"));
+                        let Ok(composed) = compose(
+                            &grammar,
+                            SourceRoot::Fixture.corpus_root(),
+                            typed,
+                            &mut LoweringCount::default(),
+                        )
+                        else {
                             continue;
-                        }
-                        repaired = repaired.saturating_add(1_usize);
-                        let named: Vec<_> = unsettled
+                        };
+                        let step = Step::Source {
+                            path,
+                            root: SourceRoot::Fixture,
+                            text: typed,
+                            base: gandr_surface_syntax::ByteOffset::from(0_usize),
+                            composed,
+                            standing: Standing::Unsettled,
+                        };
+                        let Step::Source {
+                            composed: Composed::Settled { ref report, .. },
+                            ..
+                        } = step
+                        else {
+                            continue;
+                        };
+                        let unsettled: Vec<_> = report
+                            .declarations()
                             .iter()
-                            .zip(&severities)
-                            .filter(|&(declaration, _)| declaration.name() == malformed.name())
+                            .filter(|declaration| declaration.settlement() == Settlement::Unsettled)
+                            .collect();
+                        let severities: Vec<Severity> = entries(&step, Verb::Check(Goals::Gated))
+                            .map(|diagnostic| diagnostic.severity)
+                            .filter(|&severity| {
+                                matches!(severity, Severity::Error | Severity::Note)
+                            })
                             .collect();
                         assert_eq!(
-                            named
+                            severities.len(),
+                            unsettled.len(),
+                            "one entry per unsettled declaration"
+                        );
+                        for malformed in &unsettled {
+                            if !matches!(
+                                malformed.produced().refusal(),
+                                Maybe::Present(Refusal::Lowering(LoweringRefusal::MalformedForm {
+                                    fault: FormFault::Repaired(_),
+                                    ..
+                                }))
+                            ) {
+                                continue;
+                            }
+                            repaired = repaired.saturating_add(1_usize);
+                            let named: Vec<_> = unsettled
                                 .iter()
-                                .filter(|&&(_, &severity)| severity == Severity::Error)
-                                .count(),
-                            1_usize,
-                            "{} cut at {cut}: `{}` reports its parse error alone",
-                            path.display(),
-                            malformed.name()
-                        );
-                        assert!(
-                            named.iter().all(|&(declaration, _)| !matches!(
-                                declaration.produced().refusal(),
-                                Maybe::Present(Refusal::Lowering(
-                                    LoweringRefusal::OutOfFragment { .. }
-                                ))
-                            )),
-                            "{} cut at {cut}: `{}` is malformed, never unsupported",
-                            path.display(),
-                            malformed.name()
-                        );
+                                .zip(&severities)
+                                .filter(|&(declaration, _)| declaration.name() == malformed.name())
+                                .collect();
+                            assert_eq!(
+                                named
+                                    .iter()
+                                    .filter(|&&(_, &severity)| severity == Severity::Error)
+                                    .count(),
+                                1_usize,
+                                "{} cut at {cut}: `{}` reports its parse error alone",
+                                path.display(),
+                                malformed.name()
+                            );
+                            assert!(
+                                named.iter().all(|&(declaration, _)| !matches!(
+                                    declaration.produced().refusal(),
+                                    Maybe::Present(Refusal::Lowering(
+                                        LoweringRefusal::OutOfFragment { .. }
+                                    ))
+                                )),
+                                "{} cut at {cut}: `{}` is malformed, never unsupported",
+                                path.display(),
+                                malformed.name()
+                            );
+                        }
                     }
-                }
-            }
+                    ControlFlow::Continue(())
+                });
             assert!(
                 repaired > 0_usize,
                 "typing the corpus meets malformed forms"

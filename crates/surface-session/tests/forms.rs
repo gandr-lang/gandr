@@ -5,7 +5,9 @@
 //! the resume's typings — over generated modules of both roots, edited by
 //! every class of edit, at one thread and at several.
 
+use core::convert::Infallible;
 use core::num::NonZeroUsize;
+use core::ops::ControlFlow;
 
 use anodized::spec;
 use gandr_core_incremental::MemoryCheckpointStore;
@@ -30,7 +32,6 @@ use gandr_surface_syntax::SourceText;
 use proptest::prelude::ProptestConfig;
 use proptest::prelude::any;
 use proptest::proptest;
-use quenchant_shape::shape::Maybe;
 
 use crate::common::GRAMMAR;
 use crate::common::Text;
@@ -338,56 +339,58 @@ fn every_corpus_edit_script_submits_as_the_walk_composes_it()
     // enforced), then a declaration inserted at its middle form, its first
     // form deleted, its last form moved first, and the source again: each
     // revision agrees with the walk's composition and a fresh session's.
-    let mut walk = Walk::new(vec![
+    let walk = Walk::new(vec![
         corpus(CorpusRoot::Strict),
         corpus(CorpusRoot::Fixture),
     ]);
     let mut walked = 0_usize;
     let mut sources = 0_usize;
-    while let Maybe::Present(step) = walk.step() {
-        let Step::Source {
-            path, root, text, ..
-        } = step
-        else {
-            panic!("the corpus walks without a fault: {step:?}");
-        };
-        walked = walked.saturating_add(1);
-        if walked.rem_euclid(STRIDE) != 0 {
-            continue;
-        }
-        let original = String::from(<&str>::from(text));
-        let starts = form_starts(Text::from(&original));
-        let cut = |at: usize| {
-            original
-                .split_at_checked(at)
-                .unwrap_or((original.as_str(), ""))
-        };
-        let middle = starts
-            .get(starts.len().div_euclid(2))
-            .map_or(0, |&Byte(at)| at);
-        let first_end = starts.get(1).map_or(original.len(), |&Byte(at)| at);
-        let last_start = starts.iter().rev().nth(1).map_or(0, |&Byte(at)| at);
-        let (head, tail) = cut(middle);
-        let inserted = format!("{head}def inserted = 1;\n{tail}");
-        let deleted = String::from(cut(first_end).1);
-        let (front, last) = cut(last_start);
-        let moved = format!("{last}\n{front}");
-        let mut incremental = session(root);
-        for (revision, name) in [
-            (&original, "the source"),
-            (&inserted, "an insertion"),
-            (&deleted, "a deletion"),
-            (&moved, "a move"),
-            (&original, "the source again"),
-        ] {
-            let _census = agree(
-                &mut incremental,
-                root,
-                Text::from(revision),
-                &format_args!("{}: {name}", path.display()),
-            );
-        }
-        sources = sources.saturating_add(1);
-    }
+    let ControlFlow::Continue(_report) =
+        walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+            let Step::Source {
+                path, root, text, ..
+            } = step
+            else {
+                panic!("the corpus walks without a fault: {step:?}");
+            };
+            walked = walked.saturating_add(1);
+            if walked.rem_euclid(STRIDE) != 0 {
+                return ControlFlow::Continue(());
+            }
+            let original = String::from(<&str>::from(text));
+            let starts = form_starts(Text::from(&original));
+            let cut = |at: usize| {
+                original
+                    .split_at_checked(at)
+                    .unwrap_or((original.as_str(), ""))
+            };
+            let middle = starts
+                .get(starts.len().div_euclid(2))
+                .map_or(0, |&Byte(at)| at);
+            let first_end = starts.get(1).map_or(original.len(), |&Byte(at)| at);
+            let last_start = starts.iter().rev().nth(1).map_or(0, |&Byte(at)| at);
+            let (head, tail) = cut(middle);
+            let inserted = format!("{head}def inserted = 1;\n{tail}");
+            let deleted = String::from(cut(first_end).1);
+            let (front, last) = cut(last_start);
+            let moved = format!("{last}\n{front}");
+            let mut incremental = session(root);
+            for (revision, name) in [
+                (&original, "the source"),
+                (&inserted, "an insertion"),
+                (&deleted, "a deletion"),
+                (&moved, "a move"),
+                (&original, "the source again"),
+            ] {
+                let _census = agree(
+                    &mut incremental,
+                    root,
+                    Text::from(revision),
+                    &format_args!("{}: {name}", path.display()),
+                );
+            }
+            sources = sources.saturating_add(1);
+            ControlFlow::Continue(())
+        });
     assert!(sources > 0, "the corpus roots are populated");
 }

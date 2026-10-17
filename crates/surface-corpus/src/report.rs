@@ -937,36 +937,45 @@ impl<'source> SettleReport<'source>
         self.ledger
     }
 
-    /// The report of the declarations written from `start` on, owing
-    /// `ledger`: one source's share of a unit that lays its siblings before
-    /// it.
+    /// The report of the declarations written from `start` up to `end`, owing
+    /// `ledger`: one source's share of a unit that lays several end to end.
     ///
     /// # Specification
     /// - requires: `ledger` is what the kept declarations' verdicts owe.
     /// - ensures: the root, the declarations whose span starts at or after
-    ///   `start` in admission order, and `ledger`.
-    /// - provides: the importer's report over the unit it was judged in.
+    ///   `start` and at or before `end`, in admission order, and `ledger`.
+    /// - provides: one source's report over the unit it was judged in.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an importer's settled report holds its own
-    ///   declarations alone.
-    /// - witness: `report::tests::a_report_from_an_offset_keeps_the_declarations_written_from_there`
+    /// - hypothesis: L3 — a source between two others keeps its own
+    ///   declarations alone, each neighbour's dropped.
+    /// - witness: `report::tests::a_report_within_a_source_keeps_the_declarations_written_there`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.ledger == ledger
-        && ret.declarations.iter().all(|declaration| declaration.span().start() >= start))]
-    pub fn from_offset(
-        mut self,
+        && ret.declarations.iter().all(|declaration|
+            start <= declaration.span().start() && declaration.span().start() <= end))]
+    pub fn within(
+        &self,
         start: ByteOffset,
+        end: ByteOffset,
         ledger: ObligationCount,
     ) -> Self
     {
-        self.declarations
-            .retain(|declaration| declaration.span().start() >= start);
-        self.ledger = ledger;
-        self
+        Self {
+            root: self.root,
+            declarations: self
+                .declarations
+                .iter()
+                .filter(|declaration| {
+                    start <= declaration.span().start() && declaration.span().start() <= end
+                })
+                .cloned()
+                .collect(),
+            ledger,
+        }
     }
 
     /// The run's counts.
@@ -1386,14 +1395,20 @@ mod tests
     }
 
     #[test]
-    fn a_report_from_an_offset_keeps_the_declarations_written_from_there()
+    fn a_report_within_a_source_keeps_the_declarations_written_there()
     {
-        let source = "def first = 1 ;\ndef second = 2 ;";
+        let source = "def first = 1 ;\ndef second = 2 ;\ndef third = 3 ;";
         let start = source
             .find("def second")
             .expect("the second declaration is written");
-        let report = settled(CorpusRoot::Fixture, SourceText::from(source))
-            .from_offset(ByteOffset::from(start), ObligationCount::from(3_usize));
+        let end = source
+            .find("\ndef third")
+            .expect("the third declaration is written");
+        let report = settled(CorpusRoot::Fixture, SourceText::from(source)).within(
+            ByteOffset::from(start),
+            ByteOffset::from(end),
+            ObligationCount::from(3_usize),
+        );
         let names: Vec<String> = report
             .declarations()
             .iter()
@@ -1402,12 +1417,12 @@ mod tests
         assert_eq!(
             names,
             ["second"],
-            "a declaration before the offset, a sibling's, is dropped"
+            "a declaration before the source and one after it, its neighbours', are dropped"
         );
         assert_eq!(
             report.ledger,
             ObligationCount::from(3_usize),
-            "the ledger is the one the importer's own verdicts owe"
+            "the ledger is the one the source's own verdicts owe"
         );
     }
 

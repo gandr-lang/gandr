@@ -12,21 +12,28 @@
 //! nothing and is imported by nothing is a unit of one, [`Unit::single`],
 //! which lowers exactly as a source always has.
 //!
+//! A unit may hold two sources neither of which imports the other. The walk
+//! (`gandr-surface-dispatcher`) lays out a whole import-connected component
+//! as one unit, so a source imported by several is lowered once; an editor
+//! session lays out one source's import closure. Either way a source sees
+//! only the names it declares and the names of the sources it imports.
+//!
 //! The spans of a unit's tree are the unit's: a source's bytes stand at its
 //! start. The faces that render a source subtract its start
 //! (`gandr-surface-dispatcher`'s `Step::Source` carries it), so a reader sees
 //! each source as it wrote it.
 //!
-//! Two tables stay unit-wide, by choice for this slice. The outermost
-//! [`Recognition`](crate::namespace::Recognition) scope — the builtins and
-//! the module paths — is one per lowering, so a module a sibling declares is
-//! recognised by path in its importer, and two sources of one unit declaring
-//! a module of one name collide there. A form's
+//! Two tables stay unit-wide, which for the walk is component-wide. The
+//! outermost [`Recognition`](crate::namespace::Recognition) scope — the
+//! builtins and the module paths — is one per lowering, so a module a sibling
+//! declares is recognised by path in its importer, and two sources of one
+//! component declaring a module of one name collide there, whether or not
+//! either imports the other. A form's
 //! [`NodeKey`](gandr_surface_syntax::NodeKey) is its content digest, so two
-//! byte-identical forms in two sources share a key, and a table filed by key
-//! holds one entry for both. Both reverse when a unit is a package's
-//! component: each source's module paths go under its own scope and a key
-//! carries its source.
+//! byte-identical forms in two sources of one component share a key, and a
+//! table filed by key holds one entry for both. Both reverse when a unit is a
+//! package's component: each source's module paths go under its own scope and
+//! a key carries its source.
 //!
 //! [`Container::TopLevel`]: crate::Container::TopLevel
 

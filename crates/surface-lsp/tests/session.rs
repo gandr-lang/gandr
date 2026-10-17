@@ -14,6 +14,8 @@ extern crate alloc;
 mod session
 {
     use alloc::collections::BTreeMap;
+    use core::convert::Infallible;
+    use core::ops::ControlFlow;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -25,6 +27,7 @@ mod session
     use gandr_surface_dispatcher::Step;
     use gandr_surface_dispatcher::Verb;
     use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::Width;
     use gandr_surface_dispatcher::entries;
     use gandr_surface_grammar::RoleTable;
     use gandr_surface_grammar::built_in;
@@ -784,12 +787,13 @@ mod session
         let text = "def answer = 42 ;\ndef broken = missing ;\n";
         std::fs::write(&path, text).expect("the source is written");
 
-        let mut walk = Walk::new(vec![path.clone()]);
-        let Maybe::Present(step) = walk.step()
+        let ControlFlow::Break(found) =
+            Walk::new(vec![path.clone()]).visit(Width::SERIAL, |step| {
+                ControlFlow::Break(entries(&step, Verb::Check(Goals::Reported)).collect::<Vec<_>>())
+            })
         else {
             panic!("the walk reaches the source");
         };
-        let found = entries(&step, Verb::Check(Goals::Reported)).collect::<Vec<_>>();
         assert_eq!(found.len(), 1_usize, "one refusal, one diagnostic");
         let Maybe::Present(ref code) = found[0].identifier
         else {
@@ -836,31 +840,33 @@ mod session
     fn every_corpus_diagnostic_is_published_as_the_model_builds_it()
     {
         let root = corpus();
-        let mut walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
+        let walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
         let mut expected = BTreeMap::new();
         let mut sources = Vec::new();
-        while let Maybe::Present(step) = walk.step() {
-            let Step::Source {
-                path, text, base, ..
-            } = step
-            else {
-                panic!("every corpus path is carried through the pipeline");
-            };
-            // An importer's text is its closure's; the editor holds its own.
-            let own = <&str>::from(text)
-                .get(usize::from(base) ..)
-                .expect("a source's own text starts inside its unit's");
-            let index = LineIndex::new(own.into());
-            let reports = entries(&step, Verb::Check(Goals::Reported))
-                .map(|diagnostic| rendered(&diagnostic, &index))
-                .collect::<Vec<_>>();
-            let source = Source {
-                uri: uri(path),
-                text: own.to_owned(),
-            };
-            let _prior = expected.insert(source.uri.clone(), reports);
-            sources.push(source);
-        }
+        let ControlFlow::Continue(_report) =
+            walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path, text, base, ..
+                } = step
+                else {
+                    panic!("every corpus path is carried through the pipeline");
+                };
+                // An importer's text is its component's; the editor holds its own.
+                let own = <&str>::from(text)
+                    .get(usize::from(base) ..)
+                    .expect("a source's own text starts inside its unit's");
+                let index = LineIndex::new(own.into());
+                let reports = entries(&step, Verb::Check(Goals::Reported))
+                    .map(|diagnostic| rendered(&diagnostic, &index))
+                    .collect::<Vec<_>>();
+                let source = Source {
+                    uri: uri(path),
+                    text: own.to_owned(),
+                };
+                let _prior = expected.insert(source.uri.clone(), reports);
+                sources.push(source);
+                ControlFlow::Continue(())
+            });
         assert!(
             sources.len() > 100_usize,
             "the corpus is walked whole: {} sources",
@@ -1089,15 +1095,17 @@ mod session
             let roles = RoleTable::build(&grammar).expect("the role table builds");
             let all = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
             let root = corpus();
-            let mut walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
+            let walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
             let mut expected_uris = alloc::collections::BTreeSet::new();
-            while let Maybe::Present(step) = walk.step() {
-                let Step::Source { path, .. } = step
-                else {
-                    panic!("a readable corpus source");
-                };
-                let _inserted = expected_uris.insert(uri(path));
-            }
+            let ControlFlow::Continue(_report) =
+                walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+                    let Step::Source { path, .. } = step
+                    else {
+                        panic!("a readable corpus source");
+                    };
+                    let _inserted = expected_uris.insert(uri(path));
+                    ControlFlow::Continue(())
+                });
             assert_eq!(
                 all.iter()
                     .map(|source| uri(&source.path))
