@@ -553,8 +553,10 @@ struct ScopeFrame<'source>
     parent: Frame,
     /// The type the binder was written with, as the syntax node holding it.
     declared: Maybe<NodeIndex, binder_type::Absent>,
-    /// Whether a type position names this binder.
+    /// Whether a signature's type position names this binder.
     mentioned: Mentioned,
+    /// Whether a type quoted in a body names this binder.
+    quoted: Mentioned,
     /// Where the binder was written, when the source names it.
     site: Maybe<ByteSpan, binder_site::Absent>,
     /// The zone the binder binds into.
@@ -577,6 +579,43 @@ impl From<Mentioned> for bool
     fn from(mentioned: Mentioned) -> Self
     {
         mentioned.0
+    }
+}
+
+/// The telescope a type counts its binders in: a typed binder binds in the
+/// signature's once a signature type names it, and in a body quote's once a
+/// signature type or a body quote names it (#547).
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Telescope
+{
+    /// The signature's telescope, whose binders make arrows dependent.
+    Signature,
+    /// A type quoted in a body, carried into the body's context once minted.
+    Quote,
+}
+
+impl ScopeFrame<'_>
+{
+    /// Whether this frame binds in `telescope`: never a linear frame, always
+    /// an untyped one, and a typed one once a type of that telescope names it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn binds_in(
+        &self,
+        telescope: Telescope,
+    ) -> Mentioned
+    {
+        Mentioned(match (self.zone, self.declared, telescope) {
+            (Zone::Linear, ..) => false,
+            (_, Maybe::Absent(_), _) => true,
+            (_, Maybe::Present(_), Telescope::Signature) => self.mentioned.0,
+            (_, Maybe::Present(_), Telescope::Quote) => self.mentioned.0 || self.quoted.0,
+        })
     }
 }
 
@@ -867,6 +906,7 @@ impl<'source> Scope<'source>
             parent,
             declared,
             mentioned: Mentioned(false),
+            quoted: Mentioned(false),
             site,
             zone,
         });
@@ -1158,6 +1198,42 @@ impl<'source> Scope<'source>
         }
     }
 
+    /// Record that a type quoted in a body names the binder that introduced
+    /// `binder`.
+    ///
+    /// # Specification
+    /// - requires: nothing — the coordinate is interpreted in this scope.
+    /// - ensures: a stored frame binds in [`Telescope::Quote`] from now on; its
+    ///   mention, which makes the signature's arrow dependent, is unchanged.
+    /// - provides: the body quote's half of the telescope decision, apart from
+    ///   the signature's (#547).
+    /// - fails: never; an out-of-range coordinate is ignored.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a quoted binder binds in a body quote's telescope and
+    ///   not in the signature's.
+    /// - witness: `resolve::tests::a_quoted_binder_binds_only_in_a_body_quote_s_telescope`
+    #[spec(
+        captures: before = (self.frames.len(), self.mentioned(binder)),
+        ensures: self.frames.len() == before.0
+            && self.mentioned(binder) == before.1
+            && self
+                .frames
+                .get(binder.0)
+                .is_none_or(|entry| entry.quoted.0),
+    )]
+    #[inline]
+    pub fn quote(
+        &mut self,
+        binder: ScopeId,
+    )
+    {
+        if let Some(entry) = self.frames.get_mut(binder.0) {
+            entry.quoted = Mentioned(true);
+        }
+    }
+
     /// Whether a type position names the binder that introduced `binder`.
     ///
     /// # Specification
@@ -1193,19 +1269,48 @@ impl<'source> Scope<'source>
             .map_or(Mentioned(false), |entry| entry.mentioned)
     }
 
-    /// The de Bruijn index the binder `binder` has from `from` in a telescope:
-    /// the binders strictly between, counting a typed binder only when a type
-    /// position names it.
+    /// The de Bruijn index the binder `binder` has from `from` in the
+    /// signature's telescope: [`Self::index_in`] at [`Telescope::Signature`].
+    ///
+    /// # Specification
+    /// - requires: as [`Self::index_in`].
+    /// - ensures: as [`Self::index_in`], counting a typed binder only when a
+    ///   signature's type position names it.
+    /// - provides: the index a decode in a function tail's signature carries.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mentioned typed binder, an unmentioned one and an
+    ///   untyped one between the use site and the binder, each asserted to
+    ///   count or not.
+    /// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
+    #[spec(ensures: |ret| ret == self.index_in(from, binder, Telescope::Signature))]
+    #[inline]
+    #[must_use]
+    pub fn telescope_index(
+        &self,
+        from: Frame,
+        binder: ScopeId,
+    ) -> DeBruijnIndex
+    {
+        self.index_in(from, binder, Telescope::Signature)
+    }
+
+    /// The de Bruijn index the binder `binder` has from `from` in
+    /// `telescope`: the binders strictly between, counting a typed binder only
+    /// when a type of that telescope names it.
     ///
     /// # Specification
     /// - requires: `from` is outermost or an existing frame position in the
     ///   intended scope; every mention has been recorded.
     /// - ensures: counts from `from` up to but excluding `binder`, including
-    ///   each untyped or mentioned intuitionistic frame. If the target is not
-    ///   on the chain, counts to its end; an unmentioned typed frame and a
-    ///   linear frame contribute nothing. The count saturates at the index
-    ///   width.
-    /// - provides: the index a decode in a function tail's signature carries.
+    ///   each untyped intuitionistic frame and each typed one that binds in
+    ///   `telescope`. If the target is not on the chain, counts to its end; a
+    ///   typed frame that does not bind and a linear frame contribute nothing.
+    ///   The count saturates at the index width.
+    /// - provides: the index a decode in a signature, or in a type a body
+    ///   quotes, carries.
     /// - fails: never; a chain that never reaches `binder` counts to its end.
     /// - panics: none. The walk follows parent links, which always name an
     ///   earlier frame, so it ends.
@@ -1216,6 +1321,7 @@ impl<'source> Scope<'source>
     ///   count or not.
     /// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
     /// - witness: `resolve::tests::telescope_counts_to_the_end_when_the_target_is_not_on_the_chain`
+    /// - witness: `resolve::tests::a_quoted_binder_binds_only_in_a_body_quote_s_telescope`
     #[spec(
         requires: match from {
             | Frame::Outermost => true,
@@ -1236,7 +1342,7 @@ impl<'source> Scope<'source>
                 else {
                     return false;
                 };
-                if entry.zone == Zone::Intuitionistic && (matches!(entry.declared, Maybe::Absent(_)) || entry.mentioned.0) {
+                if entry.binds_in(telescope).0 {
                     count = count.saturating_add(1);
                 }
                 visited = visited.saturating_add(1);
@@ -1247,10 +1353,11 @@ impl<'source> Scope<'source>
     )]
     #[inline]
     #[must_use]
-    pub fn telescope_index(
+    pub fn index_in(
         &self,
         from: Frame,
         binder: ScopeId,
+        telescope: Telescope,
     ) -> DeBruijnIndex
     {
         let mut current = from;
@@ -1262,12 +1369,7 @@ impl<'source> Scope<'source>
             else {
                 break;
             };
-            let binds = match entry.declared {
-                _ if entry.zone == Zone::Linear => false,
-                Maybe::Present(_) => entry.mentioned.0,
-                Maybe::Absent(_) => true,
-            };
-            if binds {
+            if entry.binds_in(telescope).0 {
                 depth = depth.saturating_add(1_u32);
             }
             current = entry.parent;
@@ -1309,6 +1411,31 @@ impl<'source> Scope<'source>
         from: Frame,
     ) -> impl Iterator<Item = bool> + '_
     {
+        self.binders_in(from, Telescope::Signature)
+    }
+
+    /// Whether each frame of the chain rooted at `from` binds in `telescope`,
+    /// innermost first, by the rule [`Self::index_in`] counts by; nothing for
+    /// a linear frame.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::telescope_binders`].
+    /// - ensures: as [`Self::telescope_binders`], in `telescope`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::telescope_binders`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a quoted binder binds in a body quote's telescope and
+    ///   not in the signature's.
+    /// - witness: `resolve::tests::a_quoted_binder_binds_only_in_a_body_quote_s_telescope`
+    #[inline]
+    pub fn binders_in(
+        &self,
+        from: Frame,
+        telescope: Telescope,
+    ) -> impl Iterator<Item = bool> + '_
+    {
         let first = match from {
             Frame::Inner(id) => Some(id),
             Frame::Outermost => None,
@@ -1317,12 +1444,9 @@ impl<'source> Scope<'source>
             Frame::Inner(parent) => Some(parent),
             Frame::Outermost => None,
         })
-        .filter_map(|id| match self.frames.get(id.0) {
+        .filter_map(move |id| match self.frames.get(id.0) {
             Some(entry) if entry.zone == Zone::Linear => None,
-            Some(entry) => Some(match entry.declared {
-                Maybe::Present(_) => entry.mentioned.0,
-                Maybe::Absent(_) => true,
-            }),
+            Some(entry) => Some(entry.binds_in(telescope).0),
             None => Some(true),
         })
     }
@@ -1420,6 +1544,7 @@ mod tests
     use super::Scope;
     use super::ScopeId;
     use super::SurfaceName;
+    use super::Telescope;
     use super::TypeFormer;
     use super::binder;
     use super::binder_site;
@@ -1843,6 +1968,53 @@ mod tests
             scope.telescope_index(Frame::Inner(y), b),
             DeBruijnIndex::from(1_u32),
             "an untyped binder between always counts"
+        );
+    }
+
+    #[test]
+    fn a_quoted_binder_binds_only_in_a_body_quote_s_telescope()
+    {
+        use alloc::vec::Vec;
+
+        let mut scope = Scope::new();
+        let typed = |scope: &mut Scope<'static>, parent: Frame, name: &'static str| {
+            scope.extend_typed(
+                parent,
+                SurfaceName::from(name),
+                NodeIndex::from(1_usize),
+                UNWRITTEN,
+            )
+        };
+        let x = typed(&mut scope, Frame::Outermost, "x");
+        let a = typed(&mut scope, Frame::Inner(x), "a");
+        let n = typed(&mut scope, Frame::Inner(a), "n");
+        scope.mention(x);
+        scope.quote(a);
+
+        assert!(
+            !bool::from(scope.mentioned(a)),
+            "a body quote's read leaves the signature's arrow independent"
+        );
+        assert_eq!(
+            scope.telescope_index(Frame::Inner(n), x),
+            DeBruijnIndex::from(0_u32),
+            "the signature's telescope skips the quoted binder"
+        );
+        assert_eq!(
+            scope.index_in(Frame::Inner(n), x, Telescope::Quote),
+            DeBruijnIndex::from(1_u32),
+            "a body quote's telescope counts it"
+        );
+        assert_eq!(
+            scope
+                .binders_in(Frame::Inner(n), Telescope::Quote)
+                .collect::<Vec<_>>(),
+            Vec::from([false, true, true]),
+            "innermost first: the unnamed binder, the quoted one, the mentioned one"
+        );
+        assert_eq!(
+            scope.telescope_binders(Frame::Inner(n)).collect::<Vec<_>>(),
+            Vec::from([false, false, true])
         );
     }
 

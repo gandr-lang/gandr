@@ -82,6 +82,7 @@ use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
+use crate::resolve::Telescope;
 
 /// Why a derived type could not be minted.
 ///
@@ -928,7 +929,13 @@ impl<'source> Lowerer<'_, 'source>
                     return Err(Missing::Unlowered);
                 };
                 let frame = self.reading(domain.node).frame();
-                indices.push(self.relocate_value_type(id, frame, sink, origin));
+                indices.push(self.relocate_value_type(
+                    id,
+                    frame,
+                    Telescope::Signature,
+                    sink,
+                    origin,
+                ));
             }
             return Ok(indices);
         }
@@ -971,7 +978,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(Missing::Unlowered);
             };
             let frame = self.reading(entry).frame();
-            indices.push(self.relocate_value_type(id, frame, sink, origin));
+            indices.push(self.relocate_value_type(id, frame, Telescope::Signature, sink, origin));
         }
 
         Ok(indices)
