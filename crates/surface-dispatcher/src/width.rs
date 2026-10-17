@@ -101,7 +101,7 @@ pub enum Width
 
 impl Width
 {
-    /// The serial walk: one thread, one source at a time.
+    /// The serial walk: one thread, one component at a time.
     pub const SERIAL: Self = Self::Threads(Threads::ONE);
 
     /// The threads this width runs on.

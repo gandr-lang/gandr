@@ -65,14 +65,13 @@ mod corpus
             .join(name)
     }
 
-    /// The report of a walk over `path`, every step a source.
+    /// The report of a visit over `path`, every step a source.
     ///
     /// # Specification
     /// - requires: `path` names a finite corpus walk with no source or engine
     ///   fault; fixtures may still be unsettled or pending.
-    /// - ensures: the exhausted walk's report has no faulted paths and records
-    ///   one lowering per source read, preserving unsettled results for
-    ///   callers.
+    /// - ensures: the visit's report has no faulted paths and records one
+    ///   lowering per source read, preserving unsettled results for callers.
     /// - fails: does not convert a fault into an empty or settled report.
     /// - panics: if a step faults.
     ///
@@ -87,13 +86,14 @@ mod corpus
         && usize::from(ret.lowerings()) == usize::from(ret.sources().read()))]
     fn run(path: PathBuf) -> RunReport
     {
-        let mut walk = Walk::new(vec![path]);
-        while let Maybe::Present(step) = walk.step() {
-            if let Step::Fault { path, fault } = step {
-                panic!("{}: {fault}", path.display());
-            }
-        }
-        walk.report()
+        let ControlFlow::Continue(report) =
+            Walk::new(vec![path]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+                if let Step::Fault { path, fault } = step {
+                    panic!("{}: {fault}", path.display());
+                }
+                ControlFlow::Continue(())
+            });
+        report
     }
 
     #[test]
@@ -192,6 +192,60 @@ mod corpus
         );
     }
 
+    /// The identity subject's base source is lowered once, in the one
+    /// component every source importing it is judged in.
+    #[test]
+    fn the_identity_base_is_lowered_once_for_its_importers()
+    {
+        let subject = root(Path::new("fixture/model/identity"));
+        let base = subject.join("circle-base.gandr");
+        let mut certificates = Vec::new();
+        let ControlFlow::Continue(report) =
+            Walk::new(vec![subject]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path,
+                    text,
+                    base: own,
+                    composed:
+                        Composed::Settled {
+                            kernel: Maybe::Present(ref kernel),
+                            ..
+                        },
+                    ..
+                } = step
+                else {
+                    panic!("each identity source is judged and admitted: {step:?}");
+                };
+                let imports_base = <&str>::from(text)
+                    .get(usize::from(own) ..)
+                    .is_some_and(|written| written.contains("import \"./circle-base.gandr\""));
+                if path == base || imports_base {
+                    certificates.push((path.to_path_buf(), kernel.as_ref().to_vec()));
+                }
+                ControlFlow::Continue(())
+            });
+        assert_eq!(
+            usize::from(report.lowerings()),
+            usize::from(report.sources().read()),
+            "each source of the subject is lowered once, the base among them"
+        );
+        let Some((first, rest)) = certificates.split_first()
+        else {
+            panic!("the base is walked");
+        };
+        assert!(
+            !rest.is_empty(),
+            "the subject holds a source importing its base"
+        );
+        for &(ref path, ref certificate) in rest {
+            assert!(
+                certificate == &first.1,
+                "{} carries the certificate its base's component was admitted with",
+                path.display()
+            );
+        }
+    }
+
     /// Every non-directory `.gandr` entry under `corpus`, with directory
     /// links followed and each canonical directory listed once.
     ///
@@ -268,14 +322,18 @@ mod corpus
     fn orphans(corpus: &Path) -> Vec<PathBuf>
     {
         let mut reached = BTreeSet::new();
-        let mut walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
-        while let Maybe::Present(step) = walk.step() {
-            match step {
-                Step::Source { path, .. } | Step::Fault { path, .. } => {
-                    reached.insert(path.to_path_buf());
+        let ControlFlow::Continue(_report) =
+            Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]).visit(
+                Width::SERIAL,
+                |step| -> ControlFlow<Infallible> {
+                    match step {
+                        Step::Source { path, .. } | Step::Fault { path, .. } => {
+                            reached.insert(path.to_path_buf());
+                        },
+                    }
+                    ControlFlow::Continue(())
                 },
-            }
-        }
+            );
         sources_under(corpus)
             .into_iter()
             .filter(|source| !reached.contains(source))
@@ -383,31 +441,35 @@ mod corpus
         mut visit: impl FnMut(&Path, &Composed<'_>),
     )
     {
-        let mut walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
-        while let Maybe::Present(step) = walk.step() {
-            let Step::Source {
-                path,
-                root,
-                ref composed,
-                ..
-            } = step
-            else {
-                continue;
-            };
-            let pathological = path
-                .components()
-                .any(|component| component.as_os_str() == "pathological");
-            let sweeps = match tree {
-                Tree::Model => !pathological,
-                Tree::Pathological => pathological,
-            };
-            if sweeps
-                && root != SourceRoot::Pending
-                && matches!(*composed, Composed::Settled { .. })
-            {
-                visit(path, composed);
-            }
-        }
+        let ControlFlow::Continue(_report) =
+            Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]).visit(
+                Width::SERIAL,
+                |step| -> ControlFlow<Infallible> {
+                    let Step::Source {
+                        path,
+                        root,
+                        ref composed,
+                        ..
+                    } = step
+                    else {
+                        return ControlFlow::Continue(());
+                    };
+                    let pathological = path
+                        .components()
+                        .any(|component| component.as_os_str() == "pathological");
+                    let sweeps = match tree {
+                        Tree::Model => !pathological,
+                        Tree::Pathological => pathological,
+                    };
+                    if sweeps
+                        && root != SourceRoot::Pending
+                        && matches!(*composed, Composed::Settled { .. })
+                    {
+                        visit(path, composed);
+                    }
+                    ControlFlow::Continue(())
+                },
+            );
     }
 
     /// Each declaration of `tree` that states a run outcome, described, and
@@ -565,8 +627,8 @@ mod corpus
     }
 
     /// The width sweep: a wider visit over corpus sources hands over, step by
-    /// step, exactly what the serial walk over them yields, and answers the
-    /// serial walk's report.
+    /// step, exactly what the serial visit over them yields, and answers the
+    /// serial visit's report.
     mod sweeps
     {
         use gandr_workflow_sweep::Sample;
@@ -607,70 +669,75 @@ mod corpus
                     visited.into_iter().map(|source| source.path).collect()
                 },
             };
+            let serial = digests(&paths, Width::SERIAL);
             for width in [
                 Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(1))),
                 Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(6))),
                 Width::PerformanceCores,
             ] {
-                let mut serial = Walk::new(paths.clone());
-                let visited =
-                    Walk::new(paths.clone()).visit(width, |step| -> ControlFlow<Infallible> {
-                        let Maybe::Present(expected) = serial.step()
-                        else {
-                            panic!("the serial walk ended first at {width:?}");
-                        };
-                        match (step, expected) {
-                            (
-                                Step::Source {
-                                    path,
-                                    root,
-                                    text,
-                                    base,
-                                    composed,
-                                    standing,
-                                },
-                                Step::Source {
-                                    path: serial_path,
-                                    root: serial_root,
-                                    text: serial_text,
-                                    base: serial_base,
-                                    composed: serial_composed,
-                                    standing: serial_standing,
-                                },
-                            ) => {
-                                assert_eq!(
-                                    (path, root, text, base, standing),
-                                    (
-                                        serial_path,
-                                        serial_root,
-                                        serial_text,
-                                        serial_base,
-                                        serial_standing
-                                    ),
-                                    "the visit at {width:?} reaches the serial walk's source"
-                                );
-                                assert!(
-                                    composed == serial_composed,
-                                    "{} composes alike at {width:?}",
-                                    path.display()
-                                );
-                            },
-                            (Step::Fault { path, fault }, _) | (_, Step::Fault { path, fault }) => {
-                                panic!("{}: {fault}", path.display());
-                            },
-                        }
-                        ControlFlow::Continue(())
-                    });
                 assert!(
-                    matches!(serial.step(), Maybe::Absent(_)),
-                    "the visit at {width:?} hands over every source"
-                );
-                assert_eq!(
-                    visited,
-                    ControlFlow::Continue(serial.report()),
-                    "the visit at {width:?} counts the serial walk's report"
+                    digests(&paths, width) == serial,
+                    "the visit at {width:?} hands over the serial visit's steps, each composed \
+                     alike, and counts its report"
                 );
             }
+        }
+
+        /// The bytes of a step's `Debug` spelling, folded into one hash.
+        #[repr(transparent)]
+        #[derive(Default)]
+        struct Digest(std::hash::DefaultHasher);
+
+        /// A step's folded hash, compared row for row across widths.
+        #[repr(transparent)]
+        #[derive(Debug, PartialEq)]
+        struct Hashed(u64);
+
+        impl core::fmt::Write for Digest
+        {
+            /// Fold `text` into the hash.
+            ///
+            /// # Specification
+            /// trivial.
+            fn write_str(
+                &mut self,
+                s: &str,
+            ) -> core::fmt::Result
+            {
+                core::hash::Hasher::write(&mut self.0, s.as_bytes());
+                Ok(())
+            }
+        }
+
+        /// Each step a visit over `paths` at `width` hands over, as its path
+        /// and the hash of its whole `Debug` spelling, and the visit's report:
+        /// one row per step, in the order handed over, so two visits' rows
+        /// differ when a step's path, root, text, start, composition or
+        /// standing does, up to a hash collision. A step that faults panics.
+        ///
+        /// # Specification
+        /// trivial.
+        fn digests(
+            paths: &[PathBuf],
+            width: Width,
+        ) -> (Vec<(PathBuf, Hashed)>, ControlFlow<Infallible, RunReport>)
+        {
+            let mut rows = Vec::new();
+            let visited =
+                Walk::new(paths.to_vec()).visit(width, |step| -> ControlFlow<Infallible> {
+                    if let Step::Fault { path, ref fault } = step {
+                        panic!("{}: {fault}", path.display());
+                    }
+                    let mut digest = Digest::default();
+                    core::fmt::Write::write_fmt(&mut digest, format_args!("{step:?}"))
+                        .expect("a hash takes every byte");
+                    let path = match step {
+                        Step::Source { path, .. } | Step::Fault { path, .. } => path.to_path_buf(),
+                    };
+                    rows.push((path, Hashed(core::hash::Hasher::finish(&digest.0))));
+                    ControlFlow::Continue(())
+                });
+            (rows, visited)
         }
     }
 }

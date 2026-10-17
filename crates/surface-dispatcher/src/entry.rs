@@ -1304,27 +1304,13 @@ mod tests
     #[test]
     fn faults_and_empty_sources_stay_exhausted()
     {
-        let mut walk = Walk::new(vec![PathBuf::new()]);
-        let Maybe::Present(fault) = walk.step()
-        else {
-            panic!("an empty path is a fault, not an empty walk");
-        };
-        assert!(matches!(fault, Step::Fault { .. }));
-        let text = SourceText::from("");
-        let grammar = built_in().expect("the grammar builds");
-        let empty = step(
-            Path::new("empty.gandr"),
-            SourceRoot::Strict,
-            text,
-            Standing::Unsettled,
-            &grammar,
-        );
-        for step in [&fault, &empty] {
-            for verb in [
-                Verb::Check(Goals::Gated),
-                Verb::Check(Goals::Reported),
-                Verb::Test,
-            ] {
+        let verbs = [
+            Verb::Check(Goals::Gated),
+            Verb::Check(Goals::Reported),
+            Verb::Test,
+        ];
+        let exhausted = |step: &Step<'_>| {
+            for verb in verbs {
                 let mut stream = entries(step, verb);
                 assert!(stream.next().is_none());
                 assert!(
@@ -1332,6 +1318,24 @@ mod tests
                     "an exhausted stream stays exhausted"
                 );
             }
-        }
+        };
+        let faulted = Walk::new(vec![PathBuf::new()]).visit(Width::SERIAL, |fault| {
+            assert!(
+                matches!(fault, Step::Fault { .. }),
+                "an empty path is a fault, not an empty walk"
+            );
+            exhausted(&fault);
+            ControlFlow::Break(())
+        });
+        assert_eq!(faulted, ControlFlow::Break(()), "the fault is handed over");
+        let text = SourceText::from("");
+        let grammar = built_in().expect("the grammar builds");
+        exhausted(&step(
+            Path::new("empty.gandr"),
+            SourceRoot::Strict,
+            text,
+            Standing::Unsettled,
+            &grammar,
+        ));
     }
 }

@@ -11,39 +11,42 @@
 //! [`dispatch`] reads no file and writes nothing. The `check` and `test` verbs
 //! route to a [`Walk`] over the paths they were given and the [`Width`] to
 //! visit it at, and the walk's I/O — listing a directory, reading a source —
-//! happens as the driver advances it with [`Walk::step`] or hands it a
-//! visitor with [`Walk::visit`]. The `run` verb routes to a [`Script`], which
-//! reads its one source when the driver runs it. The `stage` verb routes to a
-//! [`Staging`], which reads nothing: it builds its programs when the driver
-//! runs it. The `fmt` verb routes to a [`Formatting`], which reaches its paths
-//! as a walk does, and reads, lays out and rewrites each source as the driver
-//! advances it with [`Formatting::step`].
+//! happens as the driver hands it a visitor with [`Walk::visit`]. The `run`
+//! verb routes to a [`Script`], which reads its one source when the driver
+//! runs it. The `stage` verb routes to a [`Staging`], which reads nothing: it
+//! builds its programs when the driver runs it. The `fmt` verb routes to a
+//! [`Formatting`], which reaches its paths as a walk does, and reads, lays out
+//! and rewrites each source as the driver advances it with
+//! [`Formatting::step`].
 //!
 //! `dispatch` reads no file and writes nothing: it builds the grammar the walk
-//! parses with, which is computation, and returns. The walk's I/O — listing a
-//! directory, reading a source — happens as the driver calls `Walk::step` or
-//! `Walk::visit`. Stepped, the walk reads one source at a time, and the step
-//! borrows the source's text, so a run over a large tree holds one source in
-//! memory. Directories are walked depth-first in byte order of their entries'
-//! names. Discovered symbolic links are skipped; other non-directory `.gandr`
-//! entries are selected without a regular-file check. A path given explicitly
-//! is read as a source whatever its name, following symbolic links.
+//! parses with, which is computation, and returns. The walk's I/O happens as
+//! the driver calls `Walk::visit`. Directories are walked depth-first in byte
+//! order of their entries' names. Discovered symbolic links are skipped; other
+//! non-directory `.gandr` entries are selected without a regular-file check.
+//! A path given explicitly is read as a source whatever its name, following
+//! symbolic links.
 //!
-//! The alternative was collecting every source before composing any, which
-//! holds the tree in memory and delays the first line of output to the last
-//! read. The stepped walk keeps that choice; a wider visit departs from it,
-//! below, because it must know every source's size before it can schedule the
-//! largest first. The choice reverses if a verb needs the whole set before
-//! judging any member, such as a cross-source import, which would collect the
-//! paths first and still read one source at a time.
+//! # Every source is read before any is judged
 //!
-//! # Sources fork; judgement keeps walk order
+//! A source may import a sibling the walk reaches before it or after it, and
+//! the sources joined by imports are judged once, together, as one component
+//! (the `component` module). So [`Walk::visit`] reaches every path and reads
+//! every source before it judges any, and holds the tree's text until the
+//! visit ends. The alternative was a walk stepping through one source at a
+//! time, holding one text in memory and printing the first line after the
+//! first read; it can judge an importer only over its own import closure, so
+//! a source imported by several is lowered once per importer. The choice
+//! reverses for a tree whose text does not fit in memory, when the walk reads
+//! the import graph first and each component's texts again to lower it.
 //!
-//! At a width above one, [`Walk::visit`] parses and lowers the sources on a
-//! pool of scoped threads, largest source first, and judges, settles and
-//! reports them in walk order on the calling thread, so every count, verdict
-//! and diagnostic is the serial walk's at every width. [`Width::SERIAL`] is
-//! that serial walk, and the reference every wider one is tested against.
+//! # Components fork; judgement keeps walk order
+//!
+//! [`Walk::visit`] parses and lowers the components on a pool of scoped
+//! threads, largest first, and judges, settles and reports their sources in
+//! walk order on the calling thread, so every count, verdict and diagnostic
+//! is the serial visit's at every width. [`Width::SERIAL`] is that serial
+//! visit, and the reference every wider one is tested against.
 //!
 //! # One composition serves both verbs
 //!
@@ -109,7 +112,7 @@
 
 extern crate alloc;
 
-mod closure;
+mod component;
 mod compose;
 mod entry;
 mod evaluate;
@@ -130,9 +133,9 @@ pub use gandr_core_checker::HostGrant;
 pub use gandr_core_term::effect::OperationName;
 pub use gandr_core_term::effect::host::AuthorityError;
 
-pub use crate::closure::Laid;
-pub use crate::closure::laid;
-pub use crate::closure::lay_out;
+pub use crate::component::Laid;
+pub use crate::component::laid;
+pub use crate::component::lay_out;
 pub use crate::compose::Admission;
 pub use crate::compose::ComposeFault;
 pub use crate::compose::Composed;
@@ -441,6 +444,7 @@ pub fn dispatch(invocation: Invocation) -> Outcome
 #[cfg(test)]
 mod tests
 {
+    use core::ops::ControlFlow;
     use std::path::PathBuf;
 
     use anodized::spec;
@@ -479,15 +483,18 @@ mod tests
     #[spec(requires: matches!(outcome, Outcome::Run { .. }))]
     fn first_fault_path(outcome: Outcome) -> PathBuf
     {
-        let Outcome::Run { mut walk, .. } = outcome
+        let Outcome::Run { walk, .. } = outcome
         else {
             panic!("a verb routes to a walk");
         };
-        let Maybe::Present(Step::Fault { path, .. }) = walk.step()
+        let ControlFlow::Break(path) = walk.visit(Width::SERIAL, |step| match step {
+            Step::Fault { path, .. } => ControlFlow::Break(path.to_path_buf()),
+            Step::Source { .. } => panic!("an absent path faults"),
+        })
         else {
             panic!("an absent path faults");
         };
-        path.to_path_buf()
+        path
     }
 
     /// A bare invocation routes to the status report.

@@ -9,6 +9,8 @@
 #[cfg(test)]
 mod render
 {
+    use core::convert::Infallible;
+    use core::ops::ControlFlow;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -29,6 +31,7 @@ mod render
     use gandr_surface_dispatcher::Step;
     use gandr_surface_dispatcher::Verb;
     use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::Width;
     use gandr_surface_dispatcher::compose;
     use gandr_surface_dispatcher::entries;
     use gandr_surface_grammar::built_in;
@@ -654,13 +657,16 @@ def wrong = "text" ;
             Verb::Check(Goals::Reported),
             Verb::Test,
         ] {
-            let mut walk = Walk::new(vec![path.clone()]);
             let mut rendered = Vec::new();
-            while let Maybe::Present(step) = walk.step() {
-                rendered.extend(
-                    entries(&step, verb).map(|diagnostic| plain(&diagnostic, Verbosity::User)),
-                );
-            }
+            let ControlFlow::Continue(_report) = Walk::new(vec![path.clone()]).visit(
+                Width::SERIAL,
+                |step| -> ControlFlow<Infallible> {
+                    rendered.extend(
+                        entries(&step, verb).map(|diagnostic| plain(&diagnostic, Verbosity::User)),
+                    );
+                    ControlFlow::Continue(())
+                },
+            );
             assert_eq!(rendered.len(), 3_usize, "three refusals: {rendered:?}");
             for ((line, column), rendered) in [(2_usize, 14_usize), (4, 13), (5, 4)]
                 .into_iter()
@@ -682,11 +688,14 @@ def wrong = "text" ;
             Path::new("fixture/settled.gandr"),
             SourceText::from("@[ owes(1) ] def later : Integer ;\n"),
         );
-        let mut walk = Walk::new(vec![scratch.0.clone()]);
         let mut lines = Vec::new();
-        while let Maybe::Present(step) = walk.step() {
-            lines.extend(entries(&step, Verb::Test));
-        }
+        let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
+            Width::SERIAL,
+            |step| -> ControlFlow<Infallible> {
+                lines.extend(entries(&step, Verb::Test));
+                ControlFlow::Continue(())
+            },
+        );
         let [ref line] = *lines.as_slice()
         else {
             panic!("one settled fixture, one line: {lines:?}");
@@ -724,19 +733,29 @@ def wrong = "text" ;
         );
         let text = SourceText::from("def answer = 17 ;\n");
         let path = scratch.file(Path::new("strict/nested/source.gandr"), text);
-        {
-            let mut walk = Walk::new(vec![path.clone()]);
-            let Maybe::Present(Step::Source { text: observed, .. }) = walk.step()
-            else {
-                panic!("the written source is readable");
-            };
-            assert_eq!(observed, text);
-            assert!(matches!(walk.step(), Maybe::Absent(_)));
-        }
+        let mut observed = Vec::new();
+        let ControlFlow::Continue(_report) =
+            Walk::new(vec![path.clone()]).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+                if let Step::Source { text, .. } = step {
+                    observed.push(<&str>::from(text).to_owned());
+                }
+                ControlFlow::Continue(())
+            });
+        assert_eq!(
+            observed,
+            [<&str>::from(text).to_owned()],
+            "the written source is read once"
+        );
         let root = scratch.0.clone();
         drop(scratch);
         assert!(matches!(root.try_exists(), Ok(false)));
-        let mut missing = Walk::new(vec![path]);
-        assert!(matches!(missing.step(), Maybe::Present(Step::Fault { .. })));
+        let missing = Walk::new(vec![path]).visit(Width::SERIAL, |step| {
+            ControlFlow::Break(matches!(step, Step::Fault { .. }))
+        });
+        assert_eq!(
+            missing,
+            ControlFlow::Break(true),
+            "the removed source faults"
+        );
     }
 }

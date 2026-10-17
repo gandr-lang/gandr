@@ -22,11 +22,11 @@ mod entries
 {
     use alloc::collections::BTreeMap;
     use alloc::collections::BTreeSet;
+    use core::convert::Infallible;
+    use core::ops::ControlFlow;
     use std::path::Path;
     use std::path::PathBuf;
 
-    use gandr_kernel_term::ConstantIndex;
-    use gandr_surface_corpus::DeclarationReport;
     use gandr_surface_dispatcher::Composed;
     use gandr_surface_dispatcher::Declared;
     use gandr_surface_dispatcher::Lowered;
@@ -34,6 +34,7 @@ mod entries
     use gandr_surface_dispatcher::Step;
     use gandr_surface_dispatcher::TypeTable;
     use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::Width;
     use gandr_surface_dispatcher::lay_out;
     use gandr_surface_dispatcher::lower_source;
     use gandr_surface_dispatcher::lower_unit_source;
@@ -477,120 +478,141 @@ mod entries
         let mut met = BTreeSet::new();
         let mut astray = Vec::new();
         let mut nodes = 0_usize;
-        let mut walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
-        while let Maybe::Present(step) = walk.step() {
-            let Step::Source {
-                path,
-                root,
-                text,
-                base,
-                composed,
-                ..
-            } = step
-            else {
-                continue;
-            };
-            if path.components().any(|part| part.as_os_str() == "pending") {
-                continue;
-            }
-            // An importer is typed over its closure, as the hover types it:
-            // the table and the tree are its own text's, the lowering the
-            // unit's, whose constants the report names.
-            let Some(own) = <&str>::from(text).get(usize::from(base) ..)
-            else {
-                continue;
-            };
-            let laid = lay_out(&grammar, path, root, SourceText::from(own));
-            let (table, lowering) = match laid {
-                Maybe::Present(ref laid) => (
-                    TypeTable::of_unit(&grammar, text, &laid.unit, laid.base),
-                    lower_unit_source(&grammar, text, &laid.unit, &mut LoweringCount::default()),
-                ),
-                Maybe::Absent(_) => (
-                    TypeTable::of(&grammar, text),
-                    lower_source(&grammar, text, &mut LoweringCount::default()),
-                ),
-            };
-            let text = SourceText::from(own);
-            let (Ok(table), Ok(parsed)) = (table, parse(&grammar, text))
-            else {
-                continue;
-            };
-            let tree = parsed.into_tree();
-            let mut refused: BTreeSet<_> = table
-                .declarations(page, Form::Sugared)
-                .filter(|entry| matches!(entry.1, Maybe::Present(Declared::Refused(_))))
-                .map(|(key, _)| key)
-                .collect();
-            let judged_refused: BTreeSet<ConstantIndex> = match composed {
-                Composed::Settled { ref report, .. } => report
-                    .declarations()
-                    .iter()
-                    .filter(|declaration| {
-                        matches!(declaration.produced().refusal(), Maybe::Present(_))
-                    })
-                    .map(DeclarationReport::constant)
-                    .collect(),
-                Composed::Refused(_) => BTreeSet::new(),
-            };
-            if let Ok(lowering) = lowering
-                && let Lowered::Module { ref module, .. } = lowering.into_lowered()
-            {
-                for declaration in module.declarations() {
-                    if judged_refused.contains(&declaration.constant()) {
-                        for half in [declaration.signature(), declaration.definition()] {
-                            if let Maybe::Present(key) = half {
-                                let _new = refused.insert(key);
+        let walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
+        let ControlFlow::Continue(_report) =
+            walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path,
+                    root,
+                    text,
+                    base,
+                    composed,
+                    ..
+                } = step
+                else {
+                    return ControlFlow::Continue(());
+                };
+                if path.components().any(|part| part.as_os_str() == "pending") {
+                    return ControlFlow::Continue(());
+                }
+                // An importer is typed over its closure, as the hover types it:
+                // the table and the tree are its own text's, the lowering the
+                // closure's. The walk judged it in its component, so a judged
+                // declaration is matched to the closure's by where it starts in
+                // the source's own text.
+                let Some(own) = <&str>::from(text).get(usize::from(base) ..)
+                else {
+                    return ControlFlow::Continue(());
+                };
+                let laid = lay_out(&grammar, path, root, SourceText::from(own));
+                let (table, lowering, laid_base) = match laid {
+                    Maybe::Present(ref laid) => {
+                        let unit = SourceText::from(laid.text.as_str());
+                        (
+                            TypeTable::of_unit(&grammar, unit, &laid.unit, laid.base),
+                            lower_unit_source(
+                                &grammar,
+                                unit,
+                                &laid.unit,
+                                &mut LoweringCount::default(),
+                            ),
+                            usize::from(laid.base),
+                        )
+                    },
+                    Maybe::Absent(_) => {
+                        let alone = SourceText::from(own);
+                        (
+                            TypeTable::of(&grammar, alone),
+                            lower_source(&grammar, alone, &mut LoweringCount::default()),
+                            0_usize,
+                        )
+                    },
+                };
+                let text = SourceText::from(own);
+                let (Ok(table), Ok(parsed)) = (table, parse(&grammar, text))
+                else {
+                    return ControlFlow::Continue(());
+                };
+                let tree = parsed.into_tree();
+                let mut refused: BTreeSet<_> = table
+                    .declarations(page, Form::Sugared)
+                    .filter(|entry| matches!(entry.1, Maybe::Present(Declared::Refused(_))))
+                    .map(|(key, _)| key)
+                    .collect();
+                let judged_refused: BTreeSet<usize> = match composed {
+                    Composed::Settled { ref report, .. } => report
+                        .declarations()
+                        .iter()
+                        .filter(|declaration| {
+                            matches!(declaration.produced().refusal(), Maybe::Present(_))
+                        })
+                        .filter_map(|declaration| {
+                            usize::from(declaration.span().start()).checked_sub(usize::from(base))
+                        })
+                        .collect(),
+                    Composed::Refused(_) => BTreeSet::new(),
+                };
+                if let Ok(lowering) = lowering
+                    && let Lowered::Module { ref module, .. } = lowering.into_lowered()
+                {
+                    for declaration in module.declarations() {
+                        let written =
+                            usize::from(declaration.span().start()).checked_sub(laid_base);
+                        if written.is_some_and(|at| judged_refused.contains(&at)) {
+                            for half in [declaration.signature(), declaration.definition()] {
+                                if let Maybe::Present(key) = half {
+                                    let _new = refused.insert(key);
+                                }
                             }
                         }
                     }
                 }
-            }
-            let spans: BTreeSet<ByteSpan> = table.spans().collect();
-            let mut innermost: Vec<Option<ByteSpan>> = vec![None; <&str>::from(text).len()];
-            let mut held = Vec::new();
-            for (key, span, placed) in gated(&grammar, &tree, &refused) {
-                if placed.is_some() {
-                    continue;
+                let spans: BTreeSet<ByteSpan> = table.spans().collect();
+                let mut innermost: Vec<Option<ByteSpan>> = vec![None; <&str>::from(text).len()];
+                let mut held = Vec::new();
+                for (key, span, placed) in gated(&grammar, &tree, &refused) {
+                    if placed.is_some() {
+                        continue;
+                    }
+                    nodes = nodes.saturating_add(1);
+                    let _first = met.insert(key.clone());
+                    if spans.contains(&span) {
+                        held.push(span);
+                        continue;
+                    }
+                    let at = format!("{}@{}", path.display(), usize::from(span.start()));
+                    let tally = missing.entry(key).or_insert((0, at));
+                    tally.0 = tally.0.saturating_add(1);
                 }
-                nodes = nodes.saturating_add(1);
-                let _first = met.insert(key.clone());
-                if spans.contains(&span) {
-                    held.push(span);
-                    continue;
-                }
-                let at = format!("{}@{}", path.display(), usize::from(span.start()));
-                let tally = missing.entry(key).or_insert((0, at));
-                tally.0 = tally.0.saturating_add(1);
-            }
-            held.sort_by_key(|span| {
-                core::cmp::Reverse(
-                    usize::from(span.end()).saturating_sub(usize::from(span.start())),
-                )
-            });
-            for span in held {
-                for byte in usize::from(span.start()) .. usize::from(span.end()) {
-                    if let Some(slot) = innermost.get_mut(byte) {
-                        *slot = Some(span);
+                held.sort_by_key(|span| {
+                    core::cmp::Reverse(
+                        usize::from(span.end()).saturating_sub(usize::from(span.start())),
+                    )
+                });
+                for span in held {
+                    for byte in usize::from(span.start()) .. usize::from(span.end()) {
+                        if let Some(slot) = innermost.get_mut(byte) {
+                            *slot = Some(span);
+                        }
                     }
                 }
-            }
-            for (byte, inner) in innermost.into_iter().enumerate() {
-                let Some(inner) = inner
-                else {
-                    continue;
-                };
-                let answered = table.answering(ByteOffset::from(byte));
-                if !answered
-                    .is_some_and(|span| span.start() >= inner.start() && span.end() <= inner.end())
-                {
-                    astray.push(format!(
-                        "{}@{byte}: answers {answered:?} inside {inner:?}",
-                        path.display()
-                    ));
+                for (byte, inner) in innermost.into_iter().enumerate() {
+                    let Some(inner) = inner
+                    else {
+                        continue;
+                    };
+                    let answered = table.answering(ByteOffset::from(byte));
+                    if !answered.is_some_and(|span| {
+                        span.start() >= inner.start() && span.end() <= inner.end()
+                    }) {
+                        astray.push(format!(
+                            "{}@{byte}: answers {answered:?} inside {inner:?}",
+                            path.display()
+                        ));
+                    }
                 }
-            }
-        }
+                ControlFlow::Continue(())
+            });
         let mut failures = Vec::new();
         for key in &met {
             match standings.get(key.as_str()) {

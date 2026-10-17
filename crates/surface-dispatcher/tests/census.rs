@@ -11,6 +11,8 @@ mod census
 {
     use alloc::collections::BTreeMap;
     use alloc::collections::BTreeSet;
+    use core::convert::Infallible;
+    use core::ops::ControlFlow;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -25,6 +27,7 @@ mod census
     use gandr_surface_dispatcher::Step;
     use gandr_surface_dispatcher::TypeTable;
     use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::Width;
     use gandr_surface_dispatcher::lay_out;
     use gandr_surface_dispatcher::reprinted;
     use gandr_surface_dispatcher::signed;
@@ -228,101 +231,103 @@ mod census
         let mut census = Census::default();
         let mut fixed = Fixed::default();
         let mut values = 0_usize;
-        let mut walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
-        while let Maybe::Present(step) = walk.step() {
-            let Step::Source {
-                path,
-                root,
-                text,
-                base,
-                composed,
-                ..
-            } = step
-            else {
-                continue;
-            };
-            let table = typed(&grammar, path, root, (text, base));
-            if let Some(ref table) = table {
-                for entry in table.entries(page, Form::Sugared) {
-                    let Maybe::Present(entry) = entry
-                    else {
-                        continue;
-                    };
-                    let site = Site::Entry(entry.span().start());
-                    census.count(path, site, entry.ty());
-                    if let Maybe::Present(expected) = entry.expected() {
-                        census.count(path, site, expected);
-                    }
-                }
-                for (_, declared) in table.declarations(page, Form::Sugared) {
-                    if let Maybe::Present(Declared::Typed(ty)) = declared {
-                        census.count(path, Site::Declaration, &ty);
-                    }
-                }
-            }
-            if let Composed::Settled {
-                report,
-                mut program,
-                ..
-            } = composed
-            {
-                let stated: BTreeSet<String> = report
-                    .declarations()
-                    .iter()
-                    .filter(|declaration| {
-                        matches!(declaration.stated(), Stated::Verdict(Outcome::Runs(_)))
-                    })
-                    .map(|declaration| declaration.name().to_string())
-                    .collect();
-                // Each normal form the corpus states, as the printer wrote it:
-                // the side after `~>`.
-                if let Some(ref table) = table {
-                    for declaration in report.declarations() {
-                        if let Stated::Verdict(Outcome::Normalizes(ref spelled)) =
-                            *declaration.stated()
-                            && let Some((_, normal)) = spelled.as_ref().split_once("~>")
-                        {
-                            fixed.value(
-                                path,
-                                table,
-                                &grammar,
-                                Maybe::Absent(signed::Absent::Unsigned),
-                                SourceText::from(normal.trim()),
-                            );
-                        }
-                    }
-                }
-                let Maybe::Present(last) = program.target()
+        let walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
+        let ControlFlow::Continue(_report) =
+            walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path,
+                    root,
+                    text,
+                    base,
+                    composed,
+                    ..
+                } = step
                 else {
-                    continue;
+                    return ControlFlow::Continue(());
                 };
-                for position in 0_usize ..= usize::from(last) {
-                    let constant = ConstantIndex::from(position);
-                    let Maybe::Present(name) = program.name(constant)
-                    else {
-                        continue;
-                    };
-                    if !stated.contains(&name.to_string()) {
-                        continue;
+                let table = typed(&grammar, path, root, (text, base));
+                if let Some(ref table) = table {
+                    for entry in table.entries(page, Form::Sugared) {
+                        let Maybe::Present(entry) = entry
+                        else {
+                            continue;
+                        };
+                        let site = Site::Entry(entry.span().start());
+                        census.count(path, site, entry.ty());
+                        if let Maybe::Present(expected) = entry.expected() {
+                            census.count(path, site, expected);
+                        }
                     }
-                    if let Evaluation::Value(value) = program.evaluate(constant) {
-                        values = values.saturating_add(1);
-                        census.count(path, Site::Run(constant), value.presentation());
-                        if let Some(ref table) = table
-                            && value.presentation().unspelled().is_empty()
-                        {
-                            fixed.value(
-                                path,
-                                table,
-                                &grammar,
-                                Maybe::Present(constant),
-                                SourceText::from(value.presentation().as_ref()),
-                            );
+                    for (_, declared) in table.declarations(page, Form::Sugared) {
+                        if let Maybe::Present(Declared::Typed(ty)) = declared {
+                            census.count(path, Site::Declaration, &ty);
                         }
                     }
                 }
-            }
-        }
+                if let Composed::Settled {
+                    report,
+                    mut program,
+                    ..
+                } = composed
+                {
+                    let stated: BTreeSet<String> = report
+                        .declarations()
+                        .iter()
+                        .filter(|declaration| {
+                            matches!(declaration.stated(), Stated::Verdict(Outcome::Runs(_)))
+                        })
+                        .map(|declaration| declaration.name().to_string())
+                        .collect();
+                    // Each normal form the corpus states, as the printer wrote it:
+                    // the side after `~>`.
+                    if let Some(ref table) = table {
+                        for declaration in report.declarations() {
+                            if let Stated::Verdict(Outcome::Normalizes(ref spelled)) =
+                                *declaration.stated()
+                                && let Some((_, normal)) = spelled.as_ref().split_once("~>")
+                            {
+                                fixed.value(
+                                    path,
+                                    table,
+                                    &grammar,
+                                    Maybe::Absent(signed::Absent::Unsigned),
+                                    SourceText::from(normal.trim()),
+                                );
+                            }
+                        }
+                    }
+                    let Maybe::Present(last) = program.target()
+                    else {
+                        return ControlFlow::Continue(());
+                    };
+                    for position in 0_usize ..= usize::from(last) {
+                        let constant = ConstantIndex::from(position);
+                        let Maybe::Present(name) = program.name(constant)
+                        else {
+                            continue;
+                        };
+                        if !stated.contains(&name.to_string()) {
+                            continue;
+                        }
+                        if let Evaluation::Value(value) = program.evaluate(constant) {
+                            values = values.saturating_add(1);
+                            census.count(path, Site::Run(constant), value.presentation());
+                            if let Some(ref table) = table
+                                && value.presentation().unspelled().is_empty()
+                            {
+                                fixed.value(
+                                    path,
+                                    table,
+                                    &grammar,
+                                    Maybe::Present(constant),
+                                    SourceText::from(value.presentation().as_ref()),
+                                );
+                            }
+                        }
+                    }
+                }
+                ControlFlow::Continue(())
+            });
         eprintln!("presentations read: {}", census.read);
         eprintln!("run values read: {values}");
         eprintln!("values read back and printed again: {}", fixed.read);
@@ -410,90 +415,93 @@ mod census
             let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
             let mut unread: Vec<String> = Vec::new();
             let mut moved: Vec<String> = Vec::new();
-            let mut walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
-            while let Maybe::Present(step) = walk.step() {
-                let Step::Source {
-                    path,
-                    root,
-                    text,
-                    base,
-                    ..
-                } = step
-                else {
-                    continue;
-                };
-                if !visited.contains(path) {
-                    continue;
-                }
-                let Some(table) = typed(&grammar, path, root, (text, base))
-                else {
-                    continue;
-                };
-                for read in table.read_back(&grammar, page, Form::Sugared) {
-                    let class = match read.trip {
-                        RoundTrip::Equal => "Equal",
-                        RoundTrip::Open => "Open",
-                        RoundTrip::Unknown => "Unknown",
-                        RoundTrip::Different => {
-                            unread.push(format!(
-                                "{}: `{}` reads back as another type",
-                                path.display(),
-                                read.spelled
-                            ));
-                            "Different"
-                        },
-                        RoundTrip::Refused(ref refusal) => {
-                            unread.push(format!(
-                                "{}: `{}` refuses: {refusal}",
-                                path.display(),
-                                read.spelled
-                            ));
-                            "Refused"
-                        },
-                        RoundTrip::Unparsed => {
-                            unread.push(format!(
-                                "{}: `{}` does not parse",
-                                path.display(),
-                                read.spelled
-                            ));
-                            "Unparsed"
-                        },
-                        RoundTrip::Unspelled => {
-                            unread.push(format!(
-                                "{}: {:?} is unspelled",
-                                path.display(),
-                                read.site
-                            ));
-                            "Unspelled"
-                        },
+            let walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
+            let ControlFlow::Continue(_report) =
+                walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+                    let Step::Source {
+                        path,
+                        root,
+                        text,
+                        base,
+                        ..
+                    } = step
+                    else {
+                        return ControlFlow::Continue(());
                     };
-                    *trips.entry(class).or_default() += 1;
-                    // The fixed point: the spelling's reading, printed again,
-                    // is the spelling.
-                    match read.reprinted {
-                        Maybe::Present(ref again)
-                            if collapsed(SourceText::from(again.as_str()))
-                                != collapsed(SourceText::from(read.spelled.as_str())) =>
-                        {
-                            moved.push(format!(
-                                "{}: `{}` reprints as `{again}`",
-                                path.display(),
-                                read.spelled
-                            ));
-                        },
-                        Maybe::Absent(reprinted::Absent::Unspelled) => {
-                            moved.push(format!(
-                                "{}: `{}` reads back to a type the printer cannot lay out",
-                                path.display(),
-                                read.spelled
-                            ));
-                        },
-                        Maybe::Present(_)
-                        | Maybe::Absent(reprinted::Absent::Unlowered | reprinted::Absent::Unrun) =>
-                            {},
+                    if !visited.contains(path) {
+                        return ControlFlow::Continue(());
                     }
-                }
-            }
+                    let Some(table) = typed(&grammar, path, root, (text, base))
+                    else {
+                        return ControlFlow::Continue(());
+                    };
+                    for read in table.read_back(&grammar, page, Form::Sugared) {
+                        let class = match read.trip {
+                            RoundTrip::Equal => "Equal",
+                            RoundTrip::Open => "Open",
+                            RoundTrip::Unknown => "Unknown",
+                            RoundTrip::Different => {
+                                unread.push(format!(
+                                    "{}: `{}` reads back as another type",
+                                    path.display(),
+                                    read.spelled
+                                ));
+                                "Different"
+                            },
+                            RoundTrip::Refused(ref refusal) => {
+                                unread.push(format!(
+                                    "{}: `{}` refuses: {refusal}",
+                                    path.display(),
+                                    read.spelled
+                                ));
+                                "Refused"
+                            },
+                            RoundTrip::Unparsed => {
+                                unread.push(format!(
+                                    "{}: `{}` does not parse",
+                                    path.display(),
+                                    read.spelled
+                                ));
+                                "Unparsed"
+                            },
+                            RoundTrip::Unspelled => {
+                                unread.push(format!(
+                                    "{}: {:?} is unspelled",
+                                    path.display(),
+                                    read.site
+                                ));
+                                "Unspelled"
+                            },
+                        };
+                        *trips.entry(class).or_default() += 1;
+                        // The fixed point: the spelling's reading, printed again,
+                        // is the spelling.
+                        match read.reprinted {
+                            Maybe::Present(ref again)
+                                if collapsed(SourceText::from(again.as_str()))
+                                    != collapsed(SourceText::from(read.spelled.as_str())) =>
+                            {
+                                moved.push(format!(
+                                    "{}: `{}` reprints as `{again}`",
+                                    path.display(),
+                                    read.spelled
+                                ));
+                            },
+                            Maybe::Absent(reprinted::Absent::Unspelled) => {
+                                moved.push(format!(
+                                    "{}: `{}` reads back to a type the printer cannot lay out",
+                                    path.display(),
+                                    read.spelled
+                                ));
+                            },
+                            Maybe::Present(_)
+                            | Maybe::Absent(
+                                reprinted::Absent::Unlowered | reprinted::Absent::Unrun,
+                            ) => {},
+                        }
+                    }
+                    ControlFlow::Continue(())
+                });
             for (class, count) in &trips {
                 eprintln!("| {class} | {count} |");
             }

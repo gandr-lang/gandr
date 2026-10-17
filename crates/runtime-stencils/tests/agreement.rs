@@ -4,6 +4,8 @@
 //! below also states the answer it expects.
 
 use alloc::collections::BTreeMap;
+use core::convert::Infallible;
+use core::ops::ControlFlow;
 use std::path::Path;
 
 use gandr_core_sequent::CommandArena;
@@ -40,8 +42,8 @@ use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Engine;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::Width;
 use gandr_theory_cell_complexes::Polarity;
-use quenchant_shape::shape::Maybe;
 
 use crate::generate::Generator;
 use crate::generate::Shape;
@@ -162,60 +164,62 @@ fn the_generated_programs_agree_on_both_executors()
 fn the_corpus_runs_items_agree_on_both_executors()
 {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus");
-    let mut walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
+    let walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
     let mut stated = 0_usize;
     let mut answered = 0_usize;
     let mut declined: BTreeMap<String, usize> = BTreeMap::new();
-    while let Maybe::Present(step) = walk.step() {
-        let Step::Source {
-            path,
-            composed:
-                Composed::Settled {
-                    report,
-                    mut program,
-                    ..
-                },
-            ..
-        } = step
-        else {
-            continue;
-        };
-        if path
-            .components()
-            .any(|component| component.as_os_str() == "pathological")
-        {
-            continue;
-        }
-        for declaration in report.declarations() {
-            let Stated::Verdict(gandr_surface_corpus::Outcome::Runs(ref spelled)) =
-                *declaration.stated()
+    let ControlFlow::Continue(_report) =
+        walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+            let Step::Source {
+                path,
+                composed:
+                    Composed::Settled {
+                        report,
+                        mut program,
+                        ..
+                    },
+                ..
+            } = step
             else {
-                continue;
+                return ControlFlow::Continue(());
             };
-            stated = stated.saturating_add(1);
-            let constant = declaration.constant();
-            let item = format!("{} {}", path.display(), declaration.name());
-            let expected = program.evaluate_on(constant, Engine::Executor);
-            if PATCHER {
-                assert_eq!(
-                    expected,
-                    program.evaluate_on(constant, Engine::Native),
-                    "{item}: native code against the executor"
-                );
+            if path
+                .components()
+                .any(|component| component.as_os_str() == "pathological")
+            {
+                return ControlFlow::Continue(());
             }
-            match expected {
-                Ok(ref evaluation) => {
+            for declaration in report.declarations() {
+                let Stated::Verdict(gandr_surface_corpus::Outcome::Runs(ref spelled)) =
+                    *declaration.stated()
+                else {
+                    continue;
+                };
+                stated = stated.saturating_add(1);
+                let constant = declaration.constant();
+                let item = format!("{} {}", path.display(), declaration.name());
+                let expected = program.evaluate_on(constant, Engine::Executor);
+                if PATCHER {
                     assert_eq!(
-                        spelled.as_ref(),
-                        evaluation.to_string(),
-                        "{item}: the executor against the run it states"
+                        expected,
+                        program.evaluate_on(constant, Engine::Native),
+                        "{item}: native code against the executor"
                     );
-                    answered = answered.saturating_add(1);
-                },
-                Err(reason) => *declined.entry(format!("{reason:?}")).or_default() += 1,
+                }
+                match expected {
+                    Ok(ref evaluation) => {
+                        assert_eq!(
+                            spelled.as_ref(),
+                            evaluation.to_string(),
+                            "{item}: the executor against the run it states"
+                        );
+                        answered = answered.saturating_add(1);
+                    },
+                    Err(reason) => *declined.entry(format!("{reason:?}")).or_default() += 1,
+                }
             }
-        }
-    }
+            ControlFlow::Continue(())
+        });
     println!("runs items {stated}, answered {answered}, declined {declined:?}");
     assert!(answered > 0, "the corpus states runs the tiers answer");
 }

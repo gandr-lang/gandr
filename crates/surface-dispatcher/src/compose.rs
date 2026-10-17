@@ -2,44 +2,43 @@
 //!
 //! # One lowering, one verdict set
 //!
-//! A composition is lowered exactly once per step, under one strictness, and
+//! Every source is lowered exactly once per run, under one strictness, and
 //! every declaration gets one verdict: the checker's, settled against what the
 //! declaration states. The one call into the lowering sits in a private module
-//! that counts it, and [`LoweringCount`] is the projection through which a run
-//! shows it lowered each step once.
+//! that counts each source it lowers, and [`LoweringCount`] is the projection
+//! through which a run shows it lowered each source once.
 //!
-//! # An importer is composed over its siblings
+//! # A component is composed once
 //!
-//! A source that imports a sibling by path is composed as the unit the
-//! `closure` module lays out — its import closure, in dependency order, the
-//! importer last — lowered into one arena, checked against one environment in
-//! which the siblings' declarations are the prefix, and admitted with the
-//! siblings' certificates replayed first; [`judge_member`] then reports the
-//! importer's own declarations alone. The siblings are settled when the walk
-//! reaches them in their own right.
+//! Sources joined by path imports are composed as the unit the `component`
+//! module lays out — the import-connected component, its sources in
+//! dependency order — lowered into one arena, checked against one
+//! environment, settled once and admitted once, each source's certificate
+//! replayed in that order. [`judge_component`] then projects the one
+//! composition onto each source: each reports its own declarations, refusals,
+//! shadowed builtins, inferred exits and runs and the obligations its
+//! declarations owe, and shares the component's origins, failures, program
+//! and kernel artifact. A source given alone is composed over its import
+//! closure, its own text last ([`judge_member`]), which is the component it
+//! makes on its own: the session's unit.
 //!
 //! - Recorded design: one arena and one kernel environment per import-connected
-//!   component, its members in dependency order, each sibling lowered and
-//!   checked once and its export the importer's prefix by constant, components
-//!   with no import between them on the pool's threads as now.
-//! - Change: the unit is the importer's closure rather than its component. The
-//!   walk streams one source at a time, and the closure is what can be read
-//!   from disk at that source; a component needs every member reached before
-//!   any is judged, which cuts across the walk's order and its stop. Every
-//!   source that imports nothing is composed exactly as before.
-//! - Cost: a sibling is lowered and checked once more per importer that reaches
-//!   it. Its declarations are the same constants and its certificate the same
-//!   bytes in each closure (the witness below), so the repetition is time,
-//!   never a second meaning.
-//! - Reversal (#436, as the corpus's circle sources come onto one base): judge
-//!   each component once, its members level by level in topological order with
-//!   the members of one level in parallel, and project the one composition onto
-//!   each member.
+//!   component, its members in dependency order, each lowered and checked once
+//!   and its export the importer's prefix by constant, components with no
+//!   import between them on the pool's threads.
+//! - Departure: the members of one level of the import graph lower one after
+//!   another rather than in parallel, since the lowering reads one tree; the
+//!   `component` module states it with its reversal.
+//! - A whole-component refusal, a parse fault, a settle fault and a kernel
+//!   disagreement are each every member's: none leaves a composition to
+//!   project. A kernel disagreement is an engine fault, never a verdict about a
+//!   source.
 //!
-//! Witness: `walk::tests::an_importer_is_judged_over_its_sibling` — the
-//! base's certificate segments are byte-identical in its own composition and
-//! in each importer's, a diamond lays the base out once, and each importer
-//! reports its own declarations alone.
+//! Witness: `walk::tests::an_importer_is_judged_over_its_sibling` — a diamond
+//! of four sources and a source beside it are lowered as two components, each
+//! source counted once among the lowerings; each source reports its own
+//! declarations alone, and each certificate holds the base's segments once,
+//! first.
 //!
 //! # The kernel re-derives every acceptance
 //!
@@ -132,8 +131,8 @@
 //! only in what `shown` prints and in what `--goals` does to the gate. A source
 //! is lowered exactly once per run, under one strictness, and each declaration
 //! gets exactly one verdict: the checker's, settled against what it states.
-//! `RunReport::lowerings` counts every lowering the crate performs, and the
-//! corpus suite asserts it equals the number of sources read. `run` composes
+//! `RunReport::lowerings` counts every source the crate lowers, and the corpus
+//! suite asserts it equals the number of sources read. `run` composes
 //! its one source through the same `compose`, under the root its path
 //! classifies as.
 //!
@@ -208,6 +207,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::component::Member;
 use crate::evaluate::Program;
 use crate::exercised::Exercised;
 
@@ -651,7 +651,8 @@ impl core::error::Error for ComposeFault<'_>
 /// The one call into the lowering, counted.
 ///
 /// Nothing else in the crate names the lowering's entry, so the count this
-/// module keeps is every lowering the crate performs.
+/// module keeps is every source the crate lowers: each source of a unit,
+/// once per lowering of the unit.
 mod lowering
 {
     use anodized::spec;
@@ -668,12 +669,12 @@ mod lowering
     use super::LoweringCount;
 
     /// Lower the sources `unit` lays out in `tree` into `arena` against the
-    /// empty outermost scope, counting the lowering in `lowerings`.
+    /// empty outermost scope, counting each of them in `lowerings`.
     ///
     /// # Specification
     /// - requires: `tree` was molded under `grammar`.
-    /// - ensures: `lowerings` is one more, saturating, whatever the lowering
-    ///   answered.
+    /// - ensures: `lowerings` is more by the unit's sources, saturating,
+    ///   whatever the lowering answered.
     /// - provides: the lowering's own answer, unchanged.
     /// - fails: the lowering's refusal of the whole module, unchanged.
     /// - panics: none.
@@ -683,14 +684,16 @@ mod lowering
     ///
     /// # Adequacy
     /// - hypothesis: L3 — admitted, wholly refused and declaration-refused
-    ///   sources advance the count once; the saturation witness separates the
-    ///   penultimate count from the maximum. The counter is the declared
-    ///   observation of lowering calls, not a proof of all work inside them.
+    ///   sources advance the count once; a component of four sources advances
+    ///   it by four; the saturation witness separates the penultimate count
+    ///   from the maximum. The counter is the declared observation of the
+    ///   sources lowered, not a proof of all work inside the lowering.
     /// - witness: `compose::tests::each_composition_lowers_once`
     /// - witness: `script::tests::run_source_counts_lowerings_with_saturation`
+    /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
     #[spec(
         captures: [before = lowerings.0],
-        ensures: lowerings.0 == before.saturating_add(1),
+        ensures: lowerings.0 == before.saturating_add(unit.sources().len()),
     )]
     pub(super) fn lower<'source>(
         grammar: &Pbg,
@@ -700,7 +703,7 @@ mod lowering
         lowerings: &mut LoweringCount,
     ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
     {
-        *lowerings = LoweringCount(lowerings.0.saturating_add(1_usize));
+        *lowerings = LoweringCount(lowerings.0.saturating_add(unit.sources().len()));
         lower_unit(
             grammar,
             tree,
@@ -884,9 +887,10 @@ pub fn lower_parsed<'source>(
 /// # Specification
 /// - requires: `source` is the text `unit` lays out.
 /// - ensures: as [`lower_source`], the sources' names resolved within the unit
-///   as its imports say.
-/// - provides: the lowering the walk performs for a source that imports a
-///   sibling (the `closure` module).
+///   as its imports say, and `lowerings` advancing by each of the unit's
+///   sources once the parse succeeds.
+/// - provides: the lowering the walk performs for a component (the `component`
+///   module).
 /// - fails: as [`lower_source`].
 /// - panics: none.
 ///
@@ -894,7 +898,8 @@ pub fn lower_parsed<'source>(
 /// As [`lower_source`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a fixture importer lowers over its sibling and settles.
+/// - hypothesis: L3 — a fixture importer lowers over its sibling and settles,
+///   the pair counted as two sources lowered.
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 #[inline]
 #[spec(
@@ -902,7 +907,7 @@ pub fn lower_parsed<'source>(
     ensures: |ref ret| lowerings.0 == if matches!(ret, Err(ComposeFault::Parse(_))) {
         before
     } else {
-        before.saturating_add(1)
+        before.saturating_add(unit.sources().len())
     },
 )]
 pub fn lower_unit_source<'source>(
@@ -922,7 +927,8 @@ pub fn lower_unit_source<'source>(
 /// # Specification
 /// - requires: `grammar` is the checked grammar `parsed` was committed under,
 ///   over the text `unit` lays out.
-/// - ensures: as [`lower_parsed`], over the unit.
+/// - ensures: as [`lower_parsed`], over the unit, `lowerings` advancing by each
+///   of its sources.
 /// - provides: the lowering of a session's document beside the siblings it
 ///   imports.
 /// - fails: as [`lower_parsed`].
@@ -938,7 +944,7 @@ pub fn lower_unit_source<'source>(
 #[inline]
 #[spec(
     captures: [before = lowerings.0],
-    ensures: lowerings.0 == before.saturating_add(1),
+    ensures: lowerings.0 == before.saturating_add(unit.sources().len()),
 )]
 pub fn lower_parsed_unit<'source>(
     grammar: &Pbg,
@@ -1026,7 +1032,7 @@ pub fn judge<'source>(
 }
 
 /// Judge and settle one lowered unit, reporting the source that starts at
-/// `base`: [`judge`] projected onto one member of the unit.
+/// `base`: [`judge`] projected onto the unit's last source.
 ///
 /// # Specification
 /// - requires: as [`judge`]; `base` is where the reported source starts in
@@ -1035,9 +1041,9 @@ pub fn judge<'source>(
 ///   a module; the settled composition reports, of the declarations, refusals,
 ///   shadowed builtins, inferred exits and inferred runs, those written from
 ///   `base` on, and of the ledger, the obligations those declarations owe. The
-///   origins, spellings, failures, program and kernel artifact are the unit's.
-/// - provides: an importer's composition over the siblings it imports, which
-///   the walk settles when it reaches them in their own right.
+///   origins, failures, program and kernel artifact are the unit's.
+/// - provides: a document's composition over the siblings it imports, the
+///   session's.
 /// - fails: never; a settle fault is carried.
 /// - panics: none.
 ///
@@ -1059,11 +1065,90 @@ pub fn judge<'source>(
 )]
 pub fn judge_member<'source>(
     root: CorpusRoot,
-    (mut module, text): (LoweredModule<'source>, SourceText<'source>),
-    mut arena: CoreArena,
+    (module, text): (LoweredModule<'source>, SourceText<'source>),
+    arena: CoreArena,
     grant: &HostGrant,
     base: ByteOffset,
 ) -> Judged<'source>
+{
+    let last = Member {
+        start: base,
+        end: ByteOffset::from(text.as_ref().len()),
+    };
+    let (projected, admission) = judge_members(root, (module, text), arena, grant, (&[], last));
+    Judged {
+        settled: projected.last,
+        admission,
+    }
+}
+
+/// What judging a unit came to at each of its sources: each one's settled
+/// composition, its kernel artifact pending, or the settle fault.
+#[derive(Debug)]
+struct Projected<'source>
+{
+    /// Every source but the last, in the unit's order.
+    earlier: Vec<Result<Composed<'source>, SettleFault>>,
+    /// The unit's last source.
+    last: Result<Composed<'source>, SettleFault>,
+}
+
+/// One source's share of a judged unit: what it reports of its own, before
+/// the unit-wide tables join it.
+#[derive(Debug)]
+struct Share<'source>
+{
+    /// The source's own declarations' reports and the obligations they owe.
+    report: SettleReport<'source>,
+    /// The exercised rows its settled declarations carry.
+    exercised: Exercised,
+    /// Its declarations refused at their own form.
+    unstatable: Vec<LoweringRefusal<'source>>,
+    /// The types its checker refusals compare and the unit's failures name.
+    spellings: Spellings,
+    /// The builtins it shadowed.
+    shadowed: Vec<ShadowedBuiltin>,
+    /// The exits the lowering inferred in it.
+    inferred: Vec<InferredExit>,
+    /// The runs the checker inferred in it.
+    runs: Vec<InferredRun>,
+}
+
+/// Judge and settle one lowered unit once, and project the composition onto
+/// each of its sources `members`.
+///
+/// # Specification
+/// - requires: as [`judge`]; `earlier` then `last` are the unit's sources' own
+///   bytes in `text`, in the unit's order.
+/// - ensures: the unit is judged, built and settled once, as [`judge`] judges a
+///   module. Each source's settled composition reports, of the declarations,
+///   refusals, shadowed builtins, inferred exits and inferred runs, those
+///   written in its own bytes — a refusal with no span in every source's — and
+///   of the ledger, the obligations its declarations owe; its spellings are its
+///   report's; the origins, failures and program are the unit's, shared. A
+///   source that is the whole unit reports everything, nothing copied. A settle
+///   fault is every source's. The admission holds the arena, the verdicts and
+///   the unit's structured names.
+/// - fails: never; a settle fault is carried.
+/// - panics: none.
+/// - intension: one check, one program, one settle comparison per unit; the
+///   unit-wide tables are copied once for each source but the last, which takes
+///   them.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a diamond judged as one component reports each source's
+///   own declarations at each source, and a unit of one source reports all of
+///   its own.
+/// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+/// - witness: `compose::tests::a_module_settles_every_declaration_once`
+#[spec(ensures: |ref ret| ret.0.earlier.len() == earlier.len())]
+fn judge_members<'source>(
+    root: CorpusRoot,
+    (mut module, text): (LoweredModule<'source>, SourceText<'source>),
+    mut arena: CoreArena,
+    grant: &HostGrant,
+    (earlier, last): (&[Member], Member),
+) -> (Projected<'source>, Admission)
 {
     let declarations = adapt(&module);
     let grants = grant.grants(&mut arena);
@@ -1072,73 +1157,271 @@ pub fn judge_member<'source>(
     let verdicts = check_module(&mut context, &declarations);
     let names = module.structured_names();
     let mut program = Program::new(&arena, &module, &verdicts);
-    let settled = match settle(root, &arena, &module, &verdicts, &mut program) {
+    let projected = match settle(root, &arena, &module, &verdicts, &mut program) {
         Ok(report) => {
-            let own = |span: ByteSpan| span.start() >= base;
-            let report = if usize::from(base) == 0_usize {
+            let failures = Failures::of(&verdicts);
+            located(module.origins_mut(), &verdicts);
+            let unit = Unitwide {
+                unstatable: unstatable(&module),
+                runs: inferred_runs(&module, &verdicts),
+                failures: &failures,
+            };
+            let whole = earlier.is_empty() && usize::from(last.start) == 0_usize;
+            let earlier = earlier
+                .iter()
+                .map(|&member| {
+                    let own = owned(&report, (&module, &verdicts), member);
+                    let held = share(member, own, (&arena, &module, text), &unit);
+                    Ok(settled(
+                        held,
+                        (module.origins().clone(), failures.clone(), program.clone()),
+                    ))
+                })
+                .collect();
+            let own = if whole {
                 report
             }
             else {
-                let first = module
-                    .declarations()
-                    .iter()
-                    .find(|declaration| own(declaration.span()))
-                    .map_or_else(
-                        || ConstantIndex::from(usize::MAX),
-                        LoweredDeclaration::constant,
-                    );
-                let owed = verdicts
-                    .ledger()
-                    .entries()
-                    .iter()
-                    .filter(|entry| entry.absence().constant() >= first)
-                    .count();
-                report.from_offset(base, ObligationCount::from(owed))
+                owned(&report, (&module, &verdicts), last)
             };
-            let exercised = Exercised::of(&arena, &module, &report);
-            let mut unstatable = unstatable(&module);
-            unstatable.retain(|refusal| match refusal.span() {
-                Maybe::Present(span) => own(span),
-                Maybe::Absent(_) => true,
-            });
-            let failures = Failures::of(&verdicts);
-            located(module.origins_mut(), &verdicts);
-            let spellings = Spellings::of(
-                &arena,
-                &module,
-                &report,
-                &failures,
-                (module.origins(), text),
-            );
-            let mut shadowed = module.recognition().shadowed().to_vec();
-            shadowed.retain(|shadow| own(shadow.span));
-            let mut inferred = module.inferred_exits().to_vec();
-            inferred.retain(|exit| own(exit.span));
-            let mut runs = inferred_runs(&module, &verdicts);
-            runs.retain(|run| own(run.span));
-            Ok(Composed::Settled {
-                report,
-                exercised,
-                unstatable,
-                origins: module.into_origins(),
-                spellings,
-                failures,
-                shadowed,
-                inferred,
-                runs,
-                kernel: Maybe::Absent(admitted::Absent::Pending),
-                program,
-            })
+            let last_share = share(last, own, (&arena, &module, text), &unit);
+            Projected {
+                earlier,
+                last: Ok(settled(
+                    last_share,
+                    (module.into_origins(), failures, program),
+                )),
+            }
         },
-        Err(fault) => Err(fault),
+        Err(fault) => Projected {
+            earlier: earlier.iter().map(|_| Err(fault)).collect(),
+            last: Err(fault),
+        },
     };
-    Judged {
-        settled,
-        admission: Admission {
-            arena,
-            verdicts,
-            names,
+    (projected, Admission {
+        arena,
+        verdicts,
+        names,
+    })
+}
+
+/// What a judged unit holds once for all of its sources, read by [`share`].
+#[derive(Debug)]
+struct Unitwide<'unit, 'source>
+{
+    /// The unit's declarations refused at their own form.
+    unstatable: Vec<LoweringRefusal<'source>>,
+    /// The runs the checker inferred over the unit.
+    runs: Vec<InferredRun>,
+    /// The failures the checking machine kept over the unit.
+    failures: &'unit Failures,
+}
+
+/// The report of the declarations written in `member`, owing what their
+/// verdicts owe.
+///
+/// # Specification
+/// - requires: `report` settled `verdicts`, judged over `module`'s
+///   declarations.
+/// - ensures: [`SettleReport::within`] `member`, its ledger the number of
+///   `verdicts`' obligations owed by a constant from the member's first
+///   declaration up to the first declaration after it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an importer reports its own declarations, its sibling's
+///   obligations left to the sibling.
+/// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+#[spec(ensures: |ref ret| ret.declarations().iter().all(|declaration| member.start <= declaration.span().start() && declaration.span().start() <= member.end))]
+fn owned<'source>(
+    report: &SettleReport<'source>,
+    (module, verdicts): (&LoweredModule<'source>, &ModuleReport),
+    member: Member,
+) -> SettleReport<'source>
+{
+    let written = |span: ByteSpan| member.start <= span.start() && span.start() <= member.end;
+    let constant = |found: Option<&LoweredDeclaration<'_>>| {
+        found.map_or_else(
+            || ConstantIndex::from(usize::MAX),
+            LoweredDeclaration::constant,
+        )
+    };
+    let first = constant(
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| written(declaration.span())),
+    );
+    let after = constant(
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.span().start() > member.end),
+    );
+    let owed = verdicts
+        .ledger()
+        .entries()
+        .iter()
+        .filter(|entry| (first .. after).contains(&entry.absence().constant()))
+        .count();
+    report.within(member.start, member.end, ObligationCount::from(owed))
+}
+
+/// The share of a judged unit the source `member` reports, its report
+/// `report` already its own.
+///
+/// # Specification
+/// - requires: `report` is [`owned`] of `member`, or the whole unit's for a
+///   source that is the whole unit; `unit` is the unit's.
+/// - ensures: `report`, the exercised rows it carries, the spellings of the
+///   types its checker refusals compare and the unit's failures name, and of
+///   the unit's refusals at a declaration's own form, shadowed builtins,
+///   inferred exits and inferred runs, those written in `member` — starting
+///   within its own bytes, its end included — a refusal with no span kept.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`judge_members`].
+/// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+/// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
+#[spec(ensures: |ref ret| ret.shadowed.iter().all(|shadow| member.start <= shadow.span.start() && shadow.span.start() <= member.end)
+    && ret.runs.iter().all(|run| member.start <= run.span.start() && run.span.start() <= member.end))]
+fn share<'source>(
+    member: Member,
+    report: SettleReport<'source>,
+    (arena, module, text): (&CoreArena, &LoweredModule<'source>, SourceText<'source>),
+    unit: &Unitwide<'_, 'source>,
+) -> Share<'source>
+{
+    let own = |span: ByteSpan| member.start <= span.start() && span.start() <= member.end;
+    let exercised = Exercised::of(arena, module, &report);
+    let spellings = Spellings::of(
+        arena,
+        module,
+        &report,
+        unit.failures,
+        (module.origins(), text),
+    );
+    let mut unstatable = unit.unstatable.clone();
+    unstatable.retain(|refusal| match refusal.span() {
+        Maybe::Present(span) => own(span),
+        Maybe::Absent(_) => true,
+    });
+    let mut shadowed = module.recognition().shadowed().to_vec();
+    shadowed.retain(|shadow| own(shadow.span));
+    let mut inferred = module.inferred_exits().to_vec();
+    inferred.retain(|exit| own(exit.span));
+    let mut runs = unit.runs.clone();
+    runs.retain(|run| own(run.span));
+    Share {
+        report,
+        exercised,
+        unstatable,
+        spellings,
+        shadowed,
+        inferred,
+        runs,
+    }
+}
+
+/// The settled composition of one source's `share`, joined by the unit-wide
+/// origins, failures and program, its kernel artifact pending.
+///
+/// # Specification
+/// trivial.
+fn settled<'source>(
+    share: Share<'source>,
+    (origins, failures, program): (OriginTable, Failures, Program<'source>),
+) -> Composed<'source>
+{
+    Composed::Settled {
+        report: share.report,
+        exercised: share.exercised,
+        unstatable: share.unstatable,
+        origins,
+        spellings: share.spellings,
+        failures,
+        shadowed: share.shadowed,
+        inferred: share.inferred,
+        runs: share.runs,
+        kernel: Maybe::Absent(admitted::Absent::Pending),
+        program,
+    }
+}
+
+/// Judge what the lowering made of one component once, and project the
+/// composition onto each of its sources.
+///
+/// # Specification
+/// - requires: the lowering read `text`, the component's, whose sources' own
+///   bytes are `members` in the unit's order; `root` is the corpus root they
+///   sit under.
+/// - ensures: one composition per source of `members`, in order. A module the
+///   lowering read is judged, settled and admitted once and projected as
+///   [`judge_members`] projects it, each source's composition carrying the
+///   component's kernel artifact; a component of one source is
+///   [`judge_lowering`] at offset zero. A whole-component refusal is every
+///   source's.
+/// - provides: the walk's verdict at each source of a component, the component
+///   lowered and checked once.
+/// - fails: per source, as [`judge_module`]: a kernel disagreement is every
+///   source's [`ComposeFault::Readmission`], since the component's environment
+///   could not be built past it; otherwise a settle fault is every source's
+///   [`ComposeFault::Settle`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a diamond judged whole reports each source's own
+///   declarations, each certificate holding the base's segments once, first;
+///   the corpus at every width composes alike.
+/// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+/// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
+#[spec(ensures: |ref ret| ret.len() == members.len())]
+pub fn judge_component<'source>(
+    root: CorpusRoot,
+    (lowering, text): (Lowering<'source>, SourceText<'source>),
+    grant: &HostGrant,
+    members: &[Member],
+) -> Vec<Result<Composed<'source>, ComposeFault<'source>>>
+{
+    let Some((&last, earlier)) = members.split_last()
+    else {
+        return Vec::new();
+    };
+    match lowering.into_lowered() {
+        Lowered::Module { module, arena } => {
+            let (projected, admission) =
+                judge_members(root, (module, text), arena, grant, (earlier, last));
+            match admission.admit() {
+                Ok(kernel) => {
+                    let mut composed: Vec<_> = projected
+                        .earlier
+                        .into_iter()
+                        .map(|held| {
+                            held.map(|composed| composed.admitted(kernel.clone()))
+                                .map_err(ComposeFault::Settle)
+                        })
+                        .collect();
+                    composed.push(
+                        projected
+                            .last
+                            .map(|composed| composed.admitted(kernel))
+                            .map_err(ComposeFault::Settle),
+                    );
+                    composed
+                },
+                Err(fault) => members
+                    .iter()
+                    .map(|_| Err(ComposeFault::Readmission(fault.clone())))
+                    .collect(),
+            }
         },
+        Lowered::Refused(refusal) => members
+            .iter()
+            .map(|_| Ok(Composed::Refused(refusal)))
+            .collect(),
     }
 }
 
