@@ -456,8 +456,8 @@ enum Standing
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct NamedContext(usize);
 
-/// How many of a constructor pattern's fields come before a part whose type
-/// stands under them: none for a part typed outside its constructor.
+/// How many of a pattern's parts come before a part whose type stands under
+/// them: none for a part typed outside its pattern.
 ///
 /// # Specification
 /// trivial.
@@ -465,9 +465,32 @@ struct NamedContext(usize);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Before(usize);
 
-/// The constructor pattern a part's type stands inside, with the fields before
-/// the part; none for a part typed outside its constructor.
+/// The pattern a part stands inside, with how many of that pattern's parts
+/// before it the part's type stands under; none for a root pattern.
 type Inside = Option<(PatternId, Before)>;
+
+/// The parts of `pattern` that a part standing under `before` of them stands
+/// under, in written order.
+///
+/// # Specification
+/// trivial.
+fn preceding(
+    pattern: &Pattern,
+    Before(count): Before,
+) -> &[PatternId]
+{
+    match *pattern {
+        Pattern::Constructor { ref fields, .. } => fields.get(.. count).unwrap_or_default(),
+        Pattern::Pair(ref first, _) if count > 0_usize => core::slice::from_ref(first),
+        Pattern::Pair(..)
+        | Pattern::Injection(..)
+        | Pattern::Wildcard
+        | Pattern::Binder
+        | Pattern::Unit
+        | Pattern::Literal(_)
+        | Pattern::Hole(_) => &[],
+    }
+}
 
 /// One intuitionistic binder a typed node stands under: the binder around
 /// it, the name the source writes for it, whether it is a capability scope's
@@ -2665,18 +2688,20 @@ quenchant_shape::reason_enum! {
 ///   other than the unknown one, each root pattern at the scrutinee's type and
 ///   each part at the type its place gives it — a data constructor's field at
 ///   the field's type, its parameters read at the family's arguments; a word
-///   pattern's rest at the word's type; a product's, a pair's, a dependent
-///   pair's first and a sum's components at their own — and each span the
-///   lowering kept for a typed pattern: one read as the pattern at that type,
-///   one read as a constructor's name at the constructor's type, which takes
-///   the fields to the family as a thunked function and is the family itself
-///   for a constructor of no field. A scrutinee the recursion staged is read at
-///   the type its stage refines, as the surface writes no stage. A data
-///   constructor's field whose type names a field before it is read under those
-///   fields, each written as a binder, whose spans it carries; one whose
-///   earlier fields are not all binders answers nothing, and neither does any
-///   part inside it. A part whose place no rule above types, and every span
-///   inside it, answers nothing.
+///   pattern's rest at the word's type; a product's, a pair's and a sum's
+///   components at their own; a dependent pair's first at its own and its
+///   second at its own, read under the first — and each span the lowering kept
+///   for a typed pattern: one read as the pattern at that type, one read as a
+///   constructor's name at the constructor's type, which takes the fields to
+///   the family as a thunked function and is the family itself for a
+///   constructor of no field. A scrutinee the recursion staged is read at the
+///   type its stage refines, as the surface writes no stage. A part whose type
+///   names a part before it — a data constructor's field, a dependent pair's
+///   second — is read under those parts, each written as a binder, and so is
+///   every part inside it; a span carries the spans of every binder its type
+///   stands under, outermost first. A span under an earlier part not written as
+///   a binder answers nothing. A part whose place no rule above types, and
+///   every span inside it, answers nothing.
 /// - provides: the pattern half of [`TypeTable::of`].
 /// - fails: never; an untyped pattern answers nothing.
 /// - panics: none.
@@ -2685,9 +2710,11 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a word pattern's empty word, letter, cons and rest, a
 ///   data constructor pattern's name and field, in a declaration the run
 ///   settled and in one it refused, and a constructor pattern on a staged
-///   scrutinee, are asserted at their types.
+///   scrutinee, are asserted at their types; and a record pattern inside a
+///   dependent pair's second component, at its type under the first.
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
+/// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
 #[spec(ensures: |ret| ret.iter().all(|&(_, ty, _, _)| arena.value_type(ty).is_some()))]
 fn matched(
     module: &LoweredModule<'_>,
@@ -2704,8 +2731,8 @@ fn matched(
         }
     }
     let mut matched = Vec::new();
-    // Each pattern's type, and for a part read under the parts before it, its
-    // constructor pattern and how many of its fields come first.
+    // Each pattern's type, and for a part, the pattern it stands inside with
+    // how many of that pattern's parts its type stands under.
     let mut typed: BTreeMap<PatternId, (ValueTypeId, Inside)> = BTreeMap::new();
     let mut pending: Vec<(PatternId, ValueTypeId, Inside)> = Vec::new();
     for (_, case) in module.origins().cases() {
@@ -2729,57 +2756,44 @@ fn matched(
             if typed.insert(pattern, (ty, under)).is_some() {
                 continue;
             }
-            // A part read under the parts before it is not read into: its own
-            // parts would stand under binders the walk does not keep.
-            if under.is_none()
-                && let Some(shape) = case.patterns.pattern(pattern)
-            {
-                pending.extend(parts(arena, &signatures, shape, ty).into_iter().map(
-                    |(part, part_ty, before)| {
-                        (
-                            part,
-                            part_ty,
-                            (before.0 > 0_usize).then_some((pattern, before)),
-                        )
-                    },
-                ));
+            if let Some(shape) = case.patterns.pattern(pattern) {
+                pending.extend(
+                    parts(arena, &signatures, shape, ty)
+                        .into_iter()
+                        .map(|(part, part_ty, before)| (part, part_ty, Some((pattern, before)))),
+                );
             }
         }
-        for written in &case.spans {
+        'spans: for written in &case.spans {
             let Some(&(ty, under)) = typed.get(&written.pattern)
             else {
                 continue;
             };
-            let earlier = match under {
-                None => Vec::new(),
-                Some((parent, Before(count))) => {
-                    let Some(&Pattern::Constructor { ref fields, .. }) =
-                        case.patterns.pattern(parent)
-                    else {
-                        continue;
+            // The binders the type stands under, gathered innermost first
+            // from each pattern around the part.
+            let mut earlier = Vec::new();
+            let mut inside = under;
+            while let Some((parent, before)) = inside {
+                let Some(shape) = case.patterns.pattern(parent)
+                else {
+                    continue 'spans;
+                };
+                for &field in preceding(shape, before).iter().rev() {
+                    let named = match case.patterns.pattern(field) {
+                        Some(&Pattern::Binder) => case.spans.iter().find(|held| {
+                            held.pattern == field && matches!(held.reading, PatternReading::Matched)
+                        }),
+                        Some(_) | None => None,
                     };
-                    let named: Option<Vec<ByteSpan>> = fields
-                        .get(.. count)
-                        .unwrap_or_default()
-                        .iter()
-                        .map(|&field| match case.patterns.pattern(field) {
-                            Some(&Pattern::Binder) => case
-                                .spans
-                                .iter()
-                                .find(|held| {
-                                    held.pattern == field
-                                        && matches!(held.reading, PatternReading::Matched)
-                                })
-                                .map(|held| held.span),
-                            Some(_) | None => None,
-                        })
-                        .collect();
-                    match named {
-                        Some(named) if named.len() == count => named,
-                        Some(_) | None => continue,
-                    }
-                },
-            };
+                    let Some(held) = named
+                    else {
+                        continue 'spans;
+                    };
+                    earlier.push(held.span);
+                }
+                inside = typed.get(&parent).and_then(|&(_, around)| around);
+            }
+            earlier.reverse();
             let answered = match written.reading {
                 PatternReading::Matched => ty,
                 PatternReading::Constructor => {
@@ -2807,9 +2821,10 @@ fn matched(
 ///   families by constant.
 /// - ensures: as [`matched`] types the parts of one pattern; none for a pattern
 ///   whose place it does not type, and none for a leaf. A part stands under no
-///   earlier part unless it is a data constructor's field whose type names a
-///   field before it, which stands under every field before it at its declared
-///   type.
+///   earlier part unless its type names one: a data constructor's field whose
+///   type names a field before it stands under every field before it at its
+///   declared type, and a dependent pair's second whose type names the first
+///   stands under the first.
 /// - provides: one step of [`matched`]'s walk.
 /// - fails: never.
 /// - panics: none.
@@ -2818,6 +2833,7 @@ fn matched(
 /// - hypothesis: L3 — as [`matched`].
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
+/// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
 #[spec(ensures: |ret| ret.iter().all(|&(_, part, _)| arena.value_type(part).is_some())
     && (ret.is_empty() || matches!(*pattern, Pattern::Constructor { .. } | Pattern::Pair(..) | Pattern::Injection(..))))]
 fn parts(
@@ -2884,8 +2900,16 @@ fn parts(
         Pattern::Pair(first, second) => match arena.value_type(ty) {
             Some(&ValueType::Product(ref components)) => at(components, &[first, second]),
             Some(&ValueType::Sigma {
-                first: component, ..
-            }) => Vec::from([(first, component, Before(0_usize))]),
+                first: component,
+                second: later,
+            }) => {
+                // The second is typed outside the first where it can be.
+                let rest = match strengthen_value_type(arena, later, Binders::NONE.deeper()) {
+                    Maybe::Present(outside) => (second, outside, Before(0_usize)),
+                    Maybe::Absent(_) => (second, later, Before(1_usize)),
+                };
+                Vec::from([(first, component, Before(0_usize)), rest])
+            },
             Some(_) | None => Vec::new(),
         },
         Pattern::Injection(side, body) => match arena.value_type(ty) {
@@ -3542,6 +3566,38 @@ mod tests
             }),
             "the case's motive judges the result type again under its binders, which is no \
              check of the term in its own context (#551)"
+        );
+    }
+
+    #[test]
+    fn a_pattern_inside_a_dependent_pair_s_second_component_answers_558()
+    {
+        let source = SourceText::from(concat!(
+            "def nested(p : #{x : Integer, inner : #{y : Integer, q : Path(Integer, x, y)}}) ",
+            "-> -F Integer {\n  case p {\n    #{x, #{y, q}} => y\n  }\n}\n",
+            "def flat(p : #{x : Integer, y : Integer, q : Path(Integer, x, y)}) ",
+            "-> -F Integer {\n  case p {\n    #{x, y, q} => y\n  }\n}\n",
+        ));
+        let table = table(source);
+        assert_eq!(
+            answer(&table, source, SourceText::from("#{y, q}")),
+            Maybe::Present(Answer {
+                subject: Subject::Binder,
+                ty: String::from("#{a : Integer, b : Path(Integer, x, a)}"),
+                expected: Maybe::Absent(checked_against::Absent::Agreed),
+            }),
+            "the inner record answers at the pair's second component, under the `x` the \
+             outer pattern writes (#558)"
+        );
+        assert_eq!(
+            answer(&table, source, SourceText::from("#{x, y, q}")),
+            Maybe::Present(Answer {
+                subject: Subject::Binder,
+                ty: String::from("#{a : Integer, b : #{b : Integer, c : Path(Integer, a, b)}}"),
+                expected: Maybe::Absent(checked_against::Absent::Agreed),
+            }),
+            "a record of three answers as itself, not as the pair the lowering nests at its \
+             span"
         );
     }
 
