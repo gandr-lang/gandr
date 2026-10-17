@@ -1,6 +1,6 @@
 //! The run stage: a checked module focused into the command IL, one
-//! declaration run — emitted native code, the portable executor or the L
-//! machine — and its terminal read back and spelled.
+//! declaration run — on emitted native code or the portable executor — and
+//! its terminal read back and spelled.
 //!
 //! # A program is its declarations
 //!
@@ -50,11 +50,12 @@
 //! A run that returns a value succeeds. A run that reaches a declaration owed
 //! its body — returning it, forcing it, applying it or matching on it — is
 //! blamed on that declaration, the obligation it met; any other stop short of
-//! a value is stuck; a run the machine could not finish, its step budget spent
-//! or its store refusing, is unfinished. Each of these reached the machine. A
-//! declaration that refers, directly or through others, to one that was
-//! refused or did not focus never reaches it: the reference is found by
-//! walking the program's references before any command runs.
+//! a value is stuck; a run that could not finish, its jump budget spent, a
+//! region exhausted or a form the lowering refuses, is unfinished. Each of
+//! these reached the machine. A declaration that refers, directly or through
+//! others, to one that was refused or did not focus never reaches it: the
+//! reference is found by walking the program's references before any command
+//! runs.
 //!
 //! # The run stage follows the check
 //!
@@ -67,12 +68,11 @@
 //! not run. `Program::evaluate` mints `return c` for the declaration at `c`,
 //! runs it on the tier `gandr-runtime-emitter`'s policy picks — emitted
 //! native code by default where the host has a patcher, the portable
-//! executor elsewhere, both under a budget of 2²⁴ jumps — and on a fresh L
-//! machine under a budget of 2²⁴ steps when the tier declines a form it
-//! does not lower or a case no arm answers, forces the terminal when it is
-//! a thunk, so a suspended computation runs and a function answers its
-//! `fn`, and reads the terminal back into the core. `Program::evaluate_on`
-//! runs one engine alone, so a differential holds each tier to the machine.
+//! executor elsewhere, both under a budget of 2²⁴ jumps — forces the
+//! terminal when it is a thunk, so a suspended computation runs and a
+//! function answers its `fn`, and reads the terminal back into the core.
+//! `Program::evaluate_on` runs one engine alone, so a differential holds
+//! native code to the executor.
 //! Nothing runs that no caller asked for: the settle comparison runs the
 //! declarations that state a `runs` outcome, the session runs what the user
 //! entered, and `gandr run` runs one declaration. The alternative was a run
@@ -81,12 +81,12 @@
 //! building the program shows on the check path's measurements, when it would
 //! move behind a request.
 //!
-//! **The machine takes what a tier declines.** A tier answers with the
-//! machine's evaluation or declines; it never answers differently. The
-//! alternative, refusing a declaration the lowering does not cover, would
-//! turn every coverage gap into a user-visible failure; the fallback costs a
-//! lowering attempt per run. It reverses once every `runs` form lowers and
-//! the machine retires into the executor.
+//! **A tier's decline is unfinished.** A tier answers with the evaluation
+//! or declines, and a decline is [`Unfinished::Declined`] naming why. The
+//! alternative, a second interpreter taking what a tier declines, kept two
+//! implementations of one transition table that only tests held together;
+//! every corpus `runs` form lowers. The choice reverses if a form the
+//! lowering cannot take reaches a `runs` item, when the lowering grows it.
 //!
 //! | What the run came to | `RunStatus` | `gandr run` exits |
 //! | -------------------- | ----------- | ----------------- |
@@ -144,12 +144,9 @@ use gandr_core_sequent::Definitions;
 use gandr_core_sequent::FocusRefusal;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
-use gandr_core_sequent::Machine;
-use gandr_core_sequent::MachineFault;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Provenance;
 use gandr_core_sequent::ReadbackRefusal;
-use gandr_core_sequent::StepCount;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
 use gandr_core_sequent::focus_computation;
@@ -218,7 +215,7 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The transitions one run may spend: far past any run the fragment can
+/// The code-word jumps one run may spend: far past any run the fragment can
 /// write, whose only recursion descends structurally and so always halts,
 /// and the bound that keeps a run of a later fragment from looping
 /// unobserved.
@@ -231,8 +228,6 @@ const RUN_BUDGET: usize = 1_usize << 24_u32;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Engine
 {
-    /// The L machine: the reference every tier is held to.
-    Machine,
     /// Code the emitter copies and patches, where the host has a patcher.
     Native,
     /// The portable executor dispatching the same stencils.
@@ -400,22 +395,23 @@ pub enum Evaluation<'source>
     Blamed(SurfaceName<'source>),
     /// The run stopped short of a value.
     Stuck(Stuck),
-    /// The machine could not finish the run.
+    /// The run could not be finished.
     Unfinished(Unfinished),
-    /// The declaration never reached the machine.
+    /// The declaration never reached a run.
     Unrunnable(Unrunnable<'source>),
 }
 
-/// Why the machine could not finish a run.
+/// Why a run could not be finished.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Unfinished
 {
-    /// The machine faulted: its step budget ran out or its store refused.
-    Fault(MachineFault),
+    /// The run gave no outcome: its budget ran out, a region passed its
+    /// bound, or the lowering refused a form.
+    Declined(Declined),
     /// The run's terminal has no reading in the core.
     Readback(ReadbackRefusal),
-    /// The machine carried as itself a constant the program defines, which
-    /// the program's own definitions rule out.
+    /// The run carried as itself a constant the program defines, which the
+    /// program's own definitions rule out.
     Inconsistent(ConstantIndex),
     /// The printer could not lay the run's terminal out within its build
     /// ceilings.
@@ -526,13 +522,13 @@ impl fmt::Display for Evaluation<'_>
             Self::Sealed(ref sealed) => fmt::Display::fmt(sealed, f),
             Self::Blamed(goal) => write!(f, "blame: `{goal}` is owed its body"),
             Self::Stuck(ref stuck) => write!(f, "stuck: {stuck}"),
-            Self::Unfinished(Unfinished::Fault(fault)) => write!(f, "unfinished: {fault}"),
+            Self::Unfinished(Unfinished::Declined(declined)) => write!(f, "unfinished: {declined}"),
             Self::Unfinished(Unfinished::Readback(refusal)) => {
                 write!(f, "unfinished: {refusal}")
             },
             Self::Unfinished(Unfinished::Inconsistent(constant)) => write!(
                 f,
-                "unfinished: the machine carried defined constant {} as itself",
+                "unfinished: the run carried defined constant {} as itself",
                 usize::from(constant)
             ),
             Self::Unfinished(Unfinished::Unspelled) => {
@@ -811,11 +807,10 @@ impl<'source> Program<'source>
     ///   focus, decided before any command runs. Otherwise the declaration runs
     ///   on the tier the emitter's policy picks — emitted native code by
     ///   default where the host has a patcher, the portable executor elsewhere
-    ///   — and on a fresh machine when the tier declines; the two give one
-    ///   evaluation. Its value is returned, and forced when it is a thunk; a
-    ///   terminal that is, or holds outside any suspension, a declaration owed
-    ///   its body, and a run stuck observing one, is [`Evaluation::Blamed`] on
-    ///   it; any other stuck run is [`Evaluation::Stuck`]; a machine fault, a
+    ///   — and its value is returned, forced when it is a thunk; a terminal
+    ///   that is, or holds outside any suspension, a declaration owed its body,
+    ///   and a run stuck observing one, is [`Evaluation::Blamed`] on it; any
+    ///   other stuck run is [`Evaluation::Stuck`]; a run the tier declines, a
     ///   terminal with no core reading or one the printer cannot lay out is
     ///   [`Evaluation::Unfinished`]; otherwise the terminal is read back and
     ///   spelled as the grammar writes it: an integer in decimal, a text quoted
@@ -831,18 +826,18 @@ impl<'source> Program<'source>
     ///   also produces `Unrunnable`; its attempted focusing may already have
     ///   appended command-arena nodes.
     /// - panics: none.
-    /// - intension: each run is bounded by a step or jump budget; the reference
-    ///   walk, the readback and the spelling are recursion-free, their pending
-    ///   work explicit stacks.
+    /// - intension: each run is bounded by a jump budget; the reference walk,
+    ///   the readback and the spelling are recursion-free, their pending work
+    ///   explicit stacks.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one source per outcome class the fragment can write
     ///   and per spelling arm it can reach, each run asserted at its exact
     ///   evaluation; a goal met directly, through a force and through an
     ///   application; a refused and a code reference reached directly and
-    ///   through another declaration. Machine exhaustion and every core
-    ///   spelling constructor are not generated by the source cases; structured
-    ///   terminals have separate core-to-machine and spelling witnesses.
+    ///   through another declaration. Exhaustion and every core spelling
+    ///   constructor are not generated by the source cases; structured
+    ///   terminals have separate core-to-store and spelling witnesses.
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
     /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
@@ -885,7 +880,7 @@ impl<'source> Program<'source>
                 Evaluation::Sealed(ref sealed) => self.hidden.values().any(|module| *module == sealed.module)
                     && self.sealed.get(&constant).is_some_and(|declared| *declared == sealed.declared),
                 Evaluation::Value(_) | Evaluation::Stuck(_)
-                    | Evaluation::Unfinished(Unfinished::Fault(_) | Unfinished::Readback(_) | Unfinished::Unspelled) => true,
+                    | Evaluation::Unfinished(Unfinished::Declined(_) | Unfinished::Readback(_) | Unfinished::Unspelled) => true,
             }
     )]
     #[inline]
@@ -899,31 +894,30 @@ impl<'source> Program<'source>
             Err(evaluation) => return evaluation,
         };
         self.tiered(constant, returned, forced, Choice::Policy)
-            .unwrap_or_else(|_declined| self.machine(constant, returned, forced))
+            .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
     }
 
     /// Run the declaration at `constant` on `engine` alone, declining rather
-    /// than falling back to the L machine.
+    /// than spelling a decline as unfinished.
     ///
     /// # Specification
     /// - ensures: the [`Evaluation::Unrunnable`] outcomes [`Self::evaluate`]
-    ///   gives, before any engine runs; [`Engine::Machine`] never declines and
-    ///   gives [`Self::evaluate`]'s machine outcome; a tier that answers gives
-    ///   the same evaluation as the machine.
-    /// - provides: the engines apart, so a differential holds each tier to the
-    ///   machine and counts what a tier declines.
+    ///   gives, before any engine runs; an engine that answers gives the
+    ///   evaluation [`Self::evaluate`] gives on it.
+    /// - provides: the engines apart, so a differential holds native code to
+    ///   the executor and counts what either declines.
     /// - panics: none.
-    /// - executable: none — agreeing with the machine is the differential's to
+    /// - executable: none — agreeing across engines is the differential's to
     ///   show; a postcondition would run every evaluation twice.
     ///
     /// # Errors
-    /// [`Declined`] naming why the tier did not answer: a form the lowering
-    /// refuses, a constructor no arm answers, an exhausted budget.
+    /// [`Declined`] naming why the engine did not answer: a form the lowering
+    /// refuses, an exhausted budget or region.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — one source of values, functions, thunks, a text and
-    ///   applications runs on every engine; each tier's answers are the
-    ///   machine's, the text is declined by name and the integer is not.
+    ///   applications runs on every engine, and native code answers as the
+    ///   executor does.
     /// - witness: `evaluate::tests::every_engine_spells_a_run_alike`
     #[inline]
     pub fn evaluate_on(
@@ -936,13 +930,11 @@ impl<'source> Program<'source>
             Ok(entries) => entries,
             Err(evaluation) => return Ok(evaluation),
         };
-        match engine {
-            Engine::Machine => Ok(self.machine(constant, returned, forced)),
-            Engine::Native => self.tiered(constant, returned, forced, Choice::Tier(Tier::Native)),
-            Engine::Executor => {
-                self.tiered(constant, returned, forced, Choice::Tier(Tier::Executor))
-            },
-        }
+        let tier = match engine {
+            Engine::Native => Tier::Native,
+            Engine::Executor => Tier::Executor,
+        };
+        self.tiered(constant, returned, forced, Choice::Tier(tier))
     }
 
     /// The two commands that run the declaration at `constant`: the one
@@ -976,13 +968,13 @@ impl<'source> Program<'source>
 
     /// Run the commands on a tier the choice names, forcing a suspended
     /// answer, and spell the terminal; or blame the opaque constant a run
-    /// observed or answers outside any suspension, as the machine's run does.
+    /// observed or answers outside any suspension.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// The tier's [`Declined`], but for [`Declined::Opaque`], which blames.
+    /// The tier's [`Declined`].
     fn tiered(
         &self,
         constant: ConstantIndex,
@@ -1001,23 +993,17 @@ impl<'source> Program<'source>
                 evaluate_on(tier, &self.arena, &self.definitions, root, fuel, store)
             },
         };
-        let answer = |root, store: &mut Store| match run(root, store) {
-            Ok(terminal) => Ok(match Self::opaque_within(store, terminal) {
-                Maybe::Present(met) => Err(self.met(met)),
-                Maybe::Absent(carried::Absent::Carried) => Ok(terminal),
-            }),
-            Err(Declined::Opaque(met)) => Ok(Err(self.met(met))),
-            Err(declined) => Err(declined),
-        };
-        let terminal = match answer(returned, &mut store)? {
+        let outcome = run(returned, &mut store)?;
+        let terminal = match self.halted(&store, outcome) {
             Ok(terminal) => terminal,
-            Err(blamed) => return Ok(blamed),
+            Err(evaluation) => return Ok(evaluation),
         };
         let terminal = match store.value(terminal) {
             Some(&(HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. })) => {
-                match answer(forced, &mut store)? {
+                let outcome = run(forced, &mut store)?;
+                match self.halted(&store, outcome) {
                     Ok(forced) => forced,
-                    Err(blamed) => return Ok(blamed),
+                    Err(evaluation) => return Ok(evaluation),
                 }
             },
             Some(
@@ -1031,52 +1017,6 @@ impl<'source> Program<'source>
             | None => terminal,
         };
         Ok(self.finish(constant, &store, terminal))
-    }
-
-    /// Run the commands on the L machine, forcing a suspended answer, and
-    /// spell the terminal.
-    ///
-    /// # Specification
-    /// trivial.
-    fn machine(
-        &self,
-        constant: ConstantIndex,
-        returned: CommandId,
-        forced: CommandId,
-    ) -> Evaluation<'source>
-    {
-        let budget = StepCount::from(RUN_BUDGET);
-        let mut machine = Machine::new(&self.arena, &self.definitions);
-        let returned = match machine.run(returned, budget) {
-            Ok(outcome) => outcome,
-            Err(fault) => return Evaluation::Unfinished(Unfinished::Fault(fault)),
-        };
-        let terminal = match self.halted(&machine, returned) {
-            Ok(value) => value,
-            Err(evaluation) => return evaluation,
-        };
-        let terminal = match machine.store().value(terminal) {
-            Some(&(HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. })) => {
-                let forced = match machine.run(forced, budget) {
-                    Ok(outcome) => outcome,
-                    Err(fault) => return Evaluation::Unfinished(Unfinished::Fault(fault)),
-                };
-                match self.halted(&machine, forced) {
-                    Ok(value) => value,
-                    Err(evaluation) => return evaluation,
-                }
-            },
-            Some(
-                &(HeapValue::Literal(_)
-                | HeapValue::Constructed { .. }
-                | HeapValue::Stack { .. }
-                | HeapValue::Closure { .. }
-                | HeapValue::Opaque(_)
-                | HeapValue::Capability),
-            )
-            | None => terminal,
-        };
-        self.finish(constant, machine.store(), terminal)
     }
 
     /// Read the terminal `terminal` of `store` back and spell it, or name the
@@ -1273,8 +1213,8 @@ impl<'source> Program<'source>
     /// observation, and the stuck state otherwise.
     ///
     /// # Specification
-    /// - requires: `outcome` was produced by `machine`; a halted id resolves in
-    ///   its store.
+    /// - requires: `outcome` was moved into `store` by a run; a halted id
+    ///   resolves there.
     /// - ensures: success returns the identical halted id, never an immediately
     ///   opaque value. A stuck result retains its precise stuck reason; opacity
     ///   reached outside suspension is instead classified by declaration
@@ -1291,12 +1231,12 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
     /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
     #[spec(
-        requires: match outcome { Outcome::Halted(value) => machine.store().value(value).is_some(), Outcome::Stuck(_) => true },
+        requires: match outcome { Outcome::Halted(value) => store.value(value).is_some(), Outcome::Stuck(_) => true },
         captures: [halted = match outcome { Outcome::Halted(value) => Some(value), Outcome::Stuck(_) => None },
             stuck = match outcome { Outcome::Stuck(ref reason) => Some(core::mem::discriminant(reason)), Outcome::Halted(_) => None }],
         ensures: |ref ret| match *ret {
             Ok(value) => halted == Some(value)
-                && !matches!(machine.store().value(value), Some(&HeapValue::Opaque(_))),
+                && !matches!(store.value(value), Some(&HeapValue::Opaque(_))),
             Err(Evaluation::Stuck(ref actual)) => stuck == Some(core::mem::discriminant(actual)),
             Err(Evaluation::Value(_) | Evaluation::Sealed(_)) => false,
             Err(Evaluation::Blamed(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_)) => true,
@@ -1307,12 +1247,12 @@ impl<'source> Program<'source>
     /// opaque constant, or stuck otherwise.
     fn halted(
         &self,
-        machine: &Machine<'_>,
+        store: &Store,
         outcome: Outcome,
     ) -> Result<HeapValueId, Evaluation<'source>>
     {
         match outcome {
-            Outcome::Halted(value) => match Self::opaque_within(machine.store(), value) {
+            Outcome::Halted(value) => match Self::opaque_within(store, value) {
                 Maybe::Present(constant) => Err(self.met(constant)),
                 Maybe::Absent(carried::Absent::Carried) => Ok(value),
             },
@@ -1321,17 +1261,12 @@ impl<'source> Program<'source>
                     Stuck::Unobservable { value, .. }
                     | Stuck::ResumedNonStack { value, .. }
                     | Stuck::Unmatched { value, .. }
-                    | Stuck::NonScalar(value) => machine.store().value(value),
-                    Stuck::UnboundVariable { .. }
-                    | Stuck::PerformNoHandler(_)
+                    | Stuck::NonScalar(value) => store.value(value),
+                    Stuck::PerformNoHandler(_)
                     | Stuck::ShiftNoReset(_)
                     | Stuck::Primitive(_)
-                    | Stuck::UnboundCovariable(_)
                     | Stuck::UndefinedConstant(_)
                     | Stuck::CyclicConstant(_)
-                    | Stuck::IllFormedCommand(_)
-                    | Stuck::IllFormedProducer(_)
-                    | Stuck::IllFormedConsumer(_)
                     | Stuck::Unended(_) => None,
                 };
                 match observed {
@@ -1879,10 +1814,14 @@ mod tests
 {
     use anodized::spec;
     use gandr_core_sequent::FocusRefusal;
-    use gandr_core_sequent::MachineFault;
+    use gandr_core_sequent::Store;
     use gandr_core_sequent::Stuck;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_runtime_emitter::Declined;
+    use gandr_runtime_emitter::Fuel;
     use gandr_runtime_emitter::PATCHER;
+    use gandr_runtime_emitter::Status;
+    use gandr_runtime_emitter::Tier;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::SurfaceName;
@@ -2009,9 +1948,9 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
         }
     }
 
-    /// Every engine spells a run as the machine does: values, a text,
-    /// functions, thunks and applications answer on each tier with the
-    /// machine's evaluation.
+    /// Every engine spells a run as the executor does: values, a text,
+    /// functions, thunks and applications answer on native code and under
+    /// the policy with the executor's evaluation.
     #[test]
     fn every_engine_spells_a_run_alike()
     {
@@ -2026,22 +1965,21 @@ def applied : +U (-F Integer) ; def applied = thunk { become (force identity)(an
 def chosen : +U (-F Integer) ; def chosen = thunk { become (force first)(answer)(7) } ;
 def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { return 1 } } ;"#,
         );
-        let tiers: &[Engine] = if PATCHER {
-            &[Engine::Native, Engine::Executor]
-        }
-        else {
-            &[Engine::Executor]
-        };
         let declared: Vec<_> = values.declarations.keys().copied().collect();
         for constant in declared {
             let name = values.name(constant);
             let expected = values
-                .evaluate_on(constant, Engine::Machine)
-                .expect("the machine never declines");
-            for &engine in tiers {
-                let ran = values.evaluate_on(constant, engine);
-                assert_eq!(Ok(&expected), ran.as_ref(), "{name:?} on {engine:?}");
+                .evaluate_on(constant, Engine::Executor)
+                .expect("the executor answers");
+            if PATCHER {
+                let ran = values.evaluate_on(constant, Engine::Native);
+                assert_eq!(Ok(&expected), ran.as_ref(), "{name:?} on native code");
             }
+            assert_eq!(
+                expected,
+                values.evaluate(constant),
+                "{name:?} under the policy"
+            );
         }
     }
 
@@ -2169,7 +2107,9 @@ def small : Type ; def small = Integer ;"#,
                 RunStatus::Failed,
             ),
             (
-                Evaluation::Unfinished(Unfinished::Fault(MachineFault::OutOfSteps)),
+                Evaluation::Unfinished(Unfinished::Declined(Declined::Exhausted(
+                    Status::FuelExhausted,
+                ))),
                 RunStatus::Failed,
             ),
         ];
@@ -2278,12 +2218,18 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         let command =
             gandr_core_sequent::focus_computation(&core, returned, &mut commands, &mut provenance)
                 .expect("the constructed terminal focuses");
-        let mut machine = gandr_core_sequent::Machine::new(&commands, &goals.definitions);
-        let outcome = machine
-            .run(command, gandr_core_sequent::StepCount::from(100_usize))
-            .expect("the constructed terminal runs");
+        let mut store = Store::new();
+        let outcome = gandr_runtime_emitter::evaluate_on(
+            Tier::Executor,
+            &commands,
+            &goals.definitions,
+            command,
+            Fuel::from(100_usize),
+            &mut store,
+        )
+        .expect("the constructed terminal runs");
         assert_eq!(
-            goals.halted(&machine, outcome),
+            goals.halted(&store, outcome),
             Err(Evaluation::Blamed(SurfaceName::from("second")))
         );
     }
@@ -2360,16 +2306,19 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         );
     }
 
-    /// The highest continuation a run of the thunk declared as `name` held:
-    /// the frame region's peak over the run of the declaration and the force
-    /// of its thunk, on a fresh machine; it panics unless both runs halt.
+    /// The thunk declared as `name` is a thunk whose force, on every tier this
+    /// host has, runs until its heap fills, each pass allocating its window,
+    /// or its 2²⁸ jumps are spent, without filling the frame region. A pass
+    /// that allocates less than a held frame adds would fill the frames first
+    /// if it held one; `gandr-core-sequent`'s loop suite holds the plain loop
+    /// to that contrast.
     ///
     /// # Specification
     /// trivial.
-    fn peak(
+    fn holds_no_frame(
         program: &mut Program<'_>,
         name: SurfaceName<'_>,
-    ) -> gandr_core_sequent::FrameHeight
+    )
     {
         let position = program
             .declarations
@@ -2378,148 +2327,56 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
             .map(|(&constant, _)| constant)
             .expect("the program declares the name");
         let (returned, forced) = program.entries(position).expect("the declaration focuses");
-        let budget = super::StepCount::from(super::RUN_BUDGET);
-        let mut machine = super::Machine::new(&program.arena, &program.definitions);
-        let commands: [_; 2] = (returned, forced).into();
-        for command in commands {
+        let tiers: &[Tier] = if PATCHER {
+            &[Tier::Native, Tier::Executor]
+        }
+        else {
+            &[Tier::Executor]
+        };
+        for &tier in tiers {
+            let run = |root, fuel| {
+                gandr_runtime_emitter::evaluate_on(
+                    tier,
+                    &program.arena,
+                    &program.definitions,
+                    root,
+                    Fuel::from(fuel),
+                    &mut Store::new(),
+                )
+            };
             assert!(
-                matches!(machine.run(command, budget), Ok(super::Outcome::Halted(_))),
-                "`{name}` runs to a value"
+                matches!(
+                    run(returned, super::RUN_BUDGET),
+                    Ok(super::Outcome::Halted(_))
+                ),
+                "`{name}` is a thunk on {tier:?}"
+            );
+            let spent = run(forced, 1_usize << 28_u32);
+            assert!(
+                matches!(
+                    spent,
+                    Err(Declined::Exhausted(
+                        Status::FuelExhausted | Status::HeapExhausted
+                    ))
+                ),
+                "`{name}` holds no frame on {tier:?}: {spent:?}"
             );
         }
-        machine.store().peak_height()
-    }
-
-    #[test]
-    fn a_become_loop_runs_in_constant_continuation()
-    {
-        let numeral = |depth: usize| {
-            let mut written = String::from("Zero");
-            for _ in 0 .. depth {
-                written = format!("Succ({written})");
-            }
-            written
-        };
-        let mut source = String::from(
-            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
-             def rec down(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    \
-             Succ(p) => become down[<](p)\n  }\n}\n\
-             def rec skim(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    \
-             Succ(p) => {\n      run _ <- case p { Zero => return p, Succ(r) => pure r } ;\n      \
-             become skim[<](p)\n    }\n  }\n}\n\
-             def rec deep(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    \
-             Succ(p) => { run m <- deep[<](p) ; return m }\n  }\n}\n",
-        );
-        for (name, depth) in [("short", 16_usize), ("long", 256_usize)] {
-            core::fmt::Write::write_fmt(
-                &mut source,
-                format_args!(
-                "def {name} : Nat ;\ndef {name} = {} ;\n\
-                 def {name}_tail : +U (-F Nat) ;\ndef {name}_tail = thunk {{ become down({name}) }} ;\n\
-                 def {name}_exit : +U (-F Nat) ;\ndef {name}_exit = thunk {{ become skim({name}) }} ;\n\
-                 def {name}_bound : +U (-F Nat) ;\ndef {name}_bound = thunk {{ become deep({name}) }} ;\n",
-                    numeral(depth)
-                ),
-            )
-            .expect("a string takes every write");
-        }
-        let mut program = program(source.as_str());
-        let mut peak = |name: &str| peak(&mut program, SurfaceName::from(name));
-        let (short_tail, long_tail) = (peak("short_tail"), peak("long_tail"));
-        let (short_exit, long_exit) = (peak("short_exit"), peak("long_exit"));
-        let (short_bound, long_bound) = (peak("short_bound"), peak("long_bound"));
-        assert_eq!(
-            short_tail, long_tail,
-            "a `become` loop holds the same continuation however long its input"
-        );
-        assert_eq!(
-            short_exit, long_exit,
-            "a `become` loop leaving through an exit under a bound match holds the same \
-             continuation however long its input"
-        );
-        assert!(
-            usize::from(long_bound) >= usize::from(short_bound).saturating_add(240_usize),
-            "a bound recursion holds a frame per step: {short_bound:?} against {long_bound:?}"
-        );
-    }
-
-    /// The highest continuation the force of the thunk declared as `name`
-    /// held within `steps` transitions, on a fresh machine; it panics unless
-    /// the declaration halts and the force runs past `steps`.
-    ///
-    /// # Specification
-    /// trivial.
-    fn peak_within(
-        program: &mut Program<'_>,
-        name: SurfaceName<'_>,
-        steps: super::StepCount,
-    ) -> gandr_core_sequent::FrameHeight
-    {
-        let position = program
-            .declarations
-            .iter()
-            .find(|&(_, declared)| declared.name == name)
-            .map(|(&constant, _)| constant)
-            .expect("the program declares the name");
-        let (returned, forced) = program.entries(position).expect("the declaration focuses");
-        let mut machine = super::Machine::new(&program.arena, &program.definitions);
-        assert!(
-            matches!(
-                machine.run(returned, super::StepCount::from(super::RUN_BUDGET)),
-                Ok(super::Outcome::Halted(_))
-            ),
-            "`{name}` is a thunk"
-        );
-        assert_eq!(
-            machine.run(forced, steps),
-            Err(MachineFault::OutOfSteps),
-            "`{name}` runs past {steps:?}"
-        );
-        machine.store().peak_height()
     }
 
     #[test]
     fn a_loop_runs_in_constant_continuation()
     {
-        let mut deep = String::from("Zero");
-        for _ in 0 .. 1024_usize {
-            deep = format!("Succ({deep})");
-        }
-        let source = format!(
-            "data Nat : Type {{\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}}\n\
-             def tick(n : Nat) -> -F Unit {{ return unit }}\n\
-             def rec deep(n : Nat) -> -F Nat {{\n  case n {{\n    Zero => return n,\n    \
-             Succ(p) => {{ run m <- deep[<](p) ; return m }}\n  }}\n}}\n\
-             def spin : +U (-F Nat) ;\ndef spin = thunk {{ loop {{ tick(Zero); }} }} ;\n\
-             def bound : +U (-F Nat) ;\ndef bound = thunk {{ loop {{ run u <- tick(Zero) ; continue }} }} ;\n\
-             def broken : +U (-F Nat) ;\ndef broken = thunk {{ loop {{ run u <- loop {{ break }} ; continue }} }} ;\n\
-             def tested : +U (-F Nat) ;\ndef tested = thunk {{ while 1 > 0 {{ tick(Zero) }} ; return Zero }} ;\n\
-             def descent : +U (-F Nat) ;\ndef descent = thunk {{ become deep({deep}) }} ;\n"
-        );
-        let mut program = program(source.as_str());
-        let (short, long) = (1_usize << 7_u32, 1_usize << 16_u32);
-        let within = |program: &mut Program<'_>, name: &str, steps: usize| {
-            peak_within(
-                program,
-                SurfaceName::from(name),
-                super::StepCount::from(steps),
-            )
-        };
+        let source = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+             def tick(n : Nat) -> -F Unit { return unit }\n\
+             def spin : +U (-F Nat) ;\ndef spin = thunk { loop { tick(Zero); } } ;\n\
+             def bound : +U (-F Nat) ;\ndef bound = thunk { loop { run u <- tick(Zero) ; continue } } ;\n\
+             def broken : +U (-F Nat) ;\ndef broken = thunk { loop { run u <- loop { break } ; continue } } ;\n\
+             def tested : +U (-F Nat) ;\ndef tested = thunk { while 1 > 0 { tick(Zero) } ; return Zero } ;\n";
+        let mut program = program(source);
         for name in ["spin", "bound", "broken", "tested"] {
-            let at_short = within(&mut program, name, short);
-            let at_long = within(&mut program, name, long);
-            assert_eq!(
-                at_short, at_long,
-                "`{name}` holds the same continuation however many passes it runs"
-            );
+            holds_no_frame(&mut program, SurfaceName::from(name));
         }
-        let at_short = within(&mut program, "descent", short);
-        let at_longer = within(&mut program, "descent", short << 3_u32);
-        assert!(
-            usize::from(at_longer) > usize::from(at_short),
-            "a bound recursion holds more continuation the longer it runs: {at_short:?} against \
-             {at_longer:?}"
-        );
     }
 
     /// The source of a function whose exits stand one and two matches deep

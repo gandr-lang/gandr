@@ -1,16 +1,11 @@
-use gandr_core_term::CoreArena;
 use gandr_kernel_term::Side;
 use gandr_theory_cell_complexes::ConsPat;
 use gandr_theory_cell_complexes::ProdPat;
 
 use super::*;
 use crate::boundary::NodeCount;
-use crate::boundary::StepCount;
 use crate::check::FreeSet;
 use crate::check::check_command;
-use crate::machine::Definitions;
-use crate::machine::Machine;
-use crate::machine::Outcome;
 use crate::pretty::render_command;
 
 /// The core's own constructors under the names a test pattern uses.
@@ -67,9 +62,9 @@ fn a_frozen_cut_reifies_to_the_command_il()
     );
 }
 
-/// `⟨Unit |+ Inl⁻(★)⟩` reifies to `⟨() |+ μ̃x. ⟨inl(x0) |+ ★⟩⟩`, which
-/// runs to the re-wrapped value; a frame over a binary constructor is
-/// refused.
+/// `⟨Unit |+ Inl⁻(★)⟩` reifies to `⟨() |+ μ̃x. ⟨inl(x0) |+ ★⟩⟩`; a frame
+/// over a binary constructor is refused. The run suite runs the reified
+/// command to the re-wrapped value.
 #[test]
 fn a_return_frame_reifies_to_a_mu_tilde()
 {
@@ -90,26 +85,6 @@ fn a_return_frame_reifies_to_a_mu_tilde()
         Ok(FreeSet::default()),
         check_command(&arena, command),
         "well formed and closed"
-    );
-
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let Ok(Outcome::Halted(value)) = machine.run(command, StepCount::from(64_usize))
-    else {
-        panic!("the reified command halts");
-    };
-    let mut core = CoreArena::new();
-    let back = machine
-        .read_back(value, &mut core)
-        .expect("the value reads back");
-    let mut shown = CommandArena::new();
-    let mut provenance = crate::focus::Provenance::new();
-    let focused =
-        crate::focus::focus_computation(&core, back, &mut shown, &mut provenance).expect("focuses");
-    assert_eq!(
-        "⟨inl(()) |+ ★⟩",
-        render_command(&shown, focused),
-        "the frame re-wrapped the value"
     );
 
     let binary = CmdPat::cut(
@@ -206,12 +181,11 @@ fn a_refused_reification_leaves_the_arena_at_its_mark()
     );
 }
 
-/// Nested unequal frames and all constructor heads retain their semantic
-/// order.
+/// Nested unequal frames and all constructor heads reify closed, and a cut
+/// keeps its polarity unchecked. The run suite runs the frames in order.
 #[test]
 fn reification_preserves_nested_frames_and_constructor_heads()
 {
-    use gandr_core_term::Value;
     use gandr_kernel_strata::Level;
 
     let mut resolver = core_resolver();
@@ -227,47 +201,6 @@ fn reification_preserves_nested_frames_and_constructor_heads()
     let mut arena = CommandArena::new();
     let command = reify_command(&mut arena, &pattern, &resolver).expect("ground pattern");
     assert_eq!(Ok(FreeSet::default()), check_command(&arena, command));
-    let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    let Ok(Outcome::Halted(value)) = machine.run(command, StepCount::from(64_usize))
-    else {
-        panic!("reified frames return");
-    };
-    let mut core = CoreArena::new();
-    let read = machine
-        .read_back_value(value, &mut core)
-        .expect("positive result");
-    let Some(&Value::Injection(last, outer)) = core.value(read)
-    else {
-        panic!("the last frame wraps last");
-    };
-    assert_eq!(last, Side::Right.into());
-    let Some(&Value::Injection(first, pair)) = core.value(outer)
-    else {
-        panic!("the first frame wraps first");
-    };
-    assert_eq!(first, Side::Left.into());
-    let Some(&[lift, right]) = core.value(pair).and_then(Value::components)
-    else {
-        panic!("pair head survives");
-    };
-    let Some(&Value::Lift { ref target, body }) = core.value(lift)
-    else {
-        panic!("first field is lifted");
-    };
-    assert_eq!(&Level::zero(), target);
-    let Some(&Value::Injection(lifted, first_unit)) = core.value(body)
-    else {
-        panic!("right injection survives under lift");
-    };
-    assert_eq!(lifted, Side::Right.into());
-    let Some(&Value::Injection(second, last_unit)) = core.value(right)
-    else {
-        panic!("left injection remains the second field");
-    };
-    assert_eq!(second, Side::Left.into());
-    assert_eq!(Some(&Value::unit()), core.value(first_unit));
-    assert_eq!(Some(&Value::unit()), core.value(last_unit));
     let negative = CmdPat::cut(
         Polarity::Negative,
         ProdPat::ctor("Unit", []),

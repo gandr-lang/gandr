@@ -1,15 +1,16 @@
-//! The L machine against normalisation by evaluation.
+//! The runtime's tiers against normalisation by evaluation.
 //!
 //! `gandr-core-nbe` evaluates the core itself, by closures over a glued
-//! domain, and shares no step with the machine, which runs focused commands
-//! over a store. The suites compare what the two compute: the machine's
-//! halted value read back as a core term, against the normaliser's normal
-//! form. A first-order answer agrees node for node; an answer that suspends a
-//! computation agrees once the machine's reading, which keeps a closure's body
-//! as written, is normalised too; an ill-typed redex stops both at the same
-//! elimination. Recursive definitions meet two strategies here: the machine
-//! unfolds a fixpoint when it is forced, the normaliser when it is applied to
-//! a canonical argument, and on a closed first-order answer the two agree.
+//! domain, and shares no step with the tiers, which run focused commands as
+//! native code or through the portable executor. The suites compare what the
+//! two compute: a run's halted value read back as a core term, against the
+//! normaliser's normal form. A first-order answer agrees node for node; an
+//! answer that suspends a computation agrees once the run's reading, which
+//! keeps a closure's body as written, is normalised too; an ill-typed redex
+//! stops both at the same elimination. Recursive definitions meet two
+//! strategies here: a run unfolds a fixpoint when it is forced, the
+//! normaliser when it is applied to a canonical argument, and on a closed
+//! first-order answer the two agree.
 
 use alloc::vec::Vec;
 
@@ -25,12 +26,12 @@ use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::ConsumerNode;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::DestructorTag;
-use gandr_core_sequent::Machine;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Provenance;
-use gandr_core_sequent::StepCount;
+use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
 use gandr_core_sequent::focus_computation;
+use gandr_core_sequent::read_back_terminal;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -42,6 +43,11 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
+use gandr_runtime_emitter::Declined;
+use gandr_runtime_emitter::Form;
+use gandr_runtime_emitter::PATCHER;
+use gandr_runtime_emitter::Tier;
+use gandr_runtime_emitter::evaluate_on;
 use proptest::prelude::*;
 
 use crate::compare::Agreement;
@@ -76,8 +82,8 @@ enum Stop
 #[derive(Debug)]
 enum Answer
 {
-    /// A term and the arena holding it: the normaliser's normal form, or the
-    /// machine's terminal read back.
+    /// A term and the arena holding it: the normaliser's normal form, or a
+    /// run's terminal read back.
     Term
     {
         /// The arena.
@@ -103,9 +109,9 @@ struct Label(&'static str);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Expected
 {
-    /// The machine's reading is the normal form, node for node.
+    /// The run's reading is the normal form, node for node.
     Exactly,
-    /// The machine's reading keeps a redex under a binder, and is the normal
+    /// The run's reading keeps a redex under a binder, and is the normal
     /// form once normalised.
     Normalised,
     /// Both evaluators stop, at the named elimination.
@@ -121,7 +127,7 @@ struct Case
     core: CoreArena,
     /// The term.
     root: ComputationId,
-    /// How the machine's answer relates to the normaliser's.
+    /// How the run's answer relates to the normaliser's.
     expected: Expected,
 }
 
@@ -157,15 +163,17 @@ fn case(
     }
 }
 
-/// Run `root` of `core` on the L machine and read its terminal back.
+/// Run `root` of `core` on every tier this host has, check the tiers' readings
+/// agree, and answer the executor's.
 ///
 /// # Specification
 /// - requires: a well-formed pure computation without constants whose run fits
 ///   the fixture budget and whose terminal has a pure core reading.
 /// - ensures: its terminal reading in the returned arena, or the common
 ///   semantic stop for a stuck elimination or an unbound variable.
-/// - provides: the machine observation for differential comparison.
-/// - panics: on a focus refusal, machine fault or unreadable terminal.
+/// - provides: the tiers' observation for differential comparison.
+/// - panics: on a focus refusal, a tier declining other than for an unbound
+///   variable, an unreadable terminal, or two tiers reading apart.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — bounded closed generated computations halt and their
@@ -173,8 +181,8 @@ fn case(
 ///   bindings, applications, cases and malformed eliminations distinguish lost
 ///   environments, wrong branch selection and mismapped stops. Constant
 ///   unfolding and budget exhaustion are outside this helper.
-/// - witness: `tests::differential::l_machine_is_total_and_deterministic`
-/// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::the_tiers_are_total_and_deterministic`
+/// - witness: `tests::differential::the_tiers_agree_with_normalisation_by_evaluation`
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
 /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
@@ -183,7 +191,7 @@ fn case(
     | Answer::Term { ref core, term } => core.computation(term).is_some(),
     | Answer::Stopped(_) => true,
 })]
-fn machine(
+fn on_tiers(
     core: &CoreArena,
     root: ComputationId,
 ) -> Answer
@@ -193,38 +201,57 @@ fn machine(
     let command = focus_computation(core, root, &mut arena, &mut provenance)
         .expect("focusing is total on the pure fragment");
     let definitions = Definitions::new();
-    let mut machine = Machine::new(&arena, &definitions);
-    match machine.run(command, StepCount::from(1_000_000_usize)) {
-        Ok(Outcome::Halted(value)) => {
-            let mut read = CoreArena::new();
-            let term = machine
-                .read_back(value, &mut read)
-                .expect("a halted value of the pure fragment reads back");
-            Answer::Term { core: read, term }
-        },
-        Ok(Outcome::Stuck(stuck)) => Answer::Stopped(machine_stop(&arena, &stuck)),
-        Err(fault) => panic!("the machine faulted: {fault}"),
+    let tiers: &[Tier] = if PATCHER {
+        &[Tier::Native, Tier::Executor]
     }
+    else {
+        &[Tier::Executor]
+    };
+    let mut answers: Vec<Answer> = tiers
+        .iter()
+        .map(|&tier| {
+            let mut store = Store::new();
+            let fuel = gandr_runtime_emitter::Fuel::from(1_usize << 20_u32);
+            match evaluate_on(tier, &arena, &definitions, command, fuel, &mut store) {
+                Ok(Outcome::Halted(value)) => {
+                    let mut read = CoreArena::new();
+                    let term = read_back_terminal(&arena, &store, value, &mut read)
+                        .expect("a halted value of the pure fragment reads back");
+                    Answer::Term { core: read, term }
+                },
+                Ok(Outcome::Stuck(stuck)) => Answer::Stopped(tier_stop(&arena, &stuck)),
+                Err(Declined::Lowering(Form::Unbound)) => Answer::Stopped(Stop::UnboundVariable),
+                Err(declined) => panic!("{tier:?} declined: {declined}"),
+            }
+        })
+        .collect();
+    let executor = answers.pop().expect("the executor runs on every host");
+    for native in &answers {
+        assert_eq!(
+            Agreement::Same,
+            agreement(native, &executor),
+            "native code read back {native:?} against the executor's {executor:?}"
+        );
+    }
+    executor
 }
 
-/// The stop a machine's stuck configuration names.
+/// The stop a tier's stuck run names.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the common semantic stop for an unobservable apply or force, an
-///   unmatched structural or nominal match, an unmatched selection, or an
-///   unbound value variable.
+///   unmatched structural or nominal match, or an unmatched selection.
 /// - provides: an evaluator-independent refusal vocabulary.
-/// - panics: for any machine state outside those six classes.
+/// - panics: for any stop outside those five classes.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — hand-built applications, forces, cases and nominal
-///   matches with the wrong head have their declared stops; an unbound forced
-///   variable remains unbound. These distinguish exchanged stop classes; states
-///   impossible for the supported focused fragment are not mapped.
+///   matches with the wrong head have their declared stops. These distinguish
+///   exchanged stop classes; stops impossible for the supported focused
+///   fragment are not mapped.
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
-/// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
 /// - witness: `tests::differential::hand_built_projection_cases_agree`
 #[spec(ensures: |ret| match *stuck {
     | Stuck::Unobservable { head: DestructorTag::Apply, .. } => ret == Stop::AppliedNonFunction,
@@ -234,10 +261,9 @@ fn machine(
         | Some(&ConsumerNode::Select { .. }) => ret == Stop::UnprojectedField,
         | _ => ret == Stop::CasedNonInjection,
     },
-    | Stuck::UnboundVariable { .. } => ret == Stop::UnboundVariable,
     | _ => false,
 })]
-fn machine_stop(
+fn tier_stop(
     arena: &CommandArena,
     stuck: &Stuck,
 ) -> Stop
@@ -264,9 +290,7 @@ fn machine_stop(
             )
             | None => Stop::CasedNonInjection,
         },
-        Stuck::UnboundVariable { .. } => Stop::UnboundVariable,
-        Stuck::UnboundCovariable(_)
-        | Stuck::PerformNoHandler(_)
+        Stuck::PerformNoHandler(_)
         | Stuck::ShiftNoReset(_)
         | Stuck::ResumedNonStack { .. }
         | Stuck::Unobservable {
@@ -277,11 +301,8 @@ fn machine_stop(
         | Stuck::NonScalar(_)
         | Stuck::UndefinedConstant(_)
         | Stuck::CyclicConstant(_)
-        | Stuck::IllFormedCommand(_)
-        | Stuck::IllFormedProducer(_)
-        | Stuck::IllFormedConsumer(_)
         | Stuck::Unended(_) => {
-            panic!("no focused core term stops the machine as: {stuck}")
+            panic!("no focused pure core term stops a run as: {stuck}")
         },
     }
 }
@@ -294,16 +315,16 @@ fn machine_stop(
 ///   fixture's normalization budget.
 /// - ensures: its normal form resolves in the returned arena, or evaluation
 ///   yields the common stop for a malformed elimination or unbound variable.
-/// - provides: an independent normalizer observation for the machine.
+/// - provides: an independent normalizer observation for the tiers.
 /// - panics: on a readback refusal or an unsupported evaluation fault.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — generated machine readings, normalized, agree with the
+/// - hypothesis: L2 — generated run readings, normalized, agree with the
 ///   independent normalization-by-evaluation path. L3 exact first-order and
 ///   suspended-body fixtures distinguish unperformed reductions, wrong binding
 ///   and collapsed refusal classes. Evidence is bounded to the pure fixtures
 ///   and their budget, not arbitrary open code.
-/// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::the_tiers_agree_with_normalisation_by_evaluation`
 /// - witness: `tests::differential::first_order_returns_compare_exactly`
 /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
@@ -410,14 +431,14 @@ fn normaliser_stop(fault: EvalFault) -> Stop
     }
 }
 
-/// The machine's answer with its reading normalised: what a suspended body
+/// A run's answer with its reading normalised: what a suspended body
 /// comes to once the normaliser runs it.
 ///
 /// # Specification
 /// - requires: a term answer is in the normalizer helper's supported domain.
 /// - ensures: a stopped answer remains the same stop; a term answer has its
 ///   reading normalized, with any resulting term resolving in its arena.
-/// - provides: the common observation for suspended machine readings.
+/// - provides: the common observation for suspended run readings.
 /// - panics: on a normalization failure outside the helper's domain.
 ///
 /// # Adequacy
@@ -425,7 +446,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
 ///   after settling. L3 suspended-body examples distinguish a retained redex
 ///   from its normal form and preserve semantic stops. Only pure bounded
 ///   fixture readings are covered.
-/// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::the_tiers_agree_with_normalisation_by_evaluation`
 /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::refusal_classes_do_not_collapse_into_success`
@@ -521,19 +542,19 @@ fn assert_cases(cases: Vec<Case>)
 {
     for case in cases {
         let Label(label) = case.label;
-        let ran = machine(&case.core, case.root);
+        let ran = on_tiers(&case.core, case.root);
         let normal = normalised(&case.core, case.root);
         match case.expected {
             Expected::Exactly => assert_eq!(
                 Agreement::Same,
                 agreement(&ran, &normal),
-                "{label}: the machine's reading is the normal form"
+                "{label}: the run's reading is the normal form"
             ),
             Expected::Normalised => {
                 assert_eq!(
                     Agreement::Differ,
                     agreement(&ran, &normal),
-                    "{label}: the machine's reading keeps a redex under a binder"
+                    "{label}: the run's reading keeps a redex under a binder"
                 );
                 assert_eq!(
                     Agreement::Same,
@@ -545,7 +566,7 @@ fn assert_cases(cases: Vec<Case>)
                 assert_eq!(
                     Agreement::Same,
                     agreement(&ran, &Answer::Stopped(stop)),
-                    "{label}: the machine stops at {stop:?}, not {ran:?}"
+                    "{label}: the run stops at {stop:?}, not {ran:?}"
                 );
                 assert_eq!(
                     Agreement::Same,
@@ -570,7 +591,7 @@ fn returning(
     core.computation_return(value)
 }
 
-/// A first-order answer read back from the machine is the normal form node
+/// A first-order answer read back from a run is the normal form node
 /// for node, and a different first-order answer is not.
 #[test]
 fn first_order_returns_compare_exactly()
@@ -597,7 +618,7 @@ fn first_order_returns_compare_exactly()
             })
         },
     );
-    let ran = machine(&bound.core, bound.root);
+    let ran = on_tiers(&bound.core, bound.root);
     assert_eq!(
         Agreement::Same,
         agreement(&ran, &normalised(&bound.core, bound.root)),
@@ -1159,8 +1180,8 @@ fn hand_built_declared_data_cases_agree()
     ]);
 }
 
-/// A forced variable no binding answers stops both evaluators, the machine
-/// with an unbound variable rather than a fault.
+/// A forced variable no binding answers stops both evaluators: the tiers
+/// decline it as unbound before they run, the normaliser stops at it.
 #[test]
 fn an_unbound_forced_name_is_still_stuck()
 {
@@ -1177,7 +1198,7 @@ fn an_unbound_forced_name_is_still_stuck()
 }
 
 /// A projection delivers the field it names, whatever the width of the value
-/// and the place of the field in it, and the machine's reading is the normal
+/// and the place of the field in it, and the run's reading is the normal
 /// form; projecting past the width, an absent label, or the wrong kind of value
 /// stops both evaluators at the one projection stop.
 #[test]
@@ -1281,31 +1302,31 @@ proptest! {
     /// Every generated closed, well-typed computation halts within the
     /// budget, and two runs of it read back as the same term.
     #[test]
-    fn l_machine_is_total_and_deterministic(generated in computations())
+    fn the_tiers_are_total_and_deterministic(generated in computations())
     {
         let GeneratedRoot::Computation(root) = generated.root else {
             return Err(TestCaseError::fail("the strategy yields computations"));
         };
-        let first = machine(&generated.core, root);
-        let second = machine(&generated.core, root);
+        let first = on_tiers(&generated.core, root);
+        let second = on_tiers(&generated.core, root);
         prop_assert!(matches!(first, Answer::Term { .. }), "a closed, well-typed computation stopped: {:?}", first);
         prop_assert_eq!(Agreement::Same, agreement(&first, &second), "two runs read back apart");
     }
 
-    /// The machine's reading of every generated closed, well-typed
+    /// The tiers' reading of every generated closed, well-typed
     /// computation, normalised, is the normaliser's normal form of it.
     #[test]
-    fn the_l_machine_agrees_with_normalisation_by_evaluation(generated in computations())
+    fn the_tiers_agree_with_normalisation_by_evaluation(generated in computations())
     {
         let GeneratedRoot::Computation(root) = generated.root else {
             return Err(TestCaseError::fail("the strategy yields computations"));
         };
-        let ran = machine(&generated.core, root);
+        let ran = on_tiers(&generated.core, root);
         let normal = normalised(&generated.core, root);
         prop_assert_eq!(
             Agreement::Same,
             agreement(&settled(&ran), &normal),
-            "the machine read back {:?} against the normal form {:?}", ran, normal
+            "the tiers read back {:?} against the normal form {:?}", ran, normal
         );
     }
 }
@@ -1320,9 +1341,9 @@ fn refusal_classes_do_not_collapse_into_success()
     let returned = core.computation_return(unit);
     let forced = core.computation_force(unit);
     let applied = core.computation_application(returned, unit);
-    let value_answer = machine(&core, returned);
-    let forced_answer = machine(&core, forced);
-    let applied_answer = machine(&core, applied);
+    let value_answer = on_tiers(&core, returned);
+    let forced_answer = on_tiers(&core, forced);
+    let applied_answer = on_tiers(&core, applied);
     assert!(matches!(
         forced_answer,
         Answer::Stopped(Stop::ForcedNonThunk)

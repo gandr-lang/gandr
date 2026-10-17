@@ -188,13 +188,8 @@ fn refusals_restore_an_existing_core_prefix()
             environment,
         })
         .expect("room");
-    let cell = store.allocate_cell().expect("room");
     let thunk = store
-        .allocate(HeapValue::Thunk {
-            body,
-            environment,
-            cell,
-        })
+        .allocate(HeapValue::Thunk { body, environment })
         .expect("room");
     let missing = HeapValueId::from(u32::MAX);
     let mut core = CoreArena::new();

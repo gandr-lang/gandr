@@ -209,8 +209,8 @@ const SKIPPED: [&str; 9] = [
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every named program runs from the table this writes,
-///   native, and is compared with the L machine; a wrong byte, hole or tail
-///   changes an answer or crashes the run.
+///   native, and is compared with the answer it states; a wrong byte, hole or
+///   tail changes an answer or crashes the run.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 fn main() -> Result<(), Refusal>
 {

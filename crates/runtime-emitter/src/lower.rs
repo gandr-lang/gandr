@@ -31,8 +31,8 @@
 //! - **A fold is a loop.** Folding a native list tests each cell in turn and,
 //!   for each, pushes a frame holding a closure over the window with the head
 //!   bound; nil runs the empty branch with its covariable at the top, and each
-//!   frame's closure answers its cell when the tail's result returns, as the L
-//!   machine's bind frames do.
+//!   frame's closure answers its cell when the tail's result returns, as a bind
+//!   frame answers its value.
 //! - **A primitive is a host call.** Its arguments are pushed as a
 //!   constructor's fields are, and `call` passes them to the host, which
 //!   evaluates the prelude row the function's callee table names.
@@ -67,19 +67,23 @@
 //!   two-word frame (a shared stub, the argument), so a returned function meets
 //!   its next argument as `ret` pops it. A nominal match pushes one application
 //!   frame per field and forces its branch.
-//! - **A transparent constant is inlined.** Its definition is a closed
-//!   producer, evaluated where the constant is, under a scope barrier so its
-//!   binders take fresh slots. The machine's unfold-once memo only shares that
-//!   evaluation; a pure program answers the same either way.
+//! - **A transparent constant unfolds once a run.** Each constant the function
+//!   reads has a word in the run's constant table at the heap's base, zero
+//!   until its first read. A read of a zero word marks it unfolding, evaluates
+//!   the definition — a closed producer laid out as its own body — and writes
+//!   the value to the word, which every later read loads; a read of a word
+//!   still marked unfolding is a cycle and sticks at the constant. A constant
+//!   the definitions do not hold sticks where it is read.
 //!
 //! A closure site is recorded for every closure the function creates: the
 //! producer it suspends and the slots its visible producer binders occupy,
-//! innermost first. A run's answer is moved into the machine's store through
-//! these sites, so a closure in an answer is read back as the machine would
-//! read its own.
+//! innermost first; a reified stack's bind frame is recorded the same way. A
+//! run's outcome is moved into the caller's store through these records, so
+//! a closure or a literal stack in an answer reads back as the IL it
+//! suspends.
 //!
-//! What the lowering refuses is named by [`Form`]; the L machine runs those
-//! commands.
+//! What the lowering refuses is named by [`Form`], and the run declines with
+//! it.
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -102,14 +106,17 @@ use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::primitive::Primitive;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
+use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::Family;
 use gandr_runtime_stencils::Flavour;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Kind;
+use gandr_runtime_stencils::Observed;
 use gandr_runtime_stencils::StencilId;
 use gandr_runtime_stencils::Tag;
 use gandr_runtime_stencils::Word;
@@ -126,30 +133,22 @@ use crate::function::Position;
 use crate::function::Slots;
 use crate::function::Stub;
 
-/// A form the lowering does not cover: the L machine runs a command that
-/// reaches one.
+/// A command the lowering does not lay out.
+///
+/// One ill-formed — children that contradict their head, a node or a binder
+/// missing — or one past a width the layout holds. A run of a command that
+/// reaches one declines.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Form
 {
-    /// A constant the definitions do not hold.
-    UndefinedConstant,
-    /// Constants that unfold into one another past the unfolding bound.
-    ConstantCycle,
     /// A constructor with consumer fields.
     ConsumerFields,
-    /// A copattern object of several arms, or of one arm neither `apply` nor
-    /// `force`.
-    Copattern,
-    /// A destructor other than `apply` of one argument or `force`, or one of
-    /// several continuations, as a consumer or as a reified stack's frame.
+    /// A destructor of other than one continuation, or of arguments its tag
+    /// does not take, as a consumer or as a reified stack's frame.
     Destructor,
-    /// A context capture used as a value.
-    CaptureAsValue,
-    /// A `μ` against a `μ̃` at a negative cut: the by-name capture.
-    ByNameCapture,
     /// A header field past its width: a tag, an arity, a family or a table
     /// entry.
     HeaderWidth,
@@ -159,6 +158,29 @@ pub enum Form
     Dangling,
     /// A variable or covariable bound by nothing in the command.
     Unbound,
+}
+
+impl core::fmt::Display for Form
+{
+    /// Names the form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::ConsumerFields => "a constructor with consumer fields",
+            Self::Destructor => "a destructor whose children contradict its tag",
+            Self::HeaderWidth => "a header field past its width",
+            Self::Oversized => "a function larger than a region",
+            Self::Dangling => "a node the arena does not hold",
+            Self::Unbound => "a variable bound by nothing in the command",
+        })
+    }
 }
 
 /// What a binder binds.
@@ -284,29 +306,6 @@ impl Scopes
         (Scope::At(self.binders.len().saturating_sub(1)), slot)
     }
 
-    /// A scope at `scope`'s depth in which no binder is visible: where a
-    /// closed definition is inlined, so its binders take fresh slots.
-    ///
-    /// # Specification
-    /// trivial.
-    fn barrier(
-        &mut self,
-        scope: Scope,
-    ) -> Scope
-    {
-        let depth = self.depth(scope);
-        let Some(below) = depth.0.checked_sub(1)
-        else {
-            return Scope::Empty;
-        };
-        self.binders.push(Binder {
-            parent: Scope::Empty,
-            binding: Binding::Temporary,
-            slot: Slot(below),
-        });
-        Scope::At(self.binders.len().saturating_sub(1))
-    }
-
     /// The binder `index` binders of `binding`'s index space out from
     /// `scope`.
     ///
@@ -428,24 +427,54 @@ enum Task
     /// hand and the payload in its slot.
     Clause(CommandId, Scope),
     /// An access's frame, popped with the body's answer in hand: the view's
-    /// slot and the unwind's label.
-    Ended(Slot, Label),
+    /// slot, the unwind's label and the access command.
+    Ended(Slot, Label, CommandId),
+    /// Run the suspended capture in hand against the consumer its cut
+    /// delivers it to: the consumer loaded, the capture entered.
+    Capture(ConsumerId, Scope),
+    /// Read a constant not yet unfolded: unfold it, or stick as cyclic when
+    /// it is unfolding.
+    Unfold(Unfolding),
+    /// A copattern object's dispatch: an arm test per arm, each entering the
+    /// arm's body, queued in the scope the object was created in.
+    Dispatch(ProducerId, Scope),
     /// Bind a label to the next instruction.
     Bind(Label),
     /// Append one one-way instruction.
     Emit(StencilId, Operand, Operand),
+    /// Append one two-way instruction of no operands, continuing at the label
+    /// on a match.
+    Branch(StencilId, Label),
 }
 
-/// How a closure's entry binds.
+/// A constant's slow read at one site.
+#[derive(Clone, Copy, Debug)]
+struct Unfolding
+{
+    /// The constant.
+    constant: ConstantIndex,
+    /// Its word in the run's constant table.
+    word: Immediate,
+    /// Where the read continues with the value in hand.
+    resume: Label,
+    /// The entry of the constant's unfolding.
+    entry: Label,
+}
+
+/// How a closure's entry binds, and what it runs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Entry
 {
     /// An application arm: its argument, then its return covariable.
-    Apply,
-    /// A thunk or a force arm: its return covariable.
-    Force,
+    Apply(CommandId),
+    /// A thunk, a force or projection arm, or a suspended capture: its return
+    /// covariable.
+    Force(CommandId),
     /// A fixpoint: itself, then its return covariable.
-    Fixpoint,
+    Fixpoint(CommandId),
+    /// A constant's unfolding: its definition evaluated into its word, then
+    /// returned to the frame on top.
+    Unfold(ProducerId, Immediate),
 }
 
 /// A closure body awaiting its own window.
@@ -454,16 +483,14 @@ struct Body
 {
     /// Its entry's label.
     label: Label,
-    /// How the entry binds.
+    /// How the entry binds, and what it runs.
     entry: Entry,
-    /// The body.
-    command: CommandId,
     /// The scope the closure was created in.
     scope: Scope,
 }
 
-/// A closure the function creates: what the run's answer is moved into the
-/// machine's store by.
+/// A closure the function creates: what moves a closure in the run's
+/// answer into the caller's store.
 ///
 /// # Specification
 /// trivial.
@@ -476,6 +503,25 @@ pub struct Site
     pub producer: ProducerId,
     /// The slots of the producer binders visible where the closure is
     /// created, innermost first: the captures its environment binds.
+    pub captures: Vec<Slot>,
+}
+
+/// A bind frame a reified stack holds: what moves a stack in the run's
+/// answer into the caller's store.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Bound
+{
+    /// The label the frame resumes at: its code word is this label's
+    /// address.
+    pub label: Label,
+    /// The command the frame runs, binding one producer variable and one
+    /// covariable.
+    pub body: CommandId,
+    /// The slots of the producer binders visible where the stack is
+    /// reified, innermost first: the captures the body's environment binds.
     pub captures: Vec<Slot>,
 }
 
@@ -512,11 +558,13 @@ pub enum Callee
         operation: OperationName,
         /// How it finds its handler.
         reach: Reach,
+        /// The command, which a run no handler answers is stuck at.
+        at: CommandId,
     },
     /// Capture to the nearest reset; answers the stack.
-    Shift,
+    Shift(CommandId),
     /// Push a stack's frames back, each window copied afresh.
-    Replay,
+    Replay(CommandId),
     /// Hold the argument in a fresh cell; answers the cell.
     Hold,
     /// Lend a held cell's value through a fresh view; answers the view.
@@ -531,11 +579,18 @@ pub enum Callee
     {
         /// The unwind's label.
         unwind: Label,
+        /// The access, which a body answering with its view unended is stuck
+        /// at.
+        at: CommandId,
     },
     /// Build a reified stack in the window in reach: its frames innermost
     /// first, each application's argument among the call's arguments in
     /// order.
     Reify(Vec<Reified>),
+    /// Stick at a constant the definitions do not hold.
+    Undefined(ConstantIndex),
+    /// Stick at a constant whose unfolding needs its own value.
+    Cyclic(ConstantIndex),
 }
 
 /// A frame of a reified stack.
@@ -547,6 +602,8 @@ pub enum Reified
 {
     /// An application frame: its argument is the call's next argument.
     Apply,
+    /// A projection frame, taking the left component or the right.
+    Project(Side),
     /// A bind frame resuming at the label, in a copy of the window.
     Bind(Label),
 }
@@ -597,6 +654,8 @@ pub struct Lowered
     pub function: Function,
     /// Every closure site, in creation order.
     pub sites: Vec<Site>,
+    /// Every bind frame of a reified stack, in creation order.
+    pub bounds: Vec<Bound>,
     /// The heads a head object names by its family.
     pub heads: Vec<ConstructorTag>,
     /// The literals a literal constant names by its family.
@@ -608,14 +667,16 @@ pub struct Lowered
     /// Each label a frame resumes at in a window, with the window's slot
     /// count: what a capture copies.
     pub windows: Vec<(Label, Slots)>,
+    /// The case, selection or fold of each unmatched exit, by the site its
+    /// operand names.
+    pub unmatched: Vec<ConsumerId>,
+    /// The constants the function unfolds, by their word in the run's
+    /// constant table.
+    pub globals: Vec<ConstantIndex>,
 }
 
-/// The most constant unfoldings one lowering inlines: past it a cycle among
-/// definitions is refused rather than unfolded forever.
-const UNFOLDINGS: usize = 1 << 12;
-
-/// The most instructions one lowering emits: past it the command runs on the
-/// L machine rather than being copied into a function larger than a region.
+/// The most instructions one lowering emits: past it the command declines
+/// rather than being copied into a function larger than a region.
 const INSTRUCTIONS: usize = 1 << 18;
 
 /// Push the value in hand onto the frame region: a constructor's field or a
@@ -702,6 +763,8 @@ struct Lowering<'run>
     function: Function,
     /// The closure sites so far.
     sites: Vec<Site>,
+    /// The reified bind frames so far.
+    bounds: Vec<Bound>,
     /// The binders.
     scopes: Scopes,
     /// The worklist of the block being written.
@@ -713,8 +776,14 @@ struct Lowering<'run>
     bodies: Vec<Body>,
     /// The current window's slot count so far.
     window: u32,
-    /// The constant unfoldings so far.
-    unfoldings: usize,
+    /// The constants unfolded so far, by word, each with its unfolding's
+    /// entry.
+    globals: Vec<(ConstantIndex, Label)>,
+    /// Whether a suspended capture has been created.
+    captured: bool,
+    /// Whether a cut delivering a variable or a constant tests for a
+    /// suspended capture first.
+    checked: bool,
     /// The heads a head object names, by family.
     heads: Vec<ConstructorTag>,
     /// The literals a literal constant names, by family.
@@ -730,6 +799,8 @@ struct Lowering<'run>
     windows: Vec<(Label, Slots)>,
     /// The frame labels of the current window, its slot count still open.
     pending: Vec<Label>,
+    /// The consumer of each unmatched exit so far.
+    unmatched: Vec<ConsumerId>,
 }
 
 impl Lowering<'_>
@@ -789,8 +860,8 @@ impl Lowering<'_>
         (inner, slot)
     }
 
-    /// Allocate a closure over `scope`'s slots whose body is `command`,
-    /// recording its site.
+    /// Allocate a closure over `scope`'s slots entered by `entry`, recording
+    /// its site.
     ///
     /// # Specification
     /// trivial.
@@ -803,10 +874,9 @@ impl Lowering<'_>
         scope: Scope,
         entry: Entry,
         flavour: Flavour,
-        command: CommandId,
     ) -> Result<(), Form>
     {
-        let label = self.suspend(scope, entry, flavour, command)?;
+        let label = self.suspend(scope, entry, flavour)?;
         self.sites.push(Site {
             label,
             producer,
@@ -815,9 +885,9 @@ impl Lowering<'_>
         Ok(())
     }
 
-    /// Allocate a closure over `scope`'s slots whose body is `command`, and
-    /// queue the body; answers the body's label. A closure no site records
-    /// never reaches an answer: a fold's cell closure lives only in a frame.
+    /// Allocate a closure over `scope`'s slots entered by `entry`, and queue
+    /// its body; answers the body's label. A closure no site records never
+    /// reaches an answer: a fold's cell closure lives only in a frame.
     ///
     /// # Specification
     /// trivial.
@@ -829,7 +899,29 @@ impl Lowering<'_>
         scope: Scope,
         entry: Entry,
         flavour: Flavour,
-        command: CommandId,
+    ) -> Result<Label, Form>
+    {
+        let label = self.allocate(scope, flavour)?;
+        self.bodies.push(Body {
+            label,
+            entry,
+            scope,
+        });
+        Ok(label)
+    }
+
+    /// Allocate a closure of `flavour` over `scope`'s slots whose code is a
+    /// fresh label, and answer the label.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] for a capture count past the arity field.
+    fn allocate(
+        &mut self,
+        scope: Scope,
+        flavour: Flavour,
     ) -> Result<Label, Form>
     {
         let label = self.function.label();
@@ -843,13 +935,83 @@ impl Lowering<'_>
         );
         let (low, _) = header_operands(header);
         self.emit(StencilId::Closure, Operand::Code(label), low);
-        self.bodies.push(Body {
-            label,
-            entry,
-            command,
-            scope,
-        });
         Ok(label)
+    }
+
+    /// Allocate the copattern object `id` over `scope`'s slots, recording its
+    /// site; its code is a dispatch laid out among the current window's
+    /// blocks, since it reads no slot.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] for a capture count past the arity field.
+    fn object(
+        &mut self,
+        id: ProducerId,
+        scope: Scope,
+    ) -> Result<(), Form>
+    {
+        let label = self.allocate(scope, Flavour::Object)?;
+        self.blocks.push((label, Task::Dispatch(id, scope)));
+        self.sites.push(Site {
+            label,
+            producer: id,
+            captures: self.scopes.producers(scope),
+        });
+        Ok(())
+    }
+
+    /// Lay out the copattern object `id`'s dispatch: per arm, in order, a
+    /// test of the observed word entering the arm's body, queued in `scope`;
+    /// the stuck exit when no arm answers.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Dangling`] when `id` is no copattern object;
+    /// [`Form::HeaderWidth`] never, an observed word being below 2³².
+    fn dispatch(
+        &mut self,
+        id: ProducerId,
+        scope: Scope,
+    ) -> Result<(), Form>
+    {
+        let arena = self.arena;
+        let Some(&ProducerNode::Cocase { ref arms }) = arena.producer(id)
+        else {
+            return Err(Form::Dangling);
+        };
+        for arm in arms {
+            let (observed, entry) = match arm.destructor {
+                DestructorTag::Apply => (Observed::Apply, Entry::Apply(arm.body)),
+                DestructorTag::Force => (Observed::Force, Entry::Force(arm.body)),
+                DestructorTag::Project(Side::Left) => {
+                    (Observed::ProjectLeft, Entry::Force(arm.body))
+                },
+                DestructorTag::Project(Side::Right) => {
+                    (Observed::ProjectRight, Entry::Force(arm.body))
+                },
+            };
+            let word = u32::try_from(usize::from(Word::from(observed)))
+                .map_err(|_overflow| Form::HeaderWidth)?;
+            let label = self.function.label();
+            self.emit_two_way(
+                StencilId::Arm,
+                Operand::Immediate(Immediate::from(word)),
+                Operand::Unused,
+                label,
+            );
+            self.bodies.push(Body {
+                label,
+                entry,
+                scope,
+            });
+        }
+        self.emit(StencilId::Unobserved, Operand::Unused, Operand::Unused);
+        Ok(())
     }
 
     /// The header of a constructor head: a tuple's, an injection's and a
@@ -937,9 +1099,9 @@ impl Lowering<'_>
         Ok(self.function.constant(&[header.word()]))
     }
 
-    /// Select by `selector` from the value in hand: the field in hand after
-    /// the emitted instructions, the unmatched exit when the value holds no
-    /// such field.
+    /// Select by `selector` from the value in hand for the selection
+    /// consumer `id`: the field in hand after the emitted instructions, the
+    /// unmatched exit when the value holds no such field.
     ///
     /// # Specification
     /// trivial.
@@ -948,6 +1110,7 @@ impl Lowering<'_>
     /// [`Form::HeaderWidth`] for a component past an immediate's width.
     fn select(
         &mut self,
+        id: ConsumerId,
         selector: &Selector,
     ) -> Result<(), Form>
     {
@@ -973,8 +1136,31 @@ impl Lowering<'_>
                 self.selections.push((at, label.clone()));
             },
         }
-        self.emit(StencilId::Unmatched, Operand::Unused, Operand::Unused);
+        self.unmatched(id)?;
         self.function.bind(found);
+        Ok(())
+    }
+
+    /// The unmatched exit of the case, selection or fold `arms`, its site the
+    /// next row of the unmatched table.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] for a table past an immediate's width.
+    fn unmatched(
+        &mut self,
+        arms: ConsumerId,
+    ) -> Result<(), Form>
+    {
+        let site = u32::try_from(self.unmatched.len()).map_err(|_overflow| Form::HeaderWidth)?;
+        self.unmatched.push(arms);
+        self.emit(
+            StencilId::Unmatched,
+            Operand::Immediate(Immediate::from(site)),
+            Operand::Unused,
+        );
         Ok(())
     }
 
@@ -1006,13 +1192,13 @@ impl Lowering<'_>
         self.function.bind(test);
         self.emit_two_way(StencilId::Match, nil_low, nil_family, empty);
         self.emit_two_way(StencilId::Match, cell_low, cell_family, cell);
-        self.emit(StencilId::Unmatched, Operand::Unused, Operand::Unused);
+        self.unmatched(id)?;
         self.function.bind(cell);
         let (with_head, head) = self.bind(scope, Binding::Producer);
         self.emit(StencilId::Field, head.operand(), Slot(0).operand());
         let (with_tail, tail) = self.bind(with_head, Binding::Temporary);
         self.emit(StencilId::Field, tail.operand(), Slot(1).operand());
-        self.suspend(with_head, Entry::Apply, Flavour::Apply, on_cons)?;
+        self.suspend(with_head, Entry::Apply(on_cons), Flavour::Apply)?;
         let (_, closure) = self.bind(with_tail, Binding::Temporary);
         self.emit(StencilId::Bind, closure.operand(), Operand::Unused);
         self.emit(
@@ -1039,6 +1225,39 @@ impl Lowering<'_>
         let label = self.function.label();
         self.pending.push(label);
         label
+    }
+
+    /// The word of `constant`, defined as `definition`, in the run's constant
+    /// table, and its unfolding's entry; the first use queues the unfolding.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::HeaderWidth`] for a constant table past an immediate's width.
+    fn global(
+        &mut self,
+        constant: ConstantIndex,
+        definition: ProducerId,
+    ) -> Result<(Immediate, Label), Form>
+    {
+        let held = self
+            .globals
+            .iter()
+            .position(|&(unfolded, _)| unfolded == constant);
+        let position = held.unwrap_or(self.globals.len());
+        let word = Immediate::from(u32::try_from(position).map_err(|_overflow| Form::HeaderWidth)?);
+        if let Some(&(_, entry)) = self.globals.get(position) {
+            return Ok((word, entry));
+        }
+        let entry = self.function.label();
+        self.globals.push((constant, entry));
+        self.bodies.push(Body {
+            label: entry,
+            entry: Entry::Unfold(definition, word),
+            scope: Scope::Empty,
+        });
+        Ok((word, entry))
     }
 
     /// The call of `callee` on `count` pushed arguments, as one instruction
@@ -1099,16 +1318,14 @@ impl Lowering<'_>
                         signature: signature.name().clone(),
                         operation: operation.clone(),
                         reach,
+                        at: id,
                     },
                     count,
                 )?;
-                // The host continues at the clause or refuses: nothing reaches
-                // the instruction after the call.
-                self.tasks.push(Task::Emit(
-                    StencilId::Stuck,
-                    Operand::Unused,
-                    Operand::Unused,
-                ));
+                // A handler of the run continues at its clause; the host's
+                // reply returns here, to the loaded continuation.
+                self.tasks
+                    .push(Task::Emit(StencilId::Pop, Operand::Unused, Operand::Unused));
                 self.tasks.push(call);
                 self.tasks.push(PUSH);
                 self.tasks.push(Task::Producer(payload, scope));
@@ -1198,7 +1415,7 @@ impl Lowering<'_>
                 self.tasks.push(Task::Load(continuation, scope));
             },
             CommandNode::Shift { body, continuation } => {
-                let call = self.call(&Callee::Shift, Immediate::from(0_u32))?;
+                let call = self.call(&Callee::Shift(id), Immediate::from(0_u32))?;
                 let (held, stack) = self.bind(scope, Binding::Producer);
                 let (inner, _) = self.bind(held, Binding::FallThrough);
                 self.tasks.push(Task::Command(body, inner));
@@ -1215,7 +1432,7 @@ impl Lowering<'_>
                 body,
                 continuation,
             } => {
-                let call = self.call(&Callee::Replay, Immediate::from(1_u32))?;
+                let call = self.call(&Callee::Replay(id), Immediate::from(1_u32))?;
                 let (inner, _) = self.bind(scope, Binding::FallThrough);
                 self.tasks.push(Task::Command(body, inner));
                 self.tasks.push(call);
@@ -1226,15 +1443,15 @@ impl Lowering<'_>
             CommandNode::Memory {
                 ref form,
                 continuation,
-            } => self.memory(form, continuation, scope)?,
+            } => self.memory(id, form, continuation, scope)?,
         }
         Ok(())
     }
 
-    /// Lower the memory form `form` with its continuation in `scope`. A
-    /// linear binder's slot holds a cell: a hold's holds the value, an
-    /// access's view holds the value lent, how the view ended and the held
-    /// cell it writes back to.
+    /// Lower the memory form `form` of the command `id` with its continuation
+    /// in `scope`. A linear binder's slot holds a cell: a hold's holds the
+    /// value, an access's view holds the value lent, how the view ended and
+    /// the held cell it writes back to.
     ///
     /// # Specification
     /// trivial.
@@ -1243,6 +1460,7 @@ impl Lowering<'_>
     /// As [`Self::step`].
     fn memory(
         &mut self,
+        id: CommandId,
         form: &MemoryForm<ProducerId, CommandId>,
         continuation: ConsumerId,
         scope: Scope,
@@ -1271,7 +1489,7 @@ impl Lowering<'_>
                 let ended = self.frame_label();
                 let unwinding = self.function.label();
                 let (unwound, _) = self.bind(scope, Binding::FallThrough);
-                self.blocks.push((ended, Task::Ended(view, unwinding)));
+                self.blocks.push((ended, Task::Ended(view, unwinding, id)));
                 self.blocks
                     .push((unwinding, Task::Command(unwind, unwound)));
                 self.tasks.push(Task::Command(body, inner));
@@ -1316,9 +1534,10 @@ impl Lowering<'_>
         Ok(())
     }
 
-    /// Open a closure body: bind its label, emit its entry, and queue its
-    /// command. Answers the entry's instruction, whose window operand is
-    /// written once the body is lowered.
+    /// Open a closure body: bind its label, emit its entry, and queue what it
+    /// runs — a command, or a constant's definition evaluated into its word
+    /// and returned to the frame its read pushed. Answers the entry's
+    /// instruction, whose window operand is written once the body is lowered.
     ///
     /// # Specification
     /// trivial.
@@ -1331,12 +1550,12 @@ impl Lowering<'_>
         let depth = self.scopes.depth(body.scope);
         self.window = depth.0;
         let (stencil, bindings): (StencilId, &[Binding]) = match body.entry {
-            Entry::Apply => (StencilId::EnterApply, &[
+            Entry::Apply(_) => (StencilId::EnterApply, &[
                 Binding::Producer,
                 Binding::Covariable,
             ]),
-            Entry::Force => (StencilId::EnterForce, &[Binding::Covariable]),
-            Entry::Fixpoint => (StencilId::EnterFix, &[
+            Entry::Force(_) | Entry::Unfold(..) => (StencilId::EnterForce, &[Binding::Covariable]),
+            Entry::Fixpoint(_) => (StencilId::EnterFix, &[
                 Binding::Producer,
                 Binding::Covariable,
             ]),
@@ -1346,7 +1565,21 @@ impl Lowering<'_>
         for &binding in bindings {
             scope = self.bind(scope, binding).0;
         }
-        self.tasks.push(Task::Command(body.command, scope));
+        match body.entry {
+            Entry::Apply(command) | Entry::Force(command) | Entry::Fixpoint(command) => {
+                self.tasks.push(Task::Command(command, scope));
+            },
+            Entry::Unfold(definition, word) => {
+                self.tasks
+                    .push(Task::Emit(StencilId::Pop, Operand::Unused, Operand::Unused));
+                self.tasks.push(Task::Emit(
+                    StencilId::SetGlobal,
+                    Operand::Immediate(word),
+                    Operand::Unused,
+                ));
+                self.tasks.push(Task::Producer(definition, scope));
+            },
+        }
         at
     }
 
@@ -1370,6 +1603,10 @@ impl Lowering<'_>
                 self.emit(stencil, a, b);
                 Ok(())
             },
+            Task::Branch(stencil, alt) => {
+                self.emit_two_way(stencil, Operand::Unused, Operand::Unused, alt);
+                Ok(())
+            },
             Task::Bind(label) => {
                 self.function.bind(label);
                 Ok(())
@@ -1385,7 +1622,7 @@ impl Lowering<'_>
                 else {
                     return Err(Form::Dangling);
                 };
-                self.select(selector)?;
+                self.select(id, selector)?;
                 self.emit(StencilId::Pop, Operand::Unused, Operand::Unused);
                 Ok(())
             },
@@ -1405,8 +1642,8 @@ impl Lowering<'_>
                 self.tasks.push(Task::Command(body, inner));
                 Ok(())
             },
-            Task::Ended(view, unwind) => {
-                let call = self.call(&Callee::Ended { unwind }, Immediate::from(2_u32))?;
+            Task::Ended(view, unwind, at) => {
+                let call = self.call(&Callee::Ended { unwind, at }, Immediate::from(2_u32))?;
                 self.tasks
                     .push(Task::Emit(StencilId::Pop, Operand::Unused, Operand::Unused));
                 self.tasks.push(call);
@@ -1416,6 +1653,44 @@ impl Lowering<'_>
                 self.tasks.push(PUSH);
                 Ok(())
             },
+            Task::Capture(consumer, scope) => {
+                // Loading the consumer may evaluate an argument into hand.
+                let (inner, held) = self.bind(scope, Binding::Temporary);
+                self.emit(StencilId::Bind, held.operand(), Operand::Unused);
+                self.tasks.push(Task::Emit(
+                    StencilId::RunCapture,
+                    Operand::Unused,
+                    Operand::Unused,
+                ));
+                self.tasks
+                    .push(Task::Emit(StencilId::Var, held.operand(), Operand::Unused));
+                self.tasks.push(Task::Load(consumer, inner));
+                Ok(())
+            },
+            Task::Unfold(Unfolding {
+                constant,
+                word,
+                resume,
+                entry,
+            }) => {
+                self.emit(StencilId::Pushf, Operand::Code(resume), Operand::Unused);
+                let cyclic = self.function.label();
+                self.emit_two_way(
+                    StencilId::Unfold,
+                    Operand::Immediate(word),
+                    Operand::Unused,
+                    cyclic,
+                );
+                self.emit_two_way(StencilId::Jump, Operand::Unused, Operand::Unused, entry);
+                self.function.bind(cyclic);
+                // The call refuses; the pop only ends the block.
+                let call = self.call(&Callee::Cyclic(constant), Immediate::from(0_u32))?;
+                self.tasks
+                    .push(Task::Emit(StencilId::Pop, Operand::Unused, Operand::Unused));
+                self.tasks.push(call);
+                Ok(())
+            },
+            Task::Dispatch(id, scope) => self.dispatch(id, scope),
         }
     }
 
@@ -1446,17 +1721,39 @@ impl Lowering<'_>
             | CommandNode::Shift { .. }
             | CommandNode::Memory { .. } => return self.control(id, scope),
         };
-        let &ProducerNode::Mu { body } = arena.producer(producer).ok_or(Form::Dangling)?
-        else {
-            self.tasks.push(Task::Deliver(consumer, scope));
-            self.tasks.push(Task::Producer(producer, scope));
-            return Ok(());
+        let target = arena.consumer(consumer).ok_or(Form::Dangling)?;
+        let binds = matches!(*target, ConsumerNode::MuTilde { .. });
+        let body = match *arena.producer(producer).ok_or(Form::Dangling)? {
+            // The by-name side of a negative cut against a binder suspends the
+            // capture and binds it; every other cut runs it.
+            ProducerNode::Mu { body } if !(binds && polarity == Polarity::Negative) => body,
+            ProducerNode::Variable { .. } | ProducerNode::Constant(_) if self.checked && !binds => {
+                // A suspended capture delivered to anything but a binder runs
+                // against it.
+                let run = self.function.label();
+                self.blocks.push((run, Task::Capture(consumer, scope)));
+                self.tasks.push(Task::Deliver(consumer, scope));
+                self.tasks.push(Task::Branch(StencilId::Captured, run));
+                self.tasks.push(Task::Producer(producer, scope));
+                return Ok(());
+            },
+            ProducerNode::Mu { .. }
+            | ProducerNode::Variable { .. }
+            | ProducerNode::Constant(_)
+            | ProducerNode::Literal(_)
+            | ProducerNode::Constructor { .. }
+            | ProducerNode::Thunk { .. }
+            | ProducerNode::Fixpoint { .. }
+            | ProducerNode::Cocase { .. }
+            | ProducerNode::Primitive { .. }
+            | ProducerNode::Reify(_) => {
+                self.tasks.push(Task::Deliver(consumer, scope));
+                self.tasks.push(Task::Producer(producer, scope));
+                return Ok(());
+            },
         };
         let (inner, alpha) = self.bind(scope, Binding::Covariable);
-        match *arena.consumer(consumer).ok_or(Form::Dangling)? {
-            ConsumerNode::MuTilde { .. } if polarity == Polarity::Negative => {
-                return Err(Form::ByNameCapture);
-            },
+        match *target {
             ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } => {
                 let resume = self.frame_label();
                 self.emit(StencilId::Pushk, Operand::Code(resume), alpha.operand());
@@ -1565,30 +1862,46 @@ impl Lowering<'_>
                     self.tasks.push(Task::Producer(field, scope));
                 }
             },
-            ProducerNode::Mu { .. } => return Err(Form::CaptureAsValue),
+            ProducerNode::Mu { body } => {
+                self.captured = true;
+                self.closure(id, scope, Entry::Force(body), Flavour::Capture)?;
+            },
             ProducerNode::Thunk { body } => {
-                self.closure(id, scope, Entry::Force, Flavour::Thunk, body)?;
+                self.closure(id, scope, Entry::Force(body), Flavour::Thunk)?;
             },
             ProducerNode::Fixpoint { body, .. } => {
-                self.closure(id, scope, Entry::Fixpoint, Flavour::Fixpoint, body)?;
+                self.closure(id, scope, Entry::Fixpoint(body), Flavour::Fixpoint)?;
             },
             ProducerNode::Cocase { ref arms } => match **arms {
                 [arm] if arm.destructor == DestructorTag::Apply => {
-                    self.closure(id, scope, Entry::Apply, Flavour::Apply, arm.body)?;
+                    self.closure(id, scope, Entry::Apply(arm.body), Flavour::Apply)?;
                 },
                 [arm] if arm.destructor == DestructorTag::Force => {
-                    self.closure(id, scope, Entry::Force, Flavour::Force, arm.body)?;
+                    self.closure(id, scope, Entry::Force(arm.body), Flavour::Force)?;
                 },
-                _ => return Err(Form::Copattern),
+                _ => self.object(id, scope)?,
             },
             ProducerNode::Constant(constant) => match self.definitions.get(constant) {
                 Some(Definition::Transparent(definition)) => {
-                    self.unfoldings = self.unfoldings.saturating_add(1);
-                    if self.unfoldings > UNFOLDINGS {
-                        return Err(Form::ConstantCycle);
-                    }
-                    let barrier = self.scopes.barrier(scope);
-                    self.tasks.push(Task::Producer(definition, barrier));
+                    let (word, entry) = self.global(constant, definition)?;
+                    let slow = self.function.label();
+                    let resume = self.frame_label();
+                    self.emit_two_way(
+                        StencilId::Global,
+                        Operand::Immediate(word),
+                        Operand::Unused,
+                        slow,
+                    );
+                    self.function.bind(resume);
+                    self.blocks.push((
+                        slow,
+                        Task::Unfold(Unfolding {
+                            constant,
+                            word,
+                            resume,
+                            entry,
+                        }),
+                    ));
                 },
                 Some(Definition::Opaque) => {
                     let width = |_overflow| Form::HeaderWidth;
@@ -1601,7 +1914,10 @@ impl Lowering<'_>
                     let at = self.function.constant(&[header.word()]);
                     self.emit(StencilId::Const, Operand::Data(at), Operand::Unused);
                 },
-                None => return Err(Form::UndefinedConstant),
+                None => {
+                    let call = self.call(&Callee::Undefined(constant), Immediate::from(0_u32))?;
+                    self.tasks.push(call);
+                },
             },
             ProducerNode::Primitive {
                 primitive,
@@ -1628,9 +1944,14 @@ impl Lowering<'_>
                         StackFrame::Bind(body) => {
                             let label = self.frame_label();
                             self.blocks.push((label, Task::Bound(body, scope)));
+                            self.bounds.push(Bound {
+                                label,
+                                body,
+                                captures: self.scopes.producers(scope),
+                            });
                             shape.push(Reified::Bind(label));
                         },
-                        StackFrame::Project(_) => return Err(Form::Destructor),
+                        StackFrame::Project(side) => shape.push(Reified::Project(side)),
                     }
                 }
                 let count =
@@ -1686,7 +2007,7 @@ impl Lowering<'_>
                     self.emit_two_way(StencilId::Match, low, family, label);
                     labels.push(label);
                 }
-                self.emit(StencilId::Unmatched, Operand::Unused, Operand::Unused);
+                self.unmatched(id)?;
                 for (arm, &label) in arms.iter().zip(&labels).rev() {
                     let mut inner = scope;
                     let mut binds = Vec::new();
@@ -1719,7 +2040,7 @@ impl Lowering<'_>
                     );
                     labels.push(label);
                 }
-                self.emit(StencilId::Unmatched, Operand::Unused, Operand::Unused);
+                self.unmatched(id)?;
                 for (&branch, &label) in branches.iter().zip(&labels).rev() {
                     let (inner, held) = self.bind(scope, Binding::Temporary);
                     self.tasks.push(Task::Emit(
@@ -1774,11 +2095,30 @@ impl Lowering<'_>
                         ));
                         self.tasks.push(Task::Load(then, held));
                     },
-                    _ => return Err(Form::Destructor),
+                    (DestructorTag::Project(side), &[]) => {
+                        let stencil = match side {
+                            Side::Left => StencilId::ProjectLeft,
+                            Side::Right => StencilId::ProjectRight,
+                        };
+                        self.tasks
+                            .push(Task::Emit(stencil, Operand::Unused, Operand::Unused));
+                        self.tasks.push(Task::Emit(
+                            StencilId::Var,
+                            function.operand(),
+                            Operand::Unused,
+                        ));
+                        self.tasks.push(Task::Load(then, held));
+                    },
+                    (
+                        DestructorTag::Apply | DestructorTag::Force | DestructorTag::Project(_),
+                        _,
+                    ) => {
+                        return Err(Form::Destructor);
+                    },
                 }
             },
             ConsumerNode::Select { ref selector, then } => {
-                self.select(selector)?;
+                self.select(id, selector)?;
                 self.tasks.push(Task::Deliver(then, scope));
             },
             ConsumerNode::ListFold { continuation, .. } => {
@@ -1857,7 +2197,24 @@ impl Lowering<'_>
                         ));
                         self.tasks.push(Task::Load(then, scope));
                     },
-                    _ => return Err(Form::Destructor),
+                    (DestructorTag::Project(side), &[]) => {
+                        let stub = match side {
+                            Side::Left => Stub::ProjectLeft,
+                            Side::Right => Stub::ProjectRight,
+                        };
+                        self.tasks.push(Task::Emit(
+                            StencilId::PushForce,
+                            Operand::Stub(stub),
+                            Operand::Unused,
+                        ));
+                        self.tasks.push(Task::Load(then, scope));
+                    },
+                    (
+                        DestructorTag::Apply | DestructorTag::Force | DestructorTag::Project(_),
+                        _,
+                    ) => {
+                        return Err(Form::Destructor);
+                    },
                 }
             },
             ConsumerNode::Select { then, .. } => {
@@ -1888,20 +2245,21 @@ impl Lowering<'_>
 /// Lower the closed command `root`.
 ///
 /// # Specification
-/// - requires: every constant `root` reaches is defined in `definitions`.
 /// - ensures: the function's entry runs `root` from an empty frame region,
-///   delivering its answer to the halt exit, as the L machine runs it: each
-///   transparent constant inlined, each closure site recorded with the producer
-///   it suspends.
-/// - executable: none — running as the L machine does is observed only by
-///   running both.
+///   delivering its answer to the halt exit: each transparent constant unfolded
+///   once per run at its first read, each closure site recorded with the
+///   producer it suspends. A command that suspends a capture is lowered again
+///   with every cut delivering a variable or a constant to anything but a
+///   binder testing for one first, which runs it against that consumer.
+/// - executable: none — running as the source means is observed only by running
+///   both tiers against stated answers.
 ///
 /// # Errors
-/// The [`Form`] of the first node outside the lowered fragment.
+/// The [`Form`] of the first ill-formed or oversized node.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over the named
-///   programs: returns, binds, cases, constructors, functions, thunks and an
+/// - hypothesis: L2 — the named programs halt on both tiers with equal answers:
+///   returns, binds, cases, constructors, functions, thunks, lazy pairs and an
 ///   application. The stencils' suite runs the generated programs and the
 ///   corpus through this lowering too, each refused form counted by name.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
@@ -1912,21 +2270,62 @@ pub fn lower(
     root: CommandId,
 ) -> Result<Lowered, Form>
 {
+    let (lowered, needed) = lower_pass(arena, definitions, root, Pass::First)?;
+    if needed == Pass::First {
+        return Ok(lowered);
+    }
+    lower_pass(arena, definitions, root, Pass::Checked).map(|(checked, _)| checked)
+}
+
+/// A pass of the lowering: whether a cut delivering a variable or a constant
+/// tests it for a suspended capture first.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Pass
+{
+    /// No delivery tests; the pass a function that creates no suspended
+    /// capture needs.
+    First,
+    /// Every such delivery tests; the pass a function that creates one needs.
+    Checked,
+}
+
+/// Lower `root` as [`lower`] does in `pass`, answering with the pass the
+/// function needs.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// As [`lower`].
+fn lower_pass(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+    pass: Pass,
+) -> Result<(Lowered, Pass), Form>
+{
     let mut lowering = Lowering {
         arena,
         definitions,
         function: Function::default(),
         sites: Vec::new(),
+        bounds: Vec::new(),
         scopes: Scopes::default(),
         tasks: Vec::from([Task::Command(root, Scope::Empty)]),
         blocks: Vec::new(),
         bodies: Vec::new(),
         window: 0,
-        unfoldings: 0,
+        globals: Vec::new(),
+        captured: false,
+        checked: pass == Pass::Checked,
         heads: Vec::new(),
         literals: Vec::new(),
         callees: Vec::new(),
         selections: Vec::new(),
+        unmatched: Vec::new(),
         handlers: Vec::new(),
         windows: Vec::new(),
         pending: Vec::new(),
@@ -1980,13 +2379,27 @@ pub fn lower(
         let constant = lowering.function.constant(&table);
         lowering.function.set_a(at, Operand::Data(constant));
     }
-    Ok(Lowered {
+    let lowered = Lowered {
         function: lowering.function,
         sites: lowering.sites,
+        bounds: lowering.bounds,
         heads: lowering.heads,
         literals: lowering.literals,
         callees: lowering.callees,
         handlers: lowering.handlers,
         windows: lowering.windows,
-    })
+        unmatched: lowering.unmatched,
+        globals: lowering
+            .globals
+            .into_iter()
+            .map(|(constant, _)| constant)
+            .collect(),
+    };
+    let needed = if lowering.captured {
+        Pass::Checked
+    }
+    else {
+        Pass::First
+    };
+    Ok((lowered, needed))
 }

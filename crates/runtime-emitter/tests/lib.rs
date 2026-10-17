@@ -2,11 +2,15 @@
 //!
 //! One target rather than one per area, so a witness path names the area it
 //! belongs to (`tests::agreement::…`) instead of a file. The oracle — the
-//! named programs and the value-by-value comparison with the L machine — is
-//! the stencils' suite's, shared rather than copied.
+//! named programs, their stated answers and the value-by-value comparison of
+//! the two tiers — is the stencils' suite's, shared rather than copied.
+
+extern crate alloc;
 
 #[cfg(test)]
 mod agreement;
+#[cfg(test)]
+mod seam;
 #[cfg(test)]
 #[path = "../../runtime-stencils/tests/support.rs"]
 mod support;

@@ -1,6 +1,6 @@
 # gandr-core-sequent
 
-The sequent tier of the core: the command IL a call-by-push-value program is focused into, and the two-region store its abstract machine works over.
+The sequent tier of the core: the command IL a call-by-push-value program is focused into, and the store a run's answer is read back from.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -13,11 +13,11 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 
 ## Synopsis
 
-**What.** `CommandArena` holds the three node families of a polarized sequent calculus — producers, consumers and commands — over the core language's vocabulary: a command `⟨p |ε c⟩` cuts a producer against a consumer at a polarity, constructor and destructor heads (`ConstructorTag`, `DestructorTag`) declare their own arities, and variables and covariables are de Bruijn indices. `focus_computation` and `focus_value` translate a core term into that IL and `unfocus_command` and `unfocus_value` read it back; `check_command` holds a command to the IL's typing discipline. `Store` is the two-region store an environment machine over that IL runs in: an append-only heap of values, memo cells and environment chains, and a walkable region of continuation frames addressed by marks. `Machine` is that environment machine for the pure fragment: it runs a command to a value under a step budget, unfolding constants from `Definitions`, and reads the value back as a core term.
+**What.** `CommandArena` holds the three node families of a polarized sequent calculus — producers, consumers and commands — over the core language's vocabulary: a command `⟨p |ε c⟩` cuts a producer against a consumer at a polarity, constructor and destructor heads (`ConstructorTag`, `DestructorTag`) declare their own arities, and variables and covariables are de Bruijn indices. `focus_computation` and `focus_value` translate a core term into that IL and `unfocus_command` and `unfocus_value` read it back; `check_command` holds a command to the IL's typing discipline. `gandr-runtime-emitter` runs a command, natively or on the portable executor, and answers in this crate's terms: `Outcome` and `Stuck` say how a run ended, `Definitions` hold the constants it unfolds, and `Store` holds what it moved out of its regions, which `read_back_terminal` reads back as a core term.
 
-**Why.** A call-by-push-value term has its evaluation order implicit in its syntax; a command makes it explicit as a cut whose two sides say what is sent where. The abstract machine steps that structure directly, cell rules reify into it, and effect handlers walk its frames without inspecting opaque host closures.
+**Why.** A call-by-push-value term has its evaluation order implicit in its syntax; a command makes it explicit as a cut whose two sides say what is sent where. The L machine's transitions step that structure directly, cell rules reify into it, and effect handlers walk its frames without inspecting opaque host closures.
 
-**How.** Every node is minted only over children the arena already holds, so the arena is acyclic by construction, and a `SequentWatermark` with `CommandArena::truncate_to` drops exactly what a refused build minted. Binders count outward, producers and covariables in separate index spaces, so equal inputs build identical nodes and no translation keeps a name supply. The store's heap values are immutable and shared by address; a thunk's memo cell is the only mutable state, and the store itself enforces its three-state protocol. Frames carry fresh serials, so a continuation mark over a frame that has since been popped is refused as stale rather than resumed into another continuation.
+**How.** Every node is minted only over children the arena already holds, so the arena is acyclic by construction, and a `SequentWatermark` with `CommandArena::truncate_to` drops exactly what a refused build minted. Binders count outward, producers and covariables in separate index spaces, so equal inputs build identical nodes and no translation keeps a name supply. The store's values are immutable and shared by address, each naming only values allocated before it, so readback is a loop in address order.
 
 ## Provided features
 
@@ -25,17 +25,15 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `SequentWatermark` with `CommandArena::watermark` and `CommandArena::truncate_to`: the rollback a refused build takes.
 - `ConstructorTag` and `DestructorTag` with their declared `ProducerArity`, `ConsumerArity` and, for a destructor, the polarity it observes.
 - `CovariableIndex`: a covariable is a de Bruijn index, in a space of its own.
-- `Store` with `HeapValue`, `HeapValueId` and `CellId`: the heap region of immutable values and nominal memo cells, with `ForceEntry` and `MemoState` the cell protocol, `Memo` a recursive thunk's choice between a cell and unfolding, `StoreFault` its refusals.
-- `Environment`, `ValueScope`, `CovalueScope`: persistent environment chains in the heap region, read innermost first.
-- `Frame`, `ContinuationMark` and `Store::shrink_to`: the walkable frame region, marks refused once stale, and the decline of every forcing a shrink abandons.
-- `Store::peak_height`: the highest the frame region has stood since the store was made, the observation that a tail call holds no continuation of its own.
+- `Store` with `HeapValue`, `HeapValueId`, `ClosedCommand`, `HeapFamily` and `StoreFault`: the values a run moved out, immutable and shared by address, a literal stack held innermost frame first with each bind frame closed over its environment, and the full-family refusal.
+- `Environment` with `Store::bind_value` and `Store::bound_values`: persistent producer chains, read innermost first.
 - `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code, every image well formed and closed, every covariable the innermost one, a code refused by name, a record focused as the head of its labels and a tuple or record projection as a selection of its field, a split focused as a case on its one tuple pattern, and a refused translation leaving the arena and the table at their marks. A datatype's constructors, its nominal match and the fixpoint focus.
 - `unfocus_command` and `unfocus_value`: the left inverse of focusing, refusing IL outside its image by name with `UnfocusRefusal` and leaving the core arena at its mark.
 - Native `ListNil` and `ListCons` constructors and a `ListFold` consumer. Folding preserves cell order and outer scope; each branch has its own return covariable, and the cell branch binds head then folded result. The command arena owns imported type annotations, includes them in rollback, and unfocusing closes their ambient variables rather than copying foreign ids.
 - `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, and the free variables and covariables of a command.
 - `render_command`, `render_producer` and `render_consumer`: the IL's notation, binders shown with their indices.
-- `Machine::run` with `Definitions`, `Definition`, `StepCount`, `Outcome`, `Stuck` and `MachineFault`: the L machine over the store, halting with a value, stopping stuck by name, or faulting out of steps; transparent constants unfold once per machine, opaque ones are carried as themselves; a nominal match runs the branch of its value's ordinal over the fields, a selection delivers the field of the tuple or record it meets, and a recursive thunk runs with itself bound, a recursive function through its memo cell and a loop unfolded with no frame of its own.
-- `Machine::read_back` and `Machine::read_back_value` with `ReadbackRefusal`: a terminal as `return v` or the function it is, thunks, recursive thunks and functions closed over their captured environments, a record with its labels, a datatype's constructor at the unknown value type, a suspended capture refused with the core arena at its mark.
+- `Definitions`, `Definition`, `Outcome` and `Stuck`: the constants a run unfolds by position, transparent or opaque, and how a run ended — halted with a value, or stuck at the command or value it names.
+- `read_back_terminal` and `read_back_value` with `ReadbackRefusal`: a terminal as `return v` or the function it is, thunks, recursive thunks and functions closed over their captured environments, a literal stack frame by frame, a record with its labels, a datatype's constructor at the unknown value type, a suspended capture refused with the core arena at its mark.
 - `stats`, `Stats`, `origin_histogram` and `dump`: an arena's population, its commands counted by the core former each came from, and a root's rendering with both.
 - `reify_command` with `ConstructorResolver` and `ReifyRefusal`: a ground cell pattern reified node for node, a return-side frame as its `μ̃` definiens, a metavariable, an unresolved symbol, an arity mismatch and an operation frame refused with the arena at its mark.
 
@@ -44,7 +42,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - **Addresses from the same arena or store.** An address is a position in one arena or store; one from another resolves to an unrelated node or to nothing. Lookups fail closed on a dangling address, and nothing checks provenance beyond that.
 - **Truncation by the minting party.** `CommandArena::truncate_to` drops nodes, not references to them; the caller that takes a mark is the one that may truncate to it, after dropping every address minted since.
 - **Well-typed input to focusing.** Focusing translates the formers it is given and refuses only a dangling id, a code or a full arena; it does not type-check. Totality and closedness of the image are stated for closed terms the core's checker accepts that hold no code, and an ill-typed term focuses to whatever its formers say.
-- **Checked input to the machine.** `Machine::run` expects a command `check_command` accepts closed. On anything else it stops `Stuck` at the first node it cannot step, which is a diagnosis, not a verdict on the program. A machine's store grows across its runs; a caller that needs a bounded heap runs a fresh machine.
+- **Checked input to a run.** `gandr-runtime-emitter` lowers a command `check_command` accepts closed; an unbound variable or an ill-formed node declines at the lowering, naming its form, rather than running.
 
 ## Examples
 
@@ -118,11 +116,13 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Focusing, records, codes and native universe paths | [`focus`](src/focus.rs) |
 | Unfocusing | [`unfocus`](src/unfocus.rs) |
 | The typed-IL check | [`check`](src/check.rs) |
-| Marks, fixpoints, effects, delimited control and temporary access | [`machine`](src/machine.rs) |
 | Readback | [`readback`](src/readback.rs) |
-| The two-region store and the cell protocol | [`store`](src/store.rs) |
+| The store a run's answer moves into | [`store`](src/store.rs) |
+| How a run ended | [`outcome`](src/outcome.rs) |
 | The bridge from cells and its polarity | [`bridge`](src/bridge.rs) |
 | The differential against normalisation by evaluation, references | [`src/lib.rs`](src/lib.rs) |
+
+Running a command — marks, fixpoints, effects, delimited control and temporary access — is `gandr-runtime-emitter`'s, whose `src/lower.rs` states the linear form and `src/host.rs` the control.
 
 The deferred behavioural floor of the L machine is tracked in [#200](https://github.com/gandr-lang/gandr/issues/200).
 

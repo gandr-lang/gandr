@@ -680,8 +680,8 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — rides and a function flow run to the kernel rows' values,
 ///   which the first run's placeholders would not compute.
-/// - witness: `machine::tests::rides_run_by_the_motives_action`
-/// - witness: `machine::tests::a_function_flow_runs_in_variance_order`
+/// - witness: `tests::run::rides_run_by_the_motives_action`
+/// - witness: `tests::run::a_function_flow_runs_in_variance_order`
 fn with_combinators<Answer, Seed, Finish>(
     core: &CoreArena,
     arena: &mut CommandArena,
@@ -2313,7 +2313,7 @@ impl<'run> Focusing<'run>
     /// - hypothesis: L3 — a composite and a ride focused and run reach the
     ///   values the kernel's rows compute, which a placeholder left in place
     ///   would not.
-    /// - witness: `machine::tests::rides_run_by_the_motives_action`
+    /// - witness: `tests::run::rides_run_by_the_motives_action`
     #[spec(ensures: |ret| ret.is_err() || self.prepared.contains_key(&combinator) || self.wanted.contains(&combinator))]
     fn combinator(
         &mut self,

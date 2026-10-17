@@ -1,4 +1,4 @@
-//! Readback: a heap value of the L machine read back as a core term.
+//! Readback: a run's heap value read back as a core term.
 //!
 //! A positive value reads back as the core value it is: a literal as
 //! itself, a constructed value over its fields' readbacks — a datatype's
@@ -9,23 +9,23 @@
 //! `return v` for a positive value, and the function itself for a copattern
 //! object, closed the same way. A suspended `μ` has no core reading.
 //!
-//! Values are read in increasing address order. Every value the machine
-//! allocates names only values allocated before it, so each value's
+//! Values are read in increasing address order. Every value a run moves into
+//! the store names only values allocated before it, so each value's
 //! dependencies are read before it, and the readback is a loop with no
 //! recursion; a value naming a later one is refused as dangling.
 //!
 //! # Readback refuses rather than approximates
 //!
-//! `Machine::read_back` reads a positive terminal as `return v` and a copattern
-//! object as the function it is; a literal reads as itself, a constructed value
-//! over its fields — a datatype's constructor at the unknown value type — an
-//! opaque constant as the constant, and a thunk, a recursive thunk or a
-//! function as its suspended command decoded by the unfocusing walk with its
-//! captured environment's readbacks substituted. Values are read in increasing
-//! address order, since every value the machine allocates names only earlier
-//! ones, so the readback is a loop. A value with no core reading — a suspended
-//! `μ`, a copattern object standing as a value — is refused by name with the
-//! core arena at its mark.
+//! [`read_back_terminal`] reads a positive terminal as `return v` and a
+//! copattern object as the function it is; a literal reads as itself, a
+//! constructed value over its fields — a datatype's constructor at the unknown
+//! value type — an opaque constant as the constant, and a thunk, a recursive
+//! thunk or a function as its suspended command decoded by the unfocusing walk
+//! with its captured environment's readbacks substituted. Values are read in
+//! increasing address order, since every value a run moves into the store names
+//! only earlier ones, so the readback is a loop. A value with no core reading —
+//! a suspended `μ`, a copattern object standing as a value — is refused by name
+//! with the core arena at its mark.
 //!
 //! A placeholder of the right kind is not a readback: it could let a
 //! differential pass on a value it never observed. Unsupported readings
@@ -41,6 +41,7 @@ use anodized::spec;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
+use gandr_core_term::control::StackFrame;
 
 use crate::il::CommandArena;
 use crate::il::ConstructorTag;
@@ -58,9 +59,6 @@ use crate::unfocus::decode;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReadbackRefusal
 {
-    /// A runtime continuation contains frames outside flat literal-stack
-    /// syntax.
-    NonLiteralStack(HeapValueId),
     /// The value has none: a suspended `μ`, a copattern object standing as a
     /// value, a handler's capability, which no term introduces, or a
     /// constructed value whose fields contradict its head.
@@ -85,9 +83,6 @@ impl fmt::Display for ReadbackRefusal
     ) -> fmt::Result
     {
         match *self {
-            Self::NonLiteralStack(id) => {
-                write!(f, "stack {id} contains runtime continuation frames")
-            },
             Self::Unreadable(id) => write!(f, "value {id} has no core reading"),
             Self::Dangling(id) => write!(f, "value {id} is not readable from the store"),
             Self::Decode(refusal) => {
@@ -142,6 +137,7 @@ impl From<UnfocusRefusal> for ReadbackRefusal
         | Err(_) => core.watermark() == entry,
     },
 )]
+#[inline]
 pub fn read_back_value(
     arena: &CommandArena,
     store: &Store,
@@ -224,7 +220,7 @@ pub fn read_back_terminal(
 ///   normal forms; L3 — a capture used as a terminal has the exact unreadable
 ///   refusal. These distinguish dispatch to the wrong root kind.
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
-/// - witness: `machine::tests::a_suspended_capture_has_no_reading`
+/// - witness: `tests::run::a_suspended_capture_has_no_reading`
 /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
 #[spec(ensures: |ret| match ret {
     | Ok(read) => store.value(value).is_some_and(|held| match held {
@@ -389,28 +385,10 @@ impl<'run> Reading<'run>
                 HeapValue::Stack { ref frames } => {
                     for frame in frames {
                         match *frame {
-                            crate::store::Frame::Destructor {
-                                tag: crate::il::DestructorTag::Apply,
-                                arguments: crate::store::ObservationArguments::Unary(value),
-                            } => pending.push(value),
-                            crate::store::Frame::Destructor {
-                                tag: crate::il::DestructorTag::Project(_),
-                                arguments: crate::store::ObservationArguments::Nullary,
-                            } => {},
-                            crate::store::Frame::Bind { environment, .. } => {
-                                pending.extend(store.bound_values(environment));
-                            },
-                            crate::store::Frame::Reset
-                            | crate::store::Frame::Handler { .. }
-                            | crate::store::Frame::DeclinedUpdate
-                            | crate::store::Frame::Destructor { .. }
-                            | crate::store::Frame::Case { .. }
-                            | crate::store::Frame::ListFold { .. }
-                            | crate::store::Frame::Select { .. }
-                            | crate::store::Frame::Update { .. }
-                            | crate::store::Frame::Access { .. }
-                            | crate::store::Frame::Answer { .. } => {
-                                return Err(ReadbackRefusal::NonLiteralStack(id));
+                            StackFrame::Apply(value) => pending.push(value),
+                            StackFrame::Project(_) => {},
+                            StackFrame::Bind(closed) => {
+                                pending.extend(store.bound_values(closed.environment));
                             },
                         }
                     }
@@ -460,8 +438,8 @@ impl<'run> Reading<'run>
     /// - witness: `readback::tests::forward_dependencies_are_refused_before_reading_the_parent`
     /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
     /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
-    /// - witness: `machine::tests::a_recursive_thunk_computes_through_its_own_binding`
-    /// - witness: `machine::tests::a_selection_reads_the_width_of_the_value_it_meets`
+    /// - witness: `tests::run::a_recursive_thunk_computes_through_its_own_binding`
+    /// - witness: `tests::run::a_selection_reads_the_width_of_the_value_it_meets`
     /// - witness: `readback::tests::a_record_reads_back_only_from_one_field_per_ascending_label`
     /// - witness: `readback::tests::a_recorded_run_reads_back_only_from_one_field_per_payload`
     #[spec(
@@ -512,39 +490,25 @@ impl<'run> Reading<'run>
         match *held {
             HeapValue::Stack { ref frames } => {
                 let mut source = Vec::with_capacity(frames.len());
-                for frame in frames.iter().rev() {
+                for frame in frames {
                     source.push(match *frame {
-                        crate::store::Frame::Destructor {
-                            tag: crate::il::DestructorTag::Apply,
-                            arguments: crate::store::ObservationArguments::Unary(value),
-                        } => gandr_core_term::control::StackFrame::Apply(self.lookup(value)?),
-                        crate::store::Frame::Destructor {
-                            tag: crate::il::DestructorTag::Project(side),
-                            arguments: crate::store::ObservationArguments::Nullary,
-                        } => gandr_core_term::control::StackFrame::Project(side),
-                        crate::store::Frame::Bind { body, environment } => {
+                        StackFrame::Apply(value) => StackFrame::Apply(self.lookup(value)?),
+                        StackFrame::Project(side) => StackFrame::Project(side),
+                        StackFrame::Bind(closed) => {
                             let closing = store
-                                .bound_values(environment)
+                                .bound_values(closed.environment)
                                 .map(|bound| self.lookup(bound))
                                 .collect::<Result<Vec<_>, _>>()?;
-                            let Decoded::Computation(body) =
-                                decode(self.arena, Root::BindBody(body), self.core, &closing)?
+                            let Decoded::Computation(body) = decode(
+                                self.arena,
+                                Root::BindBody(closed.body),
+                                self.core,
+                                &closing,
+                            )?
                             else {
                                 return Err(UnfocusRefusal::DecodeInvariant.into());
                             };
-                            gandr_core_term::control::StackFrame::Bind(body)
-                        },
-                        crate::store::Frame::Reset
-                        | crate::store::Frame::Handler { .. }
-                        | crate::store::Frame::DeclinedUpdate
-                        | crate::store::Frame::Destructor { .. }
-                        | crate::store::Frame::Case { .. }
-                        | crate::store::Frame::ListFold { .. }
-                        | crate::store::Frame::Select { .. }
-                        | crate::store::Frame::Update { .. }
-                        | crate::store::Frame::Access { .. }
-                        | crate::store::Frame::Answer { .. } => {
-                            return Err(ReadbackRefusal::NonLiteralStack(id));
+                            StackFrame::Bind(body)
                         },
                     });
                 }

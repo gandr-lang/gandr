@@ -276,9 +276,10 @@
 //!
 //! A `become` loop therefore runs in constant continuation however long its
 //! input, an early exit inside it included, where a recursion whose call is
-//! bound by `run` holds a frame per step: the dispatcher's
-//! `evaluate::tests::a_become_loop_runs_in_constant_continuation` compares the
-//! machine's peak frame height over a short and a long input.
+//! bound by `run` holds a frame per step: the exit is a cut that passes the
+//! function's own continuation on, so no frame is pushed. The dispatcher's
+//! `evaluate::tests::a_loop_runs_in_constant_continuation` runs loops past a
+//! frame region's worth of jumps without filling it.
 //!
 //! `pure v` is the computation that does nothing and produces `v`; it stands
 //! wherever a computation yields without leaving the function, such as an arm

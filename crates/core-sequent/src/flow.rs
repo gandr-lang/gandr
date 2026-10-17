@@ -125,9 +125,9 @@ fn applied(
 /// - hypothesis: L3 — a composite, a function flow and rides at the decode of
 ///   the binder, a product, a sum, a list and a run type run to the values the
 ///   kernel's rows compute.
-/// - witness: `machine::tests::rides_run_by_the_motives_action`
-/// - witness: `machine::tests::a_function_flow_runs_in_variance_order`
-/// - witness: `machine::tests::a_flow_product_runs_componentwise`
+/// - witness: `tests::run::rides_run_by_the_motives_action`
+/// - witness: `tests::run::a_function_flow_runs_in_variance_order`
+/// - witness: `tests::run::a_flow_product_runs_componentwise`
 #[spec(ensures: |ret| match ret {
     | Ok(id) => matches!(scratch.value(id), Some(&Value::Thunk(_))),
     | Err(_) => true,
@@ -262,7 +262,7 @@ fn compose(scratch: &mut CoreArena) -> ValueId
 /// # Adequacy
 /// - hypothesis: L3 — rides at the decode of the binder, through a pair, a sum
 ///   and a list, and at a run type run to the kernel rows' values.
-/// - witness: `machine::tests::rides_run_by_the_motives_action`
+/// - witness: `tests::run::rides_run_by_the_motives_action`
 #[spec(ensures: |ret| match ret {
     | Ok(id) => matches!(scratch.value(id), Some(&Value::Thunk(_))),
     | Err(_) => true,
@@ -323,7 +323,7 @@ fn act(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each row runs to its kernel value.
-/// - witness: `machine::tests::rides_run_by_the_motives_action`
+/// - witness: `tests::run::rides_run_by_the_motives_action`
 #[spec(ensures: |ret| match ret {
     | Ok(id) => scratch.computation(id).is_some(),
     | Err(_) => true,

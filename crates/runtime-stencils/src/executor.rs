@@ -130,6 +130,25 @@ stencils! {
     ApplyFrame => stencil_apply_frame,
     /// `stencil_argument_frame`: the fold cell frames' shared stub.
     ArgumentFrame => stencil_argument_frame,
+    /// `stencil_project_left`: also the left projection frames' shared stub.
+    ProjectLeft => stencil_project_left,
+    /// `stencil_project_right`: also the right projection frames' shared
+    /// stub.
+    ProjectRight => stencil_project_right,
+    /// `stencil_arm`.
+    Arm => stencil_arm,
+    /// `stencil_unobserved`.
+    Unobserved => stencil_unobserved,
+    /// `stencil_captured`.
+    Captured => stencil_captured,
+    /// `stencil_run_capture`.
+    RunCapture => stencil_run_capture,
+    /// `stencil_global`.
+    Global => stencil_global,
+    /// `stencil_unfold`.
+    Unfold => stencil_unfold,
+    /// `stencil_set_global`.
+    SetGlobal => stencil_set_global,
     /// `stencil_pushf`.
     Pushf => stencil_pushf,
     /// `stencil_push_apply`.
@@ -217,7 +236,7 @@ impl Instruction
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every agreement case enters emitted code here and
-///   compares its answer with the executor's and the L machine's.
+///   compares its answer with the executor's and the answer it states.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 #[inline]
 pub unsafe fn enter(
@@ -252,7 +271,7 @@ pub unsafe fn enter(
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every agreement case runs the executor here and compares
-///   its answer with the emitted code's and the L machine's.
+///   its answer with the emitted code's and the answer it states.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 #[inline]
 pub unsafe fn execute(

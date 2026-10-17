@@ -331,9 +331,9 @@ impl Generator
     /// # Adequacy
     /// - hypothesis: L3 — two distinct interned types and an absent id
     ///   distinguish wrong-slot lookup and failure to reject a missing type;
-    ///   the generated machine suite exercises the valid lookup domain.
+    ///   the generated tier suite exercises the valid lookup domain.
     /// - witness: `tests::generate::interning_and_shadowed_scopes_preserve_distinct_types`
-    /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
+    /// - witness: `tests::differential::the_tiers_are_total_and_deterministic`
     #[spec(requires: self.types.get(id.0).is_some(), ensures: |ret| self.types.get(id.0) == Some(&ret))]
     fn ty(
         &self,
@@ -354,13 +354,13 @@ impl Generator
     /// # Adequacy
     /// - hypothesis: L3 — generated computations focus as closed, well-formed
     ///   commands and halt; product and sum fixtures independently distinguish
-    ///   value fields from computation fields. L2 compares the generated
-    ///   machine readings with normalization by evaluation. Evidence is bounded
-    ///   to the strategy domain, not a general typechecker proof.
+    ///   value fields from computation fields. L2 compares the generated tier
+    ///   readings with normalization by evaluation. Evidence is bounded to the
+    ///   strategy domain, not a general typechecker proof.
     /// - witness: `tests::generate::typed_builders_preserve_product_sum_and_function_roles`
     /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
-    /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
-    /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    /// - witness: `tests::differential::the_tiers_are_total_and_deterministic`
+    /// - witness: `tests::differential::the_tiers_agree_with_normalisation_by_evaluation`
     #[spec(ensures: |ret| match self.types.get(ret.0) {
         | Some(&Ty::Unit | &Ty::Integer) => true,
         | Some(&Ty::Product(first, second) | &Ty::Sum(first, second)) => self.types.get(first.0).is_some() && self.types.get(second.0).is_some(),
@@ -405,8 +405,8 @@ impl Generator
     ///   proof of the generator distribution.
     /// - witness: `tests::generate::typed_builders_preserve_product_sum_and_function_roles`
     /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
-    /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
-    /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    /// - witness: `tests::differential::the_tiers_are_total_and_deterministic`
+    /// - witness: `tests::differential::the_tiers_agree_with_normalisation_by_evaluation`
     #[spec(ensures: |ret| match self.types.get(ret.0) {
         | Some(&Ty::Returner(value)) => self.types.get(value.0).is_some(),
         | Some(&Ty::Arrow(domain, codomain)) => self.types.get(domain.0).is_some()
@@ -539,13 +539,13 @@ impl Generator
     /// # Adequacy
     /// - hypothesis: L3 — zero-fuel products, sums and function domains
     ///   preserve their distinct field roles; generated roots focus as closed
-    ///   commands and halt. L2 compares their machine readings with
-    ///   normalization by evaluation. The observations cover bounded generated
-    ///   terms, not every seed and depth or general type soundness.
+    ///   commands and halt. L2 compares their tier readings with normalization
+    ///   by evaluation. The observations cover bounded generated terms, not
+    ///   every seed and depth or general type soundness.
     /// - witness: `tests::generate::typed_builders_preserve_product_sum_and_function_roles`
     /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
-    /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
-    /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    /// - witness: `tests::differential::the_tiers_are_total_and_deterministic`
+    /// - witness: `tests::differential::the_tiers_agree_with_normalisation_by_evaluation`
     #[spec(
         requires: self.types.get(ty.0).is_some_and(|known| matches!(*known, Ty::Unit | Ty::Integer | Ty::Product(_, _) | Ty::Sum(_, _) | Ty::Thunk(_)))
             && match scope { Scope::Empty => true, Scope::At(BindingId(at)) => self.bindings.get(at).is_some() },
@@ -635,8 +635,8 @@ impl Generator
     ///   and the bounded strategy are observed, not unbounded expansion.
     /// - witness: `tests::generate::typed_builders_preserve_product_sum_and_function_roles`
     /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
-    /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
-    /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    /// - witness: `tests::differential::the_tiers_are_total_and_deterministic`
+    /// - witness: `tests::differential::the_tiers_agree_with_normalisation_by_evaluation`
     #[spec(
         requires: self.types.get(ty.0).is_some_and(|known| matches!(*known, Ty::Returner(_) | Ty::Arrow(_, _)))
             && match scope { Scope::Empty => true, Scope::At(BindingId(at)) => self.bindings.get(at).is_some() },
@@ -727,8 +727,8 @@ impl Generator
     ///   also rejects lost work or result cardinality within this domain.
     /// - witness: `tests::generate::typed_builders_preserve_product_sum_and_function_roles`
     /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
-    /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
-    /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    /// - witness: `tests::differential::the_tiers_are_total_and_deterministic`
+    /// - witness: `tests::differential::the_tiers_agree_with_normalisation_by_evaluation`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -824,14 +824,14 @@ impl Generator
 ///
 /// # Adequacy
 /// - hypothesis: L3 — generated computations focus as closed, well-formed
-///   commands and halt; L2 compares their machine readings with normalization
-///   by evaluation. Zero-fuel typed fixtures challenge the introduction
-///   boundary. Evidence uses the bounded strategy domain, not every seed and
-///   fuel or a general type-soundness proof.
+///   commands and halt; L2 compares their tier readings with normalization by
+///   evaluation. Zero-fuel typed fixtures challenge the introduction boundary.
+///   Evidence uses the bounded strategy domain, not every seed and fuel or a
+///   general type-soundness proof.
 /// - witness: `tests::generate::typed_builders_preserve_product_sum_and_function_roles`
 /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
-/// - witness: `tests::differential::l_machine_is_total_and_deterministic`
-/// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::the_tiers_are_total_and_deterministic`
+/// - witness: `tests::differential::the_tiers_agree_with_normalisation_by_evaluation`
 #[spec(ensures: |ref ret| match ret.root {
     | GeneratedRoot::Computation(root) => ret.core.computation(root).is_some(),
     | GeneratedRoot::Value(_) => false,

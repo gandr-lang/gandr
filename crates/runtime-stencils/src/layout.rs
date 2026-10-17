@@ -97,6 +97,17 @@ pub const ARITY_SHIFT: u32 = 16;
 pub const ARITY_MASK: usize = 0xFFFF;
 /// Where the family starts in a header.
 pub const FAMILY_SHIFT: u32 = 32;
+/// The bits an observation checks: kind and tag.
+pub const OBSERVED_MASK: usize = 0xFFFF;
+/// The kind and tag of an application arm's closure, which only an
+/// application observes.
+pub const APPLY_CLOSURE: usize = KIND_CLOSURE | 2_usize.wrapping_shl(TAG_SHIFT);
+/// The kind and tag of a copattern object entered through its dispatch, which
+/// reads the observed word every observation writes before entering it.
+pub const OBJECT_CLOSURE: usize = KIND_CLOSURE | 4_usize.wrapping_shl(TAG_SHIFT);
+/// The kind and tag of a suspended capture, which no observation enters: only
+/// a cut delivering it runs its body against the consumer it meets.
+pub const CAPTURE_CLOSURE: usize = KIND_CLOSURE | 5_usize.wrapping_shl(TAG_SHIFT);
 /// The bits a case arm compares against operand A: kind, tag and arity.
 pub const MATCHED_MASK: usize = 0xFFFF_FFFF;
 /// The bits a nominal match compares: kind and tag.
@@ -117,14 +128,22 @@ pub enum Flavour
     Apply,
     /// A one-arm copattern object answering `force`.
     Force,
+    /// A copattern object of any other arms: its code dispatches on the
+    /// observed word to the arm's entry.
+    Object,
+    /// A suspended capture `μα. c`: its code runs `c` with `α` the frame on
+    /// top.
+    Capture,
 }
 
 /// The flavours, by their tag.
-const FLAVOURS: [Flavour; 4] = [
+const FLAVOURS: [Flavour; 6] = [
     Flavour::Thunk,
     Flavour::Fixpoint,
     Flavour::Apply,
     Flavour::Force,
+    Flavour::Object,
+    Flavour::Capture,
 ];
 
 /// A header's tag field: a summand position, a constructor ordinal or a
@@ -195,6 +214,8 @@ impl From<Flavour> for Tag
             Flavour::Fixpoint => 1,
             Flavour::Apply => 2,
             Flavour::Force => 3,
+            Flavour::Object => 4,
+            Flavour::Capture => 5,
         })
     }
 }
@@ -523,9 +544,76 @@ pub enum Status
     FramesExhausted,
     /// The run spent its fuel: as many code-word jumps as its budget allows.
     FuelExhausted,
-    /// An observation met a value it does not observe — an opaque constant —
-    /// or a host call refused its operands; the L machine names which.
+    /// An observation met a value it does not observe — the record's observed
+    /// word names the destructor — or a host call refused its operands, the
+    /// observed word zero and the refusal the host's to name.
     Stuck,
+}
+
+/// The destructor an observation applied when it took the stuck exit, as the
+/// runtime record's observed word names it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Observed
+{
+    /// An application.
+    Apply,
+    /// A force.
+    Force,
+    /// A lazy pair's left projection.
+    ProjectLeft,
+    /// A lazy pair's right projection.
+    ProjectRight,
+}
+
+/// The observed word of [`Observed::Apply`].
+pub const OBSERVED_APPLY: Word = Word(1);
+/// The observed word of [`Observed::Force`].
+pub const OBSERVED_FORCE: Word = Word(2);
+/// The observed word of [`Observed::ProjectLeft`].
+pub const OBSERVED_PROJECT_LEFT: Word = Word(3);
+/// The observed word of [`Observed::ProjectRight`].
+pub const OBSERVED_PROJECT_RIGHT: Word = Word(4);
+
+impl TryFrom<Word> for Observed
+{
+    type Error = UnknownStatus;
+
+    /// The destructor an observed word names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn try_from(word: Word) -> Result<Self, UnknownStatus>
+    {
+        match word {
+            OBSERVED_APPLY => Ok(Self::Apply),
+            OBSERVED_FORCE => Ok(Self::Force),
+            OBSERVED_PROJECT_LEFT => Ok(Self::ProjectLeft),
+            OBSERVED_PROJECT_RIGHT => Ok(Self::ProjectRight),
+            other => Err(UnknownStatus(other)),
+        }
+    }
+}
+
+impl From<Observed> for Word
+{
+    /// The observed word naming `observed`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(observed: Observed) -> Self
+    {
+        match observed {
+            Observed::Apply => OBSERVED_APPLY,
+            Observed::Force => OBSERVED_FORCE,
+            Observed::ProjectLeft => OBSERVED_PROJECT_LEFT,
+            Observed::ProjectRight => OBSERVED_PROJECT_RIGHT,
+        }
+    }
 }
 
 /// The status word of [`Status::Running`].

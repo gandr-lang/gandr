@@ -12,14 +12,13 @@ publish.workspace = true
 
 # The composition names every stage it runs: the grammar and the parser, the
 # lowering, the checker and the kernel bridge it carries, the settle
-# comparison the corpus library owns, and the run stage's focusing, machine
-# and readback, with the emitter running a run native or on its executor
-# before the machine takes what it declines. The diagnostics model spells the
-# types a refusal names while the arena is at hand, and builds what each step
-# prints; the type table spells the type a face asks for through the
-# presentation printer. The `stage` verb builds the normaliser's staging
-# observer programs and checks them through the checker's program entry on a
-# `rayon` pool of the driver's width.
+# comparison the corpus library owns, and the run stage's focusing and
+# readback, with the emitter running a run native or on its executor. The
+# diagnostics model spells the types a refusal names while the arena is at
+# hand, and builds what each step prints; the type table spells the type a
+# face asks for through the presentation printer. The `stage` verb builds the
+# normaliser's staging observer programs and checks them through the
+# checker's program entry on a `rayon` pool of the driver's width.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]

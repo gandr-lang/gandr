@@ -15,9 +15,9 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 
 ## Synopsis
 
-**What.** `lower` turns a focused command into a `Function`: a straight list of stencil instructions over one slot per binder, frames on the frame region, constructor fields pushed before their constructor and constants in the function's data. `evaluate` runs it on the tier the process's policy picks and moves the answer into the L machine's `Store`, so the machine's readback reads it; `evaluate_on` runs one tier. A command outside the lowered fragment is `Declined` by the form the lowering refused, and the caller runs it on the L machine.
+**What.** `lower` turns a focused command into a `Function`: a straight list of stencil instructions over one slot per binder, frames on the frame region, constructor fields pushed before their constructor and constants in the function's data. `evaluate` runs it on the tier the process's policy picks and moves the outcome into the caller's `Store`, where readback reads it; `evaluate_on` runs one tier. A command outside the lowered fragment is `Declined` by the form the lowering refused.
 
-**Why.** The L machine steps a command at a time through a dispatch loop; emitted code runs the same transitions with the registers pinned and no loop, and the emission cost is a copy and a few patches per stencil. It replaces the MLIR compile host: `src/lib.rs` states that decision and the measurement that would reverse it.
+**Why.** Emitted code runs the L machine's transitions with the registers pinned and no dispatch loop, and the emission cost is a copy and a few patches per stencil; the executor built from the same stencils runs them anywhere and is the reference native code answers to. It replaces the MLIR compile host and the hand-written machine: `src/lib.rs` states both decisions and what would reverse them.
 
 **How.** The build script compiles `gandr-runtime-stencils` under `--cfg gandr_stencil_object` with the toolchain's own `rustc`, reads the object with `object`, refuses any section, symbol or relocation the patcher cannot take, and writes the stencil table. Emission copies each instruction's stencil into a region of executable memory and patches its holes: operands, the next copy, a label, the shared exits. macOS arm64 patches `BRANCH26` and relaxes `GOT_LOAD` pairs; Linux x86-64 patches `PLT32`/`PC32` displacements and `32`/`32S` absolute fields under the static relocation model. Emitted functions live in a process-wide cache keyed by the function's content. The executor tier builds an instruction array from the same `Function` and runs the same stencil functions through their dispatch table.
 
@@ -28,21 +28,22 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 
 ## Provided features
 
-- `lower`, `Lowered`, `Function`, `Form`: the lowering, its closure sites, the function it builds and the form it refuses.
-- `evaluate`, `evaluate_on`, `Tier`, `Declined`: a run under the policy or on one tier, its answer moved into the machine's store, or the reason the machine runs it instead.
+- `lower`, `Lowered`, `Function`, `Form`: the lowering, its closure sites and reified frames, the function it builds and the form it refuses.
+- `evaluate`, `evaluate_on`, `Tier`, `Declined`, `TransferRefusal`: a run under the policy or on one tier, its outcome moved into the caller's store, or why it gave none.
+- `evaluate_with_host`, `evaluate_on_with_host`, `HostHandler`, `HostRequest`, `HostReply`, `HostOutcome`, `HostValues`: a run whose unhandled operations are offered to the caller, who answers, declines or aborts each.
 - `Policy` and `POLICY_VARIABLE`: `GANDR_NATIVE=always` (the default) emits on first run, `never` takes the executor, `cached` serves only what the cache holds.
 - `PATCHER`: whether this host emits native code.
-- `Fuel`, re-exported: the code-word jumps a run may take.
+- `Fuel` and `Status`, re-exported: the code-word jumps a run may take, and why it returned.
 
 ## Expected features
 
 - **A host with a patcher for native code.** macOS on arm64 and Linux on x86-64; every other host runs the executor, with the same answers.
 - **Executable memory.** macOS grants `MAP_JIT` to an unsigned or ad-hoc signed binary; a hardened-runtime binary needs the `com.apple.security.cs.allow-jit` entitlement. Linux needs `memfd_create` and a mapping below 2 GiB.
-- **Defined constants.** Every constant a command reaches is defined in the `Definitions` given; an opaque one is carried as itself, and a run that observes it stops naming the constant, which the dispatcher blames as the L machine would.
+- **Constants by position.** A constant the `Definitions` given do not hold sticks where a run reads it; an opaque one is carried as itself, and a run that observes it stops naming the constant, which the dispatcher blames.
 
 ## Examples
 
-The emitter's witnesses run the named programs on both tiers and under the policy, each answer compared with the L machine's value by value; the stencil crate's suite runs the generated programs and the corpus through the same paths.
+The emitter's witnesses run the named programs on both tiers and under the policy, each answer compared value by value with the executor's and with the answer the program states, and the host seam's operations answered, declined and aborted; the stencil crate's suite runs the generated programs and the corpus through the same paths.
 
 ```sh
 cargo test -p gandr-runtime-emitter
@@ -51,7 +52,7 @@ GANDR_NATIVE=never cargo run -p gandr-lang -- test crates/surface-corpus/fixture
 
 ## Where the detail lives
 
-`src/lib.rs` states the tiers, the policy, the patchers, the runtime support and the retired compile host, each with its alternatives and reversal; `src/lower.rs` the linear form; `src/native.rs` and its `table`, `memory`, `aarch64` and `x86_64` modules emission, regions and patching; `src/transfer.rs` how an answer reaches the store; `build.rs` the stencil table and every refusal it makes.
+`src/lib.rs` states the tiers, the policy, the patchers, the runtime support, the retired interpreter and compile host and the call-by-name thunks, each with its alternatives and reversal; `src/lower.rs` the linear form; `src/run.rs` the regions and their bounds; `src/seam.rs` the host seam; `src/native.rs` and its `table`, `memory`, `aarch64` and `x86_64` modules emission, regions and patching; `src/transfer.rs` how an outcome reaches the store; `build.rs` the stencil table and every refusal it makes.
 
 ## Mutation backlog
 

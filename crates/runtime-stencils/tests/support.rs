@@ -1,6 +1,7 @@
-//! What the agreement suites share: the named programs, a deterministic
-//! generator of closed positive-core programs, and the comparison of a
-//! tier's answer with the L machine's, value by value across two stores.
+//! What the agreement suites share: the named programs and the answers they
+//! state, a deterministic generator of closed positive-core programs, and the
+//! comparison of native code's run with the portable executor's, value by
+//! value across two stores.
 //!
 //! The emitter's suite includes this file too, so both packages hold their
 //! tiers to one oracle.
@@ -11,18 +12,18 @@ use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
-use gandr_core_sequent::Machine;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Provenance;
-use gandr_core_sequent::StepCount;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
 use gandr_core_sequent::focus_computation;
 use gandr_core_sequent::read_back_terminal;
+use gandr_core_sequent::render_command;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::control::StackFrame;
 use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::PRELUDE;
 use gandr_kernel_term::IntegerLiteral;
@@ -32,11 +33,11 @@ use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Fuel;
+use gandr_runtime_emitter::PATCHER;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate_on;
 
-/// The steps the machine and the jumps a tier may take: the dispatcher's
-/// run budget.
+/// The jumps a tier may take: the dispatcher's run budget.
 pub const BUDGET: usize = 1 << 24;
 
 /// An integer a test program is built from.
@@ -64,7 +65,7 @@ pub fn integer(
     core.value_literal(Literal::Integer(IntegerLiteral::new(sign, magnitude)))
 }
 
-/// A closed program and what it shows.
+/// A closed program.
 pub struct Program
 {
     /// What the program is, for a failure's message.
@@ -73,6 +74,16 @@ pub struct Program
     pub core: CoreArena,
     /// The closed computation.
     pub root: ComputationId,
+}
+
+/// A closed program and the answer it states: the focused rendering of its
+/// answer's reading.
+pub struct Named
+{
+    /// The program.
+    pub program: Program,
+    /// What its answer reads back as.
+    pub shows: &'static str,
 }
 
 /// The variable at de Bruijn index zero.
@@ -89,22 +100,26 @@ fn innermost(core: &mut CoreArena) -> ValueId
 /// suspends a computation — a function, a thunk and a pair holding one — so
 /// a closure's site, captures and environment are compared too; three
 /// primitive calls, answering an integer, an integer past 64 bits and a
-/// boolean; and a reified stack resumed, its application frame and its bind
-/// frame, which reads a variable bound outside the stack.
+/// boolean; a reified stack resumed, its application frame and its bind
+/// frame, which reads a variable bound outside the stack; and a lazy pair
+/// projected where it is built and after it was suspended, so an object
+/// answers the projection it is entered with.
 ///
 /// # Specification
 /// trivial.
-pub fn named() -> Vec<Program>
+pub fn named() -> Vec<Named>
 {
     let mut programs = Vec::new();
+    let mut push = |name, shows, core, root| {
+        programs.push(Named {
+            program: Program { name, core, root },
+            shows,
+        });
+    };
     let mut core = CoreArena::new();
     let five = integer(&mut core, Integer(5));
     let root = core.computation_return(five);
-    programs.push(Program {
-        name: "return 5",
-        core,
-        root,
-    });
+    push("return 5", "⟨5 |+ ★⟩", core, root);
 
     let mut core = CoreArena::new();
     let seven = integer(&mut core, Integer(7));
@@ -112,11 +127,7 @@ pub fn named() -> Vec<Program>
     let variable = innermost(&mut core);
     let body = core.computation_return(variable);
     let root = core.computation_bind(bound, body);
-    programs.push(Program {
-        name: "x <- return 7; return x",
-        core,
-        root,
-    });
+    push("x <- return 7; return x", "⟨7 |+ ★⟩", core, root);
 
     let mut core = CoreArena::new();
     let three = integer(&mut core, Integer(-3));
@@ -124,22 +135,14 @@ pub fn named() -> Vec<Program>
     let variable = innermost(&mut core);
     let arm = core.computation_return(variable);
     let root = core.computation_case(scrutinee, &[arm, arm]);
-    programs.push(Program {
-        name: "case inl -3",
-        core,
-        root,
-    });
+    push("case inl -3", "⟨-3 |+ ★⟩", core, root);
 
     let mut core = CoreArena::new();
     let one = integer(&mut core, Integer(1));
     let two = integer(&mut core, Integer(2));
     let pair = core.value_tuple(&[one, two]);
     let root = core.computation_return(pair);
-    programs.push(Program {
-        name: "return (1, 2)",
-        core,
-        root,
-    });
+    push("return (1, 2)", "⟨pair(1, 2) |+ ★⟩", core, root);
 
     let mut core = CoreArena::new();
     let eight = integer(&mut core, Integer(8));
@@ -149,11 +152,7 @@ pub fn named() -> Vec<Program>
     let arm = core.computation_return(variable);
     let body = core.computation_case(variable, &[arm, arm]);
     let root = core.computation_bind(bound, body);
-    programs.push(Program {
-        name: "x <- return inr 8; case x",
-        core,
-        root,
-    });
+    push("x <- return inr 8; case x", "⟨8 |+ ★⟩", core, root);
 
     let mut core = CoreArena::new();
     let nine = integer(&mut core, Integer(9));
@@ -164,11 +163,12 @@ pub fn named() -> Vec<Program>
     let returned = core.computation_return(pair);
     let function = core.computation_lambda(returned);
     let root = core.computation_bind(bound, function);
-    programs.push(Program {
-        name: "y <- return 9; fn x. return (x, y)",
+    push(
+        "y <- return 9; fn x. return (x, y)",
+        "⟨cocase {apply(x; α) ⇒ ⟨pair(x0, 9) |+ α0⟩} |− ★⟩",
         core,
         root,
-    });
+    );
 
     let mut core = CoreArena::new();
     let four = integer(&mut core, Integer(4));
@@ -178,11 +178,12 @@ pub fn named() -> Vec<Program>
     let thunk = core.value_thunk(suspended);
     let body = core.computation_return(thunk);
     let root = core.computation_bind(bound, body);
-    programs.push(Program {
-        name: "y <- return 4; return thunk { return y }",
+    push(
+        "y <- return 4; return thunk { return y }",
+        "⟨{force(α) ⇒ ⟨4 |+ α0⟩} |+ ★⟩",
         core,
         root,
-    });
+    );
 
     let mut core = CoreArena::new();
     let six = integer(&mut core, Integer(6));
@@ -194,11 +195,12 @@ pub fn named() -> Vec<Program>
     let unit = core.value_unit();
     let pair = core.value_tuple(&[thunk, unit]);
     let root = core.computation_return(pair);
-    programs.push(Program {
-        name: "return (thunk { (fn x. return x) 6 }, ())",
+    push(
+        "return (thunk { (fn x. return x) 6 }, ())",
+        "⟨pair({force(α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨x0 |+ α0⟩} |− apply(6; α0)⟩}, ()) |+ ★⟩",
         core,
         root,
-    });
+    );
 
     let mut core = CoreArena::new();
     let ten = integer(&mut core, Integer(10));
@@ -206,15 +208,17 @@ pub fn named() -> Vec<Program>
     let identity_return = core.computation_return(identity_body);
     let identity = core.computation_lambda(identity_return);
     let root = core.computation_application(identity, ten);
-    programs.push(Program {
-        name: "(fn x. return x) 10",
-        core,
-        root,
-    });
-    for (name, primitive, left, right) in [
-        ("add 2 3", "add", 2_i64, 3_i64),
-        ("mul 2^62 4", "mul", 0x4000_0000_0000_0000_i64, 4_i64),
-        ("lt 1 2", "lt", 1_i64, 2_i64),
+    push("(fn x. return x) 10", "⟨10 |+ ★⟩", core, root);
+    for (name, shows, primitive, left, right) in [
+        ("add 2 3", "⟨5 |+ ★⟩", "add", 2_i64, 3_i64),
+        (
+            "mul 2^62 4",
+            "⟨18446744073709551616 |+ ★⟩",
+            "mul",
+            0x4000_0000_0000_0000_i64,
+            4_i64,
+        ),
+        ("lt 1 2", "⟨inl(()) |+ ★⟩", "lt", 1_i64, 2_i64),
     ] {
         let mut core = CoreArena::new();
         let left = integer(&mut core, Integer(left));
@@ -224,7 +228,7 @@ pub fn named() -> Vec<Program>
             .find(|row| row.name().as_ref() == primitive)
             .expect("a prelude row");
         let root = core.computation_primitive(row, Arguments::Binary([left, right]));
-        programs.push(Program { name, core, root });
+        push(name, shows, core, root);
     }
 
     let mut core = CoreArena::new();
@@ -247,11 +251,45 @@ pub fn named() -> Vec<Program>
     let identity = core.computation_lambda(identity_return);
     let resumed = core.computation_resume(stack, identity);
     let root = core.computation_bind(bound, resumed);
-    programs.push(Program {
-        name: "y <- return 2; resume [apply 3, bind x. return (x, y)] { fn z. return z }",
+    push(
+        "y <- return 2; resume [apply 3, bind x. return (x, y)] { fn z. return z }",
+        "⟨pair(3, 2) |+ ★⟩",
         core,
         root,
-    });
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let first = core.computation_return(one);
+    let second = core.computation_return(two);
+    let lazy = core.computation_with(first, second);
+    let root = core.computation_project(Side::Right, lazy);
+    push(
+        "project right (with { return 1 } { return 2 })",
+        "⟨2 |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let first = core.computation_return(one);
+    let second = core.computation_return(two);
+    let lazy = core.computation_with(first, second);
+    let suspended = core.value_thunk(lazy);
+    let bound = core.computation_return(suspended);
+    let variable = innermost(&mut core);
+    let forced = core.computation_force(variable);
+    let projected = core.computation_project(Side::Left, forced);
+    let root = core.computation_bind(bound, projected);
+    push(
+        "t <- return thunk { with { return 1 } { return 2 } }; project left (force t)",
+        "⟨1 |+ ★⟩",
+        core,
+        root,
+    );
     programs
 }
 
@@ -277,33 +315,38 @@ pub fn focus(program: &Program) -> (CommandArena, CommandId)
 #[derive(Clone, Copy, Debug)]
 pub struct Label<'name>(pub &'name str);
 
-/// How a tier answered against the machine.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// The tier a run is compared on: native code where this host has a
+/// patcher; elsewhere the executor, against a second run of itself.
+pub const COMPARED: Tier = if PATCHER {
+    Tier::Native
+}
+else {
+    Tier::Executor
+};
+
+/// What the tiers answered, once they agreed.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Verdict
 {
-    /// The tier halted with the machine's answer.
-    Agreed,
-    /// Both stuck at a constructor no arm answers.
-    BothUnmatched,
-    /// Both stuck where an observation met no closure or a primitive refused
-    /// its operands.
-    BothStuck,
-    /// Both stuck observing the same opaque constant, which the run names.
-    BothOpaque,
-    /// The tier declined a form the machine runs.
+    /// Both halted with equal answers, reading back as this rendering, or
+    /// both with no reading.
+    Halted(Option<String>),
+    /// Both stopped stuck the same way; the executor's stop.
+    Stuck(Stuck),
+    /// Both declined for the same reason.
     Declined(Declined),
 }
 
-/// Run `root` on the machine and on `tier`, and compare.
+/// Run `root` on the executor and on [`COMPARED`], and compare.
 ///
 /// # Specification
-/// - ensures: as [`agree_with`], the tier's run being `evaluate_on`.
+/// - ensures: as [`agree_with`], the compared run being [`COMPARED`]'s.
 /// - executable: none — the comparison is the suite's oracle; a predicate over
 ///   it would be the walk itself.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — every named program agrees on each tier, and a difference
-///   of literal, head, field or presence is named.
+/// - hypothesis: L2 — every named program agrees across the tiers and states
+///   its answer, and a difference of literal, head, field or presence is named.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::support::a_differing_answer_is_named`
 pub fn agree(
@@ -311,33 +354,38 @@ pub fn agree(
     commands: &CommandArena,
     definitions: &Definitions,
     root: CommandId,
-    tier: Tier,
 ) -> Verdict
 {
     agree_with(
-        Label(&format!("{} on {tier:?}", name.0)),
+        Label(&format!("{} on {COMPARED:?}", name.0)),
         commands,
         definitions,
         root,
-        |store| evaluate_on(tier, commands, definitions, root, Fuel::from(BUDGET), store),
+        |store| {
+            evaluate_on(
+                COMPARED,
+                commands,
+                definitions,
+                root,
+                Fuel::from(BUDGET),
+                store,
+            )
+        },
     )
 }
 
-/// Run `root` on the machine and through `run`, and compare.
+/// Run `root` on the executor and through `run`, and compare.
 ///
 /// # Specification
-/// - ensures: [`Verdict::Agreed`] when both halt and the answers are equal
-///   value by value, readback succeeding for the run's exactly when it succeeds
-///   for the machine's; [`Verdict::BothUnmatched`] when both stick at an
-///   unmatched constructor; [`Verdict::BothOpaque`] when the run names the
-///   opaque constant the machine stuck observing; [`Verdict::BothStuck`] when
-///   both stick elsewhere; [`Verdict::Declined`] for a form the lowering
-///   refuses; a panic naming the difference otherwise.
+/// - ensures: the two runs halt with answers equal value by value and reading
+///   back alike, stop stuck the same way over equal values, or decline for the
+///   same reason, and the executor's outcome is the verdict; a panic naming the
+///   difference otherwise.
 /// - executable: none — the comparison is the suite's oracle; a predicate over
 ///   it would be the walk itself.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — every named program agrees on each tier and under the
+/// - hypothesis: L2 — every named program agrees across the tiers and under the
 ///   policy, and a difference of literal, head, field or presence is named.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::support::a_differing_answer_is_named`
@@ -346,53 +394,143 @@ pub fn agree_with(
     commands: &CommandArena,
     definitions: &Definitions,
     root: CommandId,
-    run: impl FnOnce(&mut Store) -> Result<HeapValueId, Declined>,
+    run: impl FnOnce(&mut Store) -> Result<Outcome, Declined>,
 ) -> Verdict
 {
     let Label(name) = name;
-    let mut machine = Machine::new(commands, definitions);
-    let outcome = machine
-        .run(root, StepCount::from(BUDGET))
-        .unwrap_or_else(|fault| panic!("{name}: the machine faulted: {fault:?}"));
+    let mut expected_store = Store::new();
+    let expected = evaluate_on(
+        Tier::Executor,
+        commands,
+        definitions,
+        root,
+        Fuel::from(BUDGET),
+        &mut expected_store,
+    );
     let mut store = Store::new();
-    match (outcome, run(&mut store)) {
-        (Outcome::Halted(expected), Ok(answer)) => {
-            if let Err(difference) = same_value(machine.store(), expected, &store, answer) {
-                panic!("{name}: the answers differ at {difference}");
-            }
-            let mut left = CoreArena::new();
-            let mut right = CoreArena::new();
+    let ran = run(&mut store);
+    if let Err(difference) = same_outcome(&expected_store, &expected, &store, &ran) {
+        panic!("{name}: the runs differ at {difference}");
+    }
+    match (expected, ran) {
+        (Ok(Outcome::Halted(expected)), Ok(Outcome::Halted(answer))) => {
+            let reading = reading(commands, &expected_store, expected);
             assert_eq!(
-                read_back_terminal(commands, machine.store(), expected, &mut left).is_ok(),
-                read_back_terminal(commands, &store, answer, &mut right).is_ok(),
-                "{name}: one answer reads back and the other does not"
+                reading,
+                self::reading(commands, &store, answer),
+                "{name}: the answers read back differently"
             );
-            Verdict::Agreed
+            Verdict::Halted(reading)
         },
-        (Outcome::Stuck(Stuck::Unmatched { .. }), Err(Declined::Unmatched)) => {
-            Verdict::BothUnmatched
+        (Ok(Outcome::Stuck(stuck)), _) => Verdict::Stuck(stuck),
+        (Err(declined), _) => Verdict::Declined(declined),
+        (Ok(Outcome::Halted(_)), other) => panic!("{name}: halted against {other:?}"),
+    }
+}
+
+/// The focused rendering of the reading of `value`, or nothing when it has
+/// none.
+///
+/// # Specification
+/// trivial.
+fn reading(
+    commands: &CommandArena,
+    store: &Store,
+    value: HeapValueId,
+) -> Option<String>
+{
+    let mut core = CoreArena::new();
+    let back = read_back_terminal(commands, store, value, &mut core).ok()?;
+    let mut focused = CommandArena::new();
+    let root = focus_computation(&core, back, &mut focused, &mut Provenance::new())
+        .expect("a reading focuses");
+    Some(render_command(&focused, root))
+}
+
+/// Whether two runs' outcomes agree: equal answers, the same stop over equal
+/// values, or the same decline.
+///
+/// # Specification
+/// - ensures: `Ok` exactly when both halt with answers [`same_value`] accepts,
+///   both stop stuck as [`same_stuck`] accepts, or both decline equally.
+/// - executable: none — the walk is the comparison; a predicate would walk
+///   again.
+///
+/// # Errors
+/// A description of the difference.
+///
+/// # Adequacy
+/// - hypothesis: L2 — equal outcomes agree, and a difference of kind is named.
+/// - witness: `tests::support::a_differing_answer_is_named`
+fn same_outcome(
+    left_store: &Store,
+    left: &Result<Outcome, Declined>,
+    right_store: &Store,
+    right: &Result<Outcome, Declined>,
+) -> Result<(), String>
+{
+    match (left, right) {
+        (&Ok(Outcome::Halted(first)), &Ok(Outcome::Halted(second))) => {
+            same_value(left_store, first, right_store, second)
         },
-        (Outcome::Stuck(stuck), Err(Declined::Opaque(constant))) => {
-            let observed = if let Stuck::Unobservable { value, .. }
-            | Stuck::ResumedNonStack { value, .. }
-            | Stuck::Unmatched { value, .. }
-            | Stuck::NonScalar(value) = stuck
-            {
-                machine.store().value(value)
-            }
-            else {
-                None
-            };
-            assert_eq!(
-                Some(&HeapValue::Opaque(constant)),
-                observed,
-                "{name}: the run names a constant the machine did not observe"
-            );
-            Verdict::BothOpaque
+        (&Ok(Outcome::Stuck(ref first)), &Ok(Outcome::Stuck(ref second))) => {
+            same_stuck(left_store, first, right_store, second)
         },
-        (Outcome::Stuck(_), Err(Declined::Stuck)) => Verdict::BothStuck,
-        (_, Err(declined @ Declined::Lowering(_))) => Verdict::Declined(declined),
-        (outcome, ran) => panic!("{name}: the machine gave {outcome:?}, the run {ran:?}"),
+        (&Err(first), &Err(second)) if first == second => Ok(()),
+        (first, second) => Err(format!("{first:?} against {second:?}")),
+    }
+}
+
+/// Whether two stops are the same: the same reason at the same site, over
+/// equal values.
+///
+/// # Specification
+/// - ensures: `Ok` exactly when both name the same reason and site and every
+///   value they hold agrees under [`same_value`].
+/// - executable: none — the walk is the comparison; a predicate would walk
+///   again.
+///
+/// # Errors
+/// A description of the difference.
+///
+/// # Adequacy
+/// - hypothesis: L2 — equal stops agree, and a difference of reason, site or
+///   held value is named.
+/// - witness: `tests::support::a_differing_answer_is_named`
+fn same_stuck(
+    left_store: &Store,
+    left: &Stuck,
+    right_store: &Store,
+    right: &Stuck,
+) -> Result<(), String>
+{
+    match (left, right) {
+        (
+            &Stuck::Unobservable { value, head },
+            &Stuck::Unobservable {
+                value: other,
+                head: also,
+            },
+        ) if head == also => same_value(left_store, value, right_store, other),
+        (
+            &Stuck::Unmatched { value, arms },
+            &Stuck::Unmatched {
+                value: other,
+                arms: also,
+            },
+        ) if arms == also => same_value(left_store, value, right_store, other),
+        (&Stuck::NonScalar(value), &Stuck::NonScalar(other)) => {
+            same_value(left_store, value, right_store, other)
+        },
+        (
+            &Stuck::ResumedNonStack { at, value },
+            &Stuck::ResumedNonStack {
+                at: also,
+                value: other,
+            },
+        ) if at == also => same_value(left_store, value, right_store, other),
+        (first, second) if first == second => Ok(()),
+        (first, second) => Err(format!("{first:?} against {second:?}")),
     }
 }
 
@@ -400,12 +538,13 @@ pub fn agree_with(
 type Pair = (HeapValueId, HeapValueId);
 
 /// Whether the value `left` of `left_store` and `right` of `right_store`
-/// are equal: the same literal, the same head over equal fields, or the same
-/// suspended code over equal environments.
+/// are equal: the same literal or constant, the same head over equal fields,
+/// the same frames over equal values, or the same suspended code over equal
+/// environments.
 ///
 /// # Specification
-/// - ensures: `Ok` exactly when every pair the walk reaches agrees; memo cells,
-///   which record evaluation order, are not compared.
+/// - ensures: `Ok` exactly when every pair the walk reaches agrees; two
+///   capabilities agree, their identity being their address in each store.
 /// - executable: none — the walk is the comparison; a predicate would walk
 ///   again.
 ///
@@ -430,12 +569,12 @@ pub fn same_value(
         else {
             return Err(format!("{left:?} or {right:?} dangles"));
         };
-        let environments = match (first, second) {
+        let mut environments = Vec::new();
+        match (first, second) {
             (&HeapValue::Literal(ref first), &HeapValue::Literal(ref second))
-                if first == second =>
-            {
-                None
-            },
+                if first == second => {},
+            (&HeapValue::Opaque(first), &HeapValue::Opaque(second)) if first == second => {},
+            (&HeapValue::Capability, &HeapValue::Capability) => {},
             (
                 &HeapValue::Constructed {
                     ref tag,
@@ -447,32 +586,45 @@ pub fn same_value(
                 },
             ) if tag == other && fields.len() == others.len() => {
                 pending.extend(fields.iter().copied().zip(others.iter().copied()));
-                None
+            },
+            (&HeapValue::Stack { ref frames }, &HeapValue::Stack { frames: ref others })
+                if frames.len() == others.len() =>
+            {
+                for (frame, other) in frames.iter().zip(others.iter()) {
+                    match (*frame, *other) {
+                        (StackFrame::Apply(argument), StackFrame::Apply(another)) => {
+                            pending.push((argument, another));
+                        },
+                        (StackFrame::Project(side), StackFrame::Project(another))
+                            if side == another => {},
+                        (StackFrame::Bind(closed), StackFrame::Bind(another))
+                            if closed.body == another.body =>
+                        {
+                            environments.push((closed.environment, another.environment));
+                        },
+                        (frame, other) => return Err(format!("{frame:?} against {other:?}")),
+                    }
+                }
             },
             (
-                &HeapValue::Thunk {
-                    body, environment, ..
-                },
+                &HeapValue::Thunk { body, environment },
                 &HeapValue::Thunk {
                     body: other,
                     environment: others,
-                    ..
                 },
-            ) if body == other => Some((environment, others)),
+            ) if body == other => environments.push((environment, others)),
             (
                 &HeapValue::Fixpoint {
                     body,
                     environment,
                     evidence,
-                    ..
                 },
                 &HeapValue::Fixpoint {
                     body: other,
                     environment: others,
                     evidence: claimed,
-                    ..
                 },
-            ) if body == other && evidence == claimed => Some((environment, others)),
+            ) if body == other && evidence == claimed => environments.push((environment, others)),
             (
                 &HeapValue::Closure {
                     producer,
@@ -482,10 +634,10 @@ pub fn same_value(
                     producer: other,
                     environment: others,
                 },
-            ) if producer == other => Some((environment, others)),
+            ) if producer == other => environments.push((environment, others)),
             _ => return Err(format!("{first:?} against {second:?}")),
-        };
-        if let Some((first, second)) = environments {
+        }
+        for (first, second) in environments {
             let firsts: Vec<_> = left_store.bound_values(first).collect();
             let seconds: Vec<_> = right_store.bound_values(second).collect();
             if firsts.len() != seconds.len() {
@@ -502,7 +654,8 @@ pub fn same_value(
 }
 
 /// The comparison names a difference wherever one lies: a literal, a head,
-/// a field beneath a constructor, or a value one store lacks.
+/// a field beneath a constructor, a value one store lacks, the value or the
+/// head a stop holds, and a halt against a decline.
 #[test]
 fn a_differing_answer_is_named()
 {
@@ -552,4 +705,47 @@ fn a_differing_answer_is_named()
         same_value(&left, one, &Store::new(), one).is_err(),
         "a value one store lacks"
     );
+    let unobservable = |value, head| Ok(Outcome::Stuck(Stuck::Unobservable { value, head }));
+    let force = gandr_core_sequent::DestructorTag::Force;
+    let apply = gandr_core_sequent::DestructorTag::Apply;
+    assert_eq!(
+        Ok(()),
+        same_outcome(
+            &left,
+            &unobservable(boxed_one, force),
+            &right,
+            &unobservable(other_boxed_one, force)
+        ),
+        "equal stops agree"
+    );
+    let exhausted = Err(Declined::Exhausted(
+        gandr_runtime_emitter::Status::FuelExhausted,
+    ));
+    assert_eq!(
+        Ok(()),
+        same_outcome(&left, &exhausted, &right, &exhausted),
+        "equal declines agree"
+    );
+    for (first, second, what) in [
+        (
+            unobservable(boxed_one, force),
+            unobservable(boxed_two, force),
+            "a stop's value",
+        ),
+        (
+            unobservable(boxed_one, force),
+            unobservable(other_boxed_one, apply),
+            "a stop's head",
+        ),
+        (
+            Ok(Outcome::Halted(one)),
+            exhausted,
+            "a halt against a decline",
+        ),
+    ] {
+        assert!(
+            same_outcome(&left, &first, &right, &second).is_err(),
+            "{what} differs"
+        );
+    }
 }

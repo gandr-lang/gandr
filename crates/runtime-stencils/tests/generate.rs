@@ -125,8 +125,8 @@ impl Generator
     ///   suite focuses and runs every program, which an open one fails.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — every generated program focuses and runs on the
-    ///   machine and both tiers; an open or ill-typed one stops the machine.
+    /// - hypothesis: L1 — every generated program focuses and runs on both
+    ///   tiers; an open one declines at its lowering, which fails the suite.
     /// - witness: `tests::agreement::the_generated_programs_agree_on_both_executors`
     pub fn program(
         shape: Shape,

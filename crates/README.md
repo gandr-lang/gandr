@@ -28,7 +28,7 @@ crates/
 ├── core-checker/                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger, the refusal vocabulary, residual readmission and guarded staging families
 ├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
 ├── core-nbe/                      the glued value domain, evaluation, readback, conversion and native path transport; the sharing overlay, its erasure and its measure; strict meta-level staging
-├── core-sequent/                  the command IL a core program is focused into and the two-region store its machine runs in
+├── core-sequent/                  the command IL a core program is focused into, the outcome a run answers in and the store its answer is read back from
 ├── core-session/                  contractive binary session types, coinductive relation search, endpoint replay and certified recorded-run transport
 ├── core-term/                     core syntax with native universe paths and the one unified context
 ├── kernel-check-memo/             the check-memo seam a checker consults
@@ -36,7 +36,7 @@ crates/
 ├── kernel-core/                   checking, conversion, admission and memoization; Path_U, identity and bridge recursion, higher fields, funext, Flow_U, guarded List observations and session-certificate replay; stage formation and replay
 ├── kernel-strata/                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
-├── runtime-emitter/               the L machine's commands lowered and copy-and-patched into native code under a content cache, or built for the portable executor, and each answer moved into the machine's store
+├── runtime-emitter/               the L machine's commands lowered and copy-and-patched into native code under a content cache, or built for the portable executor, and each outcome moved into the caller's store
 ├── runtime-stencils/              the L machine's transitions written once: the stencils the emitter copies and patches, and the portable executor that dispatches them
 ├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
 ├── storage-chunker/               content-defined chunk boundaries and their committed parameters

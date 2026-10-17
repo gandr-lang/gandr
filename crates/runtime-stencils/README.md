@@ -17,7 +17,7 @@ The L machine's transitions written once: the stencils copy-and-patch emits, and
 
 **What.** Every transition of the L machine is one stencil: an `extern "rust-preserve-none"` function over five pinned registers — the run's record, the heap's bump pointer, the frame region's top, the current window of slots and the value in hand — that ends in a `become` to a continuation. Constants, variables, binds, constructors and their matches, closures and their entries, frames, the host call and the exits make up the set, and `StencilId` names each one. Primitives and control — operations, captures, replays — are host calls: the host reads and writes the frame region and names where the run continues.
 
-**Why.** Two implementations of the same transitions, an interpreter and a code generator, are held together only by tests. Written once, the emitted code and the executor cannot drift, and the executor is the differential the emitted code answers to on every host.
+**Why.** Two implementations of the same transitions, an interpreter and a code generator, are held together only by tests. Written once, the emitted code and the executor cannot drift, and the executor is the reference the emitted code answers to on every host.
 
 **How.** The crate compiles two ways. `gandr-runtime-emitter`'s build script compiles `src/lib.rs` alone under `--cfg gandr_stencil_object`: each operand is the address of an undefined static and each continuation a call to an undefined function, so every use is a relocation the emitter patches when it copies the stencil. The ordinary library build defines those holes instead: an operand reads the current `Instruction`, a continuation advances to the next one and `become`s its stencil, and `execute` enters that chain. Heap objects are a header word — kind, tag, arity and family — followed by fields; frames are two words, a code word and the window it resumes in, above a sentinel whose code halts; every code-word jump spends one unit of fuel.
 
@@ -43,7 +43,7 @@ The L machine's transitions written once: the stencils copy-and-patch emits, and
 
 ## Examples
 
-The witnesses run every program three ways — emitted native code where the host has a patcher, the executor, and the L machine — and compare the answers value by value: the named programs, 512 generated programs over budgets 1 to 1024, and every `runs` item of the corpus, with the answers counted by engine and the lowering's refusals by form.
+The witnesses run every program on emitted native code where the host has a patcher and on the executor and compare the answers value by value: the named programs, each against the answer it states; 512 generated programs over budgets 1 to 1024; and every `runs` item of the corpus, against the run it states, with the answers counted and the declines by reason.
 
 ```sh
 cargo test -p gandr-runtime-stencils
@@ -51,7 +51,7 @@ cargo test -p gandr-runtime-stencils
 
 ## Where the detail lives
 
-`src/lib.rs` states the registers, the holes, the authoring rules a stencil must keep and the feature gates; `src/layout.rs` the header and the exit statuses; `src/transitions.rs` each stencil's transition; `src/holes.rs` the two definitions of every hole; `src/executor.rs` the dispatch table and the entries.
+`src/lib.rs` states the registers, the holes, the call stencil, the authoring rules a stencil must keep, the agreement differential and the feature gates; `src/layout.rs` the header and the exit statuses; `src/transitions.rs` each stencil's transition; `src/holes.rs` the two definitions of every hole; `src/executor.rs` the dispatch table and the entries.
 
 ## Mutation backlog
 

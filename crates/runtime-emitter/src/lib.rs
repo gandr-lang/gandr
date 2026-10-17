@@ -5,10 +5,10 @@
 //! ([`Tier`]): native code copied stencil by stencil into executable memory
 //! and patched in place, served from a cache keyed by the lowered function's
 //! content; or the portable executor, which dispatches the same stencil
-//! functions through a table. A run's answer is moved into the L machine's
-//! store, so the machine's readback reads it ([`evaluate`]). A command the
-//! lowering does not cover runs on the L machine, the oracle both tiers are
-//! held to.
+//! functions through a table. A run's outcome is moved into the caller's
+//! store, so readback reads it ([`evaluate`]). The executor is the reference
+//! native code is held to; a command the lowering refuses declines by the
+//! form it refused.
 //!
 //! # One definition, two tiers
 //!
@@ -65,11 +65,12 @@
 //!
 //! # The runtime support
 //!
-//! Each thread keeps its own heap, frame region and window, grown by
-//! doubling and run again when a run exhausts one, up to a bound past which
-//! the run is declined. A run enters through `enter` or `execute` with a
-//! fresh [`gandr_runtime_stencils::Runtime`] record and a halting sentinel
-//! frame under the base mark, and returns when an exit stencil writes its
+//! Each thread keeps its own heap, frame region and window, each allocated
+//! at its bound and committed as a run first touches it; a run that would
+//! pass a bound takes that region's exit and is declined. A run enters
+//! through `enter` or `execute` with a fresh
+//! [`gandr_runtime_stencils::Runtime`] record and a halting sentinel frame
+//! under the base mark, and returns when an exit stencil writes its
 //! status. Emitted code carries no unwind tables and calls only the host
 //! entry, `host::enter`, which never unwinds: it evaluates primitives and
 //! answers control — operations, captures, replays, reified stacks and the
@@ -77,17 +78,33 @@
 //! wrote. That seam is where a Rust host — the dispatcher today — calls
 //! emitted code, and where emitted code calls back.
 //!
-//! # The compile host retired
+//! # The interpreter and the compile host retired
 //!
-//! This crate replaces an MLIR-hosted compile path that rendered a small
-//! positive fragment through a dialect. **Choice.** Emit from stencils the
-//! toolchain compiles, so the native tier needs no compiler at run time and
-//! covers what the L machine runs. **Alternative.** A dialect lowered
-//! through MLIR per item; declined for its compile latency and its native
-//! toolchain dependency, neither of which buys an optimisation the stencils
-//! lack. **Reversal.** An MLIR-hosted dialect returns only if a
-//! dialect-level optimisation the certificates cannot express is measured
-//! as needed.
+//! This crate replaces two paths. An MLIR-hosted compile path rendered a
+//! small positive fragment through a dialect; a hand-written L machine in
+//! `gandr-core-sequent` stepped every other command through a dispatch loop
+//! and was the oracle both tiers answered to. **Choice.** Emit from stencils
+//! the toolchain compiles, so the native tier needs no compiler at run time,
+//! and let the executor built from the same stencils be the reference and
+//! the fallback both. **Alternatives.** A dialect lowered through MLIR per
+//! item; declined for its compile latency and its native toolchain
+//! dependency, neither of which buys an optimisation the stencils lack. A
+//! hand-written interpreter kept beside the stencils as an independent
+//! oracle; declined because two implementations of one transition table are
+//! held together only by tests, which the corpus's stated runs and
+//! normalisation by evaluation already supply. **Reversal.** An MLIR-hosted
+//! dialect returns only if a dialect-level optimisation the certificates
+//! cannot express is measured as needed; a second interpreter only if the
+//! stated answers stop catching a stencil error the corpus reaches.
+//!
+//! **Thunks are called by name.** A thunk forced twice runs its body twice,
+//! where the retired machine wrote each forcing's value back to a memo cell.
+//! A pure body answers the same either way, and a linear one cannot be
+//! forced twice; only the cost differs. **Alternative.** An update frame
+//! per forcing writing the value back into the thunk, declined until a
+//! measured run shows a shared thunk's re-forcing to dominate. **Reversal.**
+//! That measurement; the update frame is the machine's design, ready to
+//! port.
 //!
 //! # Dependencies
 //!
@@ -108,9 +125,11 @@ mod lower;
 #[cfg(gandr_patcher)]
 mod native;
 mod run;
+mod seam;
 mod transfer;
 
 pub use gandr_runtime_stencils::Fuel;
+pub use gandr_runtime_stencils::Status;
 
 pub use crate::function::Function;
 pub use crate::lower::Form;
@@ -124,6 +143,13 @@ pub use crate::run::Policy;
 pub use crate::run::Tier;
 pub use crate::run::evaluate;
 pub use crate::run::evaluate_on;
+pub use crate::run::evaluate_on_with_host;
+pub use crate::run::evaluate_with_host;
+pub use crate::seam::HostHandler;
+pub use crate::seam::HostOutcome;
+pub use crate::seam::HostReply;
+pub use crate::seam::HostRequest;
+pub use crate::seam::HostValues;
 pub use crate::transfer::TransferRefusal;
 
 /// Whether this host has a patcher: native code runs here.

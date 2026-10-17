@@ -46,9 +46,8 @@ use crate::layout;
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over the named,
-///   generated and corpus programs; a wrong constant changes an answer read
-///   back.
+/// - hypothesis: L2 — the agreement differential over the named, generated and
+///   corpus programs; a wrong constant changes an answer read back.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::agreement::the_generated_programs_agree_on_both_executors`
 #[unsafe(no_mangle)]
@@ -73,11 +72,11 @@ pub extern "rust-preserve-none" fn stencil_const(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine; reading the wrong
-///   slot changes the answer of every generated program that binds two
-///   variables of the same type.
+/// - hypothesis: L2 — the agreement differential; reading the wrong slot
+///   changes the stated answer of a named program binding two variables, and of
+///   the corpus programs that do.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
-/// - witness: `tests::agreement::the_generated_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_var(
     runtime: *mut Runtime,
@@ -102,8 +101,8 @@ pub extern "rust-preserve-none" fn stencil_var(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine; a bind to the wrong
-///   slot changes a later variable read.
+/// - hypothesis: L2 — the agreement differential; a bind to the wrong slot
+///   changes a later variable read.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::agreement::the_generated_programs_agree_on_both_executors`
 #[unsafe(no_mangle)]
@@ -132,9 +131,9 @@ pub extern "rust-preserve-none" fn stencil_bind(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over programs
-///   building tuples; a lost or misplaced field changes the tuple read back,
-///   and a one-word frame region exits.
+/// - hypothesis: L2 — the agreement differential over programs building tuples;
+///   a lost or misplaced field changes the tuple read back, and a one-word
+///   frame region exits.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::exits::a_full_frame_region_exits_by_name`
 #[unsafe(no_mangle)]
@@ -173,9 +172,9 @@ macro_rules! constructor {
         ///   state no predicate can observe.
         ///
         /// # Adequacy
-        /// - hypothesis: L2 — a differential against the L machine over programs
-        ///   building one-, two- and three-field constructors; a reordered field or a
-        ///   wrong header changes the value read back.
+        /// - hypothesis: L2 — the agreement differential over programs building one-,
+        ///   two- and three-field constructors; a reordered field or a wrong header
+        ///   changes the value read back.
         /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
         /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
         #[unsafe(no_mangle)]
@@ -225,8 +224,8 @@ constructor!(stencil_ctor3, 3_usize);
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   building constructors of four fields or more.
+/// - hypothesis: L2 — the agreement differential over corpus programs building
+///   constructors of four fields or more.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_ctor_n(
@@ -276,8 +275,8 @@ pub extern "rust-preserve-none" fn stencil_ctor_n(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over sum cases and
-///   tuple splits; a wrong comparison takes the wrong arm or sticks.
+/// - hypothesis: L2 — the agreement differential over sum cases and tuple
+///   splits; a wrong comparison takes the wrong arm or sticks.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::agreement::the_generated_programs_agree_on_both_executors`
 #[unsafe(no_mangle)]
@@ -309,9 +308,10 @@ pub extern "rust-preserve-none" fn stencil_match(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over tuple splits of
-///   two fields; binding the wrong field swaps them in the answer.
+/// - hypothesis: L2 — the agreement differential over tuple splits of two
+///   fields; binding the wrong field swaps them in the answer.
 /// - witness: `tests::agreement::the_generated_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_field(
     runtime: *mut Runtime,
@@ -345,8 +345,8 @@ pub extern "rust-preserve-none" fn stencil_field(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over binds whose
-///   bound computation returns; a wrong frame resumes the wrong code.
+/// - hypothesis: L2 — the agreement differential over binds whose bound
+///   computation returns; a wrong frame resumes the wrong code.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::agreement::the_generated_programs_agree_on_both_executors`
 #[unsafe(no_mangle)]
@@ -391,8 +391,8 @@ pub extern "rust-preserve-none" fn stencil_pushk(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   whose `μ` aliases an outer covariable.
+/// - hypothesis: L2 — the agreement differential over corpus programs whose `μ`
+///   aliases an outer covariable.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_alias(
@@ -424,8 +424,8 @@ pub extern "rust-preserve-none" fn stencil_alias(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine; every named and
-///   generated program's outermost `μ` aliases `★`.
+/// - hypothesis: L2 — the agreement differential; every named and generated
+///   program's outermost `μ` aliases `★`.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_alias_top(
@@ -458,9 +458,9 @@ pub extern "rust-preserve-none" fn stencil_alias_top(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine; every program that
-///   binds a computation's result resumes through this stencil, and a run with
-///   no fuel exits by name.
+/// - hypothesis: L2 — the agreement differential; every program that binds a
+///   computation's result resumes through this stencil, and a run with no fuel
+///   exits by name.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::exits::a_run_without_fuel_exits_by_name`
 #[unsafe(no_mangle)]
@@ -495,9 +495,9 @@ pub extern "rust-preserve-none" fn stencil_ret(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   with thunks, fixpoints and functions; a lost capture changes a variable
-///   the body reads, structurally compared at readback.
+/// - hypothesis: L2 — the agreement differential over corpus programs with
+///   thunks, fixpoints and functions; a lost capture changes a variable the
+///   body reads, structurally compared at readback.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_closure(
@@ -557,7 +557,7 @@ macro_rules! entry {
         ///   calls whose state no predicate can observe.
         ///
         /// # Adequacy
-        /// - hypothesis: L2 — a differential against the L machine over
+        /// - hypothesis: L2 — the agreement differential over
         ///   corpus programs applying functions, forcing thunks and recursing
         ///   through fixpoints; a capture or binder in the wrong slot changes
         ///   the answer read back.
@@ -645,8 +645,9 @@ entry!(
 );
 
 /// Observe the closure `function` by application to `argument`: enter its
-/// code with the closure in the environment register; take the stuck exit,
-/// `function` in hand, when `function` is no closure.
+/// code with the closure in the environment register, an object's dispatch
+/// with the application observed; take the stuck exit, `function` in hand and
+/// the application observed, when `function` is neither.
 macro_rules! apply {
     (
         $runtime:ident, $heap:expr, $frames:expr, $environment:expr, $function:expr, $argument:expr
@@ -656,8 +657,15 @@ macro_rules! apply {
         let object = function.to_pointer::<Word>();
         // SAFETY: a positive value in hand addresses an object.
         let header = usize::from(unsafe { *object });
-        if header & layout::KIND_MASK != layout::KIND_CLOSURE {
-            become hole_stuck($runtime, $heap, $frames, $environment, function)
+        let flavour = header & layout::OBSERVED_MASK;
+        if flavour != layout::APPLY_CLOSURE {
+            // SAFETY: the runtime record outlives the run.
+            unsafe {
+                (*$runtime).observed = layout::OBSERVED_APPLY;
+            }
+            if flavour != layout::OBJECT_CLOSURE {
+                become hole_stuck($runtime, $heap, $frames, $environment, function)
+            }
         }
         // SAFETY: a closure's second word is its entry's code word.
         let code = unsafe { *object.wrapping_add(1) };
@@ -666,16 +674,50 @@ macro_rules! apply {
 }
 
 /// Observe the closure `thunk` by a force: enter its code with the closure
-/// in the environment register; take the stuck exit, `thunk` in hand, when
-/// `thunk` is no closure.
+/// in the environment register, an object's dispatch with the force observed;
+/// take the stuck exit, `thunk` in hand and the force observed, when `thunk`
+/// is no closure, an application arm's or a suspended capture.
 macro_rules! force {
     ($runtime:ident, $heap:expr, $frames:expr, $environment:expr, $thunk:expr) => {{
         let thunk: Word = $thunk;
         let object = thunk.to_pointer::<Word>();
         // SAFETY: a positive value in hand addresses an object.
         let header = usize::from(unsafe { *object });
-        if header & layout::KIND_MASK != layout::KIND_CLOSURE {
-            become hole_stuck($runtime, $heap, $frames, $environment, thunk)
+        let flavour = header & layout::OBSERVED_MASK;
+        if header & layout::KIND_MASK != layout::KIND_CLOSURE
+            || flavour == layout::APPLY_CLOSURE
+            || flavour >= layout::OBJECT_CLOSURE
+        {
+            // SAFETY: the runtime record outlives the run.
+            unsafe {
+                (*$runtime).observed = layout::OBSERVED_FORCE;
+            }
+            if flavour != layout::OBJECT_CLOSURE {
+                become hole_stuck($runtime, $heap, $frames, $environment, thunk)
+            }
+        }
+        // SAFETY: a closure's second word is its entry's code word.
+        let code = unsafe { *object.wrapping_add(1) };
+        resume!(code, $runtime, $heap, $frames, object, Word::ZERO)
+    }};
+}
+
+/// Observe the value `pair` by the projection whose observed word is
+/// `side`: enter an object's dispatch with the projection observed; take the
+/// stuck exit, `pair` in hand and the projection observed, for any other
+/// value.
+macro_rules! project {
+    ($runtime:ident, $heap:expr, $frames:expr, $environment:expr, $pair:expr, $side:expr) => {{
+        let pair: Word = $pair;
+        let object = pair.to_pointer::<Word>();
+        // SAFETY: a positive value in hand addresses an object.
+        let header = usize::from(unsafe { *object });
+        // SAFETY: the runtime record outlives the run.
+        unsafe {
+            (*$runtime).observed = $side;
+        }
+        if header & layout::OBSERVED_MASK != layout::OBJECT_CLOSURE {
+            become hole_stuck($runtime, $heap, $frames, $environment, pair)
         }
         // SAFETY: a closure's second word is its entry's code word.
         let code = unsafe { *object.wrapping_add(1) };
@@ -694,8 +736,8 @@ macro_rules! force {
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   applying functions to arguments.
+/// - hypothesis: L2 — the agreement differential over corpus programs applying
+///   functions to arguments.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_invoke_apply(
@@ -726,8 +768,8 @@ pub extern "rust-preserve-none" fn stencil_invoke_apply(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   forcing thunks they bound.
+/// - hypothesis: L2 — the agreement differential over corpus programs forcing
+///   thunks they bound.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_invoke_force(
@@ -755,8 +797,8 @@ pub extern "rust-preserve-none" fn stencil_invoke_force(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   with nominal matches, whose branches are forced here.
+/// - hypothesis: L2 — the agreement differential over corpus programs with
+///   nominal matches, whose branches are forced here.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_invoke_force_value(
@@ -781,8 +823,8 @@ pub extern "rust-preserve-none" fn stencil_invoke_force_value(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   applying a returned function and matching nominally.
+/// - hypothesis: L2 — the agreement differential over corpus programs applying
+///   a returned function and matching nominally.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_apply_frame(
@@ -814,8 +856,8 @@ pub extern "rust-preserve-none" fn stencil_apply_frame(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   folding native lists of more than one cell.
+/// - hypothesis: L2 — the agreement differential over corpus programs folding
+///   native lists of more than one cell.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_argument_frame(
@@ -834,6 +876,302 @@ pub extern "rust-preserve-none" fn stencil_argument_frame(
         Word::from_pointer(environment),
         value
     )
+}
+
+/// Project the left component of the object in hand. A left projection's
+/// frame resumes here, so it is also the shared stub every such frame's code
+/// word names.
+///
+/// # Specification
+/// - requires: the value register holds an object; the continuation is loaded.
+/// - ensures: control enters the object's dispatch with the left projection
+///   observed, one unit of fuel spent; or the fuel exit or, for anything but a
+///   copattern object, the stuck exit is taken.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — both tiers project a lazy pair's components and stick
+///   projecting a function; a swapped side answers the other component.
+/// - witness: `tests::agreement::an_object_answers_its_arms_and_sticks_on_the_rest`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_project_left(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    project!(
+        runtime,
+        heap,
+        frames,
+        environment,
+        value,
+        layout::OBSERVED_PROJECT_LEFT
+    )
+}
+
+/// Project the right component of the object in hand; also the right
+/// projection frames' shared stub.
+///
+/// # Specification
+/// - requires: as [`stencil_project_left`].
+/// - ensures: as [`stencil_project_left`], the right projection observed.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`stencil_project_left`].
+/// - witness: `tests::agreement::an_object_answers_its_arms_and_sticks_on_the_rest`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_project_right(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    project!(
+        runtime,
+        heap,
+        frames,
+        environment,
+        value,
+        layout::OBSERVED_PROJECT_RIGHT
+    )
+}
+
+/// Dispatch a copattern object's observation: continue at `hole_alt`, the
+/// arm's entry, when the observed word is operand A.
+///
+/// # Specification
+/// - requires: the environment register holds the object entered, the value
+///   register the observation's argument.
+/// - ensures: control reaches `hole_alt` when the record's observed word is
+///   operand A and the next instruction otherwise, the registers unchanged.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — both tiers project each side of a lazy pair and apply an
+///   object of several arms; a dispatch that ignores the observed word enters
+///   the first arm for every observation.
+/// - witness: `tests::agreement::an_object_answers_its_arms_and_sticks_on_the_rest`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_arm(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    // SAFETY: the runtime record outlives the run.
+    let observed = unsafe { (*runtime).observed };
+    if usize::from(observed) == operand!(runtime, A) {
+        become hole_alt(runtime, heap, frames, environment, value)
+    }
+    become hole_next(runtime, heap, frames, environment, value)
+}
+
+/// End a copattern object's dispatch: no arm answers the observation, so the
+/// stuck exit takes the object in hand, the observed word as the observation
+/// wrote it.
+///
+/// # Specification
+/// - requires: the environment register holds the object entered.
+/// - ensures: the stuck exit is taken with the object in hand.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — forcing a lazy pair sticks naming the pair and the force
+///   on both tiers.
+/// - witness: `tests::agreement::an_object_answers_its_arms_and_sticks_on_the_rest`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_unobserved(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    _value: Word,
+) -> Word
+{
+    become hole_stuck(
+        runtime,
+        heap,
+        frames,
+        environment,
+        Word::from_pointer(environment),
+    )
+}
+
+/// Test the value in hand for a suspended capture: continue at `hole_alt`,
+/// where the cut runs it against its consumer, when it is one.
+///
+/// # Specification
+/// - requires: the value register holds an object.
+/// - ensures: control reaches `hole_alt` when the value is a suspended capture
+///   and the next instruction otherwise, the registers unchanged.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a capture bound by name and then delivered to `★` runs
+///   its body there on both tiers; a missed test halts with the capture.
+/// - witness: `tests::agreement::a_suspended_capture_runs_against_the_consumer_it_meets`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_captured(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    // SAFETY: a positive value in hand addresses an object.
+    let header = usize::from(unsafe { *value.to_pointer::<Word>() });
+    if header & layout::OBSERVED_MASK == layout::CAPTURE_CLOSURE {
+        become hole_alt(runtime, heap, frames, environment, value)
+    }
+    become hole_next(runtime, heap, frames, environment, value)
+}
+
+/// Run the suspended capture in hand against the consumer loaded on top.
+///
+/// # Specification
+/// - requires: the value register holds a suspended capture; its consumer is
+///   loaded.
+/// - ensures: control enters the capture's code with it in the environment
+///   register, one unit of fuel spent; or the fuel exit is taken.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`stencil_captured`]: the capture's body observes the
+///   unit it returns by a force and sticks there.
+/// - witness: `tests::agreement::a_suspended_capture_runs_against_the_consumer_it_meets`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_run_capture(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    _environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let object = value.to_pointer::<Word>();
+    // SAFETY: a closure's second word is its entry's code word.
+    let code = unsafe { *object.wrapping_add(1) };
+    resume!(code, runtime, heap, frames, object, Word::ZERO)
+}
+
+/// Read constant A's word: its value in hand when unfolded, `hole_alt`
+/// otherwise.
+///
+/// # Specification
+/// - requires: the record's constant table holds word A.
+/// - ensures: the value register holds the constant's value and control reaches
+///   the next instruction when it is unfolded; control reaches `hole_alt` with
+///   the registers unchanged otherwise.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constant read twice is one value, its thunk's body run
+///   once per force; a constant read before it is unfolded unfolds it.
+/// - witness: `tests::agreement::constants_unfold_once_and_a_cycle_is_stuck`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_global(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    // SAFETY: the runtime record outlives the run.
+    let table = unsafe { (*runtime).globals };
+    let slot = table.wrapping_add(operand!(runtime, A));
+    // SAFETY: the table holds word A.
+    let word = unsafe { *slot };
+    if usize::from(word) > 1 {
+        become hole_next(runtime, heap, frames, environment, word)
+    }
+    become hole_alt(runtime, heap, frames, environment, value)
+}
+
+/// Begin unfolding constant A: mark it unfolding and continue, or continue
+/// at `hole_alt` when it is already unfolding — its definition needs its own
+/// value.
+///
+/// # Specification
+/// - requires: the record's constant table holds word A, which is not a value.
+/// - ensures: word A is one and control reaches the next instruction when it
+///   was zero; control reaches `hole_alt` otherwise; the registers unchanged.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constant whose definition is a pair holding itself
+///   sticks as cyclic on both tiers; one whose definition suspends itself in a
+///   thunk unfolds.
+/// - witness: `tests::agreement::constants_unfold_once_and_a_cycle_is_stuck`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_unfold(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    // SAFETY: the runtime record outlives the run.
+    let table = unsafe { (*runtime).globals };
+    let slot = table.wrapping_add(operand!(runtime, A));
+    // SAFETY: the table holds word A.
+    if unsafe { *slot } != Word::ZERO {
+        become hole_alt(runtime, heap, frames, environment, value)
+    }
+    // SAFETY: as above.
+    unsafe {
+        *slot = Word(1);
+    }
+    become hole_next(runtime, heap, frames, environment, value)
+}
+
+/// End unfolding constant A: its word takes the value in hand.
+///
+/// # Specification
+/// - requires: the record's constant table holds word A.
+/// - ensures: word A is the value register.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`stencil_global`]: a second read finds the value the
+///   first unfolding wrote.
+/// - witness: `tests::agreement::constants_unfold_once_and_a_cycle_is_stuck`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_set_global(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    // SAFETY: the runtime record outlives the run.
+    let table = unsafe { (*runtime).globals };
+    let slot = table.wrapping_add(operand!(runtime, A));
+    // SAFETY: the table holds word A.
+    unsafe {
+        *slot = value;
+    }
+    become hole_next(runtime, heap, frames, environment, value)
 }
 
 /// Push a two-word frame of code word `code` and second word `word`.
@@ -872,8 +1210,8 @@ macro_rules! push_frame {
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   binding a function's result.
+/// - hypothesis: L2 — the agreement differential over corpus programs binding a
+///   function's result.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_pushf(
@@ -905,8 +1243,8 @@ pub extern "rust-preserve-none" fn stencil_pushf(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   applying curried functions.
+/// - hypothesis: L2 — the agreement differential over corpus programs applying
+///   curried functions.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_push_apply(
@@ -939,8 +1277,8 @@ pub extern "rust-preserve-none" fn stencil_push_apply(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   forcing a returned thunk.
+/// - hypothesis: L2 — the agreement differential over corpus programs forcing a
+///   returned thunk.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_push_force(
@@ -974,9 +1312,9 @@ pub extern "rust-preserve-none" fn stencil_push_force(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   matching constructors of several fields; a reversed order swaps the
-///   branch's arguments.
+/// - hypothesis: L2 — the agreement differential over corpus programs matching
+///   constructors of several fields; a reversed order swaps the branch's
+///   arguments.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_push_fields(
@@ -1028,8 +1366,8 @@ pub extern "rust-preserve-none" fn stencil_push_fields(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   whose function body tail-calls another.
+/// - hypothesis: L2 — the agreement differential over corpus programs whose
+///   function body tail-calls another.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_shrink(
@@ -1054,8 +1392,8 @@ pub extern "rust-preserve-none" fn stencil_shrink(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over the forced
-///   entries of corpus declarations, whose observation's continuation is `★`.
+/// - hypothesis: L2 — the agreement differential over the forced entries of
+///   corpus declarations, whose observation's continuation is `★`.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_shrink_top(
@@ -1082,8 +1420,8 @@ pub extern "rust-preserve-none" fn stencil_shrink_top(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   recursing over Nat and lists; a wrong ordinal takes the wrong branch.
+/// - hypothesis: L2 — the agreement differential over corpus programs recursing
+///   over Nat and lists; a wrong ordinal takes the wrong branch.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_match_tag(
@@ -1113,8 +1451,8 @@ pub extern "rust-preserve-none" fn stencil_match_tag(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   whose `μ` meets a destructor frame.
+/// - hypothesis: L2 — the agreement differential over corpus programs whose `μ`
+///   meets a destructor frame.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_mark(
@@ -1149,8 +1487,8 @@ pub extern "rust-preserve-none" fn stencil_mark(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   selecting record fields; a wrong position selects the wrong field.
+/// - hypothesis: L2 — the agreement differential over corpus programs selecting
+///   record fields; a wrong position selects the wrong field.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_select_field(
@@ -1188,9 +1526,8 @@ pub extern "rust-preserve-none" fn stencil_select_field(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   folding native lists; a fold that never steps back answers its first cell
-///   alone.
+/// - hypothesis: L2 — the agreement differential over corpus programs folding
+///   native lists; a fold that never steps back answers its first cell alone.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_jump(
@@ -1216,7 +1553,7 @@ pub extern "rust-preserve-none" fn stencil_jump(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
+/// - hypothesis: L2 — the agreement differential over corpus programs
 ///   projecting tuple components; a wrong offset selects a neighbour.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
@@ -1254,8 +1591,8 @@ pub extern "rust-preserve-none" fn stencil_select_component(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   whose selection meets a loaded continuation.
+/// - hypothesis: L2 — the agreement differential over corpus programs whose
+///   selection meets a loaded continuation.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_pop(
@@ -1295,9 +1632,9 @@ pub extern "rust-preserve-none" fn stencil_pop(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   calling primitives, unary and binary, booleans and integers past 64 bits
-///   among the answers, and performing operations their handlers answer.
+/// - hypothesis: L2 — the agreement differential over corpus programs calling
+///   primitives, unary and binary, booleans and integers past 64 bits among the
+///   answers, and performing operations their handlers answer.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_call(
@@ -1372,8 +1709,7 @@ pub extern "rust-preserve-none" fn stencil_call(
 
 /// Answer the value an aborted access's frame saved: the frame resumes here,
 /// the saved answer as its window word, when its unwind delivers its unit,
-/// and the answer goes on to the frame below, as the L machine's answer
-/// frame discards the unwind's unit.
+/// and the answer goes on to the frame below in the unit's place.
 ///
 /// # Specification
 /// - requires: a frame — the sentinel at the least — lies below the frame
@@ -1384,8 +1720,8 @@ pub extern "rust-preserve-none" fn stencil_call(
 ///   state no predicate can observe.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a differential against the L machine over corpus programs
-///   aborting a view; an answer frame passing the unit on answers the unit.
+/// - hypothesis: L2 — the agreement differential over corpus programs aborting
+///   a view; an answer frame passing the unit on answers the unit.
 /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_answer_frame(
@@ -1444,12 +1780,46 @@ exit!(
     "The exit `★` reaches: the run's answer is the value in hand.",
     "- witness: `tests::agreement::the_named_programs_agree_on_both_executors`"
 );
-exit!(
-    stencil_unmatched,
-    layout::STATUS_UNMATCHED,
-    "The exit a case takes when no arm answers the constructor in hand.",
-    "- witness: `tests::agreement::the_generated_programs_agree_on_both_executors`"
-);
+
+/// The exit a case takes when no arm answers the constructor in hand: the
+/// case's site, operand A, becomes the record's observed word.
+///
+/// # Specification
+/// - requires: operand A is the site the lowering numbered the case by.
+/// - ensures: the runtime records the unmatched status, the site and the heap's
+///   top, and the value in hand returns to the entry.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a case on an injection it has no arm for exits unmatched
+///   with the scrutinee in hand and its site observed.
+/// - witness: `tests::exits::an_unmatched_case_names_its_site`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_unmatched(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    _frames: *mut Word,
+    _environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let site = operand!(runtime, A);
+    // SAFETY: the runtime record outlives the run.
+    unsafe {
+        (*runtime).observed = Word(site);
+    }
+    // SAFETY: as above.
+    unsafe {
+        (*runtime).status = layout::STATUS_UNMATCHED;
+    }
+    // SAFETY: as above.
+    unsafe {
+        (*runtime).heap_top = heap;
+    }
+    value
+}
+
 exit!(
     stencil_heap_exhausted,
     layout::STATUS_HEAP_EXHAUSTED,

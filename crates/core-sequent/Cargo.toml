@@ -3,7 +3,7 @@ name = "gandr-core-sequent"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The command IL a call-by-push-value program is focused into, its two-region store, and the abstract machine that runs it"
+description = "The command IL a call-by-push-value program is focused into, the store its runs answer into, and the readback of their values"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -31,10 +31,14 @@ gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-cell-complexes.workspace = true
 
-# The differential suite compares the machine's readback against the core's
-# normaliser, the one evaluator in the tree this crate shares no step with.
+# The run suite runs focused commands on the emitter's two tiers, the
+# runtime this IL is lowered to; the differential suite compares their
+# readback against the core's normaliser, the one evaluator in the tree that
+# shares no step with them. The emitter depending on this crate is a cycle
+# only through the integration target, which links one copy of each.
 [dev-dependencies]
 gandr-core-nbe.workspace = true
+gandr-runtime-emitter.workspace = true
 proptest.workspace = true
 
 [lints]
