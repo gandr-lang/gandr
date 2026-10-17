@@ -465,6 +465,21 @@ fn payload_maps_keep_slots_in_either_order()
     assert_eq!(swapped, session, "and keeps every payload at its slot");
     let failed = session.try_map_payloads(ChildOrder::Forward, |_| Err::<_, &str>("refused"));
     assert_eq!(failed, Err("refused"), "the map's error comes back");
+    let unit = arena.value_type_unit();
+    let replaced = session
+        .try_map_payloads(ChildOrder::Forward, |_| Ok::<_, ()>(unit))
+        .expect("a total map succeeds");
+    assert_eq!(
+        replaced.payloads(),
+        [unit, unit, unit],
+        "a map that moves a payload writes its image at the slot"
+    );
+}
+
+#[test]
+fn a_protocol_holds_one_node_per_written_state()
+{
+    assert_eq!(9, seat().nodes().len());
 }
 
 #[test]

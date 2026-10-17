@@ -483,6 +483,7 @@ impl<'arena> Engine<'arena>
     /// - witness: `rewrite::tests::a_shared_type_is_rewritten_once_per_node`
     /// - witness: `rewrite::tests::substitution_replaces_a_free_occurrence`
     /// - witness: `rewrite::tests::substitution_avoids_capture`
+    /// - witness: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`
     #[spec(
         captures: [pending = self.tasks.len(), ready = self.results.len()],
         ensures: (ready.checked_add(1) == Some(self.results.len()) && self.tasks.len() == pending
@@ -1864,6 +1865,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
     ///   order. Matching quotes exercise decode-on-mint, while leaves and
     ///   missing children preserve their original identity.
     /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
+    /// - witness: `rewrite::tests::every_former_is_kept_when_nothing_beneath_it_changes_and_carries_what_does`
     #[spec(
         captures: [ready = self.results.len(), children = self.arena.value(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Value::Reify(ref frames) => frames.iter().filter(|frame| !matches!(frame, crate::control::StackFrame::Project(_))).count(),
@@ -2289,6 +2291,7 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
     ///   order. Matching quotes exercise decode-on-mint, while leaves and
     ///   missing children preserve their original identity.
     /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
+    /// - witness: `rewrite::tests::every_former_is_kept_when_nothing_beneath_it_changes_and_carries_what_does`
     #[spec(
         captures: [ready = self.results.len(), children = self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
@@ -2837,6 +2840,7 @@ Computation::Memory(ref form) => form.values().count().saturating_add(form.compu
     ///   order. Matching quotes exercise decode-on-mint, while leaves and
     ///   missing children preserve their original identity.
     /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
+    /// - witness: `rewrite::tests::every_former_is_kept_when_nothing_beneath_it_changes_and_carries_what_does`
     #[spec(
         captures: [ready = self.results.len(), children = self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
@@ -3110,6 +3114,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
     ///   order. Matching quotes exercise decode-on-mint, while leaves and
     ///   missing children preserve their original identity.
     /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
+    /// - witness: `rewrite::tests::every_former_is_kept_when_nothing_beneath_it_changes_and_carries_what_does`
     #[spec(
         captures: [ready = self.results.len(), children = match self.arena.comp_type(id) {
             | None | Some(&CompType::Unknown) => 0_usize,
@@ -4653,6 +4658,7 @@ pub fn instantiate_computation_traced(
 /// # Adequacy
 /// - hypothesis: L3 — as [`substitute_environment_traced`].
 /// - witness: `rewrite::tests::a_traced_substitution_reports_every_node_it_rewrote`
+/// - witness: `rewrite::tests::a_traced_instantiation_reports_no_computation_or_type_it_kept`
 #[spec(captures: before = carried.len(), ensures: carried.len() >= before && carried.len() <= before.saturating_add(memo.len()))]
 fn report(
     memo: &BTreeMap<(Node, Binders, Rewrite), Node>,

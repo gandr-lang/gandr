@@ -1239,6 +1239,25 @@ fn occurrence_rules_separate_depth_boundaries()
             }
         }
     }
+    // An environment entry is answered at the root and carried beneath a
+    // binder, as a substitution's replacement is.
+    for (depth, expected) in [
+        (0_u32, Occurrence::Answered(replacement)),
+        (1, Occurrence::Carried(replacement, Binders::ONE)),
+    ] {
+        let id = variable(&mut arena, DeBruijnIndex::from(depth));
+        let mut engine = Engine::new(&mut arena);
+        engine.environment.push(replacement);
+        assert_eq!(
+            expected,
+            engine.occurrence(
+                id,
+                DeBruijnIndex::from(depth),
+                Binders::from(depth),
+                Rewrite::Environment,
+            )
+        );
+    }
 }
 
 #[test]
@@ -1853,6 +1872,24 @@ fn a_fill_replaces_exactly_the_named_holes()
         TermId::Value(unit)
     );
     assert_eq!(mark, arena.watermark(), "a hole-free subject mints nothing");
+
+    let computation_other = arena.computation_hole(HoleId::from(2_u32));
+    let sequenced = arena.computation_bind(computation_named, computation_other);
+    let computed = arena.computation_return(unit);
+    let TermId::Computation(filled) = fill_hole(
+        &mut arena,
+        TermId::Computation(sequenced),
+        HoleId::from(1_u32),
+        TermId::Computation(computed),
+    )
+    else {
+        panic!("a fill keeps the subject's family");
+    };
+    assert_eq!(
+        Some(&Computation::Bind(computed, computation_other)),
+        arena.computation(filled),
+        "a computation filling takes the named computation hole, and another name stands"
+    );
 }
 
 #[test]
@@ -2672,4 +2709,429 @@ fn a_traced_instantiation_replaces_its_binder()
         carried, expected,
         "exactly the rewritten nodes are reported"
     );
+}
+
+#[test]
+fn a_traced_instantiation_reports_no_computation_or_type_it_kept()
+{
+    let mut arena = CoreArena::new();
+    let argument = arena.value_constant(ConstantIndex::from(7_usize));
+    let free = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let unit = arena.value_unit();
+    let unit_type = arena.value_type_unit();
+    let moved = arena.computation_return(free);
+    let kept = arena.computation_return(unit);
+    let sequenced = arena.computation_bind(moved, kept);
+    let annotation = arena.comp_type_returner(unit_type);
+    let body = arena.computation_ascribe(sequenced, annotation);
+    let mut carried = Vec::new();
+    let instantiated =
+        super::instantiate_computation_traced(&mut arena, body, argument, &mut carried);
+    assert!(
+        !carried.iter().any(|pair| matches!(
+            *pair,
+            Carried::Computation(held, _) if held == kept
+        ) || matches!(*pair, Carried::CompType(held, _) if held == annotation)),
+        "a kept computation or computation type is no carried pair: {carried:?}"
+    );
+    assert!(
+        carried.contains(&Carried::Computation(body, instantiated)),
+        "while the rewritten root is"
+    );
+}
+
+/// One former spelled around `child`, which stands where none of the
+/// former's own binders reaches; a computation is held in a thunk and a type
+/// in a quote, so each reads as a value.
+type Former = fn(&mut CoreArena, ValueId) -> ValueId;
+
+/// One former and the name its failures are reported under.
+struct Witnessed
+{
+    /// The former's name.
+    what: &'static str,
+    /// The former.
+    former: Former,
+}
+
+/// The formers the rebuild decisions are witnessed at.
+///
+/// # Specification
+/// trivial.
+fn formers() -> Vec<Witnessed>
+{
+    use alloc::sync::Arc;
+
+    use crate::control::EffectClause;
+    use crate::effect::EffectName;
+    use crate::effect::EffectOp;
+    use crate::effect::EffectSig;
+    use crate::effect::OperationName;
+    use crate::memory::MemoryForm;
+    use crate::primitive::Arguments;
+    use crate::session::RecordedMove;
+    use crate::session::SessionAction;
+    use crate::session::SessionRelation;
+
+    /// The one-operation interface the effect formers carry.
+    ///
+    /// # Specification
+    /// trivial.
+    fn probe(arena: &mut CoreArena) -> EffectSig
+    {
+        let unit = arena.value_type_unit();
+        EffectSig::new(EffectName::from("Probe"), [EffectOp {
+            name: OperationName::from("ask"),
+            payload: unit,
+            reply: unit,
+        }])
+        .expect("one operation")
+    }
+    /// `Path(Unit, child, ())`: a type that reads `child` in no binder.
+    ///
+    /// # Specification
+    /// trivial.
+    fn path(
+        arena: &mut CoreArena,
+        child: ValueId,
+    ) -> ValueTypeId
+    {
+        let unit_type = arena.value_type_unit();
+        let unit = arena.value_unit();
+        arena.value_type_path(unit_type, child, unit)
+    }
+    /// `return ()`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn done(arena: &mut CoreArena) -> ComputationId
+    {
+        let unit = arena.value_unit();
+        arena.computation_return(unit)
+    }
+    /// The handler clauses: `ask` answered by `return ()`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn clauses(arena: &mut CoreArena) -> Arc<[EffectClause]>
+    {
+        let body = done(arena);
+        Arc::from([EffectClause {
+            operation: OperationName::from("ask"),
+            body,
+        }])
+    }
+    let reflexivity: Former = |a, c| a.value_path_refl(c);
+    let rows: Vec<(&'static str, Former)> = alloc::vec![
+        ("reflexivity", reflexivity),
+        ("here", |a, c| a.value_here(c)),
+        ("returned", |a, c| {
+            let body = a.computation_return(c);
+            a.value_returned(body)
+        }),
+        ("nested", |a, c| {
+            let body = a.computation_return(c);
+            a.value_nested(body)
+        }),
+        ("run", |a, c| {
+            let body = a.computation_return(c);
+            a.value_run(body)
+        }),
+        ("path product", |a, c| {
+            let unit = a.value_unit();
+            a.value_path_product(unit, c)
+        }),
+        ("funext", |a, c| {
+            let unit = a.value_unit();
+            a.value_funext(c, unit)
+        }),
+        ("equivalence", |a, c| {
+            let unit = a.value_unit();
+            a.value_equiv(unit, c)
+        }),
+        ("session identity", |a, c| {
+            let unit = a.value_unit();
+            a.value_session_related(SessionRelation::Equivalence, unit, c)
+        }),
+        ("stay", |a, c| a.value_stay(c)),
+        ("then", |a, c| {
+            let unit = a.value_unit();
+            a.value_then(c, unit)
+        }),
+        ("flow product", |a, c| {
+            let unit = a.value_unit();
+            a.value_flow_product(unit, c)
+        }),
+        ("forward", |a, c| a.value_forward(c)),
+        ("function flow", |a, c| {
+            let unit = a.value_unit();
+            a.value_function_flow(c, unit)
+        }),
+        ("recorded run", |a, c| {
+            a.value_recorded(Arc::from([RecordedMove::Closed, RecordedMove::Sent(c)]))
+        }),
+        ("univalence", |a, c| {
+            let description = || crate::ua::Description {
+                name: gandr_theory_levitation::Name::from("M"),
+                generators: alloc::boxed::Box::from([]),
+            };
+            let sides = Arc::new(crate::ua::Sides {
+                source: description(),
+                target: description(),
+            });
+            let stratum = crate::ua::Stratum {
+                degree: gandr_theory_sites::Degree::from(1_usize),
+                bound: gandr_theory_sites::ShapeSize::from(4_usize),
+            };
+            let unit = a.value_unit();
+            a.value_ua(stratum, sides, unit, c)
+        }),
+        ("path equivalence", |a, c| {
+            let unit_type = a.value_type_unit();
+            let unit = a.value_unit();
+            a.value_path_equiv(unit_type, unit, c, Arc::default())
+        }),
+        ("marked value", |a, c| a
+            .value_mark(MarkIndex::from(0_u32), c)),
+        ("cell", |a, c| {
+            let nil = a.value_list_nil();
+            a.value_list_cons(c, nil)
+        }),
+        ("constructor", |a, c| {
+            let unit_type = a.value_type_unit();
+            a.value_constructor(
+                unit_type,
+                gandr_kernel_term::ConstructorTag::from(0_usize),
+                vec![c],
+            )
+        }),
+        ("perform", |a, c| {
+            let signature = probe(a);
+            let body = a.computation_perform(signature, OperationName::from("ask"), c);
+            a.value_thunk(body)
+        }),
+        ("exercise", |a, c| {
+            let signature = probe(a);
+            let unit = a.value_unit();
+            let body = a.computation_exercise(c, signature, OperationName::from("ask"), unit);
+            a.value_thunk(body)
+        }),
+        ("handler", |a, c| {
+            let signature = probe(a);
+            let subject = a.computation_return(c);
+            let (on_return, clauses) = (done(a), clauses(a));
+            let body = a.computation_handle(signature, subject, on_return, clauses);
+            a.value_thunk(body)
+        }),
+        ("scope", |a, c| {
+            let signature = probe(a);
+            // The subject stands under the capability's binder.
+            let under_capability = super::shift_value(a, c, Binders::ONE);
+            let subject = a.computation_return(under_capability);
+            let (on_return, clauses) = (done(a), clauses(a));
+            let body = a.computation_scope(signature, subject, on_return, clauses);
+            a.value_thunk(body)
+        }),
+        ("list fold", |a, c| {
+            let unit_type = a.value_type_unit();
+            let (nil, cons) = (done(a), done(a));
+            let body = a.computation_list_fold(unit_type, unit_type, c, nil, cons);
+            a.value_thunk(body)
+        }),
+        ("native operation", |a, c| {
+            let row = crate::primitive::PRELUDE
+                .first()
+                .copied()
+                .expect("the prelude has a row");
+            let unit = a.value_unit();
+            let body = a.computation_primitive(row, Arguments::Binary([unit, c]));
+            a.value_thunk(body)
+        }),
+        ("nominal case", |a, c| {
+            let unit_type = a.value_type_unit();
+            let motive = a.comp_type_returner(unit_type);
+            let branch = done(a);
+            let body = a.computation_data_case(c, motive, vec![branch]);
+            a.value_thunk(body)
+        }),
+        ("record projection", |a, c| {
+            let body = a.computation_record_projection(
+                c,
+                gandr_kernel_term::FieldLabel::from(String::from("a")),
+            );
+            a.value_thunk(body)
+        }),
+        ("tuple projection", |a, c| {
+            let body =
+                a.computation_tuple_projection(c, gandr_kernel_term::Component::from(0_usize));
+            a.value_thunk(body)
+        }),
+        ("transport", |a, c| {
+            let unit = a.value_unit();
+            let body = a.computation_transport(c, unit);
+            a.value_thunk(body)
+        }),
+        ("path transport", |a, c| {
+            let unit_type = a.value_type_unit();
+            let unit = a.value_unit();
+            let body = a.computation_path_transport(unit_type, c, unit);
+            a.value_thunk(body)
+        }),
+        ("ride", |a, c| {
+            let unit_type = a.value_type_unit();
+            let unit = a.value_unit();
+            let body = a.computation_ride(unit_type, c, unit);
+            a.value_thunk(body)
+        }),
+        ("telescope transport", |a, c| {
+            let unit_type = a.value_type_unit();
+            let motive = a.comp_type_returner(unit_type);
+            let unit = a.value_unit();
+            let body = a.computation_telescope_transport(motive, c, unit, unit, unit);
+            a.value_thunk(body)
+        }),
+        ("fixpoint", |a, c| {
+            let under_self = super::shift_value(a, c, Binders::ONE);
+            let returned = a.computation_return(under_self);
+            let body =
+                a.computation_fixpoint(returned, gandr_kernel_term::FixpointEvidence::Partial);
+            a.value_thunk(body)
+        }),
+        ("marked computation", |a, c| {
+            let returned = a.computation_return(c);
+            let body = a.computation_mark(MarkIndex::from(0_u32), returned);
+            a.value_thunk(body)
+        }),
+        ("session action", |a, c| {
+            let body = a.computation_session(SessionAction::Send {
+                endpoint: DeBruijnIndex::from(0_u32),
+                payload: c,
+            });
+            a.value_thunk(body)
+        }),
+        ("memory form", |a, c| {
+            let rest = done(a);
+            let body = a.computation_memory(MemoryForm::Hold {
+                value: c,
+                body: rest,
+            });
+            a.value_thunk(body)
+        }),
+        ("record type", |a, c| {
+            let field = path(a, c);
+            let record = a.value_type_record(BTreeMap::from([(
+                gandr_kernel_term::FieldLabel::from(String::from("a")),
+                field,
+            )]));
+            a.value_quote(record)
+        }),
+        ("list type", |a, c| {
+            let element = path(a, c);
+            let list = a.value_type_list(element);
+            a.value_quote(list)
+        }),
+        ("path universe", |a, c| {
+            let unit = a.value_unit();
+            let universe = a.value_type_path_universe(c, unit);
+            a.value_quote(universe)
+        }),
+        ("flow type", |a, c| {
+            let unit_type = a.value_type_unit();
+            let unit = a.value_unit();
+            let flow = a.value_type_flow(unit_type, unit, c);
+            a.value_quote(flow)
+        }),
+        ("run type", |a, c| {
+            let run = a.value_type_run(c);
+            a.value_quote(run)
+        }),
+        ("staged type", |a, c| {
+            let base = path(a, c);
+            let stage = gandr_kernel_term::Stage::At(gandr_kernel_term::StageId::from(0_usize));
+            let staged = a.value_type_staged(base, stage);
+            a.value_quote(staged)
+        }),
+        ("session type", |a, c| {
+            use crate::session::PayloadCount;
+            use crate::session::PayloadSlot;
+            use crate::session::Protocol;
+            use crate::session::ProtocolState;
+            use crate::session::ProtocolSyntax;
+            use crate::session::SessionType;
+            let send = Protocol::new(
+                vec![
+                    ProtocolSyntax::Send {
+                        payload: PayloadSlot::from(0_usize),
+                        next: ProtocolState::from(1_usize),
+                    },
+                    ProtocolSyntax::End,
+                ],
+                ProtocolState::from(0_usize),
+                PayloadCount::from(1_usize),
+            )
+            .expect("a send, then the end");
+            let payload = path(a, c);
+            let session = SessionType::new(
+                alloc::sync::Arc::new(send),
+                alloc::sync::Arc::from([payload]),
+            )
+            .expect("one payload for one slot");
+            let ty = a.value_type_session(session);
+            a.value_quote(ty)
+        }),
+        ("dependent pair type", |a, c| {
+            let first = path(a, c);
+            let unit_type = a.value_type_unit();
+            let sigma = a.value_type_sigma(first, unit_type);
+            a.value_quote(sigma)
+        }),
+        ("pair of computation types", |a, c| {
+            let first = path(a, c);
+            let first = a.comp_type_returner(first);
+            let unit_type = a.value_type_unit();
+            let second = a.comp_type_returner(unit_type);
+            let with = a.alloc_comp_type(CompType::With(first, second));
+            a.value_quote_computation(with)
+        }),
+    ];
+    rows.into_iter()
+        .map(|(what, former)| Witnessed { what, former })
+        .collect()
+}
+
+#[test]
+fn every_former_is_kept_when_nothing_beneath_it_changes_and_carries_what_does()
+{
+    let mut arena = CoreArena::new();
+    let free = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let argument = arena.value_constant(ConstantIndex::from(7_usize));
+    let closed = arena.value_unit();
+    for Witnessed { what, former } in formers() {
+        let kept = former(&mut arena, closed);
+        let open = former(&mut arena, free);
+        let expected = former(&mut arena, argument);
+        let both = arena.value_tuple(&[kept, open]);
+        let rewritten = instantiate_value(&mut arena, both, argument);
+        let Some(&Value::Tuple(ref components)) = arena.value(rewritten)
+        else {
+            panic!("{what}: the tuple is kept a tuple");
+        };
+        let &[first, second] = &**components
+        else {
+            panic!("{what}: the tuple keeps its arity");
+        };
+        assert_eq!(
+            kept, first,
+            "{what}: a former nothing beneath changes is the node itself"
+        );
+        assert_ne!(
+            open, second,
+            "{what}: a former over a change is minted anew"
+        );
+        assert_eq!(
+            crate::CertificateEquality::Equal,
+            crate::equal_certificate_syntax(&arena, second, expected),
+            "{what}: the change is carried into the fresh node"
+        );
+    }
 }
