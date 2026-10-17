@@ -152,6 +152,7 @@ pub use crate::compose::lower_source;
 pub use crate::compose::lower_unit_source;
 pub use crate::entry::Entries;
 pub use crate::entry::entries;
+pub use crate::evaluate::Engine;
 pub use crate::evaluate::Evaluation;
 pub use crate::evaluate::Program;
 pub use crate::evaluate::RunStatus;

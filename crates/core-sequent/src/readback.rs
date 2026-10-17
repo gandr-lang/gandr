@@ -189,6 +189,7 @@ pub fn read_back_value(
         | Err(_) => core.watermark() == entry,
     },
 )]
+#[inline]
 pub fn read_back_terminal(
     arena: &CommandArena,
     store: &Store,

@@ -12,7 +12,8 @@ members = [
   "crates/kernel-core",
   "crates/kernel-strata",
   "crates/kernel-term",
-  "crates/runtime-compile-host",
+  "crates/runtime-emitter",
+  "crates/runtime-stencils",
   "crates/storage-artifact",
   "crates/storage-chunker",
   "crates/storage-records",
@@ -119,7 +120,6 @@ default-features = false
 # - kernel-core
 # - kernel-strata
 # - kernel-term
-# - runtime-compile-host
 # - storage-artifact
 # - storage-chunker
 # - storage-records
@@ -258,7 +258,6 @@ default-features = false
 # obligation ledger and the refusal vocabulary.
 # consumers:
 # - core-incremental
-# - runtime-compile-host
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -297,7 +296,8 @@ path = "crates/core-nbe"
 # The sequent intermediate language and the L machine: focusing a core term
 # into commands, running a command, and reading a run's terminal back.
 # consumers:
-# - runtime-compile-host (dev)
+# - runtime-emitter
+# - runtime-stencils (dev)
 # - surface-dispatcher
 [workspace.dependencies.gandr-core-sequent]
 path = "crates/core-sequent"
@@ -317,7 +317,8 @@ path = "crates/core-session"
 # - core-nbe
 # - core-sequent
 # - kernel-core (dev)
-# - runtime-compile-host
+# - runtime-emitter
+# - runtime-stencils (dev)
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -387,7 +388,8 @@ path = "crates/kernel-strata"
 # - core-session
 # - core-term
 # - kernel-core
-# - runtime-compile-host
+# - runtime-emitter
+# - runtime-stencils (dev)
 # - storage-artifact
 # - surface-corpus
 # - surface-diagnostics
@@ -401,15 +403,21 @@ path = "crates/kernel-strata"
 path = "crates/kernel-term"
 default-features = false
 
-# Compile-host preparation, activated only by its own development targets.
-# features:
-# - compile-host: exercise the optional Rust surface in tests and policy gates
+# Copy-and-patch emission: the lowering of the command IL, the patchers for
+# macOS arm64 and Linux x86-64, the content cache and the native tier's
+# policy, falling back to the portable executor.
 # consumers:
-# - runtime-compile-host (dev)
-[workspace.dependencies.gandr-runtime-compile-host]
-path = "crates/runtime-compile-host"
-default-features = false
-features = ["compile-host"]
+# - runtime-stencils (dev)
+# - surface-dispatcher
+[workspace.dependencies.gandr-runtime-emitter]
+path = "crates/runtime-emitter"
+
+# The L machine's transitions written once: the stencils the emitter copies
+# and the portable executor that dispatches the same functions.
+# consumers:
+# - runtime-emitter (build and normal)
+[workspace.dependencies.gandr-runtime-stencils]
+path = "crates/runtime-stencils"
 
 # Kernel artifacts on the record plane, under a manifest identity, read back
 # through the kernel's decoder.
@@ -442,6 +450,7 @@ path = "crates/storage-records"
 # The expectation language: the expectation schemas, the strict and fixture
 # roots, the settle comparison and the report shape.
 # consumers:
+# - runtime-stencils (dev)
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-render-terminal (dev)
@@ -465,6 +474,7 @@ path = "crates/surface-diagnostics"
 # Routes a driver invocation into the surface pipeline, and composes that
 # pipeline over the sources a verb walks.
 # consumers:
+# - runtime-stencils (dev)
 # - surface-diagnostics (dev)
 # - surface-driver
 # - surface-lsp
@@ -630,6 +640,7 @@ path = "crates/surface-tui"
 # - none: alloc-only cell patterns and stores.
 # consumers:
 # - core-sequent
+# - runtime-emitter
 # - storage-artifact
 # - surface-lowering
 # - theory-cell-complexes-tools
@@ -821,6 +832,19 @@ path = "crates/workflow-test-timing"
 version = "0.17.1"
 default-features = false
 
+# The C library's raw bindings: the emitter's executable regions — `MAP_JIT`
+# and the per-thread write toggle on macOS, a `memfd` mapped twice below
+# 2 GiB on Linux. Chosen over rustix, also in the graph, because rustix
+# exposes neither `MAP_JIT` nor `pthread_jit_write_protect_np`; the choice
+# reverses if it grows both. The record is in the emitter's crate docs.
+# features:
+# - none: the bindings alone; `std` adds nothing the emitter calls
+# consumers:
+# - runtime-emitter
+[workspace.dependencies.libc]
+version = "0.2.189"
+default-features = false
+
 # Exact, dynamically sized integers for native arithmetic.
 # features:
 # - none: allocation works without std or optional integrations
@@ -829,6 +853,23 @@ default-features = false
 [workspace.dependencies.num-bigint]
 version = "0.5.1"
 default-features = false
+
+# Object-file reading for the emitter's build script: the stencil object's
+# sections, symbols and relocations, Mach-O and ELF. Chosen over goblin for
+# its unified relocation view across both formats and its use by the Rust
+# toolchain's own backtrace and linker tools; the choice reverses if a third
+# object format needs a reader object lacks. The record is in the emitter's
+# crate docs.
+# features:
+# - read_core: the format-independent reading interface
+# - elf: the Linux x86-64 stencil object
+# - macho: the macOS arm64 stencil object
+# consumers:
+# - runtime-emitter (build)
+[workspace.dependencies.object]
+version = "0.40.0"
+default-features = false
+features = ["elf", "macho", "read_core"]
 
 # Race-initialised single-assignment cells without std: the corolla strata
 # `ua_n` certifies once per process. The choice, its alternatives and its
@@ -930,6 +971,7 @@ default-features = false
 # - core-term
 # - kernel-core
 # - kernel-term
+# - runtime-stencils (dev)
 # - storage-artifact
 # - surface-corpus
 # - surface-diagnostics
@@ -1312,11 +1354,15 @@ rust_2024_compatibility = "deny"
 # crate root selects opt-in quenchant lints under Dylint and is inert
 # everywhere else. The three specification cfgs select runtime enforcement,
 # print-only checks, and discarded specifications; the enforcing lane sets the
-# first for the whole graph.
-unexpected_cfgs = { level = "deny", check-cfg = ['cfg(dylint_lib, values("quenchant_dylints"))', "cfg(anodized_panic)", "cfg(anodized_print)", "cfg(anodized_discard_specs)"] }
+# first for the whole graph. `gandr_stencil_object` is set only by the
+# emitter's build script, compiling the stencil crate into the object its
+# stencil table is read from.
+unexpected_cfgs = { level = "deny", check-cfg = ['cfg(dylint_lib, values("quenchant_dylints"))', "cfg(anodized_panic)", "cfg(anodized_print)", "cfg(anodized_discard_specs)", "cfg(gandr_stencil_object)"] }
 unknown_or_malformed_diagnostic_attributes = "deny"
 # Nightly-creep guard: consumer crates have no feature exemption. A library
-# producer scopes its rustc_private expectation to the compiler-plugin crate.
+# producer scopes its rustc_private expectation to the compiler-plugin crate;
+# the runtime's stencil crate scopes its two feature gates to its root, the
+# reason beside them.
 unstable_features = "deny"
 unused = "deny"
 warnings = "deny"

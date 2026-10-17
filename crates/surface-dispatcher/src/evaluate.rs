@@ -1,5 +1,6 @@
 //! The run stage: a checked module focused into the command IL, one
-//! declaration run on the L machine, and its terminal read back and spelled.
+//! declaration run — emitted native code, the portable executor or the L
+//! machine — and its terminal read back and spelled.
 //!
 //! # A program is its declarations
 //!
@@ -64,16 +65,28 @@
 //! declaration owed its body is held opaque, and a refused one, and a code — a
 //! type, of which the machine carries no image — are held as the reason they do
 //! not run. `Program::evaluate` mints `return c` for the declaration at `c`,
-//! runs it on a fresh L machine under a budget of 2²⁴ steps, forces the
-//! terminal when it is a thunk, so a suspended computation runs and a function
-//! answers its `fn`, and reads the terminal back into the core. Nothing runs
-//! that no caller asked for: the settle comparison runs the declarations that
-//! state a `runs` outcome, the session runs what the user entered, and `gandr
-//! run` runs one declaration. The alternative was a run pipeline of its own
-//! that composed the source again, which lowers twice and could judge
-//! differently from the `check` it follows; the choice reverses if building the
-//! program shows on the check path's measurements, when it would move behind a
-//! request.
+//! runs it on the tier `gandr-runtime-emitter`'s policy picks — emitted
+//! native code by default where the host has a patcher, the portable
+//! executor elsewhere, both under a budget of 2²⁴ jumps — and on a fresh L
+//! machine under a budget of 2²⁴ steps when the tier declines a form it
+//! does not lower or a case no arm answers, forces the terminal when it is
+//! a thunk, so a suspended computation runs and a function answers its
+//! `fn`, and reads the terminal back into the core. `Program::evaluate_on`
+//! runs one engine alone, so a differential holds each tier to the machine.
+//! Nothing runs that no caller asked for: the settle comparison runs the
+//! declarations that state a `runs` outcome, the session runs what the user
+//! entered, and `gandr run` runs one declaration. The alternative was a run
+//! pipeline of its own that composed the source again, which lowers twice and
+//! could judge differently from the `check` it follows; the choice reverses if
+//! building the program shows on the check path's measurements, when it would
+//! move behind a request.
+//!
+//! **The machine takes what a tier declines.** A tier answers with the
+//! machine's evaluation or declines; it never answers differently. The
+//! alternative, refusing a declaration the lowering does not cover, would
+//! turn every coverage gap into a user-visible failure; the fallback costs a
+//! lowering attempt per run. It reverses once every `runs` form lowers and
+//! the machine retires into the executor.
 //!
 //! | What the run came to | `RunStatus` | `gandr run` exits |
 //! | -------------------- | ----------- | ----------------- |
@@ -137,15 +150,21 @@ use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Provenance;
 use gandr_core_sequent::ReadbackRefusal;
 use gandr_core_sequent::StepCount;
+use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
 use gandr_core_sequent::focus_computation;
 use gandr_core_sequent::focus_value;
+use gandr_core_sequent::read_back_terminal;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_kernel_term::ConstantIndex;
+use gandr_runtime_emitter::Declined;
+use gandr_runtime_emitter::Fuel;
+use gandr_runtime_emitter::Tier;
+use gandr_runtime_emitter::evaluate_on;
 use gandr_surface_corpus::RunSpelling;
 use gandr_surface_corpus::Runner;
 use gandr_surface_diagnostics::Families;
@@ -204,6 +223,34 @@ quenchant_shape::reason_enum! {
 /// and the bound that keeps a run of a later fragment from looping
 /// unobserved.
 const RUN_BUDGET: usize = 1_usize << 24_u32;
+
+/// The engine a run takes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Engine
+{
+    /// The L machine: the reference every tier is held to.
+    Machine,
+    /// Code the emitter copies and patches, where the host has a patcher.
+    Native,
+    /// The portable executor dispatching the same stencils.
+    Executor,
+}
+
+/// Which tier a run asks the emitter for.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Choice
+{
+    /// The tier the process's policy picks.
+    Policy,
+    /// One tier.
+    Tier(Tier),
+}
 
 /// A checked module, focused and ready to run.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -762,12 +809,14 @@ impl<'source> Program<'source>
     /// - ensures: [`Unrunnable`] when the position holds no declaration, or the
     ///   declaration or one it refers to, transitively, was refused or did not
     ///   focus, decided before any command runs. Otherwise the declaration runs
-    ///   on a fresh machine: its value is returned, and forced when it is a
-    ///   thunk; a terminal that is, or holds outside any suspension, a
-    ///   declaration owed its body, and a run stuck observing one, is
-    ///   [`Evaluation::Blamed`] on it; any other stuck run is
-    ///   [`Evaluation::Stuck`]; a machine fault, a terminal with no core
-    ///   reading or one the printer cannot lay out is
+    ///   on the tier the emitter's policy picks — emitted native code by
+    ///   default where the host has a patcher, the portable executor elsewhere
+    ///   — and on a fresh machine when the tier declines; the two give one
+    ///   evaluation. Its value is returned, and forced when it is a thunk; a
+    ///   terminal that is, or holds outside any suspension, a declaration owed
+    ///   its body, and a run stuck observing one, is [`Evaluation::Blamed`] on
+    ///   it; any other stuck run is [`Evaluation::Stuck`]; a machine fault, a
+    ///   terminal with no core reading or one the printer cannot lay out is
     ///   [`Evaluation::Unfinished`]; otherwise the terminal is read back and
     ///   spelled as the grammar writes it: an integer in decimal, a text quoted
     ///   with its escapes, `unit`, a tuple as `#{a, b}`, an injection as `+{.i
@@ -782,9 +831,9 @@ impl<'source> Program<'source>
     ///   also produces `Unrunnable`; its attempted focusing may already have
     ///   appended command-arena nodes.
     /// - panics: none.
-    /// - intension: each run is bounded by a step budget; the reference walk,
-    ///   the readback and the spelling are recursion-free, their pending work
-    ///   explicit stacks.
+    /// - intension: each run is bounded by a step or jump budget; the reference
+    ///   walk, the readback and the spelling are recursion-free, their pending
+    ///   work explicit stacks.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one source per outcome class the fragment can write
@@ -801,6 +850,7 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
     /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
     /// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+    /// - witness: `evaluate::tests::every_engine_spells_a_run_alike`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -844,23 +894,142 @@ impl<'source> Program<'source>
         constant: ConstantIndex,
     ) -> Evaluation<'source>
     {
-        if let Maybe::Present(unrunnable) = self.unrunnable(constant) {
-            return Evaluation::Unrunnable(unrunnable);
-        }
-        let (returned, forced) = match self.entries(constant) {
+        let (returned, forced) = match self.prepare(constant) {
             Ok(entries) => entries,
-            Err(refusal) => {
-                return Evaluation::Unrunnable(match self.name(constant) {
-                    Maybe::Present(declaration) => Unrunnable::Unfocused {
-                        declaration,
-                        refusal,
-                    },
-                    Maybe::Absent(declaration_name::Absent::Undeclared) => {
-                        Unrunnable::Undeclared(constant)
-                    },
-                });
+            Err(evaluation) => return evaluation,
+        };
+        self.tiered(constant, returned, forced, Choice::Policy)
+            .unwrap_or_else(|_declined| self.machine(constant, returned, forced))
+    }
+
+    /// Run the declaration at `constant` on `engine` alone, declining rather
+    /// than falling back to the L machine.
+    ///
+    /// # Specification
+    /// - ensures: the [`Evaluation::Unrunnable`] outcomes [`Self::evaluate`]
+    ///   gives, before any engine runs; [`Engine::Machine`] never declines and
+    ///   gives [`Self::evaluate`]'s machine outcome; a tier that answers gives
+    ///   the same evaluation as the machine.
+    /// - provides: the engines apart, so a differential holds each tier to the
+    ///   machine and counts what a tier declines.
+    /// - panics: none.
+    /// - executable: none — agreeing with the machine is the differential's to
+    ///   show; a postcondition would run every evaluation twice.
+    ///
+    /// # Errors
+    /// [`Declined`] naming why the tier did not answer: a form the lowering
+    /// refuses, a constructor no arm answers, an exhausted budget.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — one source of values, functions, thunks, a text and
+    ///   applications runs on every engine; each tier's answers are the
+    ///   machine's, the text is declined by name and the integer is not.
+    /// - witness: `evaluate::tests::every_engine_spells_a_run_alike`
+    #[inline]
+    pub fn evaluate_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+    ) -> Result<Evaluation<'source>, Declined>
+    {
+        let (returned, forced) = match self.prepare(constant) {
+            Ok(entries) => entries,
+            Err(evaluation) => return Ok(evaluation),
+        };
+        match engine {
+            Engine::Machine => Ok(self.machine(constant, returned, forced)),
+            Engine::Native => self.tiered(constant, returned, forced, Choice::Tier(Tier::Native)),
+            Engine::Executor => {
+                self.tiered(constant, returned, forced, Choice::Tier(Tier::Executor))
+            },
+        }
+    }
+
+    /// The two commands that run the declaration at `constant`: the one
+    /// returning it and the one forcing it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The [`Evaluation::Unrunnable`] that blocks the run.
+    fn prepare(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Result<(CommandId, CommandId), Evaluation<'source>>
+    {
+        if let Maybe::Present(unrunnable) = self.unrunnable(constant) {
+            return Err(Evaluation::Unrunnable(unrunnable));
+        }
+        self.entries(constant).map_err(|refusal| {
+            Evaluation::Unrunnable(match self.name(constant) {
+                Maybe::Present(declaration) => Unrunnable::Unfocused {
+                    declaration,
+                    refusal,
+                },
+                Maybe::Absent(declaration_name::Absent::Undeclared) => {
+                    Unrunnable::Undeclared(constant)
+                },
+            })
+        })
+    }
+
+    /// Run the commands on a tier the choice names, forcing a suspended
+    /// answer, and spell the terminal.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The tier's [`Declined`].
+    fn tiered(
+        &self,
+        constant: ConstantIndex,
+        returned: CommandId,
+        forced: CommandId,
+        choice: Choice,
+    ) -> Result<Evaluation<'source>, Declined>
+    {
+        let fuel = Fuel::from(RUN_BUDGET);
+        let mut store = Store::new();
+        let run = |root, store: &mut Store| match choice {
+            Choice::Policy => {
+                gandr_runtime_emitter::evaluate(&self.arena, &self.definitions, root, fuel, store)
+            },
+            Choice::Tier(tier) => {
+                evaluate_on(tier, &self.arena, &self.definitions, root, fuel, store)
             },
         };
+        let terminal = run(returned, &mut store)?;
+        let terminal = match store.value(terminal) {
+            Some(&(HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. })) => {
+                run(forced, &mut store)?
+            },
+            Some(
+                &(HeapValue::Literal(_)
+                | HeapValue::Constructed { .. }
+                | HeapValue::Stack { .. }
+                | HeapValue::Closure { .. }
+                | HeapValue::Opaque(_)
+                | HeapValue::Capability),
+            )
+            | None => terminal,
+        };
+        Ok(self.finish(constant, &store, terminal))
+    }
+
+    /// Run the commands on the L machine, forcing a suspended answer, and
+    /// spell the terminal.
+    ///
+    /// # Specification
+    /// trivial.
+    fn machine(
+        &self,
+        constant: ConstantIndex,
+        returned: CommandId,
+        forced: CommandId,
+    ) -> Evaluation<'source>
+    {
         let budget = StepCount::from(RUN_BUDGET);
         let mut machine = Machine::new(&self.arena, &self.definitions);
         let returned = match machine.run(returned, budget) {
@@ -892,8 +1061,23 @@ impl<'source> Program<'source>
             )
             | None => terminal,
         };
+        self.finish(constant, machine.store(), terminal)
+    }
+
+    /// Read the terminal `terminal` of `store` back and spell it, or name the
+    /// module whose signature it reaches past.
+    ///
+    /// # Specification
+    /// trivial.
+    fn finish(
+        &self,
+        constant: ConstantIndex,
+        store: &Store,
+        terminal: HeapValueId,
+    ) -> Evaluation<'source>
+    {
         let mut core = CoreArena::new();
-        match machine.read_back(terminal, &mut core) {
+        match read_back_terminal(&self.arena, store, terminal, &mut core) {
             Ok(read) => match self.hidden_in(&mut core, read) {
                 Maybe::Present(module) => self.sealed.get(&constant).map_or(
                     Evaluation::Unfinished(Unfinished::Unspelled),
@@ -1683,12 +1867,16 @@ mod tests
     use gandr_core_sequent::MachineFault;
     use gandr_core_sequent::Stuck;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_runtime_emitter::Declined;
+    use gandr_runtime_emitter::Form;
+    use gandr_runtime_emitter::PATCHER;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::SurfaceName;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Engine;
     use super::Evaluation;
     use super::Program;
     use super::RunStatus;
@@ -1805,6 +1993,52 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
                 spelled,
                 "`{name}` is spelled as pinned"
             );
+        }
+    }
+
+    /// Every engine spells a run as the machine does: values, functions,
+    /// thunks and applications answer on each tier with the machine's
+    /// evaluation, and a text, which no stencil builds, is declined by name
+    /// rather than answered wrongly.
+    #[test]
+    fn every_engine_spells_a_run_alike()
+    {
+        let mut values = program(
+            r#"def answer : Integer ; def answer = 42 ;
+def greeting : String ; def greeting = "words" ;
+def nothing : Unit ; def nothing = unit ;
+def copy = answer ;
+def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ;
+def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fn (x) { fn (y) { return x } } } ;
+def applied : +U (-F Integer) ; def applied = thunk { become (force identity)(answer) } ;
+def chosen : +U (-F Integer) ; def chosen = thunk { become (force first)(answer)(7) } ;
+def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { return 1 } } ;"#,
+        );
+        let tiers: &[Engine] = if PATCHER {
+            &[Engine::Native, Engine::Executor]
+        }
+        else {
+            &[Engine::Executor]
+        };
+        let declared: Vec<_> = values.declarations.keys().copied().collect();
+        for constant in declared {
+            let name = values.name(constant);
+            let expected = values
+                .evaluate_on(constant, Engine::Machine)
+                .expect("the machine never declines");
+            for &engine in tiers {
+                let ran = values.evaluate_on(constant, engine);
+                if name == Maybe::Present(SurfaceName::from("greeting")) {
+                    assert_eq!(
+                        Err(Declined::Lowering(Form::NonIntegerLiteral)),
+                        ran,
+                        "{engine:?} declines the text by name"
+                    );
+                }
+                else {
+                    assert_eq!(Ok(&expected), ran.as_ref(), "{name:?} on {engine:?}");
+                }
+            }
         }
     }
 
