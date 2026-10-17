@@ -533,6 +533,7 @@ impl SessionLoop
     /// - hypothesis: L3 — a probe after a declaration named `it` still answers
     ///   the expression's type.
     /// - witness: `loop::tests::the_type_command_answers_without_keeping_the_probe`
+    /// - witness: `loop::tests::a_refused_type_probe_is_reported_under_the_first_free_probe_name`
     #[spec(ensures: |ret|
         self.standings.names(SourceFragment::from(ret.as_str())) == Naming::Free
             && if self.standings.names(SourceFragment::from("it")) == Naming::Free { ret == "it" }
