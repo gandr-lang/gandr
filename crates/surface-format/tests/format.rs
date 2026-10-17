@@ -60,7 +60,7 @@ mod tests
         width: impl Into<PageWidth>,
     ) -> String
     {
-        String::from(<&str>::from(formatted(grammar, source, width).text()))
+        formatted(grammar, source, width).into_text()
     }
 
     /// The fixture `name`, and its goldens at both pages.
@@ -143,6 +143,28 @@ mod tests
     }
 
     #[test]
+    fn a_form_written_against_the_one_before_starts_its_own_line()
+    {
+        let grammar = grammar();
+        assert_eq!(
+            text(&grammar, "def a = 1 ;def b = 2 ;", WIDE),
+            "def a = 1 ;\ndef b = 2 ;\n",
+            "only a separator touches the form it ends"
+        );
+    }
+
+    #[test]
+    fn a_separator_written_on_the_next_line_joins_its_statement()
+    {
+        let grammar = grammar();
+        assert_eq!(
+            text(&grammar, "f(a)\n;\ng(b)\n\n;", WIDE),
+            "f(a) ;\ng(b) ;\n",
+            "a separator after a break or a blank line ends the statement on its line"
+        );
+    }
+
+    #[test]
     fn a_continuation_line_indents_under_its_statement()
     {
         let grammar = grammar();
@@ -170,19 +192,23 @@ mod tests
     fn a_repaired_form_is_copied_as_written()
     {
         let grammar = grammar();
-        let source = "def   a = (1 ;\ndef   b = 2 ;\n";
+        let source = "def   z = 0 ;\ndef   a = (1 ;\ndef   b = 2 ;\n";
         let formatted = formatted(&grammar, source, WIDE);
         assert_eq!(
             <&str>::from(formatted.text()),
-            "def   a = (1 ;\ndef b = 2 ;\n",
-            "the repaired form keeps its bytes and its neighbour is laid out"
+            "def z = 0 ;\ndef   a = (1 ;\ndef b = 2 ;\n",
+            "the repaired form keeps its bytes and its neighbours on either side are laid out"
         );
         let layouts: Vec<Layout> = formatted
             .pieces()
             .iter()
             .map(|piece| piece.layout)
             .collect();
-        assert_eq!(layouts, [Layout::Repaired, Layout::Formatted]);
+        assert_eq!(layouts, [
+            Layout::Formatted,
+            Layout::Repaired,
+            Layout::Formatted
+        ]);
     }
 
     #[test]
@@ -194,6 +220,17 @@ mod tests
             text(&grammar, source, NARROW),
             "def f() -> -F Integer {\r\n  return 1\r\n}\r\n",
             "carriage returns stay with their line feeds"
+        );
+    }
+
+    #[test]
+    fn a_source_split_evenly_between_endings_keeps_line_feeds()
+    {
+        let grammar = grammar();
+        assert_eq!(
+            text(&grammar, "def a = 1 ;\r\ndef b = 2 ;\n", WIDE),
+            "def a = 1 ;\ndef b = 2 ;\n",
+            "carriage returns win only when most breaks carry them"
         );
     }
 

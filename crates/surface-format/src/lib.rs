@@ -267,6 +267,9 @@ pub enum Layout
 /// - witness: `format::tests::a_repaired_form_is_copied_as_written`
 /// - witness: `format::tests::the_source_line_ending_is_kept`
 /// - witness: `format::tests::pieces_place_each_top_level_form`
+/// - witness: `format::tests::a_form_written_against_the_one_before_starts_its_own_line`
+/// - witness: `format::tests::a_separator_written_on_the_next_line_joins_its_statement`
+/// - witness: `format::tests::a_source_split_evenly_between_endings_keeps_line_feeds`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
 pub fn format(
