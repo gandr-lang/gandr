@@ -495,6 +495,7 @@ use core::fmt;
 use core::ops::ControlFlow;
 
 use anodized::spec;
+use gandr_core_term::Binders;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -1234,7 +1235,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1292,6 +1293,7 @@ fn ending(former: Former) -> Ending
         | Former::Import
         | Former::Module
         | Former::Data
+        | Former::Mutual
         | Former::SessionType
         | Former::Action
         | Former::Access
@@ -1318,7 +1320,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1421,6 +1423,7 @@ fn iterating(former: Former) -> Ending
                     | Former::Import
                     | Former::Module
                     | Former::Data
+                    | Former::Mutual
                     | Former::Reserved
                     | Former::Unadmitted,
                 Family::Neither
@@ -1490,6 +1493,7 @@ const fn family_of(former: Former) -> Family
         | Former::Import
         | Former::Module
         | Former::Data
+        | Former::Mutual
         | Former::Reserved
         | Former::Unadmitted => Family::Neither,
     }
@@ -2107,11 +2111,15 @@ enum Plan
     /// is the head applied statically to the arguments in the lowerer's
     /// operand store, none for a bare name.
     Decode(Code, Stretch, Universe),
-    /// The type the code a dynamic function returns denotes: the function at
-    /// this admission position called on the arguments in the lowerer's
-    /// operand store, its returned code decoded in the universe the position
-    /// reads.
-    Unquote(ConstantIndex, Stretch, Universe),
+    /// The type the code a dynamic function returns denotes: the function the
+    /// code names — a declaration at its admission position, or a binder
+    /// holding a thunk — called on the arguments in the lowerer's operand
+    /// store, its returned code decoded in the universe the position reads.
+    Unquote(Code, Stretch, Universe),
+    /// The call of a dynamic function the code names on the arguments in the
+    /// lowerer's operand store, left to right: a type-position call's argument
+    /// written as a call, which a value position nests.
+    Called(Code, Stretch),
     /// A static application of the head to the arguments in the lowerer's
     /// operand store, left to right.
     StaticApplication(Code, Stretch),
@@ -2854,6 +2862,9 @@ struct Lowerer<'run, 'source>
     /// Each recursive call, by its head: the instantiation whose claim checks
     /// it.
     descents: BTreeMap<NodeIndex, native::Descent>,
+    /// Each recursive call through a joint fixpoint, by its head: the summand
+    /// of the member it calls, which injects its argument.
+    injected: BTreeMap<NodeIndex, Summand>,
     /// The reading of the form being classified, or unread between forms: a
     /// value a type reads is filed in [`Self::type_read`].
     reader: Reading,
@@ -3203,6 +3214,7 @@ pub fn lower_unit<'source>(
         identities: BTreeMap::new(),
     };
     lowerer.mint(&mut sink)?;
+    lowerer.mint_joints(&mut sink);
     lowerer.mint_abstracts(&mut sink);
     lowerer.mint_models(&mut sink);
     lowerer.check_families(&mut sink);
@@ -3409,6 +3421,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             constructors: Vec::new(),
             recursions: BTreeMap::new(),
             descents: BTreeMap::new(),
+            injected: BTreeMap::new(),
             reader: Reading::Unread,
             type_read: BTreeSet::new(),
             nullary: BTreeMap::new(),
@@ -4657,6 +4670,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::AttributeBlock
             | Former::Import
             | Former::Data
+            | Former::Mutual
             | Former::Reserved
             | Former::Unadmitted => Err(site.out(FragmentBoundary::WrongSort)),
         }
@@ -4672,12 +4686,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a force; a function's result reads a computation type and reaches a
     ///   value type by a returner; a value position reaches a type of either
     ///   sort by a quote, and a computation as the value it returns at an
-    ///   endpoint and nested everywhere else; a tail, where a path through a
-    ///   body ends, reaches a value by the `return` its polarity names,
-    ///   recorded as inferred and leaving; a `while` loop's condition, and a
-    ///   tail of a handled subject, which is the subject's result, reach a
-    ///   value by a `return` recorded as no exit; the bridge is recorded for
-    ///   the form's node, and every other match records none.
+    ///   endpoint or where a type reads it, and nested everywhere else; a tail,
+    ///   where a path through a body ends, reaches a value by the `return` its
+    ///   polarity names, recorded as inferred and leaving; a `while` loop's
+    ///   condition, and a tail of a handled subject, which is the subject's
+    ///   result, reach a value by a `return` recorded as no exit; the bridge is
+    ///   recorded for the form's node, and every other match records none.
     /// - provides: the sort check every former takes, and the six insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
@@ -4723,7 +4737,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Produced::ValueType | Produced::CompType,
                 ) => Some((frame, Bridge::Inserted(Insertion::Quote))),
                 | (Reading::Value(frame), Produced::Computation)
-                    if self.at_endpoint.contains(&site.at.node) =>
+                    if self.at_endpoint.contains(&site.at.node) || self.type_read.contains(&site.at.node) =>
                 {
                     Some((frame, Bridge::Inserted(Insertion::Endpoint)))
                 },
@@ -4780,7 +4794,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 (frame, Bridge::Inserted(Insertion::Quote))
             },
             (Reading::Value(frame), Produced::Computation)
-                if self.at_endpoint.contains(&site.at.node) =>
+                if self.at_endpoint.contains(&site.at.node)
+                    || self.type_read.contains(&site.at.node) =>
             {
                 (frame, Bridge::Inserted(Insertion::Endpoint))
             },
@@ -4819,9 +4834,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
     /// What `name`, written at `site` under `frame`, resolves to: the
     /// innermost binder carrying it, else a declaration strictly earlier than
-    /// the one `site` belongs to, or that declaration itself when it is a data
-    /// declaration, searched from that declaration's own module outward to
-    /// the top level.
+    /// the one `site` belongs to, another member of its mutual block, or that
+    /// declaration itself when it is a data declaration, searched from that
+    /// declaration's own module outward to the top level.
     ///
     /// # Specification
     /// - requires: `site` is the name's own node.
@@ -4829,11 +4844,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   first module, innermost first, whose body declares the name: its
     ///   member when that member's admission position is strictly earlier, and
     ///   the forward-member refusal when it is not; else a top-level
-    ///   declaration strictly earlier, with its admission position and its
-    ///   signature's written type; the data declaration `site` belongs to,
-    ///   untyped, for its own name: a family's self reference, whose positivity
-    ///   the checker judges; else a callable operation admitted strictly
-    ///   earlier, untyped; the unresolved absence when nothing answers.
+    ///   declaration strictly earlier or another member of the mutual block
+    ///   `site` belongs to, with its admission position and its signature's
+    ///   written type; the data declaration `site` belongs to, untyped, for its
+    ///   own name: a family's self reference, whose positivity the checker
+    ///   judges; else a callable operation admitted strictly earlier, untyped;
+    ///   the unresolved absence when nothing answers.
     /// - provides: the one resolution term names, capitalised names and type
     ///   heads share.
     /// - fails: [`LoweringRefusal::UnmarkedSelfReference`] for the name a
@@ -4864,7 +4880,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.fuel.remaining <= before
                 && match ret {
                     | Ok(Maybe::Present(Resolved::Declaration { constant, declared })) => {
-                        matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if self.collected.slots.get(usize::from(constant)).is_some_and(|entry| entry.name == name && entry.constant == constant && (usize::from(constant) < usize::from(own) || (usize::from(constant) == usize::from(own) && matches!(entry.definition, Maybe::Present(Half { operand: Operand::Data(_), .. })))) && declared == match entry.signature { Maybe::Present(Half { operand: Operand::Written(written), .. }) => Maybe::Present(written.node), Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped) }))
+                        matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if self.collected.slots.get(usize::from(constant)).is_some_and(|entry| entry.name == name && entry.constant == constant && (usize::from(constant) < usize::from(own) || (usize::from(constant) == usize::from(own) && matches!(entry.definition, Maybe::Present(Half { operand: Operand::Data(_), .. }))) || matches!((self.collected.block_of(SlotIndex::from(usize::from(constant))), self.collected.block_of(own)), (Maybe::Present(held), Maybe::Present(holding)) if held == holding)) && declared == match entry.signature { Maybe::Present(Half { operand: Operand::Written(written), .. }) => Maybe::Present(written.node), Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped) }))
                     },
                     | Err(
                         LoweringRefusal::ForwardMemberReference {
@@ -4918,7 +4934,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             ..
                         })
                     );
-                if target < own || own_family {
+                // A mutual block's members name one another in any order:
+                // the block is admitted as one. A member's own name is the
+                // rule above's.
+                let one_block = target != own
+                    && matches!(
+                        (self.collected.block_of(target), self.collected.block_of(own)),
+                        (Maybe::Present(held), Maybe::Present(holding)) if held == holding
+                    );
+                if target < own || own_family || one_block {
                     let declared = match entry.signature {
                         Maybe::Present(Half {
                             operand: Operand::Written(written),
@@ -6071,6 +6095,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 (recursive, named, ahead.at(TileName::PAREN_CLOSE))
             {
                 let own_site = Maybe::Present(own.span);
+                let named = own.node;
                 let own = self.name_at(own);
                 let bound = self.scope.extend_typed(frame, own, site.at.node, own_site);
                 let _first = self.recursions.insert(bound, native::Recursion {
@@ -6079,6 +6104,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         end: self.parameters.len(),
                     },
                     claimed: native::Claimed(false),
+                    named,
                 });
                 recursion = Maybe::Present(bound);
                 frame = Frame::Inner(bound);
@@ -8184,7 +8210,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   naming a type family, as a component or a member, expands to the
     ///   family's type over the arguments; a head a binder or an earlier
     ///   declaration answers is read as the static application of that code to
-    ///   the arguments, left to right; any other head is the type former
+    ///   the arguments, left to right, or, holding a function where a value is
+    ///   read, as its call; any other head is the type former
     ///   [`Self::applied_head`] plans.
     /// - provides: the applied half of type-head resolution.
     /// - fails: yields the unresolved-head refusal for a head nothing answers
@@ -8207,12 +8234,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_run_bound_type_and_a_constructor_argument_stand_in_a_type`
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    /// - witness: `lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Constructor(_)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Constructor(_)))
                 )
         },
     )]
@@ -8234,6 +8262,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
         };
         let name = self.name_at(head);
+        if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
+            return self.staged_unquote(site, name, cursor);
+        }
         let start = self.operands.len();
         let read = arguments(site, &mut cursor, &mut self.operands);
         if let (Ok(()), Reading::Value(_)) = (read, site.reading)
@@ -8532,12 +8563,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   application, in the universe the code's written type reaches after one
     ///   arrow per argument, and else in the universe the position reads — the
     ///   computation types where only a computation type is read, the value
-    ///   types everywhere else, at the fuss-free level. A declaration defined
-    ///   by a function tail is a dynamic function, not a static operator: where
-    ///   a type is read, its application is the unquote of the code the call
-    ///   returns, in the universe the position reads. Every argument is read as
-    ///   a value under the site's frame, and a binder so named is recorded by
-    ///   [`Self::name_in_type`]: quoted in a body quote, mentioned elsewhere.
+    ///   types everywhere else, at the fuss-free level. A dynamic function — a
+    ///   declaration defined by a function tail, or a binder applied to at
+    ///   least one argument whose written type is a thunk or which is written
+    ///   with no type — is not a static operator: where a type is read, its
+    ///   application is the unquote of the code the call returns, in the
+    ///   universe the position reads, and where a value is read, an application
+    ///   of it to at least one argument is the call, a computation the position
+    ///   nests. Every argument is read as a value under the site's frame, and a
+    ///   binder so named is recorded by [`Self::name_in_type`]: quoted in a
+    ///   body quote, mentioned elsewhere.
     /// - provides: the one reading of a type operator's use, bare or applied,
     ///   as a value or as the type it denotes.
     /// - fails: yields the arity refusal for a data family applied to other
@@ -8556,20 +8591,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a bare head and an applied one, each where a value is
     ///   read and where a type is read, the decode's universe written by the
-    ///   operator and left to the position, and a function called where a type
-    ///   is read, each asserted as the exact core node read back out of the
-    ///   arena.
+    ///   operator and left to the position, a function called where a type is
+    ///   read, and a binder holding a thunk called where a type is read and in
+    ///   a type-position call's argument, each asserted as the exact core node
+    ///   read back out of the arena.
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
     /// - witness: `lower::tests::a_function_to_a_universe_unquotes_where_a_type_is_read`
+    /// - witness: `lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || match self.plans.get(usize::from(site.at.node)) {
                     | Some(&Plan::StaticApplication(_, planned)) => {
                         planned == applied && matches!(site.reading, Reading::Value(_))
+                    },
+                    | Some(&Plan::Called(_, planned)) => {
+                        planned == applied
+                            && applied.start < applied.end
+                            && matches!(site.reading, Reading::Value(_))
                     },
                     | Some(&Plan::Decode(_, planned, _) | &Plan::Unquote(_, planned, _)) => {
                         planned == applied && !matches!(site.reading, Reading::Value(_))
@@ -8604,8 +8646,46 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ),
             Resolved::Declaration { constant, declared } => (Code::Constant(constant), declared),
         };
+        let called = applied.start < applied.end;
+        let dynamic = match code {
+            Code::Constant(constant) => matches!(
+                self.collected
+                    .slots
+                    .get(usize::from(constant))
+                    .map(|slot| slot.definition),
+                Some(Maybe::Present(Half {
+                    operand: Operand::Function,
+                    ..
+                }))
+            ),
+            // A binder holds a function when its written type is a thunk, the
+            // bridge or the alias, or when it is written with no type: a
+            // pattern's field or a `run`'s result. A static lambda's operand
+            // is an operator, and its application is static.
+            Code::Bound { .. } => {
+                called
+                    && match declared {
+                        Maybe::Present(written) => self.tree.node(written).is_some_and(|node| {
+                            matches!(
+                                shape_of(self.pbg, node),
+                                Ok(Shape::Form {
+                                    former: Former::ThunkType | Former::ValueFunctionType,
+                                    ..
+                                })
+                            )
+                        }),
+                        Maybe::Absent(binder_type::Absent::Untyped) => true,
+                        Maybe::Absent(binder_type::Absent::Operand) => false,
+                    }
+            },
+        };
         let (plan, produced) = if let Reading::Value(_) = site.reading {
-            (Plan::StaticApplication(code, applied), Produced::Value)
+            if dynamic && called {
+                (Plan::Called(code, applied), Produced::Computation)
+            }
+            else {
+                (Plan::StaticApplication(code, applied), Produced::Value)
+            }
         }
         else {
             let count = OperandCount::from(applied.end.saturating_sub(applied.start));
@@ -8615,22 +8695,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 GroundSort::Value => Produced::ValueType,
                 GroundSort::Computation => Produced::CompType,
             };
-            let plan = match code {
-                Code::Constant(constant)
-                    if matches!(
-                        self.collected
-                            .slots
-                            .get(usize::from(constant))
-                            .map(|slot| slot.definition),
-                        Some(Maybe::Present(Half {
-                            operand: Operand::Function,
-                            ..
-                        }))
-                    ) =>
-                {
-                    Plan::Unquote(constant, applied, universe)
-                },
-                Code::Constant(_) | Code::Bound { .. } => Plan::Decode(code, applied, universe),
+            let plan = if dynamic {
+                Plan::Unquote(code, applied, universe)
+            }
+            else {
+                Plan::Decode(code, applied, universe)
             };
             (plan, produced)
         };
@@ -9293,7 +9362,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         exhausted(site, &cursor)?;
         let name = self.name_at(binder);
         self.note_binder(binder, name)?;
-        let extended = self.scope.extend(frame, name, Maybe::Present(binder.span));
+        let extended = self
+            .scope
+            .extend_operand(frame, name, Maybe::Present(binder.span));
         self.read(body.node, Reading::Value(Frame::Inner(extended)));
 
         self.plan(site, Plan::StaticLambda(body.node));
@@ -10068,7 +10139,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -10242,9 +10313,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Decode(code, arguments, universe) => {
                 self.mint_decode(code, arguments, universe, sink, origin)
             },
-            Plan::Unquote(function, arguments, universe) => {
-                self.mint_unquote(function, arguments, universe, sink, origin)
+            Plan::Unquote(code, arguments, universe) => {
+                self.mint_unquote(code, arguments, universe, sink, origin)
             },
+            Plan::Called(code, arguments) => self
+                .mint_called(code, arguments, sink, origin)
+                .map(Lowered::Computation),
             Plan::StaticApplication(code, arguments) => self
                 .mint_code(code, arguments, sink, origin)
                 .map(Lowered::Value),
@@ -10547,25 +10621,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: every argument is already minted or absent.
     /// - ensures: `f(v1, …, vn)` where a type is read mints as the decode of
-    ///   `returned(app(… app(force f, v1) …, vn))` at the universe's level, a
-    ///   value type for the value sort and a computation type for the
-    ///   computation sort. The head and the applications carry the written
-    ///   origin; the force, the returned code and the decode are marked
-    ///   inserted. Nothing is minted when an argument did not lower.
+    ///   `returned(c)`, `c` the call [`Self::mint_called`] mints, at the
+    ///   universe's level, a value type for the value sort and a computation
+    ///   type for the computation sort; the returned code and the decode are
+    ///   marked inserted. Nothing is minted when an argument did not lower.
     /// - provides: `El` as unquote: a function from values to a universe is a
     ///   first-order function to a code, and the type it denotes is the decode
     ///   of what the call returns, which the checker reduces by running it.
     /// - fails: never.
     /// - panics: none.
     ///
-    /// # Termination
-    /// Both loops run once per entry of the finite stretch `arguments`.
-    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a function of one argument called where a type is
-    ///   read, asserted as the exact core type read back out of the arena, with
-    ///   each node's origin.
+    /// - hypothesis: L3 — a function of one argument, a binder holding a thunk
+    ///   and a decoder's own descent called where a type is read, each asserted
+    ///   as the exact core type read back out of the arena, with each node's
+    ///   origin.
     /// - witness: `lower::tests::a_function_to_a_universe_unquotes_where_a_type_is_read`
+    /// - witness: `lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
+    /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Present(Lowered::ValueType(id)) => universe.sort == GroundSort::Value
@@ -10586,32 +10659,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )]
     fn mint_unquote(
         &self,
-        function: ConstantIndex,
+        function: Code,
         arguments: Stretch,
         universe: Universe,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.operands, arguments);
-        for &argument in written {
-            if let Maybe::Absent(reason) = self.value_at(argument) {
-                return Maybe::Absent(reason);
-            }
-        }
-        let head = sink.arena.value_constant(function);
-        sink.origins.record_value(head, origin);
-        let mut called = sink.arena.computation_force(head);
-        sink.origins
-            .record_computation(called, origin.inserted(Insertion::Force));
-        for &argument in written {
-            let Maybe::Present(passed) = self.value_at(argument)
-            else {
-                return Maybe::Absent(lowered::Absent::Unminted);
-            };
-            called = sink.arena.computation_application(called, passed);
-            sink.origins.record_computation(called, origin);
-        }
+        let called = match self.mint_called(function, arguments, sink, origin) {
+            Maybe::Present(called) => called,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
         let code = sink.arena.value_returned(called);
         sink.origins
             .record_value(code, origin.inserted(Insertion::Endpoint));
@@ -10630,6 +10688,155 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
         }
     }
+
+    /// Carry out a dynamic call's plan: the function the code names, forced
+    /// and applied to the arguments.
+    ///
+    /// # Specification
+    /// - requires: every argument is already minted or absent.
+    /// - ensures: `f(v1, …, vn)` mints as `app(… app(force f, v1) …, vn)`, `f`
+    ///   the constant at its admission position or the variable at the binder's
+    ///   index in the telescope of the type the call stands in. An argument a
+    ///   type reads as the value a call returns, `⟨c⟩`, runs first instead: the
+    ///   application is bound under one `c ← …` per such argument, in written
+    ///   order, the first outermost, the argument read as its bind's variable
+    ///   and everything else raised past the binds. The head and the
+    ///   applications carry the written origin; the force is marked inserted,
+    ///   and each bind the nested origin of the argument it runs. Nothing is
+    ///   minted when an argument did not lower.
+    /// - provides: the call an unquote decodes, and a type-position call's
+    ///   argument written as a call, which the checker runs. A descent through
+    ///   a function field, `el[<](b(x))`, is then the bind `c ← b(x); el[<](c)`
+    ///   a body writes, whose variable stands below the stage as that descent's
+    ///   does.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every loop runs once per entry of the finite stretch `arguments`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_unquote`], whose calls it mints.
+    /// - witness: `lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
+    /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(id) => matches!(
+                sink.arena.computation(id),
+                Some(&(gandr_core_term::Computation::Force(_) | gandr_core_term::Computation::Application(..) | gandr_core_term::Computation::Bind(..)))
+            ),
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    fn mint_called(
+        &self,
+        function: Code,
+        arguments: Stretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ComputationId, lowered::Absent>
+    {
+        let written = stretch(&self.operands, arguments);
+        let mut passed = Vec::with_capacity(written.len());
+        let mut runs = Vec::new();
+        for &argument in written {
+            let value = match self.value_at(argument) {
+                Maybe::Present(value) => value,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+            if self.type_read.contains(&argument)
+                && let Some(&Value::Returned(run)) = sink.arena.value(value)
+            {
+                let ran = match self.origin_at(argument) {
+                    Maybe::Present(at) => at,
+                    Maybe::Absent(_) => origin,
+                };
+                runs.push((passed.len(), run, ran));
+            }
+            passed.push(value);
+        }
+        let past = Binders::from(u32::try_from(runs.len()).unwrap_or(u32::MAX));
+        // The copies first, each carrying its source's origin: every argument
+        // no run takes, raised past the runs' binders, and each run under the
+        // runs before it. The spine minted after them records its own.
+        let mark = sink.arena.watermark();
+        let mut carried = Vec::new();
+        let mut raised = Vec::with_capacity(passed.len());
+        for (position, &value) in passed.iter().enumerate() {
+            if runs.is_empty() || runs.iter().any(|&(at, ..)| at == position) {
+                raised.push(value);
+                continue;
+            }
+            let wrapped = sink.arena.computation_return(value);
+            let shifted = gandr_core_term::shift_computation_under_traced(
+                sink.arena,
+                wrapped,
+                Binders::NONE,
+                past,
+                &mut carried,
+            );
+            raised.push(match sink.arena.computation(shifted) {
+                Some(&gandr_core_term::Computation::Return(inner)) => inner,
+                _ => value,
+            });
+        }
+        let mut firsts = Vec::with_capacity(runs.len());
+        for (order, &(_, run, _)) in runs.iter().enumerate() {
+            let before = Binders::from(u32::try_from(order).unwrap_or(u32::MAX));
+            firsts.push(gandr_core_term::shift_computation_under_traced(
+                sink.arena,
+                run,
+                Binders::NONE,
+                before,
+                &mut carried,
+            ));
+        }
+        exits::record_copies(sink, mark, &carried, origin);
+        let head = match function {
+            Code::Bound {
+                from,
+                binder,
+                telescope,
+            } => {
+                let index = u32::from(self.scope.index_in(from, binder, telescope));
+                sink.arena.value_variable(
+                    Zone::Intuitionistic,
+                    DeBruijnIndex::from(index.saturating_add(u32::from(past))),
+                )
+            },
+            Code::Constant(constant) => sink.arena.value_constant(constant),
+        };
+        sink.origins.record_value(head, origin);
+        let mut called = sink.arena.computation_force(head);
+        sink.origins
+            .record_computation(called, origin.inserted(Insertion::Force));
+        for (position, &value) in raised.iter().enumerate() {
+            let argument = match runs.iter().position(|&(at, ..)| at == position) {
+                Some(order) => {
+                    let index = runs.len().saturating_sub(order).saturating_sub(1);
+                    let bound = sink.arena.value_variable(
+                        Zone::Intuitionistic,
+                        DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX)),
+                    );
+                    let ran = runs.get(order).map_or(origin, |&(.., ran)| ran);
+                    sink.origins
+                        .record_value(bound, ran.inserted(Insertion::Nested));
+                    bound
+                },
+                None => value,
+            };
+            called = sink.arena.computation_application(called, argument);
+            sink.origins.record_computation(called, origin);
+        }
+        for (&first, &(.., ran)) in firsts.iter().zip(&runs).rev() {
+            called = sink.arena.computation_bind(first, called);
+            sink.origins
+                .record_computation(called, ran.inserted(Insertion::Nested));
+        }
+
+        Maybe::Present(called)
+    }
+
     /// Carry out a tuple's plan: its members, as one tuple.
     ///
     /// # Specification
@@ -11140,6 +11347,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Universe(_)
             | Plan::Decode(..)
             | Plan::Unquote(..)
+            | Plan::Called(..)
             | Plan::StaticApplication(..)
             | Plan::Tuple(_)
             | Plan::Record(_)
@@ -11386,9 +11594,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: `c(v1, …, vn)` mints as `app(… app(c, v1) …, vn)`, every
-    ///   application carrying the call's origin; a call of no arguments is its
-    ///   head's own computation; nothing is minted when the head or an argument
-    ///   did not lower.
+    ///   application carrying the call's origin; a call through a joint
+    ///   fixpoint passes its argument injected at the called member's summand,
+    ///   the injection marked as the fixpoint's insertion; a call of no
+    ///   arguments is its head's own computation; nothing is minted when the
+    ///   head or an argument did not lower.
     /// - provides: the curried elimination of a lambda.
     /// - fails: never.
     /// - panics: none.
@@ -11398,6 +11608,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   head only once when required, and preserve authored versus inserted
     ///   origins.
     /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
+    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     #[spec(
@@ -11441,10 +11652,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         for &argument in arguments {
-            let passed = match self.value_at(argument) {
+            let mut passed = match self.value_at(argument) {
                 Maybe::Present(passed) => passed,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
+            if let Some(&summand) = self.injected.get(&head) {
+                let injected = sink.arena.value_injection(summand, passed);
+                sink.origins
+                    .record_value(injected, origin.inserted(Insertion::Fixpoint));
+                passed = injected;
+            }
             let id = sink.arena.computation_application(applied, passed);
             sink.origins.record_computation(id, origin);
             applied = id;
@@ -11462,13 +11679,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   … λ. b)`, one lambda per parameter with the binder tile's origin and
     ///   the thunk marked as inserted at the declaration form; a recursive tail
     ///   closes its last parameter's lambda by a fixpoint marked as inserted at
-    ///   the declaration form, `thunk (λ … λ. fix. λ. b)`, claiming structural
-    ///   descent when a call claims it and partial otherwise; its declared type
-    ///   is `+U (A1 -> … -> An -> C)`, one arrow per parameter with the binder
-    ///   tile's origin and `+U` the declaration form's, an arrow dependent
-    ///   where a later type names its parameter; a tail missing a parameter or
-    ///   result type mints the body alone; nothing is minted when the block did
-    ///   not lower.
+    ///   the declaration form, its binder named where the function's own name
+    ///   is written, `thunk (λ … λ. fix. λ. b)`, claiming structural descent
+    ///   when a call claims it and partial otherwise; its declared type is `+U
+    ///   (A1 -> … -> An -> C)`, one arrow per parameter with the binder tile's
+    ///   origin and `+U` the declaration form's, an arrow dependent where a
+    ///   later type names its parameter; a tail missing a parameter or result
+    ///   type mints the body alone; nothing is minted when the block did not
+    ///   lower.
     /// - provides: the function tail's two halves, from one reading.
     /// - fails: never.
     /// - panics: none.
@@ -11530,6 +11748,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let closed = sink.arena.computation_fixpoint(body, evidence);
                 sink.origins
                     .record_computation(closed, origin.inserted(Insertion::Fixpoint));
+                // The fixpoint's binder is the function's own name, which
+                // a type its identified fields read names it by.
+                if let Maybe::Present(scope) = function.recursion
+                    && let Some(recursion) = self.recursions.get(&scope)
+                    && let Maybe::Present(named) = self.origin_at(recursion.named)
+                {
+                    sink.origins.record_binder(closed, named);
+                }
                 body = closed;
             }
         }
@@ -14326,6 +14552,7 @@ pub fn parse_literal(
         | Former::Import
         | Former::Module
         | Former::Data
+        | Former::Mutual
         | Former::SessionType
         | Former::Action
         | Former::Offer
@@ -17565,6 +17792,91 @@ mod tests
                 Maybe::Present(Provenance::Written)
             ),
             "the call is the source's"
+        );
+    }
+
+    #[test]
+    fn a_thunk_binder_called_in_a_type_unquotes_its_call()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def pick(t : Type) -> -F Type { return t } def take(g : +U (Integer -> -F \
+                 Type), v : g(1), w : pick(g(2))) -> -F Integer { return 1 }",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let declared = declared_of(lowered[1]);
+        // The domains of the arrows the declared type nests, outermost first:
+        // a Π where the rest names its parameter, a plain arrow otherwise.
+        let mut domains = Vec::new();
+        let mut at = match arena.value_type(declared) {
+            Some(&ValueType::Thunk(arrow)) => arrow,
+            other => panic!("a function's type is a thunk: {other:?}"),
+        };
+        while let Some(&CompType::Pi { domain, codomain } | &CompType::Arrow { domain, codomain }) =
+            arena.comp_type(at)
+        {
+            domains.push(domain);
+            at = codomain;
+        }
+        let [_, called, argued] = *domains
+        else {
+            panic!("three parameters: {domains:?}");
+        };
+        // The code a decode at `decoded` reads: what a computation returns.
+        let returned = |decoded| {
+            let Some(&ValueType::Element { code, .. }) = arena.value_type(decoded)
+            else {
+                panic!("a call where a type is read decodes");
+            };
+            let Some(&Value::Returned(called)) = arena.value(code)
+            else {
+                panic!("the code is what the call returns: {:?}", arena.value(code));
+            };
+            called
+        };
+        // The forced head and the argument of a call.
+        let call = |applied| {
+            let Some(&Computation::Application(forced, argument)) = arena.computation(applied)
+            else {
+                panic!("a call applies its head: {:?}", arena.computation(applied));
+            };
+            let Some(&Computation::Force(head)) = arena.computation(forced)
+            else {
+                panic!("the head is forced");
+            };
+            (arena.value(head).cloned(), arena.value(argument).cloned())
+        };
+        let variable = |index: u32| {
+            Some(Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(index),
+            })
+        };
+        assert_eq!(
+            call(returned(called)).0,
+            variable(0),
+            "the binder's call is the code it returns"
+        );
+        let Some(&Computation::Bind(inner, outer)) = arena.computation(returned(argued))
+        else {
+            panic!(
+                "an argument calling the binder is bound ahead: {:?}",
+                arena.computation(returned(argued))
+            );
+        };
+        // `v` binds nothing for `w`'s type, a plain arrow's rest, so the binder
+        // is the nearest one.
+        assert_eq!(call(inner).0, variable(0), "the binder's call runs first");
+        assert_eq!(
+            call(outer),
+            (
+                Some(Value::Constant(ConstantIndex::from(0_usize))),
+                variable(0)
+            ),
+            "and the outer call takes what it returned"
         );
     }
 

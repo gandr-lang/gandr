@@ -189,7 +189,10 @@ pub enum Insertion
     /// body is read under.
     Match,
     /// The fixpoint a recursive function closes over its last parameter's
-    /// lambda, binding the function's own name.
+    /// lambda, binding the function's own name; and the joint fixpoint a
+    /// mutual block's recursive functions share, with its sum case, its
+    /// ascription and the injection each member and each call through a
+    /// sibling passes.
     Fixpoint,
     /// A node a loop writes that the source does not: a `while`'s case on its
     /// condition with the unit its false branch leaves with, and the re-entry

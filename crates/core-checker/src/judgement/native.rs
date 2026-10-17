@@ -183,14 +183,16 @@ impl Machine<'_, '_>
         Ok(Step::Descend(Goal::Form(TypeNode::Value(datatype))))
     }
 
-    /// Check a nominal constructor at a stage: its recursive fields one step
-    /// below the stage, its other fields at their declared types.
+    /// Check a nominal constructor at a stage: its recursive fields — those
+    /// naming its family or, in a mutual block, any of the block's families —
+    /// one step below the stage, its other fields at their declared types.
     ///
     /// # Specification
     /// - requires: `term` is a constructor and `owed` what the stage it is
     ///   checked at owes ([`crate::recursion::constructor_owes`]).
     /// - ensures: the annotation forms before the declaration-ordered field
-    ///   checks; a recursive field checks at `owed.fields`, any other at its
+    ///   checks; a field naming a family of the constructor's
+    ///   [`crate::recursion::kin`] checks at `owed.fields`, any other at its
     ///   declared type; the constructor checks once they have.
     /// - fails: [`CheckRefusal::TypeMismatch`] for an annotation that does not
     ///   convert with the type the stage refines;
@@ -210,6 +212,7 @@ impl Machine<'_, '_>
     /// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
     /// - witness: `recursion::tests::a_nullary_argument_needs_a_value_below_the_stage`
     /// - witness: `recursion::tests::a_constructor_of_plain_fields_needs_a_value_below_the_stage`
+    /// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
     pub(super) fn staged_constructor(
         &mut self,
@@ -247,6 +250,8 @@ impl Machine<'_, '_>
             return Err(CheckRefusal::ConstructorArity(term));
         }
         self.wait(Frame::NativeYield(Produced::Checked));
+        let kin = crate::recursion::kin(self.context, datatype);
+        let families = crate::recursion::families(&kin, &datatype);
         let mut recursive = 0_usize;
         for (index, &field_type) in declared.iter().enumerate().rev() {
             let declared_type = former::field_at(
@@ -255,8 +260,10 @@ impl Machine<'_, '_>
                 field_type,
                 gandr_kernel_term::FieldPosition::from(index),
             )?;
-            let wanted =
-                crate::recursion::stage_field(self.context, declared_type, datatype, owed.fields)?;
+            let mut wanted = declared_type;
+            for &family in families {
+                wanted = crate::recursion::stage_field(self.context, wanted, family, owed.fields)?;
+            }
             if wanted != declared_type {
                 // A recursive field stands one step below: the constructor is
                 // above it whatever stage the field is at.
@@ -615,7 +622,9 @@ impl Machine<'_, '_>
     /// - ensures: that binder closes before branch functions check; the final
     ///   type substitutes the actual scrutinee into the motive; when the case
     ///   `opened` a stage, each branch binds its recursive fields at it
-    ///   ([`crate::recursion::stage_branch`]); with `respect` present the rules
+    ///   ([`crate::recursion::stage_branch`]), a telescope that read the
+    ///   declaration's constant as its self binder formed in the block's
+    ///   foresight before the branch checks; with `respect` present the rules
     ///   are decided after every branch has checked and before the type is
     ///   yielded.
     /// - fails: the internal scope guard or telescope instantiation.
@@ -756,7 +765,7 @@ impl Machine<'_, '_>
         for index in (0 .. constructors.constructors().len()).rev() {
             let expected =
                 former::branch_type(self.context, datatype, ConstructorTag::from(index), motive)?;
-            let expected = match opened {
+            let (expected, identified) = match opened {
                 Maybe::Present(child) => {
                     let fields = constructors
                         .constructors()
@@ -769,7 +778,7 @@ impl Machine<'_, '_>
                         (fields, child),
                     )?
                 },
-                Maybe::Absent(_plain) => expected,
+                Maybe::Absent(_plain) => (expected, crate::recursion::Identified::Kept),
             };
             let branch = match self.computation(term)? {
                 &Computation::DataCase { ref branches, .. } => branches
@@ -811,6 +820,9 @@ impl Machine<'_, '_>
                 term: branch,
                 direction: Direction::Check(expected),
             }));
+            if identified == crate::recursion::Identified::Read {
+                self.wait(Frame::NativeForesee(expected));
+            }
         }
         Ok(Step::Ascend(Produced::Checked))
     }

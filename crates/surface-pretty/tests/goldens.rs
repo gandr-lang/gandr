@@ -1460,21 +1460,65 @@ mod tests
     {
         let names = [Name::from("a")];
         let mut core = CoreArena::new();
-        let universe = small_universe(&mut core);
-        let abstract_a = core.value_type_abstract(ConstantIndex::from(0_usize));
-        let outer = bound(&mut core, DeBruijnIndex::from(1_u32));
-        let returns_outer = core.comp_type_returner(outer);
-        let body = core.comp_type_arrow(abstract_a, returns_outer);
-        let pi_inner = core.comp_type_pi(universe, body);
-        let pi_outer = core.comp_type_pi(universe, pi_inner);
+        let pi_outer = two_binders(&mut core);
         assert_eq!(
             spelled(
                 &CoreSource::new(&core, &names),
                 Root::Type(CoreNode::CompType(pi_outer))
             ),
-            faithful(Written("(b : Type) -> (c : Type) -> a -> -F b")),
+            faithful(Written("(b : Type) -> (c : Type) -> a -> c -> -F b")),
             "the binders skip the abstract type `a`"
         );
+    }
+
+    /// `(x : Type) -> (y : Type) -> a -> y -> -F x`, over the abstract type
+    /// `a`: two dependent arrows, each binder occurring in the codomain.
+    ///
+    /// # Specification
+    /// trivial.
+    fn two_binders(core: &mut CoreArena) -> CompTypeId
+    {
+        let universe = small_universe(core);
+        let abstract_a = core.value_type_abstract(ConstantIndex::from(0_usize));
+        let outer = bound(core, DeBruijnIndex::from(1_u32));
+        let inner = bound(core, DeBruijnIndex::from(0_u32));
+        let returns_outer = core.comp_type_returner(outer);
+        let body = core.comp_type_arrow(inner, returns_outer);
+        let body = core.comp_type_arrow(abstract_a, body);
+        let pi_inner = core.comp_type_pi(universe, body);
+        core.comp_type_pi(universe, pi_inner)
+    }
+
+    /// A dependent arrow whose codomain names no binder — what a decode
+    /// substituting a constant family leaves (#577) — has no spelling of its
+    /// own: the surface reads `(x : A) -> C` as the plain arrow where `C`
+    /// does not name `x`, so it is written as that arrow; one whose codomain
+    /// names its binder keeps it.
+    #[test]
+    fn a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow()
+    {
+        let names = [Name::from("a")];
+        let mut core = CoreArena::new();
+        let universe = small_universe(&mut core);
+        let abstract_a = core.value_type_abstract(ConstantIndex::from(0_usize));
+        let returns_a = core.comp_type_returner(abstract_a);
+        let ignoring = core.comp_type_pi(universe, returns_a);
+        let own = bound(&mut core, DeBruijnIndex::from(0_u32));
+        let returns_own = core.comp_type_returner(own);
+        let naming = core.comp_type_pi(universe, returns_own);
+        for (root, expected, what) in [
+            (ignoring, "Type -> -F a", "a binder no occurrence names"),
+            (naming, "(a : Type) -> -F a", "a binder its codomain names"),
+        ] {
+            assert_eq!(
+                spelled(
+                    &CoreSource::new(&core, &names),
+                    Root::Type(CoreNode::CompType(root))
+                ),
+                faithful(Written(expected)),
+                "{what}"
+            );
+        }
     }
 
     /// A dependent arrow's binder spells as the source names it where that
@@ -1486,36 +1530,36 @@ mod tests
     {
         let names = [Name::from("a")];
         let mut core = CoreArena::new();
-        let universe = small_universe(&mut core);
-        let abstract_a = core.value_type_abstract(ConstantIndex::from(0_usize));
-        let outer = bound(&mut core, DeBruijnIndex::from(1_u32));
-        let returns_outer = core.comp_type_returner(outer);
-        let body = core.comp_type_arrow(abstract_a, returns_outer);
-        let pi_inner = core.comp_type_pi(universe, body);
-        let pi_outer = core.comp_type_pi(universe, pi_inner);
+        let pi_outer = two_binders(&mut core);
+        let Some(&gandr_core_term::CompType::Pi {
+            codomain: pi_inner, ..
+        }) = core.comp_type(pi_outer)
+        else {
+            panic!("two dependent arrows");
+        };
         for (outer_name, inner_name, expected, what) in [
             (
                 Some("presented"),
                 Some("other"),
-                "(presented : Type) -> (other : Type) -> a -> -F presented",
+                "(presented : Type) -> (other : Type) -> a -> other -> -F presented",
                 "both binders as written",
             ),
             (
                 Some("a"),
                 Some("other"),
-                "(b : Type) -> (other : Type) -> a -> -F b",
+                "(b : Type) -> (other : Type) -> a -> other -> -F b",
                 "a name the type mentions falls back",
             ),
             (
                 Some("b"),
                 None,
-                "(b : Type) -> (c : Type) -> a -> -F b",
+                "(b : Type) -> (c : Type) -> a -> c -> -F b",
                 "a generated name skips a written one around it",
             ),
             (
                 Some("x"),
                 Some("x"),
-                "(x : Type) -> (b : Type) -> a -> -F x",
+                "(x : Type) -> (b : Type) -> a -> b -> -F x",
                 "a name a binder around it took falls back",
             ),
         ] {

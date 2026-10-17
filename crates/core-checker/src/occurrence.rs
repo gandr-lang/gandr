@@ -1,12 +1,18 @@
 //! The strict-positivity walk a data declaration passes before its fields
 //! form, mirroring the kernel's.
 //!
-//! A declaration's own admission position names the block being admitted. A
-//! field may name it in exactly two forms — directly, `T ps`, or as the
-//! codomain of a thunked function whose domains do not name it,
-//! `U (Π ȳ. F (T ps))` — and always at the parameter variables in telescope
-//! order. Every other occurrence is refused by name, and a reference to a
-//! later position is a reference outside the block.
+//! A declaration is admitted in a block: alone, or with the declarations a
+//! mutual block admits beside it. A field may name a family of its block in
+//! exactly two forms — directly, `T ps`, or as the codomain of a thunked
+//! function whose domains do not name it, `U (Π ȳ. F (T ps))` — and always at
+//! the parameter variables in telescope order. Every other occurrence of a
+//! family is refused by name. A definition of the block is named freely, as a
+//! term: its uses are what its own admission judges. A reference past the
+//! block's last member is a reference outside the block.
+//!
+//! A data declaration's block is what its fields reach: [`reach`] extends it
+//! past every later position a member names, so a block is never declared,
+//! only measured, and both checkers measure it alike.
 //!
 //! Both checkers run this walk before a data declaration forms and refuse by
 //! the same names: `NegativeOccurrence`, `NestedOccurrence`, `IndexOccurrence`,
@@ -121,6 +127,134 @@ enum Uniformity
     Uniform,
     /// Anything else.
     NonUniform,
+}
+
+/// The block a data declaration is admitted in: its families, a run of data
+/// declarations from the first member, the declaration among them, then the
+/// block's definitions up to the position past its last member.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a lone declaration's block holds its own family and ends one past
+///   it.
+/// - executable: none — the positions hold no table to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lone family and a mutual block of a family and its
+///   decoder are each walked by the block they are admitted in.
+/// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Block
+{
+    /// The block's first member, its first family.
+    first: ConstantIndex,
+    /// The position past its last family.
+    families: ConstantIndex,
+    /// The position past its last member.
+    end: ConstantIndex,
+}
+
+impl Block
+{
+    /// The block of the data declaration at `position` alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn lone(position: ConstantIndex) -> Self
+    {
+        let end = ConstantIndex::from(usize::from(position).saturating_add(1));
+        Self {
+            first: position,
+            families: end,
+            end,
+        }
+    }
+
+    /// The block whose families run from `first` to before `families`, and
+    /// whose definitions run from there to before `end`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub const fn new(
+        first: ConstantIndex,
+        families: ConstantIndex,
+        end: ConstantIndex,
+    ) -> Self
+    {
+        Self {
+            first,
+            families,
+            end,
+        }
+    }
+
+    /// The block's first member, its first family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub const fn first(self) -> ConstantIndex
+    {
+        self.first
+    }
+
+    /// The position past the block's last family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub const fn families(self) -> ConstantIndex
+    {
+        self.families
+    }
+
+    /// Whether the block admits `position` among its families.
+    ///
+    /// # Specification
+    /// trivial.
+    fn family(
+        self,
+        position: ConstantIndex,
+    ) -> Membership
+    {
+        if self.first <= position && position < self.families {
+            Membership::Family
+        }
+        else {
+            Membership::Other
+        }
+    }
+
+    /// Whether the block holds `position` among its members.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn holds(
+        self,
+        position: ConstantIndex,
+    ) -> Membership
+    {
+        if self.first <= position && position < self.end {
+            Membership::Family
+        }
+        else {
+            Membership::Other
+        }
+    }
+}
+
+/// Whether a position names one of a block's families, or one of its members.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Membership
+{
+    /// A family of the block, or a member where members are asked.
+    Family,
+    /// Anything else.
+    Other,
 }
 
 /// The length of a declaration's parameter telescope.
@@ -296,22 +430,22 @@ enum Binding
     Closed,
 }
 
-/// The most severe self occurrence in one root's type, or the first later
-/// position it names.
+/// The most severe occurrence of a family of `block` in one root's type, or
+/// the first position past the block it names.
 ///
 /// # Specification
 /// - requires: `telescope` is the declaration's telescope length and `root` is
 ///   scoped under it.
-/// - ensures: `Err(index)` when the root names a position after `position`;
-///   otherwise the most severe finding over every self occurrence, with the two
-///   admitted forms finding nothing.
+/// - ensures: `Err(index)` when the root names a position at or past the
+///   block's end; otherwise the most severe finding over every occurrence of a
+///   family of the block, with the two admitted forms finding nothing.
 /// - provides: the syntactic half of strict positivity; formation is the other
 ///   half.
-/// - fails: a later position, as its index.
+/// - fails: a position past the block, as its index.
 /// - panics: none.
 ///
 /// # Errors
-/// The later position a reference names.
+/// The position past the block a reference names.
 ///
 /// # Termination
 /// - reason: the `while let` worklist, not recursion; each node and reach pair
@@ -323,14 +457,16 @@ enum Binding
 /// - hypothesis: L3 — a negative, a nested, an index and a non-uniform
 ///   occurrence, and a reference to a later position, each surface as their own
 ///   finding, while the direct and function forms of `Nat`, `List A` and `Tree`
-///   find nothing.
+///   find nothing; a decoder named in a field of its mutual block finds
+///   nothing, and a family of the block named under a domain is negative.
 /// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
 /// - witness: `recursive_data::recursive_data::a_field_naming_its_own_or_a_later_position_is_refused_by_name`
-#[spec(ensures: |ret| ret.as_ref().err().is_none_or(|later| *later > position))]
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+#[spec(ensures: |ret| ret.as_ref().err().is_none_or(|later| *later >= block.end))]
 fn worst(
     arena: &CoreArena,
-    position: ConstantIndex,
+    block: &Block,
     scope: Scope,
     root: ValueTypeId,
     start: Reach,
@@ -349,10 +485,10 @@ fn worst(
                     declaration,
                     ref arguments,
                 }) => {
-                    if declaration > position {
+                    if declaration >= block.end {
                         return Err(declaration);
                     }
-                    let inner = if declaration == position {
+                    let inner = if block.family(declaration) == Membership::Family {
                         let depth = match reach {
                             Reach::Head { depth, .. } => depth,
                             Reach::Thunk
@@ -375,10 +511,10 @@ fn worst(
                     );
                 },
                 Some(&ValueType::Abstract(index)) => {
-                    if index > position {
+                    if index >= block.end {
                         return Err(index);
                     }
-                    if index == position {
+                    if block.family(index) == Membership::Family {
                         worst = worst.max(found(term(reach), Uniformity::NonUniform));
                     }
                 },
@@ -514,10 +650,10 @@ fn worst(
             },
             AnyNode::Value(id) => match arena.value(id) {
                 Some(&Value::Constant(index)) => {
-                    if index > position {
+                    if index >= block.end {
                         return Err(index);
                     }
-                    if index == position {
+                    if block.family(index) == Membership::Family {
                         worst = worst.max(found(term(reach), Uniformity::NonUniform));
                     }
                 },
@@ -849,16 +985,17 @@ const fn refusal(
     }
 }
 
-/// Refuse every occurrence of a data declaration's own family outside the
-/// two admitted field forms, and every reference past its block.
+/// Refuse every occurrence of a family of `block` in a data declaration
+/// outside the two admitted field forms, and every reference past the block.
 ///
 /// # Specification
-/// - requires: `position` is the admission position the declaration takes, and
-///   `signature`'s parameters and fields are scoped as the signature states.
-/// - ensures: success exactly when no parameter names the family, every field
-///   names it only directly or as a thunked function's codomain whose domains
-///   do not name it, always at the parameter variables in order, and nothing
-///   names a later position.
+/// - requires: `block` holds the admission position the declaration takes among
+///   its families, and `signature`'s parameters and fields are scoped as the
+///   signature states.
+/// - ensures: success exactly when no parameter names a family of the block,
+///   every field names one only directly or as a thunked function's codomain
+///   whose domains do not name it, always at the parameter variables in order,
+///   and nothing names a position past the block.
 /// - provides: the strict-positivity and head-uniformity judgement the
 ///   formation of a recursive block rests on; it runs before any field forms,
 ///   as the kernel's does, so both checkers refuse the same site by the same
@@ -869,15 +1006,17 @@ const fn refusal(
 /// # Errors
 /// `CrossBlockReference`, `NegativeOccurrence`, `IndexOccurrence`,
 /// `NestedOccurrence` or `NonUniformOccurrence` at the refused site; a
-/// parameter naming the family is always an index occurrence.
+/// parameter naming a family is always an index occurrence.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `Nat`, `List A` and `Tree` with a function field are
 ///   admitted; a `T → A` field domain, a non-uniform head, a later reference, a
 ///   nested and an index occurrence are each refused by name at their site, by
-///   this checker and by the kernel.
+///   this checker and by the kernel; a universe naming its decoder in a field
+///   is admitted with the decoder in its block.
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
 /// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(
     CheckRefusal::CrossBlockReference { .. }
     | CheckRefusal::NegativeOccurrence(_)
@@ -886,7 +1025,7 @@ const fn refusal(
     | CheckRefusal::NonUniformOccurrence(_))))]
 pub fn occurrences(
     arena: &CoreArena,
-    position: ConstantIndex,
+    block: &Block,
     signature: &DataSignature,
 ) -> Result<(), CheckRefusal>
 {
@@ -896,7 +1035,7 @@ pub fn occurrences(
             telescope: Telescope(index),
             earlier: Binders::NONE,
         };
-        let finding = worst(arena, position, scope, parameter, Reach::Term)
+        let finding = worst(arena, block, scope, parameter, Reach::Term)
             .map_err(|later| CheckRefusal::CrossBlockReference { site, index: later })?;
         if finding != Finding::Admitted {
             return Err(CheckRefusal::IndexOccurrence(site));
@@ -911,7 +1050,7 @@ pub fn occurrences(
                 field: FieldPosition::from(field),
             };
             let scope = Scope { telescope, earlier };
-            let finding = worst(arena, position, scope, root, Reach::Head {
+            let finding = worst(arena, block, scope, root, Reach::Head {
                 depth: Binders::NONE,
                 site: HeadSite::Field,
             })
@@ -921,4 +1060,59 @@ pub fn occurrences(
         }
     }
     Ok(())
+}
+
+/// The position past the furthest one the data declaration at `position`
+/// names: the end of the block its fields reach.
+///
+/// # Specification
+/// - requires: `position` is the admission position the declaration takes.
+/// - ensures: one past `position` when nothing in `signature` names a later
+///   position; otherwise one past the furthest later position a parameter or a
+///   field names.
+/// - provides: how a block is measured rather than declared: a data declaration
+///   naming a later declaration is admitted with it, and the kernel measures
+///   the same block by the same walk.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: each root's walk restarts only past a later position it found, and
+///   the block's end rises strictly each time.
+/// - measure: the later positions the root names, finite.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lone family reaches one past itself, and a universe
+///   naming its decoder reaches one past the decoder.
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+#[spec(ensures: |ret| ret > position)]
+pub fn reach(
+    arena: &CoreArena,
+    position: ConstantIndex,
+    signature: &DataSignature,
+) -> ConstantIndex
+{
+    let mut block = Block::lone(position);
+    let telescope = Telescope(signature.parameters().len());
+    let parameters = signature
+        .parameters()
+        .iter()
+        .enumerate()
+        .map(|(index, &root)| (root, Telescope(index), Binders::NONE, Reach::Term));
+    let fields = signature.constructors().iter().flat_map(|fields| {
+        fields.iter().enumerate().map(move |(field, &root)| {
+            let earlier = (0 .. field).fold(Binders::NONE, |earlier, _| earlier.deeper());
+            (root, telescope, earlier, Reach::Head {
+                depth: Binders::NONE,
+                site: HeadSite::Field,
+            })
+        })
+    });
+    for (root, telescope, earlier, start) in parameters.chain(fields) {
+        let scope = Scope { telescope, earlier };
+        while let Err(later) = worst(arena, &block, scope, root, start) {
+            block.end = ConstantIndex::from(usize::from(later).saturating_add(1));
+        }
+    }
+    block.end
 }

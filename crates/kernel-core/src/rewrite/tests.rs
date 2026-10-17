@@ -123,6 +123,88 @@ fn shifting_raises_free_indices_and_spares_bound_ones()
 }
 
 #[test]
+fn an_abstraction_replaces_its_constant_by_a_variable_under_binders()
+{
+    let mut arena = TermArena::new();
+    let decoder = gandr_kernel_term::ConstantIndex::from(1_usize);
+    let other = gandr_kernel_term::ConstantIndex::from(2_usize);
+    // `El(c x)`, `c` the constant and `x` the variable `at`.
+    let decode = |arena: &mut TermArena, constant, at: u32| {
+        let head = arena.value_constant(constant);
+        let forced = arena.computation_force(head);
+        let argument = arena.value_variable(DeBruijnIndex::from(at));
+        let call = arena.computation_application(forced, argument);
+        let code = arena.value_returned(call);
+        arena.value_type_element(code, Level::zero())
+    };
+    // `U (El(el x) → F (El(el y)))`, the codomain under the arrow's binder.
+    let domain = decode(&mut arena, decoder, 0);
+    let codomain = decode(&mut arena, decoder, 1);
+    let returner = arena.comp_type_returner(codomain);
+    let pi = arena.comp_type_pi(domain, returner);
+    let subject = arena.value_type_thunk(pi);
+    let mut table = ContentTable::new();
+    let mut memo = RewriteMemo::new();
+    let read = super::abstract_constant_value_type(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        subject,
+        (decoder, DeBruijnIndex::from(5_u32)),
+    );
+    // The decoder's head and argument in `El(head argument)`.
+    let call = |arena: &TermArena, decoded| {
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(decoded)
+        else {
+            panic!("a decode");
+        };
+        let Some(&Value::Returned(call)) = arena.value(code)
+        else {
+            panic!("a returned call");
+        };
+        let Some(&Computation::Application(forced, argument)) = arena.computation(call)
+        else {
+            panic!("an application");
+        };
+        let Some(&Computation::Force(head)) = arena.computation(forced)
+        else {
+            panic!("a forced head");
+        };
+        (arena.value(head).cloned(), arena.value(argument).cloned())
+    };
+    let variable = |at: u32| Some(Value::Variable(DeBruijnIndex::from(at)));
+    let Some(&ValueType::Thunk(pi)) = arena.value_type(read)
+    else {
+        panic!("a thunk");
+    };
+    let Some(&CompType::Pi { domain, codomain }) = arena.comp_type(pi)
+    else {
+        panic!("an arrow");
+    };
+    let Some(&CompType::Returner(result)) = arena.comp_type(codomain)
+    else {
+        panic!("a returner");
+    };
+    // The domain stands under no binder: the variable at the index. The
+    // codomain stands under the arrow's: one past it. The arguments stand.
+    assert_eq!(call(&arena, domain), (variable(5), variable(0)));
+    assert_eq!(call(&arena, result), (variable(6), variable(1)));
+    let unrelated = decode(&mut arena, other, 0);
+    // A fresh session: a memo may answer with an equal node minted earlier.
+    assert_eq!(
+        super::abstract_constant_value_type(
+            &mut arena,
+            &mut ContentTable::new(),
+            &mut RewriteMemo::new(),
+            unrelated,
+            (decoder, DeBruijnIndex::from(5_u32)),
+        ),
+        unrelated,
+        "a type naming another constant is kept"
+    );
+}
+
+#[test]
 fn a_binder_spares_what_it_binds()
 {
     let mut arena = TermArena::new();

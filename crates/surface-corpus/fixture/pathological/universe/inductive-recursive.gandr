@@ -1,0 +1,88 @@
+// What an inductive-recursive block refuses. The block is one admission, so
+// one refused member refuses every member with it: positivity is checked
+// across the block, so a family to the left of an arrow in another family's
+// field refuses the block whole; and a decode a code's field holds must stand
+// below the code, so a field decoding a code it was not built from, or a
+// decoder arm decoding its own code again, refuses the decoder by the stage
+// order and its codes with it. A decode reads a call only when the call
+// returns a code.
+// Shared with `../../model/universe/inductive-recursive.gandr`.
+
+/// The two branches of a binary node.
+@[ checks ]
+data Two : Type {
+  L : Two;
+  R : Two;
+}
+
+/// Two families, one consuming the other: positivity is checked across
+/// the block, so both are refused.
+rec {
+  /// A family consuming the next one: `Right` stands left of the arrow.
+  @[ refuses("NegativeOccurrence") ]
+  data Left : Type {
+    MkL : (f : +U (Right -> -F Two)) --> Left;
+  }
+
+  /// The family `Left` consumes: its own field is positive, and it is
+  /// refused with its block.
+  @[ refuses("NegativeOccurrence") ]
+  data Right : Type {
+    MkR : (l : Left) --> Right;
+  }
+}
+
+/// A universe whose field decodes a definition of the block rather than
+/// the code it was built from.
+rec {
+  /// Codes whose function code decodes a code it was not built from,
+  /// refused with their decoder.
+  @[ refuses("StageNotBelow") ]
+  data Odd : Type {
+    TwoC : Odd;
+    Over : (a : Odd, b : +U (decode(base) -> -F Odd)) --> Odd;
+  }
+
+  /// The decoder, recursing on the code below: the field's decode does not
+  /// stand below the code it was read from.
+  @[ refuses("StageNotBelow") ]
+  def rec decode(u : Odd) -> -F Type {
+    case u {
+      TwoC => return Two,
+      Over(a, b) => decode[<](a)
+    }
+  }
+
+  /// The code the field decodes, a definition of the block, refused with it.
+  @[ refuses("StageNotBelow") ]
+  def base : Odd ;
+  def base = TwoC ;
+}
+
+/// A universe whose decoder decodes its own code again.
+rec {
+  /// The codes: one base code, and the dependent functions over a code,
+  /// refused with their decoder.
+  @[ refuses("StageNotBelow") ]
+  data Loop : Type {
+    Base : Loop;
+    PiL : (a : Loop, b : +U (unloop(a) -> -F Loop)) --> Loop;
+  }
+
+  /// The decoder decoding a function code again where its domain is wanted.
+  @[ refuses("StageNotBelow") ]
+  def rec unloop(u : Loop) -> -F Type {
+    case u {
+      Base => return Two,
+      PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Two))
+    }
+  }
+}
+
+/// A type read off a call that returns no code: `g(L)` is a function still
+/// waiting for its second argument, and only a pure returner's call stands
+/// where a type is read.
+@[ refuses("CompoundEndpoint") ]
+def curried(g : +U (Two -> Two -> -F Type), v : g(L)) -> -F Two {
+  return L
+}

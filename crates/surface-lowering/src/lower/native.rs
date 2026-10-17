@@ -144,13 +144,15 @@
 //! accumulator, at the cost of re-indexing every branch. Reversal: a
 //! recursive definition that must vary an earlier parameter.
 //!
-//! A mutual block, `rec { def …; def … }`, is declined: the grammar parses
-//! it as one item whose members are inline tiles of the block, so the module
-//! reads no declaration in it and refuses the whole source at the block's
-//! form. Reversal: one fixpoint over a bundle of the members' thunks, each
-//! member its projection, with partial evidence until a stage typing spans
-//! the bundle; this needs the members collected as declarations from
-//! inside one form, and is its own unit.
+//! A mutual block, `rec { … }`, collects its members as declarations admitted
+//! as one block. Two or more recursive functions of one block recurse through
+//! one another as one fixpoint over the sum of their domains: each member is
+//! `thunk (λx. (fix f. λy. case y { b₀ | … | bₙ }) (injᵢ x))`, and a descent
+//! through a sibling, `g[<](a)`, lowers to `(force f) (inj_g a)`. The
+//! checkers stage that sum at the one stage the block's families share, so a
+//! call descends through any of them; `Lowerer::mint_joints` states the
+//! choice. A member of the joint takes no leading parameter, which a call
+//! through it refuses as non-uniform.
 //!
 //! `def rec f(p₁, …, pₖ, y) -> C { b }` lowers to `thunk (λp₁ … λpₖ. fix f. λy.
 //! b)`: the core fixpoint binds its own thunk, and its structural evidence
@@ -184,14 +186,6 @@
 //! eliminator's methods take them (`McBride`); it admits a recursive call that
 //! varies them, an accumulator, at the cost of re-indexing every branch.
 //! Reversal: a recursive definition that must vary an earlier parameter.
-//!
-//! The mutual block `rec { def …; def … }` is declined. The grammar parses it
-//! as one item whose members are inline tiles of the block, so the module reads
-//! no declaration in it and refuses the whole source at the block's form.
-//! Reversal: one fixpoint over a bundle of the members' thunks, each member its
-//! projection, with partial evidence until a descent judgment spans the bundle.
-//! That needs the members collected as declarations from inside one form, and
-//! is its own unit.
 //!
 //! # Native data and the match
 //!
@@ -309,11 +303,13 @@ use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
 
+use super::Code;
 use super::FormName;
 use super::Former;
 use super::Function;
@@ -327,6 +323,7 @@ use super::Reading;
 use super::Sink;
 use super::Site;
 use super::Stretch;
+use super::arguments;
 use super::arity;
 use super::arity::Dependent;
 use super::closed;
@@ -350,6 +347,7 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::module::Collected;
 use crate::module::Constructor;
 use crate::module::DataIndex;
 use crate::module::Generators;
@@ -440,6 +438,25 @@ quenchant_shape::reason_enum! {
             Adopted,
             /// The nodes carry a classifier the lowering inserted.
             Classifier,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration is no member of a joint fixpoint.
+    pub mod joint {
+        /// The declaration is outside a joint, the name is not one, or the
+        /// member did not lower to one.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The declaration's mutual block declares fewer than two
+            /// recursive functions, or the declaration is none of them.
+            Alone,
+            /// The name names no recursive function of the block.
+            Outside,
+            /// The member did not lower to a fixpoint over one parameter at a
+            /// plain arrow.
+            Unjoined,
         }
     }
 }
@@ -551,10 +568,11 @@ pub(super) struct Claimed(pub bool);
 /// # Specification
 /// - requires: coordinates, when present, are interpreted in their originating
 ///   run.
-/// - ensures: the parameters every recursive call passes unchanged and whether
-///   a call claims descent stay together under the frame binding the name.
-/// - provides: what a descent claim checks its call against, and the evidence
-///   the fixpoint carries.
+/// - ensures: the parameters every recursive call passes unchanged, whether a
+///   call claims descent and the tile writing the name stay together under the
+///   frame binding the name.
+/// - provides: what a descent claim checks its call against, the evidence the
+///   fixpoint carries, and the name its binder is read by.
 /// - fails: none as a data value; interpretation belongs to its consumers.
 /// - panics: none as a data value.
 /// - executable: none — the scope and the parameter store are not retained;
@@ -574,6 +592,9 @@ pub(super) struct Recursion
     /// Whether a call claims descent, which makes the fixpoint's evidence
     /// structural rather than partial.
     pub claimed: Claimed,
+    /// The tile writing the function's own name: where its fixpoint's binder
+    /// is named.
+    pub named: NodeIndex,
 }
 
 /// A recursive call as its call form read it: what its head's claim checks.
@@ -601,6 +622,142 @@ pub(super) struct Descent
     pub call: Site,
     /// Every argument the call wrote, in the lowerer's operand store.
     pub arguments: Stretch,
+}
+
+/// The recursive functions of a mutual block, which recurse through one
+/// another as one fixpoint over the sum of their domains: a member's summand
+/// is its position in the block.
+///
+/// # Specification
+/// - requires: the slots are one mutual block's `def rec` declarations in block
+///   order.
+/// - ensures: the members and the declaration being read, with its summand when
+///   it is a member of a joint of at least two.
+/// - provides: what a descent through a sibling reads its summand from.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — the collected slots are not retained; `instantiation`
+///   and `mint_joints` interpret the record.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rose tree's two measures, one block, descend through
+///   each other's summands of one fixpoint.
+/// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Joint
+{
+    /// The members, in block order.
+    pub members: Vec<SlotIndex>,
+    /// The declaration being read and its summand.
+    pub own: Maybe<(SlotIndex, Summand), joint::Absent>,
+}
+
+/// A member of a joint fixpoint as its own lowering left it: `thunk (fix. λ.
+/// branch)` at `+U (domain -> codomain)`.
+///
+/// # Specification
+/// - requires: the ids are live in the arena the member was minted into.
+/// - ensures: the declaration form, its declared type with the arrow's two
+///   halves, its body under its own fixpoint binder and parameter, its
+///   fixpoint's claim, and the declaration's origin, together.
+/// - provides: what the joint fixpoint is built from.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — `joinable` reads it from the arena and `join`
+///   interprets it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Joint`].
+/// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Joinable
+{
+    /// The declaration form, where its function lowered.
+    declaration: NodeIndex,
+    /// Its declared type, `+U (domain -> codomain)`.
+    signature: ValueTypeId,
+    /// The parameter's type.
+    domain: ValueTypeId,
+    /// The result type.
+    codomain: CompTypeId,
+    /// The body, under the fixpoint binder and the parameter.
+    branch: ComputationId,
+    /// The fixpoint's claim.
+    evidence: FixpointEvidence,
+    /// The declaration's origin.
+    origin: Origin,
+}
+
+impl Joint
+{
+    /// No joint: the declaration being read is no member of one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(super) const fn alone() -> Self
+    {
+        Self {
+            members: Vec::new(),
+            own: Maybe::Absent(joint::Absent::Alone),
+        }
+    }
+
+    /// The summand of the declaration being read.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) const fn summand(&self) -> Maybe<Summand, joint::Absent>
+    {
+        match self.own {
+            Maybe::Present((_, summand)) => Maybe::Present(summand),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The summand of the member `name` names, read where the declaration
+    /// being read is declared.
+    ///
+    /// # Specification
+    /// - requires: `collected` is the module the joint was read from.
+    /// - ensures: the position of the member declared under `name` beside the
+    ///   declaration being read, when one is.
+    /// - fails: [`joint::Absent::Alone`] outside a joint;
+    ///   [`joint::Absent::Outside`] for a name no member is declared under.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Joint`].
+    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(summand) => self.members.get(usize::from(summand)).is_some(),
+        Maybe::Absent(_) => true,
+    })]
+    pub(super) fn member<'source>(
+        &self,
+        collected: &Collected<'source>,
+        name: SurfaceName<'source>,
+    ) -> Maybe<Summand, joint::Absent>
+    {
+        let Maybe::Present((owner, _)) = self.own
+        else {
+            return Maybe::Absent(joint::Absent::Alone);
+        };
+        let Some(container) = collected
+            .slots
+            .get(usize::from(owner))
+            .map(|slot| slot.container)
+        else {
+            return Maybe::Absent(joint::Absent::Alone);
+        };
+        collected
+            .by_name
+            .get(&(container, name))
+            .and_then(|target| self.members.iter().position(|member| member == target))
+            .map_or(Maybe::Absent(joint::Absent::Outside), |at| {
+                Maybe::Present(Summand::from(at))
+            })
+    }
 }
 
 /// The column entry no written pattern fills: it matches anything and binds
@@ -7051,7 +7208,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   last as itself and one argument more, stands as the variable the frame
     ///   binds and makes the function's fixpoint claim descent; each leading
     ///   argument, which the call erases, is labelled with its parameter's
-    ///   written type.
+    ///   written type. Inside a joint fixpoint ([`Joint`]) a head naming a
+    ///   sibling member stands as the function's own fixpoint binder, and
+    ///   either head's call injects its argument at the called member's
+    ///   summand.
     /// - provides: the head of a recursive call.
     /// - fails: the reserved refusal for any other resident, a termination
     ///   claim the grammar reserves; the unadmitted refusal for an
@@ -7059,8 +7219,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   heads no call; the arity refusal, at the call, for a call passing
     ///   other than one argument per parameter; the non-uniform refusal, at the
     ///   argument, for a parameter before the last passed as anything but
-    ///   itself; the wrong-sort refusal outside a head or value position; and
-    ///   the allowance refusal from the binder walk.
+    ///   itself, and at the call for a joint member over leading parameters;
+    ///   the wrong-sort refusal outside a head or value position; and the
+    ///   allowance refusal from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -7074,6 +7235,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
     /// - witness: `lower::native::tests::only_the_descent_claim_heads_a_recursive_call`
+    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Variable(..))))]
     pub(super) fn instantiation(
         &mut self,
@@ -7118,28 +7280,155 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Unadmitted));
         }
         let name = self.name_at(head);
-        let Maybe::Present(bound) = self.scope.resolve(frame, name, &mut self.fuel)?
+        let Some(&descent) = self.descents.get(&site.at.node)
         else {
             return Err(site.out(FragmentBoundary::Unadmitted));
         };
-        let (Some(&recursion), Some(&descent)) = (
-            self.recursions.get(&bound.binder),
-            self.descents.get(&site.at.node),
-        )
+        let joint = match self.collected.owner_of(site.at.node) {
+            Maybe::Present(owner) => self.joint(owner),
+            Maybe::Absent(_) => Joint::alone(),
+        };
+        let resolved = self.scope.resolve(frame, name, &mut self.fuel)?;
+        // A sibling of the joint answers by the function's own fixpoint
+        // binder: the joint fixpoint is the function's own, read at the
+        // sibling's summand.
+        let (bound, summand) = match resolved {
+            Maybe::Present(bound) if self.recursions.contains_key(&bound.binder) => {
+                (bound, joint.summand())
+            },
+            Maybe::Present(_) => return Err(site.out(FragmentBoundary::Unadmitted)),
+            Maybe::Absent(_) => {
+                let (Maybe::Present((owner, _)), Maybe::Present(called)) =
+                    (joint.own, joint.member(&self.collected, name))
+                else {
+                    return Err(site.out(FragmentBoundary::Unadmitted));
+                };
+                let Some(own) = self
+                    .collected
+                    .slots
+                    .get(usize::from(owner))
+                    .map(|slot| slot.name)
+                else {
+                    return Err(site.out(FragmentBoundary::Unadmitted));
+                };
+                let Maybe::Present(bound) = self.scope.resolve(frame, own, &mut self.fuel)?
+                else {
+                    return Err(site.out(FragmentBoundary::Unadmitted));
+                };
+                (bound, Maybe::Present(called))
+            },
+        };
+        let Some(&recursion) = self.recursions.get(&bound.binder)
         else {
             return Err(site.out(FragmentBoundary::Unadmitted));
         };
+        if let Maybe::Present(summand) = summand {
+            // The joint fixpoint takes one argument, the injection of the
+            // descended value: no member passes a leading parameter.
+            if !stretch(&self.parameters, recursion.uniform).is_empty() {
+                return Err(descent.call.out(FragmentBoundary::NonUniform));
+            }
+            let _previous = self.injected.insert(site.at.node, summand);
+        }
+        self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
+        if let Some(held) = self.recursions.get_mut(&bound.binder) {
+            held.claimed = Claimed(true);
+        }
+        self.plan(site, Plan::Variable(bound.index, bound.binder));
+
+        Ok(())
+    }
+
+    /// The joint fixpoint the declaration at `owner` is read in.
+    ///
+    /// # Specification
+    /// - requires: the module is collected.
+    /// - ensures: the `def rec` declarations of the mutual block holding
+    ///   `owner`, in block order, with `owner`'s summand, when the block
+    ///   declares at least two and `owner` is one; otherwise no joint.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Joint`].
+    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    #[spec(ensures: |ret| match ret.own {
+        Maybe::Present((own, summand)) => own == owner && ret.members.len() >= 2 && ret.members.get(usize::from(summand)) == Some(&owner),
+        Maybe::Absent(_) => ret.members.is_empty(),
+    })]
+    pub(super) fn joint(
+        &self,
+        owner: SlotIndex,
+    ) -> Joint
+    {
+        let Some(block) = self
+            .collected
+            .blocks
+            .iter()
+            .find(|block| (block.first .. block.end).contains(&owner))
+        else {
+            return Joint::alone();
+        };
+        let members: Vec<SlotIndex> = self
+            .collected
+            .recursive
+            .range(block.first .. block.end)
+            .copied()
+            .collect();
+        match members.iter().position(|&member| member == owner) {
+            Some(at) if members.len() >= 2 => Joint {
+                members,
+                own: Maybe::Present((owner, Summand::from(at))),
+            },
+            Some(_) | None => Joint::alone(),
+        }
+    }
+
+    /// Check the arguments `arguments` a descent call `call` on `recursion`
+    /// passes, read under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `arguments` is a stretch of the operand store.
+    /// - ensures: one argument per parameter of the recursive function, each
+    ///   before the last the parameter itself, which the call erases and which
+    ///   is labelled with its parameter's written type.
+    /// - provides: the check a descent call's claim makes, in a body and in the
+    ///   type a decoder's arm returns.
+    /// - fails: the arity refusal, at the call, for a call passing other than
+    ///   one argument per parameter; the non-uniform refusal, at the argument,
+    ///   for a parameter before the last passed as anything but itself; the
+    ///   allowance refusal from the binder walk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The call's refusal.
+    ///
+    /// # Termination
+    /// The loop runs once per leading parameter, a finite stretch.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::instantiation`], whose descent calls
+    ///   observe each refusal.
+    /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
+    /// - witness: `lower::native::tests::only_the_descent_claim_heads_a_recursive_call`
+    #[spec(ensures: |ret| ret.is_err() || stretch(&self.operands, arguments).len() == stretch(&self.parameters, recursion.uniform).len().saturating_add(1))]
+    fn uniform_descent(
+        &mut self,
+        frame: Frame,
+        recursion: Recursion,
+        call: Site,
+        arguments: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
         let uniform = stretch(&self.parameters, recursion.uniform);
-        let arguments = stretch(&self.operands, descent.arguments);
+        let arguments = stretch(&self.operands, arguments);
         if arguments.len() != uniform.len().saturating_add(1) {
-            return Err(descent
-                .call
-                .out(FragmentBoundary::Arity(OperandCount::from(arguments.len()))));
+            return Err(call.out(FragmentBoundary::Arity(OperandCount::from(arguments.len()))));
         }
         for (parameter, &argument) in uniform.iter().zip(arguments) {
             let Some(node) = self.tree.node(argument)
             else {
-                return Err(descent.call.out(FragmentBoundary::NonUniform));
+                return Err(call.out(FragmentBoundary::NonUniform));
             };
             let passed = Placed::of(argument, node);
             let unchanged = match shape_of(self.pbg, node)? {
@@ -7156,10 +7445,7 @@ impl<'source> Lowerer<'_, 'source>
                 Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => false,
             };
             if !unchanged {
-                let varied = Site {
-                    at: passed,
-                    ..descent.call
-                };
+                let varied = Site { at: passed, ..call };
                 return Err(varied.out(FragmentBoundary::NonUniform));
             }
             // The argument is the parameter itself, which the fixpoint binds
@@ -7174,10 +7460,91 @@ impl<'source> Lowerer<'_, 'source>
                 });
             }
         }
+
+        Ok(())
+    }
+
+    /// Classify a decoder's own recursion written in the type one of its arms
+    /// returns, `el[<](a)`: the decode of the code the descent call returns.
+    ///
+    /// # Specification
+    /// - requires: `site` is a type application in type position whose head,
+    ///   named `name` at `head`, is followed by `[`; `cursor` stands past it.
+    /// - ensures: the descent `[<]` on a name the frame of a recursive
+    ///   function's fixpoint binds, applied to one argument per parameter with
+    ///   each leading one passed as itself, stands as the unquote of that
+    ///   fixpoint called on the last argument, read as a value, at the universe
+    ///   the position reads, and makes the fixpoint claim descent; the
+    ///   fixpoint's binder is recorded as mentioned.
+    /// - provides: the written spelling of an inductive-recursive decode, `(x :
+    ///   el[<](a)) -> -F el[<](b(x))`, whose codomain decodes a code the arm
+    ///   cannot compute before its binder.
+    /// - fails: the misplaced-tile fault for a bracket holding other than `<`;
+    ///   the unadmitted refusal for a head naming no recursive function in
+    ///   scope; the refusals [`Self::uniform_descent`] raises; the wrong-sort
+    ///   refusal where no type is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The application's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decoder's arm returning a function type whose
+    ///   domain and codomain each decode a descent call, read back as the exact
+    ///   unquotes, and a descent on a name no fixpoint binds, refused as
+    ///   unadmitted.
+    /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Unquote(Code::Bound { .. }, ..))))]
+    pub(super) fn staged_unquote(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        closed(site, &mut cursor, TileName::LESS_THAN)?;
+        closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
+        let from = site.reading.frame();
+        let start = self.operands.len();
+        arguments(site, &mut cursor, &mut self.operands)?;
+        let written = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        let Maybe::Present(bound) = self.scope.resolve(from, name, &mut self.fuel)?
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted));
+        };
+        let Some(&recursion) = self.recursions.get(&bound.binder)
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted));
+        };
+        self.uniform_descent(from, recursion, site, written)?;
         if let Some(held) = self.recursions.get_mut(&bound.binder) {
             held.claimed = Claimed(true);
         }
-        self.plan(site, Plan::Variable(bound.index, bound.binder));
+        let applied = Stretch {
+            start: written.end.saturating_sub(1).max(written.start),
+            end: written.end,
+        };
+        let universe = site.reading.positional_universe();
+        let produced = match universe.sort {
+            GroundSort::Value => Produced::ValueType,
+            GroundSort::Computation => Produced::CompType,
+        };
+        let frame = self.require(site, produced)?;
+        let telescope = self.name_in_type(site.at.node, bound.binder);
+        for position in applied.start .. applied.end {
+            if let Some(&argument) = self.operands.get(position) {
+                self.read(argument, Reading::Value(frame));
+            }
+        }
+        let code = Code::Bound {
+            from,
+            binder: bound.binder,
+            telescope,
+        };
+        self.plan(site, Plan::Unquote(code, applied, universe));
 
         Ok(())
     }
@@ -7212,6 +7579,237 @@ impl<'source> Lowerer<'_, 'source>
                 Some(_) | None => FixpointEvidence::Partial,
             }),
             Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// Join each mutual block's recursive functions into one fixpoint over the
+    /// sum of their domains, each member that fixpoint at its own summand.
+    ///
+    /// **Choice.** The core has one fixpoint former, and the kernel stages a
+    /// fixpoint over a sum of a block's families at the block's one stage, so
+    /// mutual recursion is the joint fixpoint `fix f. λ y. case y { … }` over
+    /// `A₀ + … + Aₙ`, a member `λ x. f (injᵢ x)` and a descent through a
+    /// sibling `f (inj_j v)`. **Alternatives.** A mutual fixpoint former, a
+    /// new kernel node the record declines; a tuple of fixpoints, which no
+    /// stage relates. **Reversal.** A member over leading parameters, or at
+    /// a dependent type, joins once the joint reads a telescope rather than
+    /// one domain.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has run.
+    /// - ensures: in a mutual block of at least two `def rec` declarations,
+    ///   each lowered to `thunk (fix. λ. bᵢ)` at `+U (Aᵢ -> C)`, every member's
+    ///   body is `thunk (λ x. ((fix. λ y. case y { b₀↑ | … | bₙ↑ }) : Σᵢ Aᵢ ->
+    ///   C) (injᵢ x))`, each `bᵢ` raised past the case's binder and its copies
+    ///   at the origins of what they copy, every other node the fixpoint's
+    ///   insertion; the fixpoint claims descent when a member's did. A block
+    ///   with a member that did not lower so is unchanged.
+    /// - provides: mutual recursion between a block's functions as the one
+    ///   fixpoint the core has.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — each member's body shape is a term in the sink's
+    ///   arena, which a clause would walk member by member; the witness reads
+    ///   the shapes back.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Joint`].
+    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    pub(super) fn mint_joints(
+        &mut self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        for index in 0 .. self.collected.blocks.len() {
+            let Some(&block) = self.collected.blocks.get(index)
+            else {
+                continue;
+            };
+            let members: Vec<SlotIndex> = self
+                .collected
+                .recursive
+                .range(block.first .. block.end)
+                .copied()
+                .collect();
+            if members.len() < 2 {
+                continue;
+            }
+            let mut joined = Vec::with_capacity(members.len());
+            for &member in &members {
+                match self.joinable(member, sink) {
+                    Maybe::Present(read) => joined.push(read),
+                    Maybe::Absent(_) => break,
+                }
+            }
+            if joined.len() == members.len() {
+                self.join(&joined, sink);
+            }
+        }
+    }
+
+    /// The member at `member` as the joint fixpoint reads it.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has run.
+    /// - ensures: a function tail lowered to `thunk (fix. λ. b)` at `+U (A ->
+    ///   C)` reads as its declaration, `A`, `C`, `b` and the fixpoint's claim.
+    /// - fails: [`joint::Absent::Unjoined`] for anything else.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Joint`].
+    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(read) => sink.arena.computation(read.branch).is_some(),
+        Maybe::Absent(reason) => reason == joint::Absent::Unjoined,
+    })]
+    fn joinable(
+        &self,
+        member: SlotIndex,
+        sink: &Sink<'_>,
+    ) -> Maybe<Joinable, joint::Absent>
+    {
+        let unjoined = Maybe::Absent(joint::Absent::Unjoined);
+        let Some(&Maybe::Present(Half {
+            operand: Operand::Function,
+            declaration,
+        })) = self
+            .collected
+            .slots
+            .get(usize::from(member))
+            .map(|slot| &slot.definition)
+        else {
+            return unjoined;
+        };
+        let (Maybe::Present(signature), Maybe::Present(body), Maybe::Present(origin)) = (
+            self.signature_at(declaration.node),
+            self.function_body_at(declaration.node),
+            self.origin_at(declaration.node),
+        )
+        else {
+            return unjoined;
+        };
+        let arena = &*sink.arena;
+        let Some(&gandr_core_term::ValueType::Thunk(arrow)) = arena.value_type(signature)
+        else {
+            return unjoined;
+        };
+        let Some(&CompType::Arrow { domain, codomain }) = arena.comp_type(arrow)
+        else {
+            return unjoined;
+        };
+        let Some(&Value::Thunk(fixpoint)) = arena.value(body)
+        else {
+            return unjoined;
+        };
+        let Some(&gandr_core_term::Computation::Fixpoint {
+            body: lambda,
+            evidence,
+        }) = arena.computation(fixpoint)
+        else {
+            return unjoined;
+        };
+        let Some(&gandr_core_term::Computation::Lambda(branch)) = arena.computation(lambda)
+        else {
+            return unjoined;
+        };
+        Maybe::Present(Joinable {
+            declaration: declaration.node,
+            signature,
+            domain,
+            codomain,
+            branch,
+            evidence,
+            origin,
+        })
+    }
+
+    /// Mint the joint fixpoint of `joined` and make each member's body that
+    /// fixpoint at its summand, as [`Self::mint_joints`] states.
+    ///
+    /// # Specification
+    /// - requires: `joined` is one block's members in block order, at least
+    ///   two, each read by [`Self::joinable`].
+    /// - ensures: as [`Self::mint_joints`] states for one block.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Joint`].
+    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    #[spec(requires: joined.len() >= 2)]
+    fn join(
+        &mut self,
+        joined: &[Joinable],
+        sink: &mut Sink<'_>,
+    )
+    {
+        let Some(first) = joined.first()
+        else {
+            return;
+        };
+        let mark = sink.arena.watermark();
+        let mut carried = Vec::new();
+        let domains: Vec<ValueTypeId> = joined.iter().map(|member| member.domain).collect();
+        let sum = sink.arena.value_type_sum(&domains);
+        let ascribed = sink.arena.comp_type_arrow(sum, first.codomain);
+        // Each member's body stands under its own fixpoint binder and its
+        // parameter; in the joint it stands under the fixpoint binder, the
+        // case's scrutinee and the summand the case binds.
+        let mut branches = Vec::with_capacity(joined.len());
+        for member in joined {
+            branches.push(gandr_core_term::shift_computation_under_traced(
+                sink.arena,
+                member.branch,
+                Binders::ONE,
+                Binders::ONE,
+                &mut carried,
+            ));
+        }
+        let evidence = if joined
+            .iter()
+            .any(|member| member.evidence == FixpointEvidence::StructuralDescent)
+        {
+            FixpointEvidence::StructuralDescent
+        }
+        else {
+            FixpointEvidence::Partial
+        };
+        let scrutinee = sink
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = sink.arena.computation_case(scrutinee, &branches);
+        let lambda = sink.arena.computation_lambda(case);
+        let fixpoint = sink.arena.computation_fixpoint(lambda, evidence);
+        let joint = sink.arena.computation_ascribe(fixpoint, ascribed);
+        record_copied_since(
+            sink,
+            mark,
+            first.origin.inserted(Insertion::Fixpoint),
+            Maybe::Absent(rooted::Absent::Unminted),
+            &carried,
+        );
+        for (at, member) in joined.iter().enumerate() {
+            let inserted = member.origin.inserted(Insertion::Fixpoint);
+            let own = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            sink.origins.record_value(own, inserted);
+            let injected = sink.arena.value_injection(Summand::from(at), own);
+            sink.origins.record_value(injected, inserted);
+            let applied = sink.arena.computation_application(joint, injected);
+            sink.origins.record_computation(applied, inserted);
+            let lambda = sink.arena.computation_lambda(applied);
+            sink.origins.record_computation(lambda, inserted);
+            let thunk = sink.arena.value_thunk(lambda);
+            sink.origins
+                .record_value(thunk, member.origin.inserted(Insertion::Thunk));
+            if let Some(lowered) = self.lowered.get_mut(usize::from(member.declaration)) {
+                *lowered = Maybe::Present(Lowered::Function {
+                    signature: Maybe::Present(member.signature),
+                    body: thunk,
+                });
+            }
         }
     }
 }

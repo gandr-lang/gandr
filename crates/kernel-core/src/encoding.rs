@@ -2594,6 +2594,19 @@ pub enum RewriteGoal
         /// The replacement value, in the context outside the binder.
         replacement: ValueId,
     },
+    /// Replace every occurrence of a constant by the variable at a fixed index
+    /// counted from the root, raised under every binder crossed.
+    Abstract
+    {
+        /// The node being rewritten.
+        subject: AnyNode,
+        /// The binder depth the walk has reached, which the index rises by.
+        depth: BinderDepth,
+        /// The constant replaced.
+        constant: gandr_kernel_term::ConstantIndex,
+        /// The variable it reads as at the root.
+        index: gandr_kernel_term::DeBruijnIndex,
+    },
 }
 
 impl RewriteGoal
@@ -2613,6 +2626,7 @@ impl RewriteGoal
         match self {
             Self::Shift { .. } => WireTag::from(0x06_u8),
             Self::Substitute { .. } => WireTag::from(0x07_u8),
+            Self::Abstract { .. } => WireTag::from(0x08_u8),
         }
     }
 
@@ -2624,7 +2638,9 @@ impl RewriteGoal
     const fn subject(self) -> AnyNode
     {
         match self {
-            Self::Shift { subject, .. } | Self::Substitute { subject, .. } => subject,
+            Self::Shift { subject, .. }
+            | Self::Substitute { subject, .. }
+            | Self::Abstract { subject, .. } => subject,
         }
     }
 }
@@ -2656,7 +2672,7 @@ impl RewriteGoal
 #[spec(ensures: |ret| ret.0.first() == Some(&u8::from(goal.direction()))
     && table.placed.contains_key(&goal.subject())
     && match goal {
-        RewriteGoal::Shift { .. } => true,
+        RewriteGoal::Shift { .. } | RewriteGoal::Abstract { .. } => true,
         RewriteGoal::Substitute { replacement, .. } => table.placed.contains_key(&AnyNode::Value(replacement)),
     })]
 pub fn encode_rewrite(
@@ -2686,6 +2702,16 @@ pub fn encode_rewrite(
             let replacement = table.place(arena, AnyNode::Value(replacement));
             encoding.put_count(ComponentCount(usize::from(depth)));
             encoding.put_content(replacement);
+        },
+        RewriteGoal::Abstract {
+            depth,
+            constant,
+            index,
+            ..
+        } => {
+            encoding.put_count(ComponentCount(usize::from(depth)));
+            encoding.put_count(ComponentCount(usize::from(constant)));
+            encoding.put_word(EncodedWord(u64::from(u32::from(index))));
         },
     }
     encoding

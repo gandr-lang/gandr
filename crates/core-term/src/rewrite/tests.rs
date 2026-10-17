@@ -64,6 +64,87 @@ use crate::syntax::ValueType;
 use crate::syntax::Zone;
 
 #[test]
+fn an_abstraction_replaces_its_constant_by_a_variable_under_binders()
+{
+    let mut arena = CoreArena::new();
+    let decoder = ConstantIndex::from(1_usize);
+    let other = ConstantIndex::from(2_usize);
+    // `U (El(el x) → F (El(el y)))`, the codomain under the arrow's binder.
+    let decode = |arena: &mut CoreArena, constant: ConstantIndex, at: DeBruijnIndex| {
+        let head = arena.value_constant(constant);
+        let forced = arena.computation_force(head);
+        let argument = arena.value_variable(Zone::Intuitionistic, at);
+        let call = arena.computation_application(forced, argument);
+        let code = arena.value_returned(call);
+        arena.value_type_element(code, Level::zero())
+    };
+    let domain = decode(&mut arena, decoder, DeBruijnIndex::from(0_u32));
+    let codomain = decode(&mut arena, decoder, DeBruijnIndex::from(1_u32));
+    let returner = arena.comp_type_returner(codomain);
+    let pi = arena.comp_type_pi(domain, returner);
+    let subject = arena.value_type_thunk(pi);
+    let read = super::abstract_constant_value_type(
+        &mut arena,
+        subject,
+        decoder,
+        DeBruijnIndex::from(5_u32),
+    );
+    // The decoder's head and argument in `El(head argument)`.
+    let call = |arena: &CoreArena, decoded: ValueTypeId| {
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(decoded)
+        else {
+            panic!("a decode");
+        };
+        let Some(&Value::Returned(call)) = arena.value(code)
+        else {
+            panic!("a returned call");
+        };
+        let Some(&Computation::Application(forced, argument)) = arena.computation(call)
+        else {
+            panic!("an application");
+        };
+        let Some(&Computation::Force(head)) = arena.computation(forced)
+        else {
+            panic!("a forced head");
+        };
+        (arena.value(head).cloned(), arena.value(argument).cloned())
+    };
+    let variable = |index: u32| {
+        Some(Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(index),
+        })
+    };
+    let Some(&ValueType::Thunk(pi)) = arena.value_type(read)
+    else {
+        panic!("a thunk");
+    };
+    let Some(&CompType::Pi { domain, codomain }) = arena.comp_type(pi)
+    else {
+        panic!("an arrow");
+    };
+    let Some(&CompType::Returner { result, .. }) = arena.comp_type(codomain)
+    else {
+        panic!("a returner");
+    };
+    // The domain stands under no binder: the variable at the index. The
+    // codomain stands under the arrow's: one past it. The arguments stand.
+    assert_eq!(call(&arena, domain), (variable(5), variable(0)));
+    assert_eq!(call(&arena, result), (variable(6), variable(1)));
+    let unrelated = decode(&mut arena, other, DeBruijnIndex::from(0_u32));
+    assert_eq!(
+        super::abstract_constant_value_type(
+            &mut arena,
+            unrelated,
+            decoder,
+            DeBruijnIndex::from(5_u32)
+        ),
+        unrelated,
+        "a type naming another constant is kept"
+    );
+}
+
+#[test]
 fn native_motives_preserve_binder_and_field_order()
 {
     let mut arena = CoreArena::new();

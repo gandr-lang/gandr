@@ -93,6 +93,33 @@
 //! verdict is the second run's and carries the elaborated body, and the report
 //! keeps what the elaboration did under the declaration's position. The
 //! decisions, the alternatives and the reversal are in `nested`.
+//!
+//! # A mutual block is admitted on a schedule
+//!
+//! A data declaration whose fields name a later declaration is admitted in a
+//! block with it: [`crate::occurrence::reach`] measures the block from the
+//! fields, the run of data declarations at its head are its families and the
+//! declarations after them its definitions. The block is admitted on one
+//! schedule, the kernel's: the families' formations come into scope, each
+//! definition's declared type forms and is foreseen, each family's
+//! constructors form naming the definitions at those types, and then each
+//! definition's body is judged with every family admitted. Nothing here is a
+//! new judgement: each step is the one a lone declaration takes, taken in the
+//! block's order. A universe and its decoder are the instance —
+//! `data U { PiC : (a : U, b : +U (el(a) -> -F U)) --> U }` names `el`, whose
+//! declared type names `U` — and inside the decoder's own fixpoint its
+//! constant in the family's fields reads as its self binder, as
+//! [`crate::recursion::stage_branch`] states. Witness:
+//! `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`.
+//!
+//! The block is one admission, so one refused family refuses it whole: every
+//! family the run accepted takes the first family's refusal, as the kernel's
+//! one admission refuses them all. The block's families share one stage, so
+//! a recursion over the sum of them — a rose tree's node and its forest,
+//! measured together — descends through either, as
+//! [`crate::recursion::kin`] states. Witnesses:
+//! `recursive_data::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`,
+//! `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -137,6 +164,212 @@ use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
 use crate::seal::SealTable;
 use crate::support::Supported;
+
+quenchant_shape::reason_enum! {
+    /// Why no mutual block is open in a module run.
+    mod open {
+        /// The reason no block is open.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The declarations judged are each admitted alone.
+            Lone,
+        }
+    }
+}
+
+/// Open the mutual block the first of `run`, the declarations from it on,
+/// leads, when it leads one, and close the block a run left open once it passes
+/// the block's end.
+///
+/// # Specification
+/// - requires: `open` is what the previous call left, over the same
+///   declarations; `run` is a suffix of them, in order.
+/// - ensures: a block whose end the first of `run` reaches is closed; then,
+///   with none open, a data declaration whose fields name a later position
+///   opens its block: the families its run of data declarations holds in scope,
+///   each later definition's declared type formed and foreseen — one that does
+///   not form is left to its own admission to refuse — and the block's end
+///   returned in `open`.
+/// - provides: the first two steps of a mutual block's admission schedule; the
+///   rest is each member's own admission, in order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a universe and its decoder admitted as one block, and a
+///   declaration after the block admitted alone.
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+#[spec(ensures: match *open {
+    Maybe::Present(end) => run.first().is_some_and(|leader| leader.constant() < end),
+    Maybe::Absent(_) => true,
+})]
+fn schedule(
+    context: &mut CheckingContext<'_>,
+    run: &[Declaration],
+    open: &mut Maybe<ConstantIndex, open::Absent>,
+)
+{
+    let Some(leader) = run.first()
+    else {
+        return;
+    };
+    if let Maybe::Present(end) = *open
+        && leader.constant() >= end
+    {
+        context.close_mutual();
+        *open = Maybe::Absent(open::Absent::Lone);
+    }
+    if let Maybe::Present(_) = *open {
+        // A definition of the block is judged as a lone one is: the
+        // definitions foreseen for the families' fields are forgotten from
+        // its own position on, so its body names none not yet admitted.
+        if let crate::DeclarationContent::Value { .. } = *leader.content() {
+            context.unforesee(leader.constant());
+        }
+        return;
+    }
+    let crate::DeclarationContent::Data(ref signature) = *leader.content()
+    else {
+        return;
+    };
+    let first = leader.constant();
+    let mut end = crate::occurrence::reach(context.arena(), first, signature);
+    if usize::from(end) <= usize::from(first).saturating_add(1) {
+        return;
+    }
+    let mut families = Vec::new();
+    let mut past_families = ConstantIndex::from(usize::from(first).saturating_add(1));
+    let mut phase = Members::Families;
+    let mut members = 0_usize;
+    for member in run {
+        if member.constant() >= end {
+            break;
+        }
+        // The block is its members' run, with no position missing: data
+        // declarations at its head, definitions after them.
+        if usize::from(member.constant()) != usize::from(first).saturating_add(members) {
+            return;
+        }
+        members = members.saturating_add(1);
+        match (member.content(), phase) {
+            (&crate::DeclarationContent::Data(ref family), Members::Families) => {
+                end = end.max(crate::occurrence::reach(
+                    context.arena(),
+                    member.constant(),
+                    family,
+                ));
+                past_families =
+                    ConstantIndex::from(usize::from(member.constant()).saturating_add(1));
+                families.push((member.constant(), alloc::sync::Arc::clone(family)));
+            },
+            (&crate::DeclarationContent::Value { .. }, _) => phase = Members::Definitions,
+            (&crate::DeclarationContent::Data(_) | &crate::DeclarationContent::Abstract(_), _) => {
+                return;
+            },
+        }
+    }
+    if usize::from(first).saturating_add(members) != usize::from(end) {
+        return;
+    }
+    context.open_mutual(
+        crate::occurrence::Block::new(first, past_families, end),
+        families,
+    );
+    // Every definition's declared type forms before any is foreseen: a
+    // declared type names the block's families, never its definitions.
+    let mut foreseen = Vec::new();
+    for member in run {
+        if member.constant() >= end {
+            break;
+        }
+        if let crate::DeclarationContent::Value {
+            signature: Maybe::Present(declared),
+            ..
+        } = *member.content()
+            && member.constant() >= past_families
+            && let Ok(formed) = form_value_type(context, declared)
+        {
+            foreseen.push((member.constant(), formed));
+        }
+    }
+    for (constant, formed) in foreseen {
+        context.foresee(constant, formed);
+    }
+    *open = Maybe::Present(end);
+}
+
+/// Which run of a mutual block a walk over its members is in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Members
+{
+    /// The data declarations at its head: its families.
+    Families,
+    /// The declarations past them: its definitions.
+    Definitions,
+}
+
+/// Refuse each mutual block of `blocks` whole: once one of its members is
+/// refused, every member of it the run accepted is refused with the first
+/// refusal, as the kernel refuses the block's one admission.
+///
+/// # Specification
+/// - requires: `judged` holds one entry per declaration of the module, in
+///   order, and `blocks` the run's blocks as first and end positions.
+/// - ensures: inside a block holding a refused member, family or definition,
+///   every member judged [`Verdict::Data`], [`Verdict::Checked`] or
+///   [`Verdict::Synthesised`] is judged [`Verdict::Refused`] with the refusal
+///   of the block's first refused member, under a copy of its failure when it
+///   kept one; every other entry unchanged.
+/// - provides: one verdict for a block, as the kernel's admission gives one.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause compares every verdict before and after, a
+///   walk of the module's verdicts no clause makes; the witness reads them
+///   back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family whose own fields are positive, in a block with a
+///   family consuming it, is refused as the block is; a universe whose decoder
+///   is refused is refused with it.
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+fn refuse_whole(
+    blocks: &[(ConstantIndex, ConstantIndex)],
+    judged: &mut [Judged],
+    failures: &mut BTreeMap<ConstantIndex, Failure>,
+)
+{
+    for &(first, end) in blocks {
+        let within = |constant: ConstantIndex| first <= constant && constant < end;
+        let refused = judged.iter().find_map(|entry| match entry.verdict {
+            Verdict::Refused(refusal) if within(entry.constant) => {
+                Some((refusal, failures.get(&entry.constant).cloned()))
+            },
+            Verdict::Refused(_)
+            | Verdict::Data
+            | Verdict::Checked { .. }
+            | Verdict::Synthesised { .. }
+            | Verdict::Owed(_) => None,
+        });
+        let Some((refusal, failure)) = refused
+        else {
+            continue;
+        };
+        for entry in judged.iter_mut() {
+            if within(entry.constant)
+                && matches!(
+                    entry.verdict,
+                    Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }
+                )
+            {
+                entry.verdict = Verdict::Refused(refusal);
+                if let Some(ref failure) = failure {
+                    failures.insert(entry.constant, failure.clone());
+                }
+            }
+        }
+    }
+}
 
 /// The judgement's answer for one declaration.
 ///
@@ -739,6 +972,7 @@ fn decide(
     let (verdict, failure) = match body {
         Maybe::Present(body) => {
             let _stale = context.take_nesting();
+            context.own_body(body);
             let first = judge(context, body, direction);
             let decisions = context.take_nesting();
             let judged = match first {
@@ -750,6 +984,7 @@ fn decide(
                             // pairs it relates.
                             let _first = context.take_relating();
                             context.forget_stages();
+                            context.own_body(elaborated);
                             judge(context, elaborated, direction)
                         },
                         Err(unenclosed) => Err(unenclosed_failure(unenclosed.run())),
@@ -764,6 +999,7 @@ fn decide(
             };
             relating = context.take_relating();
             if let Some(signed) = signed.take() {
+                context.own_body(body);
                 typings =
                     Maybe::Present(Typings::after(signed, type_value(context, body, direction)));
                 let _typed = context.take_nesting();
@@ -990,7 +1226,20 @@ pub fn check_module(
     let mut ledger = ObligationLedger::new();
     let mut failures = BTreeMap::new();
     let mut nested_elaborations = BTreeMap::new();
-    for declaration in declarations {
+    let mut open = Maybe::Absent(open::Absent::Lone);
+    let mut blocks = Vec::new();
+    for (index, declaration) in declarations.iter().enumerate() {
+        let was = open;
+        schedule(
+            context,
+            declarations.get(index ..).unwrap_or_default(),
+            &mut open,
+        );
+        if let Maybe::Present(end) = open
+            && was != open
+        {
+            blocks.push((declaration.constant(), end));
+        }
         let decision = decide(context, declaration, Run::Judged);
         if let Maybe::Present(failure) = decision.failure {
             failures.insert(declaration.constant(), failure);
@@ -1007,6 +1256,10 @@ pub fn check_module(
             verdict: decision.verdict,
         });
     }
+    if let Maybe::Present(_) = open {
+        context.close_mutual();
+    }
+    refuse_whole(&blocks, &mut judged, &mut failures);
     ModuleReport {
         judged,
         ledger,
@@ -1063,10 +1316,19 @@ pub fn type_module(
 ) -> BTreeMap<ConstantIndex, Typings>
 {
     let mut typed = BTreeMap::new();
-    for declaration in declarations {
+    let mut open = Maybe::Absent(open::Absent::Lone);
+    for (index, declaration) in declarations.iter().enumerate() {
+        schedule(
+            context,
+            declarations.get(index ..).unwrap_or_default(),
+            &mut open,
+        );
         if let Maybe::Present(typings) = decide(context, declaration, Run::Typed).typings {
             typed.insert(declaration.constant(), typings);
         }
+    }
+    if let Maybe::Present(_) = open {
+        context.close_mutual();
     }
     typed
 }

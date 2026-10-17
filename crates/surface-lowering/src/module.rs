@@ -8,8 +8,9 @@
 //! wherever the two sit and the signature-then-definition form stays
 //! spellable. References still resolve by *admission position* — a name's
 //! position is fixed by its first declaration, and a body may name only
-//! strictly earlier positions — so self-reference and mutual reference are
-//! refused by the rule as well as by the core's own definition chain.
+//! strictly earlier positions — so outside a `rec { }` block (§ A `rec` block
+//! is one admission) self-reference and mutual reference are refused by the
+//! rule as well as by the core's own definition chain.
 //!
 //! # A signature no definition completes is the obligation producer
 //!
@@ -73,6 +74,17 @@
 //! table by name, each with its family, tag and arity, so a term or a pattern
 //! naming one resolves it without searching the declarations.
 //!
+//! # A `rec` block is one admission
+//!
+//! `rec { data … ; def … ; def rec … }` collects each member as a declaration
+//! of its own, in one run of slots ([`MutualBlock`]), and its members name
+//! one another in any order: a universe's code names its decoder, a rose
+//! tree's node names its forest. The checkers admit the run as one block, its
+//! data declarations first. Its `def rec` functions, when two or more, are one
+//! fixpoint over the sum of their domains, each at its summand
+//! (`lower::native` § A recursive function is one fixpoint over its last
+//! parameter).
+//!
 //! # A `sign` block defines a value of `Sig`
 //!
 //! `sign S { … }` takes the next admission position under `S` and files a
@@ -100,7 +112,8 @@
 //! flattens to named members). References resolve by admission position — the
 //! position of the declaration that introduced the name — so a declaration's
 //! own body and every later declaration are out of its scope, and
-//! self-reference and mutual reference are refused as unresolved names. A
+//! self-reference and mutual reference outside a `rec` block are refused as
+//! unresolved names. A
 //! module whose own shape is wrong — a root that is not a module, a root child
 //! that is neither a declaration, a module declaration nor an import, a
 //! declaration with no name, an import out of shape, two imports of one alias,
@@ -161,8 +174,8 @@
 //! a top-level name keeps the unresolved-name refusal. The alternative was
 //! refusing a later member as unresolved, which hides that the name exists one
 //! position too late. `def rec` does not reverse this: it binds its own name
-//! inside its own body, never a later declaration's. The choice reverses with
-//! mutual recursion, which the `rec { }` block reserves.
+//! inside its own body, never a later declaration's; a `rec` block's members
+//! name one another (§ A `rec` block is one admission).
 //!
 //! Each top-level module declares one namespace in the outermost scope,
 //! governing exactly what it exports: a value component as a component and a
@@ -233,6 +246,7 @@
 //! and `module::tests::ownership_routes_refusals_without_touching_other_slots`.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -384,6 +398,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The node is the root, layout, or not under a filed declaration.
             Unowned,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a slot belongs to no mutual block.
+    pub mod mutual_block {
+        /// The slot stands outside every block.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No `rec { … }` block's run holds the slot.
+            Outside,
         }
     }
 }
@@ -1300,6 +1326,12 @@ pub struct Collected<'source>
     /// `Sig`, the presentation code, when a `sign` block that refuses
     /// nothing has minted it.
     pub sig: Maybe<SigSlot, sig_slot::Absent>,
+    /// The mutual blocks, in source order: each the run of slots its members
+    /// took, admitted as one block.
+    pub blocks: Vec<MutualBlock>,
+    /// The slots declared `def rec`: in a mutual block, its recursive
+    /// functions recurse through one another.
+    pub recursive: BTreeSet<SlotIndex>,
 }
 
 quenchant_shape::reason_enum! {
@@ -1357,6 +1389,29 @@ pub struct SigSlot
     pub slot: SlotIndex,
     /// Each constructor's field count, in tag order.
     pub arities: Vec<usize>,
+}
+
+/// A mutual block `rec { … }` and the run of slots its members took.
+///
+/// # Specification
+/// - requires: nothing to construct this data; the collection produces it.
+/// - ensures: the slots from `first` up to `end` are the block's members, in
+///   source order, and nothing else.
+/// - executable: none — the slot range holds no table to check it against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a block of a data declaration and its decoder takes two
+///   consecutive slots, and a declaration after it takes none of the block's.
+/// - witness: `module::tests::a_mutual_block_collects_its_members_as_one_run`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MutualBlock
+{
+    /// The block form.
+    pub form: Placed,
+    /// The first slot a member took.
+    pub first: SlotIndex,
+    /// The slot after the last a member took.
+    pub end: SlotIndex,
 }
 
 /// A top-level module an attribute block decorates, with the slots of the
@@ -1420,6 +1475,41 @@ impl<'source> Collected<'source>
             .get(usize::from(position))
             .copied()
             .unwrap_or(Maybe::Absent(slot_owner::Absent::Unowned))
+    }
+
+    /// The mutual block whose run of slots holds `slot`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the block of [`Self::blocks`] whose slots from `first` up to
+    ///   `end` hold `slot`; [`mutual_block::Absent::Outside`] when none does.
+    /// - provides: the one-block test name resolution makes, where members name
+    ///   one another in any order.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is the walk itself; a clause restating
+    ///   it would walk the blocks again.
+    ///
+    /// # Clause cost
+    /// - bound: walks the module's blocks once; every block holds a slot of its
+    ///   own, so no more steps than the module has declarations.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — members of one block name one another in either
+    ///   order, and a declaration after the block does not reach into it.
+    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    /// - witness: `module::tests::a_mutual_block_collects_its_members_as_one_run`
+    #[inline]
+    pub fn block_of(
+        &self,
+        slot: SlotIndex,
+    ) -> Maybe<MutualBlock, mutual_block::Absent>
+    {
+        self.blocks
+            .iter()
+            .find(|block| (block.first .. block.end).contains(&slot))
+            .copied()
+            .map_or(Maybe::Absent(mutual_block::Absent::Outside), Maybe::Present)
     }
 
     /// The top level of the source whose text holds `offset`.
@@ -2097,6 +2187,8 @@ pub fn collect<'source>(
             functors: Vec::new(),
             instances: Vec::new(),
             sig: Maybe::Absent(sig_slot::Absent::Unminted),
+            blocks: Vec::new(),
+            recursive: BTreeSet::new(),
         },
         pieces: Pieces::new(),
         ordinals: BTreeMap::new(),
@@ -2132,6 +2224,14 @@ pub fn collect<'source>(
         }
         if former == Former::Declaration {
             collector.declaration(child, &decorations)?;
+            decorations.clear();
+            continue;
+        }
+        if former == Former::Mutual {
+            if let Some(&stray) = decorations.first() {
+                collector.module_child(stray)?;
+            }
+            collector.mutual(child)?;
             decorations.clear();
             continue;
         }
@@ -2475,6 +2575,155 @@ impl<'source> Collector<'_, 'source>
             }),
             Shape::Root | Shape::Repair(_) | Shape::Layout => Ok(()),
         }
+    }
+
+    /// Collect the mutual block `block`: each member as the root collects
+    /// one, and the run of slots the members take.
+    ///
+    /// # Specification
+    /// - requires: `block` is a `rec { … }` form standing at the root.
+    /// - ensures: an attribute block decorates the member after it, a data
+    ///   declaration and a definition are collected into their slots, and the
+    ///   block is recorded with the slots its members took, in source order.
+    /// - provides: the block half of [`collect`]: what the lowering admits as
+    ///   one block.
+    /// - fails: [`LoweringRefusal::OutOfFragment`] for a member that is no data
+    ///   declaration, definition or attribute block, and an attribute block
+    ///   decorating nothing; a repaired block as its repair; every fault
+    ///   [`Self::data`] and [`Self::declaration`] raise.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block of a data declaration and its decoder takes
+    ///   two consecutive slots, and a declaration after it takes none of the
+    ///   block's.
+    /// - witness: `module::tests::a_mutual_block_collects_its_members_as_one_run`
+    #[spec(
+        captures: before = (self.collected.slots.len(), self.collected.blocks.len()),
+        ensures: |ret| ret.is_err()
+            || self.collected.blocks.get(before.1).is_some_and(|entry| {
+                entry.form == block
+                    && entry.first.0 == before.0
+                    && entry.end.0 == self.collected.slots.len()
+            }),
+    )]
+    fn mutual(
+        &mut self,
+        block: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, block.node, &mut pieces)?;
+        if let Maybe::Present(repaired) = pieces.repair {
+            return Err(repaired.refusal(FormName::MUTUAL));
+        }
+        let first = SlotIndex(self.collected.slots.len());
+        let mut decorations: Vec<Placed> = Vec::new();
+        for piece in pieces.pieces {
+            let Piece::Operand(member) = piece
+            else {
+                continue;
+            };
+            self.fuel.spend()?;
+            match self.root_former(member)? {
+                Former::AttributeBlock => decorations.push(member),
+                Former::Data => {
+                    self.data(member, &decorations)?;
+                    self.hold_described_refusals(member);
+                    self.route_operations(member);
+                    decorations.clear();
+                },
+                Former::Declaration => {
+                    self.declaration(member, &decorations)?;
+                    decorations.clear();
+                },
+                Former::Name
+                | Former::Constructor
+                | Former::Hole
+                | Former::Number
+                | Former::Text
+                | Former::Parenthesized
+                | Former::Unit
+                | Former::Thunk
+                | Former::Lambda
+                | Former::Block
+                | Former::Return
+                | Former::Exit
+                | Former::Become
+                | Former::Loop
+                | Former::While
+                | Former::For
+                | Former::Break
+                | Former::Continue
+                | Former::Force
+                | Former::Run
+                | Former::Call
+                | Former::Case
+                | Former::Telescope
+                | Former::Injection
+                | Former::LazyRecord
+                | Former::Binary
+                | Former::Unary
+                | Former::Projection
+                | Former::TypeHead
+                | Former::TypePath
+                | Former::Universe
+                | Former::TypeApplication
+                | Former::ThunkType
+                | Former::ReturnerType
+                | Former::ArrowType
+                | Former::ProductType
+                | Former::SumType
+                | Former::LazyProductType
+                | Former::TelescopeType
+                | Former::LabelledSumType
+                | Former::LazyRecordType
+                | Former::ValueFunctionType
+                | Former::StaticAbstraction
+                | Former::ParenthesizedType
+                | Former::PathType
+                | Former::RelationType
+                | Former::CapabilityType
+                | Former::AtType
+                | Former::Scope
+                | Former::Import
+                | Former::Module
+                | Former::Mutual
+                | Former::Instantiation
+                | Former::SessionType
+                | Former::Action
+                | Former::Offer
+                | Former::Access
+                | Former::Reserved
+                | Former::Unadmitted => {
+                    let Some(node) = self.tree.node(member.node)
+                    else {
+                        continue;
+                    };
+                    if let Shape::Form { name, .. } = shape_of(self.pbg, node)? {
+                        return Err(LoweringRefusal::OutOfFragment {
+                            span: member.span,
+                            form: name,
+                            sort: FragmentSort::Declaration,
+                            boundary: FragmentBoundary::WrongSort,
+                        });
+                    }
+                },
+            }
+        }
+        if let Some(&stray) = decorations.first() {
+            self.module_child(stray)?;
+        }
+        self.collected.blocks.push(MutualBlock {
+            form: block,
+            first,
+            end: SlotIndex(self.collected.slots.len()),
+        });
+
+        Ok(())
     }
 
     /// Collect a top-level module the attribute blocks `decorations` decorate,
@@ -3265,7 +3514,7 @@ impl<'source> Collector<'_, 'source>
         }
         let mut header = Cursor::new(after, declaration.span);
         let _def = header.tile(TileName::DEF);
-        let _recursive = header.tile(TileName::REC);
+        let recursive = header.tile(TileName::REC);
         let Maybe::Present(named) = header.tile(TileName::IDENTIFIER)
         else {
             return Err(self.unnamed(pieces, declaration, &header));
@@ -3273,6 +3522,9 @@ impl<'source> Collector<'_, 'source>
         let name = self.name_of(named);
         let slot = self.admit(container, name, declaration, named);
         self.collected.own(declaration.node, slot);
+        if let Maybe::Present(_) = recursive {
+            let _fresh = self.collected.recursive.insert(slot);
+        }
         for &block in decorations {
             self.collected.own(block.node, slot);
             self.document(slot, block.node, block.span.end(), declaration.node);
@@ -8015,6 +8267,29 @@ mod tests
         let module = lowered.structures.first_mut().unwrap();
         *module.path.first_mut().unwrap() = SurfaceName::from("bad.path");
         assert!(lowered.structured_names().is_empty());
+    }
+
+    #[test]
+    fn a_mutual_block_collects_its_members_as_one_run()
+    {
+        let pbg = grammar();
+        let tree = parsed(
+            &pbg,
+            SourceText::from(
+                "def before = 1 ; rec { data N : Type { Z : N ; } def f = 1 ; } def after = 2 ;",
+            ),
+        );
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+        assert_eq!(collected.slots.len(), 4, "every member takes its own slot");
+        let [block] = *collected.blocks.as_slice()
+        else {
+            panic!("one block");
+        };
+        assert_eq!(
+            (block.first, block.end),
+            (SlotIndex::from(1_usize), SlotIndex::from(3_usize)),
+            "the members' run, and neither the declaration before nor after"
+        );
     }
 
     #[test]

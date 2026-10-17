@@ -166,7 +166,9 @@ pub fn kind_level(
 /// their constructor and the declaration's own family, at its admission
 /// position. The family may occur in a field only strictly positively and at
 /// its parameter variables, which the occurrence walk decides before anything
-/// forms. A refused signature leaves no binder, block or nominal entry.
+/// forms. A refused signature leaves no binder, block or nominal entry of its
+/// own; a family of an open mutual block stays in scope with the block, which
+/// its other families' fields name.
 ///
 /// # Specification
 /// - requires: the nominal entry has not been installed in the context, and
@@ -175,7 +177,7 @@ pub fn kind_level(
 ///   every parameter and field forms in its declared scope, a field under the
 ///   parameters and its constructor's fields before it; fields fit the declared
 ///   value universe; the original binder depth is restored and the block
-///   closed.
+///   closed, unless the family is one of an open mutual block.
 /// - fails: occurrence, kind, formation and field-universe refusals are
 ///   retained.
 /// - panics: none.
@@ -190,15 +192,18 @@ pub fn kind_level(
 /// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
 /// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth
-    && (matches!(context.data_in_scope(position), Maybe::Absent(_)) || context.data_signatures().contains_key(&position)))]
+    && (matches!(context.data_in_scope(position), Maybe::Absent(_))
+        || context.data_signatures().contains_key(&position)
+        || context.block_of(position) != crate::occurrence::Block::lone(position)))]
 pub fn form_signature(
     context: &mut CheckingContext<'_>,
     position: ConstantIndex,
     signature: &Arc<DataSignature>,
 ) -> Result<(), CheckRefusal>
 {
-    crate::occurrence::occurrences(context.arena(), position, signature)?;
+    crate::occurrence::occurrences(context.arena(), &context.block_of(position), signature)?;
     let depth = context.depth(Zone::Intuitionistic);
     context.open_block(position, Arc::clone(signature));
     let outcome = (|| {
@@ -232,7 +237,7 @@ pub fn form_signature(
         }
         present(context, position, signature)
     })();
-    context.close_block();
+    context.close_block(position);
     while context.depth(Zone::Intuitionistic) != depth {
         let _closed = context
             .binders()

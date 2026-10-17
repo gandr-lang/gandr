@@ -1078,6 +1078,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Import
                 | Former::Module
                 | Former::Data
+                | Former::Mutual
                 | Former::Instantiation
                 | Former::Action
                 | Former::Offer

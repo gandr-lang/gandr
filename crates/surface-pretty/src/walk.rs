@@ -1651,7 +1651,8 @@ enum Join
     /// An arrow over its domain and codomain.
     Arrow,
     /// A dependent arrow over its domain and codomain, its binder named by the
-    /// binders open where the join runs.
+    /// binders open where the join runs; written as the plain arrow when the
+    /// walk spelled every node so far and no occurrence named its binder.
     Pi,
     /// A dependent pair type over its two factors, its first label named as
     /// a dependent arrow's binder is and its second by the next name.
@@ -2329,6 +2330,10 @@ struct Walk<'walk, 'names>
     /// The zone of each open binder, outermost first; a binder's position
     /// among them names it.
     opened: Vec<Zone>,
+    /// The positions whose binder an occurrence named since it last opened:
+    /// a dependent arrow whose binder no occurrence names is spelled as the
+    /// plain arrow.
+    occurring: BTreeSet<OpenBinders>,
     /// The arguments the binders of a static redex stand for, by the binder's
     /// position among the open ones: a redex is written as its reduct, each
     /// occurrence of such a binder as the argument's piece.
@@ -2668,9 +2673,12 @@ impl Walk<'_, '_>
             .unwrap_or(usize::MAX)
             .saturating_sub(open);
         let spelled = match found {
-            Some(position) => match self.names.get(position.0) {
-                Some(&Some(ref name)) => Ok(name.0.clone()),
-                Some(&None) | None => Err(Unspelled::Exhausted),
+            Some(position) => {
+                let _fresh = self.occurring.insert(position);
+                match self.names.get(position.0) {
+                    Some(&Some(ref name)) => Ok(name.0.clone()),
+                    Some(&None) | None => Err(Unspelled::Exhausted),
+                }
             },
             None => match zone {
                 Zone::Intuitionistic => self
@@ -2801,6 +2809,7 @@ impl Walk<'_, '_>
                 .substituted
                 .insert(OpenBinders(self.opened.len()), argument);
             let position = self.opened.len();
+            let _named = self.occurring.remove(&OpenBinders(position));
             if self.names.len() <= position {
                 self.names.resize(position.saturating_add(1_usize), None);
             }
@@ -4206,6 +4215,7 @@ impl Walk<'_, '_>
         let name = written.or_else(|| self.fresh(OpenBinders(0)));
         self.names.resize(position, None);
         self.names.push(name);
+        let _named = self.occurring.remove(&OpenBinders(position));
         self.opened.push(zone);
     }
 
@@ -4867,6 +4877,7 @@ impl Walk<'_, '_>
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `goldens::tests::a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
@@ -5017,6 +5028,23 @@ impl Walk<'_, '_>
                 (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
             },
             Join::Arrow => {
+                let codomain = self.pop()?;
+                let domain = self.pop()?;
+                let domain = self.bare_up_to(domain, Binding::Lazy)?;
+                let arrow = self.leaf(Glyphs(" ->"))?;
+                let head = self.builder.concat(domain, arrow)?;
+                let head = self.space_or_break(head)?;
+                (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+            },
+            // The surface reads `(x : A) -> C` as the plain arrow where `C`
+            // does not name `x`, so a dependent arrow whose codomain names
+            // no binder — a decode substituting a constant family — has no
+            // spelling of its own and is written as the arrow it reads as.
+            // A walk that spelled every node so far met every occurrence.
+            Join::Pi
+                if self.fidelity == Fidelity::Faithful
+                    && !self.occurring.contains(&OpenBinders(self.opened.len())) =>
+            {
                 let codomain = self.pop()?;
                 let domain = self.pop()?;
                 let domain = self.bare_up_to(domain, Binding::Lazy)?;
@@ -5294,6 +5322,7 @@ where
         binders: Binders::new(mentioned),
         names: Vec::new(),
         opened: Vec::new(),
+        occurring: BTreeSet::new(),
         substituted: BTreeMap::new(),
         context,
         fidelity: Fidelity::Faithful,
@@ -5579,6 +5608,7 @@ mod tests
             binders: super::Binders::new(super::BTreeSet::new()),
             names: super::Vec::new(),
             opened: super::Vec::new(),
+            occurring: super::BTreeSet::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
             fidelity: Fidelity::Faithful,
@@ -5656,6 +5686,7 @@ mod tests
             binders: super::Binders::new(super::BTreeSet::new()),
             names: super::Vec::new(),
             opened: super::Vec::new(),
+            occurring: super::BTreeSet::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
             fidelity: Fidelity::Faithful,

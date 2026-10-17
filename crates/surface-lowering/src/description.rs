@@ -11,7 +11,8 @@
 //! # Declarations read into descriptions
 //!
 //! `description::elaborate_descriptions` reads top-level `data`, `codata` and
-//! `sign` declarations into checked descriptions. Typed family parameters and
+//! `sign` declarations, and those a mutual block `rec { … }` holds, in source
+//! order, into checked descriptions. Typed family parameters and
 //! classifiers are retained separately from the description code. Constructor
 //! results must name the declared family with the same parameter variables, in
 //! order; declared value-index positions stay expressions rather than being
@@ -555,7 +556,11 @@ pub fn elaborate_descriptions<'source>(
     }
     let reader = Reader { grammar, tree };
     let mut report = DescriptionReport::default();
-    for position in tree.children(tree.root()) {
+    // The declarations in source order: a mutual block's members are read in
+    // its place, as declarations of their own.
+    let mut pending: Vec<_> = tree.children(tree.root()).collect();
+    pending.reverse();
+    while let Some(position) = pending.pop() {
         let Some(node) = tree.node(position)
         else {
             continue;
@@ -563,6 +568,14 @@ pub fn elaborate_descriptions<'source>(
         let at = Placed::of(position, node);
         let mut pieces = Pieces::new();
         read_pieces(grammar, tree, position, &mut pieces)?;
+        if matches!(shape_of(grammar, node)?, Shape::Form { name, .. } if name == crate::FormName::MUTUAL)
+        {
+            pending.extend(pieces.pieces.iter().rev().filter_map(|piece| match *piece {
+                Piece::Operand(member) => Some(member.node),
+                Piece::Tile { .. } => None,
+            }));
+            continue;
+        }
         let mut run = Run::new(&pieces.pieces, at.span);
         let serial =
             NominalSerial::from(u64::try_from(report.declarations.len()).unwrap_or(u64::MAX));

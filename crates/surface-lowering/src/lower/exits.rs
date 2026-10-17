@@ -522,6 +522,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::AttributeBlock
             | Former::Import
             | Former::Data
+            | Former::Mutual
             | Former::Instantiation
             | Former::SessionType
             | Former::Action

@@ -1,0 +1,19 @@
+// What a rose tree refuses. A family standing in its own field under another
+// family's former, a node holding `List(Rose)`, is a nested occurrence: the
+// stage a fold descends through is the list's, not the tree's, so the
+// children are written as a family of the tree's own block instead. Shared
+// with `../../model/data/rose.gandr`.
+
+/// Lists, the former the nested occurrence stands under.
+@[ checks ]
+data List(a : Type) : Type {
+  Nil : List(a);
+  Cons : (head : a, tail : List(a)) --> List(a);
+}
+
+/// A node over a list of nodes: `Rose` nested under `List`. The direct form,
+/// typed by stage, is #393.
+@[ refuses("NestedOccurrence") ]
+data Rose : Type {
+  Node : (kids : List(Rose)) --> Rose;
+}

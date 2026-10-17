@@ -1266,7 +1266,9 @@ pub fn equal_type_syntax(
 /// reflexivity at that point and the words' empty word, two session types
 /// whose protocols behave alike from their states, a type decoding a static
 /// redex and the type its reduct decodes — and a staged type and its base, as
-/// the printer writes it, since the surface spells no stage.
+/// the printer writes it, since the surface spells no stage, and a dependent
+/// arrow whose codomain names no binder and the plain arrow, since the surface
+/// reads `(x : A) -> C` as the arrow where `C` does not name `x` (#577).
 ///
 /// # Specification
 /// - requires: `signatures` holds the data declarations the types name.
@@ -1282,14 +1284,17 @@ pub fn equal_type_syntax(
 ///   labels, `end` — whatever their nodes' positions; a decode whose code is a
 ///   static abstraction applied to no more arguments than its chain has binders
 ///   is read as the decode of the abstraction's body instantiated at the
-///   arguments, at most [`StaticSteps::ALLOWED`] times along one comparison;
-///   and a call kept unelaborated is read as the value it returns.
+///   arguments, at most [`StaticSteps::ALLOWED`] times along one comparison; a
+///   call kept unelaborated is read as the value it returns; and a dependent
+///   arrow whose codomain names no binder is read as the plain arrow over its
+///   domain and its codomain strengthened.
 /// - provides: the comparison a printed type's reading back is held to: a type
 ///   of words has no name the surface writes, and is spelled as the path type
 ///   it reads as; a session type at a state is spelled as the protocol from
 ///   that state, which reads back to a protocol at its root; a static redex the
 ///   surface cannot apply is spelled as its reduct; a stage has no spelling,
-///   and a staged type is spelled as its base.
+///   and a staged type is spelled as its base; a dependent arrow ignoring its
+///   binder has no spelling, and is spelled as the arrow.
 /// - fails: returns `Different` on a dangling node.
 /// - panics: none.
 ///
@@ -1305,12 +1310,14 @@ pub fn equal_type_syntax(
 ///   type, alone and as an arrow's domain, reads as its base where the syntax
 ///   alone tells them apart, and stays different from another type. A path
 ///   between a call returned reads as one between the call kept, and not as one
-///   between another call.
+///   between another call. A dependent arrow ignoring its binder reads as the
+///   arrow, in either order; one naming its binder stays different.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
 /// - witness: `syntax::tests::a_staged_type_reads_as_its_base`
 /// - witness: `syntax::tests::a_kept_call_reads_as_the_value_it_returns`
+/// - witness: `syntax::tests::a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
 #[inline]
 #[must_use]
@@ -1956,9 +1963,11 @@ fn session_children(
 ///   ([`read_as_words`]) agreeing outright, two session types whose protocols
 ///   behave alike from their states ([`session_children`]), a decoded static
 ///   redex read as its reduct ([`decoded_value_type`], [`decoded_comp_type`]),
-///   and a call kept unelaborated read as the value it returns, as the lowering
-///   keeps it where a type after it reads it; under [`Reading::Syntax`] no
-///   reduction is performed.
+///   a call kept unelaborated read as the value it returns, as the lowering
+///   keeps it where a type after it reads it, and a dependent arrow whose
+///   codomain names no binder read as the plain arrow over its domain and its
+///   codomain strengthened; under [`Reading::Syntax`] no reduction is
+///   performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
 ///   second traversal pretending to be an independent postcondition.
 ///
@@ -1969,6 +1978,7 @@ fn session_children(
 /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
+/// - witness: `syntax::tests::a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow`
 /// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_type_former_equals_its_twin_and_differs_where_its_guard_does`
@@ -2903,6 +2913,35 @@ fn equal_syntax(
                             codomain: d,
                         },
                     ) => pending.extend([VT(a, c), CT(b, d)]),
+                    // The surface reads `(x : A) -> C` as the plain arrow
+                    // where `C` does not name `x`, and the printer spells a
+                    // dependent arrow whose codomain names no binder as that
+                    // arrow: read back, it is the arrow.
+                    (
+                        &CompType::Pi {
+                            domain: a,
+                            codomain: b,
+                        },
+                        &CompType::Arrow {
+                            domain: c,
+                            codomain: d,
+                        },
+                    )
+                    | (
+                        &CompType::Arrow {
+                            domain: c,
+                            codomain: d,
+                        },
+                        &CompType::Pi {
+                            domain: a,
+                            codomain: b,
+                        },
+                    ) if matches!(reading, Reading::Printed(_)) => {
+                        match crate::rewrite::strengthen_comp_type(arena.to_mut(), b) {
+                            Maybe::Present(b) => pending.extend([VT(a, c), CT(b, d)]),
+                            Maybe::Absent(_) => return CertificateEquality::Different,
+                        }
+                    },
                     (
                         &CompType::Element {
                             code: a,
@@ -3361,6 +3400,62 @@ mod tests
             equal_type_reading(&arena, &signatures, staged, other),
             CertificateEquality::Different,
             "a staged type does not read as another type"
+        );
+    }
+
+    /// A decode substituting a constant family leaves a dependent arrow
+    /// whose codomain names no binder (#577); printed as the arrow, it reads
+    /// back as one.
+    #[test]
+    fn a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        // A path between the binder `index` binders out, the codomain's
+        // result.
+        let path = |arena: &mut crate::CoreArena, index: u32| {
+            let end = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+            let path = arena.value_type_path(nat, end, end);
+            arena.comp_type_returner(path)
+        };
+        let thunked = |arena: &mut crate::CoreArena, ty: CompTypeId| arena.value_type_thunk(ty);
+        // Under one binder around the type: the dependent arrow's codomain
+        // names that binder at index one, the arrow's at index zero.
+        let (outer_under, outer, own) = (
+            path(&mut arena, 1),
+            path(&mut arena, 0),
+            path(&mut arena, 0),
+        );
+        let vacuous = arena.comp_type_pi(nat, outer_under);
+        let vacuous = thunked(&mut arena, vacuous);
+        let plain = arena.comp_type_arrow(nat, outer);
+        let plain = thunked(&mut arena, plain);
+        let dependent = arena.comp_type_pi(nat, own);
+        let dependent = thunked(&mut arena, dependent);
+        for (left, right, what) in [
+            (
+                vacuous,
+                plain,
+                "a dependent arrow ignoring its binder against the arrow",
+            ),
+            (plain, vacuous, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, dependent, plain),
+            CertificateEquality::Different,
+            "a dependent arrow naming its binder does not read as the arrow"
         );
     }
 

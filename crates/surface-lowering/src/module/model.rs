@@ -986,6 +986,7 @@ pub fn spine_domains<'source>(
             | Former::Import
             | Former::Module
             | Former::Data
+            | Former::Mutual
             | Former::Instantiation
             | Former::SessionType
             | Former::Action

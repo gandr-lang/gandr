@@ -124,9 +124,10 @@ pub(super) fn signature(
 /// # Specification
 /// - requires: entries is the immutable admitted prefix.
 /// - ensures: a head naming the block's own position borrows the block's
-///   signature; any other head resolves as [`signature`] does.
-/// - provides: self reference inside one block — the family is in scope at its
-///   own position while its fields form, and nowhere else.
+///   signature, and one naming a family of the mutual block whose families form
+///   borrows that family's; any other head resolves as [`signature`] does.
+/// - provides: self reference inside one block — a family is in scope at its
+///   own position while the block's families form, and nowhere else.
 /// - fails: a non-data or unadmitted position outside the block.
 /// - panics: none.
 ///
@@ -137,9 +138,11 @@ pub(super) fn signature(
 /// # Adequacy
 /// - hypothesis: L3 — `Nat`'s `succ` field and `List A`'s `cons` tail form
 ///   through the block; the same head in a definition after admission resolves
-///   through the prefix.
+///   through the prefix; a universe's family resolves in its mutual block.
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted`
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
 #[spec(ensures: |ret| ret.is_ok() == (matches!(judgement.block, super::Block::Inside { position, .. } if position == index)
+    || matches!(judgement.member(index), Maybe::Present((member, super::occurrence::Membership::Family)) if matches!(member.content(), DeclarationContent::Data { .. }))
     || matches!(judgement.entries.get(usize::from(index)).map(AdmittedDeclaration::content), Some(DeclarationContent::Data { .. }))))]
 pub(super) fn resolve<'session>(
     judgement: super::Judgement<'session>,
@@ -151,6 +154,31 @@ pub(super) fn resolve<'session>(
             position,
             signature: own,
         } if position == index => Ok(own),
+        super::Block::Mutual { .. } => match judgement.member(index) {
+            Maybe::Present((member, super::occurrence::Membership::Family)) => {
+                match *member.content() {
+                    DeclarationContent::Data {
+                        ref parameters,
+                        ref constructors,
+                        kind,
+                    } => Ok(Signature {
+                        parameters,
+                        constructors,
+                        kind,
+                    }),
+                    DeclarationContent::Def { .. }
+                    | DeclarationContent::Axiom { .. }
+                    | DeclarationContent::AbstractType { .. } => {
+                        Err(KernelError::NotADataType { index })
+                    },
+                }
+            },
+            Maybe::Present((
+                _,
+                super::occurrence::Membership::Definition | super::occurrence::Membership::Other,
+            ))
+            | Maybe::Absent(_) => signature(judgement.entries, index),
+        },
         super::Block::Inside { .. } | super::Block::Outside => signature(judgement.entries, index),
     }
 }
@@ -519,6 +547,15 @@ pub(super) enum Looped
     Settled,
 }
 
+/// What a case scrutinises: its data classifier, the stage the case opened
+/// when it opened one, and the definition whose own constant reads as the
+/// fixpoint's self binder in the branches' field types.
+pub(super) type Scrutinised = (
+    ValueTypeId,
+    Maybe<StageId, super::recursion::Unstaged>,
+    Maybe<(ConstantIndex, DeBruijnIndex), super::recursion::Unowned>,
+);
+
 /// Collect the constructor-specific branch obligations and instantiated result.
 ///
 /// # Specification
@@ -526,10 +563,12 @@ pub(super) enum Looped
 ///   is checked by the surrounding judgement.
 /// - ensures: exactly one branch obligation per constructor, in table order,
 ///   each binding its recursive fields at the stage the case `opened`
-///   (`recursion::stage_branch`) when it opened one, then, for a case carrying
-///   a loop arm per loop of its sort (`loops::loops`), one per loop arm at
-///   `loops::arm_type`; [`Looped::Owed`] exactly when the sort has loops and
-///   the case carries no loop arm.
+///   (`recursion::stage_branch`) when it opened one — with the declaration's
+///   own constant read as the self binder `own` names, every field domain that
+///   named it returned as a [`super::recursion::Read`] — then, for a case
+///   carrying a loop arm per loop of its sort (`loops::loops`), one per loop
+///   arm at `loops::arm_type`; [`Looped::Owed`] exactly when the sort has loops
+///   and the case carries no loop arm.
 /// - fails: wrong shape or a non-exhaustive branch vector: neither one branch
 ///   per constructor nor one more per loop. A presented type's rules are an
 ///   obligation the caller decides once the branches have checked, by
@@ -545,6 +584,7 @@ pub(super) enum Looped
 ///   checking; a circle case with its loop arm checks the arm.
 /// - witness: `native_formers::native_formers::data_case_checks_coverage_and_motive`
 /// - witness: `recursive_data::recursive_data::a_recursion_descends_on_its_first_parameter`
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckComp(..)))))]
 pub(super) fn case(
@@ -552,8 +592,8 @@ pub(super) fn case(
     (entries, presentations): (&[AdmittedDeclaration], &crate::presented::Presentations),
     session: &mut SupportContext,
     case: ComputationId,
-    (datatype, opened): (ValueTypeId, Maybe<StageId, super::recursion::Unstaged>),
-) -> Result<(CompTypeId, Vec<Goal>, Looped), KernelError>
+    (datatype, opened, own): Scrutinised,
+) -> Result<(CompTypeId, Vec<Goal>, Looped, Vec<super::recursion::Read>), KernelError>
 {
     let (scrutinee, motive, count) = match arena.computation(case).ok_or(KernelError::ArenaFault)? {
         &Computation::DataCase {
@@ -633,19 +673,24 @@ pub(super) fn case(
         return Err(KernelError::NonExhaustiveDataCase);
     };
     let mut goals = Vec::with_capacity(count);
+    let mut reads = Vec::new();
+    // A mutual block's families share the stage the case opened.
+    let kin = match opened {
+        Maybe::Present(_) => super::recursion::kin(arena, entries, datatype),
+        Maybe::Absent(_) => Maybe::Absent(super::recursion::Kinless::Lone),
+    };
     for (index, fields) in signature.constructors.iter().enumerate() {
-        let expected = branch_type(
-            arena,
-            session,
-            datatype,
-            ConstructorTag::from(index),
-            fields,
-            motive,
-        )?;
+        let tag = ConstructorTag::from(index);
+        let expected = branch_type(arena, session, datatype, tag, fields, motive)?;
         let expected = match opened {
-            Maybe::Present(child) => {
-                super::recursion::stage_branch(arena, session, datatype, expected, (fields, child))?
-            },
+            Maybe::Present(child) => super::recursion::stage_branch(
+                arena,
+                session,
+                (super::recursion::families(&kin, &datatype), tag),
+                expected,
+                (fields, child),
+                (own, &mut reads),
+            )?,
             Maybe::Absent(_plain) => expected,
         };
         let branch = match arena.computation(case) {
@@ -674,7 +719,7 @@ pub(super) fn case(
     }
     let (table, memo) = session.rewrite_parts();
     let result = rewrite::substitute_comp_type(arena, table, memo, motive, scrutinee);
-    Ok((result, goals, looped))
+    Ok((result, goals, looped, reads))
 }
 
 quenchant_shape::reason_enum! {

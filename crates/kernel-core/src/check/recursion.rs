@@ -10,6 +10,12 @@
 //! - **A case opens one stage below its scrutinee's.** [`open_case`] mints one
 //!   child of a scrutinee's stage, after naming a bound by fresh stages, and
 //!   [`stage_branch`] binds each recursive field at it.
+//! - **A definition's own constant is its fixpoint's self binder.** Inside the
+//!   structural fixpoint a definition opens first, [`stage_branch`] reads each
+//!   occurrence of the definition's own constant in a field type as the self
+//!   binder — how a family its mutual block admits names its decoder — and the
+//!   case forms the branch so read, so a decoder named at a place that does not
+//!   descend is refused by the stage order like any other call.
 //! - **A constructor stands above its fields.** [`constructor_fields`] checks a
 //!   constructor wanted at a stage with its recursive fields one step lower; a
 //!   constructor with none needs a value in scope at a stage of a data type
@@ -28,6 +34,10 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldPosition;
 use gandr_kernel_term::Stage;
 use gandr_kernel_term::StageId;
 use gandr_kernel_term::StagedPosition;
@@ -41,6 +51,7 @@ use quenchant_shape::shape::Maybe;
 use super::Goal;
 use crate::conv::Convertibility;
 use crate::conv::convertible_value_types;
+use crate::env::AdmittedDeclaration;
 use crate::error::ExpectedComputationShape;
 use crate::error::KernelError;
 use crate::rewrite;
@@ -56,6 +67,120 @@ pub(super) enum Unstaged
 {
     /// The type is refined at no stage.
     Plain,
+}
+
+/// Why a case reads no constant as its definition's self binder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) enum Unowned
+{
+    /// The case stands under no fixpoint its declaration opened first.
+    Outside,
+}
+
+/// A field domain that named the definition's own constant, read at the self
+/// binder before its recursive occurrences are staged: the type the case
+/// forms, so a decode at a place that does not descend is refused.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Read
+{
+    /// The constructor whose branch binds the field.
+    pub tag: ConstructorTag,
+    /// The field, by position.
+    pub field: FieldPosition,
+    /// Its domain with the constant read as the self binder.
+    pub domain: ValueTypeId,
+}
+
+/// Why a type has no kin past itself.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) enum Kinless
+{
+    /// It is no family of a mutual block of several.
+    Lone,
+}
+
+/// The families a case on `datatype`, or a constructor of it wanted at a
+/// stage, refines at that stage: one mutual block's families share one stage.
+///
+/// A field of a sibling family is a structural part of the value as a field
+/// of its own family is — the block's families are one inductive definition
+/// read at several sorts — so a case binds it one stage below its scrutinee
+/// and a constructor wants it one stage below its own, the same set on both
+/// sides.
+///
+/// # Specification
+/// - requires: `entries` are the admitted declarations `datatype` resolves in.
+/// - ensures: [`Kinless::Lone`] unless `datatype` is a family admitted in a
+///   block of several families; then each of those families taking as many
+///   parameters as `datatype` has arguments, at `datatype`'s arguments, in
+///   block order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rose tree's node and its list of children, one block,
+///   recurse through each other at one stage, and a lone family's case stages
+///   only its own fields.
+/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(ref families) => families.len() >= 2,
+    Maybe::Absent(_) => true,
+})]
+pub(super) fn kin(
+    arena: &mut TermArena,
+    entries: &[AdmittedDeclaration],
+    datatype: ValueTypeId,
+) -> Maybe<Vec<ValueTypeId>, Kinless>
+{
+    let Some(&ValueType::Data {
+        declaration,
+        ref arguments,
+    }) = arena.value_type(datatype)
+    else {
+        return Maybe::Absent(Kinless::Lone);
+    };
+    let Some(block) = entries
+        .get(usize::from(declaration))
+        .map(AdmittedDeclaration::block)
+    else {
+        return Maybe::Absent(Kinless::Lone);
+    };
+    let (first, past) = (usize::from(block.first()), usize::from(block.families()));
+    if past.saturating_sub(first) < 2 {
+        return Maybe::Absent(Kinless::Lone);
+    }
+    let arguments = arguments.clone();
+    let mut families = Vec::with_capacity(past.saturating_sub(first));
+    for position in first .. past {
+        let position = ConstantIndex::from(position);
+        if position == declaration {
+            families.push(datatype);
+        }
+        else if super::former::signature(entries, position)
+            .is_ok_and(|signature| signature.parameters.len() == arguments.len())
+        {
+            families.push(arena.value_type_data(position, arguments.clone()));
+        }
+    }
+    if families.len() < 2 {
+        return Maybe::Absent(Kinless::Lone);
+    }
+    Maybe::Present(families)
+}
+
+/// The families [`kin`] found, or `datatype` alone.
+///
+/// # Specification
+/// trivial.
+pub(super) fn families<'kin>(
+    kin: &'kin Maybe<Vec<ValueTypeId>, Kinless>,
+    datatype: &'kin ValueTypeId,
+) -> &'kin [ValueTypeId]
+{
+    match *kin {
+        Maybe::Present(ref families) => families.as_slice(),
+        Maybe::Absent(_) => core::slice::from_ref(datatype),
+    }
 }
 
 /// The two types a fixpoint opening its stage checks at.
@@ -106,8 +231,10 @@ impl Dependence
 /// - requires: `expected` is formed.
 /// - ensures: a root stage `ι` minted, the body's type the telescope with the
 ///   arrow at `position` taking `A^ι`, and the self binder's the same telescope
-///   with it at `A^{<ι}`; every other arrow, and the codomain past `position`,
-///   as `expected` holds them.
+///   with it at `A^{<ι}`; for `A` a sum of data types, `A^ι` is the sum of each
+///   summand at `ι` — a mutual block's recursion, its families' sum at one
+///   stage — and `A^{<ι}` the same below it; every other arrow, and the
+///   codomain past `position`, as `expected` holds them.
 /// - fails: [`KernelError::ComputationShapeMismatch`] wanting an arrow when the
 ///   telescope ends, in a returner, a lazy product or a decode, before
 ///   `position`: a fixpoint whose self-reference is not below its own stage
@@ -120,9 +247,11 @@ impl Dependence
 /// # Adequacy
 /// - hypothesis: L3 — a first-parameter recursion opens the first arrow and is
 ///   admitted, the same recursion calling itself at its own parameter is
-///   refused, and a fixpoint at a returner opens nothing.
+///   refused, and a fixpoint at a returner opens nothing; a recursion at the
+///   sum of a rose tree's two families stages each summand.
 /// - witness: `recursive_data::recursive_data::a_recursion_descends_on_its_first_parameter`
 /// - witness: `recursive_data::recursive_data::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
+/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |opened| arena.comp_type(opened.own).is_some() && arena.comp_type(opened.inside).is_some()))]
 pub(super) fn open_fixpoint(
     arena: &mut TermArena,
@@ -155,8 +284,27 @@ pub(super) fn open_fixpoint(
         cursor = codomain;
     };
     let root = stages.mint_root();
-    let inside_domain = arena.value_type_staged(domain, Stage::At(root));
-    let own_domain = arena.value_type_staged(domain, below(Stage::At(root)));
+    let (inside_domain, own_domain) = match arena.value_type(domain) {
+        Some(&ValueType::Sum(ref summands))
+            if !summands.is_empty()
+                && summands.iter().all(|&summand| {
+                    matches!(arena.value_type(summand), Some(&ValueType::Data { .. }))
+                }) =>
+        {
+            let summands = summands.clone();
+            let mut inside = Vec::with_capacity(summands.len());
+            let mut own = Vec::with_capacity(summands.len());
+            for &summand in &summands {
+                inside.push(arena.value_type_staged(summand, Stage::At(root)));
+                own.push(arena.value_type_staged(summand, below(Stage::At(root))));
+            }
+            (arena.value_type_sum(&inside), arena.value_type_sum(&own))
+        },
+        Some(_) | None => (
+            arena.value_type_staged(domain, Stage::At(root)),
+            arena.value_type_staged(domain, below(Stage::At(root))),
+        ),
+    };
     let mut own = dependence.former(arena, own_domain, codomain);
     let mut inside = dependence.former(arena, inside_domain, codomain);
     while let Some((outer, dependence)) = spine.pop() {
@@ -355,12 +503,19 @@ pub(super) fn stage_field(
 }
 
 /// A case branch's type with its recursive fields at the stage the case
-/// opened.
+/// opened, and the definition's own constant read as its self binder.
 ///
 /// # Specification
 /// - requires: `branch` is the Pi telescope over one binder per entry of
-///   `fields` that `former::branch_type` built over `datatype`.
-/// - ensures: the same telescope with each recursive field domain at `child`.
+///   `fields` that `former::branch_type` built over the case's data type, one
+///   of `families` — its [`kin`], or itself alone; `own`, when present, is the
+///   declaration's position and its fixpoint's self binder as an index in the
+///   case's context.
+/// - ensures: the same telescope with each field domain naming one of
+///   `families` at `child` and, under `own`, every occurrence of the constant
+///   in a domain replaced by the self binder raised past the fields before it;
+///   each domain that named the constant pushed onto `reads` under `tag`, as
+///   read and before staging.
 /// - fails: [`KernelError::ArenaFault`] for a telescope shorter than `fields`.
 /// - panics: none.
 ///
@@ -369,15 +524,23 @@ pub(super) fn stage_field(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the successor's field moves to the case's stage and a
-///   call on it is admitted, while the zero branch binds nothing.
+///   call on it is admitted, while the zero branch binds nothing; a universe's
+///   function field names its decoder, read as the self binder, and the decoder
+///   at a place that does not descend is refused.
 /// - witness: `recursive_data::recursive_data::a_recursion_descends_on_its_first_parameter`
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| arena.comp_type(staged).is_some()))]
 pub(super) fn stage_branch(
     arena: &mut TermArena,
     session: &mut SupportContext,
-    datatype: ValueTypeId,
+    (families, tag): (&[ValueTypeId], ConstructorTag),
     branch: CompTypeId,
     (fields, child): (&[ValueTypeId], StageId),
+    (own, reads): (
+        Maybe<(ConstantIndex, DeBruijnIndex), Unowned>,
+        &mut Vec<Read>,
+    ),
 ) -> Result<CompTypeId, KernelError>
 {
     let mut domains = Vec::with_capacity(fields.len());
@@ -392,18 +555,44 @@ pub(super) fn stage_branch(
     }
     for (index, domain) in domains.iter_mut().enumerate() {
         let depth = u32::try_from(index).map_err(|_overflow| KernelError::ConstructorArity)?;
-        // The field stands under the fields before it: the family read at the
-        // field's own depth.
-        let (table, memo) = session.rewrite_parts();
-        let recursive = rewrite::shift_value_type(
-            arena,
-            table,
-            memo,
-            datatype,
-            BinderDepth::NONE,
-            BinderDepth::from(depth),
-        );
-        *domain = stage_field(arena, session, *domain, recursive, Stage::At(child))?;
+        if let Maybe::Present((constant, binder)) = own {
+            let (table, memo) = session.rewrite_parts();
+            // The self binder stands outside the fields before this one.
+            // reason: an index past the ceiling clamps, as a shift's does.
+            let raised = DeBruijnIndex::from(u32::from(quenchant_arith::arith::saturating_add(
+                quenchant_arith::arith::Int::from(u32::from(binder)),
+                quenchant_arith::arith::Int::from(depth),
+            )));
+            let read = rewrite::abstract_constant_value_type(
+                arena,
+                table,
+                memo,
+                *domain,
+                (constant, raised),
+            );
+            if read != *domain {
+                reads.push(Read {
+                    tag,
+                    field: FieldPosition::from(index),
+                    domain: read,
+                });
+                *domain = read;
+            }
+        }
+        // The field stands under the fields before it: each family of the
+        // block read at the field's own depth.
+        for &family in families {
+            let (table, memo) = session.rewrite_parts();
+            let recursive = rewrite::shift_value_type(
+                arena,
+                table,
+                memo,
+                family,
+                BinderDepth::NONE,
+                BinderDepth::from(depth),
+            );
+            *domain = stage_field(arena, session, *domain, recursive, Stage::At(child))?;
+        }
     }
     for &domain in domains.iter().rev() {
         focus = arena.comp_type_pi(domain, focus);
@@ -415,13 +604,14 @@ pub(super) fn stage_branch(
 ///
 /// # Specification
 /// - requires: `goals` are the field goals `former::constructor` built for a
-///   constructor of `datatype`, each a value check.
-/// - ensures: each goal with its recursive field one step below `wanted`; with
-///   no recursive field, the goals unchanged once [`room`] witnesses a value in
-///   scope at a stage of a data type within `wanted`.
+///   constructor of a data type among `families` — its [`kin`], or itself alone
+///   — each a value check.
+/// - ensures: each goal with its field naming one of `families` one step below
+///   `wanted`; with no such field, the goals unchanged once [`room`] witnesses
+///   a value in scope at a stage of a data type within `wanted`.
 /// - fails: [`KernelError::StageNotBelow`] from the top for a constructor with
-///   no recursive field and no such value: the first stage of a data type is
-///   empty, so nothing shows `wanted` holds one.
+///   no such field and no such value: the first stage of a data type is empty,
+///   so nothing shows `wanted` holds one.
 /// - panics: none.
 ///
 /// # Errors
@@ -430,8 +620,10 @@ pub(super) fn stage_branch(
 /// # Adequacy
 /// - hypothesis: L3 — a nullary argument under a successor arm's field is
 ///   admitted, and the same argument under the zero arm, where the case has
-///   minted its stage but bound nothing at it, is refused.
+///   minted its stage but bound nothing at it, is refused; a rose tree's node
+///   rebuilt below the stage wants its list of children below it.
 /// - witness: `recursive_data::recursive_data::a_nullary_argument_needs_a_value_below_the_stage`
+/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
 #[spec(ensures: |ret| match ret {
     Ok(()) => true,
     Err(ref error) => matches!(*error, KernelError::StageNotBelow { found: Standing::Top, bound } if bound == wanted) || *error == KernelError::ArenaFault,
@@ -439,7 +631,7 @@ pub(super) fn stage_branch(
 pub(super) fn constructor_fields(
     arena: &mut TermArena,
     (session, stages, context): (&mut SupportContext, &StageOrder, &[ValueTypeId]),
-    datatype: ValueTypeId,
+    families: &[ValueTypeId],
     wanted: Stage,
     goals: &mut [Goal],
 ) -> Result<(), KernelError>
@@ -450,7 +642,10 @@ pub(super) fn constructor_fields(
         else {
             return Err(KernelError::ArenaFault);
         };
-        let staged = stage_field(arena, session, field_type, datatype, below(wanted))?;
+        let mut staged = field_type;
+        for &family in families {
+            staged = stage_field(arena, session, staged, family, below(wanted))?;
+        }
         if staged != field_type {
             changed = Changed::Refined;
             *goal = Goal::CheckValue(field, staged);

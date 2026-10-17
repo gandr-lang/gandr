@@ -616,7 +616,9 @@ fn the_declined_metadata_golden_is_declined()
         panic!("one reserved attribute")
     };
     assert!(
-        matches!(diagnostic.fault, DescriptionFault::IllFormed(ref reason) if reason.kind == gandr_theory_levitation::WfKind::DeclaresDerivedMetadata)
+        matches!(diagnostic.fault, DescriptionFault::IllFormed(ref reason) if reason.kind == gandr_theory_levitation::WfKind::DeclaresDerivedMetadata),
+        "the reserved attribute is declined as derived metadata, not {:?}",
+        diagnostic.fault
     );
 }
 

@@ -2112,7 +2112,7 @@ mod tests
               "module ${1:type_identifier} { ${2:member} \\}"
               "import \"\";"
               "op infixl ${1:number} \"\";"
-              "rec { \\}"
+              "rec { ${1:item} \\}"
               "@[${1:identifier}]"
         "#]]
         .assert_eq(&rendered);

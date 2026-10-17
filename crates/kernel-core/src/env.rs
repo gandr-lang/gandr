@@ -865,6 +865,9 @@ pub struct AdmittedDeclaration
     /// declaration rests on, itself included when it is one. Precomputed at
     /// admission, so the audit is a lookup.
     rested_on: BTreeSet<ConstantIndex>,
+    /// The block it was admitted in: its own position alone unless a mutual
+    /// block admitted it, whose families share one stage.
+    block: check::occurrence::Block,
 }
 
 impl AdmittedDeclaration
@@ -912,6 +915,16 @@ impl AdmittedDeclaration
     pub const fn declaration(&self) -> &Declaration
     {
         &self.declaration
+    }
+
+    /// The block the declaration was admitted in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn block(&self) -> check::occurrence::Block
+    {
+        self.block
     }
 }
 
@@ -1343,6 +1356,7 @@ impl Environment
                     declaration,
                     admission: Admission::Checked,
                     rested_on,
+                    block: check::occurrence::Block::lone(position),
                 });
                 self.advance_seals(position);
                 Ok(CheckedId::new(position))
@@ -1420,9 +1434,227 @@ impl Environment
             declaration,
             admission: Admission::Unchecked,
             rested_on,
+            block: check::occurrence::Block::lone(position),
         });
         self.advance_seals(position);
         CheckedId::new(position)
+    }
+
+    /// Admit a mutual block through the checked choke point: its families, a
+    /// run of data declarations, then its definitions, in order, as one
+    /// admission.
+    ///
+    /// The block is admitted on the one schedule both checkers keep: each
+    /// definition's declared type forms with the families in scope; each
+    /// family's fields form with the block's families at their signatures and
+    /// its definitions at their declared types; then each definition's body is
+    /// checked with every family admitted, as a lone definition's is. Each step
+    /// is the judgement a lone declaration takes — no node or rule is new — so
+    /// the block is what lets a family name a definition that cases on it.
+    ///
+    /// # Specification
+    /// - requires: `staged` was built into this environment's arena through
+    ///   [`Self::stage`], in admission order; nothing is taken on credit.
+    /// - ensures: `Ok(ids)` with one [`CheckedId`] per member, at consecutive
+    ///   positions from the current length, exactly when every definition's
+    ///   declared type forms with the families in scope, every family passes
+    ///   the occurrence walk over the block and forms, and every definition's
+    ///   body checks; each member's audit is the union of the block's. On any
+    ///   failure the arena, the entries and the manifest are as they were
+    ///   before the call.
+    /// - provides: the one checked entry for declarations that name each other,
+    ///   by the same choke point [`Self::add_decl`] is.
+    /// - fails: [`KernelError::OutstandingStagedContent`] when a declaration
+    ///   staged after the block is unresolved; otherwise any [`KernelError`] a
+    ///   member's admission surfaces.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`KernelError::OutstandingStagedContent`], or any [`KernelError`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a universe and its decoder are admitted together; a
+    ///   decoder that names itself at a place that does not descend, and a
+    ///   field naming its family under a function domain, are each refused with
+    ///   the environment unchanged.
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole`
+    #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark(), members = staged.len()],
+        ensures: |ret| match ret.as_ref() {
+            Ok(ids) => ids.len() == members
+                && self.entries.len().checked_sub(entry_len) == Some(members)
+                && self.admission_floor == self.arena.watermark(),
+            Err(_) => self.entries.len() == entry_len
+                && self.arena.watermark().clamped_into(gandr_kernel_term::ArenaWatermark::default(), entry_watermark) == self.arena.watermark(),
+        })]
+    #[inline]
+    pub fn add_block(
+        &mut self,
+        staged: Vec<StagedDeclaration>,
+    ) -> Result<Vec<CheckedId>, KernelError>
+    {
+        let Some(content_start) = staged.iter().map(|member| member.content_start).min()
+        else {
+            return Ok(Vec::new());
+        };
+        // The guard of `add_decl`, over the whole block: every member's claim
+        // resolves, and a claim left above the block's start is a producer
+        // the rollback would truncate through.
+        for member in &staged {
+            self.outstanding.resolve(member.content_start);
+        }
+        let above = self.outstanding.above(content_start);
+        if usize::from(above) != 0 {
+            for member in &staged {
+                self.outstanding.register(member.content_start);
+            }
+            return Err(KernelError::OutstandingStagedContent { above });
+        }
+        let members = staged
+            .into_iter()
+            .map(|member| member.declaration)
+            .collect::<Vec<_>>();
+        let base = self.entries.len();
+        let content_end = self.arena.watermark();
+        let rejected = content_start.clamped_into(self.admission_floor, content_end);
+        let manifest = self.manifest.clone();
+        match self.admit_block(&members, content_end) {
+            Ok(ids) => {
+                self.arena.truncate_to(content_end);
+                self.admission_floor = content_end;
+                Ok(ids)
+            },
+            Err(error) => {
+                self.entries.truncate(base);
+                self.manifest = manifest;
+                self.arena.truncate_to(rejected);
+                Err(error)
+            },
+        }
+    }
+
+    /// The schedule of [`Self::add_block`], appending each member as it
+    /// checks; the caller rolls back on failure.
+    ///
+    /// # Specification
+    /// - requires: `members` were staged into this arena below `content_end`,
+    ///   in admission order.
+    /// - ensures: on success one entry per member is appended, each audited
+    ///   with the union of the block's audits; on failure some prefix of them
+    ///   may be, for the caller to truncate.
+    /// - provides: the schedule, apart from the rollback.
+    /// - fails: any [`KernelError`] a member's admission surfaces.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Any [`KernelError`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::add_block`].
+    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+    #[spec(captures: entry_len = self.entries.len(), ensures: |ret| ret.as_ref().map_or(true,
+        |ids| self.entries.len().checked_sub(entry_len) == Some(ids.len())))]
+    fn admit_block(
+        &mut self,
+        members: &[Declaration],
+        content_end: ArenaWatermark,
+    ) -> Result<Vec<CheckedId>, KernelError>
+    {
+        let base = self.entries.len();
+        let first = ConstantIndex::from(base);
+        let families = members
+            .iter()
+            .take_while(|member| matches!(*member.content(), DeclarationContent::Data { .. }))
+            .count();
+        let past_families = ConstantIndex::from(base.saturating_add(families));
+        let end = ConstantIndex::from(base.saturating_add(members.len()));
+        let mut admitted = Vec::with_capacity(members.len());
+        // The definitions' declared types form with the families in scope and
+        // no definition: a declared type names the block's families, never
+        // its definitions.
+        for member in members.iter().skip(families) {
+            let levels = LevelContext::admit(
+                member.levels().params(),
+                member.levels().constraints().to_vec(),
+            )?;
+            let Self {
+                ref mut arena,
+                ref entries,
+                ref manifest,
+                ..
+            } = *self;
+            check::form_declared(
+                arena,
+                check::Judgement::new(entries, &levels)
+                    .unsealing(manifest)
+                    .within_mutual(
+                        check::occurrence::Block::new(first, past_families, past_families),
+                        members,
+                    ),
+                member.declared_id(),
+            )?;
+            self.arena.truncate_to(content_end);
+        }
+        for (offset, member) in members.iter().enumerate() {
+            let position = ConstantIndex::from(base.saturating_add(offset));
+            let levels = LevelContext::admit(
+                member.levels().params(),
+                member.levels().constraints().to_vec(),
+            )?;
+            // A family forms with the block in scope; a definition is checked
+            // as a lone one is, every family and definition before it
+            // admitted, inside the block only so its own fixpoint reads its
+            // constant as the self binder.
+            {
+                let Self {
+                    ref mut arena,
+                    ref entries,
+                    ref manifest,
+                    ..
+                } = *self;
+                let judgement = check::Judgement::new(entries, &levels)
+                    .unsealing(manifest)
+                    .within_mutual(
+                        check::occurrence::Block::new(
+                            first,
+                            past_families,
+                            if offset < families { end } else { position },
+                        ),
+                        members,
+                    );
+                check::check_declaration(arena, judgement, member)?;
+            }
+            self.arena.truncate_to(content_end);
+            let rested_on = self.transitive_rest(
+                member.content(),
+                member.laws(),
+                position,
+                Admission::Checked,
+            );
+            // The block's families share one stage; a definition stands alone.
+            self.entries.push(AdmittedDeclaration {
+                declaration: member.clone(),
+                admission: Admission::Checked,
+                rested_on,
+                block: if offset < families {
+                    check::occurrence::Block::new(first, past_families, end)
+                }
+                else {
+                    check::occurrence::Block::lone(position)
+                },
+            });
+            self.advance_seals(position);
+            admitted.push(CheckedId::new(position));
+        }
+        // The members name each other, so each rests on what any rests on.
+        let mut rested = BTreeSet::new();
+        for entry in self.entries.iter().skip(base) {
+            rested.extend(entry.rested_on.iter().copied());
+        }
+        for entry in self.entries.iter_mut().skip(base) {
+            entry.rested_on.clone_from(&rested);
+        }
+        Ok(admitted)
     }
 
     /// Close the admission that minted `atom`: from the next admission on, the
@@ -1550,7 +1782,40 @@ impl Environment
             admission_floor: floor,
             ..Self::default()
         };
-        for (position, marked) in declarations.iter().enumerate() {
+        let mut position = 0_usize;
+        while let Some(marked) = declarations.get(position) {
+            // A data declaration whose fields name later positions leads the
+            // block they reach, measured as both checkers measure it, and the
+            // block is admitted whole.
+            let end = usize::from(block_end(
+                &environment.arena,
+                declarations,
+                ConstantIndex::from(position),
+            ));
+            if end > position.saturating_add(1) {
+                let members = declarations.get(position .. end).unwrap_or_default();
+                if members
+                    .iter()
+                    .all(|member| member.mark() == AdmissionMark::Checked)
+                {
+                    let staged = members
+                        .iter()
+                        .map(|member| StagedDeclaration {
+                            content_start: floor,
+                            declaration: member.declaration().clone(),
+                        })
+                        .collect();
+                    let _admitted =
+                        environment
+                            .add_block(staged)
+                            .map_err(|error| ArtifactRefusal {
+                                position: ConstantIndex::from(position),
+                                error,
+                            })?;
+                    position = end;
+                    continue;
+                }
+            }
             let staged = StagedDeclaration {
                 content_start: floor,
                 declaration: marked.declaration().clone(),
@@ -1569,6 +1834,7 @@ impl Environment
                     let _admitted = environment.add_decl_unchecked(staged);
                 },
             }
+            position = position.saturating_add(1);
         }
         Ok(environment)
     }
@@ -1806,6 +2072,81 @@ impl Environment
         }
         rested
     }
+}
+
+/// The position past the block the declaration at `first` leads: past the
+/// furthest position its run of data declarations reaches, when every
+/// position up to there is held — data declarations at the head, then
+/// definitions — or past `first` alone otherwise.
+///
+/// # Specification
+/// - requires: `declarations` resolve in `arena`.
+/// - ensures: one past `first` unless `first` is a data declaration whose
+///   fields reach later; then one past the furthest position the data
+///   declarations from `first` reach, when `declarations` holds every position
+///   before it and each after the leading data run is a definition, and one
+///   past `first` when not.
+/// - provides: the measurement replay groups a block by, the one the checker
+///   groups its schedule by and the bridge admits a block by.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the walk advances one position per step and stops at the measured
+///   end, which only rises to a reached position.
+/// - measure: `end - position`, bounded by the furthest position named.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lone family is no block, and a universe naming its
+///   decoder leads a block of the two.
+/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+#[spec(ensures: |ret| ret > first)]
+fn block_end(
+    arena: &TermArena,
+    declarations: &[MarkedDeclaration],
+    first: ConstantIndex,
+) -> ConstantIndex
+{
+    let start = usize::from(first);
+    let lone = start.saturating_add(1);
+    let mut end = lone;
+    let mut position = start;
+    while position < end {
+        match declarations
+            .get(position)
+            .map(|marked| marked.declaration().content())
+        {
+            Some(&DeclarationContent::Data {
+                ref parameters,
+                ref constructors,
+                ..
+            }) => {
+                let reached = check::occurrence::reach(
+                    arena,
+                    ConstantIndex::from(position),
+                    parameters,
+                    constructors,
+                );
+                end = end.max(usize::from(reached));
+            },
+            Some(&DeclarationContent::Def { .. }) => break,
+            Some(&(DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. }))
+            | None => return ConstantIndex::from(lone),
+        }
+        position = position.saturating_add(1);
+    }
+    let definitions = declarations.get(position .. end).unwrap_or_default();
+    if end > declarations.len()
+        || !definitions.iter().all(|marked| {
+            matches!(
+                *marked.declaration().content(),
+                DeclarationContent::Def { .. }
+            )
+        })
+    {
+        return ConstantIndex::from(lone);
+    }
+    ConstantIndex::from(end)
 }
 
 /// Whether a walk follows the codes the types it meets are read off.
