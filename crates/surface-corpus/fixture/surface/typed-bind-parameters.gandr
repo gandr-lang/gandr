@@ -1,0 +1,43 @@
+// A typed bind's annotation names the function's parameters as the body
+// does: `run x : a <- c` under `a : Type` binds `x` at `a`, however many
+// parameters stand between the binder and `a` (#662).
+
+/// A value handed back at the type it was given.
+@[ checks ]
+def same(a : Type, y : a) -> -F a {
+  return y
+}
+
+/// The annotation names the type parameter just outside the value (#662).
+@[ checks ]
+def kept(a : Type, y : a) -> -F a {
+  run x : a <- same(a, y) ;
+  return x
+}
+
+/// Another parameter stands between the binder and the one it names (#662).
+@[ checks ]
+def keptPast(a : Type, y : a, z : Integer) -> -F a {
+  run x : a <- same(a, y) ;
+  return x
+}
+
+/// A pair handed back at the product it was given.
+@[ checks ]
+def samePair(a : Type, b : Type, p : a * b) -> -F (a * b) {
+  return p
+}
+
+/// The annotation names two parameters at once (#662).
+@[ checks ]
+def keptPair(a : Type, b : Type, p : a * b) -> -F (a * b) {
+  run x : a * b <- samePair(a, b, p) ;
+  return x
+}
+
+/// A computation returning an `a` is not ascribed a `b`.
+@[ refuses("TypeMismatch") ]
+def misnamed(a : Type, b : Type, y : a) -> -F a {
+  run x : b <- same(a, y) ;
+  return y
+}
