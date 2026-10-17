@@ -415,7 +415,8 @@ pub enum RefusalName
     DuplicateDefinition,
     /// A second import of one alias.
     DuplicateImportAlias,
-    /// A declared name or binder over a builtin, under the reject policy.
+    /// A declared name or binder over a builtin, under the reject policy; a
+    /// family named as a builtin type the grammar spells as a tile, always.
     ShadowedBuiltin,
     /// A form the fragment does not admit, from the lowering or the checker.
     OutOfFragment,

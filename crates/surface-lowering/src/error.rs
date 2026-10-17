@@ -701,7 +701,8 @@ pub enum LoweringRefusal<'source>
     },
 
     /// A declared name or a binder over a builtin, under the policy that
-    /// forbids shadowing one.
+    /// forbids shadowing one; or a family named as a builtin type the grammar
+    /// spells as a tile of its own, under either policy.
     ShadowedBuiltin
     {
         /// The bytes of the name that shadows.
