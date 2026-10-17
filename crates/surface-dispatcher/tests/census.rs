@@ -21,9 +21,11 @@ mod census
     use gandr_surface_dispatcher::Declared;
     use gandr_surface_dispatcher::Evaluation;
     use gandr_surface_dispatcher::RoundTrip;
+    use gandr_surface_dispatcher::SourceRoot;
     use gandr_surface_dispatcher::Step;
     use gandr_surface_dispatcher::TypeTable;
     use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::lay_out;
     use gandr_surface_dispatcher::reprinted;
     use gandr_surface_dispatcher::signed;
     use gandr_surface_grammar::Pbg;
@@ -149,6 +151,33 @@ mod census
             .join(" ")
     }
 
+    /// The table of the walk's source at `path`, typed beside the siblings it
+    /// imports: the walk's `text` lays out the source's import closure, its
+    /// own text from `base`, and read as one source the importer's imports
+    /// resolve to nothing and refuse every declaration of it (#552).
+    ///
+    /// # Specification
+    /// trivial.
+    fn typed(
+        grammar: &Pbg,
+        path: &Path,
+        root: SourceRoot,
+        (text, base): (SourceText<'_>, ByteOffset),
+    ) -> Option<TypeTable>
+    {
+        let own = SourceText::from(text.as_ref().get(usize::from(base) ..)?);
+        match lay_out(grammar, path, root, own) {
+            Maybe::Present(laid) => TypeTable::of_unit(
+                grammar,
+                SourceText::from(laid.text.as_str()),
+                &laid.unit,
+                laid.base,
+            )
+            .ok(),
+            Maybe::Absent(_) => TypeTable::of(grammar, text).ok(),
+        }
+    }
+
     /// The printer as a fixed point over the values the corpus states: each
     /// run value and normal form, printed, read back in its source and printed
     /// again, is the same spelling after whitespace collapses. A spelling the
@@ -203,14 +232,16 @@ mod census
         while let Maybe::Present(step) = walk.step() {
             let Step::Source {
                 path,
+                root,
                 text,
+                base,
                 composed,
                 ..
             } = step
             else {
                 continue;
             };
-            let table = TypeTable::of(&grammar, text).ok();
+            let table = typed(&grammar, path, root, (text, base));
             if let Some(ref table) = table {
                 for entry in table.entries(page, Form::Sugared) {
                     let Maybe::Present(entry) = entry
@@ -381,14 +412,20 @@ mod census
             let mut moved: Vec<String> = Vec::new();
             let mut walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
             while let Maybe::Present(step) = walk.step() {
-                let Step::Source { path, text, .. } = step
+                let Step::Source {
+                    path,
+                    root,
+                    text,
+                    base,
+                    ..
+                } = step
                 else {
                     continue;
                 };
                 if !visited.contains(path) {
                     continue;
                 }
-                let Ok(table) = TypeTable::of(&grammar, text)
+                let Some(table) = typed(&grammar, path, root, (text, base))
                 else {
                     continue;
                 };

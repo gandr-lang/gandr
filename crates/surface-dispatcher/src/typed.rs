@@ -91,6 +91,7 @@ use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Formations;
 use gandr_core_checker::Formed;
+use gandr_core_checker::HostGrant;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::Typings;
@@ -163,8 +164,7 @@ use crate::compose::Lowered;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
 use crate::compose::adapt;
-use crate::compose::compose;
-use crate::compose::lower_source;
+use crate::compose::judge_lowering;
 use crate::compose::lower_unit_source;
 use crate::evaluate::Evaluation;
 
@@ -721,6 +721,12 @@ pub struct TypeTable
     /// own thunk, a static lambda's domain, read off the first type the typed
     /// run kept for the former, or for a bind for its bound computation.
     opened: Vec<(CoreNode, ValueTypeId)>,
+    /// The unit the source was lowered in, which a reading back lowers the
+    /// source and its probe in again: the siblings an importer reads stand
+    /// before it, its imports resolved to them.
+    unit: Unit,
+    /// Where the source's own text starts in the unit's.
+    base: ByteOffset,
 }
 
 /// The intuitionistic binder at or around `at`.
@@ -982,7 +988,8 @@ impl TypeTable
     /// - ensures: as [`of`](Self::of) over the whole unit, keeping the entries
     ///   and rule orientations at or past `base`, each moved back by `base`
     ///   bytes, so the table answers offsets into the last source's own text;
-    ///   declarations are keyed by form, which no offset moves. Unchanged at
+    ///   declarations are keyed by form, which no offset moves. The table keeps
+    ///   the unit, which every reading back lowers in again. Unchanged at
     ///   offset zero over [`Unit::single`].
     /// - provides: what an editor answers inside a document that imports a
     ///   sibling: an imported name types as its declaration does.
@@ -1494,6 +1501,8 @@ impl TypeTable
             arena,
             names,
             naming: Naming::of(&module, source),
+            unit: unit.clone(),
+            base,
             families: Families::of(&module),
             contexts,
             orientations,
@@ -2062,14 +2071,14 @@ impl TypeTable
     ///   does not parse as the type of `def x : … ;` with no repair is
     ///   [`RoundTrip::Unparsed`]. Every other is appended to the source as a
     ///   signature of a fresh name — a computation type `C` as `+U (C)` — the
-    ///   whole lowered once, and is [`RoundTrip::Equal`] when the type read is
-    ///   the table's node, `U C` for a computation type, compared by
-    ///   [`equal_type_reading`] under the source's data signatures — the same
-    ///   syntax with path evidence erased, a type of words as the path at its
-    ///   point, a session type by its protocol's behaviour from its state;
-    ///   [`RoundTrip::Different`] otherwise; and [`RoundTrip::Refused`] with
-    ///   the refusal when the lowering refused a closed signature or the whole
-    ///   source.
+    ///   whole lowered once in the unit the table was built in, and is
+    ///   [`RoundTrip::Equal`] when the type read is the table's node, `U C` for
+    ///   a computation type, compared by [`equal_type_reading`] under the
+    ///   source's data signatures — the same syntax with path evidence erased,
+    ///   a type of words as the path at its point, a session type by its
+    ///   protocol's behaviour from its state; [`RoundTrip::Different`]
+    ///   otherwise; and [`RoundTrip::Refused`] with the refusal when the
+    ///   lowering refused a closed signature or the whole source.
     /// - provides: the read-back half of the hover's content guarantee.
     /// - fails: never; a type that does not read back says why.
     /// - panics: none.
@@ -2080,10 +2089,12 @@ impl TypeTable
     /// - hypothesis: L3 — a data type, a thunked function type in its sugared
     ///   spelling, a universe, a computation type and a declaration read back
     ///   equal; a term typed under parameters and a bind, one of them a binder
-    ///   the type does not name, reads back equal under them; and the corpus
+    ///   the type does not name, reads back equal under them; a type of a
+    ///   source that imports a sibling reads back beside it; and the corpus
     ///   census reads back every printed type of every source, failing on a
     ///   class the findings do not pin.
     /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
+    /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     /// - witness: `census::census::sweeps::every_printed_type_reads_back_to_its_certificate`
     #[spec(ensures: |ret| ret.len() >= self.entries.len())]
     #[inline]
@@ -2231,9 +2242,10 @@ impl TypeTable
         // The names the lowering keeps beside the read types' dependent
         // arrows, at the arrows' images, so a reprint binds what was written.
         let mut read_arrows: Vec<(CompTypeId, String)> = Vec::new();
-        match lower_source(
+        match lower_unit_source(
             grammar,
             SourceText::from(augmented.as_str()),
+            &self.unit,
             &mut LoweringCount::default(),
         )
         .map(Lowering::into_lowered)
@@ -2409,8 +2421,9 @@ impl TypeTable
     /// - requires: `grammar` is the grammar the table was built under.
     /// - ensures: `written` appended to the source as the body of a fresh thunk
     ///   declaration, read first as it is written, with no signature: the whole
-    ///   lowered once and the thunk's computation printed as a run's value
-    ///   prints, on one line in the sugared form, its constants and
+    ///   lowered once in the unit the table was built in, an importer beside
+    ///   the siblings it reads, and the thunk's computation printed as a run's
+    ///   value prints, on one line in the sugared form, its constants and
     ///   constructors named as the table names them. Where that reading is
     ///   refused — a constructor needs the type its position states — and
     ///   `signed` declares a type, the declaration is signed with it, with the
@@ -2428,8 +2441,10 @@ impl TypeTable
     /// # Adequacy
     /// - hypothesis: L3 — the census reprints every run value and normal form
     ///   the corpus states; a value whose spelling lowers to another prints
-    ///   otherwise and fails it.
+    ///   otherwise and fails it. A value of a source that imports a sibling
+    ///   reprints both ways: as written, and run under its signature.
     /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     #[inline]
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
     pub fn reprint_value(
@@ -2478,7 +2493,7 @@ impl TypeTable
                 let mut signed = self.naming.text.clone();
                 signed.push_str(&signature);
                 signed.push_str(&body);
-                Self::run_reprinted(grammar, SourceText::from(signed.as_str()))
+                self.run_reprinted(grammar, SourceText::from(signed.as_str()))
             },
             again @ (Maybe::Present(_) | Maybe::Absent(_)) => again,
         }
@@ -2488,11 +2503,12 @@ impl TypeTable
     /// and its computation printed as a run's value prints.
     ///
     /// # Specification
-    /// - requires: `grammar` is the grammar the source is read under.
+    /// - requires: `grammar` is the grammar the source is read under; `source`
+    ///   is the text the table's unit lays out, the declaration appended.
     /// - ensures: the computation on one line in the sugared form, its
     ///   constants and constructors named as the table names them;
-    ///   [`reprinted::Absent::Unlowered`] when the lowering refused the source
-    ///   or the declaration, or defined no thunk, and
+    ///   [`reprinted::Absent::Unlowered`] when the lowering in the table's unit
+    ///   refused the source or the declaration, or defined no thunk, and
     ///   [`reprinted::Absent::Unspelled`] when the printer could not lay it
     ///   out.
     /// - provides: the unsigned half of [`Self::reprint_value`].
@@ -2502,6 +2518,7 @@ impl TypeTable
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::reprint_value`].
     /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
     fn lowered_reprint(
         &self,
@@ -2510,7 +2527,7 @@ impl TypeTable
     ) -> Maybe<String, reprinted::Absent>
     {
         let Ok(Lowered::Module { module, arena }) =
-            lower_source(grammar, source, &mut LoweringCount::default())
+            lower_unit_source(grammar, source, &self.unit, &mut LoweringCount::default())
                 .map(Lowering::into_lowered)
         else {
             return Maybe::Absent(reprinted::Absent::Unlowered);
@@ -2549,10 +2566,12 @@ impl TypeTable
     /// a run spells it.
     ///
     /// # Specification
-    /// - requires: `grammar` is the grammar the source is read under.
-    /// - ensures: the run's spelling when the source settles as a whole and the
-    ///   declaration runs to a value; [`reprinted::Absent::Unlowered`] when the
-    ///   source is refused or faults, [`reprinted::Absent::Unrun`] when no
+    /// - requires: `grammar` is the grammar the source is read under; `source`
+    ///   is the text the table's unit lays out, the declaration appended.
+    /// - ensures: the run's spelling when the source, lowered in the table's
+    ///   unit and judged from where its own text starts, settles as a whole and
+    ///   the declaration runs to a value; [`reprinted::Absent::Unlowered`] when
+    ///   the source is refused or faults, [`reprinted::Absent::Unrun`] when no
     ///   declaration is [`REPRINTED`] or its run reaches no value.
     /// - provides: the run half of [`Self::reprint_value`].
     /// - fails: never.
@@ -2561,18 +2580,25 @@ impl TypeTable
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::reprint_value`].
     /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+    /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
     fn run_reprinted(
+        &self,
         grammar: &Pbg,
         source: SourceText<'_>,
     ) -> Maybe<String, reprinted::Absent>
     {
-        let Ok(Composed::Settled { mut program, .. }) = compose(
-            grammar,
-            CorpusRoot::Fixture,
-            source,
-            &mut LoweringCount::default(),
-        )
+        let Ok(Composed::Settled { mut program, .. }) =
+            lower_unit_source(grammar, source, &self.unit, &mut LoweringCount::default()).and_then(
+                |lowering| {
+                    judge_lowering(
+                        CorpusRoot::Fixture,
+                        (lowering, source),
+                        &HostGrant::UNBOUNDED,
+                        self.base,
+                    )
+                },
+            )
         else {
             return Maybe::Absent(reprinted::Absent::Unlowered);
         };
@@ -3120,6 +3146,69 @@ mod tests
                 .spans()
                 .all(|span| usize::from(span.end()) <= <&str>::from(importer).len()),
             "no entry of the sibling is kept"
+        );
+    }
+
+    /// #552: a table built over an importer's unit reads its printed values
+    /// and types back in that unit. Read alone, the importer's import
+    /// resolves to nothing and every declaration of it — the appended probe
+    /// among them — is refused with the import.
+    #[test]
+    fn an_importer_s_value_reads_back_beside_its_sibling_552()
+    {
+        use gandr_kernel_term::ConstantIndex;
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        use super::signed;
+
+        let sibling = "data Point : Type {\n  Here : Point;\n}";
+        let importer = "import \"./point.gandr\" ;\ndef there : +U (-F +{Point, Point}) ;\ndef \
+                        there = thunk { return +{.1 = Here} } ;";
+        let laid = format!("{sibling}\n{importer}");
+        let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ])
+        .expect("the unit's sources start in order");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+            .expect("the unit parses");
+        assert_eq!(
+            table.reprint_value(
+                &grammar,
+                Maybe::Absent(signed::Absent::Unsigned),
+                SourceText::from("Here")
+            ),
+            Maybe::Present(String::from("Here")),
+            "the sibling's constructor reads back as written"
+        );
+        let there = table
+            .names
+            .iter()
+            .position(|name| name == "there")
+            .map(ConstantIndex::from)
+            .expect("the importer's declaration is named");
+        assert_eq!(
+            table.reprint_value(
+                &grammar,
+                Maybe::Present(there),
+                SourceText::from("+{.1 = Here}")
+            ),
+            Maybe::Present(String::from("+{.1 = Here}")),
+            "an injection, which needs its type, reads back run under the declaration's"
+        );
+        let trips: Vec<(String, RoundTrip)> = table
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        assert!(
+            !trips.is_empty() && trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
+            "every printed type of the importer reads back beside its sibling: {trips:?}"
         );
     }
 
