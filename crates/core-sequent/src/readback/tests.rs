@@ -9,6 +9,7 @@ use gandr_theory_cell_complexes::Polarity;
 
 use super::*;
 use crate::boundary::ProducerArity;
+use crate::il::CommandId;
 use crate::il::ConsumerNode;
 use crate::il::CopatternArm;
 use crate::il::DestructorTag;
@@ -132,7 +133,9 @@ fn closing_records_innermost_values_and_exact_lookup()
 }
 
 /// Refusals after partial dependency or closing reads restore an existing
-/// core prefix.
+/// core prefix: a dependency missing or malformed, a closure with no core
+/// reading, an environment that is not its command's support, and a
+/// suspended command with no core reading.
 #[test]
 fn refusals_restore_an_existing_core_prefix()
 {
@@ -188,8 +191,20 @@ fn refusals_restore_an_existing_core_prefix()
             environment,
         })
         .expect("room");
+    let closed_function = store
+        .allocate(HeapValue::Closure {
+            producer: wrong_function,
+            environment: Environment::EMPTY,
+        })
+        .expect("room");
     let thunk = store
         .allocate(HeapValue::Thunk { body, environment })
+        .expect("room");
+    let closed_thunk = store
+        .allocate(HeapValue::Thunk {
+            body,
+            environment: Environment::EMPTY,
+        })
         .expect("room");
     let missing = HeapValueId::from(u32::MAX);
     let mut core = CoreArena::new();
@@ -213,12 +228,22 @@ fn refusals_restore_an_existing_core_prefix()
         ),
         (
             thunk,
+            ReadbackRefusal::Capture(thunk),
+            ReadbackRefusal::Capture(thunk),
+        ),
+        (
+            closed_thunk,
             ReadbackRefusal::Decode(UnfocusRefusal::EscapingContinuation(top)),
             ReadbackRefusal::Decode(UnfocusRefusal::EscapingContinuation(top)),
         ),
         (
             function,
             ReadbackRefusal::Unreadable(function),
+            ReadbackRefusal::Capture(function),
+        ),
+        (
+            closed_function,
+            ReadbackRefusal::Unreadable(closed_function),
             ReadbackRefusal::Decode(UnfocusRefusal::ProducerOutsideTheImage(wrong_function)),
         ),
     ] {
@@ -234,6 +259,62 @@ fn refusals_restore_an_existing_core_prefix()
         assert_eq!(mark, core.watermark());
         assert_eq!(Some(&Value::Constant(42_usize.into())), core.value(prefix));
     }
+}
+
+/// A thunk reads back closed over an environment of exactly one value per
+/// variable its body's support selects; one value too few or too many, or a
+/// body the arena does not hold, is refused by the thunk's name.
+#[test]
+fn an_environment_that_is_not_the_support_is_refused()
+{
+    let mut arena = CommandArena::new();
+    let named = arena
+        .mint_producer(ProducerNode::Variable {
+            zone: gandr_core_term::Zone::Intuitionistic,
+            index: 0_u32.into(),
+        })
+        .expect("leaf");
+    let returned = arena
+        .mint_consumer(ConsumerNode::Covariable(0_u32.into()))
+        .expect("leaf");
+    let body = arena
+        .mint_cut(Polarity::Positive, named, returned)
+        .expect("references resolve");
+    let mut store = Store::new();
+    let first = store
+        .allocate(HeapValue::Opaque(7_usize.into()))
+        .expect("room");
+    let second = store
+        .allocate(HeapValue::Opaque(8_usize.into()))
+        .expect("room");
+    let one = store.bind_value(Environment::EMPTY, first).expect("room");
+    let two = store.bind_value(one, second).expect("room");
+    let mut thunk = |body, environment| {
+        store
+            .allocate(HeapValue::Thunk { body, environment })
+            .expect("room")
+    };
+    let exact = thunk(body, one);
+    let short = thunk(body, Environment::EMPTY);
+    let long = thunk(body, two);
+    let absent = thunk(CommandId::from(u32::MAX), one);
+    let mut core = CoreArena::new();
+    for refused in [short, long, absent] {
+        assert_eq!(
+            Err(ReadbackRefusal::Capture(refused)),
+            read_back_value(&arena, &store, refused, &mut core)
+        );
+    }
+    let read = read_back_value(&arena, &store, exact, &mut core).expect("the support is bound");
+    let Some(&Value::Thunk(suspended)) = core.value(read)
+    else {
+        panic!("a thunk reads back as a thunk");
+    };
+    let Some(&gandr_core_term::Computation::Return(answer)) = core.computation(suspended)
+    else {
+        panic!("the body returns its variable");
+    };
+    assert_eq!(Some(&Value::Constant(7_usize.into())), core.value(answer));
 }
 
 /// A record reads back only from as many fields as its labels, under labels

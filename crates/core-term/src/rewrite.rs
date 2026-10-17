@@ -105,6 +105,7 @@ use crate::arena::ValueTypeId;
 use crate::hole::HoleId;
 use crate::hole::MarkIndex;
 use crate::hole::TermId;
+use crate::support::Thinning;
 use crate::syntax::CompType;
 use crate::syntax::ComponentCount;
 use crate::syntax::Computation;
@@ -335,6 +336,9 @@ enum Rewrite
     /// run the engine's slots name by the variable of the bind its region
     /// mints for it.
     Splice(Binders),
+    /// Answer every node as itself, recording each intuitionistic index past
+    /// the depth, counted from it: the scan for the indices a subject names.
+    Gather,
 }
 
 /// Whether a lowering met the binder it lowers out of.
@@ -405,6 +409,9 @@ struct Engine<'arena>
     closings: Vec<Carried>,
     /// The constants and atoms a renaming replaces; nothing outside one.
     renaming: &'arena Renaming,
+    /// The indices a gather met past their depth, counted from it, in the
+    /// order met.
+    gathered: Vec<DeBruijnIndex>,
 }
 
 impl<'arena> Engine<'arena>
@@ -429,6 +436,7 @@ impl<'arena> Engine<'arena>
             binds: Vec::new(),
             closings: Vec::new(),
             renaming: &NOTHING_RENAMED,
+            gathered: Vec::new(),
         }
     }
 
@@ -779,7 +787,8 @@ impl<'arena> Engine<'arena>
             | Rewrite::Wrap
             | Rewrite::Environment
             | Rewrite::Rename
-            | Rewrite::Abstract(..) => Maybe::Absent(()),
+            | Rewrite::Abstract(..)
+            | Rewrite::Gather => Maybe::Absent(()),
         }
     }
 
@@ -986,6 +995,9 @@ impl<'arena> Engine<'arena>
             },
             | Rewrite::Environment => self.mention == mentioned
                 && (u32::from(index) >= depth.0 || ret == Occurrence::Answered(id)),
+            | Rewrite::Gather => self.mention == mentioned && ret == Occurrence::Answered(id)
+                && u32::from(index).checked_sub(depth.0)
+                    .is_none_or(|past| self.gathered.last() == Some(&DeBruijnIndex::from(past))),
         },
     )]
     fn occurrence(
@@ -1035,6 +1047,12 @@ impl<'arena> Engine<'arena>
             | Rewrite::Elaborate
             | Rewrite::Rename
             | Rewrite::Abstract(..) => Occurrence::Answered(id),
+            Rewrite::Gather => {
+                if let Some(past) = position.0.checked_sub(depth.0) {
+                    self.gathered.push(DeBruijnIndex::from(past));
+                }
+                Occurrence::Answered(id)
+            },
             Rewrite::Environment => {
                 if position < depth {
                     return Occurrence::Answered(id);
@@ -3638,6 +3656,46 @@ pub fn strengthen_value_type(
         };
     }
     Maybe::Present(lowered)
+}
+
+/// The intuitionistic indices a value type names past its own binders: its
+/// support, as a selection.
+///
+/// A scan: the walk visits the subject once per binder depth it is reached
+/// at. It serves a vocabulary that carries supports beside nodes whose
+/// annotations are core types that do not carry one yet; once the core's
+/// nodes carry their covers (#340) the support is read off the type.
+///
+/// # Specification
+/// - requires: nothing; an unreadable subject names nothing.
+/// - ensures: the selection of exactly the intuitionistic indices an occurrence
+///   in `subject` names past the binders between it and the subject, each
+///   counted from the subject; the linear selection empty, since no former
+///   binds into the linear zone and a linear occurrence is not rewritten;
+///   `arena` unchanged.
+/// - provides: an annotation's support.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one engine walk, minting nothing.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a type naming one index under a binder and another past
+///   it, the same index twice and a closed type separate a bound occurrence
+///   from a free one, the lowering past the binder from identity, a repeat from
+///   two members and an empty support from a missed one; the watermark
+///   separates a scan from a rewrite.
+/// - witness: `rewrite::tests::a_value_type_support_names_exactly_its_free_indices`
+#[spec(captures: [mark = arena.watermark()], ensures: |ret|
+    arena.watermark() == mark && ret.indices(Zone::Linear).is_empty())]
+#[inline]
+pub fn value_type_support(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+) -> Thinning
+{
+    let mut engine = Engine::new(arena);
+    let _answered = engine.run(Node::ValueType(subject), Binders::NONE, Rewrite::Gather);
+    Thinning::gathered(Zone::Intuitionistic, engine.gathered)
 }
 
 /// The classifier of a constructor of `family` over the field telescope

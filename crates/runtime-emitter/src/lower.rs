@@ -76,11 +76,12 @@
 //!   the definitions do not hold sticks where it is read.
 //!
 //! A closure site is recorded for every closure the function creates: the
-//! producer it suspends and the slots its visible producer binders occupy,
-//! innermost first; a reified stack's bind frame is recorded the same way. A
-//! run's outcome is moved into the caller's store through these records, so
-//! a closure or a literal stack in an answer reads back as the IL it
-//! suspends.
+//! producer it suspends and the slots of the producer bindings its support
+//! selects (`CommandArena::captures`), innermost first; a reified stack's
+//! bind frame is recorded the same way, from its body's support past the
+//! frame's value. A run's outcome is moved into the caller's store through
+//! these records, so a closure moves exactly the values it names, and a
+//! closure or a literal stack in an answer reads back as the IL it suspends.
 //!
 //! What the lowering refuses is named by [`Form`], and the run declines with
 //! it.
@@ -99,6 +100,7 @@ use gandr_core_sequent::ProducerId;
 use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::Route;
 use gandr_core_sequent::Selector;
+use gandr_core_sequent::Suspension;
 use gandr_core_term::FieldLabel;
 use gandr_core_term::Zone;
 use gandr_core_term::control::StackFrame;
@@ -501,8 +503,9 @@ pub struct Site
     pub label: Label,
     /// The suspended producer: a thunk, a fixpoint or a copattern object.
     pub producer: ProducerId,
-    /// The slots of the producer binders visible where the closure is
-    /// created, innermost first: the captures its environment binds.
+    /// The slots of the producer binders the closure captures where it is
+    /// created — the bindings its producer's support selects — innermost
+    /// first: the captures its environment binds.
     pub captures: Vec<Slot>,
 }
 
@@ -520,8 +523,9 @@ pub struct Bound
     /// The command the frame runs, binding one producer variable and one
     /// covariable.
     pub body: CommandId,
-    /// The slots of the producer binders visible where the stack is
-    /// reified, innermost first: the captures the body's environment binds.
+    /// The slots of the producer binders the body captures where the stack
+    /// is reified — the bindings its support selects past the frame's own
+    /// value — innermost first: the captures the body's environment binds.
     pub captures: Vec<Slot>,
 }
 
@@ -861,13 +865,14 @@ impl Lowering<'_>
     }
 
     /// Allocate a closure over `scope`'s slots entered by `entry`, recording
-    /// its site.
+    /// its site and the bindings `producer` captures.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// [`Form::HeaderWidth`] for a capture count past the arity field.
+    /// [`Form::HeaderWidth`] for a capture count past the arity field;
+    /// [`Form::Dangling`] and [`Form::Unbound`] as [`Self::captured`].
     fn closure(
         &mut self,
         producer: ProducerId,
@@ -876,13 +881,43 @@ impl Lowering<'_>
         flavour: Flavour,
     ) -> Result<(), Form>
     {
+        let captures = self.captured(Suspension::Producer(producer), scope)?;
         let label = self.suspend(scope, entry, flavour)?;
         self.sites.push(Site {
             label,
             producer,
-            captures: self.scopes.producers(scope),
+            captures,
         });
         Ok(())
+    }
+
+    /// The slots of the producer binders `suspension` captures where it is
+    /// created in `scope`: the bindings its support selects, innermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Dangling`] for a suspension the arena does not hold;
+    /// [`Form::Unbound`] for a captured index no producer binder of `scope`
+    /// binds.
+    fn captured(
+        &self,
+        suspension: Suspension,
+        scope: Scope,
+    ) -> Result<Vec<Slot>, Form>
+    {
+        let visible = self.scopes.producers(scope);
+        let captures = self.arena.captures(suspension).ok_or(Form::Dangling)?;
+        captures
+            .map(|index| {
+                usize::try_from(u32::from(index))
+                    .ok()
+                    .and_then(|at| visible.get(at))
+                    .copied()
+                    .ok_or(Form::Unbound)
+            })
+            .collect()
     }
 
     /// Allocate a closure over `scope`'s slots entered by `entry`, and queue
@@ -939,26 +974,28 @@ impl Lowering<'_>
     }
 
     /// Allocate the copattern object `id` over `scope`'s slots, recording its
-    /// site; its code is a dispatch laid out among the current window's
-    /// blocks, since it reads no slot.
+    /// site and the bindings it captures; its code is a dispatch laid out
+    /// among the current window's blocks, since it reads no slot.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// [`Form::HeaderWidth`] for a capture count past the arity field.
+    /// [`Form::HeaderWidth`] for a capture count past the arity field;
+    /// [`Form::Dangling`] and [`Form::Unbound`] as [`Self::captured`].
     fn object(
         &mut self,
         id: ProducerId,
         scope: Scope,
     ) -> Result<(), Form>
     {
+        let captures = self.captured(Suspension::Producer(id), scope)?;
         let label = self.allocate(scope, Flavour::Object)?;
         self.blocks.push((label, Task::Dispatch(id, scope)));
         self.sites.push(Site {
             label,
             producer: id,
-            captures: self.scopes.producers(scope),
+            captures,
         });
         Ok(())
     }
@@ -1942,12 +1979,13 @@ impl Lowering<'_>
                             shape.push(Reified::Apply);
                         },
                         StackFrame::Bind(body) => {
+                            let captures = self.captured(Suspension::Bind(body), scope)?;
                             let label = self.frame_label();
                             self.blocks.push((label, Task::Bound(body, scope)));
                             self.bounds.push(Bound {
                                 label,
                                 body,
-                                captures: self.scopes.producers(scope),
+                                captures,
                             });
                             shape.push(Reified::Bind(label));
                         },

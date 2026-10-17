@@ -5,6 +5,7 @@ use gandr_kernel_term::Side;
 use super::*;
 use crate::il::CopatternArm;
 use crate::il::PatternArm;
+use crate::il::Route;
 
 /// Mint the unit producer.
 ///
@@ -614,49 +615,6 @@ fn a_head_answered_twice_is_rejected()
     );
 }
 
-/// Independent arity namespaces widen and saturate at their own boundaries.
-#[test]
-fn scope_depths_widen_and_saturate_independently()
-{
-    for (producers, covariables, add_producers, add_covariables, expected) in [
-        (0_u32, 0_u32, 0_usize, 0_usize, Depth {
-            producers: 0,
-            covariables: 0,
-            linears: 4,
-        }),
-        (2, 7, 3, 5, Depth {
-            producers: 5,
-            covariables: 12,
-            linears: 4,
-        }),
-        (u32::MAX.saturating_sub(1), 2, 2, 4, Depth {
-            producers: u32::MAX,
-            covariables: 6,
-            linears: 4,
-        }),
-        (1, u32::MAX, 2, 1, Depth {
-            producers: 3,
-            covariables: u32::MAX,
-            linears: 4,
-        }),
-        (1, 0, usize::MAX, usize::MAX, Depth {
-            producers: u32::MAX,
-            covariables: u32::MAX,
-            linears: 4,
-        }),
-    ] {
-        assert_eq!(
-            expected,
-            Depth {
-                producers,
-                covariables,
-                linears: 4,
-            }
-            .under(add_producers.into(), add_covariables.into())
-        );
-    }
-}
-
 /// Intrinsic polarity is a total table over node kinds and destructor
 /// heads.
 #[test]
@@ -742,18 +700,20 @@ fn every_node_kind_declares_its_intrinsic_polarity()
     }
 }
 
-/// Scope subtraction binds intuitionistic variables but not linear ones.
+/// A `μ̃` binds an intuitionistic variable and a `μ` a covariable, and
+/// neither binds a linear variable: the free set under each counts past only
+/// the binders of its own space.
 #[test]
 fn scope_boundaries_keep_linear_variables_free()
 {
     let mut arena = CommandArena::new();
-    let mut producers = Vec::new();
+    let mut fields = Vec::new();
     for (zone, index) in [
         (Zone::Intuitionistic, 0_u32),
         (Zone::Intuitionistic, 2),
         (Zone::Linear, 0),
     ] {
-        producers.push(
+        fields.push(
             arena
                 .mint_producer(ProducerNode::Variable {
                     zone,
@@ -762,54 +722,55 @@ fn scope_boundaries_keep_linear_variables_free()
                 .expect("leaf"),
         );
     }
-    let mut consumers = Vec::new();
-    for index in [0_u32, 1, 3] {
-        consumers.push(
-            arena
-                .mint_consumer(ConsumerNode::Covariable(index.into()))
-                .expect("leaf"),
-        );
-    }
-    for (depth, expected_producers, expected_covariables) in [
+    let triple = arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::Tuple(ProducerArity::from(3_usize)),
+            producers: fields.into_boxed_slice(),
+            consumers: Box::from([]),
+        })
+        .expect("fields resolve");
+    let returned = arena
+        .mint_consumer(ConsumerNode::Covariable(1_u32.into()))
+        .expect("leaf");
+    let inner = arena
+        .mint_cut(Polarity::Positive, triple, returned)
+        .expect("children resolve");
+    let under_mu_tilde = cut_against_unit(&mut arena, ConsumerNode::MuTilde { body: inner });
+    let under_mu = cut_against_top(&mut arena, ProducerNode::Mu { body: inner });
+    for (root, producers, covariables) in [
         (
-            Depth::default(),
+            inner,
             BTreeSet::from([
                 (Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
                 (Zone::Intuitionistic, 2_u32.into()),
                 (Zone::Linear, 0_u32.into()),
             ]),
-            BTreeSet::from([CovariableIndex::from(0_u32), 1_u32.into(), 3_u32.into()]),
+            BTreeSet::from([CovariableIndex::from(1_u32)]),
         ),
         (
-            Depth {
-                producers: 2,
-                covariables: 2,
-                linears: 0,
-            },
+            under_mu_tilde,
             BTreeSet::from([
-                (Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
+                (Zone::Intuitionistic, DeBruijnIndex::from(1_u32)),
                 (Zone::Linear, 0_u32.into()),
             ]),
             BTreeSet::from([CovariableIndex::from(1_u32)]),
         ),
+        (
+            under_mu,
+            BTreeSet::from([
+                (Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
+                (Zone::Intuitionistic, 2_u32.into()),
+                (Zone::Linear, 0_u32.into()),
+            ]),
+            BTreeSet::from([CovariableIndex::from(0_u32)]),
+        ),
     ] {
-        let mut walk = Walk {
-            arena: &arena,
-            stack: Vec::new(),
-            free: FreeSet::default(),
-        };
-        for &producer in &producers {
-            walk.producer(producer, depth).expect("variable is valid");
-        }
-        for &consumer in &consumers {
-            walk.consumer(consumer, depth).expect("covariable is valid");
-        }
         assert_eq!(
-            FreeSet {
-                producers: expected_producers,
-                covariables: expected_covariables
-            },
-            walk.free
+            Ok(FreeSet {
+                producers,
+                covariables
+            }),
+            check_command(&arena, root)
         );
     }
 }
@@ -888,37 +849,157 @@ fn child_refusals_follow_declared_precedence()
             CheckRefusal::DanglingProducer(missing_producer),
         ),
     ] {
-        let mut walk = Walk {
+        let walk = Walk {
             arena: &arena,
-            stack: alloc::vec![Visit::Command(body, Depth::default())],
-            free: FreeSet::default(),
+            stack: alloc::vec![NodeAddress::Command(body)],
+            scratch: CoreArena::new(),
         };
         assert_eq!(
             Err(expected),
-            walk.children(
-                head,
-                producer_arity,
-                consumer_arity,
-                producers,
-                consumers,
-                Depth::default()
-            )
+            walk.fields(head, producer_arity, consumer_arity, producers, consumers)
         );
-        assert!(
-            matches!(walk.stack.as_slice(), &[Visit::Command(found, depth)] if found == body && depth == Depth::default())
-        );
+        assert_eq!(&[NodeAddress::Command(body)], walk.stack.as_slice());
     }
     let mut walk = Walk {
         arena: &arena,
         stack: Vec::new(),
-        free: FreeSet::default(),
+        scratch: CoreArena::new(),
     };
     assert_eq!(
         Err(CheckRefusal::DanglingConsumer(missing_consumer)),
-        walk.consumer(missing_consumer, Depth::default())
+        walk.consumer(missing_consumer)
     );
     assert_eq!(
         Err(CheckRefusal::DanglingProducer(missing_producer)),
-        walk.producer(missing_producer, Depth::default())
+        walk.producer(missing_producer)
+    );
+}
+
+/// A cover a node carries is held to its node: the cut `⟨x0 |+ α0⟩` refuses
+/// a forged root cover by its space and its fault — a support selecting the
+/// wrong variable or covariable, a slot nothing selects, an edge too few or
+/// too wide — and a leaf forged consistently with its parent is refused at
+/// the leaf, which names a variable its forged support does not select.
+#[test]
+fn a_forged_cover_is_refused_at_the_root()
+{
+    let mut arena = CommandArena::new();
+    let variable = arena
+        .mint_producer(ProducerNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        })
+        .expect("leaf");
+    let covariable = arena
+        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+        .expect("leaf");
+    let root = arena
+        .mint_cut(Polarity::Positive, variable, covariable)
+        .expect("children resolve");
+    let free = check_command(&arena, root).expect("the minted covers are the node's own");
+    assert_eq!(
+        (
+            &BTreeSet::from([(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))]),
+            &BTreeSet::from([CovariableIndex::from(0_u32)])
+        ),
+        (free.producers(), free.covariables())
+    );
+
+    let at = Crossing::default();
+    let none = Thinning::empty();
+    let zero = Thinning::leaf(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let one = Thinning::leaf(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let wide = Thinning::from_ascending(
+        alloc::vec![DeBruijnIndex::from(0_u32), DeBruijnIndex::from(1_u32)],
+        Vec::new(),
+    )
+    .expect("ascending");
+    let honest = NodeCover {
+        producers: Cover::of([], &[(&zero, at), (&none, at)].into_iter()),
+        covariables: Cover::of([], &[(&none, at), (&zero, at)].into_iter()),
+    };
+    let forged_root = |forged: NodeCover| {
+        let mut arena = arena.clone();
+        arena.forge_cover(NodeAddress::Command(root), forged);
+        check_command(&arena, root)
+    };
+    let refusal = |space, fault| {
+        Err(CheckRefusal::ForgedCover {
+            node: NodeAddress::Command(root),
+            space,
+            fault,
+        })
+    };
+    assert_eq!(Ok(free), forged_root(honest.clone()));
+    assert_eq!(
+        refusal(BindingSpace::Producers, CoverFault::Misplaced),
+        forged_root(NodeCover {
+            producers: Cover::of([], &[(&one, at), (&none, at)].into_iter()),
+            ..honest.clone()
+        }),
+        "a support selecting x1 for the child's x0"
+    );
+    assert_eq!(
+        refusal(BindingSpace::Covariables, CoverFault::Misplaced),
+        forged_root(NodeCover {
+            covariables: Cover::of([], &[(&none, at), (&one, at)].into_iter()),
+            ..honest.clone()
+        }),
+        "a support selecting α1 for the child's α0"
+    );
+    assert_eq!(
+        refusal(
+            BindingSpace::Producers,
+            CoverFault::Cover(CoverError::Unused(Zone::Intuitionistic))
+        ),
+        forged_root(NodeCover {
+            producers: Cover::of(
+                [(Zone::Intuitionistic, DeBruijnIndex::from(1_u32))],
+                &[(&zero, at), (&none, at)].into_iter()
+            ),
+            ..honest.clone()
+        }),
+        "a slot neither the cut nor a child selects"
+    );
+    assert_eq!(
+        refusal(
+            BindingSpace::Producers,
+            CoverFault::Cover(CoverError::Arity)
+        ),
+        forged_root(NodeCover {
+            producers: Cover::of(
+                [(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))],
+                &core::iter::empty::<(&Thinning, Crossing)>()
+            ),
+            ..honest.clone()
+        }),
+        "no edge for either side"
+    );
+    assert_eq!(
+        refusal(
+            BindingSpace::Covariables,
+            CoverFault::Cover(CoverError::Domain(Zone::Intuitionistic))
+        ),
+        forged_root(NodeCover {
+            covariables: Cover::of([], &[(&none, at), (&wide, at)].into_iter()),
+            ..honest.clone()
+        }),
+        "an edge wider than its child's support"
+    );
+
+    let mut forged = arena.clone();
+    forged.forge_cover(NodeAddress::Producer(variable), NodeCover::default());
+    forged.forge_cover(NodeAddress::Command(root), NodeCover {
+        producers: Cover::of([], &[(&none, at), (&none, at)].into_iter()),
+        ..honest
+    });
+    assert_eq!(
+        Err(CheckRefusal::ForgedCover {
+            node: NodeAddress::Producer(variable),
+            space: BindingSpace::Producers,
+            fault: CoverFault::Unnamed,
+        }),
+        check_command(&forged, root),
+        "x0 names a variable its forged support does not select"
     );
 }

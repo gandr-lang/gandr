@@ -512,6 +512,35 @@ impl Thinning
         leaf
     }
 
+    /// The selection of `indices` in `zone` alone, gathered in any order and
+    /// with repeats.
+    ///
+    /// # Specification
+    /// - ensures: the zone selects each index of `indices` once, ascending; the
+    ///   other zone selects nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a gathered list out of order and with a repeat
+    ///   separates sorting and deduplication from either alone.
+    /// - witness: `rewrite::tests::a_value_type_support_names_exactly_its_free_indices`
+    #[spec(ensures: |ret| ret.indices(zone).windows(2).all(|pair| pair.first() < pair.last())
+        && ret.indices(match zone {
+            | Zone::Intuitionistic => Zone::Linear,
+            | Zone::Linear => Zone::Intuitionistic,
+        }).is_empty())]
+    pub(crate) fn gathered(
+        zone: Zone,
+        mut indices: Vec<DeBruijnIndex>,
+    ) -> Self
+    {
+        indices.sort_unstable();
+        indices.dedup();
+        let mut gathered = Self::empty();
+        *gathered.zone_mut(zone) = indices;
+        gathered
+    }
+
     /// The thinning selecting `intuitionistic` and `linear`, as a reader that
     /// did not build them receives them.
     ///

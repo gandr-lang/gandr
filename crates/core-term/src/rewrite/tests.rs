@@ -48,6 +48,7 @@ use super::strengthen_value_type;
 use super::strengthening;
 use super::substitute_environment;
 use super::substitute_environment_traced;
+use super::value_type_support;
 use super::wrap_marks;
 use crate::arena::CompTypeId;
 use crate::arena::ComputationId;
@@ -1019,6 +1020,56 @@ fn a_value_type_strengthens_unless_it_names_a_binder()
         strengthen_value_type(&mut arena, integer, Binders::from(2_u32)),
         "a closed type strengthens to itself"
     );
+}
+
+#[test]
+fn a_value_type_support_names_exactly_its_free_indices()
+{
+    let mut arena = CoreArena::new();
+    // U (Π (_ : El #3). El #0 → F (El #2)): the domain's #3 is free, the
+    // codomain's #0 is the arrow's own binder and its #2 is the subject's #1.
+    let domain = decoded(&mut arena, DeBruijnIndex::from(3));
+    let bound = decoded(&mut arena, DeBruijnIndex::from(0));
+    let past = decoded(&mut arena, DeBruijnIndex::from(2));
+    let result = arena.comp_type_returner(past);
+    let codomain = arena.comp_type_arrow(bound, result);
+    let pi = arena.comp_type_pi(domain, codomain);
+    let dependent = arena.value_type_thunk(pi);
+    // El #1 × El #1 × El #0: one index named twice, one once.
+    let once = decoded(&mut arena, DeBruijnIndex::from(0));
+    let twice = decoded(&mut arena, DeBruijnIndex::from(1));
+    let again = decoded(&mut arena, DeBruijnIndex::from(1));
+    let repeated = arena.value_type_product(&[twice, again, once]);
+    let closed = arena.value_type_base(BaseType::Integer);
+    let mark = arena.watermark();
+    for (subject, expected, reading) in [
+        (
+            dependent,
+            vec![1_u32, 3],
+            "a bound occurrence drops and a later one lowers past its binder",
+        ),
+        (
+            repeated,
+            vec![0, 1],
+            "a repeat is one member, the selection ascending",
+        ),
+        (closed, vec![], "a closed type names nothing"),
+    ] {
+        let support = value_type_support(&mut arena, subject);
+        assert_eq!(
+            expected
+                .into_iter()
+                .map(DeBruijnIndex::from)
+                .collect::<Vec<_>>(),
+            support.indices(Zone::Intuitionistic),
+            "{reading}"
+        );
+        assert!(
+            support.indices(Zone::Linear).is_empty(),
+            "{reading}: nothing linear"
+        );
+    }
+    assert_eq!(mark, arena.watermark(), "the scan mints nothing");
 }
 
 #[test]

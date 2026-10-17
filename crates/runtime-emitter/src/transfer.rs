@@ -19,16 +19,18 @@
 //! | a closure of a copattern object | a closure over the site's producer |
 //! | a reified stack | a literal stack, innermost frame first |
 //!
-//! A closure's environment binds the captures its site names — the visible
-//! producer binders where it was created — outermost first, so de Bruijn
-//! index zero is the innermost, as readback's environments bind. A
-//! covariable or a slot the lowering held a temporary in is not bound:
-//! readback closes a suspended command over producer bindings alone. A
-//! stack's frames move by their code words: an application stub's argument,
-//! a projection stub's side, and a reified bind frame's command closed over
-//! the captures its window copy holds, as a closure's are. A captured stack
-//! holds the run's own frames — a delimiter, a handler, a pending match —
-//! which no store value spells, and is refused as a host object.
+//! A closure's environment binds the captures its site names — the producer
+//! bindings its support selects where it was created, and no other —
+//! outermost first, so de Bruijn index zero is the innermost capture, as
+//! readback pairs an environment with the closure's support. A binding the
+//! body never names, a covariable or a slot the lowering held a temporary in
+//! is neither moved nor bound: readback closes a suspended command over the
+//! producer bindings it names alone. A stack's frames move by their code
+//! words: an application stub's argument, a projection stub's side, and a
+//! reified bind frame's command closed over the captures its site names, as a
+//! closure's are. A captured stack holds the run's own frames — a delimiter, a
+//! handler, a pending match — which no store value spells, and is refused as a
+//! host object.
 
 use alloc::collections::BTreeMap;
 

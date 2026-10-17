@@ -9,6 +9,12 @@
 //! `return v` for a positive value, and the function itself for a copattern
 //! object, closed the same way. A suspended `μ` has no core reading.
 //!
+//! A suspended command's environment binds exactly the intuitionistic
+//! variables its support selects, innermost first
+//! ([`CommandArena::captures`]), so readback pairs each bound value with the
+//! index it closes; an environment that is not the support is refused by
+//! name.
+//!
 //! Values are read in increasing address order. Every value a run moves into
 //! the store names only values allocated before it, so each value's
 //! dependencies are read before it, and the readback is a loop with no
@@ -42,14 +48,17 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::control::StackFrame;
+use gandr_kernel_term::DeBruijnIndex;
 
 use crate::il::CommandArena;
 use crate::il::ConstructorTag;
 use crate::il::ProducerNode;
+use crate::il::Suspension;
 use crate::store::Environment;
 use crate::store::HeapValue;
 use crate::store::HeapValueId;
 use crate::store::Store;
+use crate::unfocus::Closing;
 use crate::unfocus::Decoded;
 use crate::unfocus::Root;
 use crate::unfocus::UnfocusRefusal;
@@ -68,6 +77,10 @@ pub enum ReadbackRefusal
     Dangling(HeapValueId),
     /// A thunk's or a function's suspended command has no core reading.
     Decode(UnfocusRefusal),
+    /// A closure whose environment is not its suspended command's support:
+    /// a bound value too many or too few, or a command the arena does not
+    /// hold.
+    Capture(HeapValueId),
 }
 
 impl fmt::Display for ReadbackRefusal
@@ -87,6 +100,9 @@ impl fmt::Display for ReadbackRefusal
             Self::Dangling(id) => write!(f, "value {id} is not readable from the store"),
             Self::Decode(refusal) => {
                 write!(f, "a suspended command has no core reading: {refusal}")
+            },
+            Self::Capture(id) => {
+                write!(f, "value {id} binds an environment that is not its support")
             },
         }
     }
@@ -247,8 +263,10 @@ fn terminal(
             return Err(ReadbackRefusal::Unreadable(value));
         };
         let mut reading = Reading::new(arena, store, core);
-        let closing = reading.closing(environment)?;
-        return match decode(arena, Root::Copattern(producer), core, &closing)? {
+        let values = reading.closing(environment)?;
+        let selected = captured(arena, value, Suspension::Producer(producer))?;
+        let closing = Closing::new(&selected, &values).ok_or(ReadbackRefusal::Capture(value))?;
+        return match decode(arena, Root::Copattern(producer), core, closing)? {
             Decoded::Computation(function) => Ok(function),
             Decoded::Value(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
         };
@@ -495,15 +513,18 @@ impl<'run> Reading<'run>
                         StackFrame::Apply(value) => StackFrame::Apply(self.lookup(value)?),
                         StackFrame::Project(side) => StackFrame::Project(side),
                         StackFrame::Bind(closed) => {
-                            let closing = store
+                            let values = store
                                 .bound_values(closed.environment)
                                 .map(|bound| self.lookup(bound))
                                 .collect::<Result<Vec<_>, _>>()?;
+                            let selected = captured(self.arena, id, Suspension::Bind(closed.body))?;
+                            let closing = Closing::new(&selected, &values)
+                                .ok_or(ReadbackRefusal::Capture(id))?;
                             let Decoded::Computation(body) = decode(
                                 self.arena,
                                 Root::BindBody(closed.body),
                                 self.core,
-                                &closing,
+                                closing,
                             )?
                             else {
                                 return Err(UnfocusRefusal::DecodeInvariant.into());
@@ -599,11 +620,14 @@ impl<'run> Reading<'run>
             HeapValue::Thunk {
                 body, environment, ..
             } => {
-                let closing = store
+                let values = store
                     .bound_values(environment)
                     .map(|bound| self.lookup(bound))
                     .collect::<Result<Vec<_>, _>>()?;
-                match decode(self.arena, Root::ThunkBody(body), self.core, &closing)? {
+                let selected = captured(self.arena, id, Suspension::Thunk(body))?;
+                let closing =
+                    Closing::new(&selected, &values).ok_or(ReadbackRefusal::Capture(id))?;
+                match decode(self.arena, Root::ThunkBody(body), self.core, closing)? {
                     Decoded::Value(thunk) => Ok(thunk),
                     Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
                 }
@@ -614,15 +638,18 @@ impl<'run> Reading<'run>
                 evidence,
                 ..
             } => {
-                let closing = store
+                let values = store
                     .bound_values(environment)
                     .map(|bound| self.lookup(bound))
                     .collect::<Result<Vec<_>, _>>()?;
+                let selected = captured(self.arena, id, Suspension::Fixpoint(body))?;
+                let closing =
+                    Closing::new(&selected, &values).ok_or(ReadbackRefusal::Capture(id))?;
                 match decode(
                     self.arena,
                     Root::FixpointBody(body, evidence),
                     self.core,
-                    &closing,
+                    closing,
                 )? {
                     Decoded::Value(thunk) => Ok(thunk),
                     Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
@@ -662,6 +689,38 @@ impl<'run> Reading<'run>
             .copied()
             .ok_or(ReadbackRefusal::Dangling(id))
     }
+}
+
+/// The indices the suspension a value holds captured, innermost first.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the indices [`CommandArena::captures`] names for `suspension`.
+/// - provides: the half of a closing the IL states; the store's environment is
+///   the other.
+/// - fails: [`ReadbackRefusal::Capture`] naming `value` when the arena does not
+///   hold the suspension's node.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a thunk over a body the arena does not hold is refused by
+///   the value's name; L2 — every generated closure reads back.
+/// - witness: `readback::tests::an_environment_that_is_not_the_support_is_refused`
+/// - witness: `tests::run::a_captured_environment_holds_exactly_its_support`
+#[spec(ensures: |ret| ret.is_ok() == arena.captures(suspension).is_some())]
+fn captured(
+    arena: &CommandArena,
+    value: HeapValueId,
+    suspension: Suspension,
+) -> Result<Vec<DeBruijnIndex>, ReadbackRefusal>
+{
+    Ok(arena
+        .captures(suspension)
+        .ok_or(ReadbackRefusal::Capture(value))?
+        .collect())
 }
 
 #[cfg(test)]

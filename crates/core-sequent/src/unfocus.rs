@@ -45,10 +45,13 @@
 //!
 //! The walk is a loop over an explicit task stack, and its one implementation
 //! serves both the public inverse and the store's readback, which closes a
-//! terminal's free variables by index from its environment. The alternative was
-//! a readback of its own for a run's values, which would be a second decoder
-//! for the same image to keep in step. The choice reverses if a run's
-//! terminals grow a form focusing never produces.
+//! terminal's free variables from its environment: the environment binds
+//! exactly the variables the closure's support selects, so the closing pairs
+//! each selected index with its value and lowers every other free index past
+//! the selected ones below it. The alternative was a readback of its own for a
+//! run's values, which would be a second decoder for the same image to keep in
+//! step. The choice reverses if a run's terminals grow a form focusing never
+//! produces.
 //!
 //! Unfocusing a native List fold closes the ambient variables of the type
 //! annotations the command arena imported rather than copying foreign ids:
@@ -186,7 +189,7 @@ pub fn unfocus_command(
     core: &mut CoreArena,
 ) -> Result<ComputationId, UnfocusRefusal>
 {
-    let decoded = decode(arena, Root::Command(command), core, &[])?;
+    let decoded = decode(arena, Root::Command(command), core, Closing::default())?;
     match decoded {
         Decoded::Computation(computation) => Ok(computation),
         Decoded::Value(_) => Err(UnfocusRefusal::DecodeInvariant),
@@ -226,7 +229,7 @@ pub fn unfocus_value(
     core: &mut CoreArena,
 ) -> Result<ValueId, UnfocusRefusal>
 {
-    let decoded = decode(arena, Root::Value(producer), core, &[])?;
+    let decoded = decode(arena, Root::Value(producer), core, Closing::default())?;
     match decoded {
         Decoded::Value(value) => Ok(value),
         Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant),
@@ -338,15 +341,68 @@ pub enum Decoded
     Computation(ComputationId),
 }
 
-/// Decode a root into `core`, closing producer variables past the root's own
-/// binders with `closing`, innermost first.
+/// The closed values a decoded root's free producer variables read: the
+/// intuitionistic indices past the root's own binders that its closure
+/// captured, ascending, each beside the closed value it reads. An index the
+/// closing does not select stays a variable, lowered past the captured
+/// indices below it.
 ///
 /// # Specification
-/// - requires: every id in `closing` is a closed value of `core`.
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Closing<'run>
+{
+    /// The captured indices past the root's own binders, strictly ascending.
+    selected: &'run [DeBruijnIndex],
+    /// The closed value each captured index reads, in the same order.
+    values: &'run [ValueId],
+}
+
+impl<'run> Closing<'run>
+{
+    /// The closing reading `values[r]` at `selected[r]`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some` exactly when the two have one value per index and the
+    ///   indices strictly ascend.
+    /// - provides: the one way a readback pairs an environment with what its
+    ///   closure captured.
+    /// - fails: `None` otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shorter environment, a longer one and an unordered
+    ///   selection are refused, and the paired closing reads each value at its
+    ///   index.
+    /// - witness: `unfocus::tests::closing_substitution_distinguishes_binders_and_zones`
+    /// - witness: `readback::tests::an_environment_that_is_not_the_support_is_refused`
+    #[spec(ensures: |ret| ret.is_some() == (selected.len() == values.len()
+        && selected.windows(2).all(|pair| pair.first() < pair.last())))]
+    #[inline]
+    pub(crate) fn new(
+        selected: &'run [DeBruijnIndex],
+        values: &'run [ValueId],
+    ) -> Option<Self>
+    {
+        let ascending = selected
+            .iter()
+            .zip(selected.iter().skip(1))
+            .all(|(before, after)| before < after);
+        (selected.len() == values.len() && ascending).then_some(Self { selected, values })
+    }
+}
+
+/// Decode a root into `core`, closing producer variables past the root's own
+/// binders with `closing`.
+///
+/// # Specification
+/// - requires: every value in `closing` is a closed value of `core`.
 /// - ensures: on success the decoded term; a producer variable of the
 ///   intuitionistic zone counting `k` past the binders opened since the root
-///   reads `closing[k]` where present, and counting past the closing it stays a
-///   variable, shifted down past the `closing.len()` bindings substituted.
+///   reads the value `closing` pairs with `k` where it selects `k`, and stays a
+///   variable otherwise, lowered past the selected indices below `k`;
+///   annotations close the same way.
 /// - provides: the one walk both the public inverse and the store's readback
 ///   run.
 /// - fails: as [`unfocus_command`]; `core` is then exactly as on entry.
@@ -369,7 +425,7 @@ pub enum Decoded
 /// - witness: `tests::run::a_function_terminal_reads_back_closed_over_its_environment`
 /// - witness: `tests::run::a_thunk_reads_back_closed_over_its_environment`
 #[spec(
-    requires: closing.iter().all(|id| core.value(*id).is_some()),
+    requires: closing.values.iter().all(|id| core.value(*id).is_some()),
     captures: [mark = core.watermark()],
     ensures: |ret| match ret {
         | Ok(Decoded::Value(id)) => core.value(id).is_some(),
@@ -381,7 +437,7 @@ pub fn decode(
     arena: &CommandArena,
     root: Root,
     core: &mut CoreArena,
-    closing: &[ValueId],
+    closing: Closing<'_>,
 ) -> Result<Decoded, UnfocusRefusal>
 {
     let mark = core.watermark();
@@ -482,8 +538,8 @@ struct Unfocusing<'run>
     arena: &'run CommandArena,
     /// The core arena built into.
     core: &'run mut CoreArena,
-    /// The closed values free producer variables read, innermost first.
-    closing: &'run [ValueId],
+    /// The closed values free producer variables read.
+    closing: Closing<'run>,
     /// The pending work, the next task last.
     tasks: Vec<Task>,
     /// Decoded values awaiting their parent.
@@ -913,20 +969,49 @@ impl Unfocusing<'_>
                     })
             })?
         };
-        if self.closing.is_empty() {
+        if self.closing.selected.is_empty() {
             return Ok(signature);
         }
-        signature.try_map_types(gandr_core_term::effect::TypeOrder::Forward, |mut ty| {
-            for &closed in self.closing {
-                ty = gandr_core_term::instantiate_value_type_under(
-                    self.core,
-                    ty,
-                    closed,
-                    gandr_core_term::Binders::from(depth.producers),
-                );
-            }
-            Ok(ty)
+        signature.try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+            Ok(self.close_type(ty, depth))
         })
+    }
+
+    /// Close an annotation read at `depth`: each index the closing selects
+    /// past `depth`'s producer binders is replaced by its value, the highest
+    /// first, so each substitution lowers only the indices above it.
+    ///
+    /// # Specification
+    /// - requires: `ty` is a type of `core` read at `depth`.
+    /// - ensures: the type with each selected index past `depth` replaced by
+    ///   its closed value and every other index past `depth` lowered past the
+    ///   selected indices below it, as [`Self::variable`] reads a variable.
+    /// - panics: none.
+    /// - executable: none — the substitution is the core's; the witnesses
+    ///   observe the closed annotation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a captured fold annotation reads its captured code,
+    ///   and an interface's types close beneath handler binders.
+    /// - witness: `unfocus::tests::closing_fold_annotations_substitutes_captured_codes`
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    fn close_type(
+        &mut self,
+        ty: gandr_core_term::ValueTypeId,
+        depth: Depth,
+    ) -> gandr_core_term::ValueTypeId
+    {
+        let mut ty = ty;
+        for (&index, &closed) in self.closing.selected.iter().zip(self.closing.values).rev() {
+            let under = depth.producers.saturating_add(u32::from(index));
+            ty = gandr_core_term::instantiate_value_type_under(
+                self.core,
+                ty,
+                closed,
+                gandr_core_term::Binders::from(under),
+            );
+        }
+        ty
     }
 
     /// Assemble decoded control children into their source instruction.
@@ -1293,28 +1378,29 @@ impl Unfocusing<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: an intuitionistic variable counting `k` past `depth`'s
-    ///   producer binders reads `closing[k]` where present and is rebuilt
-    ///   `closing.len()` lower past it; every other variable is rebuilt as
-    ///   itself.
+    ///   producer binders reads the closing's value at `k` where it selects
+    ///   `k`, and is rebuilt lowered past the selected indices below `k`
+    ///   otherwise; every other variable is rebuilt as itself.
     /// - provides: the closing substitution, fused into the walk.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the first bound variable, each closing entry, the
-    ///   first variable past closing and the linear zone are observed at exact
-    ///   value identity or variable index. Wrong subtraction, binder capture
-    ///   and accidental linear substitution change these boundary readings.
+    /// - hypothesis: L3 — the first bound variable, each closing entry, a
+    ///   variable between two captured indices, the first variable past the
+    ///   closing and the linear zone are observed at exact value identity or
+    ///   variable index. Wrong subtraction, binder capture and accidental
+    ///   linear substitution change these boundary readings.
     /// - witness: `unfocus::tests::closing_substitution_distinguishes_binders_and_zones`
     #[spec(ensures: self.values.last().is_some_and(|value| {
         let past = if zone == Zone::Intuitionistic {
             u32::from(index).checked_sub(depth.producers)
         } else { None };
         match past {
-            | Some(past) => match usize::try_from(past).ok().and_then(|offset| self.closing.get(offset)) {
-                | Some(closed) => value == closed,
-                | None => self.core.value(*value) == Some(&gandr_core_term::Value::Variable {
-                    zone, index: DeBruijnIndex::from(u32::from(index).saturating_sub(u32::try_from(self.closing.len()).unwrap_or(u32::MAX))),
+            | Some(past) => match self.closing.selected.binary_search(&DeBruijnIndex::from(past)) {
+                | Ok(rank) => self.closing.values.get(rank) == Some(value),
+                | Err(below) => self.core.value(*value) == Some(&gandr_core_term::Value::Variable {
+                    zone, index: DeBruijnIndex::from(u32::from(index).saturating_sub(u32::try_from(below).unwrap_or(u32::MAX))),
                 }),
             },
             | None => self.core.value(*value) == Some(&gandr_core_term::Value::Variable { zone, index }),
@@ -1331,18 +1417,26 @@ impl Unfocusing<'_>
             Zone::Intuitionistic => u32::from(index).checked_sub(depth.producers),
             Zone::Linear => None,
         };
-        let closed = past
-            .and_then(|past| usize::try_from(past).ok())
-            .and_then(|past| self.closing.get(past))
-            .copied();
-        let value = match (closed, past) {
-            (Some(closed), _) => closed,
-            (None, Some(_)) => {
-                let substituted = u32::try_from(self.closing.len()).unwrap_or(u32::MAX);
-                let shifted = u32::from(index).saturating_sub(substituted);
-                self.core.value_variable(zone, DeBruijnIndex::from(shifted))
+        let value = match past {
+            Some(past) => match self
+                .closing
+                .selected
+                .binary_search(&DeBruijnIndex::from(past))
+            {
+                Ok(rank) => self.closing.values.get(rank).copied(),
+                Err(below) => {
+                    // reason: `below` counts distinct `u32` indices under
+                    // `past`, so it fits; the clamp keeps the conversion total.
+                    let lowered = u32::try_from(below).unwrap_or(u32::MAX);
+                    let shifted = u32::from(index).saturating_sub(lowered);
+                    Some(self.core.value_variable(zone, DeBruijnIndex::from(shifted)))
+                },
             },
-            (None, None) => self.core.value_variable(zone, index),
+            None => None,
+        };
+        let value = match value {
+            Some(value) => value,
+            None => self.core.value_variable(zone, index),
         };
         self.values.push(value);
     }
@@ -1474,17 +1568,8 @@ impl Unfocusing<'_>
                         .map_err(|gandr_core_term::ImportFault| {
                             UnfocusRefusal::ConsumerOutsideTheImage(consumer)
                         })?;
-                let mut element = element;
-                let mut result = result;
-                for &closed in self.closing {
-                    let under = gandr_core_term::Binders::from(depth.producers);
-                    element = gandr_core_term::instantiate_value_type_under(
-                        self.core, element, closed, under,
-                    );
-                    result = gandr_core_term::instantiate_value_type_under(
-                        self.core, result, closed, under,
-                    );
-                }
+                let element = self.close_type(element, depth);
+                let result = self.close_type(result, depth);
                 self.tasks.push(Task::Spine(continuation, depth));
                 self.tasks.push(Task::ListFold(element, result));
                 self.tasks.push(Task::Value(producer, depth));

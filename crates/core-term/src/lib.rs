@@ -253,6 +253,7 @@ pub use crate::rewrite::strengthen_value_type;
 pub use crate::rewrite::strengthening;
 pub use crate::rewrite::substitute_environment;
 pub use crate::rewrite::substitute_environment_traced;
+pub use crate::rewrite::value_type_support;
 pub use crate::rewrite::wrap_marks;
 pub use crate::syntax::CertificateEquality;
 pub use crate::syntax::CompType;
