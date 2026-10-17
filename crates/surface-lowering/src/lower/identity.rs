@@ -945,6 +945,63 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
+    /// Classify a path type written as a call, `Path(A, a, b)` where a value
+    /// is read, its three operands already read off the call.
+    ///
+    /// # Specification
+    /// - requires: `site` is a call headed `Path`, which nothing the scope
+    ///   binds answers, written over `carrier`, `left` and `right`.
+    /// - ensures: the form stands as a value type, reads its carrier as a value
+    ///   type and its two endpoints as endpoints standing inside a type, all
+    ///   under its own frame, and is planned over the three, the carrier as
+    ///   written; where a value is read the type is quoted.
+    /// - provides: the path type an argument of a parameter `t : Type` spells.
+    /// - fails: yields the wrong-sort refusal where no value type is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path type written as a declaration's body, read
+    ///   back out of the arena as the quote of the path type over its carrier
+    ///   and endpoints.
+    /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::Path(Carrier::Written(carrier), left, right))
+                        if [carrier, left, right] == written
+                            && self.reading(carrier) == Reading::ValueType(site.reading.frame())
+                            && self.reading(left) == Reading::Value(site.reading.frame())
+                            && self.reading(right) == Reading::Value(site.reading.frame())
+                            && self.in_type.contains(&left)
+                            && self.in_type.contains(&right)
+                            && self.at_endpoint.contains(&left)
+                            && self.at_endpoint.contains(&right)
+                )
+        },
+    )]
+    pub(super) fn written_path(
+        &mut self,
+        site: Site,
+        written: [NodeIndex; 3],
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::ValueType)?;
+        let [carrier, left, right] = written;
+        self.read(carrier, Reading::ValueType(frame));
+        self.read(left, Reading::Value(frame));
+        self.read(right, Reading::Value(frame));
+        self.in_type.extend([left, right]);
+        self.at_endpoint.extend([left, right]);
+        self.plan(site, Plan::Path(Carrier::Written(carrier), left, right));
+
+        Ok(())
+    }
+
     /// Classify a directed identity type, `Flow(A, a, b)`, its three operands
     /// already read off the application.
     ///
