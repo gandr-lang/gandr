@@ -286,6 +286,49 @@ impl LoweringCount
     }
 }
 
+/// How many spelling passes a run has made: one per judged unit, each
+/// spelling every type the unit's checker refusals compare and its failures
+/// name.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SpellingCount(usize);
+
+impl From<SpellingCount> for usize
+{
+    /// The number of spelling passes `count` records.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: SpellingCount) -> Self
+    {
+        count.0
+    }
+}
+
+impl SpellingCount
+{
+    /// Count one more spelling pass, saturating.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the count is one more, saturated at the maximum count.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a walk over the identity subject counts one pass per
+    ///   component, however many sources share it; a pass per member, or none,
+    ///   changes the count. Saturation is not reached by the witness.
+    /// - witness: `corpus::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
+    #[inline]
+    #[spec(captures: [before = self.0], ensures: |_| self.0 == before.saturating_add(1))]
+    pub(crate) fn tick(&mut self)
+    {
+        self.0 = self.0.saturating_add(1);
+    }
+}
+
 /// What one source became.
 #[expect(
     clippy::large_enum_variant,
@@ -1075,7 +1118,14 @@ pub fn judge_member<'source>(
         start: base,
         end: ByteOffset::from(text.as_ref().len()),
     };
-    let (projected, admission) = judge_members(root, (module, text), arena, grant, (&[], last));
+    let (projected, admission) = judge_members(
+        root,
+        (module, text),
+        arena,
+        grant,
+        (&[], last),
+        &mut SpellingCount::default(),
+    );
     Judged {
         settled: projected.last,
         admission,
@@ -1104,7 +1154,7 @@ struct Share<'source>
     exercised: Exercised,
     /// Its declarations refused at their own form.
     unstatable: Vec<LoweringRefusal<'source>>,
-    /// The types its checker refusals compare and the unit's failures name.
+    /// The types the unit's checker refusals compare and its failures name.
     spellings: Spellings,
     /// The builtins it shadowed.
     shadowed: Vec<ShadowedBuiltin>,
@@ -1124,23 +1174,26 @@ struct Share<'source>
 ///   module. Each source's settled composition reports, of the declarations,
 ///   refusals, shadowed builtins, inferred exits and inferred runs, those
 ///   written in its own bytes — a refusal with no span in every source's — and
-///   of the ledger, the obligations its declarations owe; its spellings are its
-///   report's; the origins, failures and program are the unit's, shared. A
-///   source that is the whole unit reports everything, nothing copied. A settle
-///   fault is every source's. The admission holds the arena, the verdicts and
-///   the unit's structured names.
+///   of the ledger, the obligations its declarations owe; the spellings,
+///   origins, failures and program are the unit's, shared. A source that is the
+///   whole unit reports everything, nothing copied. A settle fault is every
+///   source's. The admission holds the arena, the verdicts and the unit's
+///   structured names. `spelled` advances once when the unit settles: its one
+///   spelling pass.
 /// - fails: never; a settle fault is carried.
 /// - panics: none.
-/// - intension: one check, one program, one settle comparison per unit; the
-///   unit-wide tables are copied once for each source but the last, which takes
-///   them.
+/// - intension: one check, one program, one settle comparison and one spelling
+///   pass per unit; the unit-wide tables are copied once for each source but
+///   the last, which takes them.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a diamond judged as one component reports each source's
 ///   own declarations at each source, and a unit of one source reports all of
-///   its own.
+///   its own; a subject whose importers share their base's component is spelled
+///   once per component.
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `compose::tests::a_module_settles_every_declaration_once`
+/// - witness: `corpus::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
 #[spec(ensures: |ref ret| ret.0.earlier.len() == earlier.len())]
 fn judge_members<'source>(
     root: CorpusRoot,
@@ -1148,6 +1201,7 @@ fn judge_members<'source>(
     mut arena: CoreArena,
     grant: &HostGrant,
     (earlier, last): (&[Member], Member),
+    spelled: &mut SpellingCount,
 ) -> (Projected<'source>, Admission)
 {
     let declarations = adapt(&module);
@@ -1161,17 +1215,24 @@ fn judge_members<'source>(
         Ok(report) => {
             let failures = Failures::of(&verdicts);
             located(module.origins_mut(), &verdicts);
+            let spellings = Spellings::of(
+                &arena,
+                &module,
+                &report,
+                &failures,
+                (module.origins(), text),
+            );
+            spelled.tick();
             let unit = Unitwide {
                 unstatable: unstatable(&module),
                 runs: inferred_runs(&module, &verdicts),
-                failures: &failures,
             };
             let whole = earlier.is_empty() && usize::from(last.start) == 0_usize;
             let earlier = earlier
                 .iter()
                 .map(|&member| {
                     let own = owned(&report, (&module, &verdicts), member);
-                    let held = share(member, own, (&arena, &module, text), &unit);
+                    let held = share(member, (own, spellings.clone()), (&arena, &module), &unit);
                     Ok(settled(
                         held,
                         (module.origins().clone(), failures.clone(), program.clone()),
@@ -1184,7 +1245,7 @@ fn judge_members<'source>(
             else {
                 owned(&report, (&module, &verdicts), last)
             };
-            let last_share = share(last, own, (&arena, &module, text), &unit);
+            let last_share = share(last, (own, spellings), (&arena, &module), &unit);
             Projected {
                 earlier,
                 last: Ok(settled(
@@ -1207,14 +1268,12 @@ fn judge_members<'source>(
 
 /// What a judged unit holds once for all of its sources, read by [`share`].
 #[derive(Debug)]
-struct Unitwide<'unit, 'source>
+struct Unitwide<'source>
 {
     /// The unit's declarations refused at their own form.
     unstatable: Vec<LoweringRefusal<'source>>,
     /// The runs the checker inferred over the unit.
     runs: Vec<InferredRun>,
-    /// The failures the checking machine kept over the unit.
-    failures: &'unit Failures,
 }
 
 /// The report of the declarations written in `member`, owing what their
@@ -1269,16 +1328,15 @@ fn owned<'source>(
 }
 
 /// The share of a judged unit the source `member` reports, its report
-/// `report` already its own.
+/// `report` already its own and `spellings` the unit's.
 ///
 /// # Specification
 /// - requires: `report` is [`owned`] of `member`, or the whole unit's for a
-///   source that is the whole unit; `unit` is the unit's.
-/// - ensures: `report`, the exercised rows it carries, the spellings of the
-///   types its checker refusals compare and the unit's failures name, and of
-///   the unit's refusals at a declaration's own form, shadowed builtins,
-///   inferred exits and inferred runs, those written in `member` — starting
-///   within its own bytes, its end included — a refusal with no span kept.
+///   source that is the whole unit; `spellings` and `unit` are the unit's.
+/// - ensures: `report`, the exercised rows it carries, `spellings`, and of the
+///   unit's refusals at a declaration's own form, shadowed builtins, inferred
+///   exits and inferred runs, those written in `member` — starting within its
+///   own bytes, its end included — a refusal with no span kept.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1290,20 +1348,13 @@ fn owned<'source>(
     && ret.runs.iter().all(|run| member.start <= run.span.start() && run.span.start() <= member.end))]
 fn share<'source>(
     member: Member,
-    report: SettleReport<'source>,
-    (arena, module, text): (&CoreArena, &LoweredModule<'source>, SourceText<'source>),
-    unit: &Unitwide<'_, 'source>,
+    (report, spellings): (SettleReport<'source>, Spellings),
+    (arena, module): (&CoreArena, &LoweredModule<'source>),
+    unit: &Unitwide<'source>,
 ) -> Share<'source>
 {
     let own = |span: ByteSpan| member.start <= span.start() && span.start() <= member.end;
     let exercised = Exercised::of(arena, module, &report);
-    let spellings = Spellings::of(
-        arena,
-        module,
-        &report,
-        unit.failures,
-        (module.origins(), text),
-    );
     let mut unstatable = unit.unstatable.clone();
     unstatable.retain(|refusal| match refusal.span() {
         Maybe::Present(span) => own(span),
@@ -1363,9 +1414,10 @@ fn settled<'source>(
 ///   [`judge_members`] projects it, each source's composition carrying the
 ///   component's kernel artifact; a component of one source is
 ///   [`judge_lowering`] at offset zero. A whole-component refusal is every
-///   source's.
+///   source's. `spelled` advances once for a module the lowering read and
+///   settled, however many sources it has.
 /// - provides: the walk's verdict at each source of a component, the component
-///   lowered and checked once.
+///   lowered, checked and spelled once.
 /// - fails: per source, as [`judge_module`]: a kernel disagreement is every
 ///   source's [`ComposeFault::Readmission`], since the component's environment
 ///   could not be built past it; otherwise a settle fault is every source's
@@ -1378,12 +1430,14 @@ fn settled<'source>(
 ///   the corpus at every width composes alike.
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
+/// - witness: `corpus::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
 #[spec(ensures: |ref ret| ret.len() == members.len())]
 pub fn judge_component<'source>(
     root: CorpusRoot,
     (lowering, text): (Lowering<'source>, SourceText<'source>),
     grant: &HostGrant,
     members: &[Member],
+    spelled: &mut SpellingCount,
 ) -> Vec<Result<Composed<'source>, ComposeFault<'source>>>
 {
     let Some((&last, earlier)) = members.split_last()
@@ -1393,7 +1447,7 @@ pub fn judge_component<'source>(
     match lowering.into_lowered() {
         Lowered::Module { module, arena } => {
             let (projected, admission) =
-                judge_members(root, (module, text), arena, grant, (earlier, last));
+                judge_members(root, (module, text), arena, grant, (earlier, last), spelled);
             match admission.admit() {
                 Ok(kernel) => {
                     let mut composed: Vec<_> = projected
