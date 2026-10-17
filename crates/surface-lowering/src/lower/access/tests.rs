@@ -14,6 +14,7 @@ use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
 use crate::form::FormName;
+use crate::lower::exits::tests::assert_same_body;
 use crate::lower::exits::tests::spelled_within;
 use crate::lower::native::tests::assert_accepted;
 use crate::lower::native::tests::body_named;
@@ -159,6 +160,10 @@ def early(n : Nat) -> -F Integer {
   run m <- case n { Zero => return 5, Succ(p) => pure 1 } ;
   return c
 }
+def early_by_hand(n : Nat) -> -F Integer {
+  hold c = 0;
+  case n { Zero => return 5, Succ(p) => return c }
+}
 ",
     );
     let mut arena = CoreArena::new();
@@ -210,5 +215,13 @@ def early(n : Nat) -> -F Integer {
             Some(DeclarationOutcome::Completed { .. })
         ),
         "an exit in a hold's scope commutes through the hold"
+    );
+    assert_same_body(
+        &module,
+        &arena,
+        (
+            SurfaceName::from("early"),
+            SurfaceName::from("early_by_hand"),
+        ),
     );
 }

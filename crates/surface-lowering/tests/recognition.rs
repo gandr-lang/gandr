@@ -681,6 +681,18 @@ mod recognition
             ),
             "and the builtin keeps its name"
         );
+
+        let member = lowered(
+            SourceText::from("module M { def list = 1 ; }"),
+            seeded(ShadowPolicy::Reject),
+        );
+        assert!(
+            matches!(outcomes(&member).as_slice(), [
+                DeclarationOutcome::Bodied { .. }
+            ]),
+            "a module's member shadows nothing at the top level, whatever its name: {:?}",
+            outcomes(&member)
+        );
     }
 
     #[test]

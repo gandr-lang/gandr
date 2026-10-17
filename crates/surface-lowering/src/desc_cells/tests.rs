@@ -134,6 +134,11 @@ fn a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed()
         Some("rule divmod(Zero, n) ==> Zero")
     );
     assert_eq!(cells.declarations[0].store.len(), CellCount::from(1_usize));
+    assert_eq!(
+        cells.declarations[0].coincidence,
+        Coincidence::Unexamined,
+        "a declaration with a declined rule is not decided as one system"
+    );
 }
 
 #[test]
@@ -257,6 +262,11 @@ fn a_two_redex_body_declines_with_both_occurrences()
     };
     assert_eq!(occurrences.len(), 2);
     assert_eq!(cells.declarations[0].store.len(), CellCount::from(0_usize));
+    assert_eq!(
+        cells.declarations[0].coincidence,
+        Coincidence::Unexamined,
+        "nor is one with a declined circuit"
+    );
 }
 
 #[test]

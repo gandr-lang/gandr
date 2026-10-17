@@ -102,6 +102,34 @@ fn context(
         .collect()
 }
 
+/// The value type an operation's type `ty` returns, read through its thunk
+/// and every function former.
+///
+/// # Specification
+/// trivial.
+fn returned(
+    arena: &CoreArena,
+    ty: gandr_core_term::ValueTypeId,
+) -> Option<ValueType>
+{
+    let Some(&ValueType::Thunk(mut comp)) = arena.value_type(ty)
+    else {
+        return None;
+    };
+    loop {
+        match *arena.comp_type(comp)? {
+            gandr_core_term::CompType::Returner { result, .. } => {
+                return arena.value_type(result).cloned();
+            },
+            gandr_core_term::CompType::Arrow { codomain, .. }
+            | gandr_core_term::CompType::Pi { codomain, .. } => comp = codomain,
+            gandr_core_term::CompType::Element { .. }
+            | gandr_core_term::CompType::Unknown
+            | gandr_core_term::CompType::With(..) => return None,
+        }
+    }
+}
+
 #[test]
 fn a_sign_answers_at_every_member()
 {
@@ -133,6 +161,10 @@ fn a_sign_answers_at_every_member()
     let comp = entry(&types, span("oper comp", "comp"), DescribedRole::Name);
     assert!(matches!(ty(comp), Some(ValueType::Thunk(_))));
     assert_eq!(context(&types, comp), ["Ob", "Hom", "id"]);
+    assert!(
+        matches!(returned(&arena, comp.ty), Some(ValueType::Element { .. })),
+        "an operation with one result returns its sort, not a tuple of it"
+    );
     let law = entry(&types, span("unitL", "unitL"), DescribedRole::Name);
     assert!(matches!(ty(law), Some(ValueType::Thunk(_))));
     assert_eq!(context(&types, law), ["Ob", "Hom", "id", "comp"]);
@@ -148,6 +180,15 @@ fn a_sign_answers_at_every_member()
     assert!(
         matches!(ty(port), Some(ValueType::Element { .. })),
         "decoded from its sort"
+    );
+    let element = |entry: DescribedType| match arena.value_type(entry.ty) {
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
+    };
+    let index = entry(&types, span("--> Hom(a, a)", "a"), DescribedRole::Term);
+    assert!(
+        element(index).is_some(),
+        "an index variable at its binder's sort"
     );
     let sort = entry(&types, span("(a : Ob)", "Ob"), DescribedRole::Type);
     assert!(
@@ -165,6 +206,10 @@ fn a_sign_answers_at_every_member()
     assert_eq!(ty(head), ty(declared), "a head at its operation's type");
     assert_eq!(context(&types, head), context(&types, declared));
     let variable = entry(&types, span("f) ==>", "f"), DescribedRole::Term);
+    assert!(
+        matches!(element(variable), Some(gandr_core_term::Value::Returned(_))),
+        "a law's variable at its own binder's sort, `Hom` applied, not another binder's `Ob`"
+    );
     assert!(matches!(ty(variable), Some(ValueType::Element { .. })));
 
     let nat = entry(&types, span("sort Nat", "Nat"), DescribedRole::Name);
@@ -190,12 +235,50 @@ fn a_sign_answers_at_every_member()
 }
 
 #[test]
+fn a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it()
+{
+    let source = SourceText::from(
+        "sign Wired {\n  sort Nat : Type;\n  sort Bool : Type;\n  oper add : (Nat, Nat) --> \
+         Nat;\n  oper isz : (Nat) --> Bool;\n  rule late : (rule p : u ==> u2, data x : Nat, \
+         data y : Nat) ==> (z : Nat) {\n    node : p(tt) ==> (tlate);\n    node : add(x, y) \
+         --> (tt);\n  };\n  rule side : (rule q : x ==> wside, data x : Nat) ==> (o : Nat) {\n    \
+         node : q(x) ==> (o);\n  };\n  rule tests : (data x : Nat) ==> (ob : Bool) {\n    node : \
+         isz(x) --> (bout);\n  };\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let element = |entry: DescribedType| match arena.value_type(entry.ty) {
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
+    };
+    let late = entry(&types, span("(tlate)", "tlate"), DescribedRole::Term);
+    assert!(
+        element(late).is_some(),
+        "a wire sorted only once a later line has sorted its input"
+    );
+    let side = entry(&types, span("==> wside", "wside"), DescribedRole::Term);
+    assert!(
+        element(side).is_some(),
+        "a rewrite's side sorted by the side it rewrites"
+    );
+    let bout = entry(&types, span("(bout)", "bout"), DescribedRole::Term);
+    let ob = entry(&types, span("(ob : Bool)", "ob"), DescribedRole::Name);
+    assert_eq!(
+        element(bout),
+        element(ob),
+        "an operation's output wire at that operation's result sort"
+    );
+}
+
+#[test]
 fn a_data_rule_answers_each_node_at_its_sort()
 {
     let source = SourceText::from(
         "data NatDiv : Type {\n  Zero : NatDiv;\n  Succ : (n : NatDiv) --> NatDiv;\n  oper \
-         divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  rule divmod(m, \
-         Succ(d)) ==> (Zero, m);\n}\n",
+         divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  oper half(h : \
+         NatDiv) -> NatDiv;\n  rule divmod(m, Succ(d)) ==> (Zero, m);\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -215,8 +298,23 @@ fn a_data_rule_answers_each_node_at_its_sort()
     );
     let field = entry(&types, span("(n : NatDiv) -->", "n"), DescribedRole::Name);
     assert_eq!(ty(field), ty(zero), "a field at its sort");
+    let field_sort = entry(
+        &types,
+        span("(n : NatDiv) -->", "NatDiv"),
+        DescribedRole::Type,
+    );
+    assert!(
+        matches!(ty(field_sort), Some(ValueType::Universe { .. })),
+        "a field's written sort at its family's universe"
+    );
     let operation = entry(&types, span("oper divmod", "divmod"), DescribedRole::Name);
     assert!(matches!(ty(operation), Some(ValueType::Thunk(_))));
+    let half = entry(&types, span("oper half", "half"), DescribedRole::Name);
+    assert_eq!(
+        returned(&arena, half.ty),
+        ty(zero),
+        "an operation with one output returns its family, not a tuple of it"
+    );
     let output = entry(&types, span("quot", "quot"), DescribedRole::Name);
     assert_eq!(ty(output), ty(zero));
 

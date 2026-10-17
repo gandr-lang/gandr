@@ -1098,10 +1098,15 @@ pub(super) fn mark_copies(
 /// # Adequacy
 /// - hypothesis: L2 — the commuted body of a return two matches deep agrees
 ///   with the body written with the rest in each arm by hand. L3 — the checker
-///   accepts it, its exit is the body's own tail, and every node has an origin.
+///   accepts it, its exit is the body's own tail, and every node has an origin;
+///   the rest reaches through a split arm, a fork's parent, an offer's arms and
+///   a hold's scope.
 /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
 /// - witness: `lower::exits::tests::a_bound_match_continues_its_block_at_each_local_arm`
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
+/// - witness: `lower::exits::tests::a_bound_match_continues_its_block_through_a_split_arm`
+/// - witness: `lower::session::tests::an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms`
+/// - witness: `lower::access::tests::an_exit_inside_an_access_is_refused`
 #[spec(ensures: |ret| sink.arena.computation(ret).is_some() || ret == body)]
 pub(super) fn commute(
     sink: &mut Sink<'_>,
@@ -1682,8 +1687,11 @@ impl Sources
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`commute`].
+/// - hypothesis: L3 — as [`commute`], each former rebuilt over children that
+///   changed.
 /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+/// - witness: `lower::access::tests::an_exit_inside_an_access_is_refused`
+/// - witness: `lower::session::tests::an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms`
 #[spec(ensures: |ret| ret == node || sink.arena.computation(ret).is_some())]
 fn rebuild(
     sink: &mut Sink<'_>,

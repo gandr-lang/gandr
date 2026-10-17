@@ -873,7 +873,8 @@ impl Typer<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `comp(id(a), f)` answers at `Hom(a, b)`, `id(a)` at
-    ///   `Hom(a, a)`, `a` at `Ob` and `comp` at its type.
+    ///   `Hom(a, a)`, `a` at `Ob`, `comp` at its type and the variable `f` at
+    ///   the code its sort returns.
     /// - witness: `described::tests::a_sign_answers_at_every_member`
     #[expect(
         clippy::too_many_arguments,
@@ -982,8 +983,11 @@ impl Typer<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `cong1`'s wires `x`, `x′`, `y` and `z` answer at
-    ///   `Nat`, and `add` at its type.
+    ///   `Nat`, and `add` at its type; a wire only a later reading reaches, a
+    ///   rewrite side read off the side it rewrites and an output read off its
+    ///   operation's result each answer at their sort.
     /// - witness: `described::tests::a_sign_answers_at_every_member`
+    /// - witness: `described::tests::a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it`
     fn circuit(
         &mut self,
         scope: &Scope,
@@ -1141,8 +1145,9 @@ impl Typer<'_>
     /// Each node of each finite rule side is popped once.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `divmod`, `walk` and their rules answer at their
-    ///   types and sorts.
+    /// - hypothesis: L3 — `divmod`, `walk`, `half` and their rules answer at
+    ///   their types and sorts, a field's sort at its family's universe and a
+    ///   one-result operation's result at the family itself.
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
     fn family(
         &mut self,

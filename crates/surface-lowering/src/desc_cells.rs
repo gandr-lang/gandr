@@ -228,10 +228,11 @@ pub struct CellReport
 ///   returning too few results and a later declaration separate an admitted
 ///   many-out member, a refused rule and an untouched sibling, and two
 ///   declarations in swapped order separate store order from source order; a
-///   declaration with a declined rule is unexamined, and two rules rewriting
-///   one term apart refuse their declaration.
+///   declaration with a declined rule or a declined circuit is unexamined, and
+///   two rules rewriting one term apart refuse their declaration.
 /// - witness: `desc_cells::tests::a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output`
 /// - witness: `desc_cells::tests::a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed`
+/// - witness: `desc_cells::tests::a_two_redex_body_declines_with_both_occurrences`
 /// - witness: `desc_cells::tests::declaration_order_is_the_cell_order`
 /// - witness: `desc_cells::tests::ordinary_lowering_executes_the_cell_gate_and_preserves_later_values`
 /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`

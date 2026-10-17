@@ -266,7 +266,7 @@ fn a_capability_type_lowers_to_its_authority()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def fs : Cap {write, read, exit} ;\ndef once : Cap[1] {write} ;\ndef every : Cap[ω] {read} ;\ndef none : Cap[0] {read} ;\n",
+            "def fs : Cap {write, read, exit} ;\ndef once : Cap[1] {write} ;\ndef every : Cap[ω] {read} ;\ndef none : Cap[0] {read} ;\ndef named : Cap[n] {read} ;\n",
         ),
         &mut arena,
     );
@@ -313,6 +313,15 @@ fn a_capability_type_lowers_to_its_authority()
                 if grade == SurfaceName::from("0")
         ),
         "a type-only grade is refused by name"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "named".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::GradedBridge { grade, .. })
+                if grade == SurfaceName::from("n")
+        ),
+        "a grade written as a name is refused by that name: {:?}",
+        outcome_of(&module, "named".into())
     );
 }
 

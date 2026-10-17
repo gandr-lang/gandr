@@ -77,10 +77,12 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — foreign heads, instantiated parameters and unequal
-    ///   arities separate the independent uniformity premises.
+    ///   arities separate the independent uniformity premises; a result
+    ///   repeating a parameter by another name is refused.
     /// - witness: `description::tests::an_instantiated_result_head_declines_as_uninferable`
     /// - witness: `description::tests::a_result_head_of_the_wrong_arity_declines`
     /// - witness: `description::tests::a_foreign_result_head_declines`
+    /// - witness: `description::tests::a_result_must_repeat_each_parameter_by_its_own_name`
     #[spec(ensures: |result| match result.as_ref() {
         Ok(arguments) => arguments.len() == parameters.len().saturating_add(indices.0),
         Err(diagnostic) => diagnostic.span == at.span,
@@ -148,7 +150,7 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a reserved marker distinguishes retained attributes
-    ///   from erasure.
+    ///   from erasure, two markers read through their separator.
     /// - witness: `description::tests::the_declined_metadata_golden_is_declined`
     #[spec(captures: before = run.remaining().len(), ensures: run.remaining().len() <= before)]
     pub(super) fn attrs(

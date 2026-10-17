@@ -99,6 +99,11 @@ impl AsRef<str> for RejectionReason
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reason built from a borrowed and from an owned text
+    ///   reads as that text.
+    /// - witness: `namespace::namespace::a_rejection_reason_reads_as_the_text_it_was_given`
     #[inline]
     fn as_ref(&self) -> &str
     {

@@ -2531,6 +2531,50 @@ mod modules
     }
 
     #[test]
+    fn a_nested_module_stated_at_a_non_record_type_is_the_wrong_sort()
+    {
+        let found = rows(&lower(
+            "module Outer : #{ inner: Integer } { module inner { def answer = 1; } }",
+        ));
+        assert!(
+            found.iter().any(|&(_, _, ref amounts)| matches!(
+                amounts,
+                Amounts::Refused(LoweringRefusal::OutOfFragment {
+                    sort: FragmentSort::Module,
+                    boundary: FragmentBoundary::WrongSort,
+                    ..
+                })
+            )),
+            "a module is stated only by a record of its components: {found:?}"
+        );
+
+        let deep = "module Outer : #{ inner: #{ deep: #{ x: Integer } } } { module inner { module \
+                    deep { def x = 1; } } }";
+        let found = rows(&lower(deep));
+        assert!(
+            !found
+                .iter()
+                .any(|&(_, _, ref amounts)| matches!(amounts, Amounts::Refused(_))),
+            "a record stating a module nested two deep is read through each layer: {found:?}"
+        );
+        let found = rows(&lower(
+            "module Outer : #{ inner: #{ deep: Integer } } { module inner { module deep { def x \
+             = 1; } } }",
+        ));
+        assert!(
+            found.iter().any(|&(_, _, ref amounts)| matches!(
+                amounts,
+                Amounts::Refused(LoweringRefusal::OutOfFragment {
+                    sort: FragmentSort::Module,
+                    boundary: FragmentBoundary::WrongSort,
+                    ..
+                })
+            )),
+            "and at each layer only by a record: {found:?}"
+        );
+    }
+
+    #[test]
     fn member_signature_attaches_and_wins_over_derived_function_type()
     {
         let source = "module M { def f : +U (Integer -> -F Integer); def f(x : Integer) -> -F \
@@ -2979,6 +3023,32 @@ mod modules
             })]),
             "the open nested module is refused at its parse error alone, the signature \
              component naming it raising no unknown member: {refused:?}"
+        );
+
+        let sibling = "module Facts : #{ answer: Integer, other: Integer } {\n  def answer = ( 1 \
+                       ;\n}\n";
+        let lowered = repaired(sibling);
+        let refused: Vec<_> = rows(&lowered)
+            .into_iter()
+            .filter_map(|(name, _, amounts)| match amounts {
+                Amounts::Refused(refusal) => Some((name, refusal)),
+                Amounts::Completed
+                | Amounts::Uncompleted
+                | Amounts::Bodied
+                | Amounts::Data
+                | Amounts::Abstract => None,
+            })
+            .collect();
+        assert!(
+            refused.iter().any(|&(_, ref refusal)| !matches!(
+                refusal,
+                LoweringRefusal::MalformedForm {
+                    fault: FormFault::Repaired(_),
+                    ..
+                }
+            )),
+            "a repaired member silences only the component naming it, not a sibling the body \
+             never declares: {refused:?}"
         );
     }
 

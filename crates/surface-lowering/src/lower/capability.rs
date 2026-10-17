@@ -484,8 +484,8 @@ impl<'source> Lowerer<'_, 'source>
     /// The grade's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `ω`, `1` and `0`, each asserted as the grade or the
-    ///   exact refusal.
+    /// - hypothesis: L3 — `ω`, `1`, `0` and a name, each asserted as the grade
+    ///   or the exact refusal.
     /// - witness: `lower::capability::tests::a_capability_type_lowers_to_its_authority`
     #[spec(
         captures: first = cursor.peek(),

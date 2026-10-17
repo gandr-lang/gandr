@@ -302,13 +302,29 @@ fn a_presentation_reads_its_members_off_its_value()
         "each face is the value's two terms"
     );
 
-    let mut short = presentation.clone();
-    let _dropped = short.placement.operations.pop();
-    assert_eq!(
-        short.members(),
-        Err(PresentationFault::Unplaced),
-        "a member the placement does not place"
-    );
+    for (short, kind) in [
+        {
+            let mut short = presentation.clone();
+            let _dropped = short.placement.sorts.pop();
+            (short, "sort")
+        },
+        {
+            let mut short = presentation.clone();
+            let _dropped = short.placement.operations.pop();
+            (short, "operation")
+        },
+        {
+            let mut short = presentation.clone();
+            let _dropped = short.placement.laws.pop();
+            (short, "law")
+        },
+    ] {
+        assert_eq!(
+            short.members(),
+            Err(PresentationFault::Unplaced),
+            "a {kind} the placement does not place"
+        );
+    }
 
     let mut ended = presentation;
     ended.value = SigValue::from_value(DescValue::new(

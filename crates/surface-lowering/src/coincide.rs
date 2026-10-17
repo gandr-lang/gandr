@@ -222,10 +222,12 @@ pub(crate) struct OrientedBlock<G>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a cancellation written right to left flips, the same
-///   cancellation pinned left to right is refused, and a growing pinned rule is
-///   refused at itself.
+///   cancellation pinned left to right is refused, a growing pinned rule is
+///   refused at itself, each rule pinned the way the order runs it orients and
+///   pinned against it is refused, and a commuting rule orients neither way.
 /// - witness: `coincide::tests::an_equation_written_backwards_orients_forwards`
 /// - witness: `coincide::tests::a_rule_that_rebuilds_its_own_call_refuses_the_block`
+/// - witness: `coincide::tests::a_pinned_rule_orients_only_the_way_it_is_pinned`
 #[spec(ensures: |ret| match ret.as_ref() {
     Ok(oriented) => oriented.directions.len() == description.rules.len()
         && oriented.description.rules.len() == description.rules.len()
@@ -579,11 +581,12 @@ pub(crate) fn decide<G>(
 /// The fault and the span it stands at, as the ensures clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a sequent pair is located at its later rule, and an
-///   interior pair of the circle whose later rule is the overlap's left cell is
-///   located at that rule all the same; swapping the two spans changes the
-///   witnessed text.
+/// - hypothesis: L3 — a sequent pair is located at its later rule, written
+///   after or before the earlier one in the overlap, and an interior pair of
+///   the circle whose later rule is the overlap's left cell is located at that
+///   rule all the same; swapping the two spans changes the witnessed text.
 /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
+/// - witness: `coincide::tests::two_rules_written_the_other_way_round_are_refused_at_the_later_one_all_the_same`
 /// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
 #[spec(captures: joined = match joinability {
     Joinability::Joined(ref all) => Some(all.len()),
@@ -660,7 +663,8 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a `sign` block's congruence is left out while its faces
-///   keep their identifiers, and a family with no circuit is read in place.
+///   keep their identifiers, alone and beside a rule's face, and a family with
+///   no circuit is read in place.
 /// - witness: `coincide::tests::a_congruence_is_no_rewrite_of_its_own`
 #[spec(ensures: |ret| usize::from(ret.len()) <= usize::from(store.len()))]
 pub(crate) fn rewriting_store<'store>(
@@ -714,6 +718,10 @@ impl AsRef<str> for CallText<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call reads back as the text it was written as.
+    /// - witness: `coincide::tests::a_call_lends_the_text_it_was_written_as`
     #[inline]
     fn as_ref(&self) -> &str
     {

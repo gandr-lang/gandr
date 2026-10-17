@@ -363,4 +363,38 @@ fn a_parameter_is_read_only_inside_its_functor()
             })),
         "and inside it reads only what the parameter states: {found:?}"
     );
+
+    let deeper = [
+        SEED,
+        "module Dig(S : #{ type T, seed : T }) { def wrong = S.seed.inner ; def typed : S.T.U \
+         ; }\nmodule D = Dig(Seed) ;\n",
+    ]
+    .concat();
+    let found = rows(&lower(deeper.as_str()));
+    for member in ["seed", "T"] {
+        assert!(
+            found.iter().any(|&(_, _, amounts)| matches!(
+                amounts,
+                Amounts::Refused(LoweringRefusal::UnknownMember { module, member: selected, .. })
+                    if module == name("S") && selected == name(member)
+            )),
+            "a parameter states no module, so a path past `S.{member}` is refused at that \
+             link: {found:?}"
+        );
+    }
+
+    let reached = [
+        SEED,
+        "module Reach(S : #{ type T, seed : T }) { def other = Seed.next ; }\nmodule R = \
+         Reach(Seed) ;\n",
+    ]
+    .concat();
+    let found = rows(&lower(reached.as_str()));
+    assert!(
+        !found
+            .iter()
+            .any(|&(_, _, amounts)| matches!(amounts, Amounts::Refused(_))),
+        "only the parameter's own name reads through the parameter; another module is read \
+         as itself: {found:?}"
+    );
 }
