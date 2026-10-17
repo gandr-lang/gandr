@@ -1315,8 +1315,10 @@ fn ending(former: Former) -> Ending
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a loop ending in `continue`, in a match whose arms break
-///   or end in a call, and in a call each lower and run.
+///   or end in a call, and in a call each lower and run; one ending in a hole
+///   is left to be filled.
 /// - witness: `lower::loops::tests::a_loop_body_ends_by_its_exits_or_runs_again`
+/// - witness: `lower::loops::tests::a_hole_ending_a_loop_body_is_left_to_be_filled`
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
@@ -3580,7 +3582,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   module exporting a component, hiding a member and exporting a nested
     ///   module, each path asserted as the exact resolution. Every exported
     ///   member is checked here once, after the last module, rather than by
-    ///   each module's declaration.
+    ///   each module's declaration. A module's member, whatever its name,
+    ///   shadows no builtin.
     /// - witness: `recognition::recognition::a_shadowed_builtin_is_reported_as_a_warning`
     /// - witness: `recognition::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
     /// - witness: `recognition::recognition::user_shadowing_is_the_only_observable_delta`
@@ -4336,9 +4339,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a refused declaration still mints its attribute
-    ///   payload without minting the refused signature or body.
+    ///   payload without minting the refused signature or body, a compound
+    ///   payload down to its leaves.
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
+    /// - witness: `lower::tests::a_refused_declarations_compound_payload_is_lowered_to_its_leaves`
     #[spec(
         captures: before = (self.payload.len(), self.in_payload(position)),
         ensures: |_| {
@@ -5127,8 +5132,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an aliased family and value each read from the
-    ///   imported source, and an undeclared member refused by name.
+    ///   imported source, an undeclared member refused by name, and a pending
+    ///   member refused at the member.
     /// - witness: `namespace::namespace::an_aliased_import_qualifies_its_source_s_names`
+    /// - witness: `namespace::namespace::a_pending_member_read_through_an_alias_is_refused_at_the_member`
     #[spec(ensures: |ref ret| matches!(
         *ret,
         Ok(_) | Err(LoweringRefusal::UnknownMember { .. } | LoweringRefusal::UnexportedName { .. })
@@ -5270,13 +5277,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a declaration, a type atom, the universe and an
     ///   unanswered constructor each written where a value is read, asserted as
-    ///   the exact core node or refusal.
+    ///   the exact core node or refusal; an unknown constructor unadmitted.
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_data_family_named_where_a_value_is_read_is_quoted`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    /// - witness: `lower::tests::an_unknown_constructor_where_a_value_is_read_is_unadmitted`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -6516,9 +6524,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a two-component tuple binds both names in order, and
-    ///   a name pattern reads as no tuple.
+    ///   three components bind all three, and a name pattern reads as no tuple.
     /// - witness: `lower::tests::a_tuple_binder_splits_the_returned_tuple_in_order`
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+    /// - witness: `lower::tests::a_split_of_three_components_lowers`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |components| match *components { Maybe::Present(ref parts) => parts.len() >= 2, Maybe::Absent(_) => true }))]
     fn tuple_binders(
         &self,
@@ -7053,11 +7062,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric operands separate order and operator
-    ///   choice; unsupported operators are rejected.
+    ///   choice; unsupported operators are rejected; a prefix operator takes
+    ///   its one operand.
     /// - witness: `lower::tests::native_operator_plans_preserve_order`
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    /// - witness: `lower::tests::a_prefix_operator_takes_its_one_operand`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(Plan::PrimitiveCall(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_))))]
     fn operator(
         &mut self,
@@ -7151,7 +7162,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a path to an exported component at depth two and at
     ///   depth nine, to a hidden member, to an absent member at each depth, to
     ///   a module, to a member declared later, and a selection off a free name,
-    ///   each asserted as the exact constant or refusal.
+    ///   each asserted as the exact constant or refusal; a path past a
+    ///   parameter's value, refused at that link.
     /// - witness: `modules::modules::a_user_module_selection_is_governed_and_a_free_target_still_projects`
     /// - witness: `modules::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
     /// - witness: `modules::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
@@ -7159,6 +7171,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `modules::modules::a_hidden_or_absent_user_module_component_is_declined_as_a_hole`
     /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
+    /// - witness: `modules::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -7767,10 +7780,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a path to a sealed component, to a manifest one, to a
     ///   body type member, to a nested module's type, to an absent member, to a
     ///   value component and from an unbound head, each asserted as the exact
-    ///   type or refusal.
+    ///   type or refusal; a path past a parameter's type, refused at that link.
     /// - witness: `modules::modules::a_qualified_type_reference_resolves_through_the_namespace`
     /// - witness: `modules::modules::an_unbound_type_path_is_refused_by_name`
     /// - witness: `modules::modules::opaque_ascription_seals`
+    /// - witness: `modules::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -8054,9 +8068,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::universe_of`], and a path type at a
-    ///   levelled universe.
+    ///   levelled universe; a level past the constants, refused at its numeral.
     /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
     /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types`
+    /// - witness: `lower::tests::a_universe_level_past_the_constants_is_refused_at_its_numeral`
     fn universe_tiles(
         &self,
         site: Site,
@@ -8128,9 +8143,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a binder written at a sorted, levelled universe
     ///   inside a grouping, a declaration signed at one, an operator's codomain
     ///   reached through one static arrow, and an unwritten type at each sort
-    ///   of position, each observed through the decode it mints.
+    ///   of position, each observed through the decode it mints; an operator
+    ///   whose codomain does not fit the application decoding where it stands.
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+    /// - witness: `lower::tests::a_static_application_its_operator_does_not_fit_decodes_where_it_stands`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -8228,13 +8245,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   written at two arguments, an operator a declaration and a binder name,
     ///   and a constructor applied in a type-position call's argument, each
     ///   asserted as the exact core node read back out of the arena or the
-    ///   exact refusal.
+    ///   exact refusal; a forward member applied, refused at its head.
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::an_applied_head_no_former_answers_is_refused`
     /// - witness: `lower::tests::a_run_bound_type_and_a_constructor_argument_stand_in_a_type`
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
+    /// - witness: `lower::tests::a_forward_member_applied_as_a_type_is_refused_at_its_head`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -9327,8 +9345,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — one abstraction, two nested whose body names both
     ///   binders, and an abstraction where a value type is read, each asserted
     ///   as the exact core node read back out of the arena or the exact
-    ///   refusal.
+    ///   refusal; a lowercase binder name.
     /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
+    /// - witness: `lower::tests::a_static_abstraction_binds_a_lowercase_name`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -9911,9 +9930,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a constructor awaiting its family's application is
     ///   minted at its slot's type once the application reaches it, and a type
     ///   quoted in a body past an unmentioned parameter reads its binders at
-    ///   their indices in the body.
+    ///   their indices in the body; a grouped type head stands for what it
+    ///   groups.
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument`
     /// - witness: `lower::tests::a_quote_in_a_body_reads_past_an_unmentioned_parameter`
+    /// - witness: `lower::tests::a_type_head_answers_at_what_it_stands_for`
     #[spec(
         captures: before = (
             matches!(
@@ -12229,8 +12250,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a decorated module of two members and an undecorated
-    ///   declaration after it, the attribute reaching the members only.
+    ///   declaration after it, the attribute reaching the members only; a
+    ///   module's laws filed under the module; a refused attribute refusing the
+    ///   first member alone.
     /// - witness: `lower::exits::tests::an_explicit_exits_attribute_asks_within_its_form`
+    /// - witness: `lower::tests::a_module_respects_attribute_files_its_laws_under_the_module`
+    /// - witness: `lower::tests::a_module_attribute_refusal_refuses_its_first_member_alone`
     #[spec(
         captures: before = (self.fuel.remaining, usize::from(table.attributed_count())),
         ensures: |ret| {
@@ -12442,9 +12467,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// As [`Self::document`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::document`].
+    /// - hypothesis: L3 — as [`Self::document`], and a link to a module, its
+    ///   member and a constructor, each resolved.
     /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
     /// - witness: `lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
+    /// - witness: `lower::tests::a_link_resolves_to_a_module_its_member_or_a_constructor`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -17730,6 +17757,40 @@ mod tests
     }
 
     #[test]
+    fn a_static_application_its_operator_does_not_fit_decodes_where_it_stands()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def t : Type -> Type[-, 1] ; def u : Type -> Type -> Type[-, 1] ; def a : +U \
+                 (t(Integer, Integer)) ; def b : +U (u(Integer)) ;",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let level = |at: usize| {
+            let Some(&ValueType::Thunk(suspended)) = arena.value_type(declared_of(lowered[at]))
+            else {
+                panic!("`+U` is a thunk type");
+            };
+            let Some(&CompType::Element { ref target, .. }) = arena.comp_type(suspended)
+            else {
+                panic!("an operator applied where a computation type is read decodes");
+            };
+            target.clone()
+        };
+        assert_eq!(
+            (level(2_usize), level(3_usize)),
+            (
+                Level::constant(LevelConstant::ZERO),
+                Level::constant(LevelConstant::ZERO)
+            ),
+            "an arrow too few or too many leaves the operator's universe unread, so each \
+             decodes at the default of where it stands"
+        );
+    }
+
+    #[test]
     fn a_function_to_a_universe_unquotes_where_a_type_is_read()
     {
         let mut arena = CoreArena::new();
@@ -18836,6 +18897,320 @@ mod tests
     }
 
     #[test]
+    fn a_refused_declarations_compound_payload_is_lowered_to_its_leaves()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def p : Integer ; def q : Integer ; @[ respects((q, p)) ] def r(n : Integer) -> \
+                 -F Integer { return b }",
+            ),
+            &mut arena,
+        );
+        let named = |wanted: &str| {
+            module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"))
+        };
+        assert!(
+            matches!(named("r").outcome(), DeclarationOutcome::Refused(_)),
+            "the body names nothing declared"
+        );
+        let (p, q) = (named("p").constant(), named("q").constant());
+        assert_eq!(
+            module.laws(named("r")),
+            [q, p].as_slice(),
+            "the names inside the payload's tuple are lowered under the refused declaration"
+        );
+    }
+
+    #[test]
+    fn an_unended_form_reports_its_deepest_repair_first_written_among_equals()
+    {
+        let at = |point: usize| span(ByteOffset::from(point), ByteOffset::from(point));
+        let pbg = grammar();
+        for (source, point, why) in [
+            (
+                "def a = (1 + ) * ((2 + ) * 3)",
+                22_usize,
+                "the deeper hole wins though it is written later",
+            ),
+            (
+                "def a = ((1 + ) * 3) * (2 + )",
+                13_usize,
+                "the deeper hole wins though it is written earlier",
+            ),
+            (
+                "def a = (1 + ) * (2 + )",
+                12_usize,
+                "of two holes at one depth the first written wins",
+            ),
+            (
+                "def a = ( * )",
+                10_usize,
+                "of two holes in one form the first written wins",
+            ),
+        ] {
+            let tree = repaired(&pbg, SourceText::from(source));
+            assert_eq!(
+                refusal_in(&pbg, &tree),
+                LoweringRefusal::MalformedForm {
+                    span: at(point),
+                    form: FormName::from(NamedKind("binary_expression")),
+                    fault: FormFault::Repaired(Repair::Grout(
+                        gandr_surface_syntax::GroutShape::Convex,
+                    )),
+                },
+                "{why}: `{source}`"
+            );
+        }
+    }
+
+    /// The outcome of the declaration `wanted` in `module`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn outcome_named<'source>(
+        module: &crate::module::LoweredModule<'source>,
+        wanted: impl AsRef<str>,
+    ) -> DeclarationOutcome<'source>
+    {
+        let wanted = wanted.as_ref();
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_ref() == wanted)
+            .unwrap_or_else(|| panic!("`{wanted}` is declared"))
+            .outcome()
+    }
+
+    #[test]
+    fn a_lowered_module_counts_its_names_and_gives_up_its_origins()
+    {
+        let source = "def f(n : Integer) -> -F Integer { return n } def g = 1 ;";
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(source), &mut arena);
+        assert_eq!(usize::from(module.declaration_count()), 2_usize);
+        let returner = source.find("-F Integer").expect("the returner is written");
+        assert!(
+            module.origins().comp_types().iter().any(|&(_, origin)| {
+                usize::from(origin.span().start()) == returner
+                    && usize::from(origin.span().end()) == returner + "-F Integer".len()
+            }),
+            "the returner type is recorded where it is written"
+        );
+        assert_eq!(
+            module.into_origins().declaration_count(),
+            crate::origin::OriginCount::from(2_usize),
+            "the table given up holds both declarations"
+        );
+    }
+
+    #[test]
+    fn a_signature_written_after_its_signed_function_is_no_duplicate()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def f(n : Integer) -> -F Integer { return n } def f : +U (Integer -> -F \
+                 Integer) ;",
+            ),
+            &mut arena,
+        );
+        assert!(
+            matches!(
+                outcome_named(&module, "f"),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "the written signature joins the function as it does written first: {:?}",
+            outcome_named(&module, "f")
+        );
+    }
+
+    #[test]
+    fn a_module_respects_attribute_files_its_laws_under_the_module()
+    {
+        let pbg = grammar();
+        let source =
+            SourceText::from("def p : Integer ; @[ respects(p) ] module M { def x = 1 ; }");
+        let tree = parsed(&pbg, source);
+        let mut arena = CoreArena::new();
+        let module = lower_module(
+            &pbg,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .unwrap();
+        let [ref p, _] = *module.declarations()
+        else {
+            panic!("`p` and `x` are declared");
+        };
+        let filed = (0_usize ..)
+            .map(gandr_surface_syntax::NodeIndex::from)
+            .map_while(|at| tree.node(at).map(|_| at))
+            .filter_map(|at| tree.key(at))
+            .filter(|&key| module.attributes().laws(key) == [p.constant()])
+            .count();
+        assert_eq!(
+            filed, 1_usize,
+            "the module's form carries the law it names, and no other form does"
+        );
+    }
+
+    #[test]
+    fn a_link_resolves_to_a_module_its_member_or_a_constructor()
+    {
+        let mut arena = CoreArena::new();
+        let source = "/// See [M], [Red] and [x].\ndef a = 1 ;\nmodule M { def x = 1 ; }\ndata Color \
+                      : Type { Red : Color; }\n/// Not [gone].\ndef b = 2 ;";
+        let module = lowered(SourceText::from(source), &mut arena);
+        assert!(
+            !matches!(outcome_named(&module, "a"), DeclarationOutcome::Refused(_)),
+            "each link names something declared: {:?}",
+            outcome_named(&module, "a")
+        );
+        let gone = source.find("gone").expect("the link is written");
+        assert_eq!(
+            outcome_named(&module, "b"),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedDocLink {
+                span: span(ByteOffset::from(gone), ByteOffset::from(gone + 4)),
+                name: SurfaceName::from("gone"),
+            }),
+            "a module beside a missing name does not answer for it"
+        );
+    }
+
+    #[test]
+    fn a_module_attribute_refusal_refuses_its_first_member_alone()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("@[ checkz ] module M { def x = 1 ; }\ndef y = 2 ;"),
+            &mut arena,
+        );
+        assert_eq!(
+            outcome_named(&module, "x"),
+            DeclarationOutcome::Refused(LoweringRefusal::UnknownAttribute {
+                span: at(3_usize, 9_usize),
+                name: SurfaceName::from("checkz"),
+                suggestion: Maybe::Present(registered(SurfaceName::from("checks"))),
+            }),
+            "the misspelt attribute is the module's first declaration's refusal"
+        );
+        assert!(
+            !matches!(outcome_named(&module, "y"), DeclarationOutcome::Refused(_)),
+            "and the module's neighbour lowers"
+        );
+    }
+
+    #[test]
+    fn an_unknown_constructor_where_a_value_is_read_is_unadmitted()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        assert_eq!(
+            refusal(SourceText::from("def a = Foo ;")),
+            LoweringRefusal::OutOfFragment {
+                span: at(8_usize, 11_usize),
+                form: FormName::from(NamedKind("constructor")),
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Unadmitted,
+            },
+            "only `Type` is a universe; another unanswered capital is no form the fragment has"
+        );
+    }
+
+    #[test]
+    fn a_split_of_three_components_lowers()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def a = thunk { run (x, y, z) <- pure (1, 2, 3) ; return x } ;"),
+            &mut arena,
+        );
+        assert!(
+            !matches!(outcome_named(&module, "a"), DeclarationOutcome::Refused(_)),
+            "a tuple pattern takes two components or more: {:?}",
+            outcome_named(&module, "a")
+        );
+    }
+
+    #[test]
+    fn a_prefix_operator_takes_its_one_operand()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def f(n : Integer) -> -F Integer { - n }"),
+            &mut arena,
+        );
+        assert!(
+            matches!(
+                outcome_named(&module, "f"),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "a negation is a tile before one operand: {:?}",
+            outcome_named(&module, "f")
+        );
+    }
+
+    #[test]
+    fn a_universe_level_past_the_constants_is_refused_at_its_numeral()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        assert_eq!(
+            refusal(SourceText::from(
+                "def d : Type[+, 99999999999999999999999] ;"
+            )),
+            LoweringRefusal::OutOfFragment {
+                span: at(16_usize, 39_usize),
+                form: FormName::from(NamedKind("universe_type")),
+                sort: FragmentSort::ValueType,
+                boundary: FragmentBoundary::Unadmitted,
+            },
+            "the refusal stands at the level, not the whole universe"
+        );
+    }
+
+    #[test]
+    fn a_forward_member_applied_as_a_type_is_refused_at_its_head()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("module M { def a : f(Integer) ; def f : Type -> Type ; }"),
+            &mut arena,
+        );
+        assert_eq!(
+            outcome_named(&module, "a"),
+            DeclarationOutcome::Refused(LoweringRefusal::ForwardMemberReference {
+                span: at(19_usize, 20_usize),
+                name: SurfaceName::from("f"),
+                declared: at(36_usize, 37_usize),
+            }),
+            "the refusal stands at the operator's name, not the whole application"
+        );
+    }
+
+    #[test]
+    fn a_static_abstraction_binds_a_lowercase_name()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def t : Type -> Type ; def w = \\x. t(x) ;"),
+            &mut arena,
+        );
+        assert!(
+            !matches!(outcome_named(&module, "w"), DeclarationOutcome::Refused(_)),
+            "a type variable binds as a type identifier does: {:?}",
+            outcome_named(&module, "w")
+        );
+    }
+
+    #[test]
     fn the_attribute_diagnostics_fire_on_a_refused_declaration()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -18973,6 +19348,16 @@ mod tests
         assert!(
             standing.contains(&"S.T"),
             "a path to the parameter's type stands for the argument's: {standing:?}"
+        );
+        let mut grouped_arena = CoreArena::new();
+        let grouped = lowered(
+            SourceText::from("def a : (Integer) ; def a = 1 ;"),
+            &mut grouped_arena,
+        );
+        assert_eq!(
+            grouped.origins().stand_ins(),
+            [],
+            "a grouping passes its type through and stands for nothing minted elsewhere"
         );
     }
 

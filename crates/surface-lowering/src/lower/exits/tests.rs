@@ -247,6 +247,25 @@ fn a_bound_match_continues_its_block_at_each_local_arm()
 }
 
 #[test]
+fn a_bound_match_continues_its_block_through_a_split_arm()
+{
+    let source = format!(
+        "{NAT}def split(n : Nat) -> -F Nat {{ run m <- case n {{ Zero => return n, Succ(p) => {{ run (a, b) <- pure (p, n) ; pure a }} }} ; return Succ(m) }}\n\
+         def split_by_hand(n : Nat) -> -F Nat {{ case n {{ Zero => return n, Succ(p) => {{ run (a, b) <- pure (p, n) ; return Succ(a) }} }} }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert_same_body(
+        &module,
+        &arena,
+        (
+            SurfaceName::from("split"),
+            SurfaceName::from("split_by_hand"),
+        ),
+    );
+}
+
+#[test]
 fn a_use_a_local_end_replaces_keeps_its_bytes()
 {
     let source = format!(

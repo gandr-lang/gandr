@@ -573,7 +573,8 @@ impl AttributeRegistry
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one near miss per registry row, exact registered
-    ///   spellings, distances two and three, and a two-way tie separate minimum
+    ///   spellings, distances two and three, a two-way tie, and a later entry
+    ///   one edit away after an earlier one two away separate minimum
     ///   selection, inclusion of the bound and registry-order ties. The
     ///   predicate checks membership, the length lower bound and exact matches
     ///   without re-running the allocating distance calculation.
@@ -1250,6 +1251,11 @@ mod tests
         assert_eq!(
             AttributeRegistry::suggestion(SurfaceName::from("rows")),
             Maybe::Present(owes)
+        );
+        assert_eq!(
+            AttributeRegistry::suggestion(SurfaceName::from("ouns")),
+            Maybe::Present(registered(SurfaceName::from("runs"))),
+            "a later spelling one edit away displaces an earlier one two away"
         );
     }
 

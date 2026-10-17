@@ -113,6 +113,7 @@ fn a_loop_body_ends_by_its_exits_or_runs_again()
          def ticking_stated(n : Nat) -> -F Nat {{ loop {{ tick(n); }} }}\n\
          def ticking_by_hand(n : Nat) -> -F Nat {{ loop {{ tick(n); continue }} }}\n\
          def arms(n : Nat) -> -F Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => tick(p) }} }} }}\n\
+         def arms_stated(n : Nat) -> -F Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => tick(p) }}; }} }}\n\
          def arms_by_hand(n : Nat) -> -F Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => {{ tick(p); continue }} }} }} }}\n\
          def inner(n : Nat) -> -F Nat {{ loop {{ loop {{ break }} }} }}\n\
          def inner_by_hand(n : Nat) -> -F Nat {{ loop {{ loop {{ break }} ; continue }} }}\n\
@@ -124,6 +125,7 @@ fn a_loop_body_ends_by_its_exits_or_runs_again()
         ("ticking", "ticking_by_hand"),
         ("ticking_stated", "ticking_by_hand"),
         ("arms", "arms_by_hand"),
+        ("arms_stated", "arms_by_hand"),
         ("inner", "inner_by_hand"),
     ] {
         assert_same_body(
@@ -138,6 +140,24 @@ fn a_loop_body_ends_by_its_exits_or_runs_again()
         "a nested loop no path of which ends runs only itself again"
     );
     assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_hole_ending_a_loop_body_is_left_to_be_filled()
+{
+    let source = format!("{PRELUDE}def holed(n : Nat) -> -F Nat {{ loop {{ ?pending }} }}\n");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("holed")));
+    assert!(
+        matches!(
+            arena.computation(tail),
+            Some(&Computation::Fixpoint { body, .. })
+                if matches!(arena.computation(body), Some(&Computation::Hole(_)))
+        ),
+        "a hole passes the loop's end on to what fills it, so no re-entry follows it: {:?}",
+        arena.computation(tail)
+    );
 }
 
 #[test]

@@ -410,6 +410,111 @@ def later = 7;"#,
 }
 
 #[test]
+fn two_rules_written_the_other_way_round_are_refused_at_the_later_one_all_the_same()
+{
+    let source = SourceText::from(
+        r#"@[ checks ]
+data NatApart : Type {
+    Zero : NatApart;
+    Succ : (n : NatApart) --> NatApart;
+    oper add(m : NatApart, n : NatApart) -> NatApart;
+    rule add(m, Zero) ==> Succ(m);
+    rule add(Zero, n) ==> n;
+    rule add(Succ(m), n) ==> Succ(add(m, n));
+}"#,
+    );
+    lowered(source, |module| {
+        let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+        else {
+            panic!("one cell diagnostic: {:?}", module.cells().diagnostics)
+        };
+        let CellFault::Coherence(ref fault @ CoherenceFault::Diverges { first, .. }) =
+            diagnostic.fault
+        else {
+            panic!("the pair diverges: {:?}", diagnostic.fault)
+        };
+        assert_eq!(
+            text(source, diagnostic.span).as_ref(),
+            "rule add(Zero, n) ==> n",
+            "the refusal stands at the later rule"
+        );
+        assert_eq!(
+            text(source, first).as_ref(),
+            "rule add(m, Zero) ==> Succ(m)",
+            "and names the earlier one"
+        );
+        assert_eq!(
+            fault.to_string(),
+            "both rules rewrite `add(Zero, Zero)`, one to `Succ(Zero)` and the other to `Zero`"
+        );
+    });
+}
+
+#[test]
+fn a_pinned_rule_orients_only_the_way_it_is_pinned()
+{
+    use crate::description::written::RuleDirection::LeftToRight;
+    use crate::description::written::RuleDirection::RightToLeft;
+    use crate::description::written::RuleOrientation::Pinned;
+    use crate::description::written::RuleOrientation::Unpinned;
+
+    let source = SourceText::from(
+        r#"data Int : Type {
+    Z : Int;
+    S : (x : Int) --> Int;
+    P : (x : Int) --> Int;
+    rule x <=> S(P(x));
+    rule P(S(x)) <=> x;
+}"#,
+    );
+    lowered(source, |module| {
+        let description = &module.descriptions().declarations[0].description;
+        let orient = |orientations: &[RuleOrientation]| {
+            orient_block(description, orientations).map(|block| block.directions)
+        };
+        assert_eq!(
+            orient(&[Pinned(RightToLeft), Pinned(LeftToRight)]),
+            Ok(Vec::from([RightToLeft, LeftToRight])),
+            "each rule pinned the way it runs"
+        );
+        assert_eq!(
+            orient(&[Pinned(LeftToRight), Unpinned]),
+            Err(RuleIndex::from(0_usize)),
+            "a rule pinned against its order"
+        );
+        assert_eq!(
+            orient(&[Unpinned, Pinned(RightToLeft)]),
+            Err(RuleIndex::from(1_usize)),
+            "and the other"
+        );
+    });
+    let commuting = SourceText::from(
+        r#"data Pair : Type {
+    Z : Pair;
+    oper add(m : Pair, n : Pair) -> Pair;
+    rule add(m, n) <=> add(n, m);
+}"#,
+    );
+    lowered(commuting, |module| {
+        let description = &module.descriptions().declarations[0].description;
+        assert_eq!(
+            orient_block(description, &[Unpinned]).map(|block| block.directions),
+            Err(RuleIndex::from(0_usize)),
+            "a rule the order runs neither way orients neither way"
+        );
+    });
+}
+
+#[test]
+fn a_call_lends_the_text_it_was_written_as()
+{
+    assert_eq!(
+        CallText::from("add(Succ(Zero), Zero)").as_ref(),
+        "add(Succ(Zero), Zero)"
+    );
+}
+
+#[test]
 fn a_rule_that_rebuilds_its_own_call_refuses_the_block()
 {
     let source = SourceText::from(
@@ -527,6 +632,37 @@ fn a_congruence_is_no_rewrite_of_its_own()
         assert!(
             matches!(cells.rewriting(), Cow::Borrowed(_)),
             "a family with no congruence is read in place"
+        );
+    });
+    let with_a_rule = SourceText::from(
+        r#"sign Nat {
+  sort Nat : Type;
+  oper add : (Nat, Nat) --> Nat;
+  rule left : add(x, y) ==> x;
+
+  rule cong1 : (
+    rule p : Nat ==> Nat,
+    data x : Nat,
+    data y : Nat
+  ) ==> (z : Nat) {
+    node : p(x) ==> (x′);
+    node : add(x′, y) --> (z);
+  };
+}"#,
+    );
+    lowered(with_a_rule, |module| {
+        let [ref cells] = *module.cells().declarations.as_slice()
+        else {
+            panic!("one block")
+        };
+        assert!(
+            !cells.faces.is_empty(),
+            "the rule is a face: {:?}",
+            module.cells().diagnostics
+        );
+        assert!(
+            usize::from(cells.rewriting().len()) < usize::from(cells.store.len()),
+            "the congruence's cell is left out beside a face"
         );
     });
 }

@@ -620,6 +620,41 @@ fn the_declined_metadata_golden_is_declined()
         "the reserved attribute is declined as derived metadata, not {:?}",
         diagnostic.fault
     );
+    let report = elaborated(SourceText::from(
+        "data Declared : Type { Mk : Declared [variance, strictness]; }",
+    ));
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| matches!(diagnostic.fault, DescriptionFault::IllFormed(ref reason) if reason.kind == gandr_theory_levitation::WfKind::DeclaresDerivedMetadata)),
+        "two markers separated by a comma read as two markers, not a malformed slot: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn a_block_left_open_keeps_the_member_before_its_missing_close()
+{
+    let report = elaborated(SourceText::from("data X : Type { A : X"));
+    assert_eq!(
+        report
+            .declarations
+            .iter()
+            .map(|declaration| declaration.description.ctors.len())
+            .collect::<Vec<_>>(),
+        [1_usize],
+        "the member the repair closes over is read, beside the repair's own report"
+    );
+}
+
+#[test]
+fn a_result_must_repeat_each_parameter_by_its_own_name()
+{
+    let report = elaborated(SourceText::from(
+        "data List(a : Type) : Type { Nil : List(b); }",
+    ));
+    assert!(
+        !report.diagnostics.is_empty(),
+        "`List(b)` is not the family over its own parameter `a`"
+    );
 }
 
 #[test]
@@ -779,6 +814,51 @@ fn a_codata_oper_declines_without_swallowing_observation_and_rule_siblings()
         source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
         Some("oper tail(s : S) -> S")
     );
+}
+
+#[test]
+fn a_field_reads_each_primitive_and_each_applied_argument()
+{
+    let source = "data Box(a : Type) : Type {\n  Prims : (i : Integer, s : String, b : Boolean, \
+                  u : Unit) --> Box(a);\n  Nested : (inner : Pair(a, Pair(a, a))) --> Box(a);\n}";
+    let report = elaborated(SourceText::from(source));
+    assert_eq!(report.diagnostics, Vec::new());
+    let [ref entry] = *report.declarations.as_slice()
+    else {
+        panic!("one family")
+    };
+    let [ref prims, ref nested] = *entry.description.ctors.as_ref()
+    else {
+        panic!("two generators")
+    };
+    let field_types = |code: &gandr_theory_levitation::Code<DescriptionGrade>| {
+        let mut found = Vec::new();
+        let mut pending = Vec::from([code.view()]);
+        while let Some(view) = pending.pop() {
+            match view {
+                CodeView::Field { ty, .. } => found.push(ty.clone()),
+                CodeView::Prod(parts) => {
+                    let first = pending.len();
+                    pending.extend(parts.map(gandr_theory_levitation::CodeNode::view));
+                    if let Some(added) = pending.get_mut(first ..) {
+                        added.reverse();
+                    }
+                },
+                CodeView::Unit | CodeView::Var(_) | CodeView::Sum(_) | CodeView::Bind { .. } => {},
+            }
+        }
+        found
+    };
+    assert_eq!(field_types(&prims.code), [
+        ValueTypeRef::prim(PrimTy::Integer),
+        ValueTypeRef::prim(PrimTy::StringTy),
+        ValueTypeRef::prim(PrimTy::Boolean),
+        ValueTypeRef::prim(PrimTy::Unit),
+    ]);
+    assert_eq!(field_types(&nested.code), [ValueTypeRef::ctor("Pair", [
+        ValueTypeRef::param("a"),
+        ValueTypeRef::ctor("Pair", [ValueTypeRef::param("a"), ValueTypeRef::param("a")])
+    ])]);
 }
 
 #[test]

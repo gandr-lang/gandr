@@ -134,7 +134,8 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a body reads its parameter's type and value by path,
-    ///   and a declaration outside the functor does not.
+    ///   and a declaration outside the functor does not; another module's path
+    ///   inside the functor reads as that module.
     /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `modules::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {

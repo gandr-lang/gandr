@@ -1939,9 +1939,11 @@ fn unended(
 /// # Adequacy
 /// - hypothesis: L3 — a source ending inside a case's arms, within a
 ///   definition, finds the case's minted close under the definition's own; a
-///   string never closed, within a definition, is read as the string's end.
+///   string never closed, within a definition, is read as the string's end;
+///   among repairs, the deepest, then the first written, is reported.
 /// - witness: `lower::tests::a_missing_close_is_reported_at_the_innermost_form`
 /// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
+/// - witness: `lower::tests::an_unended_form_reports_its_deepest_repair_first_written_among_equals`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(found)) => matches!(found.nested, Maybe::Present(_)),
     | Ok(Maybe::Absent(_)) | Err(LoweringRefusal::UnknownMold { .. }) => true,

@@ -364,8 +364,9 @@ impl Presentation
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a presentation with an unnamed port reads back its
-    ///   members, the port at its placeholder, and a placement one tile short
-    ///   is refused; the `CatShape` derivation reads its members this way.
+    ///   members, the port at its placeholder, and a placement one sort,
+    ///   operation or law tile short is refused; the `CatShape` derivation
+    ///   reads its members this way.
     /// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
     /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
     #[inline]

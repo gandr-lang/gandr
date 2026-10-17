@@ -987,9 +987,11 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a rewrite binder beside data ports keeps its name and
-    ///   face, and a parenthesized expression is refused as an endpoint.
+    ///   face, a parenthesized expression is refused as an endpoint, and an
+    ///   endpoint written twice is a variable unless a sort carries its name.
     /// - witness: `description::sign::tests::a_ruled_sign_block_lowers_its_members_into_a_description`
     /// - witness: `description::sign::tests::an_expression_kind_signature_endpoint_is_refused_by_the_description_route`
+    /// - witness: `description::sign::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
     fn port_side(
         &self,
         run: &mut Run<'_>,
@@ -1279,7 +1281,7 @@ fn fresh_port(at: Placed) -> Name
 /// # Adequacy
 /// - hypothesis: L3 — a block's description agrees with the value it defines,
 ///   member for member, an unnamed port at its placeholder and a face at its
-///   member's span.
+///   member's span; a rule the placement does not place is refused.
 /// - witness: `description::sign::tests::the_description_is_read_off_the_value`
 /// - witness: `description::sign::tests::the_cat_shape_laws_are_written_faces`
 fn described(

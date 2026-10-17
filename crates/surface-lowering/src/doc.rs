@@ -298,8 +298,9 @@ pub fn read_doc<'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a bare and a backticked link, a Markdown link, a
-///   reference, a bracket inside a code span and a bracketed non-name each
-///   separate a link from text.
+///   reference, a bracket inside a code span, a bracketed non-name and a name
+///   with an underscore beside one with a hyphen each separate a link from
+///   text.
 /// - witness: `doc::tests::links_are_found_where_they_are_written`
 #[spec(captures: before = links.len(), ensures: links.len() >= before)]
 fn scan_links<'source>(
@@ -477,6 +478,14 @@ mod tests
             entry,
             ["M.inner=M.inner"],
             "a link inside an entry's string spans its name in the source"
+        );
+        let (_, mixed) = read(SourceText::from(
+            "/// Read [snake_case] beside [not-a-name].\ndef x = 1 ;",
+        ));
+        assert_eq!(
+            mixed,
+            ["snake_case=snake_case"],
+            "an underscore continues a name and a hyphen ends one"
         );
     }
 }

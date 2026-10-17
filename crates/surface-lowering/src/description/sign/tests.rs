@@ -366,6 +366,32 @@ fn a_pinned_rewrite_endpoint_reads_as_a_variable()
         source: FreeTerm::var("x"),
         target: FreeTerm::var("x′"),
     });
+    let fixed = described(
+        "sign Labelled {
+  sort Nat : Type;
+  oper step : (i : Nat) --> (o : Nat);
+  rule twice : (rule p : x ==> x, data x : Nat) ==> (o : Nat) {
+    node w1 : p(x) ==> (m);
+    node w2 : step(m) --> (o);
+  };
+}",
+    );
+    let [ref rule] = *fixed.declarations[0].description.circuits.as_ref()
+    else {
+        panic!("one circuit rule: {:?}", fixed.diagnostics)
+    };
+    let [ref port] = *rule.ports.as_ref()
+    else {
+        panic!("one rewrite port")
+    };
+    assert_eq!(
+        port.face,
+        PortFace::Pinned {
+            source: FreeTerm::var("x"),
+            target: FreeTerm::var("x"),
+        },
+        "an endpoint written twice is a variable unless a sort carries its name"
+    );
 }
 
 #[test]
@@ -1112,6 +1138,13 @@ fn the_description_is_read_off_the_value()
         source
             .get(usize::from(span.start()) .. usize::from(span.end()))
             .is_some_and(|member| member.starts_with("rule unitL"))
+    );
+    let mut short = presentation.clone();
+    let _dropped = short.placement.faces.pop();
+    assert_eq!(
+        super::described(&short, sign.description.id.clone()),
+        Err(crate::model::PresentationFault::Unplaced),
+        "a rule the placement does not place"
     );
 }
 

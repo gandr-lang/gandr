@@ -486,9 +486,9 @@ impl<'source> Lowerer<'_, 'source>
     /// The re-entry's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a call, a statement-written match and a nested loop
-    ///   at a loop's end each run the loop again; a nested loop with no `break`
-    ///   is left as it is.
+    /// - hypothesis: L3 — a call, a statement-written match, a match whose arms
+    ///   are stated and a nested loop at a loop's end each run the loop again;
+    ///   a nested loop with no `break` is left as it is.
     /// - witness: `lower::loops::tests::a_loop_body_ends_by_its_exits_or_runs_again`
     #[spec(
         ensures: |ret| {

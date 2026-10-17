@@ -1563,6 +1563,34 @@ mod namespace
     }
 
     #[test]
+    fn a_pending_member_read_through_an_alias_is_refused_at_the_member()
+    {
+        let pbg = grammar();
+        let (text, unit) = laid(&[
+            (SourceText::from("def owed : Integer ;"), &[]),
+            (
+                SourceText::from(
+                    "import \"./base.gandr\" as base ;\ndef again : Integer ;\ndef again = \
+                     base.owed ;",
+                ),
+                &[ImportTarget::Source(SourceIndex::from(0_usize))],
+            ),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+        let member = text.find("base.owed").expect("the path is written") + "base.".len();
+
+        assert!(
+            module.declarations().iter().any(|declaration| matches!(
+                declaration.outcome(),
+                DeclarationOutcome::Refused(LoweringRefusal::UnexportedName { span, name, .. })
+                    if name.as_ref() == "owed" && span == bytes(member, member + "owed".len())
+            )),
+            "the refusal stands at the selected name, not the whole path"
+        );
+    }
+
+    #[test]
     fn an_unresolved_import_refuses_its_source()
     {
         let pbg = grammar();
@@ -2728,5 +2756,20 @@ mod namespace
             1_usize,
             "the chain survives every walk, so the iteration claim is not vacuous"
         );
+    }
+
+    #[test]
+    fn a_rejection_reason_reads_as_the_text_it_was_given()
+    {
+        let given = "this policy forbids shadowing";
+        let reasons = [
+            RejectionReason::from(given),
+            RejectionReason::from(String::from(given)),
+        ];
+        for reason in &reasons {
+            let text: &str = reason.as_ref();
+            assert_eq!(text, given, "the reason reads as its text");
+            assert_eq!(reason.to_string(), given, "and displays it");
+        }
     }
 }

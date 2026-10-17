@@ -3791,8 +3791,9 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — paired halves, duplicate halves,
-    ///   written-versus-derived signatures and rejected tails separate filing
-    ///   from refusal and witness creation.
+    ///   written-versus-derived signatures, a signature written after its
+    ///   signed function, and rejected tails separate filing from refusal and
+    ///   witness creation.
     /// - witness: `module::tests::a_signature_pairs_with_its_definition`
     /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
     /// - witness: `module::tests::a_second_signature_is_refused`
@@ -3800,6 +3801,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
     /// - witness: `modules::modules::signatures_attach_to_their_defs`
     /// - witness: `module::tests::a_declaration_missing_its_body_is_refused`
+    /// - witness: `lower::tests::a_signature_written_after_its_signed_function_is_no_duplicate`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -5911,7 +5913,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a nested module left open is reported at its missing
     ///   close alone, its parent's signature component naming it raising
-    ///   nothing.
+    ///   nothing, while a sibling component the body never declares is still
+    ///   reported.
     /// - witness: `modules::modules::a_malformed_member_named_by_the_signature_is_reported_once`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -6155,9 +6158,11 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a layer from the enclosing module's signature and one
     ///   from a member signature, the latter disagreeing with the module's own,
-    ///   each asserted as the exact exports and the checker's verdict.
+    ///   each asserted as the exact exports and the checker's verdict; a nested
+    ///   module stated at a non-record type, the wrong sort.
     /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
     /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `modules::modules::a_nested_module_stated_at_a_non_record_type_is_the_wrong_sort`
     #[spec(
         captures: before = (
             self.collected.structures.len(),

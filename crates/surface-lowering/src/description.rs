@@ -1190,10 +1190,11 @@ impl Reader<'_, '_>
     /// Returns `HigherOrderField`, `TypeShape` or `Malformed`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — nested applications, universes and function fields
-    ///   separate supported shapes and order.
+    /// - hypothesis: L3 — nested applications, the four primitives, universes
+    ///   and function fields separate supported shapes and order.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
     /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
+    /// - witness: `description::tests::a_field_reads_each_primitive_and_each_applied_argument`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     fn type_reference(
         &self,
@@ -1294,8 +1295,9 @@ enum TypeFrame
 ///
 /// # Adequacy
 /// - hypothesis: L3 — multi-field constructors distinguish nested from member
-///   separators.
+///   separators, and a member a repaired close ends is kept.
 /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
+/// - witness: `description::tests::a_block_left_open_keeps_the_member_before_its_missing_close`
 #[spec(ensures: |result| result.iter().all(|member| !member.is_empty()))]
 fn split_members(pieces: &[Piece]) -> Vec<&[Piece]>
 {
@@ -1340,8 +1342,11 @@ fn split_members(pieces: &[Piece]) -> Vec<&[Piece]>
 }
 
 mod family;
+
 mod members;
+
 mod sign;
+
 pub mod written;
 
 #[cfg(test)]
