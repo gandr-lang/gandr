@@ -23,3 +23,5 @@ hom = "hom"
 ratatui = "ratatui"
 # Author surname: Donald Yau, co-author of the graphical-map factorizations.
 yau = "yau"
+# ELF vocabulary: `.rela` sections hold relocations with explicit addends.
+rela = "rela"

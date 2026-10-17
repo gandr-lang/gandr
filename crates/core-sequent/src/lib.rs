@@ -161,6 +161,7 @@ pub use crate::pretty::render_command;
 pub use crate::pretty::render_consumer;
 pub use crate::pretty::render_producer;
 pub use crate::readback::ReadbackRefusal;
+pub use crate::readback::read_back_terminal;
 pub use crate::store::CellId;
 pub use crate::store::ContinuationMark;
 pub use crate::store::Covalue;

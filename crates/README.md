@@ -13,7 +13,7 @@ theory    reusable metatheory machinery
 kernel    the certified trusted base and its substrate: levels, the term arena and sharing format, the checking machine
 core      the core language: call-by-push-value syntax, the unified context, normalization by evaluation
 storage   the content-addressed tier: authenticated record and value planes
-runtime   effectful host machinery below the faces: effects handlers, foreign calls, the compile host
+runtime   effectful host machinery below the faces: effects handlers, foreign calls, emitted native code
 surface   syntax, grammar, parsing, lowering, the pipeline a driver invocation enters, and the driver a human or a tool runs
 workflow  repository tooling and gates
 ```
@@ -36,7 +36,8 @@ crates/
 ├── kernel-core/                   checking, conversion, admission and memoization; Path_U, identity and bridge recursion, higher fields, funext, Flow_U, guarded List observations and session-certificate replay; stage formation and replay
 ├── kernel-strata/                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
-├── runtime-compile-host/          feature-gated positive-core images, typed admission, C boundary vocabulary and canonical value rendering
+├── runtime-emitter/               the L machine's commands lowered and copy-and-patched into native code under a content cache, or built for the portable executor, and each answer moved into the machine's store
+├── runtime-stencils/              the L machine's transitions written once: the stencils the emitter copies and patches, and the portable executor that dispatches them
 ├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
 ├── storage-chunker/               content-defined chunk boundaries and their committed parameters
 ├── storage-records/               the authenticated ordered-record plane

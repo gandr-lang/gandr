@@ -1,0 +1,43 @@
+[package]
+name = "gandr-runtime-emitter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Copy-and-patch emission of the L machine's lowered commands: native code under a content cache, the portable executor elsewhere"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["copy-and-patch", "gandr", "jit", "sequent-calculus"]
+categories = ["compilers"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The lowering reads the command IL and its vocabulary: the zones from the
+# core syntax, literals, indices and fixpoint evidence from the kernel's term
+# crate, and the cut polarity from the cell substrate. A run's answer is moved
+# into the machine's store, so the machine's readback reads it. The stencils
+# are a normal dependency for their layout and the executor, and a build
+# dependency for the stencil list the build script checks the object against.
+[dependencies]
+gandr-core-sequent.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
+gandr-runtime-stencils.workspace = true
+gandr-theory-cell-complexes.workspace = true
+
+[build-dependencies]
+gandr-runtime-stencils.workspace = true
+object.workspace = true
+
+# The two hosts with a patcher map executable memory through the C library.
+[target.'cfg(any(all(target_os = "macos", target_arch = "aarch64"), all(target_os = "linux", target_arch = "x86_64")))'.dependencies]
+libc.workspace = true
+
+[lints]
+workspace = true

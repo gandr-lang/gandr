@@ -4,7 +4,7 @@ A programming language built on a small certified kernel. A call-by-push-value c
 
 ## Status
 
-`0.0.0`, pre-release. Every tier exists: the kernel (universe levels, the term arena and sharing format, the checking machine, conversion and its replay, native universe paths, sessions and the stage universe), the core language (normalization by evaluation, the bidirectional checker, incremental checking and the sequent machine), the storage tier's value and record planes, the compile host, and the surface from grammar and parser through lowering to the driver, the language server, the MCP server and the terminal faces. `crates/surface-corpus` holds the language's corpus: its strict root checks owing nothing, and its fixture root states each source's expected verdict.
+`0.0.0`, pre-release. Every tier exists: the kernel (universe levels, the term arena and sharing format, the checking machine, conversion and its replay, native universe paths, sessions and the stage universe), the core language (normalization by evaluation, the bidirectional checker, incremental checking and the sequent machine), the storage tier's value and record planes, the runtime's native emitter, which runs a program as copy-and-patched machine code, and the surface from grammar and parser through lowering to the driver, the language server, the MCP server and the terminal faces. `crates/surface-corpus` holds the language's corpus: its strict root checks owing nothing, and its fixture root states each source's expected verdict.
 
 ## Usage
 

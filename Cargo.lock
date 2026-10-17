@@ -608,15 +608,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "gandr-runtime-compile-host"
+name = "gandr-runtime-emitter"
 version = "0.0.0"
 dependencies = [
- "gandr-core-checker",
  "gandr-core-sequent",
  "gandr-core-term",
  "gandr-kernel-term",
- "gandr-runtime-compile-host",
- "quenchant-anodized",
+ "gandr-runtime-stencils",
+ "gandr-theory-cell-complexes",
+ "libc",
+ "object",
+]
+
+[[package]]
+name = "gandr-runtime-stencils"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-sequent",
+ "gandr-core-term",
+ "gandr-kernel-term",
+ "gandr-runtime-emitter",
+ "gandr-surface-corpus",
+ "gandr-surface-dispatcher",
+ "quenchant-shape",
 ]
 
 [[package]]
@@ -727,6 +741,7 @@ dependencies = [
  "gandr-core-sequent",
  "gandr-core-term",
  "gandr-kernel-term",
+ "gandr-runtime-emitter",
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-format",
@@ -1436,6 +1451,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c7398b9c8b70908f6371f47ed36737907c87c52af34c268fed0bf0ceb92ead9"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "object"
+version = "0.40.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd229a0361b9d0d4396176e02d65897f487eebeab7caa6d443855ee152ca0b9c"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

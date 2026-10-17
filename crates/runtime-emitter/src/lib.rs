@@ -1,0 +1,126 @@
+//! Copy-and-patch emission of the L machine's lowered commands.
+//!
+//! A command the checker admitted is lowered to a straight list of stencil
+//! instructions ([`lower()`]), and that one list runs on either of two tiers
+//! ([`Tier`]): native code copied stencil by stencil into executable memory
+//! and patched in place, served from a cache keyed by the lowered function's
+//! content; or the portable executor, which dispatches the same stencil
+//! functions through a table. A run's answer is moved into the L machine's
+//! store, so the machine's readback reads it ([`evaluate`]). A command the
+//! lowering does not cover runs on the L machine, the oracle both tiers are
+//! held to.
+//!
+//! # One definition, two tiers
+//!
+//! The L machine's transitions are written once, in the stencil crate. Its
+//! default build is the executor: each hole is a function that reads the
+//! current instruction record. Compiled under `--cfg gandr_stencil_object`,
+//! which this crate's build script does with the toolchain's own `rustc`,
+//! each hole is an undefined symbol and the object's relocations are the
+//! patcher's input. The build script reads the object — each `stencil_*`
+//! function's bytes and relocations — and refuses one it cannot patch,
+//! checking the stencil list against the executor's
+//! (`gandr_runtime_stencils::StencilId::ALL`), so the two tiers cannot drift.
+//!
+//! **Choice.** The executor lands with the emitter rather than after it. The
+//! stencil crate's library build must link — an object with undefined holes
+//! cannot — and its own tests witness its stencils, so its default build
+//! defines the holes, and that definition is the executor. **Alternative.**
+//! A stencil crate that builds only as an object, the executor a later
+//! landing; declined because the crate's witnesses would then live in another
+//! package. **Reversal.** None foreseen: the executor is the tier every host
+//! without a patcher takes.
+//!
+//! # The policy
+//!
+//! [`Policy`] reads `GANDR_NATIVE` once per process: `always` (the default)
+//! emits a function on its first run and serves it from the process's cache
+//! after; `never` takes the executor; `cached` serves a function the cache
+//! already holds and takes the executor otherwise, which is what a
+//! differential between the tiers wants.
+//!
+//! **Choice.** Emit on the first run. A function is lowered from its source
+//! in every process, so a gate on a run count before emitting would skip only
+//! the first run — the one the cache cannot serve — and save nothing; the
+//! cache that would make such a gate useful is the persistent, content-keyed
+//! one that serves code across processes, which lands with the run memo.
+//! **Alternatives.** An item per constant, so a shared helper is emitted once,
+//! waits for a workload where shared helpers dominate; tiering a step at a
+//! time by heat is the whole profile-guided design and declined here.
+//! **Reversal.** The persistent cache, when it lands, keys the same
+//! [`Function`] by content and serves it before emission.
+//!
+//! # The patchers
+//!
+//! Two hosts have a patcher, selected by the build script's `gandr_patcher`
+//! configuration: macOS arm64 (Mach-O, `BRANCH26` continuations, `GOT_LOAD`
+//! pairs relaxed to `movz`/`movk` or `adrp`/`add`) and Linux x86-64 (ELF under
+//! the static relocation model, `PLT32`/`PC32` displacements and `32`/`32S`
+//! absolute fields). Every other host takes the executor. The x86-64 patcher
+//! applies each relocation's addend as a linker does — the compiler folds an
+//! immediate's bias into it — where a patcher refusing explicit addends would
+//! refuse every RIP-relative operand. Executable memory is a `MAP_JIT`
+//! mapping toggled per thread on macOS and a `memfd` mapped twice, writable
+//! and executable-below-2-GiB, on Linux; the region module states why.
+//!
+//! # The runtime support
+//!
+//! Each thread keeps its own heap, frame region and window, grown by
+//! doubling and run again when a run exhausts one, up to a bound past which
+//! the run is declined. A run enters through `enter` or `execute` with a
+//! fresh [`gandr_runtime_stencils::Runtime`] record and a halting sentinel
+//! frame under the base mark, and returns when an exit stencil writes its
+//! status. Emitted code carries no unwind tables and calls nothing, so
+//! nothing unwinds through it; that seam is where a Rust host — the
+//! dispatcher today — calls emitted code.
+//!
+//! # The compile host retired
+//!
+//! This crate replaces an MLIR-hosted compile path that rendered a small
+//! positive fragment through a dialect. **Choice.** Emit from stencils the
+//! toolchain compiles, so the native tier needs no compiler at run time and
+//! covers what the L machine runs. **Alternative.** A dialect lowered
+//! through MLIR per item; declined for its compile latency and its native
+//! toolchain dependency, neither of which buys an optimisation the stencils
+//! lack. **Reversal.** An MLIR-hosted dialect returns only if a
+//! dialect-level optimisation the certificates cannot express is measured
+//! as needed.
+//!
+//! # Dependencies
+//!
+//! The build script reads the stencil object with `object` (read-only, ELF
+//! and Mach-O): one relocation view over both formats, maintained with the
+//! toolchain's own backtrace and linker tools. `goblin` was the alternative,
+//! declined for its per-format relocation types; the choice reverses if a
+//! third format needs a reader `object` lacks. Executable memory is mapped
+//! through `libc`: `rustix`, already in the graph, exposes neither `MAP_JIT`
+//! nor `pthread_jit_write_protect_np`; the choice reverses if it grows both.
+
+extern crate alloc;
+
+mod executor;
+mod function;
+mod lower;
+#[cfg(gandr_patcher)]
+mod native;
+mod run;
+mod transfer;
+
+pub use gandr_runtime_stencils::Fuel;
+
+pub use crate::function::Function;
+pub use crate::lower::Form;
+pub use crate::lower::Lowered;
+pub use crate::lower::lower;
+#[cfg(gandr_patcher)]
+pub use crate::native::EmitRefusal;
+pub use crate::run::Declined;
+pub use crate::run::POLICY_VARIABLE;
+pub use crate::run::Policy;
+pub use crate::run::Tier;
+pub use crate::run::evaluate;
+pub use crate::run::evaluate_on;
+pub use crate::transfer::TransferRefusal;
+
+/// Whether this host has a patcher: native code runs here.
+pub const PATCHER: bool = cfg!(gandr_patcher);
