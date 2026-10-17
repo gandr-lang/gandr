@@ -47,6 +47,12 @@ def endoBare(a : Type, n : Nat) -> -F Type { return (a => a) }
 @[ checks ]
 def byCode(n : Nat) -> -F Type { return (+U ((c : U) -> -F el(c))) }
 
+/// The functions on a type a parameter names, quoted in a body: the arrow's
+/// binder is labelled with that parameter's type, spelled `t`, because `t`
+/// binds in the quote's telescope though no signature type names it (#590).
+@[ checks ]
+def onType(t : Type) -> -F Type { return (+U ((x : t) -> -F t)) }
+
 /// One, at the decode of the natural code, which runs to `Nat`.
 @[ checks ]
 def one : el(NatC) ;
