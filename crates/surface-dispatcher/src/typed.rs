@@ -99,6 +99,7 @@ use gandr_core_checker::level_of;
 use gandr_core_checker::type_module;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::Binders;
+use gandr_core_term::Carried;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
@@ -121,7 +122,7 @@ use gandr_core_term::instantiate_value_type_under;
 use gandr_core_term::pattern::Pattern;
 use gandr_core_term::pattern::PatternId;
 use gandr_core_term::shift_value;
-use gandr_core_term::shift_value_type_under;
+use gandr_core_term::shift_value_type_under_traced;
 use gandr_core_term::strengthen_value_type;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GroundSort;
@@ -2367,47 +2368,51 @@ impl TypeTable
                 }
             },
         }
-        let last_parameter =
-            |arena: &mut CoreArena, declared: ValueTypeId, count: usize| -> Option<ValueTypeId> {
-                let &ValueType::Thunk(mut at) = arena.value_type(declared)?
-                else {
-                    return None;
-                };
-                // Whether each parameter before the last kept its binder.
-                let mut kept: Vec<bool> = Vec::with_capacity(count);
-                loop {
-                    let (domain, codomain, dependent) = match arena.comp_type(at) {
-                        Some(&CompType::Pi { domain, codomain }) => (domain, codomain, true),
-                        Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, false),
-                        Some(_) | None => return None,
-                    };
-                    if kept.len() == count {
-                        let mut ty = domain;
-                        for dropped in (0 .. count).rev() {
-                            if kept.get(dropped) != Some(&false) {
-                                continue;
-                            }
-                            let scope = kept
-                                .iter()
-                                .skip(dropped)
-                                .skip(1)
-                                .filter(|&&present| present)
-                                .fold(Binders::NONE, |scope, _| scope.deeper());
-                            ty = shift_value_type_under(arena, ty, scope, Binders::ONE);
-                            if let Some(slot) = kept.get_mut(dropped) {
-                                *slot = true;
-                            }
-                        }
-                        return Some(ty);
-                    }
-                    kept.push(dependent);
-                    at = codomain;
-                }
+        let last_parameter = |arena: &mut CoreArena,
+                              declared: ValueTypeId,
+                              count: usize,
+                              carried: &mut Vec<Carried>|
+         -> Option<ValueTypeId> {
+            let &ValueType::Thunk(mut at) = arena.value_type(declared)?
+            else {
+                return None;
             };
+            // Whether each parameter before the last kept its binder.
+            let mut kept: Vec<bool> = Vec::with_capacity(count);
+            loop {
+                let (domain, codomain, dependent) = match arena.comp_type(at) {
+                    Some(&CompType::Pi { domain, codomain }) => (domain, codomain, true),
+                    Some(&CompType::Arrow { domain, codomain }) => (domain, codomain, false),
+                    Some(_) | None => return None,
+                };
+                if kept.len() == count {
+                    let mut ty = domain;
+                    for dropped in (0 .. count).rev() {
+                        if kept.get(dropped) != Some(&false) {
+                            continue;
+                        }
+                        let scope = kept
+                            .iter()
+                            .skip(dropped)
+                            .skip(1)
+                            .filter(|&&present| present)
+                            .fold(Binders::NONE, |scope, _| scope.deeper());
+                        ty = shift_value_type_under_traced(arena, ty, scope, Binders::ONE, carried);
+                        if let Some(slot) = kept.get_mut(dropped) {
+                            *slot = true;
+                        }
+                    }
+                    return Some(ty);
+                }
+                kept.push(dependent);
+                at = codomain;
+            }
+        };
         // A function's read type is its last parameter's, read under every
         // parameter before it: the lowering forms a parameter its codomain
         // never names as a non-dependent arrow, its binder dropped, so each
         // dropped binder is put back around the type, innermost first.
+        let mut carried: Vec<Carried> = Vec::new();
         for (name, &count) in &parameterised {
             let Some(read) = lowered.get_mut(name)
             else {
@@ -2417,8 +2422,25 @@ impl TypeTable
             else {
                 continue;
             };
-            *read = last_parameter(&mut arena, declared, count)
+            *read = last_parameter(&mut arena, declared, count, &mut carried)
                 .ok_or_else(|| String::from("the declaration is no function of its parameters"));
+        }
+        // A type the lowering recorded as written as a relation stands at each
+        // copy a shift made of it, so a type read under a dropped binder
+        // reprints as written (#674). The copies are taken in the order the
+        // shifts made them, so a copy of a copy finds its source's relation.
+        for copy in carried {
+            let Carried::ValueType(source, image) = copy
+            else {
+                continue;
+            };
+            if let Some(&(_, relation)) = read_back
+                .relations
+                .iter()
+                .find(|&&(related, _)| related == source)
+            {
+                read_back.relations.push((image, relation));
+            }
         }
         printed
             .into_iter()
