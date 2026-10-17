@@ -18,7 +18,12 @@ data Tagged(l : Type, r : Type, s : SumOb(l, r)) : Type {
 
 /// Each summand stands as the family's third argument, at its place's type.
 @[ checks ]
-def keptTagged(a : Integer, b : String, t : Tagged(Integer, String, Inl(a)), u : Tagged(Integer, String, Inr(b))) -> -F Tagged(Integer, String, Inl(a)) {
+def keptTagged(
+  a : Integer,
+  b : String,
+  t : Tagged(Integer, String, Inl(a)),
+  u : Tagged(Integer, String, Inr(b))
+) -> -F Tagged(Integer, String, Inl(a)) {
   return t
 }
 

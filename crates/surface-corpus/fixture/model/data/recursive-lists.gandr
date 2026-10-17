@@ -68,7 +68,10 @@ def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
 def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
   case xs {
     Nil => return (Nil : List(b)),
-    Cons(x, rest) => { run y <- f(x); run r <- map[<](a, b, f, rest); return (Cons(y, r) : List(b)) }
+    Cons(
+      x,
+      rest
+    ) => { run y <- f(x); run r <- map[<](a, b, f, rest); return (Cons(y, r) : List(b)) }
   }
 }
 
@@ -77,7 +80,10 @@ def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
 def rec map_elided(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
   case xs {
     Nil => (Nil : List(b)),
-    Cons(x, rest) => { run y <- f(x); run r <- map_elided[<](a, b, f, rest); (Cons(y, r) : List(b)) }
+    Cons(
+      x,
+      rest
+    ) => { run y <- f(x); run r <- map_elided[<](a, b, f, rest); (Cons(y, r) : List(b)) }
   }
 }
 

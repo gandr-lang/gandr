@@ -64,7 +64,10 @@ def third(p : Integer * String) -> -F String {
 
 /// A split's answer may name its scrutinee: each arm answers it at the pair.
 @[ checks ]
-def rebuilt(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(#{n : Integer, v : Path(Integer, n, n)}, p, p) {
+def rebuilt(p : #{
+  n : Integer,
+  v : Path(Integer, n, n)
+}) -> -F Path(#{n : Integer, v : Path(Integer, n, n)}, p, p) {
   case p {
     #{.n = m, .v = w} => return here(#{m, w})
   }

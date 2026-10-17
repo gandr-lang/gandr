@@ -21,7 +21,12 @@ module Seed :> #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T 
 
 /// A functor from any counter to a sealed counter of its own: its seed,
 /// step and reader are the argument's.
-module MkCounter(S : #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) }) :> #{ type T, seed : T, step : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) } {
+module MkCounter(S : #{
+  type T,
+  zero : T,
+  next : +U[ω] (T -> -F T),
+  read : +U[ω] (T -> -F Integer)
+}) :> #{ type T, seed : T, step : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) } {
   type T = S.T;
   def seed = S.zero;
   def step = S.next;

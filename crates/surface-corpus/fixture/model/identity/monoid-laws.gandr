@@ -27,6 +27,10 @@ def unitR(x: Integer) -> -F Path(Integer, combine(x, neutral), x) {
 
 /// Associativity, not by reflexivity.
 @[ refuses("EndpointMismatch") ]
-def assoc(x: Integer, y: Integer, z: Integer) -> -F Path(Integer, combine(combine(x, y), z), combine(x, combine(y, z))) {
+def assoc(x: Integer, y: Integer, z: Integer) -> -F Path(
+  Integer,
+  combine(combine(x, y), z),
+  combine(x, combine(y, z))
+) {
   return here(combine(combine(x, y), z))
 }

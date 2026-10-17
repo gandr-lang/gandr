@@ -68,6 +68,15 @@
 //! sweep's bound affords fails that bound; the sweep's own cost is the thing
 //! to cut.
 //!
+//! **A layout is no change.** A modified source the formatter lays out to the
+//! text it lays the base's out to holds the base's tokens and comments in the
+//! base's order — the invariant `gandr-surface-format` checks on every text
+//! it returns — so every sweep reads it as before, and it leaves the change.
+//! A corpus-wide layout then keeps every sample at its stated size; the
+//! nightly `sweeps` profile, visiting every source, is the backstop. The
+//! alternative was every touched file in, which put the corpus's layout pass
+//! past the 30 s bound in every sample at once (#492).
+//!
 //! **Reversal**: a runner that takes the whole sweeps between nightlies, or
 //! nextest's own test partitioning by input, makes the sample unnecessary.
 //!

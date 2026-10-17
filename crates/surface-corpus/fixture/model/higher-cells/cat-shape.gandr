@@ -30,7 +30,14 @@ module SetoidCat : Model(CatShape) {
 
   /// Composition of two functions, applied.
   @[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { run g <- d(f) ; e(g) } } } } } }") ]
-  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {
+  def compose(
+    t : Type,
+    u : Type,
+    v : Type,
+    f : +U[ω] (t -> -F u),
+    g : +U[ω] (u -> -F v),
+    x : t
+  ) -> -F v {
     run y <- f(x);
     become g(y)
   }
@@ -42,40 +49,73 @@ module SetoidCat : Model(CatShape) {
 
   /// Composition likewise runs through the hidden `compose`.
   @[ runs("⟨opaque at SetoidCat⟩ : +U ((a : Type) -> (b : Type) -> (c : Type) -> (a => b) -> (b => c) -> -F (a => c))") ]
-  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {
+  def comp(
+    t : Type,
+    u : Type,
+    v : Type,
+    f : +U[ω] (t -> -F u),
+    g : +U[ω] (u -> -F v)
+  ) -> -F (+U[ω] (t -> -F v)) {
     return thunk { become compose(t, u, v, f, g) }
   }
 
   /// The left unit law, by conversion.
   @[ checks ]
-  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) {
+  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path(
+    (+U[ω] (p -> -F q)),
+    comp(p, p, q, id(p), f),
+    f
+  ) {
     return here(f)
   }
 
   /// The right unit law, by conversion.
   @[ checks ]
-  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, q, q, f, id(q)), f) {
+  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path(
+    (+U[ω] (p -> -F q)),
+    comp(p, q, q, f, id(q)),
+    f
+  ) {
     return here(f)
   }
 
   /// Associativity, by conversion through `compose`.
   @[ checks ]
-  def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path((+U[ω] (p -> -F s)), comp(p, r, s, comp(p, q, r, f, g), h), comp(p, q, s, f, comp(q, r, s, g, h))) {
+  def assoc(
+    p : Type,
+    q : Type,
+    r : Type,
+    s : Type,
+    f : +U[ω] (p -> -F q),
+    g : +U[ω] (q -> -F r),
+    h : +U[ω] (r -> -F s)
+  ) -> -F Path(
+    (+U[ω] (p -> -F s)),
+    comp(p, r, s, comp(p, q, r, f, g), h),
+    comp(p, q, s, f, comp(q, r, s, g, h))
+  ) {
     return here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })
   }
 
   /// The left unit law stated by the right one, whose type converts to it.
   @[ checks ]
-  def unitLFromR : (p : Type, q : Type, f : +U[ω] (p -> -F q)) => Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) ;
+  def unitLFromR : (p : Type, q : Type, f : +U[ω] (p -> -F q)) => Path(
+    (+U[ω] (p -> -F q)),
+    comp(p, p, q, id(p), f),
+    f
+  ) ;
   def unitLFromR = unitR ;
 
   /// The left unit law by either law, chosen by a boolean.
   @[ checks ]
-  def unitLEither(p : Type, q : Type, f : +U[ω] (p -> -F q), b : Bool) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) {
+  def unitLEither(p : Type, q : Type, f : +U[ω] (p -> -F q), b : Bool) -> -F Path(
+    (+U[ω] (p -> -F q)),
+    comp(p, p, q, id(p), f),
+    f
+  ) {
     case b {
       true => become unitL(p, q, f),
       false => become unitR(p, q, f)
     }
   }
-
 }

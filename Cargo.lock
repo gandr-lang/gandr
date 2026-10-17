@@ -1192,6 +1192,10 @@ name = "gandr-workflow-sweep"
 version = "0.0.0"
 dependencies = [
  "blake3",
+ "gandr-surface-format",
+ "gandr-surface-grammar",
+ "gandr-surface-parser",
+ "gandr-surface-syntax",
  "quenchant-anodized",
 ]
 

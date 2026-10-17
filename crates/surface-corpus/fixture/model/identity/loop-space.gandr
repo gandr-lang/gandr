@@ -120,5 +120,10 @@ def rec retrWords(n : Int) -> -F Path(Int, windWords(spinWords(n)), n) {
 /// the types the record states once `to` is `windWords` and `back` is
 /// `spinWords`.
 @[ checks ]
-def wordsWinding : #{to : +U (Words -> -F Int), back : +U (Int -> -F Words), sect : (c : Words) => Path(Words, back(to(c)), c), retr : (n : Int) => Path(Int, to(back(n)), n)} ;
+def wordsWinding : #{
+  to : +U (Words -> -F Int),
+  back : +U (Int -> -F Words),
+  sect : (c : Words) => Path(Words, back(to(c)), c),
+  retr : (n : Int) => Path(Int, to(back(n)), n)
+} ;
 def wordsWinding = #{windWords, #{spinWords, #{sectWords, retrWords}}} ;

@@ -52,7 +52,11 @@ def unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
 /// a path from `loop ∷ spin(wind(q))` to `loop ∷ q`. The two path types do
 /// not convert, and the arm is refused.
 @[ refuses("TypeMismatch") ]
-def rec forged(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), spin(wind(p)), p) {
+def rec forged(p : Path(Circle, Base, Base)) -> -F Path(
+  Path(Circle, Base, Base),
+  spin(wind(p)),
+  p
+) {
   case p {
     here => return here(here(Base)),
     loop ∷ q => become forged[<](q),

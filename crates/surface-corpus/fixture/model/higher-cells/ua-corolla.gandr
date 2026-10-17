@@ -19,16 +19,27 @@ def flip(b : Bool) -> -F Bool {
 
 /// The magma to itself by the swap at the binary corolla.
 @[ checks ]
-def opposite = ua[1, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+def opposite = ua[
+  1,
+  4
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
 
 /// Transport along it swaps the binary corolla's boolean.
 @[ checks ]
-def moves : Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
+def moves : Path(
+  #{Unit, #{+{Unit}, Bool}},
+  transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}),
+  #{unit, #{+{.0 = unit}, +{.1 = unit}}}
+) ;
 def moves = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
 
 /// It does not leave the boolean where it was.
 @[ refuses("EndpointMismatch") ]
-def stays : Path(#{Unit, #{+{Unit}, Bool}}, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.0 = unit}}}) ;
+def stays : Path(
+  #{Unit, #{+{Unit}, Bool}},
+  transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}),
+  #{unit, #{+{.0 = unit}, +{.0 = unit}}}
+) ;
 def stays = here(#{unit, #{+{.0 = unit}, +{.0 = unit}}}) ;
 
 /// The magma to itself by the swap written three times.

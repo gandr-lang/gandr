@@ -24,7 +24,16 @@ def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> -F (a ≃ b) {
 /// `y`; carried along the forward map, that agreement turns the right
 /// inverse's round trip into the left one's.
 @[ checks ]
-def leftRetraction(a : Type, b : Type, t : +U (a -> -F b), g : +U (b -> -F a), h : +U (b -> -F a), y : b, sh : Path(a, g(t(h(y))), h(y)), ry : Path(b, t(h(y)), y)) -> -F Path(b, t(g(y)), y) {
+def leftRetraction(
+  a : Type,
+  b : Type,
+  t : +U (a -> -F b),
+  g : +U (b -> -F a),
+  h : +U (b -> -F a),
+  y : b,
+  sh : Path(a, g(t(h(y))), h(y)),
+  ry : Path(b, t(h(y)), y)
+) -> -F Path(b, t(g(y)), y) {
   back(cong(t, back(sh) then cong(g, ry))) then ry
 }
 
@@ -33,6 +42,9 @@ def leftRetraction(a : Type, b : Type, t : +U (a -> -F b), g : +U (b -> -F a), h
 @[ checks ]
 def equivToIso(a : Type, b : Type, e : a ≃ b) -> -F (a ≅ b) {
   case e {
-    #{t, #{g, s}, #{h, r}} => #{t, #{g, #{s, thunk { fn (y) { leftRetraction(a, b, t, g, h, y, s(h(y)), r(y)) } }}}}
+    #{t, #{g, s}, #{h, r}} => #{
+      t,
+      #{g, #{s, thunk { fn (y) { leftRetraction(a, b, t, g, h, y, s(h(y)), r(y)) } }}}
+    }
   }
 }

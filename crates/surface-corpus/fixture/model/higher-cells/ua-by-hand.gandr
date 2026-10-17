@@ -27,12 +27,18 @@ module ByHand {
 
   /// The derived path, by the swap at the binary corolla.
   @[ checks ]
-  def opposite = ua[1, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+  def opposite = ua[
+    1,
+    4
+  ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
 
   /// The same path written by hand.
   @[ checks ]
   def opposite_by_hand : Path(Type, Tel, Tel) ;
-  def opposite_by_hand = pathProduct(here(Unit), pathProduct(equiv(keep, keep), equiv(exchange, exchange))) ;
+  def opposite_by_hand = pathProduct(
+    here(Unit),
+    pathProduct(equiv(keep, keep), equiv(exchange, exchange))
+  ) ;
 
   /// The derived and the hand path convert.
   @[ checks ]
@@ -41,18 +47,29 @@ module ByHand {
 
   /// Transport along the hand path swaps the binary corolla's boolean.
   @[ checks ]
-  def moves : Path(Tel, transport(\X. X, opposite_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
+  def moves : Path(
+    Tel,
+    transport(\X. X, opposite_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}}),
+    #{unit, #{+{.0 = unit}, +{.1 = unit}}}
+  ) ;
   def moves = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
 
   /// Transport along either path gives the same telescope.
   @[ checks ]
-  def alike : Path(Tel, transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), transport(\X. X, opposite_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}})) ;
+  def alike : Path(
+    Tel,
+    transport(\X. X, opposite, #{unit, #{+{.0 = unit}, +{.0 = unit}}}),
+    transport(\X. X, opposite_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}})
+  ) ;
   def alike = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
 
   /// The directed twin written by hand.
   @[ checks ]
   def opposite_dir_by_hand : Flow(Type, Tel, Tel) ;
-  def opposite_dir_by_hand = flowProduct(stay(Unit), flowProduct(forward(keep), forward(exchange))) ;
+  def opposite_dir_by_hand = flowProduct(
+    stay(Unit),
+    flowProduct(forward(keep), forward(exchange))
+  ) ;
 
   /// A telescope ridden along the directed twin.
   @[ checks ]
@@ -67,7 +84,11 @@ module ByHand {
 
   /// Riding moves the telescope as transport does.
   @[ checks ]
-  def rides : Path(Tel, ride(\X. X, opposite_dir_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}}), #{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
+  def rides : Path(
+    Tel,
+    ride(\X. X, opposite_dir_by_hand, #{unit, #{+{.0 = unit}, +{.0 = unit}}}),
+    #{unit, #{+{.0 = unit}, +{.1 = unit}}}
+  ) ;
   def rides = here(#{unit, #{+{.0 = unit}, +{.1 = unit}}}) ;
 
   /// A ride that would reverse the flow reads it contravariantly, refused.
