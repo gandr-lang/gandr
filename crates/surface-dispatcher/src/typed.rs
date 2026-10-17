@@ -2483,9 +2483,13 @@ impl TypeTable
     }
 
     /// The value `written` spells, read in the source the table was built
-    /// from as the value a run of `signed` returns and printed again as a run
-    /// prints it: the printer's fixed point over the values it prints,
-    /// `print(parse(print(v)))`.
+    /// from as the value a run of the declaration named `signed` returns and
+    /// printed again as a run prints it: the printer's fixed point over the
+    /// values it prints, `print(parse(print(v)))`.
+    ///
+    /// The declaration is named, not numbered (#610): a run's constants are
+    /// the program of the component judged, which can hold sources the
+    /// table's unit does not, so its numbering is not the table's.
     ///
     /// # Specification
     /// - requires: `grammar` is the grammar the table was built under.
@@ -2495,14 +2499,15 @@ impl TypeTable
     ///   the siblings it reads, and the thunk's computation printed as a run's
     ///   value prints, on one line in the sugared form, its constants and
     ///   constructors named as the table names them. Where that reading is
-    ///   refused — a constructor needs the type its position states — and
-    ///   `signed` declares a type, the declaration is signed with it, with the
-    ///   computation returning it when it is no thunk, the whole source judged
-    ///   and the fresh declaration run, its value spelled as the run spells it;
-    ///   [`reprinted::Absent::Unrun`] when the source did not settle or the run
-    ///   reached no value. [`reprinted::Absent::Unlowered`] when the lowering
-    ///   refused it or the source, and [`reprinted::Absent::Unspelled`] when
-    ///   the printer could not lay it out.
+    ///   refused — a constructor needs the type its position states — and the
+    ///   declaration named `signed` declares a type, the declaration is signed
+    ///   with it, with the computation returning it when it is no thunk, the
+    ///   whole source judged and the fresh declaration run, its value spelled
+    ///   as the run spells it; [`reprinted::Absent::Unrun`] when the source did
+    ///   not settle or the run reached no value.
+    ///   [`reprinted::Absent::Unlowered`] when the lowering refused it or the
+    ///   source, and [`reprinted::Absent::Unspelled`] when the printer could
+    ///   not lay it out.
     /// - provides: the reprint a presentation census compares a printed value
     ///   with.
     /// - fails: never.
@@ -2512,25 +2517,33 @@ impl TypeTable
     /// - hypothesis: L3 — the census reprints every run value and normal form
     ///   the corpus states; a value whose spelling lowers to another prints
     ///   otherwise and fails it. A value of a source that imports a sibling
-    ///   reprints both ways: as written, and run under its signature.
+    ///   reprints both ways: as written, and run under its signature, found by
+    ///   its name in a component with more members than its imports.
     /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
+    /// - witness: `typed::tests::a_member_s_value_reprints_under_its_own_declaration_610`
     #[inline]
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
     pub fn reprint_value(
         &self,
         grammar: &Pbg,
-        signed: Maybe<ConstantIndex, signed::Absent>,
+        signed: Maybe<Name<'_>, signed::Absent>,
         written: SourceText<'_>,
     ) -> Maybe<String, reprinted::Absent>
     {
         const NAME: &str = REPRINTED;
         let declared = match signed {
             Maybe::Present(signed) => self
-                .naming
-                .roots
-                .binary_search_by_key(&signed, |&(held, _)| held)
-                .ok()
+                .names
+                .iter()
+                .position(|name| name.as_str() == signed.as_ref())
+                .map(ConstantIndex::from)
+                .and_then(|signed| {
+                    self.naming
+                        .roots
+                        .binary_search_by_key(&signed, |&(held, _)| held)
+                        .ok()
+                })
                 .and_then(|at| self.naming.roots.get(at))
                 .and_then(|&(_, [declared, body])| body.and(declared)),
             Maybe::Absent(signed::Absent::Unsigned) => None,
@@ -3227,11 +3240,11 @@ mod tests
     #[test]
     fn an_importer_s_value_reads_back_beside_its_sibling_552()
     {
-        use gandr_kernel_term::ConstantIndex;
         use gandr_surface_lowering::ImportTarget;
         use gandr_surface_lowering::SourceIndex;
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
+        use gandr_surface_pretty::Name;
 
         use super::signed;
 
@@ -3257,16 +3270,10 @@ mod tests
             Maybe::Present(String::from("Here")),
             "the sibling's constructor reads back as written"
         );
-        let there = table
-            .names
-            .iter()
-            .position(|name| name == "there")
-            .map(ConstantIndex::from)
-            .expect("the importer's declaration is named");
         assert_eq!(
             table.reprint_value(
                 &grammar,
-                Maybe::Present(there),
+                Maybe::Present(Name::from("there")),
                 SourceText::from("+{.1 = Here}")
             ),
             Maybe::Present(String::from("+{.1 = Here}")),
@@ -3280,6 +3287,119 @@ mod tests
         assert!(
             !trips.is_empty() && trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
             "every printed type of the importer reads back beside its sibling: {trips:?}"
+        );
+    }
+
+    /// #610: a run value of one member of a component reprints under its own
+    /// declaration's signature. The walk numbers the constants of the whole
+    /// component — here the base, a sibling that also imports it, then the
+    /// member — while the member's table numbers only its import closure, so
+    /// the walk's number of `joined` names another declaration of the table,
+    /// or none, and the `Cons` that needs its type refused to read back.
+    #[test]
+    fn a_member_s_value_reprints_under_its_own_declaration_610()
+    {
+        use core::convert::Infallible;
+        use core::ops::ControlFlow;
+        use std::path::Path;
+
+        use gandr_kernel_term::ConstantIndex;
+        use gandr_surface_pretty::Name;
+
+        use crate::component::lay_out;
+        use crate::compose::Composed;
+        use crate::evaluate::Evaluation;
+        use crate::walk::Step;
+        use crate::walk::Walk;
+        use crate::walk::tests::Scratch;
+        use crate::width::Width;
+
+        let scratch = Scratch::new(Path::new("member-reprint"));
+        scratch.file(
+            Path::new("fixture/base.gandr"),
+            SourceText::from("data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n"),
+        );
+        scratch.file(
+            Path::new("fixture/a-sibling.gandr"),
+            SourceText::from(
+                "import \"./base.gandr\" ;\ndef one : Nat ;\ndef one = Succ(Zero) ;\ndef two : \
+                 Nat ;\ndef two = Succ(one) ;\n",
+            ),
+        );
+        scratch.file(
+            Path::new("fixture/b-member.gandr"),
+            SourceText::from(
+                "import \"./base.gandr\" ;\ndata List(a : Type) : Type {\n  Nil : List(a);\n  \
+                 Cons : (head : a, tail : List(a)) --> List(a);\n}\ndef joined : +U (-F \
+                 List(Nat)) ;\ndef joined = thunk { return (Cons(Zero, (Nil : List(Nat))) : \
+                 List(Nat)) } ;\n",
+            ),
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let mut reprinted = Vec::new();
+        let ControlFlow::Continue(_) = Walk::new(vec![scratch.root().join("fixture")]).visit(
+            Width::SERIAL,
+            |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path,
+                    root,
+                    text,
+                    base,
+                    composed: Composed::Settled { mut program, .. },
+                    ..
+                } = step
+                else {
+                    return ControlFlow::Continue(());
+                };
+                if !path.ends_with("b-member.gandr") {
+                    return ControlFlow::Continue(());
+                }
+                let own = SourceText::from(text.as_ref().get(usize::from(base) ..).unwrap_or_default());
+                let Maybe::Present(laid) = lay_out(&grammar, path, root, own)
+                else {
+                    panic!("the member is laid out beside its import");
+                };
+                let table = TypeTable::of_unit(
+                    &grammar,
+                    SourceText::from(laid.text.as_str()),
+                    &laid.unit,
+                    laid.base,
+                )
+                .expect("the member's unit parses");
+                let Maybe::Present(last) = program.target()
+                else {
+                    panic!("the component declares");
+                };
+                for position in 0_usize ..= usize::from(last) {
+                    let constant = ConstantIndex::from(position);
+                    if !matches!(program.name(constant), Maybe::Present(name) if name.to_string() == "joined")
+                    {
+                        continue;
+                    }
+                    let Evaluation::Value(value) = program.evaluate(constant)
+                    else {
+                        panic!("`joined` runs to a value");
+                    };
+                    let spelled = value.presentation().as_ref().to_owned();
+                    reprinted.push((
+                        spelled.clone(),
+                        table.reprint_value(
+                            &grammar,
+                            Maybe::Present(Name::from("joined")),
+                            SourceText::from(spelled.as_str()),
+                        ),
+                    ));
+                }
+                ControlFlow::Continue(())
+            },
+        );
+        assert_eq!(
+            reprinted,
+            [(
+                String::from("Cons(Zero, Nil)"),
+                Maybe::Present(String::from("Cons(Zero, Nil)"))
+            )],
+            "the member's value reprints under its own declaration's type"
         );
     }
 

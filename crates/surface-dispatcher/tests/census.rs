@@ -34,6 +34,7 @@ mod census
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
     use gandr_surface_pretty::Form;
+    use gandr_surface_pretty::Name;
     use gandr_surface_pretty::PageWidth;
     use gandr_surface_pretty::Presentation;
     use gandr_surface_pretty::Unreadable;
@@ -197,8 +198,10 @@ mod census
 
     impl Fixed
     {
-        /// Read `spelled` back in `table`, signed as `signed`'s run returns
-        /// it, and compare its reprint.
+        /// Read `spelled` back in `table`, signed as the run of the
+        /// declaration named `signed` returns it, and compare its reprint. The
+        /// name, not the walk's constant, crosses over: the walk numbers the
+        /// whole component's constants, the table its source's unit (#610).
         ///
         /// # Specification
         /// trivial.
@@ -207,7 +210,7 @@ mod census
             path: &Path,
             table: &TypeTable,
             grammar: &Pbg,
-            signed: Maybe<ConstantIndex, signed::Absent>,
+            signed: Maybe<Name<'_>, signed::Absent>,
             spelled: SourceText<'_>,
         )
         {
@@ -315,11 +318,12 @@ mod census
                             if let Some(ref table) = table
                                 && value.presentation().unspelled().is_empty()
                             {
+                                let named = name.to_string();
                                 fixed.value(
                                     path,
                                     table,
                                     &grammar,
-                                    Maybe::Present(constant),
+                                    Maybe::Present(Name::from(named.as_str())),
                                     SourceText::from(value.presentation().as_ref()),
                                 );
                             }
