@@ -203,7 +203,12 @@ pub fn form_signature(
     signature: &Arc<DataSignature>,
 ) -> Result<(), CheckRefusal>
 {
-    crate::occurrence::occurrences(context.arena(), &context.block_of(position), signature)?;
+    crate::occurrence::occurrences(
+        context.arena(),
+        &context.block_of(position),
+        context.block_definitions(),
+        signature,
+    )?;
     let depth = context.depth(Zone::Intuitionistic);
     context.open_block(position, Arc::clone(signature));
     let outcome = (|| {

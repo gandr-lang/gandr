@@ -6,9 +6,11 @@
 //! exactly two forms — directly, `T ps`, or as the codomain of a thunked
 //! function whose domains do not name it, `U (Π ȳ. F (T ps))` — and always at
 //! the parameter variables in telescope order. Every other occurrence of a
-//! family is refused by name. A definition of the block is named freely, as a
-//! term: its uses are what its own admission judges. A reference past the
-//! block's last member is a reference outside the block.
+//! family is refused by name. A definition of the block stands for its body:
+//! a field naming one is read through it, the types the body quotes at the
+//! place the definition is named and the types it only annotates its terms
+//! with not at all (#602). A reference past the block's last member is a
+//! reference outside the block.
 //!
 //! A data declaration's block is what its fields reach: [`reach`] extends it
 //! past every later position a member names, so a block is never declared,
@@ -430,15 +432,203 @@ enum Binding
     Closed,
 }
 
+/// How the walk reads a node: as part of a field's type, or as part of the
+/// body of a definition of the block the field names (#602).
+///
+/// A field naming a definition stands for what the definition unfolds to, so
+/// the walk reads the body. A body's terms are annotated with types its uses
+/// do not denote — a constructor's datatype, a case's motive — and those are
+/// not read; a type the body quotes is one its use denotes, and it is read
+/// as a field's type is, down to the terms inside it, which are a body's
+/// terms again.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Reading
+{
+    /// Part of a field's type: every node is read.
+    Field,
+    /// A term of a definition's body: its terms are read and its types are
+    /// not.
+    Body,
+    /// A type a definition's body quotes: its types are read and its terms
+    /// are a body's.
+    Quoted,
+}
+
+impl Reading
+{
+    /// The reading of `child`, a child of a node read this way.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn child(
+        self,
+        child: AnyNode,
+    ) -> Self
+    {
+        match (self, child) {
+            (Self::Quoted, AnyNode::Value(_) | AnyNode::Computation(_)) => Self::Body,
+            (
+                reading @ (Self::Field | Self::Body | Self::Quoted),
+                AnyNode::Value(_)
+                | AnyNode::Computation(_)
+                | AnyNode::ValueType(_)
+                | AnyNode::CompType(_),
+            ) => reading,
+        }
+    }
+
+    /// The reading of a type quoted by a term read this way.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn quote(self) -> Self
+    {
+        match self {
+            Self::Field => Self::Field,
+            Self::Body | Self::Quoted => Self::Quoted,
+        }
+    }
+
+    /// What `node`, read this way, is to the field: a type a body only
+    /// annotates a term with is an annotation, and everything else is
+    /// denoted.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn denotation(
+        self,
+        node: AnyNode,
+    ) -> Denotation
+    {
+        match (self, node) {
+            (Self::Body, AnyNode::ValueType(_) | AnyNode::CompType(_)) => Denotation::Annotation,
+            (
+                Self::Field | Self::Body | Self::Quoted,
+                AnyNode::Value(_)
+                | AnyNode::Computation(_)
+                | AnyNode::ValueType(_)
+                | AnyNode::CompType(_),
+            ) => Denotation::Denoted,
+        }
+    }
+}
+
+/// What a node the walk reaches is to the field it walks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Denotation
+{
+    /// Part of what the field's type denotes: read.
+    Denoted,
+    /// A type a definition's body annotates a term with: passed over.
+    Annotation,
+}
+
+/// The walk's worklist: a node pushed is a child of the node popped last,
+/// read as [`Reading::child`] says, unless pushed with a reading of its own.
+struct Pending
+{
+    /// The nodes left, each with its reach and reading.
+    items: Vec<(AnyNode, Reach, Reading)>,
+    /// How the node popped last is read.
+    reading: Reading,
+}
+
+impl Pending
+{
+    /// A worklist holding `root` alone, read as part of a field's type.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new(
+        root: AnyNode,
+        start: Reach,
+    ) -> Self
+    {
+        Self {
+            items: Vec::from([(root, start, Reading::Field)]),
+            reading: Reading::Field,
+        }
+    }
+
+    /// Push `node` at `reach`, a child of the node popped last.
+    ///
+    /// # Specification
+    /// trivial.
+    fn push(
+        &mut self,
+        (node, reach): (AnyNode, Reach),
+    )
+    {
+        self.items.push((node, reach, self.reading.child(node)));
+    }
+
+    /// Push `node` at `reach`, read as `reading` says.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read(
+        &mut self,
+        node: AnyNode,
+        reach: Reach,
+        reading: Reading,
+    )
+    {
+        self.items.push((node, reach, reading));
+    }
+
+    /// The reading of the node popped last.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reading(&self) -> Reading
+    {
+        self.reading
+    }
+
+    /// The node pushed last; every push until the next pop is its child.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pop(&mut self) -> Option<(AnyNode, Reach, Reading)>
+    {
+        let item = self.items.pop()?;
+        self.reading = item.2;
+        Some(item)
+    }
+}
+
+impl Extend<(AnyNode, Reach)> for Pending
+{
+    /// Push every node of `iter`, each a child of the node popped last.
+    ///
+    /// # Specification
+    /// trivial.
+    fn extend<Items>(
+        &mut self,
+        iter: Items,
+    ) where
+        Items: IntoIterator<Item = (AnyNode, Reach)>,
+    {
+        let reading = self.reading;
+        self.items.extend(
+            iter.into_iter()
+                .map(|(node, reach)| (node, reach, reading.child(node))),
+        );
+    }
+}
+
 /// The most severe occurrence of a family of `block` in one root's type, or
 /// the first position past the block it names.
 ///
 /// # Specification
 /// - requires: `telescope` is the declaration's telescope length and `root` is
-///   scoped under it.
+///   scoped under it; `definitions` are the bodies of the block's definitions
+///   by position.
 /// - ensures: `Err(index)` when the root names a position at or past the
 ///   block's end; otherwise the most severe finding over every occurrence of a
-///   family of the block, with the two admitted forms finding nothing.
+///   family of the block, with the two admitted forms finding nothing, a
+///   definition of `definitions` read through its body at the reach it is named
+///   at, as [`Reading`] says.
 /// - provides: the syntactic half of strict positivity; formation is the other
 ///   half.
 /// - fails: a position past the block, as its index.
@@ -448,35 +638,42 @@ enum Binding
 /// The position past the block a reference names.
 ///
 /// # Termination
-/// - reason: the `while let` worklist, not recursion; each node and reach pair
-///   is expanded once.
-/// - measure: the unexpanded pairs reachable from the root, finite because the
-///   arena is acyclic and reaches are finite per node.
+/// - reason: the `while let` worklist, not recursion; each node, reach and
+///   reading triple is expanded once, so definitions naming each other are read
+///   once each.
+/// - measure: the unexpanded triples reachable from the root, finite because
+///   the arena is acyclic, the definitions finite, and reaches and readings
+///   finite per node.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a negative, a nested, an index and a non-uniform
 ///   occurrence, and a reference to a later position, each surface as their own
 ///   finding, while the direct and function forms of `Nat`, `List A` and `Tree`
 ///   find nothing; a decoder named in a field of its mutual block finds
-///   nothing, and a family of the block named under a domain is negative.
+///   nothing, a family of the block named under a domain is negative, and so is
+///   one named there through a definition of the block.
 /// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
 /// - witness: `recursive_data::recursive_data::a_field_naming_its_own_or_a_later_position_is_refused_by_name`
 /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::a_definition_of_the_block_is_read_through_602`
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|later| *later >= block.end))]
 fn worst(
     arena: &CoreArena,
     block: &Block,
+    definitions: &[(ConstantIndex, ValueId)],
     scope: Scope,
     root: ValueTypeId,
     start: Reach,
 ) -> Result<Finding, ConstantIndex>
 {
-    let mut pending: Vec<(AnyNode, Reach)> = Vec::from([(AnyNode::ValueType(root), start)]);
-    let mut seen: BTreeSet<(AnyNode, Reach)> = BTreeSet::new();
+    let mut pending = Pending::new(AnyNode::ValueType(root), start);
+    let mut seen: BTreeSet<(AnyNode, Reach, Reading)> = BTreeSet::new();
     let mut worst = Finding::Admitted;
-    while let Some((node, reach)) = pending.pop() {
-        if !seen.insert((node, reach)) {
+    while let Some((node, reach, reading)) = pending.pop() {
+        if reading.denotation(node) == Denotation::Annotation
+            || !seen.insert((node, reach, reading))
+        {
             continue;
         }
         match node {
@@ -656,6 +853,14 @@ fn worst(
                     if block.family(index) == Membership::Family {
                         worst = worst.max(found(term(reach), Uniformity::NonUniform));
                     }
+                    // A definition of the block is read through: what its
+                    // body names, the field names where it names the
+                    // definition (#602).
+                    else if let Some(&(_, body)) =
+                        definitions.iter().find(|&&(defined, _)| defined == index)
+                    {
+                        pending.read(AnyNode::Value(body), reach, Reading::Body);
+                    }
                 },
                 Some(&Value::Constructor {
                     datatype,
@@ -751,9 +956,15 @@ fn worst(
                 ) => {
                     pending.push((AnyNode::Computation(body), reach));
                 },
-                Some(&Value::Quote(quoted)) => pending.push((AnyNode::ValueType(quoted), reach)),
+                // A quoted type is a type its term denotes: in a definition's
+                // body, it is read as a field's type is.
+                Some(&Value::Quote(quoted)) => {
+                    let reading = pending.reading().quote();
+                    pending.read(AnyNode::ValueType(quoted), reach, reading);
+                },
                 Some(&Value::QuoteComputation(quoted)) => {
-                    pending.push((AnyNode::CompType(quoted), reach));
+                    let reading = pending.reading().quote();
+                    pending.read(AnyNode::CompType(quoted), reach, reading);
                 },
                 Some(
                     &(Value::Primitive { .. }
@@ -990,12 +1201,13 @@ const fn refusal(
 ///
 /// # Specification
 /// - requires: `block` holds the admission position the declaration takes among
-///   its families, and `signature`'s parameters and fields are scoped as the
-///   signature states.
+///   its families, `definitions` the bodies of its definitions by position, and
+///   `signature`'s parameters and fields are scoped as the signature states.
 /// - ensures: success exactly when no parameter names a family of the block,
 ///   every field names one only directly or as a thunked function's codomain
 ///   whose domains do not name it, always at the parameter variables in order,
-///   and nothing names a position past the block.
+///   a definition of the block counting as the types its body quotes, and
+///   nothing names a position past the block.
 /// - provides: the strict-positivity and head-uniformity judgement the
 ///   formation of a recursive block rests on; it runs before any field forms,
 ///   as the kernel's does, so both checkers refuse the same site by the same
@@ -1013,10 +1225,12 @@ const fn refusal(
 ///   admitted; a `T → A` field domain, a non-uniform head, a later reference, a
 ///   nested and an index occurrence are each refused by name at their site, by
 ///   this checker and by the kernel; a universe naming its decoder in a field
-///   is admitted with the decoder in its block.
+///   is admitted with the decoder in its block; a family named under a domain
+///   through a definition of its block is refused as one named there directly.
 /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
 /// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
 /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::a_definition_of_the_block_is_read_through_602`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(
     CheckRefusal::CrossBlockReference { .. }
     | CheckRefusal::NegativeOccurrence(_)
@@ -1026,6 +1240,7 @@ const fn refusal(
 pub fn occurrences(
     arena: &CoreArena,
     block: &Block,
+    definitions: &[(ConstantIndex, ValueId)],
     signature: &DataSignature,
 ) -> Result<(), CheckRefusal>
 {
@@ -1035,7 +1250,7 @@ pub fn occurrences(
             telescope: Telescope(index),
             earlier: Binders::NONE,
         };
-        let finding = worst(arena, block, scope, parameter, Reach::Term)
+        let finding = worst(arena, block, definitions, scope, parameter, Reach::Term)
             .map_err(|later| CheckRefusal::CrossBlockReference { site, index: later })?;
         if finding != Finding::Admitted {
             return Err(CheckRefusal::IndexOccurrence(site));
@@ -1050,7 +1265,7 @@ pub fn occurrences(
                 field: FieldPosition::from(field),
             };
             let scope = Scope { telescope, earlier };
-            let finding = worst(arena, block, scope, root, Reach::Head {
+            let finding = worst(arena, block, definitions, scope, root, Reach::Head {
                 depth: Binders::NONE,
                 site: HeadSite::Field,
             })
@@ -1110,7 +1325,7 @@ pub fn reach(
     });
     for (root, telescope, earlier, start) in parameters.chain(fields) {
         let scope = Scope { telescope, earlier };
-        while let Err(later) = worst(arena, &block, scope, root, start) {
+        while let Err(later) = worst(arena, &block, &[], scope, root, start) {
             block.end = ConstantIndex::from(usize::from(later).saturating_add(1));
         }
     }

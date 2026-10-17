@@ -354,6 +354,9 @@ pub struct CheckingContext<'arena>
     )>,
     /// The mutual block being admitted, while one is.
     mutual: Maybe<crate::occurrence::Block, mutual::Absent>,
+    /// The bodies of the open mutual block's definitions, by position: the
+    /// occurrence walk reads a field naming one through its body.
+    defining: Vec<(ConstantIndex, ValueId)>,
     /// Every mutual block of several families opened so far: its families
     /// share one stage.
     kin: Vec<crate::occurrence::Block>,
@@ -502,6 +505,7 @@ impl<'arena> CheckingContext<'arena>
             support: SupportLog::Off,
             forming: Vec::new(),
             mutual: Maybe::Absent(mutual::Absent::Lone),
+            defining: Vec::new(),
             kin: Vec::new(),
             hindsight: Vec::new(),
             foreseen: Vec::new(),
@@ -889,21 +893,26 @@ impl<'arena> CheckingContext<'arena>
         self.forming.retain(|&(held, _)| held != position);
     }
 
-    /// Open the mutual block `block` over the signatures of its families:
-    /// each is in scope until its own formation closes it, and the block is
-    /// what each family's occurrences are walked by.
+    /// Open the mutual block `block` over the signatures of its families and
+    /// the bodies of its definitions: each family is in scope until its own
+    /// formation closes it, and the block is what each family's occurrences
+    /// are walked by, through its definitions' bodies.
     ///
     /// # Specification
-    /// - requires: `families` are the block's data declarations, in order.
-    /// - ensures: [`Self::data_in_scope`] answers each family's signature, and
-    ///   [`Self::block_of`] answers `block` for each of its members.
+    /// - requires: `families` are the block's data declarations, in order, and
+    ///   `definitions` the bodies of its definitions that have one.
+    /// - ensures: [`Self::data_in_scope`] answers each family's signature,
+    ///   [`Self::block_of`] answers `block` for each of its members, and
+    ///   [`Self::block_definitions`] answers `definitions`.
     /// - provides: the scope a mutual block's definitions' declared types form
     ///   in before any family's constructors do.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a universe and its decoder admitted as one block.
+    /// - hypothesis: L3 — a universe and its decoder admitted as one block, and
+    ///   a family naming itself through a definition of its block refused.
     /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    /// - witness: `recursive_data::recursive_data::a_definition_of_the_block_is_read_through_602`
     #[spec(ensures: self.mutual == Maybe::Present(block))]
     pub(crate) fn open_mutual(
         &mut self,
@@ -914,6 +923,7 @@ impl<'arena> CheckingContext<'arena>
                 alloc::sync::Arc<gandr_core_term::DataSignature>,
             ),
         >,
+        definitions: Vec<(ConstantIndex, ValueId)>,
     )
     {
         self.mutual = Maybe::Present(block);
@@ -921,6 +931,17 @@ impl<'arena> CheckingContext<'arena>
             self.kin.push(block);
         }
         self.forming.extend(families);
+        self.defining = definitions;
+    }
+
+    /// The bodies of the open mutual block's definitions, by position; none
+    /// outside a block.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn block_definitions(&self) -> &[(ConstantIndex, ValueId)]
+    {
+        &self.defining
     }
 
     /// Close the mutual block: every family left forming leaves scope.
@@ -931,6 +952,7 @@ impl<'arena> CheckingContext<'arena>
     {
         self.mutual = Maybe::Absent(mutual::Absent::Lone);
         self.forming.clear();
+        self.defining.clear();
         self.hindsight.clear();
     }
 

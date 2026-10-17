@@ -1529,6 +1529,48 @@ mod recursive_data
         assert!(environment.entries().is_empty());
     }
 
+    /// A family named through a definition of its block stands where the
+    /// definition is named: `Bad` holding `U (hidden → F 1)` with `hidden =
+    /// Bad` is refused as `Bad` holding `U (Bad → F 1)` is, the walk reading
+    /// the definition's body, and the environment is unchanged (#602).
+    #[test]
+    fn a_definition_of_the_block_is_read_through_602()
+    {
+        let mut environment = Environment::new();
+        let family = ConstantIndex::from(0_usize);
+        let hidden = ConstantIndex::from(1_usize);
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let named = arena.value_constant(hidden);
+        let decoded = arena.value_type_element(named, Level::zero());
+        let unit = arena.value_type_unit();
+        let into = arena.comp_type_returner(unit);
+        let arrow = arena.comp_type_arrow(decoded, into);
+        let consumer = arena.value_type_thunk(arrow);
+        let bad = staging.data(
+            LevelSignature::monomorphic(),
+            vec![],
+            vec![vec![consumer]],
+            kind,
+        );
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let types = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let own = arena.value_type_data(family, vec![]);
+        let quoted = arena.value_quote(own);
+        let naming = staging.def(LevelSignature::monomorphic(), types, quoted);
+        let verdict = environment.add_block(vec![bad, naming]);
+        assert_eq!(
+            verdict,
+            Err(KernelError::NegativeOccurrence(OccurrenceSite::Field {
+                tag: ConstructorTag::from(0_usize),
+                field: FieldPosition::from(0_usize),
+            }))
+        );
+        assert!(environment.entries().is_empty());
+    }
+
     /// Where a rose tree's recursion over its block's two families calls
     /// itself.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]

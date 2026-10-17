@@ -1735,4 +1735,51 @@ mod recursive_data
             "and nothing of it crosses"
         );
     }
+
+    /// A family named through a definition of its block stands where the
+    /// definition is named: `Bad` holding `U (hidden → F 1)` with `hidden =
+    /// Bad` is refused, with `hidden`, as `Bad` holding `U (Bad → F 1)` is,
+    /// and nothing of the block crosses (#602).
+    #[test]
+    fn a_definition_of_the_block_is_read_through_602()
+    {
+        let mut arena = CoreArena::new();
+        let family = ConstantIndex::from(0_usize);
+        let hidden = ConstantIndex::from(1_usize);
+        let kind = kind(&mut arena);
+        let named = arena.value_constant(hidden);
+        let decoded = arena.value_type_element(named, Level::zero());
+        let unit = arena.value_type_unit();
+        let returns = arena.comp_type_returner(unit);
+        let consuming = arena.comp_type_arrow(decoded, returns);
+        let consumer = arena.value_type_thunk(consuming);
+        let own = arena.value_type_data(family, vec![]);
+        let quoted = arena.value_quote(own);
+        let declarations = [
+            data(
+                family,
+                DataSignature::new(vec![], vec![vec![consumer]], kind),
+            ),
+            definition(hidden, kind, quoted),
+        ];
+        let (report, crossed) = run(&mut arena, &declarations);
+        let field = OccurrenceSite::Field {
+            tag: ConstructorTag::from(0_usize),
+            field: FieldPosition::from(0_usize),
+        };
+        for entry in report.judged() {
+            assert_eq!(
+                entry.verdict(),
+                Verdict::Refused(CheckRefusal::NegativeOccurrence(field)),
+                "the block is refused whole"
+            );
+        }
+        assert!(
+            crossed.readmitted().iter().all(|entry| !matches!(
+                entry.outcome(),
+                Outcome::Data { .. } | Outcome::Defined { .. }
+            )),
+            "and nothing of it crosses"
+        );
+    }
 }

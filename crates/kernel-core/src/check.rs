@@ -5362,18 +5362,31 @@ where
         .presenting(&presentations);
     // A data declaration's own position names its block while it is checked:
     // the occurrence walk refuses every non-strictly-positive or non-uniform
-    // occurrence of a family of the block by name first, and formation then
-    // reads it through the block's signatures. Alone, the block is the
-    // declaration's own; in a mutual block, the block in scope already holds
-    // it.
+    // occurrence of a family of the block by name first, reading a definition
+    // of the block through its body, and formation then reads it through the
+    // block's signatures. Alone, the block is the declaration's own; in a
+    // mutual block, the block in scope already holds it.
     let judgement = match *declaration.content() {
         DeclarationContent::Data {
             kind,
             ref parameters,
             ref constructors,
         } => match judgement.block {
-            Block::Mutual { block, .. } => {
-                occurrence::occurrences(arena, block, parameters, constructors)?;
+            Block::Mutual { block, members } => {
+                let first = usize::from(block.first());
+                let definitions = members
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(offset, member)| match *member.content() {
+                        DeclarationContent::Def { body, .. } => {
+                            Some((ConstantIndex::from(first.saturating_add(offset)), body))
+                        },
+                        DeclarationContent::Data { .. }
+                        | DeclarationContent::Axiom { .. }
+                        | DeclarationContent::AbstractType { .. } => None,
+                    })
+                    .collect::<Vec<_>>();
+                occurrence::occurrences(arena, block, &definitions, parameters, constructors)?;
                 judgement
             },
             Block::Outside | Block::Inside { .. } => {
@@ -5381,6 +5394,7 @@ where
                 occurrence::occurrences(
                     arena,
                     occurrence::Block::lone(position),
+                    &[],
                     parameters,
                     constructors,
                 )?;

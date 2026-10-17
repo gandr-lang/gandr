@@ -1,7 +1,8 @@
 // What a function-typed field refuses. A W-type's node may hold a function
 // into its own family, but not from it: a family to the left of the arrow is a
-// negative occurrence, and no fold over it is well-founded. Shared with
-// `../../model/data/w-tree.gandr`.
+// negative occurrence, and no fold over it is well-founded. A definition of
+// the family's block stands for its body, so naming the family through one
+// hides nothing. Shared with `../../model/data/w-tree.gandr`.
 
 /// The two branches of a binary node.
 @[ checks ]
@@ -14,4 +15,20 @@ data Two : Type {
 @[ refuses("NegativeOccurrence") ]
 data Bad : Type {
   Mk : (f : +U (Bad -> -F Two)) --> Bad;
+}
+
+/// The same node with its domain written through a definition of its block
+/// (#602): the walk reads `hidden` through to `Hidden`, which stands left of
+/// the arrow, and the block is refused whole.
+rec {
+  /// A node consuming its own family through `hidden`.
+  @[ refuses("NegativeOccurrence") ]
+  data Hidden : Type {
+    MkH : (f : +U (hidden -> -F Two)) --> Hidden;
+  }
+
+  /// The family, named by a definition of its block, refused with it.
+  @[ refuses("NegativeOccurrence") ]
+  def hidden : Type ;
+  def hidden = Hidden ;
 }
