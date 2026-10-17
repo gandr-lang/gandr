@@ -1,0 +1,15 @@
+// `map`'s functoriality written over the list `map` of
+// `../../model/data/recursive-lists.gandr`, a `def`: a rule names only the
+// operations of its own block, so `map` and `compose` here are no operation
+// the block declares and the rule is malformed. A law over a definition is
+// admitted when the coincidence check runs over the definitions an
+// import-connected component holds (#525); until then the law is stated over
+// `map` presented as an operation, in `../../model/data/map-laws.gandr`.
+
+/// Mapping twice fused into mapping once, over the `def`.
+@[ refuses("MalformedForm") ]
+sign MapLaws {
+  sort L : Type;
+
+  rule mapMap : map(f, map(g, xs)) <=> map(compose(f, g), xs);
+}

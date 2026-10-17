@@ -1,0 +1,35 @@
+// `map`'s functoriality stated as a law beside the definition it governs:
+// mapping a composite is mapping twice (Bird, _An Introduction to the Theory
+// of Lists_, 1987, § 2). The list `map` of `recursive-lists.gandr` takes its
+// function as a value, and a rule names only its block's operations, so the
+// law is stated over `map` presented as an operation with its function
+// defunctionalised (Reynolds, _Definitional Interpreters for Higher-Order
+// Programming Languages_, 1972): a function is a name `app` applies, and
+// `compose` builds one from two. The coincidence check certifies the law with
+// the definition's own rules, and the `normalizes` row fires it. The same law
+// written over the `def` is refused in `../../pathological/data/map-law-on-a-def.gandr`.
+
+/// Lists with `map` as an operation: `mapNil` and `mapCons` define it,
+/// `appCompose` reads a composite, `composeAssoc` orients composition, and
+/// `mapMap` is the law, mapping twice fused into mapping once.
+@[ normalizes("map(inc, map(dbl, cons(one, nil))) ~> cons(app(inc, app(dbl, one)), nil)") ]
+sign ListMap {
+  sort E : Type;
+  sort F : Type;
+  sort L : Type;
+
+  oper nil : L;
+  oper cons : (x : E, xs : L) --> L;
+  oper app : (f : F, x : E) --> E;
+  oper compose : (f : F, g : F) --> F;
+  oper map : (f : F, xs : L) --> L;
+  oper inc : F;
+  oper dbl : F;
+  oper one : E;
+
+  rule mapNil : map(f, nil()) <=> nil();
+  rule mapCons : map(f, cons(x, xs)) <=> cons(app(f, x), map(f, xs));
+  rule appCompose : app(compose(f, g), x) <=> app(f, app(g, x));
+  rule composeAssoc : compose(compose(f, g), h) <=> compose(f, compose(g, h));
+  rule mapMap : map(f, map(g, xs)) <=> map(compose(f, g), xs);
+}
