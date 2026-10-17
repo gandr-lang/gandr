@@ -247,15 +247,17 @@
 //! every join.
 //!
 //! A match of no arms, `case e {}`, names no family to compile against, so it
-//! reads its scrutinee's stated type, as a sum pattern reads its arity. Over a
-//! data type with no constructor it lowers to that type's data case of no
-//! branch; over a path type, to a data case of no branch whose admission the
-//! checker decides by apartness (`gandr-core-checker`'s `former` § Apartness);
-//! over a data type with a constructor it is `NonExhaustiveMatch`; over
-//! anything else, `Void` among them, it is the case of no branches, the empty
-//! sum's eliminator, which checks at any answer. The data case reads its
-//! answer as any match does, `case e -> T {}` or the enclosing result type;
-//! the empty sum's case takes none written, since no branch would answer it.
+//! reads its scrutinee's stated type, as a sum pattern reads its arity: a
+//! parameter's written type, or a lambda binder's where the lambda answers a
+//! written arrow `A -> C`, its domain `A`. Over a data type with no
+//! constructor it lowers to that type's data case of no branch; over a path
+//! type, to a data case of no branch whose admission the checker decides by
+//! apartness (`gandr-core-checker`'s `former` § Apartness); over a data type
+//! with a constructor it is `NonExhaustiveMatch`; over anything else, `Void`
+//! among them, it is the case of no branches, the empty sum's eliminator,
+//! which checks at any answer. The data case reads its answer as any match
+//! does, `case e -> T {}` or the enclosing result type; the empty sum's case
+//! takes none written, since no branch would answer it.
 //!
 //! **Choice.** The empty match read by its scrutinee's written type, so `data
 //! Empty : Type {}` and a path between apart terms each have an eliminator.

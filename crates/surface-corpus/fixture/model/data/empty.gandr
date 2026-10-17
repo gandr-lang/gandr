@@ -21,6 +21,17 @@ def stated(v : Empty) -> -F Integer {
   case v -> -F Integer {}
 }
 
+/// A lambda's binder matched with no arm (#534): the signature's arrow types
+/// the binder `Empty`, as a parameter's written type does.
+@[ checks ]
+def viaLambda : +U (Empty -> -F Integer) ;
+def viaLambda = thunk { fn (x) { case x {} } } ;
+
+/// The answer written on a lambda binder's match (#534).
+@[ checks ]
+def viaStated : +U (Empty -> -F Integer) ;
+def viaStated = thunk { fn (x) { case x -> -F Integer {} } } ;
+
 /// The integers as a presented type: a successor and a predecessor that
 /// cancel.
 data Int : Type {
