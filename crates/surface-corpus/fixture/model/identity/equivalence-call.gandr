@@ -1,0 +1,34 @@
+// A relation a call returns splits as one a parameter holds. A `run` binder
+// is written with no type, so a match on it takes the record's layout from
+// the result the called function was written with: the four fields of a
+// quasi-inverse, and the two inverses of an equivalence, each a record of its
+// own (#656).
+
+// The quasi-inverse, the equivalence and `isoToEquiv`.
+import "./equivalence.gandr" ;
+
+/// The quasi-inverse handed back unchanged.
+@[ checks ]
+def kept(a : Type, b : Type, i : a ≅ b) -> -F (a ≅ b) {
+  return i
+}
+
+/// A quasi-inverse a call returns is bi-invertible, split as `isoToEquiv`
+/// splits its parameter (#656).
+@[ checks ]
+def keptToEquiv(a : Type, b : Type, i : a ≅ b) -> -F (a ≃ b) {
+  run j <- kept(a, b, i);
+  case j {
+    #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}}
+  }
+}
+
+/// An equivalence a call returns, split along its nesting and put back
+/// together (#656).
+@[ checks ]
+def madeAgain(a : Type, b : Type, i : a ≅ b) -> -F (a ≃ b) {
+  run e <- isoToEquiv(a, b, i);
+  case e {
+    #{t, #{g, s}, #{h, r}} => #{t, #{#{g, s}, #{h, r}}}
+  }
+}

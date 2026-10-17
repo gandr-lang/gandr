@@ -1609,3 +1609,25 @@ fn a_relation_split_names_each_written_component_665()
         "every written component is named, the unused `t`, `s` and `r` with `k`"
     );
 }
+
+/// A pattern at a `run` binder splits the record the relation its callee
+/// returns abbreviates, as one at a parameter does: the callee's signature is
+/// minted before the caller's body is read, so its layout comes from the
+/// written glyph. Positionally, nested as the equivalence's inverses nest,
+/// and by label (#656).
+#[test]
+fn a_run_binder_splits_the_relation_its_call_returns_656()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def kept(i : Bool ≅ Integer) -> -F (Bool ≅ Integer) { return i }\n",
+            "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { case i { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
+            "def split(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { run j <- kept(i); case j { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
+            "def forwardOf(i : Bool ≅ Integer) -> -F +U (Bool -> -F Integer) { run e <- made(i); case e { #{t, #{g, s}, #{h, r}} => return t } }\n",
+            "def backOf(i : Bool ≅ Integer) -> -F +U (Integer -> -F Bool) { run j <- kept(i); case j { #{.back = k} => return k } }\n",
+        )),
+        &mut arena,
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}

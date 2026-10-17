@@ -2892,6 +2892,10 @@ struct Lowerer<'run, 'source>
     /// Each recursive function's parameter, by the frame it binds: the
     /// function and the parameter's position, which a match on it stages.
     staged_parameters: BTreeMap<ScopeId, native::Scrutiny>,
+    /// Each `run` binder written with no type, by the frame it binds: the
+    /// frame its computation reads under and the computation, whose callee's
+    /// written result states the binder's type to a match on it.
+    ran: BTreeMap<ScopeId, (Frame, Placed)>,
     /// Each node under an arm of a match on a recursive function's
     /// parameter: the innermost such match's function and position.
     scrutinised: BTreeMap<NodeIndex, native::Scrutiny>,
@@ -3457,6 +3461,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             constructors: Vec::new(),
             recursions: BTreeMap::new(),
             staged_parameters: BTreeMap::new(),
+            ran: BTreeMap::new(),
             scrutinised: BTreeMap::new(),
             descents: BTreeMap::new(),
             injected: BTreeMap::new(),
@@ -6508,7 +6513,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   tuple under a nameless binder and each component's name over it, in
     ///   order, and the statement is recorded as that split. A name annotated
     ///   `x : A` reads `A` in `frame` and binds the name over it, and the
-    ///   statement is recorded as the bind of `c` ascribed `-F A`.
+    ///   statement is recorded as the bind of `c` ascribed `-F A`. A name
+    ///   written with no type is recorded with `frame` and `c`, which
+    ///   [`Self::ran_type`] reads its type off.
     /// - provides: the one statement the fragment reads.
     /// - fails: yields the unadmitted refusal for an annotated tuple pattern
     ///   and for a binder pattern other than a name, a wildcard or a tuple of
@@ -6628,12 +6635,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             binding: StatementBinding::Named(binder.node),
             rest: exits::Rest::Bound,
         });
+        let bound_at = self.scope.extend(frame, name, Maybe::Present(binder.span));
+        let _first = self.ran.insert(bound_at, (frame, bound));
 
-        Ok(Frame::Inner(self.scope.extend(
-            frame,
-            name,
-            Maybe::Present(binder.span),
-        )))
+        Ok(Frame::Inner(bound_at))
     }
 
     /// The component patterns of a tuple pattern standing as a `run`

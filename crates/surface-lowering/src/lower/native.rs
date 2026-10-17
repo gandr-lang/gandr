@@ -3853,7 +3853,7 @@ impl<'source> Lowerer<'_, 'source>
         let layout = match (related, stated, &form) {
             (Maybe::Present(layout), ..) => Maybe::Present(layout),
             (Maybe::Absent(_), Maybe::Present(node), &Maybe::Absent(_)) => {
-                self.stated_relation(node)
+                self.stated_relation(node)?
             },
             (Maybe::Absent(reason), ..) => Maybe::Absent(reason),
         };
