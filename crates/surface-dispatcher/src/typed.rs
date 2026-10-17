@@ -138,6 +138,7 @@ use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::PatternReading;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
+use gandr_surface_lowering::SplitComponent;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_lowering::described::DescribedRole;
@@ -571,6 +572,9 @@ struct Naming
     /// Each lambda and bind with where the binder it opens is written,
     /// ascending by id.
     openers: Vec<(ComputationId, ByteSpan)>,
+    /// Each split component with where the pattern variable it binds is
+    /// written, ascending by split and component.
+    components: Vec<((ComputationId, SplitComponent), ByteSpan)>,
     /// Each dependent arrow with where the name it binds is written,
     /// ascending by id.
     arrows: Vec<(CompTypeId, ByteSpan)>,
@@ -591,8 +595,9 @@ impl Naming
     /// # Specification
     /// - requires: `module` was lowered from `source`.
     /// - ensures: the source text, each value declaration's roots by its
-    ///   constant, the origin table's binders, dependent arrows and relations,
-    ///   and its bindings then its written values as uses.
+    ///   constant, the origin table's binders, split components, dependent
+    ///   arrows and relations, and its bindings then its written values as
+    ///   uses.
     /// - provides: the input of [`scopes`], kept for an answer.
     /// - fails: never.
     /// - panics: none.
@@ -641,6 +646,11 @@ impl Naming
             .map(|&(opener, origin)| (opener, origin.span()))
             .collect();
         openers.sort_by_key(|&(opener, _)| opener);
+        let components = origins
+            .components()
+            .iter()
+            .map(|&(component, origin)| (component, origin.span()))
+            .collect();
         let uses = origins
             .bindings()
             .iter()
@@ -664,6 +674,7 @@ impl Naming
             text: String::from(<&str>::from(source)),
             roots,
             openers,
+            components,
             arrows,
             relations,
             uses,
@@ -816,8 +827,9 @@ fn intuitionistic(
 ///   constants'.
 /// - ensures: the scopes of every node reachable from `roots`, and for each
 ///   binder, at its position, the intuitionistic binder around it and its name:
-///   the one written for the lambda or bind that opens it, else the one written
-///   at a use's binder.
+///   the one written for the lambda or bind that opens it, or for the split
+///   component it is, counted from the split's outermost binder, else the one
+///   written at a use's binder.
 /// - provides: the context an entry's type is spelled in.
 /// - fails: never.
 /// - panics: none.
@@ -825,8 +837,10 @@ fn intuitionistic(
 /// # Adequacy
 /// - hypothesis: L3 — the corpus census spells the types of terms inside
 ///   bodies, and of endpoints under a signature's binders, by their binders'
-///   names; a binder left unnamed spells `?`, which the census fails on.
+///   names; a binder left unnamed spells `?`, which the census fails on. A
+///   split component its arm never uses is named all the same.
 /// - witness: `census::census::every_typed_entry_spells_without_a_dishonest_question_mark`
+/// - witness: `typed::tests::an_unused_split_component_answers_by_its_written_name_665`
 #[spec(ensures: |ret| ret.1.len() == ret.0.binders().len())]
 fn scopes(
     arena: &CoreArena,
@@ -838,21 +852,44 @@ fn scopes(
     let names: Vec<Name<'_>> = names.iter().map(|name| Name::from(name.as_str())).collect();
     let printer = CoreSource::new(arena, &names);
     let scopes = Scopes::of(&printer, roots.into_iter().flatten());
+    // A split's binders are consecutive, its outermost component first.
+    let mut split: Option<(ComputationId, usize)> = None;
     let mut bound: Vec<Bound> = scopes
         .binders()
         .map(|(_, binder)| {
             let (name, scope) = match binder.opener() {
-                CoreNode::Computation(opener) => (
-                    naming
+                CoreNode::Computation(opener) => {
+                    let component = match split {
+                        Some((held, count)) if held == opener => count.saturating_add(1),
+                        Some(_) | None => 0,
+                    };
+                    split = Some((opener, component));
+                    let key = (opener, SplitComponent::from(component));
+                    let written = naming
                         .openers
                         .binary_search_by_key(&opener, |&(held, _)| held)
                         .ok()
                         .and_then(|at| naming.openers.get(at))
-                        .and_then(|&(_, span)| naming.written(span)),
-                    binder.slot() == ChildSlot::FIRST
-                        && matches!(arena.computation(opener), Some(&Computation::Scope { .. })),
-                ),
+                        .map(|&(_, span)| span)
+                        .or_else(|| {
+                            naming
+                                .components
+                                .binary_search_by_key(&key, |&(held, _)| held)
+                                .ok()
+                                .and_then(|at| naming.components.get(at))
+                                .map(|&(_, span)| span)
+                        });
+                    (
+                        written.and_then(|span| naming.written(span)),
+                        binder.slot() == ChildSlot::FIRST
+                            && matches!(
+                                arena.computation(opener),
+                                Some(&Computation::Scope { .. })
+                            ),
+                    )
+                },
                 CoreNode::Value(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => {
+                    split = None;
                     (None, false)
                 },
             };
@@ -4078,5 +4115,36 @@ mod tests
                 "{reason}"
             );
         }
+    }
+
+    /// A split of a relation whose arm uses only `k` still names `t`, which
+    /// the record's later fields mention: the remainder after `t` answers as
+    /// two round trips through `k` and `t` (#665).
+    #[test]
+    fn an_unused_split_component_answers_by_its_written_name_665()
+    {
+        let source = SourceText::from(
+            "def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {\n  case i {\n    #{t, k, s, r} => k\n  }\n}\n",
+        );
+        let table = table(source);
+        let spelled: Vec<(String, bool)> = table
+            .entries(PageWidth::from(80_u32), Form::Sugared)
+            .filter_map(|entry| match entry {
+                Maybe::Present(entry) => Some((
+                    String::from(entry.ty().as_ref()),
+                    entry.ty().unspelled().is_empty(),
+                )),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        assert!(
+            spelled.iter().all(|&(_, whole)| whole),
+            "no entry spells a `?`: {spelled:#?}"
+        );
+        assert!(
+            spelled.iter().any(|&(ref ty, _)| ty
+                == "+U ((c : a) -> -F Path(a, k(t(c)), c)) * +U ((c : b) -> -F Path(b, t(k(c)), c))"),
+            "the remainder after `t` names it: {spelled:#?}"
+        );
     }
 }

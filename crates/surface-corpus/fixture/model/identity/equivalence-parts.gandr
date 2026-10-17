@@ -1,0 +1,23 @@
+// One part of a quasi-inverse or an equivalence, taken by a pattern that
+// names every field and uses one. The fields the arm leaves alone are named
+// all the same: the round trips mention the maps before them, so a type read
+// inside the arm names the forward map the arm never uses (#665).
+
+// The quasi-inverse and the equivalence.
+import "./equivalence.gandr" ;
+
+/// The map back of a quasi-inverse.
+@[ checks ]
+def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {
+  case i {
+    #{t, k, s, r} => k
+  }
+}
+
+/// The left inverse of an equivalence, split along its nesting.
+@[ checks ]
+def leftOf(a : Type, b : Type, e : a ≃ b) -> -F +U (b -> -F a) {
+  case e {
+    #{t, #{g, s}, #{h, r}} => g
+  }
+}
