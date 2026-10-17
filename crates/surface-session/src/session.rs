@@ -1565,6 +1565,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - hypothesis: L3 — generated edits submit to the walk's compositions at
     ///   one thread and at the host's width alike.
     /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
+    /// - witness: `session::tests::a_session_molds_on_the_width_it_is_given`
     #[spec(ensures: |ret| ret.threads == width.threads())]
     #[inline]
     #[must_use]
@@ -2856,4 +2857,43 @@ fn documentation_of(module: &LoweredModule<'_>) -> BTreeMap<NodeKey, Documentati
         .iter()
         .map(|(&key, documented)| (key, documented.text().clone()))
         .collect()
+}
+
+#[cfg(test)]
+mod tests
+{
+    use core::num::NonZeroUsize;
+
+    use gandr_core_incremental::BackendArtifact;
+    use gandr_core_incremental::MemoryCheckpointStore;
+    use gandr_storage_records::InMemoryBlockStore;
+    use gandr_surface_dispatcher::SourceRoot;
+    use gandr_surface_dispatcher::Threads;
+    use gandr_surface_dispatcher::Width;
+    use gandr_surface_grammar::built_in;
+
+    use super::Session;
+
+    /// Each width a session is given is the one its edit loop molds on,
+    /// whatever width it held before.
+    #[test]
+    fn a_session_molds_on_the_width_it_is_given()
+    {
+        let fresh = Session::new(
+            built_in().expect("the built-in grammar builds"),
+            SourceRoot::Strict,
+            MemoryCheckpointStore::default(),
+            InMemoryBlockStore::default(),
+            BackendArtifact::from(b"session width".as_slice()),
+        );
+        let two = Threads::from(NonZeroUsize::new(2_usize).expect("two is not zero"));
+        let three = Threads::from(NonZeroUsize::new(3_usize).expect("three is not zero"));
+        let widened = fresh.with_width(Width::Threads(two));
+        assert_eq!(widened.threads, two);
+        let rewidened = widened.with_width(Width::Threads(three));
+        assert_eq!(
+            rewidened.threads, three,
+            "a second width replaces the first"
+        );
+    }
 }

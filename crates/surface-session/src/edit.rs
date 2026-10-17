@@ -572,6 +572,10 @@ impl ItemTree
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a signed and an unsigned value declaration.
+    /// - witness: `edit::tests::a_value_declaration_reports_its_signature_and_an_unsigned_one_none`
     #[inline]
     #[must_use]
     pub const fn signature(&self) -> Option<&Tree>
@@ -1566,6 +1570,7 @@ impl EditScript
 /// - witness: `tests::edit::literal_edit_is_one_set_int`
 /// - witness: `tests::edit::item_insertion_leaves_neighbours_untouched`
 /// - witness: `tests::edit::hole_fill_and_erase`
+/// - witness: `edit::tests::a_changed_nominal_declaration_is_replaced_and_an_unchanged_one_kept`
 /// - witness: `tests::edit::item_ascription_change_is_one_set_item_ascription`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `tests::edit::comp_constructor_change_is_one_replace`
@@ -2428,6 +2433,7 @@ enum Agreement
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::child_mapping_preserves_payloads_without_replaying_the_callback`
 /// - witness: `edit::tests::a_memory_form_agrees_on_its_kind_and_slot`
+/// - witness: `edit::tests::every_node_family_agrees_exactly_on_its_payload`
 #[spec(
     ensures: |ret| {
     (ret == Agreement::Same)
@@ -4086,6 +4092,9 @@ mod tests
             "def a = 1 ;\ndef b = 2 ;\ndef c = 3 ;\n",
             "def owed : Integer ;\ndef reads = owed ;\n",
             "def f(x: Integer) -> -F Integer { return x }\ndef twice = thunk { become (force f)(\"text\") } ;\n",
+            // The tail return the lowering inserts spans the value it returns:
+            // a tie the descent breaks by depth.
+            "def g(x: Integer) -> -F Integer { x }\n",
         ];
         for source in sources {
             let snapshot = snapshot_of(SourceText::from(source));
@@ -4252,6 +4261,380 @@ def body = 1 ;
             super::agreement(&access(slot), &access(DeBruijnIndex::from(1_u32))),
             Agreement::Differs,
             "an access over another slot is another payload"
+        );
+    }
+
+    #[test]
+    fn every_node_family_agrees_exactly_on_its_payload()
+    {
+        use alloc::collections::BTreeMap;
+        use alloc::sync::Arc;
+
+        use gandr_core_incremental::ItemKey;
+        use gandr_core_incremental::Occurrence;
+        use gandr_core_incremental::Reference;
+        use gandr_core_term::Component;
+        use gandr_core_term::ConstructorTag;
+        use gandr_core_term::FieldLabel;
+        use gandr_core_term::control::EffectClause;
+        use gandr_core_term::control::StackFrame;
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        use gandr_core_term::effect::capability::CapabilityGrade;
+        use gandr_core_term::effect::capability::Region;
+        use gandr_core_term::effect::capability::RegionDepth;
+        use gandr_kernel_strata::Level;
+        use gandr_kernel_term::Side;
+
+        use super::Agreement;
+        use super::Agreement::Differs;
+        use super::Agreement::Same;
+        use super::ContentNode;
+        use super::NodeIndex;
+
+        let node = |index: usize| NodeIndex::from(index);
+        let interface = |name: &str, operations: &[&str]| {
+            EffectSig::new(
+                EffectName::from(name),
+                operations.iter().map(|&operation| EffectOp {
+                    name: OperationName::from(operation),
+                    payload: node(1_usize),
+                    reply: node(2_usize),
+                }),
+            )
+            .expect("distinct operations")
+        };
+        let state = || interface("State", &["get", "put"]);
+        let perform = |signature, operation: &str, payload| ContentNode::Perform {
+            signature,
+            operation: OperationName::from(operation),
+            payload: node(payload),
+        };
+        let exercise = |signature, operation: &str, payload| ContentNode::Exercise {
+            capability: node(5_usize),
+            signature,
+            operation: OperationName::from(operation),
+            payload: node(payload),
+        };
+        let scope = |signature, operation: &str, body| ContentNode::Scope {
+            signature,
+            subject: node(3_usize),
+            on_return: node(4_usize),
+            clauses: Arc::from([EffectClause {
+                operation: OperationName::from(operation),
+                body: node(body),
+            }]),
+        };
+        let capability =
+            |signatures: Vec<EffectSig<NodeIndex>>, grade, region| ContentNode::Capability {
+                authority: EffectRow::from_signatures(signatures).expect("distinct interfaces"),
+                grade,
+                region,
+            };
+        let held = Region::Held;
+        let durable = CapabilityGrade::Durable;
+        let item = |key: &str| Reference::Item {
+            key: ItemKey::from(key),
+            occurrence: Occurrence::from(0_usize),
+        };
+        let data = |key: &str, argument| ContentNode::Data {
+            declaration: item(key),
+            arguments: vec![node(argument)],
+        };
+        let constructor = |tag: usize, field| ContentNode::Constructor {
+            datatype: node(1_usize),
+            tag: ConstructorTag::from(tag),
+            fields: vec![node(field)],
+        };
+        let label = |text: &str| FieldLabel::from(String::from(text));
+        let record =
+            |key: &str, field| ContentNode::Record(BTreeMap::from([(label(key), node(field))]));
+        let reify =
+            |frames: &[StackFrame<NodeIndex, NodeIndex>]| ContentNode::Reify(Arc::from(frames));
+        let zero = Level::zero();
+        let one = zero.succ().expect("level one");
+        let lift = |target: &Level, body| ContentNode::ValueLift {
+            target: target.clone(),
+            body: node(body),
+        };
+        let element = |target: &Level, code| ContentNode::Element {
+            target: target.clone(),
+            code: node(code),
+        };
+        let cases: [(&str, ContentNode, ContentNode, Agreement); 28] = [
+            (
+                "a perform over other children",
+                perform(state(), "get", 3),
+                perform(state(), "get", 4),
+                Same,
+            ),
+            (
+                "a perform of another operation",
+                perform(state(), "get", 3),
+                perform(state(), "put", 3),
+                Differs,
+            ),
+            (
+                "a perform of another interface",
+                perform(state(), "get", 3),
+                perform(interface("Store", &["get", "put"]), "get", 3),
+                Differs,
+            ),
+            (
+                "a perform naming other operations",
+                perform(state(), "get", 3),
+                perform(interface("State", &["get", "set"]), "get", 3),
+                Differs,
+            ),
+            (
+                "an exercise over other children",
+                exercise(state(), "get", 3),
+                exercise(state(), "get", 4),
+                Same,
+            ),
+            (
+                "an exercise of another operation",
+                exercise(state(), "get", 3),
+                exercise(state(), "put", 3),
+                Differs,
+            ),
+            (
+                "an exercise of another interface",
+                exercise(state(), "get", 3),
+                exercise(interface("Store", &["get", "put"]), "get", 3),
+                Differs,
+            ),
+            (
+                "an exercise naming other operations",
+                exercise(state(), "get", 3),
+                exercise(interface("State", &["get", "set"]), "get", 3),
+                Differs,
+            ),
+            (
+                "a scope over other children",
+                scope(state(), "get", 6),
+                scope(state(), "get", 7),
+                Same,
+            ),
+            (
+                "a scope handling another operation",
+                scope(state(), "get", 6),
+                scope(state(), "put", 6),
+                Differs,
+            ),
+            (
+                "a scope of another interface",
+                scope(state(), "get", 6),
+                scope(interface("Store", &["get", "put"]), "get", 6),
+                Differs,
+            ),
+            (
+                "a scope naming other operations",
+                scope(state(), "get", 6),
+                scope(interface("State", &["get", "set"]), "get", 6),
+                Differs,
+            ),
+            (
+                "one capability",
+                capability(vec![state()], durable, held),
+                capability(vec![state()], durable, held),
+                Same,
+            ),
+            (
+                "a capability of another grade",
+                capability(vec![state()], durable, held),
+                capability(vec![state()], CapabilityGrade::Consumable, held),
+                Differs,
+            ),
+            (
+                "a capability of another region",
+                capability(vec![state()], durable, held),
+                capability(
+                    vec![state()],
+                    durable,
+                    Region::Scoped(RegionDepth::from(0_u32)),
+                ),
+                Differs,
+            ),
+            (
+                "a capability of another interface",
+                capability(vec![state()], durable, held),
+                capability(vec![interface("Store", &["get", "put"])], durable, held),
+                Differs,
+            ),
+            (
+                "a capability of fewer operations",
+                capability(vec![state()], durable, held),
+                capability(vec![interface("State", &["get"])], durable, held),
+                Differs,
+            ),
+            (
+                "a capability naming other operations",
+                capability(vec![state()], durable, held),
+                capability(vec![interface("State", &["get", "set"])], durable, held),
+                Differs,
+            ),
+            (
+                "a family over another argument",
+                data("List", 1),
+                data("List", 2),
+                Same,
+            ),
+            ("another family", data("List", 1), data("Tree", 1), Differs),
+            (
+                "a constructor over another field",
+                constructor(0, 1),
+                constructor(0, 2),
+                Same,
+            ),
+            (
+                "another constructor",
+                constructor(0, 1),
+                constructor(1, 1),
+                Differs,
+            ),
+            (
+                "a record of another label",
+                record("x", 1),
+                record("y", 1),
+                Differs,
+            ),
+            (
+                "a record projection of another label",
+                ContentNode::RecordProjection(node(1_usize), label("x")),
+                ContentNode::RecordProjection(node(1_usize), label("y")),
+                Differs,
+            ),
+            (
+                "a tuple projection of another component",
+                ContentNode::TupleProjection(node(1_usize), Component::from(0_usize)),
+                ContentNode::TupleProjection(node(1_usize), Component::from(1_usize)),
+                Differs,
+            ),
+            (
+                "a lift over another body",
+                lift(&zero, 1),
+                lift(&zero, 2),
+                Same,
+            ),
+            (
+                "a lift to another level",
+                lift(&zero, 1),
+                lift(&one, 1),
+                Differs,
+            ),
+            (
+                "an element at another level",
+                element(&zero, 1),
+                element(&one, 1),
+                Differs,
+            ),
+        ];
+        for (what, old, new, expected) in cases {
+            assert_eq!(super::agreement(&old, &new), expected, "{what}");
+        }
+        let frames = [
+            StackFrame::Apply(node(1_usize)),
+            StackFrame::Bind(node(2_usize)),
+        ];
+        let renumbered = [
+            StackFrame::Apply(node(3_usize)),
+            StackFrame::Bind(node(4_usize)),
+        ];
+        for (what, old, new, expected) in [
+            (
+                "a stack over other frames' children",
+                reify(&frames),
+                reify(&renumbered),
+                Same,
+            ),
+            (
+                "a stack projecting one side",
+                reify(&[StackFrame::Project(Side::Left)]),
+                reify(&[StackFrame::Project(Side::Left)]),
+                Same,
+            ),
+            (
+                "a stack projecting the other side",
+                reify(&[StackFrame::Project(Side::Left)]),
+                reify(&[StackFrame::Project(Side::Right)]),
+                Differs,
+            ),
+            (
+                "a tuple over other children",
+                ContentNode::Tuple(vec![node(1_usize), node(2_usize)]),
+                ContentNode::Tuple(vec![node(3_usize), node(4_usize)]),
+                Same,
+            ),
+        ] {
+            assert_eq!(super::agreement(&old, &new), expected, "{what}");
+        }
+    }
+
+    /// A data declaration whose constructors change is deleted and inserted
+    /// afresh, and an unchanged one is kept: the script is empty.
+    #[test]
+    fn a_changed_nominal_declaration_is_replaced_and_an_unchanged_one_kept()
+    {
+        let two = snapshot_of(SourceText::from(
+            "data Color : Type { Red : Color; Green : Color; }\ndef a = 1 ;\n",
+        ));
+        let three = snapshot_of(SourceText::from(
+            "data Color : Type { Red : Color; Green : Color; Blue : Color; }\ndef a = 1 ;\n",
+        ));
+        assert!(
+            super::diff(&two, &two).actions().is_empty(),
+            "an unchanged data declaration is kept"
+        );
+        for (old, new, what) in [
+            (&two, &three, "a data declaration gaining a constructor"),
+            (&three, &two, "a data declaration losing a constructor"),
+        ] {
+            let script = super::diff(old, new);
+            assert!(
+                script.actions().iter().any(|action| matches!(
+                    *action,
+                    super::Action::DeleteItem { at } if at == ItemOrdinal::from(0_usize)
+                )),
+                "{what} is replaced: {:?}",
+                script.actions()
+            );
+            assert_eq!(super::apply(old.items(), &script), new.items(), "{what}");
+        }
+    }
+
+    #[test]
+    fn a_value_declaration_reports_its_signature_and_an_unsigned_one_none()
+    {
+        use gandr_core_incremental::ItemKey;
+        use gandr_core_incremental::Occurrence;
+        use gandr_core_incremental::Program;
+        use gandr_core_incremental::Reference;
+        use gandr_core_term::CoreArena;
+        use gandr_surface_lowering::OriginTable;
+
+        let mut arena = CoreArena::new();
+        let value = arena.value_unit();
+        let program = Program::new(arena, Vec::new()).expect("empty declaration order");
+        let (tree, _spans) =
+            super::read(&program, &OriginTable::default(), super::Root::Value(value));
+        let item = |signature| ItemTree {
+            reference: Reference::Item {
+                key: ItemKey::from("f"),
+                occurrence: Occurrence::from(0_usize),
+            },
+            declaration: super::DeclarationTree::Value {
+                signature,
+                body: Maybe::Present(tree.clone()),
+            },
+        };
+        assert_eq!(item(Maybe::Present(tree.clone())).signature(), Some(&tree));
+        assert_eq!(
+            item(Maybe::Absent(super::signature::Absent::Unsigned)).signature(),
+            None
         );
     }
 
