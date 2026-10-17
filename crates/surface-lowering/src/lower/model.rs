@@ -77,6 +77,7 @@ use crate::module::SlotIndex;
 use crate::module::StructureIndex;
 use crate::module::TypeMeaning;
 use crate::module::spine_domains;
+use crate::module::ungrouped;
 use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
@@ -893,10 +894,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the mint sweep has run.
-    /// - ensures: one type per entry of the kind's domain — each entry of a
-    ///   parenthesised list, the domain itself when written bare, or each
-    ///   domain along a static arrow's spine — each carried into the context
-    ///   binding every entry before it.
+    /// - ensures: read through the parentheses around the kind as a whole, one
+    ///   type per entry of the kind's domain — each entry of a parenthesised
+    ///   list, the domain itself when written bare, or each domain along a
+    ///   static arrow's spine — each carried into the context binding every
+    ///   entry before it.
     /// - fails: [`Missing::Refused`] with the reader's refusal for a domain
     ///   whose pieces or entries do not read, and [`Missing::Unlowered`] for an
     ///   empty kind, a list without its opener, or an entry that did not lower.
@@ -920,6 +922,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Result<Vec<ValueTypeId>, Missing<'source>>
     {
+        let kind = ungrouped(self.pbg, self.tree, kind).map_err(Missing::Refused)?;
         if let Ok(Some((_, Former::ArrowType))) = self.form_at(kind) {
             let domains = spine_domains(self.pbg, self.tree, kind).map_err(Missing::Refused)?;
             let mut indices = Vec::with_capacity(domains.len());
@@ -1061,19 +1064,21 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the mint sweep has run.
-    /// - ensures: the kind's type and, for a static arrow, `λ … λ. ⌜τ⌝`, one
-    ///   static abstraction per parameter; otherwise `thunk (λ … λ. return
-    ///   ⌜τ⌝)`, one lambda per parameter; every node carrying `origin`; nothing
-    ///   when the kind or the family's type did not lower.
+    /// - ensures: the kind's type and, for a static arrow — read through the
+    ///   parentheses around the kind as a whole — `λ … λ. ⌜τ⌝`, one static
+    ///   abstraction per parameter; otherwise `thunk (λ … λ. return ⌜τ⌝)`, one
+    ///   lambda per parameter; every node carrying `origin`; nothing when the
+    ///   kind or the family's type did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the written `CatShape` family checks its member at
-    ///   its kind, and a family read against a static arrow checks as an
-    ///   operator.
+    ///   its kind, and a family read against a static arrow, bare or in
+    ///   parentheses (#611), checks as an operator.
     /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `modules::modules::a_kind_reads_through_its_grouping_parentheses`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present((kind_id, body)) if sink.arena.value_type(kind_id).is_some() && sink.arena.value(body).is_some()))]
     fn family_witness(
         &self,
@@ -1093,7 +1098,8 @@ impl<'source> Lowerer<'_, 'source>
         };
         let code = sink.arena.value_quote(family);
         sink.origins.record_value(code, origin);
-        if let Ok(Some((_, Former::ArrowType))) = self.form_at(kind) {
+        let operator_kind = ungrouped(self.pbg, self.tree, kind).unwrap_or(kind);
+        if let Ok(Some((_, Former::ArrowType))) = self.form_at(operator_kind) {
             let mut operator = code;
             for _parameter in 0 .. usize::from(arity) {
                 operator = sink.arena.value_static_lambda(operator);

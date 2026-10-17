@@ -346,6 +346,7 @@ pub use self::model::ModelPart;
 pub use self::model::ParameterList;
 pub use self::model::derived;
 pub use self::model::spine_domains;
+pub use self::model::ungrouped;
 pub use self::sealing::AbstractSlot;
 pub use self::sealing::ComponentPlace;
 use self::sealing::KindForm;
