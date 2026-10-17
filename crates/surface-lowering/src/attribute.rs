@@ -4,15 +4,17 @@
 //!
 //! # The side table is keyed by content identity
 //!
-//! An entry is filed under the [`NodeKey`] of the declaration form the
-//! attribute decorates — the digest of the top-level form holding it and its
-//! rank there — never under that declaration's position in a list. A position
-//! is invalidated by an edit anywhere earlier in the file; a key is
-//! invalidated only by an edit inside the top-level form holding the
-//! declaration. The molded tree makes a leading attribute block part of the
-//! declaration form it precedes, so the key reads the declaration's own
-//! attributes: editing an attribute re-keys that form's entries, and an edit
-//! to another form leaves the key alone.
+//! An entry is filed under the [`UnitKey`] of the declaration form the
+//! attribute decorates — the source holding the form, the digest of the
+//! top-level form holding it and its rank there — never under that
+//! declaration's position in a list. A position is invalidated by an edit
+//! anywhere earlier in the file; a key is invalidated only by an edit inside
+//! the top-level form holding the declaration. The molded tree makes a leading
+//! attribute block part of the declaration form it precedes, so the key reads
+//! the declaration's own attributes: editing an attribute re-keys that form's
+//! entries, and an edit to another form leaves the key alone. Two
+//! byte-identical forms in two sources of one unit are filed apart by their
+//! sources (#596).
 //!
 //! # Every schema but `respects` is inert
 //!
@@ -118,11 +120,11 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_syntax::ByteSpan;
-use gandr_surface_syntax::NodeKey;
 use quenchant_shape::shape::Maybe;
 
 use crate::form::Former;
 use crate::resolve::SurfaceName;
+use crate::unit::UnitKey;
 
 quenchant_shape::reason_enum! {
     /// Why the registry answers nothing for a spelling.
@@ -988,10 +990,10 @@ pub struct AttributeTable
 {
     /// Declaration key to that declaration's entries, in the order the source
     /// wrote them.
-    entries: BTreeMap<NodeKey, Vec<AttributeEntry>>,
+    entries: BTreeMap<UnitKey, Vec<AttributeEntry>>,
     /// Declaration key to the laws its `respects` entry names, in the order
     /// the payload names them.
-    laws: BTreeMap<NodeKey, Vec<ConstantIndex>>,
+    laws: BTreeMap<UnitKey, Vec<ConstantIndex>>,
 }
 
 impl AttributeTable
@@ -1045,7 +1047,7 @@ impl AttributeTable
     #[inline]
     pub fn file(
         &mut self,
-        key: NodeKey,
+        key: UnitKey,
         entry: AttributeEntry,
     )
     {
@@ -1080,7 +1082,7 @@ impl AttributeTable
     #[must_use]
     pub fn entries(
         &self,
-        key: NodeKey,
+        key: UnitKey,
     ) -> &[AttributeEntry]
     {
         self.entries.get(&key).map_or(&[], Vec::as_slice)
@@ -1107,7 +1109,7 @@ impl AttributeTable
     #[inline]
     pub fn file_laws(
         &mut self,
-        key: NodeKey,
+        key: UnitKey,
         laws: Vec<ConstantIndex>,
     )
     {
@@ -1139,7 +1141,7 @@ impl AttributeTable
     #[must_use]
     pub fn laws(
         &self,
-        key: NodeKey,
+        key: UnitKey,
     ) -> &[ConstantIndex]
     {
         self.laws.get(&key).map_or(&[], Vec::as_slice)
@@ -1218,6 +1220,20 @@ mod tests
     use crate::fixture::registered;
     use crate::fixture::span;
     use crate::resolve::SurfaceName;
+    use crate::unit::SourceIndex;
+    use crate::unit::UnitKey;
+
+    /// The key of the form whose digest is `form`, in the source at `source`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keyed(
+        source: SourceIndex,
+        form: NodeDigest,
+    ) -> UnitKey
+    {
+        UnitKey::new(source, NodeKey::new(form, FormRank::default()))
+    }
 
     #[test]
     fn suggestions_include_the_bound_and_break_ties_by_registry_order()
@@ -1578,8 +1594,8 @@ mod tests
             );
         }
         let mut table = AttributeTable::new();
-        let filed = NodeKey::new(NodeDigest::from([1_u8; 32_usize]), FormRank::default());
-        let unfiled = NodeKey::new(NodeDigest::from([2_u8; 32_usize]), FormRank::default());
+        let filed = keyed(SourceIndex::default(), NodeDigest::from([1_u8; 32_usize]));
+        let unfiled = keyed(SourceIndex::default(), NodeDigest::from([2_u8; 32_usize]));
         table.file_laws(filed, vec![first, second]);
         assert_eq!(
             table.laws(filed),
@@ -1593,7 +1609,7 @@ mod tests
     fn entries_keep_the_order_they_were_filed_in()
     {
         let mut table = AttributeTable::new();
-        let key = NodeKey::new(NodeDigest::from([1_u8; 32_usize]), FormRank::default());
+        let key = keyed(SourceIndex::default(), NodeDigest::from([1_u8; 32_usize]));
         let first = AttributeEntry::new(
             registered(SurfaceName::from("checks")),
             AttributeSchema::Marker,
@@ -1621,12 +1637,11 @@ mod tests
         );
     }
 
+    /// Two declarations keep their own lists, whether their forms differ or
+    /// one form is written byte for byte in two sources of a unit (#596).
     #[test]
     fn two_declarations_keep_separate_entry_lists()
     {
-        let mut table = AttributeTable::new();
-        let first_key = NodeKey::new(NodeDigest::from([1_u8; 32_usize]), FormRank::default());
-        let second_key = NodeKey::new(NodeDigest::from([2_u8; 32_usize]), FormRank::default());
         let first = AttributeEntry::new(
             registered(SurfaceName::from("checks")),
             AttributeSchema::Marker,
@@ -1639,24 +1654,32 @@ mod tests
             Maybe::Absent(payload::Absent::Marker),
             span(ByteOffset::from(8_usize), ByteOffset::from(20_usize)),
         );
-        table.file(first_key, first);
-        table.file(second_key, second);
+        let form = NodeDigest::from([1_u8; 32_usize]);
+        let first_key = keyed(SourceIndex::default(), form);
+        for second_key in [
+            keyed(SourceIndex::default(), NodeDigest::from([2_u8; 32_usize])),
+            keyed(SourceIndex::from(1_usize), form),
+        ] {
+            let mut table = AttributeTable::new();
+            table.file(first_key, first);
+            table.file(second_key, second);
 
-        assert_eq!(
-            table.entries(first_key),
-            vec![first].as_slice(),
-            "one declaration's list is untouched by another's"
-        );
-        assert_eq!(
-            table.entries(second_key),
-            vec![second].as_slice(),
-            "the second declaration holds only its own entry"
-        );
-        assert_eq!(
-            table.attributed_count(),
-            AttributedCount::from(2_usize),
-            "two keys are two attributed declarations"
-        );
+            assert_eq!(
+                table.entries(first_key),
+                vec![first].as_slice(),
+                "one declaration's list is untouched by another's"
+            );
+            assert_eq!(
+                table.entries(second_key),
+                vec![second].as_slice(),
+                "the second declaration holds only its own entry"
+            );
+            assert_eq!(
+                table.attributed_count(),
+                AttributedCount::from(2_usize),
+                "two keys are two attributed declarations"
+            );
+        }
     }
 
     #[test]
@@ -1666,9 +1689,9 @@ mod tests
 
         assert!(
             table
-                .entries(NodeKey::new(
-                    NodeDigest::from([9_u8; 32_usize]),
-                    FormRank::default()
+                .entries(keyed(
+                    SourceIndex::default(),
+                    NodeDigest::from([9_u8; 32_usize])
                 ))
                 .is_empty(),
             "a key the table holds nothing for reads as the empty list"

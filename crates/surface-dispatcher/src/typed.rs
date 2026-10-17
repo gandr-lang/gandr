@@ -1030,8 +1030,10 @@ impl TypeTable
     /// - ensures: as [`of`](Self::of) over the whole unit, keeping the entries
     ///   and rule orientations at or past `base`, each moved back by `base`
     ///   bytes, so the table answers offsets into the last source's own text;
-    ///   declarations are keyed by form, which no offset moves. The table keeps
-    ///   the unit, which every reading back lowers in again. Unchanged at
+    ///   the last source's declarations are keyed by their forms' keys in that
+    ///   source's own tree, which no offset moves, and a sibling's — even one
+    ///   writing the same form byte for byte (#596) — are not kept. The table
+    ///   keeps the unit, which every reading back lowers in again. Unchanged at
     ///   offset zero over [`Unit::single`].
     /// - provides: what an editor answers inside a document that imports a
     ///   sibling: an imported name types as its declaration does.
@@ -1484,6 +1486,7 @@ impl TypeTable
                 standing: Standing::Named(NamedContext(usize::from(entry.context))),
             });
         }
+        let own_source = unit.source_at(base);
         let mut declared = BTreeMap::new();
         for declaration in module.declarations() {
             // A `data` family's operation and the words of its loops are
@@ -1513,8 +1516,10 @@ impl TypeTable
                 declaration.definition(),
                 declaration.duplicate(),
             ] {
-                if let Maybe::Present(key) = key {
-                    let _replaced = declared.insert(key, held.clone());
+                if let Maybe::Present(key) = key
+                    && key.source() == own_source
+                {
+                    let _replaced = declared.insert(key.form(), held.clone());
                 }
             }
         }

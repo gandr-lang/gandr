@@ -433,4 +433,5 @@ pub use crate::unit::PathImportOrdinal;
 pub use crate::unit::SourceIndex;
 pub use crate::unit::Unit;
 pub use crate::unit::UnitFault;
+pub use crate::unit::UnitKey;
 pub use crate::unit::UnitSource;

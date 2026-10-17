@@ -561,7 +561,7 @@ mod entries
                         if written.is_some_and(|at| judged_refused.contains(&at)) {
                             for half in [declaration.signature(), declaration.definition()] {
                                 if let Maybe::Present(key) = half {
-                                    let _new = refused.insert(key);
+                                    let _new = refused.insert(key.form());
                                 }
                             }
                         }

@@ -23,17 +23,35 @@
 //! (`gandr-surface-dispatcher`'s `Step::Source` carries it), so a reader sees
 //! each source as it wrote it.
 //!
-//! Two tables stay unit-wide, which for the walk is component-wide. The
+//! One table stays unit-wide, which for the walk is component-wide. The
 //! outermost [`Recognition`](crate::namespace::Recognition) scope — the
 //! builtins and the module paths — is one per lowering, so a module a sibling
 //! declares is recognised by path in its importer, and two sources of one
 //! component declaring a module of one name collide there, whether or not
-//! either imports the other. A form's
-//! [`NodeKey`](gandr_surface_syntax::NodeKey) is its content digest, so two
-//! byte-identical forms in two sources of one component share a key, and a
-//! table filed by key holds one entry for both. Both reverse when a unit is a
-//! package's component: each source's module paths go under its own scope and
-//! a key carries its source.
+//! either imports the other. It reverses when a unit is a package's
+//! component: each source's module paths go under its own scope.
+//!
+//! # A form's key in its unit names its source
+//!
+//! A form's [`NodeKey`] is its content digest and a rank, so two
+//! byte-identical forms in two sources of one unit share it. The lowering
+//! files what it keeps per form — attributes, documentation, a declaration's
+//! halves — under a [`UnitKey`]: the source holding the form, then its
+//! `NodeKey`. Two members of one component that write one form byte for byte
+//! each keep their own expectations and documentation (#596). A face that
+//! answers inside one source's own tree, where every form is that source's,
+//! reads the `UnitKey`s of that source by [`UnitKey::form`].
+//!
+//! - Choice: the source beside the key, at the lowering, the one place a unit's
+//!   layout is known; the tree keys stay content keys, so a source parsed alone
+//!   and the same source laid in a unit name a form alike.
+//! - Alternatives: the source mixed into the tree's form digest, which makes a
+//!   form's key depend on where its source is laid and so moves every key of a
+//!   source an editor re-lays; an occurrence count among identical forms in the
+//!   tree, which names a form by what other sources hold.
+//! - Reversal: a consumer that needs one form identity across units — reuse of
+//!   a source's work when the unit around it changes — files by the `NodeKey`
+//!   and projects each unit's keys onto it, as an editor's face does.
 //!
 //! [`Container::TopLevel`]: crate::Container::TopLevel
 
@@ -42,6 +60,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::NodeKey;
 
 /// A source's position in its unit, which is the order the unit admits its
 /// sources in: every source after each source it imports.
@@ -88,6 +107,73 @@ impl fmt::Display for SourceIndex
     ) -> fmt::Result
     {
         fmt::Display::fmt(&self.0, f)
+    }
+}
+
+/// A form's key in the unit that lays its source out: the source holding the
+/// form, then the form's own [`NodeKey`].
+///
+/// # Specification
+/// - requires: nothing; the type is a carrier and admits any pair.
+/// - ensures: two keys are equal exactly when their sources and form keys are;
+///   the order compares the source first.
+/// - provides: the key the lowering files a form's attributes, documentation
+///   and declaration halves under, apart for two byte-identical forms of two
+///   sources.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — a carrier with no invariant beyond its fields.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two byte-identical attributed forms in two sources of one
+///   unit are filed apart and each settles under its own expectation.
+/// - witness: `attribute::tests::two_declarations_keep_separate_entry_lists`
+/// - witness: `namespace::namespace::one_form_in_two_sources_files_its_attributes_apart_596`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct UnitKey
+{
+    /// The source holding the form.
+    source: SourceIndex,
+    /// The form's key in its tree.
+    form: NodeKey,
+}
+
+impl UnitKey
+{
+    /// The key of the form `form` keys in the source at `source`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        source: SourceIndex,
+        form: NodeKey,
+    ) -> Self
+    {
+        Self { source, form }
+    }
+
+    /// The source holding the form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn source(&self) -> SourceIndex
+    {
+        self.source
+    }
+
+    /// The form's key in its tree, as the source read alone keys it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn form(&self) -> NodeKey
+    {
+        self.form
     }
 }
 
