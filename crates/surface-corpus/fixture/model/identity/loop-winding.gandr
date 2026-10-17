@@ -1,0 +1,71 @@
+// The winding number: the fold out of the loop's words into the presented
+// integers, which respects the words' rules by conversion, and the fold into
+// the native integers, which respects them by the native model's owed laws
+// under `respects`. Each runs at closed words and is read by conversion.
+
+// The presented integers.
+import "./circle-base.gandr" ;
+// The loop's words.
+import "./loop-words.gandr" ;
+// The circle's shape and its two models.
+import "./loop-shape.gandr" ;
+
+/// The winding number, the fold out of the words into the presented
+/// integers. At `Loop(Unloop(x))` it builds `S(P(windWords(x)))`, whose
+/// normal form is `windWords(x)`, so it respects both rules and is admitted.
+@[ checks ]
+def rec windWords(c : Words) -> -F Int {
+  case c {
+    Nil => return Z,
+    Loop(x) => { run n <- windWords[<](x); return S(n) },
+    Unloop(x) => { run n <- windWords[<](x); return P(n) }
+  }
+}
+
+/// Two loops wind twice.
+@[ runs("S(S(Z))") ]
+def twice_wound : +U (-F Int) ;
+def twice_wound = thunk { become windWords(Loop(Loop(Nil))) } ;
+
+/// A run builds the count letter by letter: a cancelled word winds to
+/// `S(P(Z))`, which conversion reads as `Z` (`wound_never`).
+@[ runs("S(P(Z))") ]
+def wound_letterwise : +U (-F Int) ;
+def wound_letterwise = thunk { become windWords(Loop(Unloop(Nil))) } ;
+
+/// Conversion runs the fold at a closed word: two loops are two successors.
+@[ checks ]
+def wound_twice : Path(Int, windWords(Loop(Loop(Nil))), S(S(Z))) ;
+def wound_twice = here(S(S(Z))) ;
+
+/// A cancelled word winds to zero in conversion.
+@[ checks ]
+def wound_never : Path(Int, windWords(Loop(Unloop(Nil))), Z) ;
+def wound_never = here(Z) ;
+
+/// The winding number into the native integers, a fold that rests on the
+/// native model's laws. At `Loop(Unloop(x))` it computes
+/// `turn(unturn(native_wind(x)))`, which conversion does not reduce to
+/// `native_wind(x)` on a variable; the law `turnUnturn` states exactly that
+/// path, so `respects` names it for the first rule and `unturnTurn` for the
+/// second. The loop arms call the model's operations rather than spelling
+/// `n + 1`, so each side the rule relates is the law's own endpoint. The fold
+/// checks and owes what its two laws owe.
+@[ respects((NativeWinding.turnUnturn, NativeWinding.unturnTurn)), owes(2) ]
+def rec native_wind(c : Words) -> -F Integer {
+  case c {
+    Nil => return 0,
+    Loop(x) => become NativeWinding.turn(native_wind[<](x)),
+    Unloop(x) => become NativeWinding.unturn(native_wind[<](x))
+  }
+}
+
+/// Two loops wind twice into the native integers.
+@[ runs("2") ]
+def native_twice : +U (-F Integer) ;
+def native_twice = thunk { become native_wind(Loop(Loop(Nil))) } ;
+
+/// A cancelled word winds as its normal form does: not at all.
+@[ runs("0") ]
+def native_unwound : +U (-F Integer) ;
+def native_unwound = thunk { become native_wind(Loop(Unloop(Nil))) } ;

@@ -158,7 +158,10 @@ mod census
     /// The table of the walk's source at `path`, typed beside the siblings it
     /// imports: the walk's `text` lays out the source's import closure, its
     /// own text from `base`, and read as one source the importer's imports
-    /// resolve to nothing and refuse every declaration of it (#552).
+    /// resolve to nothing and refuse every declaration of it (#552). A source
+    /// that imports nothing is typed from its own bytes alone: the walk's text
+    /// before `base` holds the component's earlier members, whose imports are
+    /// not its own (#625).
     ///
     /// # Specification
     /// trivial.
@@ -178,7 +181,7 @@ mod census
                 laid.base,
             )
             .ok(),
-            Maybe::Absent(_) => TypeTable::of(grammar, text).ok(),
+            Maybe::Absent(_) => TypeTable::of(grammar, own).ok(),
         }
     }
 

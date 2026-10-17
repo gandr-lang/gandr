@@ -1,0 +1,99 @@
+// The circle's loop space, presented at the term stratum: `Loop(x)` is "x,
+// then the loop" and `Unloop(x)` "x, then its inverse", with the two
+// cancellations as rules, so these terms are, one stratum down, the words
+// that `Path(Circle, Base, Base)` is in `circle.gandr`, the book's circle
+// (§ 8.1). Conversion reads a word by its normal form, and a fold out of the
+// words is admitted only when it respects both rules, as the mirror does and
+// a case that tells a loop from its inverse does not. `loop-winding.gandr`
+// and `loop-space.gandr` count the words into the integers and back.
+
+/// The loop's words as a presented type: its rules rewrite constructor
+/// terms, so a word normalizes to the loops it winds.
+@[ normalizes("Loop(Loop(Unloop(Unloop(Loop(Nil))))) ~> Loop(Nil)") ]
+data Words : Type {
+  Nil : Words;
+  Loop : (x : Words) --> Words;
+  Unloop : (x : Words) --> Words;
+  rule Loop(Unloop(x)) <=> x;
+  rule Unloop(Loop(x)) <=> x;
+}
+
+/// A function that builds a word: one more loop.
+@[ checks ]
+def around(c : Words) -> -F Words {
+  return Loop(c)
+}
+
+/// A run returns the word it builds.
+@[ runs("Loop(Loop(Nil))") ]
+def built : +U (-F Words) ;
+def built = thunk { become around(Loop(Nil)) } ;
+
+/// Conversion reads a word by its normal form: a cancelled loop is a loop.
+@[ checks ]
+def cancelled_word : Path(Words, Loop(Unloop(Loop(Nil))), Loop(Nil)) ;
+def cancelled_word = here(Loop(Nil)) ;
+
+/// A path between words stands at the path between their normal forms.
+@[ checks ]
+def respelled : Path(Words, Loop(Nil), Loop(Nil)) ;
+def respelled = cancelled_word ;
+
+/// Two words that both cancel to the empty word are one word.
+@[ checks ]
+def both_cancel : Path(Words, Unloop(Loop(Nil)), Loop(Unloop(Nil))) ;
+def both_cancel = here(Nil) ;
+
+/// No rule identifies a loop with the empty word.
+@[ refuses("EndpointMismatch") ]
+def loop_not_nil : Path(Words, Loop(Nil), Nil) ;
+def loop_not_nil = here(Nil) ;
+
+/// A case that tells a loop from its inverse, refused: `Unloop(Loop(Nil))`
+/// and `Loop(Unloop(Nil))` are one word, which it would read as 2 and 1.
+@[ refuses("RuleNotRespected") ]
+def tell_words(c : Words) -> -F Integer {
+  case c {
+    Nil => return 0,
+    Loop(x) => return 1,
+    Unloop(x) => return 2
+  }
+}
+
+/// The path from 2 to 1 that `tell_words` would carry `both_cancel` to; with
+/// `tell_words` refused its applications do not compute, and the endpoints
+/// differ.
+@[ refuses("EndpointMismatch") ]
+def two_is_one() -> -F Path(Integer, 2, 1) {
+  become cong(tell_words, both_cancel)
+}
+
+/// The mirror: a loop for an inverse and an inverse for a loop. At
+/// `Loop(Unloop(x))` it builds `Unloop(Loop(mirror(x)))`, which the second
+/// rule reads as `mirror(x)`, so it respects both rules and is admitted.
+@[ checks ]
+def rec mirror(c : Words) -> -F Words {
+  case c {
+    Nil => return Nil,
+    Loop(x) => { run m <- mirror[<](x); return Unloop(m) },
+    Unloop(x) => { run m <- mirror[<](x); return Loop(m) }
+  }
+}
+
+/// The mirror of a loop is its inverse.
+@[ runs("Unloop(Nil)") ]
+def mirrored : +U (-F Words) ;
+def mirrored = thunk { become mirror(Loop(Nil)) } ;
+
+/// Conversion runs an admitted fold at a closed word. Read by its normal
+/// form, `Loop(Unloop(Nil))` is `Nil`, whose mirror is `Nil`; unfolded
+/// letter by letter, the mirror is `Unloop(Loop(Nil))`, which is `Nil`
+/// again. The two readings agree because the mirror respects the rules.
+@[ checks ]
+def mirror_cancelled : Path(Words, mirror(Loop(Unloop(Nil))), Nil) ;
+def mirror_cancelled = here(Nil) ;
+
+/// The mirror of a respelled loop is the inverse of the loop.
+@[ checks ]
+def mirror_respelled : Path(Words, mirror(Loop(Unloop(Loop(Nil)))), Unloop(Nil)) ;
+def mirror_respelled = here(Unloop(Nil)) ;
