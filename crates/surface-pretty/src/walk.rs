@@ -718,6 +718,7 @@ struct Arm<'source, Node>
 /// - hypothesis: L3 — a data case over a nullary and a unary constructor spells
 ///   each branch under its pattern, the unary one's field bound.
 /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `goldens::tests::a_constructor_at_the_depth_limit_binds_every_field`
 #[spec(ensures: |ret| ret.name.is_some() || ret.fields == 0_usize)]
 fn arm<S>(
     source: &S,
@@ -795,6 +796,7 @@ where
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
 /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `goldens::tests::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
 #[spec(ensures: |ref ret| match *former {
     | Former::Product(arity) | Former::Sum(arity) | Former::RecordType(arity) => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
@@ -2092,6 +2094,7 @@ fn candidate(ordinal: Ordinal) -> Maybe<BinderName, binder::Absent>
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+/// - witness: `walk::tests::the_name_scan_visits_exactly_its_budget`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref names) => u32::try_from(names.len()).is_ok_and(|count| count <= VISIT_BUDGET),
     Maybe::Absent(scan::Absent::OverBudget) => true,
@@ -3328,6 +3331,7 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — a bind run by a bind and a returner at a call's head
     ///   distinguish a block from parentheses and from a bare operand.
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `goldens::tests::a_block_body_holds_its_sequence_bare`
     #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
@@ -3386,6 +3390,8 @@ impl Walk<'_, '_>
     /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `goldens::tests::a_scoped_capability_names_its_scope`
+    /// - witness: `goldens::tests::a_returner_lists_each_interface_of_its_row_between_commas`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened
@@ -3978,6 +3984,7 @@ impl Walk<'_, '_>
     ///   call whose head is a returner observe argument order, the elided force
     ///   and the head's parentheses.
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `goldens::tests::a_call_collects_its_arguments_up_to_the_depth_limit`
     #[spec(
         captures: [entry = tasks.len()],
         ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
@@ -4187,6 +4194,7 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — a handler's clause names and a data case's
     ///   constructors spell as written; an unnamed constructor spells `?`.
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
     #[spec(ensures: |ref ret| !ret.0.contains(['\n', '\r', '\t']) && !ret.0.is_empty())]
     fn spelled(
         &mut self,
@@ -4242,6 +4250,8 @@ impl Walk<'_, '_>
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
     /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `goldens::tests::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
+    /// - witness: `goldens::tests::a_prelude_operator_is_written_as_its_operator`
     #[spec(
         captures: [forms = self.forms.len()],
         ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
@@ -5562,6 +5572,35 @@ mod tests
         assert_eq!(walk.fidelity, Fidelity::Approximate);
     }
 
+    /// The scan visits as many nodes as its budget and no more: a tree of
+    /// exactly `VISIT_BUDGET` nodes is scanned, one of a node more is over
+    /// budget.
+    #[test]
+    fn the_name_scan_visits_exactly_its_budget()
+    {
+        let budget = usize::try_from(super::VISIT_BUDGET).expect("the budget fits a usize");
+        let mut arena = gandr_core_term::CoreArena::new();
+        let unit = arena.value_unit();
+        let within = arena.value_tuple(&super::Vec::from_iter(core::iter::repeat_n(
+            unit,
+            budget.saturating_sub(1_usize),
+        )));
+        let over = arena.value_tuple(&super::Vec::from_iter(core::iter::repeat_n(unit, budget)));
+        let source = crate::core_source::CoreSource::new(&arena, &[]);
+        let scanned = |root| {
+            super::mentioned(
+                &source,
+                crate::core_source::CoreNode::Value(root),
+                super::Admits::Value,
+            )
+        };
+        assert!(matches!(scanned(within), super::Maybe::Present(_)));
+        assert!(matches!(
+            scanned(over),
+            super::Maybe::Absent(super::scan::Absent::OverBudget)
+        ));
+    }
+
     /// An incomplete join reports bookkeeping, not a fabricated layout refusal.
     #[test]
     fn missing_operands_are_unbalanced_not_layout_failures()
@@ -5598,6 +5637,25 @@ mod tests
             walk.pop(),
             Err(super::PresentationError::Unbalanced)
         ));
+        walk.forms.push(super::Vec::from([super::Part::Open]));
+        assert_eq!(
+            walk.join(super::Join::Form {
+                pieces: super::Arity(0_usize),
+                binding: super::Binding::Atom,
+            }),
+            Err(super::PresentationError::Unbalanced),
+            "a form that opens a block it never closes"
+        );
+        walk.atom(super::Glyphs("x")).expect("one piece builds");
+        walk.forms.push(super::Vec::new());
+        assert_eq!(
+            walk.join(super::Join::Form {
+                pieces: super::Arity(1_usize),
+                binding: super::Binding::Atom,
+            }),
+            Err(super::PresentationError::Unbalanced),
+            "a form that leaves a piece it takes unplaced"
+        );
     }
 
     /// Empty and forbidden-control names cannot masquerade as faithful atoms.
@@ -5606,6 +5664,10 @@ mod tests
     {
         let mut arena = gandr_core_term::CoreArena::new();
         let constant = arena.value_constant(gandr_kernel_term::ConstantIndex::from(0_usize));
+        let family = arena.value_type_data(
+            gandr_kernel_term::ConstantIndex::from(0_usize),
+            super::Vec::new(),
+        );
         for invalid in ["", "\r", "\n", "\t"] {
             let names = [super::Name::from(invalid)];
             let source = crate::core_source::CoreSource::new(&arena, &names);
@@ -5618,6 +5680,15 @@ mod tests
             .expect("malformed names are approximated");
             assert_eq!(result.as_ref(), "?");
             assert_eq!(result.fidelity(), Fidelity::Approximate);
+            let typed = crate::present_type(
+                &source,
+                crate::core_source::CoreNode::ValueType(family),
+                PageWidth::from(80_u32),
+                crate::Form::Sugared,
+            )
+            .expect("malformed names are approximated");
+            assert_eq!(typed.as_ref(), "?", "a family named {invalid:?}");
+            assert_eq!(typed.fidelity(), Fidelity::Approximate);
         }
     }
 

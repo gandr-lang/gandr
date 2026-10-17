@@ -553,6 +553,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
+    /// - witness: `core_source::tests::only_a_parameterised_constructor_carries_its_classifier`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value(id), ret) {
@@ -2044,5 +2045,35 @@ mod tests
                 .read(CoreNode::Value(nested)),
             Former::Nested(computation) if computation == CoreNode::Computation(inner)
         ));
+    }
+
+    /// A constructor of a family applied to arguments carries its value type
+    /// as its classifier, so the printer can annotate it; one of a family with
+    /// no parameters carries none.
+    #[test]
+    fn only_a_parameterised_constructor_carries_its_classifier()
+    {
+        let mut arena = CoreArena::new();
+        let unit = arena.value_unit();
+        let bare = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let applied = arena.value_type_data(ConstantIndex::from(0_usize), Vec::from([unit]));
+        let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
+        let of_bare = arena.value_constructor(bare, tag, Vec::new());
+        let of_applied = arena.value_constructor(applied, tag, Vec::new());
+        let source = CoreSource::new(&arena, &[]);
+        assert!(
+            matches!(
+                source.read(CoreNode::Value(of_applied)),
+                Former::Constructor { classifier: Some(held), .. } if held == CoreNode::ValueType(applied)
+            ),
+            "a parameterised constructor carries its family's application"
+        );
+        assert!(
+            matches!(source.read(CoreNode::Value(of_bare)), Former::Constructor {
+                classifier: None,
+                ..
+            }),
+            "a constructor of a family without parameters carries nothing"
+        );
     }
 }

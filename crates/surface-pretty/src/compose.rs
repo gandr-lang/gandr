@@ -498,6 +498,11 @@ impl Compose for OneLine
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a flat document is its own nest; a broken one gains
+    ///   the indentation after each line feed.
+    /// - witness: `compose::tests::a_nest_indents_each_line_feed_and_leaves_a_flat_document_itself`
     fn nest(
         &mut self,
         amount: NestAmount,
@@ -520,6 +525,10 @@ impl Compose for OneLine
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tie and a strictly fewer-broken right.
+    /// - witness: `compose::tests::a_choice_takes_fewer_breaks_and_the_left_on_a_tie`
     fn choice(
         &mut self,
         left: Doc,
@@ -540,5 +549,62 @@ impl Compose for OneLine
     ) -> Result<Doc, PresentationError>
     {
         Ok(doc)
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_surface_layout::units::NestAmount;
+
+    use super::Compose as _;
+    use super::Doc;
+    use super::Glyphs;
+    use super::OneLine;
+
+    #[test]
+    fn a_nest_indents_each_line_feed_and_leaves_a_flat_document_itself()
+    {
+        let mut one = OneLine::new();
+        let flat = one.text(Glyphs("x y")).expect("a leaf composes");
+        assert_eq!(
+            flat,
+            one.nest(NestAmount::from(2_u32), flat)
+                .expect("a nest composes"),
+            "a document with no break is its own nest"
+        );
+        let head = one.text(Glyphs("x")).expect("a leaf composes");
+        let tail = one.text(Glyphs("y")).expect("a leaf composes");
+        let broken = one
+            .concat_all(&[head, Doc::HARD_LINE, tail])
+            .expect("a concatenation composes");
+        let nested = one
+            .nest(NestAmount::from(2_u32), broken)
+            .expect("a nest composes");
+        assert_eq!(
+            "x\n  y",
+            one.into_text(nested).expect("the nest is numbered")
+        );
+    }
+
+    #[test]
+    fn a_choice_takes_fewer_breaks_and_the_left_on_a_tie()
+    {
+        let mut one = OneLine::new();
+        let left = one.text(Glyphs("left")).expect("a leaf composes");
+        let right = one.text(Glyphs("right")).expect("a leaf composes");
+        assert_eq!(
+            left,
+            one.choice(left, right).expect("a choice composes"),
+            "a tie"
+        );
+        let broken = one
+            .concat(left, Doc::HARD_LINE)
+            .expect("a concatenation composes");
+        assert_eq!(
+            right,
+            one.choice(broken, right).expect("a choice composes"),
+            "the alternative with fewer breaks"
+        );
     }
 }
