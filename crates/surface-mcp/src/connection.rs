@@ -700,6 +700,11 @@ mod tests
             Some(&json!(true))
         );
         assert_eq!(
+            legacy.pointer("/result/serverInfo"),
+            Some(&json!({ "name": "gandr", "version": env!("CARGO_PKG_VERSION") })),
+            "the server names itself and its version"
+        );
+        assert_eq!(
             legacy.pointer("/result/resultType"),
             Some(&json!("complete"))
         );
@@ -745,6 +750,26 @@ mod tests
             "trial",
             "type_of"
         ]);
+        let required: Vec<Option<&Value>> = listed
+            .pointer("/result/tools")
+            .and_then(Value::as_array)
+            .expect("the tools are listed")
+            .iter()
+            .map(|tool| tool.pointer("/inputSchema/required"))
+            .collect();
+        assert_eq!(
+            required,
+            [
+                Some(&json!(["uri"])),
+                None,
+                Some(&json!(["uri", "line", "character"])),
+                Some(&json!(["uri"])),
+                Some(&json!(["uri", "version", "range", "text"])),
+                Some(&json!(["uri", "candidates"])),
+                Some(&json!(["uri", "line", "character"])),
+            ],
+            "each tool's schema names the arguments it requires"
+        );
         assert_eq!(
             ask(
                 &mut connection,
@@ -788,6 +813,15 @@ mod tests
                 )
                 .is_empty(),
             "a client's response is dropped"
+        );
+        assert_eq!(
+            ask(
+                &mut connection,
+                &mut workspace,
+                &json!({ "jsonrpc": "2.0", "id": 8_i32 })
+            ),
+            json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32_600_i32, "message": "Invalid Request" } }),
+            "a line with an id but neither a method nor a result is refused"
         );
     }
 
@@ -889,6 +923,25 @@ mod tests
             Some(&json!(true)),
             "a position is required"
         );
+        for unplaced in [
+            json!({ "uri": uri, "line": 0_u32, "character": "4" }),
+            json!({ "uri": uri, "line": -1_i32, "character": 4_u32 }),
+            json!({ "uri": uri, "line": 0_u32, "character": -1_i32 }),
+        ] {
+            assert_eq!(
+                call(
+                    &mut connection,
+                    &mut workspace,
+                    &json!("type_of"),
+                    &unplaced
+                )
+                .pointer("/structuredContent/error"),
+                Some(&json!(
+                    "`line` and `character` must be non-negative integers"
+                )),
+                "a position is two non-negative integers: {unplaced}"
+            );
+        }
         sync(
             &mut server,
             &mut workspace,
