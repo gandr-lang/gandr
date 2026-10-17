@@ -1713,6 +1713,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
     /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
     /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
+    /// - witness: `algebra::tests::a_verbatim_line_taints_only_past_the_computation_width`
     #[spec(
         ensures: |ret| { let Maybe::Present(identity) = self.arena.verbatim_identity(verbatim) else { return matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::DocumentIdentity })) };
             ret.as_ref().map_or(true,
@@ -2576,7 +2577,7 @@ mod tests
         let mut meter = RenderMeter::new(RenderLimits::default());
         let mut resolver = Resolver::new(&arena, options, &mut meter);
         let node = text.node_id();
-        for (column, indentation) in [(3u32, 1u32), (4u32, 2u32)] {
+        for (column, indentation) in [(3u32, 1u32), (4u32, 2u32), (0u32, 3u32)] {
             let promise = resolver
                 .begin_eval(
                     node,
@@ -2597,6 +2598,24 @@ mod tests
                         && deferred_indentation == Indentation::from(indentation)
                 ),
                 "an out-of-bound context defers with its own context"
+            );
+        }
+        for (column, indentation) in [(2u32, 0u32), (0u32, 2u32)] {
+            let at_bound = resolver.begin_eval(
+                node,
+                Column::from(column),
+                Indentation::from(indentation),
+                ResolutionMode::Memoized,
+            );
+            assert!(
+                matches!(
+                    at_bound,
+                    Ok(Step::Result(
+                        MeasureSet::Frontier(_) | MeasureSet::Tainted(TaintPromise::Ready(_))
+                    ))
+                ),
+                "a context at the computation width is computed, not deferred: \
+                 ({column}, {indentation})"
             );
         }
         let first_measure = forced(

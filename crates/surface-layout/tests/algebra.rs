@@ -1012,6 +1012,31 @@ mod tests
         Ok(())
     }
 
+    /// Finalization charges one step for each node it was given and one for
+    /// each image probe, and none for the images it appends.
+    #[test]
+    fn finalization_charges_each_original_node_and_probe_once() -> Result<(), BuildError>
+    {
+        let built = {
+            let mut meter = BuildMeter::new(generous_limits());
+            drop(DocBuilder::try_new(&mut meter)?);
+            meter.usage().build_steps
+        };
+        let mut meter = BuildMeter::new(generous_limits());
+        let arena = DocBuilder::try_new(&mut meter)?.finish()?;
+        assert_eq!(
+            arena.node_count(),
+            DocNodesUsed::from(4u64),
+            "the soft line's space is appended as an image"
+        );
+        assert_eq!(
+            u64::from(meter.usage().build_steps).checked_sub(u64::from(built)),
+            Some(4u64),
+            "three seeded nodes visited and the soft line's one probe"
+        );
+        Ok(())
+    }
+
     /// Finalization growth remains bounded linearly for a repeated
     /// concatenation spine.
     #[test]
@@ -1721,6 +1746,8 @@ mod tests
         let mut meter = RenderMeter::new(generous_render_limits());
         let rendered = render(&arena, root, &options, &mut meter)?;
         assert_eq!(rendered.text, "abc");
+        assert_eq!("abc", rendered.text, "a string compares from either side");
+        assert_ne!("abx", rendered.text, "a different string is unequal");
         assert_eq!(rendered.cost, LayoutCost {
             squared_overflow: SquaredOverflow::from(0u64),
             line_breaks: LineBreaks::from(0u64),
@@ -1754,6 +1781,34 @@ mod tests
         // workflow-gates: allow-escaped-newline
         assert_eq!(rendered.text, "a\r\nb\n\r\n");
         assert_eq!(u64::from(meter.usage().output_bytes), 7u64);
+        Ok(())
+    }
+
+    /// A verbatim line after the first taints the layout only when it runs
+    /// past the computation width, not when it ends exactly at it.
+    #[test]
+    fn a_verbatim_line_taints_only_past_the_computation_width() -> Result<(), RenderError>
+    {
+        for (payload, taint) in [
+            // workflow-gates: allow-escaped-newline
+            ("a\nbb", WidthTaint::Untainted),
+            // workflow-gates: allow-escaped-newline
+            ("a\nbbb", WidthTaint::Tainted),
+        ] {
+            let mut build_meter = BuildMeter::new(generous_limits());
+            let mut builder = expect_build(DocBuilder::try_new(&mut build_meter));
+            let root = expect_build(builder.verbatim(VerbatimSource::from(payload)));
+            let arena = expect_build(builder.finish());
+            let options = LayoutOptions::try_new(
+                PageWidth::from(2u32),
+                ComputationWidth::from(2u32),
+                PhysicalLineEnding::Lf,
+            )?;
+            let mut meter = RenderMeter::new(generous_render_limits());
+            let rendered = render(&arena, root, &options, &mut meter)?;
+            assert_eq!(rendered.text, payload);
+            assert_eq!(rendered.width_tainted, taint, "{payload:?}");
+        }
         Ok(())
     }
 
