@@ -1621,7 +1621,8 @@ enum Term
 ///
 /// A held endpoint stuck where no unfolding reaches is the call it stands
 /// for: two such endpoints over one call are one endpoint, and the kernel
-/// closes the shared comparison on the α-equal sides the walk found. Two
+/// closes the shared comparison on the sides the walk found, reading each
+/// returned endpoint inside them as the walk did. Two
 /// returned endpoints the walk does not equate compare as the computations
 /// they hold, as the kernel's replay reads them: the walk compares captured
 /// closures by their environments, where the machine opens them under one

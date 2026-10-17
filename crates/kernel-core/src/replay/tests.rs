@@ -208,6 +208,65 @@ fn a_compared_pair_closes_on_alpha_equality_or_rigid_separation()
 }
 
 #[test]
+fn a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695()
+{
+    // #695: the engine compares a returned endpoint by what it returns, so a
+    // call of a defined constant, `f(x)`, and the same call over
+    // `⟨(λy. return y) x⟩` are one shared pair to it; the kernel closes the
+    // closing once the endpoint set aside is read, without unfolding `f`, and
+    // not when the endpoint returns another variable.
+    let mut arena = TermArena::new();
+    let near = arena.value_variable(DeBruijnIndex::from(0));
+    let far = arena.value_variable(DeBruijnIndex::from(1));
+    let bound = arena.value_variable(DeBruijnIndex::from(0));
+    let returner = arena.computation_return(bound);
+    let identity = arena.computation_lambda(returner);
+    let body = arena.value_thunk(identity);
+    let defined = Unfoldings::new(Vec::from([Unfoldable::Body(body)]));
+    let function = arena.value_constant(ConstantIndex::from(0_usize));
+    let returned = |arena: &mut TermArena, argument| {
+        let applied = arena.computation_application(identity, argument);
+        arena.value_returned(applied)
+    };
+    let held = |arena: &mut TermArena, argument| {
+        let forced = arena.computation_force(function);
+        arena.computation_application(forced, argument)
+    };
+    let left = held(&mut arena, near);
+    let read_alike = returned(&mut arena, near);
+    let alike = held(&mut arena, read_alike);
+    let read_apart = returned(&mut arena, far);
+    let apart = held(&mut arena, read_apart);
+    let mark = arena.watermark();
+
+    assert_eq!(
+        run(
+            &mut arena,
+            &defined,
+            ReplaySides::Computations(left, alike),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        KernelVerdict::Convertible,
+        "the endpoint reads as the variable it returns"
+    );
+    assert_eq!(
+        run(
+            &mut arena,
+            &defined,
+            ReplaySides::Computations(left, apart),
+            EngineClaim::Convertible,
+            &[SHARED]
+        ),
+        refused(ReplayRefusal::Inapplicable {
+            at: TracePosition::from(0),
+        }),
+        "and one returning another variable is no shared pair"
+    );
+    assert_eq!(arena.watermark(), mark);
+}
+
+#[test]
 fn the_replay_reduces_before_it_reads_a_decision()
 {
     let mut arena = TermArena::new();

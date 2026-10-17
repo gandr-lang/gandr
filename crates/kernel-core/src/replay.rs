@@ -45,7 +45,7 @@
 //!
 //! | goal | what the replay reads |
 //! | --- | --- |
-//! | any | `ComparedShared` closes it when the sides are α-equal, or rigid and α-distinct |
+//! | any | `ComparedShared` closes it when the sides are α-equal, or alike once each returned endpoint inside them is read (#695), or rigid and α-distinct |
 //! | a defined constant at either head | `Unfold` and the reduction naming its side, with `Postpone` before it; `Freeze`; `ConstShortcut` |
 //! | a thunk against a thunk or a neutral value | two `Force`s |
 //! | a lambda against a neutral computation | `EtaExpand` on the neutral side |
@@ -3995,8 +3995,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Compared::Equal`] when the sides are α-equal under
-    ///   [`equal_weakened`], [`Compared::Separated`] when both are rigid and
-    ///   not, [`Compared::Open`] otherwise.
+    ///   [`equal_weakened`], or converge under [`pending_endpoints`] with every
+    ///   pair it sets aside alike once read by [`Self::endpoints_alike`] — a
+    ///   reading that stops leaves the pair open, as [`read_endpoints`] leaves
+    ///   it apart; [`Compared::Separated`] when both are rigid and neither
+    ///   holds, [`Compared::Open`] otherwise.
     /// - provides: the replay of a closing on two shared nodes.
     /// - fails: [`ReplayRefusal::Unreadable`] on sides of two polarities.
     /// - panics: none.
@@ -4007,9 +4010,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Adequacy
     /// - hypothesis: L3: equal pairs, distinct rigid variables, thunks, and
     ///   defined constants separate equality, rigid separation, and undecided
-    ///   comparison under both engine claims. Only root identity and polarity
-    ///   are executable here; the recursive relation is not rerun.
+    ///   comparison under both engine claims; a call over a returned endpoint
+    ///   closes with the call over what the endpoint returns, and not with the
+    ///   call over another value (#695). Only root identity and polarity are
+    ///   executable here; the recursive relation is not rerun.
     /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    /// - witness: `replay::tests::a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695`
     #[spec(ensures: |ret| match (goal.left, goal.right) {
         (Term::Value(left), Term::Value(right)) if left == right =>
             ret == Ok(if self.arena.value(left).is_some() { Compared::Equal } else { Compared::Open }),
@@ -4023,24 +4029,120 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         goal: &Goal,
     ) -> Result<Compared, Stop>
     {
-        let equality = match (goal.left, goal.right) {
-            (Term::Value(left), Term::Value(right)) => {
-                equal_weakened(self.arena, ConversionGoal::Value(left, right))
-            },
+        let pair = match (goal.left, goal.right) {
+            (Term::Value(left), Term::Value(right)) => ConversionGoal::Value(left, right),
             (Term::Computation(left), Term::Computation(right)) => {
-                equal_weakened(self.arena, ConversionGoal::Computation(left, right))
+                ConversionGoal::Computation(left, right)
             },
             (Term::Value(_), Term::Computation(_)) | (Term::Computation(_), Term::Value(_)) => {
                 return Err(unreadable());
             },
         };
-        if equality == Convertibility::Convertible {
+        if equal_weakened(self.arena, pair) == Convertibility::Convertible {
+            return Ok(Compared::Equal);
+        }
+        // The engine compares a returned endpoint by what its computation
+        // returned, so two sides alike but for an endpoint it read through,
+        // `⟨(λe. return ua(e)) e⟩` against `ua(e)` beneath one held call, are
+        // the shared pair it found once each endpoint set aside is read (#695).
+        let mut pending = Vec::new();
+        if pending_endpoints(
+            self.arena,
+            self.unfoldings.presentations(),
+            pair,
+            &mut pending,
+        ) == Convertibility::Convertible
+            && !pending.is_empty()
+            && self.endpoints_alike(pending, goal.reduction) == Ok(Convertibility::Convertible)
+        {
             return Ok(Compared::Equal);
         }
         match (self.rigidity(goal.left), self.rigidity(goal.right)) {
             (Rigidity::Rigid, Rigidity::Rigid) => Ok(Compared::Separated),
             (Rigidity::Rigid | Rigidity::Flexible, _) => Ok(Compared::Open),
         }
+    }
+
+    /// Whether every pair `pending` holds is alike once each returned endpoint
+    /// in it is read by the reduction the goal takes.
+    ///
+    /// A side reads to the value its computation returns, through every
+    /// `return` it reaches by `reduction`; no definition unfolds, as no
+    /// decision names one. A pair that read to something is walked again, its
+    /// own set-aside pairs read in turn; a pair neither side of which reads to
+    /// anything compares by [`equal_weakened`].
+    ///
+    /// # Specification
+    /// - requires: every pair's values live in the arena.
+    /// - ensures: [`Convertibility::Convertible`] exactly when every pair is
+    ///   alike so; [`Convertibility::Distinct`] at the first that is not, and
+    ///   at any set-aside decode or codomain, which this reading does not read.
+    /// - provides: the endpoint reading [`Self::compared`] closes on.
+    /// - fails: [`Stop::Budget`] past the budget; as [`Self::whnf`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// - reason: the `while let` over the worklist and the inner `while let`
+    ///   over one side's chain of returned values, not recursion.
+    /// - measure: the budget left: a side reads one step of its chain per
+    ///   charge, and a pair returns to the worklist only after one of its sides
+    ///   read to something.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call over an endpoint returning the other side's
+    ///   argument is alike, and over one returning another variable is not;
+    ///   leaving the endpoints unread changes the first, and answering every
+    ///   read pair alike the second.
+    /// - witness: `replay::tests::a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695`
+    #[spec(captures: before = self.spent, ensures: |ret| self.spent >= before
+        && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget))]
+    fn endpoints_alike(
+        &mut self,
+        mut pending: Vec<SetAside>,
+        reduction: Reduction,
+    ) -> Result<Convertibility, Stop>
+    {
+        while let Some(set_aside) = pending.pop() {
+            let SetAside::Values(left, right) = set_aside
+            else {
+                return Ok(Convertibility::Distinct);
+            };
+            let mut read = [left, right];
+            for side in &mut read {
+                while let Some(&Value::Returned(computation)) = self.arena.value(*side) {
+                    self.charge()?;
+                    let Term::Computation(reduced) =
+                        self.whnf(Term::Computation(computation), reduction)?
+                    else {
+                        return Err(unreadable());
+                    };
+                    let Some(&Computation::Return(returned)) = self.arena.computation(reduced)
+                    else {
+                        break;
+                    };
+                    *side = returned;
+                }
+            }
+            let [one, other] = read;
+            let walked = if (one, other) == (left, right) {
+                equal_weakened(self.arena, ConversionGoal::Value(one, other))
+            }
+            else {
+                pending_endpoints(
+                    self.arena,
+                    self.unfoldings.presentations(),
+                    ConversionGoal::Value(one, other),
+                    &mut pending,
+                )
+            };
+            if walked == Convertibility::Distinct {
+                return Ok(Convertibility::Distinct);
+            }
+        }
+        Ok(Convertibility::Convertible)
     }
 
     /// Whether anything inside `term` can reduce.
