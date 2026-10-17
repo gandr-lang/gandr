@@ -1,93 +1,19 @@
 // The circle's loop space as a group, after the group-law half of cubical
 // Agda's `Cubical/HITs/S1/Base.agda`: spinning as a map of sums, winding as
 // one, and the loops commuting. `circle.gandr` holds the equivalence
-// `winding` these laws read through; this source restates the declarations
-// it uses, as every corpus source does. `int-sum.gandr` holds the integers'
-// sum and its laws, and `circle-rotation.gandr` the circle's multiplication.
-// Where cubical fills a cube by `hcomp`, a law here is conversion on words or
+// `winding` these laws read through, `int-sum.gandr` the integers' sum and
+// its laws, and `circle-rotation.gandr` the circle's multiplication. Where
+// cubical fills a cube by `hcomp`, a law here is conversion on words or
 // `cong`.
 //
 // Out of reach by design: `ΩS¹≡ℤ`, the loops equal to the integers as types,
 // needs univalence; `isSetΩS¹` and `toPropElim` need the h-level ladder;
 // `basedΩS¹ x ≡ ℤ` at every point needs equivalences as structure.
 
-/// The circle: one point and a loop at it, bound as `loop : Path(Circle,
-/// Base, Base)`.
-data Circle : Type {
-  Base : Circle;
-  loop : Base <-> Base;
-}
-
-/// The integers as a presented type: a successor and a predecessor that
-/// cancel.
-data Int : Type {
-  Z : Int;
-  S : (x : Int) --> Int;
-  P : (x : Int) --> Int;
-  rule S(P(x)) <=> x;
-  rule P(S(x)) <=> x;
-}
-
-/// The winding number: a loop counts one up, its inverse one down.
-def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
-  case p {
-    here => Z,
-    loop ∷ q => S(wind[<](q)),
-    back(loop) ∷ q => P(wind[<](q))
-  }
-}
-
-/// Spinning a count: a successor is one more loop, a predecessor one more
-/// inverse.
-def rec spin(n : Int) -> -F Path(Circle, Base, Base) {
-  case n {
-    Z => here(Base),
-    S(x) => loop ∷ spin[<](x),
-    P(x) => back(loop) ∷ spin[<](x)
-  }
-}
-
-/// One loop more.
-def loopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
-  loop ∷ p
-}
-
-/// One inverse loop more.
-def unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
-  back(loop) ∷ p
-}
-
-/// Spinning undoes winding at every loop (cubical's `decodeEncode` at the
-/// point), by induction over the words.
-def rec sect(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), spin(wind(p)), p) {
-  case p {
-    here => here(here(Base)),
-    loop ∷ q => cong(loopOn, sect[<](q)),
-    back(loop) ∷ q => cong(unloopOn, sect[<](q))
-  }
-}
-
-/// One successor more.
-def up(n : Int) -> -F Int {
-  S(n)
-}
-
-/// One predecessor more.
-def down(n : Int) -> -F Int {
-  P(n)
-}
-
-/// The sum of two integers (cubical's `_+_` on `ℤ`), by recursion on the
-/// second. It respects `Int`'s rules: at `S(P(x))` it builds `S(P(plus(a,
-/// x)))`, which the first rule reads as `plus(a, x)`.
-@[ checks ]
-def rec plus(a : Int, b : Int) -> -F Int {
-  case b {
-    Z => a,
-    S(x) => S(plus[<](a, x)),
-    P(x) => P(plus[<](a, x))
-  }
-}
+// The circle, the integers, winding, spinning and the round trip `sect`.
+import "./circle-base.gandr" ;
+// The integers' sum and its laws.
+import "./int-sum.gandr" ;
 
 /// Spinning a successor is one loop more (cubical's `intLoop-sucℤ`), by
 /// computation.
@@ -132,49 +58,6 @@ def rec windHom(q : Path(Circle, Base, Base), p : Path(Circle, Base, Base)) -> -
     here => here(wind(q)),
     loop ∷ r => cong(up, windHom[<](q, r)),
     back(loop) ∷ r => cong(down, windHom[<](q, r))
-  }
-}
-
-/// A successor on the left of a sum comes out of it (cubical's `sucℤ+`), by
-/// induction on the right summand, as `int-sum.gandr` proves it.
-@[ checks ]
-def rec plusS(a : Int, b : Int) -> -F Path(Int, plus(S(a), b), S(plus(a, b))) {
-  case b {
-    Z => here(S(a)),
-    S(x) => cong(up, plusS[<](a, x)),
-    P(x) => cong(down, plusS[<](a, x))
-  }
-}
-
-/// A predecessor on the left of a sum comes out of it (cubical's `predℤ+`),
-/// as `plusS`.
-@[ checks ]
-def rec plusP(a : Int, b : Int) -> -F Path(Int, plus(P(a), b), P(plus(a, b))) {
-  case b {
-    Z => here(P(a)),
-    S(x) => cong(up, plusP[<](a, x)),
-    P(x) => cong(down, plusP[<](a, x))
-  }
-}
-
-/// Zero is a left unit of the sum, by induction on the right summand.
-@[ checks ]
-def rec plusZ(b : Int) -> -F Path(Int, plus(Z, b), b) {
-  case b {
-    Z => here(Z),
-    S(x) => cong(up, plusZ[<](x)),
-    P(x) => cong(down, plusZ[<](x))
-  }
-}
-
-/// The sum commutes (cubical's `+Comm`), as `int-sum.gandr` proves it: `Int`
-/// is a set, so the case respects its rules by their endpoints alone (#427).
-@[ checks ]
-def rec plusComm(a : Int, b : Int) -> -F Path(Int, plus(a, b), plus(b, a)) {
-  case b {
-    Z => back(plusZ(a)),
-    S(x) => cong(up, plusComm[<](a, x)) then back(plusS(x, a)),
-    P(x) => cong(down, plusComm[<](a, x)) then back(plusP(x, a))
   }
 }
 
