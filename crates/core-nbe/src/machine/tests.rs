@@ -3391,7 +3391,7 @@ fn a_held_endpoint_unfolds_by_a_recorded_step()
 }
 
 #[test]
-fn a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on()
+fn a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361()
 {
     // `run(ident(thunk(return unit)))`, `run` forcing its argument, as a
     // compound endpoint against `unit`. Held, `run` unfolds first and
@@ -3468,7 +3468,7 @@ fn stuck_call(core: &mut CoreArena) -> ComputationId
 }
 
 #[test]
-fn a_bind_over_a_stuck_call_reads_through_its_continuation()
+fn a_bind_over_a_stuck_call_reads_through_its_continuation_369()
 {
     // `⟨S to n. return (n, ())⟩` for the stuck call `S`, against
     // `(⟨S⟩, ())`: `wind(Loop(x))` against `S(wind(x))` in miniature. The

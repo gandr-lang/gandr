@@ -1241,7 +1241,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
     /// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
     /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
     /// - witness: `code::tests::native_classifier_endpoints_compare_in_order_and_refuse_a_missing_target`
-    /// - witness: `code::tests::capability_types_compare_grade_region_and_authority_types`
+    /// - witness: `code::tests::capability_types_compare_grade_region_and_authority_types_373`
     /// - witness: `code::tests::a_type_former_written_twice_is_one_code`
     /// - witness: `code::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
     ///

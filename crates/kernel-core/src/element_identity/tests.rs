@@ -604,7 +604,11 @@ fn a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair()
         ),
         "the first path must join the first components"
     );
+}
 
+#[test]
+fn a_declared_pair_relates_by_its_body_s_components_337()
+{
     // A declared pair's identity reads the components of its admitted body,
     // so the reflexivities of those components relate it to itself; an
     // axiom's is read through its projections, which no dialogue relates.
@@ -2302,7 +2306,7 @@ fn relation_refusal(admitted: &Result<CheckedId, KernelError>) -> Option<KernelV
 }
 
 #[test]
-fn a_definition_relating_compound_endpoints_admits()
+fn a_definition_relating_compound_endpoints_admits_274()
 {
     // Without a relation the forced reading leaves `k` apart from `⟨force
     // delay⟩`: the refusal the ascription met before definitions carried

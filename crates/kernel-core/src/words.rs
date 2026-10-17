@@ -266,7 +266,7 @@ impl Routes
 /// - hypothesis: L3 — `loop` answered at every point is read as its word and
 ///   conjugated to itself; were the name left rigid, the loop at every point
 ///   would be refused.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_none_or(|body| head(arena, unfoldings.presentations(), body) != Head::Other))]
 fn named(
     arena: &TermArena,
@@ -303,7 +303,7 @@ fn named(
 /// - hypothesis: L3 — reflexivity, the empty word and the loop's letters are
 ///   told apart in every loop witness; a misread head would move or fix the
 ///   wrong word.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| match ret {
     Head::Letter { rest, .. } => arena.value(rest).is_some(),
@@ -364,7 +364,7 @@ fn head(
 /// # Adequacy
 /// - hypothesis: L3 — the conjugated and mapped loop witnesses splice closed
 ///   words letter by letter.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(ref letters, end)| head(arena, presentations, end) == Head::Empty && letters.iter().all(|&letter| matches!(head(arena, presentations, letter), Head::Letter { .. }))))]
 fn spelled(
     arena: &TermArena,
@@ -448,7 +448,7 @@ fn relettered(
 /// # Adequacy
 /// - hypothesis: L3 — conjugation at `Path(Circle, x, x)` inverts the loop on
 ///   the left; a word left uninverted would not cancel.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_none_or(|built| spelled(arena, presentations, built).is_some()))]
 fn inverted(
     arena: &mut TermArena,
@@ -485,7 +485,7 @@ fn inverted(
 /// # Adequacy
 /// - hypothesis: L3 — reflexivity at `Path(Circle, Base, x)` becomes the loop
 ///   only when the empty word is spliced before it.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.value(built).is_some()))]
 fn concatenated(
     arena: &mut TermArena,
@@ -526,7 +526,7 @@ fn concatenated(
 /// - hypothesis: L3 — each witness family reads one action per endpoint: the
 ///   point fixed, `x` moving, and the flip's and the collapse's calls as
 ///   routes; a misread action carries the answer elsewhere.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| match ret {
     Some(Action::Moving) => matches!(arena.value(endpoint), Some(&Value::Variable(_))),
@@ -1317,7 +1317,7 @@ where
 ///   word. The circle's corpus rows replay through the same reducts in
 ///   `gandr-surface-corpus`'s
 ///   `kernel_export::kernel_loop_elimination_readmission`.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop`
+/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
 /// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `native_formers::native_formers::a_composite_along_a_returned_path_cancels_to_the_empty_word`
 /// - witness: `native_formers::native_formers::a_word_appends_on_its_first_word`

@@ -502,7 +502,7 @@ fn comp_shape_mismatch(
 ///   corrupted.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
-/// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits`
+/// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits_274`
 /// - witness: `element_identity::tests::a_corrupted_relation_is_refused_by_name`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
 fn read_returned(

@@ -539,7 +539,7 @@ pub(crate) fn pending_endpoints(
 /// - hypothesis: L3 — two path types whose compound endpoints differ set both
 ///   endpoint pairs aside and converge, so a relation reaches them, while a
 ///   differing domain still separates.
-/// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits`
+/// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits_274`
 /// - witness: `conv::tests::related_pairs_set_aside_path_endpoints`
 #[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before)]
 pub(crate) fn related_pairs(

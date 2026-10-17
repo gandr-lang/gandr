@@ -7917,7 +7917,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   read the path at the circle's point and replay in the kernel; the
     ///   composite set against reflexivity is refused at its endpoints, where
     ///   reading the words as their own type would refuse by shape.
-    /// - witness: `native_formers::native_formers::a_word_written_as_a_transport_path_is_that_path_in_both_checkers`
+    /// - witness: `native_formers::native_formers::a_word_written_as_a_transport_path_is_that_path_in_both_checkers_397`
     #[spec(ensures: |ret| match ret {
         | Ok(PathReading::Known { carrier, left, right }) => self.context.arena().value_type(carrier).is_some()
             && self.context.arena().value(left).is_some()

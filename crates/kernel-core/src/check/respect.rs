@@ -151,7 +151,7 @@ pub(super) enum Reading
 /// - hypothesis: L3 — as [`respected`]: the fold reading admits a fixpoint over
 ///   the circle that a bare reading of its case would refuse, and a fold over a
 ///   path at a looped point respects its words' cancellations.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 /// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
 #[spec(ensures: |ret| match ret { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, .. } if marked == fixpoint), Maybe::Absent(reason) => reason == root::Absent::NotOverCase })]
 pub(super) fn fold_root(
@@ -200,7 +200,7 @@ pub(super) fn fold_root(
 /// # Adequacy
 /// - hypothesis: L3 — the same case over a free circle is admitted with no
 ///   obligation, and over the presented circle is decided against its rules.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 #[spec(ensures: |ret| match ret { Maybe::Present(owed) => owed == reading, Maybe::Absent(_) => true })]
 pub(super) fn obliged(
     arena: &TermArena,
@@ -255,7 +255,7 @@ pub(super) fn obliged(
 ///   refused at the first rule, as the checker refuses and admits them; a fold
 ///   into the integers is admitted on its two laws and refused at the rule
 ///   whose law states the other cancellation.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 /// - witness: `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
 #[spec(
     captures: before = arena.watermark(),
@@ -380,7 +380,7 @@ enum Related
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`].
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::ArenaFault)))]
 fn obligation(
     arena: &mut TermArena,
@@ -462,7 +462,7 @@ fn obligation(
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`]: the circle's one variable is the
 ///   innermost binder.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule`
+/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 #[spec(ensures: |ret| u32::from(ret) == u32::from(bound).checked_sub(u32::from(variable)).and_then(|past| past.checked_sub(1_u32)).unwrap_or_default())]
 fn pattern_binder(
     bound: VariableCount,

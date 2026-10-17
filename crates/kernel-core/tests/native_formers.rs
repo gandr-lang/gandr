@@ -357,7 +357,7 @@ mod native_formers
     }
 
     #[test]
-    fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule()
+    fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357()
     {
         use gandr_kernel_term::Presentation;
         use gandr_kernel_term::PresentedRule;
@@ -1652,7 +1652,7 @@ mod native_formers
     }
 
     #[test]
-    fn a_case_over_the_circle_owes_its_loop()
+    fn a_case_over_the_circle_owes_its_loop_377()
     {
         let mut environment = one_loop();
         assert_eq!(
