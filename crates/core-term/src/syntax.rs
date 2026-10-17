@@ -1318,10 +1318,10 @@ pub fn equal_type_syntax(
 ///   between a call returned reads as one between the call kept, and not as one
 ///   between another call. A dependent arrow ignoring its binder reads as the
 ///   arrow, in either order; one naming its binder stays different.
-/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
-/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
+/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
-/// - witness: `syntax::tests::a_staged_type_reads_as_its_base`
+/// - witness: `syntax::tests::a_staged_type_reads_as_its_base_465`
 /// - witness: `syntax::tests::a_kept_call_reads_as_the_value_it_returns`
 /// - witness: `syntax::tests::a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
@@ -1352,7 +1352,7 @@ pub fn equal_type_reading(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`equal_type_reading`].
-/// - witness: `syntax::tests::a_staged_type_reads_as_its_base`
+/// - witness: `syntax::tests::a_staged_type_reads_as_its_base_465`
 #[spec(ensures: |ret| ret == id || matches!(arena.value_type(id), Some(&ValueType::Staged { base, .. }) if base == ret))]
 fn unstaged(
     arena: &crate::CoreArena,
@@ -1576,7 +1576,7 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — the circle's path at its point reads as its words; with
 ///   an endpoint off the point it reads as none.
-/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(words) => signatures.get(&words).is_some_and(|signature| signature.presentation().cells().is_some()),
     Maybe::Absent(_) => true,
@@ -1624,7 +1624,7 @@ pub fn identified_words(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`equal_type_reading`].
-/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(found) => matches!(arena.value_type(words), Some(&ValueType::Data { declaration, .. }) if declaration == found),
     Maybe::Absent(_) => true,
@@ -1679,7 +1679,7 @@ fn read_as_words(
 /// - hypothesis: L3 — the circle's reflexivity at its point against its empty
 ///   word, alone and under a transport, compares equal; off the point it stays
 ///   different.
-/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || matches!(arena.value(here), Some(&Value::Here(_))))]
 fn empty_word(
     arena: &crate::CoreArena,
@@ -1755,7 +1755,7 @@ enum Spelling
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`identified_words`].
-/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 #[spec(ensures: |ret| ret == Spelling::Apart || !side.is_empty())]
 fn spells(
     arena: &crate::CoreArena,
@@ -1850,7 +1850,7 @@ fn signature_children(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`equal_type_reading`].
-/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
+/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
 fn session_children(
     pending: &mut alloc::vec::Vec<StructuralGoal>,
     left: &crate::session::SessionType,
@@ -1872,7 +1872,7 @@ fn session_children(
     /// # Adequacy
     /// - hypothesis: L3 — a state under a `mu` and one at a recursion variable
     ///   each reach the action the protocol takes there.
-    /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
+    /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
     #[spec(ensures: |ret| ret.is_none_or(|(_, node)| !matches!(*node, ProtocolNode::Mu(_) | ProtocolNode::Recur(_))))]
     fn acting(
         protocol: &Protocol,
@@ -1982,8 +1982,8 @@ fn session_children(
 ///   comparison rules without depending on allocation order.
 /// - witness: `syntax::tests::certificate_syntax_erases_only_evidence`
 /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
-/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point`
-/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state`
+/// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
+/// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
 /// - witness: `syntax::tests::a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow`
 /// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
@@ -3102,7 +3102,7 @@ mod tests
     }
 
     #[test]
-    fn a_type_of_words_reads_as_the_path_at_its_point()
+    fn a_type_of_words_reads_as_the_path_at_its_point_399()
     {
         use gandr_kernel_term::FreeCell;
         use gandr_kernel_term::FreeCells;
@@ -3219,7 +3219,7 @@ mod tests
     }
 
     #[test]
-    fn a_session_type_reads_as_its_protocol_from_its_state()
+    fn a_session_type_reads_as_its_protocol_from_its_state_400()
     {
         use alloc::sync::Arc;
 
@@ -3386,7 +3386,7 @@ mod tests
     }
 
     #[test]
-    fn a_staged_type_reads_as_its_base()
+    fn a_staged_type_reads_as_its_base_465()
     {
         use gandr_kernel_term::Stage;
         use gandr_kernel_term::StageId;

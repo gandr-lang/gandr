@@ -398,7 +398,7 @@ where
 /// - hypothesis: L3 — a `run` binder and a function's parameters are named, and
 ///   a type over them spells them by those names.
 /// - witness: `diagnostics::diagnostics::a_mismatch_under_a_binder_names_it`
-/// - witness: `diagnostics::diagnostics::a_refusal_spells_its_binders_by_name`
+/// - witness: `diagnostics::diagnostics::a_refusal_spells_its_binders_by_name_418`
 #[spec(ensures: |ret| ret.len() == obligation.binders().len())]
 pub fn opened(
     obligation: &Obligation,
