@@ -1,13 +1,20 @@
+// An attribute block of two entries before a data block, a signature and a
+// function: each block is read whole, so the unknown `note` refuses its
+// declaration whatever it precedes.
+
+// A colour, its block's second entry unknown.
 @[ refuses("UnknownAttribute"), note("a colour, named by its constructors") ]
 data Color : Type {
   Red : Color;
   Green : Color;
 }
 
+// An answer stated before its definition, its block's second entry unknown.
 @[ refuses("UnknownAttribute"), note("the answer, stated before its definition") ]
 def answer : Integer ;
 def answer = 42 ;
 
+// The first of two integers, its block's second entry unknown.
 @[ refuses("UnknownAttribute"), note("the first of two integers") ]
 def first(x : Integer, y : Integer) -> -F Integer {
   return x

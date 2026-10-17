@@ -1,3 +1,9 @@
+// Addition on the naturals as an operation of their presentation, defined by
+// two rules by recursion on its first argument (Baader and Nipkow, _Term
+// Rewriting and All That_, Cambridge University Press, 1998, § 4.1): a sum
+// of closed numerals normalizes to a numeral and runs to it.
+
+/// The naturals with addition as an operation.
 @[ normalizes("add(Succ(Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))") ]
 data NatAdd : Type {
   Zero : NatAdd;
@@ -7,6 +13,7 @@ data NatAdd : Type {
   rule add(Succ(m), n) <=> Succ(add(m, n));
 }
 
+/// Two plus one runs to three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
 def two_plus_one : +U (-F NatAdd) ;
 def two_plus_one = thunk { become add(Succ(Succ(Zero)), Succ(Zero)) } ;

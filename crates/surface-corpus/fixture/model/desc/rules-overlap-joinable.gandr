@@ -1,3 +1,10 @@
+// Rules that overlap are admitted when their critical pairs join (Knuth and
+// Bendix's completion; Baader and Nipkow, _Term Rewriting and All That_,
+// Cambridge University Press, 1998, § 6.2): zero a unit of addition on both
+// sides overlaps the recursion on the first argument at `add(Zero, Zero)` and
+// at `add(Succ(m), Zero)`, and both pairs rewrite to one term.
+
+/// The naturals with addition, zero stated a unit on both sides.
 @[ normalizes("add(Zero, Zero) ~> Zero") ]
 data NatUnits : Type {
   Zero : NatUnits;
@@ -8,14 +15,17 @@ data NatUnits : Type {
   rule add(Succ(m), n) <=> Succ(add(m, n));
 }
 
+/// Zero plus zero, where the two unit rules overlap.
 @[ runs("Zero") ]
 def zero_plus_zero : +U (-F NatUnits) ;
 def zero_plus_zero = thunk { become add(Zero, Zero) } ;
 
+/// One plus zero, where the right unit overlaps the recursion.
 @[ runs("Succ(Zero)") ]
 def one_plus_zero : +U (-F NatUnits) ;
 def one_plus_zero = thunk { become add(Succ(Zero), Zero) } ;
 
+/// Two plus one, by the recursion alone.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def two_plus_one : +U (-F NatUnits) ;
-def two_plus_one = thunk { become add(Succ(Succ(Zero)), Succ(Zero)) } ;
+def two_plus_one_overlapping : +U (-F NatUnits) ;
+def two_plus_one_overlapping = thunk { become add(Succ(Succ(Zero)), Succ(Zero)) } ;

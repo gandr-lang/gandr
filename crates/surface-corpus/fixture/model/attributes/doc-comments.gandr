@@ -1,9 +1,15 @@
+// Doc comments and the `doc` attribute, after rustdoc's intra-doc links
+// (_The rustdoc book_, § Linking to items by name): a `[name]` in either
+// resolves to a declaration of the source, and a link to a name nothing
+// declares is refused.
+
 /// Returns its argument; [echo] does the same.
 @[ checks ]
 def identity(x: Integer) -> -F Integer {
   return x
 }
 
+// Documented by the attribute, linking back to `identity`.
 @[ checks, doc("Returns its argument, as [identity] does.") ]
 def echo(x: Integer) -> -F Integer {
   return x

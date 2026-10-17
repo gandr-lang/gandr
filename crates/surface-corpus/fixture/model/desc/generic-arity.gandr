@@ -1,6 +1,8 @@
 // A generic program over descriptions. A `sign` block is a value of `Sig`, so
 // an ordinary function reads any presentation by `case`; a function whose arms
-// return type quotes names a type where a type is read (`El` as unquote).
+// return type quotes names a type where a type is read (`El` as unquote),
+// after Chapman, Dagand, McBride and Morris (_The Gentle Art of Levitation_,
+// doi:10.1145/1863543.1863547).
 
 /// A monoid presented as data: the block binds `Monoid : Sig`, its sort and
 /// its two operations held in one value.

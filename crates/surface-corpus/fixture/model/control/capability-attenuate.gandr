@@ -1,16 +1,27 @@
+// Capability attenuation, after the object-capability discipline (Dennis and
+// Van Horn, _Programming Semantics for Multiprogrammed Computations_,
+// doi:10.1145/365230.365252; Miller, _Robust Composition_, 2006): a
+// capability holding more operations is passed where one holding fewer is
+// asked, and a holder cannot use an operation its capability does not hold.
+
+/// The file system's capability, holding reading and writing, owed by the
+/// host that grants it.
 @[ owes(1) ]
 def fs : Cap {read, write} ;
 
+/// A reader that asks only for reading.
 @[ checks ]
 def peek(c : Cap {read}) -> -F [Fs] String {
   become c.read("notes")
 }
 
+/// The full capability passed where reading alone is asked.
 @[ checks ]
 def main() -> -F [Fs] String {
   become peek(fs)
 }
 
+/// A holder of reading alone cannot write.
 @[ refuses("CapabilityOutsideAuthority") ]
 def save(c : Cap {read}) -> -F [Fs] Unit {
   become c.write("notes", "draft")

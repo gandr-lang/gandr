@@ -1,3 +1,9 @@
+// A presented type whose operation is given by a rule, a face between two
+// terms (Baader and Nipkow, _Term Rewriting and All That_, Cambridge
+// University Press, 1998, § 4.1): the identity operation at zero rewrites to
+// zero.
+
+/// Zero and an identity operation, its value at zero given by a rule.
 @[ checks ]
 data NatTheory : Type {
   Zero : NatTheory;
