@@ -683,8 +683,13 @@ mod tests
             blake3::hash(&image).as_bytes(),
             "the root is BLAKE3 of the image"
         );
-        let decoded = StoreManifest::decode(ManifestImage::from(image.as_slice()))
-            .expect("the golden decodes");
+        let borrowed = ManifestImage::from(image.as_slice());
+        assert_eq!(
+            borrowed.as_ref(),
+            image.as_slice(),
+            "a borrowed image reads back its bytes"
+        );
+        let decoded = StoreManifest::decode(borrowed).expect("the golden decodes");
         assert_eq!(decoded, manifest, "the golden round-trips");
 
         let mut perturbed = image;

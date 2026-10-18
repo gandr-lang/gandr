@@ -137,6 +137,22 @@ fn retargeting_an_arrow_rechecks_every_part_whose_path_crosses_it()
 }
 
 #[test]
+fn a_part_minted_and_deleted_in_one_edit_owes_no_equation()
+{
+    let (mut store, ..) = two_loops(Indexing::Indexed);
+    let vertex = object(&store, &Name("V"));
+
+    let mut edit = store.edit();
+    let gone = edit.add_part(vertex).expect("a vertex is minted");
+    edit.delete_part(vertex, gone)
+        .expect("nothing refers to the new vertex");
+    edit.finish()
+        .expect("a dead part's unset loop is no equation to check");
+    assert_eq!(store.liveness(vertex, gone), Ok(Liveness::Dead));
+    assert_eq!(store.audit(), Ok(()));
+}
+
+#[test]
 fn every_inverse_agrees_with_a_scan_after_every_edit()
 {
     let ThreePath {

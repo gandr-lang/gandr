@@ -666,8 +666,10 @@ impl Edit<'_>
     /// # Adequacy
     /// - hypothesis: L3 — retargeting an edge finds the loops two arrows
     ///   upstream of it, so a lost prefix step or occurrence leaves their
-    ///   violation unrefused.
+    ///   violation unrefused; a part minted and deleted in one edit is no part
+    ///   to recheck.
     /// - witness: `tests::equations::retargeting_an_arrow_rechecks_every_part_whose_path_crosses_it`
+    /// - witness: `tests::equations::a_part_minted_and_deleted_in_one_edit_owes_no_equation`
     #[inline]
     fn affected(&self) -> Result<BTreeSet<(EquationId, PartKey)>, Refusal>
     {

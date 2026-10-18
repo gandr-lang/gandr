@@ -379,15 +379,17 @@ impl PartSet
     /// Clears a live key's bit; the counter does not move.
     ///
     /// # Specification
-    /// - requires: the key is live.
-    /// - ensures: the key is dead and the live count is one smaller; every
-    ///   other key's liveness and the counter are unchanged.
+    /// - requires: nothing; a key that is not live is left as it is.
+    /// - ensures: the key is dead; the live count is one smaller when it was
+    ///   live and unchanged otherwise; every other key's liveness and the
+    ///   counter are unchanged.
     /// - panics: none.
     /// - executable: none — a predicate over every other key would walk the
     ///   set; the boundary witness observes the neighbours.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — removing key 64 of 66 leaves 63 and 65 live.
+    /// - hypothesis: L3 — removing key 64 of 66 leaves 63 and 65 live, and
+    ///   removing it again counts nothing.
     /// - witness: `parts::tests::removal_clears_one_bit_across_a_word_boundary`
     #[inline]
     pub(crate) fn remove(
@@ -595,6 +597,12 @@ mod tests
             u64::from(set.next_key()),
             66_u64,
             "the counter does not move"
+        );
+        set.remove(PartKey::from(64_u64));
+        assert_eq!(
+            u64::from(set.live()),
+            65_u64,
+            "removing the dead key again counts nothing"
         );
 
         let keys: Vec<u64> = set.iter().map(u64::from).collect();
