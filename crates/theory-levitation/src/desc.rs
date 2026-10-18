@@ -15,11 +15,14 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use quenchant_shape::shape::Maybe;
 
 use crate::arity::BridgeArity;
 use crate::arity::SortRef;
 use crate::boundary::NominalSerial;
 use crate::boundary::RecursiveStatus;
+use crate::boundary::ShapePoint;
+use crate::boundary::ShapeSize;
 use crate::boundary::SurfaceByteOffset;
 use crate::circuit::CircuitRule;
 use crate::code::Attrs;
@@ -310,6 +313,181 @@ impl SortIndex
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a signature carries no shape parameter.
+    pub mod shape_parameter {
+        /// The reason the shape parameter is absent.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The signature states no shape: its sorts and operations are
+            /// stated over a point, and no cell is fixed on a face.
+            Unshaped,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a face has no point outside its shape.
+    pub mod face_escape {
+        /// The reason no point escapes.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// Every point of the face is a point of the shape.
+            Inside,
+        }
+    }
+}
+
+/// A signature's shape parameter: the finite shape its cells are stated over,
+/// and the named faces of it a cell may be fixed on.
+///
+/// `shape Square : 4 { left = {0, 2}; right = {1, 3}; }` states a shape of
+/// four points and two faces of it, each the subshape of the points it lists
+/// (Schönlank, Nuyts and Devriese, _Towards `FaceTT`_, TYPES 2026: the shape
+/// parameter `ft` and its subshapes). The table holds what was written, and
+/// [`check_desc`] refuses a face with a point outside the shape and a face
+/// name stated twice; a face that passes reads as a subshape of the shape's
+/// carrier, whose inclusions `gandr-theory-shapes` decides. That reading is
+/// the consumer's: this crate depends on no other crate of the workspace, so
+/// a point and a size are its own counts.
+///
+/// [`check_desc`]: crate::check_desc
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct SignShape
+{
+    /// The shape's name.
+    pub name: Name,
+    /// The number of points of the shape.
+    pub points: ShapeSize,
+    /// The named faces, in written order.
+    pub faces: Box<[ShapeFace]>,
+}
+
+impl SignShape
+{
+    /// The shape of the given name and size, with the given faces.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new<N, F>(
+        name: N,
+        points: ShapeSize,
+        faces: F,
+    ) -> Self
+    where
+        N: Into<Name>,
+        F: Into<Box<[ShapeFace]>>,
+    {
+        Self {
+            name: name.into(),
+            points,
+            faces: faces.into(),
+        }
+    }
+
+    /// The least point of `face` the shape lacks.
+    ///
+    /// # Specification
+    /// - ensures: the least point of the face at or past the shape's size, or
+    ///   [`face_escape::Absent::Inside`] when the face is a subshape.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the last point of a shape stays inside, the first
+    ///   point past it escapes, and of two escaping points the lesser is named;
+    ///   an off-by-one bound or the greater point changes the answer.
+    /// - witness: `desc::tests::a_face_escapes_its_shape_at_its_least_outside_point`
+    #[inline]
+    #[spec(ensures: |escape| match escape {
+        Maybe::Present(point) => face.points.contains(&point) && point >= ShapePoint::from(usize::from(self.points))
+            && face.points.iter().all(|other| *other >= point || usize::from(*other) < usize::from(self.points)),
+        Maybe::Absent(_) => face.points.iter().all(|point| usize::from(*point) < usize::from(self.points)),
+    })]
+    pub fn escape(
+        &self,
+        face: &ShapeFace,
+    ) -> Maybe<ShapePoint, face_escape::Absent>
+    {
+        face.points
+            .iter()
+            .copied()
+            .find(|point| usize::from(*point) >= usize::from(self.points))
+            .map_or(Maybe::Absent(face_escape::Absent::Inside), Maybe::Present)
+    }
+}
+
+/// One named face of a signature's shape: `left = {0, 2}`, the subshape of the
+/// listed points.
+///
+/// The points are kept ascending and once each, so two spellings of one
+/// subshape are one face.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ShapeFace
+{
+    /// The face's name.
+    name: Name,
+    /// The face's points, ascending, each once.
+    points: Box<[ShapePoint]>,
+}
+
+impl ShapeFace
+{
+    /// The face of the given name holding the given points.
+    ///
+    /// # Specification
+    /// - ensures: the points ascending and each once, whatever order and
+    ///   repetition they were given in.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — points given descending and repeated read back
+    ///   ascending and once each.
+    /// - witness: `desc::tests::a_face_escapes_its_shape_at_its_least_outside_point`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref face| face.points.is_sorted_by(|left, right| left < right))]
+    pub fn new<N, P>(
+        name: N,
+        points: P,
+    ) -> Self
+    where
+        N: Into<Name>,
+        P: IntoIterator<Item = ShapePoint>,
+    {
+        let mut points: Vec<ShapePoint> = points.into_iter().collect();
+        points.sort_unstable();
+        points.dedup();
+        Self {
+            name: name.into(),
+            points: points.into(),
+        }
+    }
+
+    /// The face's name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn name(&self) -> &Name
+    {
+        &self.name
+    }
+
+    /// The face's points, ascending, each once.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn points(&self) -> &[ShapePoint]
+    {
+        &self.points
+    }
+}
+
 /// A datatype parameter with its grade and attribute Σ.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ParamDesc<G>
@@ -572,6 +750,10 @@ pub struct SignDesc<G>
     /// `data` or `codata` block declares exactly one sort, named by the block;
     /// a sign block declares its `sort` members.
     pub sorts: Box<[SortDesc]>,
+    /// The shape parameter the sorts and operations are stated over, absent
+    /// for a signature that states none. A `data` or `codata` block states
+    /// none; a sign block states one by its `shape` member.
+    pub shape: Maybe<SignShape, shape_parameter::Absent>,
     /// The datatype parameters, each graded and attributed.
     pub params: Box<[ParamDesc<G>]>,
     /// The constructors: the σ tag over the code grammar, the 1-cells.
@@ -635,6 +817,7 @@ impl<G> SignDesc<G>
         Self {
             id,
             sorts,
+            shape: Maybe::Absent(shape_parameter::Absent::Unshaped),
             params: params.into(),
             ctors: ctors.into(),
             opers: opers.into(),
@@ -660,6 +843,23 @@ impl<G> SignDesc<G>
     {
         Self {
             sorts: sorts.into(),
+            ..self
+        }
+    }
+
+    /// The same description stated over `shape`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_shape(
+        self,
+        shape: SignShape,
+    ) -> Self
+    {
+        Self {
+            shape: Maybe::Present(shape),
             ..self
         }
     }
@@ -773,5 +973,38 @@ mod tests
         assert!(bool::from(desc.is_recursive()));
         desc.ctors = Box::from([recursive, leaf]);
         assert!(bool::from(desc.is_recursive()));
+    }
+
+    #[test]
+    fn a_face_escapes_its_shape_at_its_least_outside_point()
+    {
+        let points = |raw: &[usize]| {
+            raw.iter()
+                .copied()
+                .map(ShapePoint::from)
+                .collect::<Vec<_>>()
+        };
+        let left = ShapeFace::new("left", points(&[2, 0, 2]));
+        assert_eq!(
+            left.points(),
+            points(&[0, 2]).as_slice(),
+            "a face keeps its points ascending and once each"
+        );
+        let square = SignShape::new("Square", ShapeSize::from(4_usize), []);
+        let escape = |raw: &[usize]| square.escape(&ShapeFace::new("f", points(raw)));
+        let inside = Maybe::Absent(face_escape::Absent::Inside);
+        assert_eq!(escape(&[0, 2]), inside);
+        assert_eq!(escape(&[]), inside, "the empty face is a subshape");
+        assert_eq!(escape(&[3, 2, 1, 0]), inside, "the last point stays inside");
+        assert_eq!(
+            escape(&[1, 4]),
+            Maybe::Present(ShapePoint::from(4_usize)),
+            "the first point past the shape escapes"
+        );
+        assert_eq!(
+            escape(&[7, 5, 1]),
+            Maybe::Present(ShapePoint::from(5_usize)),
+            "of two escaping points the lesser is named"
+        );
     }
 }

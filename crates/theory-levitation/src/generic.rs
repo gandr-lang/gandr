@@ -698,13 +698,13 @@ pub fn serialize_value<G>(
 /// Inspectable rendering of a description's `sign` normal form to canonical
 /// text, in the ruled surface spelling.
 ///
-/// Every description renders as its `sign` normal form, with the declared
-/// sort set spelled first and the arrow grid's `-->` / `==>` at every arrow
-/// position. The normal form's members are sorts, operations and rules only:
-/// a family is declared once, whole, as a nested generator block, so
-/// constructor and observation descriptors have no member spelling here and
-/// the render omits them; they remain inspectable through
-/// [`SignDesc::ctors`].
+/// Every description renders as its `sign` normal form, with its shape
+/// parameter first, then the declared sort set, and the arrow grid's `-->` /
+/// `==>` at every arrow position. The normal form's members are the shape,
+/// sorts, operations and rules only: a family is declared once, whole, as a
+/// nested generator block, so constructor and observation descriptors have no
+/// member spelling here and the render omits them; they remain inspectable
+/// through [`SignDesc::ctors`].
 ///
 /// The rendering is deterministic and structural — an inspection notation,
 /// not a surface pretty-printer. Every member is terminated by `;`, and the
@@ -713,8 +713,10 @@ pub fn serialize_value<G>(
 /// # Specification
 /// - ensures: deterministic output for a given description: `sign` and the
 ///   datatype's name, its parameters in parentheses when it has any, then the
-///   sorts, operations, rule faces and circuit rules in declaration order, each
-///   terminated by `;`, or `{}` when there are none.
+///   shape parameter, the sorts, operations, rule faces and circuit rules in
+///   declaration order, each terminated by `;`, or `{}` when there are none. A
+///   shape renders `shape Name : size { face = {points}; … }`, its points
+///   ascending.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -729,13 +731,14 @@ pub fn serialize_value<G>(
 /// - witness: `generic::tests::desc_inspection_omits_a_primitive_field_constructor`
 /// - witness: `generic::tests::port_rendering_distinguishes_authored_and_placeholder_names`
 /// - witness: `generic::tests::description_members_keep_their_declared_kind_order`
+/// - witness: `generic::tests::a_shape_renders_first_with_its_faces`
 #[inline]
 #[must_use]
 #[spec(ensures: |ref text| text.as_ref().strip_prefix("sign ")
     .and_then(|body| body.strip_prefix(desc.id.name.as_ref()))
     .is_some_and(|body| body.starts_with(if desc.params.is_empty() { " {" } else { "(" }))
-    && text.as_ref().ends_with(if desc.sorts.is_empty() && desc.opers.is_empty()
-        && desc.rules.is_empty() && desc.circuits.is_empty() { "{}" } else { "; }" }))]
+    && text.as_ref().ends_with(if matches!(desc.shape, Maybe::Absent(_)) && desc.sorts.is_empty()
+        && desc.opers.is_empty() && desc.rules.is_empty() && desc.circuits.is_empty() { "{}" } else { "; }" }))]
 pub fn serialize_desc<G>(desc: &SignDesc<G>) -> SerializedDescText
 {
     let params: Vec<String> = desc
@@ -750,6 +753,26 @@ pub fn serialize_desc<G>(desc: &SignDesc<G>) -> SerializedDescText
         format!("({})", params.join(", "))
     };
     let mut members: Vec<String> = Vec::new();
+    if let Maybe::Present(ref shape) = desc.shape {
+        let faces: Vec<String> = shape
+            .faces
+            .iter()
+            .map(|face| {
+                let points: Vec<String> = face
+                    .points()
+                    .iter()
+                    .map(|point| format!("{}", usize::from(*point)))
+                    .collect();
+                format!("{} = {{{}}}; ", face.name(), points.join(", "))
+            })
+            .collect();
+        members.push(format!(
+            "shape {} : {} {{ {}}}",
+            shape.name,
+            usize::from(shape.points),
+            faces.concat()
+        ));
+    }
     for sort in &desc.sorts {
         let indices: Vec<String> = sort
             .indices
@@ -1262,6 +1285,53 @@ mod tests
         )
         .with_sorts([]);
         assert_eq!(serialize_desc(&desc).as_ref(), "sign Empty {}");
+    }
+
+    #[test]
+    fn a_shape_renders_first_with_its_faces()
+    {
+        use crate::boundary::ShapePoint;
+        use crate::boundary::ShapeSize;
+        use crate::desc::ShapeFace;
+        use crate::desc::SignShape;
+        use crate::desc::SortDesc;
+
+        let points = |raw: &[usize]| {
+            raw.iter()
+                .copied()
+                .map(ShapePoint::from)
+                .collect::<Vec<_>>()
+        };
+        let empty: SignDesc<Grade> = SignDesc::new(
+            NominalId::new(0_u64.into(), "Cells"),
+            [],
+            [],
+            [],
+            [],
+            DeclPolarity::Data,
+            Attrs::empty(),
+        )
+        .with_sorts([]);
+        let bare = empty
+            .clone()
+            .with_shape(SignShape::new("Point", ShapeSize::from(1_usize), []));
+        assert_eq!(
+            serialize_desc(&bare).as_ref(),
+            "sign Cells { shape Point : 1 { }; }",
+            "a shape is a member: a description of nothing else is not empty"
+        );
+        let square = empty
+            .with_sorts([SortDesc::new("A", DeclPolarity::Data)])
+            .with_shape(SignShape::new("Square", ShapeSize::from(4_usize), [
+                ShapeFace::new("left", points(&[2, 0])),
+                ShapeFace::new("right", points(&[1, 3])),
+                ShapeFace::new("none", []),
+            ]));
+        assert_eq!(
+            serialize_desc(&square).as_ref(),
+            "sign Cells { shape Square : 4 { left = {0, 2}; right = {1, 3}; none = {}; }; sort A : Type; }",
+            "the shape comes first, each face its points ascending"
+        );
     }
 
     #[test]

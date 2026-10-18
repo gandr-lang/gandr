@@ -1,0 +1,26 @@
+// The twin of `model/desc/shaped-signature.gandr`: a face holding a point
+// past its shape, a face named twice, and a signature stating two shapes.
+
+/// `far` holds point 4 of a shape of four points: the description check
+/// refuses the face by name (`FaceOutsideShape`).
+@[ refuses("MalformedForm") ]
+sign Past {
+  shape Square : 4 { far = {1, 4}; };
+  sort Cell : Type;
+}
+
+/// `left` is named twice: the description check refuses the second by name
+/// (`DuplicateFaceName`).
+@[ refuses("MalformedForm") ]
+sign Twice {
+  shape Square : 4 { left = {0, 2}; left = {1, 3}; };
+  sort Cell : Type;
+}
+
+/// A signature is stated over one shape: the second member is malformed.
+@[ refuses("MalformedForm") ]
+sign TwoShapes {
+  shape Square : 4 { };
+  shape Line : 2 { };
+  sort Cell : Type;
+}

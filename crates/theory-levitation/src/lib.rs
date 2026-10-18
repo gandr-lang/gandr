@@ -53,6 +53,14 @@
 //!   binding syntax with the generated model's canonical terms
 //!   ([`FirstOrderJudgement`]), and evaluates it into a value domain and reads
 //!   it back ([`Evaluation`]), from the declarations alone (`binding`).
+//! - **The face theory as a parameter.** A signature may state the finite shape
+//!   its cells are stated over ([`SignShape`]): a size and named faces, each
+//!   the subshape of the points it lists, after `FaceTT`'s shape parameter.
+//!   [`check_desc`] refuses a face past its shape or named twice, `Sig` codes
+//!   the shape, and [`serialize_desc`] renders it as the `sign` block's first
+//!   member. Reading a face as a subshape, and deciding inclusions between
+//!   faces, is `gandr-theory-shapes`'s, at the consumer: this crate is the
+//!   closed tier below.
 //!
 //! The fragment is the framework's rule at one depth over closed finitary
 //! signatures: a binder's domain is a representable sort, and a signature is
@@ -206,6 +214,10 @@
 //!   whose laws the dictionary suite checks on this crate's structures, and
 //!   protype isomorphisms (§ 3.2.3), the shape of the certificate suite's value
 //!   translators.
+//! - Maximilian Schönlank, Andreas Nuyts and Dominique Devriese. "Towards
+//!   `FaceTT`: a generalization of intensional type systems with glue". TYPES
+//!   2026, abstract 42 — the shape parameter `ft` and its subshapes, which
+//!   [`SignShape`] states for a signature.
 
 #![no_std]
 
@@ -256,6 +268,8 @@ pub use crate::boundary::RuleIndex;
 pub use crate::boundary::RuleVariableLinearity;
 pub use crate::boundary::SerializedDescText;
 pub use crate::boundary::SerializedValueBytes;
+pub use crate::boundary::ShapePoint;
+pub use crate::boundary::ShapeSize;
 pub use crate::boundary::SurfaceByteOffset;
 pub use crate::boundary::TermPositionIndex;
 pub use crate::boundary::VariableIndex;
@@ -297,10 +311,14 @@ pub use crate::desc::NominalId;
 pub use crate::desc::OperDesc;
 pub use crate::desc::ParamDesc;
 pub use crate::desc::Representability;
+pub use crate::desc::ShapeFace;
 pub use crate::desc::SignDesc;
+pub use crate::desc::SignShape;
 pub use crate::desc::SortDesc;
 pub use crate::desc::SortIndex;
 pub use crate::desc::SurfaceSpan;
+pub use crate::desc::face_escape;
+pub use crate::desc::shape_parameter;
 pub use crate::elaborate::ActiveCell;
 pub use crate::elaborate::CircuitElaborationError;
 pub use crate::elaborate::InterfacePair;

@@ -909,7 +909,7 @@ fn a_sign_block_defines_its_presentation()
             .iter()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
-        [3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5],
+        [3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3],
         "each constructor's names, then its recursions"
     );
     let mut declarations = alloc::vec![gandr_core_checker::Declaration::data(
@@ -1261,10 +1261,26 @@ fn a_rendered_signature_reparses_to_itself()
             SortRef::new("", "Nat"),
         ),
     ]);
+    // A square's cells over two of its sides, with a face of no point: the
+    // shape renders first and its faces their points ascending.
+    let points = |raw: &[usize]| {
+        raw.iter()
+            .copied()
+            .map(ShapePoint::from)
+            .collect::<Vec<_>>()
+    };
+    let square = signature("Cells", vec![SortDesc::new("A", DeclPolarity::Data)], vec![
+        operation("cell", vec![], SortRef::new("", "A")),
+    ])
+    .with_shape(SignShape::new("Square", ShapeSize::from(4_usize), [
+        ShapeFace::new("left", points(&[0, 2])),
+        ShapeFace::new("right", points(&[3, 1])),
+        ShapeFace::new("none", []),
+    ]));
     // An unnamed port under a binder renders as `_ : pi+ (x : S) . T`, which
     // an input port does not read yet (#718); every port here is named or
     // binds nothing.
-    for original in [lambda, identity_return, naturals] {
+    for original in [lambda, identity_return, naturals, square] {
         let rendered = gandr_theory_levitation::serialize_desc(&original);
         let report = described(rendered.as_ref());
         assert_eq!(report.diagnostics, [], "{rendered:?} lowers whole");
@@ -1300,6 +1316,122 @@ fn a_rendered_signature_reparses_to_itself()
             binders(&original.opers),
             "every port keeps its binders, each domain a sort over its index terms"
         );
+        assert_eq!(
+            sign.description.shape, original.shape,
+            "the shape keeps its size and its faces"
+        );
+    }
+}
+
+#[test]
+fn a_face_past_its_shape_is_refused_by_name()
+{
+    for (source, kind, written) in [
+        (
+            "sign Cells { shape Square : 4 { far = {1, 4}; }; sort A : Type; }",
+            gandr_theory_levitation::WfKind::FaceOutsideShape,
+            "a face holding a point past its shape",
+        ),
+        (
+            "sign Cells { shape Square : 4 { left = {0}; left = {2}; }; sort A : Type; }",
+            gandr_theory_levitation::WfKind::DuplicateFaceName,
+            "a face named twice",
+        ),
+    ] {
+        let report = described(source);
+        let [ref diagnostic] = *report.diagnostics.as_slice()
+        else {
+            panic!("{written}: one refusal: {:?}", report.diagnostics)
+        };
+        assert!(
+            matches!(
+                diagnostic.fault,
+                DescriptionFault::IllFormed(ref reason) if reason.kind == kind
+            ),
+            "{written} is the description check's: {diagnostic:?}"
+        );
+    }
+    let report =
+        described("sign Cells { shape Square : 4 { }; shape Line : 2 { }; sort A : Type; }");
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("a signature states one shape: {:?}", report.diagnostics)
+    };
+    assert!(
+        matches!(diagnostic.fault, DescriptionFault::Malformed),
+        "a second shape is malformed: {diagnostic:?}"
+    );
+}
+
+#[test]
+fn the_corpus_signatures_evaluate_and_read_back_their_closed_terms()
+{
+    use gandr_theory_levitation::BindingJudgement;
+    use gandr_theory_levitation::BindingTerm;
+    use gandr_theory_levitation::SimplySorted;
+    use gandr_theory_levitation::VariableIndex;
+
+    // The corpus's own blocks, read as every `sign` block is: the naturals and
+    // the λ-calculus are simply sorted, so both views serve their descriptions.
+    let report = described(include_str!(
+        "../../../../surface-corpus/fixture/model/desc/second-order-signatures.gandr"
+    ));
+    assert_eq!(report.diagnostics, [], "the corpus's blocks lower whole");
+    let sign = |name: &str| {
+        report
+            .declarations
+            .iter()
+            .find(|declaration| declaration.description.id.name.as_ref() == name)
+            .map_or_else(
+                || panic!("the corpus declares `{name}`"),
+                |declaration| &declaration.description,
+            )
+    };
+    let both_views = |semantics: &SimplySorted<'_, _>, judgement: BindingJudgement| {
+        let mut evaluation = semantics
+            .evaluate(&judgement)
+            .expect("a closed term evaluates");
+        assert_eq!(
+            evaluation.readback(),
+            Ok(judgement.clone()),
+            "reading the value back is the identity"
+        );
+        let first_order = semantics
+            .to_first_order(&judgement)
+            .expect("the first-order view");
+        assert_eq!(
+            semantics.from_first_order(&first_order),
+            Ok(judgement),
+            "the two views identify the term"
+        );
+    };
+    let naturals = SimplySorted::new(sign("Nat")).expect("the naturals are simply sorted");
+    let mut numeral = BindingTerm::operation(Name::from("zero"), []);
+    for _ in 0_usize .. 3_usize {
+        both_views(&naturals, BindingJudgement {
+            context: Vec::new(),
+            sort: Name::from("Nat"),
+            term: numeral.clone(),
+        });
+        numeral = BindingTerm::operation(Name::from("succ"), [numeral]);
+    }
+    let lambda = SimplySorted::new(sign("Lambda")).expect("the λ-calculus is simply sorted");
+    let bound = || BindingTerm::variable(VariableIndex::from(0_usize));
+    let identity = BindingTerm::operation(Name::from("lam"), [bound()]);
+    let doubling = BindingTerm::operation(Name::from("lam"), [BindingTerm::operation(
+        Name::from("app"),
+        [bound(), bound()],
+    )]);
+    for term in [
+        identity.clone(),
+        doubling.clone(),
+        BindingTerm::operation(Name::from("app"), [doubling, identity]),
+    ] {
+        both_views(&lambda, BindingJudgement {
+            context: Vec::new(),
+            sort: Name::from("Tm"),
+            term,
+        });
     }
 }
 

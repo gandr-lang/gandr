@@ -9,6 +9,8 @@
 //!   occurrence names a declared sort;
 //! * a π⁺ binder's domain is a declared representable sort: an operation may
 //!   bind only variables of a sort that extends a context;
+//! * the faces of a signature's shape have distinct names, and each is a
+//!   subshape of the shape: its points lie in the shape's carrier;
 //! * a rule face may mention only in-signature symbols (constructor and
 //!   operation names of this datatype), and its right-hand side may not
 //!   introduce a variable absent from its left-hand side;
@@ -47,6 +49,7 @@ use crate::code::Attrs;
 use crate::code::Name;
 use crate::desc::Representability;
 use crate::desc::SignDesc;
+use crate::desc::SignShape;
 use crate::desc::SurfaceSpan;
 use crate::rule::FreeTerm;
 use crate::rule::RuleFace;
@@ -103,6 +106,10 @@ pub enum WfKind
     /// A circuit rule's wiring reads one output of a many-out node on its
     /// own, which no term carries.
     SplitCircuitOutputs,
+    /// Two faces of the signature's shape share one name.
+    DuplicateFaceName,
+    /// A face of the signature's shape holds a point the shape lacks.
+    FaceOutsideShape,
 }
 
 quenchant_shape::reason_enum! {
@@ -188,23 +195,23 @@ fn located(
 ///
 /// # Specification
 /// - ensures: every failure of the rules this module states, in a deterministic
-///   order: sorting-discipline checks, then the π⁺ binder check, then attribute
-///   declines, then per-face checks, then per-arity checks, then
-///   per-circuit-rule checks; an empty result witnesses a well-formed
-///   description. The binder check reports one `NonRepresentableBinder` per
-///   binder, over every port of every operation, whose domain is not a declared
-///   representable sort.
+///   order: sorting-discipline checks, then the π⁺ binder check, then the shape
+///   checks, then attribute declines, then per-face checks, then per-arity
+///   checks, then per-circuit-rule checks; an empty result witnesses a
+///   well-formed description. The binder check reports one
+///   `NonRepresentableBinder` per binder, over every port of every operation,
+///   whose domain is not a declared representable sort.
 /// - panics: none; total on any description, a mis-built one included.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a clean description passes; a duplicate sort name, a
 ///   foreign result or `var` sort, a sort polarity disagreeing with the
-///   declaration's, an ordinary or undeclared π⁺ domain, an out-of-signature
-///   face, a fresh right-hand-side variable, a non-composing arity, a
-///   reserved-derived attribute, a circuit rule whose wiring derives a boundary
-///   its sphere does not fix, a cyclic wiring, and a redex applying a rewrite
-///   the rule's telescope does not declare each surface exactly their
-///   diagnostic.
+///   declaration's, an ordinary or undeclared π⁺ domain, a face named twice, a
+///   face past its shape, an out-of-signature face, a fresh right-hand-side
+///   variable, a non-composing arity, a reserved-derived attribute, a circuit
+///   rule whose wiring derives a boundary its sphere does not fix, a cyclic
+///   wiring, and a redex applying a rewrite the rule's telescope does not
+///   declare each surface exactly their diagnostic.
 /// - witness: `wellformed::tests::the_sorting_discipline_indexes_the_description`
 /// - witness: `wellformed::tests::a_clean_description_passes`
 /// - witness: `wellformed::tests::an_out_of_signature_cell_is_declined`
@@ -221,6 +228,7 @@ fn located(
 /// - witness: `tests::glf::restricted_binding_requires_representability`
 /// - witness: `wellformed::tests::a_derivation_budget_failure_prevents_boundary_comparison`
 /// - witness: `wellformed::tests::a_results_tuple_stands_only_at_a_right_hand_root`
+/// - witness: `wellformed::tests::a_shape_refuses_a_repeated_face_and_a_point_past_it`
 #[inline]
 #[must_use]
 #[spec(ensures: |ref diagnostics| diagnostics.iter().all(|diagnostic| match diagnostic.kind {
@@ -229,7 +237,8 @@ fn located(
     | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs => matches!(diagnostic.span, Maybe::Present(_)),
     WfKind::ArityDoesNotCompose | WfKind::DeclaresDerivedMetadata | WfKind::DuplicateSortName
     | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement
-    | WfKind::NonRepresentableBinder => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
+    | WfKind::NonRepresentableBinder | WfKind::DuplicateFaceName
+    | WfKind::FaceOutsideShape => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
 }) && diagnostics.iter().filter(|diagnostic| diagnostic.kind == WfKind::NonRepresentableBinder).count()
     == desc.opers.iter()
         .flat_map(|op| op.arity.inputs.iter().chain(&op.arity.outputs))
@@ -262,6 +271,9 @@ pub fn check_desc<G>(desc: &SignDesc<G>) -> Vec<WfDiagnostic>
                 ));
             }
         }
+    }
+    if let Maybe::Present(ref shape) = desc.shape {
+        check_shape(shape, &mut diagnostics);
     }
 
     // Reserved-derived metadata: no attribute Σ may declare it.
@@ -313,6 +325,58 @@ pub fn check_desc<G>(desc: &SignDesc<G>) -> Vec<WfDiagnostic>
     }
 
     diagnostics
+}
+
+/// Check a signature's shape parameter: its faces are named apart and each is
+/// a subshape of the shape.
+///
+/// # Specification
+/// - ensures: one `DuplicateFaceName` per face whose name an earlier face
+///   holds, and one `FaceOutsideShape` per face holding a point the shape
+///   lacks, named by its least such point, in face order, each unlocated.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a face named twice and a face holding the first point
+///   past its shape are each reported once, in face order, beside a face that
+///   passes; skipping either or reporting the first occurrence of a name
+///   changes the sequence.
+/// - witness: `wellformed::tests::a_shape_refuses_a_repeated_face_and_a_point_past_it`
+#[spec(
+    captures: [before = diagnostics.len()],
+    ensures: diagnostics.len() == before.saturating_add(
+        shape.faces.iter().enumerate().filter(|entry| shape.faces.iter().take(entry.0).any(|prior| prior.name() == entry.1.name())).count()
+            .saturating_add(shape.faces.iter().filter(|face| matches!(shape.escape(face), Maybe::Present(_))).count())),
+)]
+fn check_shape(
+    shape: &SignShape,
+    diagnostics: &mut Vec<WfDiagnostic>,
+)
+{
+    for (at, face) in shape.faces.iter().enumerate() {
+        if shape
+            .faces
+            .iter()
+            .take(at)
+            .any(|prior| prior.name() == face.name())
+        {
+            diagnostics.push(unlocated(
+                WfKind::DuplicateFaceName,
+                format!("shape '{}' names face '{}' twice", shape.name, face.name()),
+            ));
+        }
+        if let Maybe::Present(point) = shape.escape(face) {
+            diagnostics.push(unlocated(
+                WfKind::FaceOutsideShape,
+                format!(
+                    "face '{}' of shape '{}' holds point {point}, past its {} points",
+                    face.name(),
+                    shape.name,
+                    shape.points
+                ),
+            ));
+        }
+    }
 }
 
 /// Check the sorting discipline over the declared sort set.
@@ -1089,6 +1153,62 @@ mod tests
         assert!(
             check_desc(&nat_with(vec![face], vec![op], Attrs::empty())).is_empty(),
             "a well-formed description has no diagnostics"
+        );
+    }
+
+    #[test]
+    fn a_shape_refuses_a_repeated_face_and_a_point_past_it()
+    {
+        use crate::boundary::ShapePoint;
+        use crate::boundary::ShapeSize;
+        use crate::desc::ShapeFace;
+
+        let points = |raw: &[usize]| {
+            raw.iter()
+                .copied()
+                .map(ShapePoint::from)
+                .collect::<Vec<_>>()
+        };
+        let shaped = |faces: Vec<ShapeFace>| {
+            nat_with(Vec::new(), Vec::new(), Attrs::empty()).with_shape(SignShape::new(
+                "Square",
+                ShapeSize::from(4_usize),
+                faces,
+            ))
+        };
+        let left = ShapeFace::new("left", points(&[0, 2]));
+        let right = ShapeFace::new("right", points(&[1, 3]));
+        assert!(
+            check_desc(&shaped(vec![left.clone(), right.clone()])).is_empty(),
+            "two faces of the square named apart pass"
+        );
+        let kinds = |faces: Vec<ShapeFace>| {
+            check_desc(&shaped(faces))
+                .into_iter()
+                .map(|diagnostic| (diagnostic.kind, diagnostic.span))
+                .collect::<Vec<_>>()
+        };
+        let absent = Maybe::Absent(diagnostic_span::Absent::Unrecorded);
+        assert_eq!(
+            kinds(vec![
+                left.clone(),
+                ShapeFace::new("far", points(&[1, 4])),
+                right,
+                ShapeFace::new("left", points(&[3])),
+            ]),
+            [
+                (WfKind::FaceOutsideShape, absent),
+                (WfKind::DuplicateFaceName, absent)
+            ],
+            "the point past the square and the second `left` are each reported once, in face order"
+        );
+        assert_eq!(
+            kinds(vec![left, ShapeFace::new("left", points(&[5]))]),
+            [
+                (WfKind::DuplicateFaceName, absent),
+                (WfKind::FaceOutsideShape, absent)
+            ],
+            "one face both repeated and past the shape earns both, the name first"
         );
     }
 
