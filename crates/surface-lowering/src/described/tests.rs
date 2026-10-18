@@ -234,6 +234,66 @@ fn a_sign_answers_at_every_member()
     );
 }
 
+#[test]
+fn a_binder_answers_at_its_sort_and_its_operation_nowhere()
+{
+    let source = SourceText::from(
+        "sign IdentityReturn {\n  sort VTy : Type;\n  sort CTy : Type;\n  sort VTm(a : VTy) : \
+         Type+;\n  sort CTm(b : CTy) : Type;\n  oper f : (a : VTy) --> CTy;\n  oper arrow : (a \
+         : VTy, b : CTy) --> CTy;\n  oper ret : (a : VTy, t : VTm(a)) --> CTm(f(a));\n  oper \
+         lam : (a : VTy, b : CTy, t : pi+ (x : VTm(a)) . CTm(b)) --> CTm(arrow(a, b));\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
+
+    let binder = entry(&types, span("(x :", "x"), DescribedRole::Name);
+    assert!(
+        matches!(ty(binder), Some(ValueType::Element { .. })),
+        "a binder at its sort"
+    );
+    assert_eq!(
+        context(&types, binder),
+        ["VTy", "CTy", "VTm", "CTm", "f", "arrow", "ret", "a", "b"],
+        "under the members and the ports before it"
+    );
+    let domain = entry(&types, span("(x : VTm", "VTm(a)"), DescribedRole::Type);
+    assert!(
+        matches!(ty(domain), Some(ValueType::Universe { .. })),
+        "the binder's sort at its universe"
+    );
+    let index = entry(&types, span("(x : VTm(a)", "a"), DescribedRole::Term);
+    assert!(
+        matches!(ty(index), Some(ValueType::Element { .. })),
+        "the binder's index at its port's sort"
+    );
+    let body = entry(&types, span(". CTm(b)", "CTm(b)"), DescribedRole::Type);
+    assert!(
+        matches!(ty(body), Some(ValueType::Universe { .. })),
+        "the bound port's sort at its universe"
+    );
+    for applied in [
+        span("--> CTm(f(a))", "f(a)"),
+        span("--> CTm(arrow(a, b))", "arrow(a, b)"),
+    ] {
+        assert!(
+            matches!(
+                ty(entry(&types, applied, DescribedRole::Term)),
+                Some(ValueType::Element { .. })
+            ),
+            "an index application at its operation's result, first-order or not"
+        );
+    }
+    for unstated in [span("oper lam", "lam"), span("t : pi+", "t")] {
+        assert!(
+            types.entries.iter().all(|held| held.span != unstated),
+            "no component states a binding operation or its bound port"
+        );
+    }
+}
+
 /// #668: a constant applied in a law, `pt()`, answers at its sort as every
 /// other application there does.
 #[test]

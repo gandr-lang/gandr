@@ -1665,7 +1665,7 @@ fn scan_shell_interior(
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
 /// - ensures: scanning advances; host word classification preserves the case of
-///   its leading letter.
+///   its leading letter, except a marked word, which is punctuation.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1675,7 +1675,8 @@ fn scan_shell_interior(
 ///   and failure to advance change a row; host word classification preserves
 ///   the case of its leading letter.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'a' ..= b'z') => ret.lexeme == Lexeme::LowerWord, Some(b'A' ..= b'Z') => ret.lexeme == Lexeme::UpperWord, _ => true }))]
+/// - witness: `label::tests::a_marked_word_is_one_tile_only_where_its_sign_ends`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'a' ..= b'z') => matches!(ret.lexeme, Lexeme::LowerWord | Lexeme::Punct), Some(b'A' ..= b'Z') => matches!(ret.lexeme, Lexeme::UpperWord | Lexeme::Punct), _ => true }))]
 fn scan_one(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1702,10 +1703,10 @@ fn scan_one(
         b'.' => scan_dot(bytes, pos),
         b'_' => scan_word_or_underscore(bytes, pos),
         _ if bool::from(byte.is_lower_start()) => {
-            ScanResult::new(Lexeme::LowerWord, scan_word(bytes, pos))
+            scan_marked(bytes, pos, scan_word(bytes, pos), Lexeme::LowerWord)
         },
         _ if bool::from(byte.is_upper_start()) => {
-            ScanResult::new(Lexeme::UpperWord, scan_word(bytes, pos))
+            scan_marked(bytes, pos, scan_word(bytes, pos), Lexeme::UpperWord)
         },
         _ => scan_punct_or_unknown(bytes, pos),
     }
@@ -2716,6 +2717,66 @@ fn bridge_end(
             BytePattern(&PRIME_UTF8),
         ));
     (spelled && !continues).then_some(end)
+}
+
+/// The words a `+` written straight after them marks, each one tile with its
+/// sign: `pi+`, the restricted binder over a representable sort, and `Type+`,
+/// the universe of representable sorts.
+///
+/// The mark is one tile only when the sign ends there, as a bridge's letter
+/// must: `pi+x` is the sum of `pi` and `x`, `Type + Unit` the sum it always
+/// was, and only `pi+ (x : S) . T` and `Type+;` take the marked tiles. The
+/// marked spellings are the ones a signature's rendering writes, so what it
+/// prints parses as the binder and the universe it means.
+const MARKED_WORDS: [&[u8]; 2] = [b"pi", b"Type"];
+
+/// The class and end of the word scanned from `pos` to `end`: a marked word
+/// with the `+` after it is one punctuation tile, any other word is `class`.
+///
+/// # Specification
+/// - requires: `pos .. end` is one word the word scanner read.
+/// - ensures: punctuation through the `+` when the word is marked, the `+`
+///   follows it and the byte after the `+` neither continues a word nor opens a
+///   prime; the word as `class` otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each marked word before a space, a parenthesis, a
+///   semicolon and the end of input, a marked word whose sign continues into a
+///   word, an unmarked word before a sign and a spaced sign separate the
+///   decision.
+/// - witness: `label::tests::a_marked_word_is_one_tile_only_where_its_sign_ends`
+#[spec(ensures: |ret| if ret.lexeme == Lexeme::Punct {
+    ret.next.0 == end.0.saturating_add(1) && bytes.0.get(end.0) == Some(&b'+')
+} else {
+    ret.lexeme == class && ret.next == end
+})]
+fn scan_marked(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+    end: ByteOffset,
+    class: Lexeme,
+) -> ScanResult
+{
+    let marked = end.advance(ByteWidth::ONE);
+    let spelled = MARKED_WORDS
+        .iter()
+        .any(|word| bool::from(bytes.span_matches(pos, end, BytePattern(word))));
+    let signed = bytes.byte(end) == Some(SourceByte::from(b'+'));
+    let continues = bytes
+        .byte(marked)
+        .is_some_and(|byte| bool::from(byte.is_word_continue()))
+        || bool::from(bytes.span_matches(
+            marked,
+            marked.advance(ByteWidth::THREE),
+            BytePattern(&PRIME_UTF8),
+        ));
+    if spelled && signed && !continues {
+        ScanResult::new(Lexeme::Punct, marked)
+    }
+    else {
+        ScanResult::new(class, end)
+    }
 }
 
 /// Return the byte length of an operator/punctuation tile at `pos`, if any.
@@ -3836,6 +3897,67 @@ mod tests
             lexed("+U′"),
             vec![punct("+"), upper("U′")],
             "and the sign before it is the sum"
+        );
+    }
+    #[test]
+    fn a_marked_word_is_one_tile_only_where_its_sign_ends()
+    {
+        let lexed = |src: &str| tiles(SourceFragment::from(src), &label(SourceFragment::from(src)));
+        let punct = |text: &str| (Lexeme::Punct, text.to_owned());
+        let upper = |text: &str| (Lexeme::UpperWord, text.to_owned());
+        let lower = |text: &str| (Lexeme::LowerWord, text.to_owned());
+        assert_eq!(
+            lexed("pi+ (x : Tm) . Tm"),
+            vec![
+                punct("pi+"),
+                punct("("),
+                lower("x"),
+                punct(":"),
+                upper("Tm"),
+                punct(")"),
+                punct("."),
+                upper("Tm"),
+            ],
+            "the restricted binder is one tile before a space"
+        );
+        assert_eq!(
+            lexed("pi+(x) Type+; Type+"),
+            vec![
+                punct("pi+"),
+                punct("("),
+                lower("x"),
+                punct(")"),
+                punct("Type+"),
+                punct(";"),
+                punct("Type+"),
+            ],
+            "a mark ends before punctuation and at the end of input"
+        );
+        assert_eq!(
+            lexed("pi+x Type+Unit"),
+            vec![
+                lower("pi"),
+                punct("+"),
+                lower("x"),
+                upper("Type"),
+                punct("+"),
+                upper("Unit"),
+            ],
+            "a sign continued by a word is the sum"
+        );
+        assert_eq!(
+            lexed("Type + Unit pip+ (x)"),
+            vec![
+                upper("Type"),
+                punct("+"),
+                upper("Unit"),
+                lower("pip"),
+                punct("+"),
+                punct("("),
+                lower("x"),
+                punct(")"),
+            ],
+            "a spaced sign, or a sign after another word, is its own tile"
         );
     }
     #[test]

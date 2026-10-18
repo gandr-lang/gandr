@@ -219,8 +219,10 @@ fn an_underivable_component_keeps_its_fault()
         r"sign Faulty {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
+  sort Tm : Type+;
   oper id : (a : Ob) --> Hom(a, a);
   oper split : (a : Ob) --> (l : Ob, r : Ob);
+  oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
   rule twice : id(id(a)) ==> id(a);
   rule loose : x ==> x;
   rule halves : split(a) ==> split(a);
@@ -254,6 +256,11 @@ fn an_underivable_component_keeps_its_fault()
         spelled(&model, "wired"),
         "wired refused: Circuit",
         "a circuit rule is kept by name"
+    );
+    assert_eq!(
+        spelled(&model, "lam"),
+        "lam refused: Binding",
+        "an operation whose port binds a variable"
     );
     assert!(
         model

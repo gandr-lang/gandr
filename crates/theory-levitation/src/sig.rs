@@ -14,7 +14,7 @@
 //!
 //! # One sort, chained
 //!
-//! `Sig` is one self-recursive sort of eleven constructors, in tag order:
+//! `Sig` is one self-recursive sort of thirteen constructors, in tag order:
 //!
 //! | tag | constructor | fields |
 //! |---|---|---|
@@ -29,6 +29,8 @@
 //! | 8 | `Con` | a constructor's name, its arguments |
 //! | 9 | `Tuple` | the components of a results tuple |
 //! | 10 | `Arg` | a term, the rest of the arguments |
+//! | 11 | `Representable` | as `Sort`, for a representable sort |
+//! | 12 | `Bound` | as `Port`, then its binders, before the rest |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -45,17 +47,42 @@
 //!   with the constructor table, so the split is a change of every
 //!   presentation's identity.
 //!
+//! # Second-order presentations
+//!
+//! A sort declared `Type+` is representable: it admits context extension, so
+//! a port may bind a variable of it (Kaposi and Xie, _Second-Order Generalised
+//! Algebraic Theories_, FSCD 2024, Definition 3). Such a sort is a
+//! `Representable` member of the sort chain; a port written `t : pi+ (x : S) .
+//! T` is a `Bound` member of its operation's port chain, its binders a chain of
+//! plain `Port`s, outermost first. A binder binds nothing of its own, a sort's
+//! index port binds nothing, and a `Bound` port binds at least one variable, so
+//! the value of a port has one spelling.
+//!
+//! - **Choice.** Representability and binding are constructors of their own,
+//!   appended to the table, rather than a field of every `Sort` and `Port`.
+//!   Tags are positions, so a presentation that declares neither keeps the
+//!   bytes it had, and a first-order presentation's identity is what it was
+//!   before the second-order constructors existed. The alternative, a
+//!   representability field on every sort and a binder chain on every port,
+//!   states the grammar more uniformly but re-keys every presentation for a
+//!   distinction none of them draws, and the field still needs two constructors
+//!   of its own to code the bit.
+//! - **Reversal.** The typed split above, which re-keys every presentation
+//!   anyway, carries representability and binding as fields of its sort and
+//!   port families.
+//!
 //! # What waits
 //!
 //! The constructors above are the part of the code grammar the fragment
-//! admits: sorts and their index telescopes, operations and their ports, and
-//! rule faces between terms of variables, operation applications, constructor
-//! applications and results tuples. The rest of the grammar waits on a
-//! constructor `Sig` does not have yet: circuit rules (a body of wired nodes
-//! and its rewrite ports), higher cells (a rule between rules), a sort's
-//! polarity (every presented sort is data), constructors and parameters (a
-//! presentation declares none), attributes, and atom binders. A presentation's
-//! circuit rules are kept beside its value by the reader that reads them.
+//! admits: sorts and their index telescopes, representable sorts, operations
+//! and their ports, ports under restricted binders, and rule faces between
+//! terms of variables, operation applications, constructor applications and
+//! results tuples. The rest of the grammar waits on a constructor `Sig` does
+//! not have yet: circuit rules (a body of wired nodes and its rewrite ports),
+//! higher cells (a rule between rules), a sort's polarity (every presented
+//! sort is data), constructors and parameters (a presentation declares none),
+//! attributes, and atom binders. A presentation's circuit rules are kept
+//! beside its value by the reader that reads them.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -74,6 +101,7 @@ use crate::code::ValueTypeRef;
 use crate::desc::CtorDesc;
 use crate::desc::DeclPolarity;
 use crate::desc::NominalId;
+use crate::desc::Representability;
 use crate::desc::SignDesc;
 use crate::desc::SortDesc;
 use crate::generic::DescValue;
@@ -87,13 +115,25 @@ use crate::rule::TermView;
 
 /// The names of `Sig`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const SIG_CONSTRUCTORS: [&str; 11] = [
-    "Presents", "End", "Sort", "Oper", "Port", "Rule", "Var", "App", "Con", "Tuple", "Arg",
+pub const SIG_CONSTRUCTORS: [&str; 13] = [
+    "Presents",
+    "End",
+    "Sort",
+    "Oper",
+    "Port",
+    "Rule",
+    "Var",
+    "App",
+    "Con",
+    "Tuple",
+    "Arg",
+    "Representable",
+    "Bound",
 ];
 
 /// Each constructor of `Sig`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 11] = [
+const CONSTRUCTORS: [(&str, usize, usize); 13] = [
     (SIG_CONSTRUCTORS[0], 0, 3),
     (SIG_CONSTRUCTORS[1], 0, 0),
     (SIG_CONSTRUCTORS[2], 1, 2),
@@ -105,6 +145,8 @@ const CONSTRUCTORS: [(&str, usize, usize); 11] = [
     (SIG_CONSTRUCTORS[8], 1, 1),
     (SIG_CONSTRUCTORS[9], 0, 1),
     (SIG_CONSTRUCTORS[10], 0, 2),
+    (SIG_CONSTRUCTORS[11], 1, 2),
+    (SIG_CONSTRUCTORS[12], 2, 3),
 ];
 
 /// One constructor of `Sig`, by its tag.
@@ -133,6 +175,10 @@ enum Tag
     Tuple,
     /// An argument and the rest of the arguments.
     Arg,
+    /// A representable sort and the rest of the sorts.
+    Representable,
+    /// A port under its binders and the rest of the ports.
+    Bound,
 }
 
 impl Tag
@@ -156,11 +202,13 @@ impl Tag
             Self::Con => 8,
             Self::Tuple => 9,
             Self::Arg => 10,
+            Self::Representable => 11,
+            Self::Bound => 12,
         })
     }
 }
 
-/// The description of `Sig`, one data sort of eleven constructors.
+/// The description of `Sig`, one data sort of thirteen constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -168,10 +216,10 @@ impl Tag
 /// # Specification
 /// - ensures: no parameters, one data sort `Sig`, and the constructors
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
-///   `Tuple` and `Arg` in that order, each at the result sort `Sig`; a
-///   constructor's `String` fields carry `grade` and come first, `Port`'s two
-///   and one for every other constructor that names something, and its
-///   remaining fields are `Sig`.
+///   `Tuple`, `Arg`, `Representable` and `Bound` in that order, each at the
+///   result sort `Sig`; a constructor's `String` fields carry `grade` and come
+///   first, two for `Port` and `Bound` and one for every other constructor that
+///   names something, and its remaining fields are `Sig`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -180,7 +228,7 @@ impl Tag
 ///   constructor table and the exact identity bytes of a presentation;
 ///   reordered constructors, a dropped field or a name read as a recursion
 ///   change them.
-/// - witness: `sig::tests::the_code_is_one_data_sort_of_eleven_constructors`
+/// - witness: `sig::tests::the_code_is_one_data_sort_of_thirteen_constructors`
 /// - witness: `sig::tests::a_presentation_encodes_to_its_exact_identity_bytes`
 #[inline]
 #[must_use]
@@ -227,11 +275,12 @@ where
 }
 
 /// One port of a presentation: its name, empty when it was written unnamed,
-/// and its sort, a sort name over index terms.
+/// its sort, a sort name over index terms, and the variables it binds.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: the index terms keep their written order.
+/// - ensures: the index terms and the binders keep their written order, the
+///   outermost binder first.
 /// - executable: none — a data carrier with no invocation boundary.
 ///
 /// # Adequacy
@@ -246,9 +295,37 @@ pub struct SigPort
     pub sort: Name,
     /// The sort's index terms, in order.
     pub indices: Vec<FreeTerm>,
+    /// The `pi+` binders over the port, outermost first, each a variable of a
+    /// representable sort; empty for a first-order port. Only an operation's
+    /// port binds.
+    pub bindings: Vec<SigBinder>,
 }
 
-/// One sort of a presentation: its name and its index telescope.
+/// One `pi+` binder of a port: the bound variable's name and its sort, a
+/// representable sort name over index terms. A binder binds nothing of its
+/// own.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the index terms keep their written order.
+/// - executable: none — a data carrier with no invocation boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`SigValue::encode`].
+/// - witness: `sig::tests::a_second_order_presentation_encodes_its_binders`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct SigBinder
+{
+    /// The bound variable's name.
+    pub name: Name,
+    /// The name of the variable's sort.
+    pub sort: Name,
+    /// The sort's index terms, in order.
+    pub indices: Vec<FreeTerm>,
+}
+
+/// One sort of a presentation: its name, its index telescope and whether it
+/// is representable.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -266,6 +343,8 @@ pub struct SigSort
     pub name: Name,
     /// The index telescope, in order.
     pub indices: Vec<SigPort>,
+    /// Whether a port may bind a variable of the sort.
+    pub representability: Representability,
 }
 
 /// One operation of a presentation: its name and its two port lists.
@@ -375,29 +454,43 @@ impl SigValue
     /// The value coding `parts`.
     ///
     /// # Specification
+    /// - requires: only an operation's port binds, and a binder binds nothing
+    ///   of its own: the grammar has no other place for a binder.
     /// - ensures: the root is `Presents` over the sort, operation and rule
-    ///   chains, each member in order; [`Self::decode`] reads `parts` back.
+    ///   chains, each member in order, a representable sort as `Representable`
+    ///   and a port with binders as `Bound`; [`Self::decode`] reads `parts`
+    ///   back.
     /// - panics: none.
     /// - intension: every chain is folded from its end and every term built
     ///   from a post-order worklist, so no step recurses.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a presentation with an indexed sort, a two-output
-    ///   operation, an unnamed port and rules whose sides apply operations,
-    ///   constructors and a results tuple round-trips exactly and encodes to
-    ///   its exact bytes; a dropped member, a swapped chain or a lost index
-    ///   changes the decoded parts or the bytes.
+    /// - hypothesis: L3 — a presentation with an indexed sort, a representable
+    ///   sort, a two-output operation, an unnamed port, a port under two
+    ///   binders and rules whose sides apply operations, constructors and a
+    ///   results tuple round-trips exactly, and a first-order presentation
+    ///   encodes to its exact bytes; a dropped member, a swapped chain, a lost
+    ///   index or binder or a forgotten representability changes the decoded
+    ///   parts or the bytes.
     /// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
     /// - witness: `sig::tests::a_presentation_encodes_to_its_exact_identity_bytes`
+    /// - witness: `sig::tests::a_second_order_presentation_encodes_its_binders`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ref value| value.0.ctor == Tag::Presents.constructor())]
+    #[spec(
+        requires: parts.sorts.iter().flat_map(|sort| sort.indices.iter()).all(|index| index.bindings.is_empty()),
+        ensures: |ref value| value.0.ctor == Tag::Presents.constructor(),
+    )]
     pub fn encode(parts: &SigParts) -> Self
     {
         let mut sorts = value(Tag::End, Vec::new());
         for sort in parts.sorts.iter().rev() {
             let indices = ports(&sort.indices);
-            sorts = value(Tag::Sort, vec![leaf(&sort.name), rec(indices), rec(sorts)]);
+            let tag = match sort.representability {
+                Representability::Ordinary => Tag::Sort,
+                Representability::Representable => Tag::Representable,
+            };
+            sorts = value(tag, vec![leaf(&sort.name), rec(indices), rec(sorts)]);
         }
         let mut operations = value(Tag::End, Vec::new());
         for operation in parts.operations.iter().rev() {
@@ -457,7 +550,9 @@ impl SigValue
     ///   value read is a `Presents` value.
     /// - fails: a root other than `Presents`, a chain member of another
     ///   constructor, a term position holding no term, a payload unlike its
-    ///   constructor's code, or a name that is not UTF-8.
+    ///   constructor's code, or a name that is not UTF-8; a `Bound` port
+    ///   anywhere but an operation's port chain, a `Bound` binder, or a `Bound`
+    ///   port binding nothing is misplaced, so a port's value has one spelling.
     /// - panics: none.
     /// - intension: chains are walked in loops and terms rebuilt from a
     ///   post-order worklist, so no step recurses.
@@ -467,11 +562,14 @@ impl SigValue
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the round trip of a presentation exercising every
-    ///   constructor, and four malformed values — an `End` root, a rule in the
-    ///   sort chain, a port where a term stands, a non-UTF-8 name — each
+    ///   constructor, and seven malformed values — an `End` root, a rule in the
+    ///   sort chain, a port where a term stands, a non-UTF-8 name, a binding
+    ///   index port, a binding binder and a binderless `Bound` port — each
     ///   refused by its exact fault.
     /// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
+    /// - witness: `sig::tests::a_second_order_presentation_encodes_its_binders`
     /// - witness: `sig::tests::a_value_outside_the_grammar_is_refused_by_name`
+    /// - witness: `sig::tests::a_binder_outside_an_operation_port_is_misplaced`
     #[inline]
     #[spec(ensures: |ref ret| ret.is_err() || self.0.ctor == Tag::Presents.constructor())]
     pub fn decode(&self) -> Result<SigParts, SigFault>
@@ -484,15 +582,29 @@ impl SigValue
         let mut parts = SigParts::default();
         let mut at = nested(sorts)?;
         loop {
-            let next = member::<3>(at, Tag::Sort)?;
+            let representability = if at.ctor == Tag::Representable.constructor() {
+                Representability::Representable
+            }
+            else {
+                Representability::Ordinary
+            };
+            let tag = match representability {
+                Representability::Ordinary => Tag::Sort,
+                Representability::Representable => Tag::Representable,
+            };
+            let next = member::<3>(at, tag)?;
             let Maybe::Present([name, indices, rest]) = next
             else {
                 break;
             };
             let name = text(name)?;
             let indices = nested(indices)?;
-            let indices = read_ports(indices)?;
-            parts.sorts.push(SigSort { name, indices });
+            let indices = read_plain(indices, unbound)?;
+            parts.sorts.push(SigSort {
+                name,
+                indices,
+                representability,
+            });
             at = nested(rest)?;
         }
         let mut at = nested(operations)?;
@@ -587,7 +699,8 @@ fn rec(nested: DescValue) -> Payload
     Payload::rec(nested)
 }
 
-/// The chain coding `list`, in order.
+/// The chain coding `list`, in order: a port with binders as `Bound` over the
+/// chain of its binders, every other port as `Port`.
 ///
 /// # Specification
 /// trivial.
@@ -595,20 +708,52 @@ fn ports(list: &[SigPort]) -> DescValue
 {
     let mut chain = value(Tag::End, Vec::new());
     for port in list.iter().rev() {
-        let indices = arguments(
-            port.indices
-                .iter()
-                .map(|index| term(index.to_node()))
-                .collect(),
-        );
-        chain = value(Tag::Port, vec![
+        if port.bindings.is_empty() {
+            chain = plain_port(&port.name, &port.sort, &port.indices, chain);
+            continue;
+        }
+        let mut binders = value(Tag::End, Vec::new());
+        for binder in port.bindings.iter().rev() {
+            binders = plain_port(&binder.name, &binder.sort, &binder.indices, binders);
+        }
+        chain = value(Tag::Bound, vec![
             leaf(&port.name),
             leaf(&port.sort),
-            rec(indices),
+            rec(index_arguments(&port.indices)),
+            rec(binders),
             rec(chain),
         ]);
     }
     chain
+}
+
+/// The `Port` member coding a port named `name` at `sort` over `indices`,
+/// before `rest`: a port that binds nothing, or a binder.
+///
+/// # Specification
+/// trivial.
+fn plain_port(
+    name: &Name,
+    sort: &Name,
+    indices: &[FreeTerm],
+    rest: DescValue,
+) -> DescValue
+{
+    value(Tag::Port, vec![
+        leaf(name),
+        leaf(sort),
+        rec(index_arguments(indices)),
+        rec(rest),
+    ])
+}
+
+/// The argument chain over the index terms `indices`, in order.
+///
+/// # Specification
+/// trivial.
+fn index_arguments(indices: &[FreeTerm]) -> DescValue
+{
+    arguments(indices.iter().map(|index| term(index.to_node())).collect())
 }
 
 /// The argument chain over `terms`, in order.
@@ -852,11 +997,64 @@ fn text(field: PayloadNode<'_>) -> Result<Name, SigFault>
     Ok(Name::from(spelled))
 }
 
-/// The ports of the chain at `node`, in order.
+/// The ports of an operation's chain at `node`, in order, each with the
+/// binders it carries.
 ///
 /// # Specification
-/// - ensures: one port per `Port` member, each with its index terms.
-/// - fails: as [`member`], [`text`] and [`read_term`].
+/// - ensures: one port per `Port` or `Bound` member, each with its index terms;
+///   a `Bound` member's binders in order, a `Port` member's none.
+/// - fails: as [`member`], [`text`], [`read_term`] and [`read_plain`]; a
+///   `Bound` member whose binder chain is empty is misplaced at its `End`.
+/// - panics: none.
+/// - executable: none — a predicate would read the chain a second time.
+///
+/// # Errors
+/// As stated.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`SigValue::decode`].
+/// - witness: `sig::tests::a_second_order_presentation_encodes_its_binders`
+/// - witness: `sig::tests::a_binder_outside_an_operation_port_is_misplaced`
+fn read_ports(mut node: Node<'_>) -> Result<Vec<SigPort>, SigFault>
+{
+    let mut ports = Vec::new();
+    loop {
+        if node.ctor != Tag::Bound.constructor() {
+            let next = member::<4>(node, Tag::Port)?;
+            let Maybe::Present([name, sort, indices, rest]) = next
+            else {
+                break;
+            };
+            let port = plain_at(name, sort, indices)?;
+            ports.push(unbound(port));
+            node = nested(rest)?;
+            continue;
+        }
+        let [name, sort, indices, binders, rest] = expect::<5>(node, Tag::Bound)?;
+        let port = plain_at(name, sort, indices)?;
+        let binders = nested(binders)?;
+        if binders.ctor == Tag::End.constructor() {
+            return Err(SigFault::Misplaced(binders.ctor));
+        }
+        let bindings = read_plain(binders, core::convert::identity)?;
+        ports.push(SigPort {
+            name: port.name,
+            sort: port.sort,
+            indices: port.indices,
+            bindings,
+        });
+        node = nested(rest)?;
+    }
+    Ok(ports)
+}
+
+/// The members of a chain at `node` that bind nothing — a sort's index
+/// telescope or a port's binders — in order, each read by `read`.
+///
+/// # Specification
+/// - ensures: one member per `Port` member, each with its index terms.
+/// - fails: as [`member`], [`text`] and [`read_term`]; a `Bound` member is
+///   misplaced.
 /// - panics: none.
 /// - executable: none — a predicate would read the chain a second time.
 ///
@@ -866,27 +1064,70 @@ fn text(field: PayloadNode<'_>) -> Result<Name, SigFault>
 /// # Adequacy
 /// - hypothesis: L3 — as [`SigValue::decode`].
 /// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
-fn read_ports(mut node: Node<'_>) -> Result<Vec<SigPort>, SigFault>
+/// - witness: `sig::tests::a_binder_outside_an_operation_port_is_misplaced`
+fn read_plain<Read>(
+    mut node: Node<'_>,
+    read: fn(SigBinder) -> Read,
+) -> Result<Vec<Read>, SigFault>
 {
-    let mut ports = Vec::new();
+    let mut members = Vec::new();
     loop {
         let next = member::<4>(node, Tag::Port)?;
         let Maybe::Present([name, sort, indices, rest]) = next
         else {
             break;
         };
-        let name = text(name)?;
-        let sort = text(sort)?;
-        let indices = nested(indices)?;
-        let indices = read_arguments(indices)?;
-        ports.push(SigPort {
-            name,
-            sort,
-            indices,
-        });
+        let port = plain_at(name, sort, indices)?;
+        members.push(read(port));
         node = nested(rest)?;
     }
-    Ok(ports)
+    Ok(members)
+}
+
+/// A port that binds nothing, from the fields `plain` read.
+///
+/// # Specification
+/// trivial.
+fn unbound(plain: SigBinder) -> SigPort
+{
+    SigPort {
+        name: plain.name,
+        sort: plain.sort,
+        indices: plain.indices,
+        bindings: Vec::new(),
+    }
+}
+
+/// The fields of a `Port` member: its name `name`, its sort `sort` and the
+/// argument chain `indices`.
+///
+/// # Specification
+/// - ensures: the name, the sort's name and the index terms in order.
+/// - fails: as [`text`], [`nested`] and [`read_arguments`].
+/// - panics: none.
+/// - executable: none — a predicate would read the fields a second time.
+///
+/// # Errors
+/// As stated.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`SigValue::decode`].
+/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
+fn plain_at(
+    name: PayloadNode<'_>,
+    sort: PayloadNode<'_>,
+    indices: PayloadNode<'_>,
+) -> Result<SigBinder, SigFault>
+{
+    let name = text(name)?;
+    let sort = text(sort)?;
+    let indices = nested(indices)?;
+    let indices = read_arguments(indices)?;
+    Ok(SigBinder {
+        name,
+        sort,
+        indices,
+    })
 }
 
 /// The terms of the argument chain at `node`, in order.

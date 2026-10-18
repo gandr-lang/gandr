@@ -463,6 +463,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "package_type",
     "path_type",
     "unpack_statement",
+    "representable_universe_type",
     "rec_block",
     "resume_expression",
     "return_expression",

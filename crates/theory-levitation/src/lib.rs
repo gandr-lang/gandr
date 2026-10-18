@@ -333,6 +333,7 @@ pub use crate::rule::TermNode;
 pub use crate::rule::TermView;
 pub use crate::rule::Variance;
 pub use crate::sig::SIG_CONSTRUCTORS;
+pub use crate::sig::SigBinder;
 pub use crate::sig::SigFault;
 pub use crate::sig::SigOperation;
 pub use crate::sig::SigParts;

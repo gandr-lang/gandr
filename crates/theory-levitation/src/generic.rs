@@ -835,24 +835,29 @@ fn render_oper_member(oper: &OperDesc) -> String
 /// no authored name, and a restricted binder telescope as nested
 /// `pi+ (x : S) . T`, outermost binder first.
 ///
+/// A binder is a form of a named port, so an anonymous port under one renders
+/// under the placeholder name `_`, which reads back as an anonymous port.
+///
 /// # Specification
-/// - ensures: anonymous ports render their bare sort; authored names render as
-///   the name, a colon separator and their sort. The sort ends with the port's
-///   own sort application, after one `pi+` prefix per binder.
+/// - ensures: an anonymous port with no binder renders its bare sort, and under
+///   a binder renders as `_`, a colon separator and its sort; authored names
+///   render as the name, a colon separator and their sort. The sort ends with
+///   the port's own sort application, after one `pi+` prefix per binder.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — empty, underscore and authored names have exact port
 ///   text; a spurious name, lost sort or wrong separator changes that text. A
 ///   binder port's exact text in the source signature separates a lost or
-///   reordered binder.
+///   reordered binder, and an anonymous binder port's its placeholder name.
 /// - witness: `generic::tests::port_rendering_distinguishes_authored_and_placeholder_names`
 /// - witness: `tests::glf::restricted_binding_requires_representability`
 #[spec(ensures: |ref text| match authored_name(port) {
     Maybe::Present(name) => text.strip_prefix(name.as_ref())
         .and_then(|body| body.strip_prefix(" : "))
         .is_some_and(|body| body.ends_with(render_sort(&port.sort, &port.arguments).as_str())),
-    Maybe::Absent(_) => text.ends_with(render_sort(&port.sort, &port.arguments).as_str()),
+    Maybe::Absent(_) => text.ends_with(render_sort(&port.sort, &port.arguments).as_str())
+        && text.starts_with("_ : ") != port.bindings.is_empty(),
 })]
 fn render_port(port: &SortRef) -> String
 {
@@ -866,7 +871,8 @@ fn render_port(port: &SortRef) -> String
     }
     match authored_name(port) {
         Maybe::Present(name) => format!("{name} : {sort}"),
-        Maybe::Absent(port_name::Absent::Anonymous) => sort,
+        Maybe::Absent(port_name::Absent::Anonymous) if port.bindings.is_empty() => sort,
+        Maybe::Absent(port_name::Absent::Anonymous) => format!("_ : {sort}"),
     }
 }
 
@@ -973,6 +979,7 @@ mod tests
     use crate::desc::DeclPolarity;
     use crate::desc::NominalId;
     use crate::desc::ParamDesc;
+    use crate::desc::SortIndex;
     use crate::desc::SurfaceSpan;
     use crate::rule::FreeTerm;
     use crate::test_support::Grade;
@@ -1352,6 +1359,12 @@ mod tests
         let named = SortRef::new("port", "T");
         assert_eq!(authored_name(&named), Maybe::Present(&named.name));
         assert_eq!(render_port(&named), "port : T");
+        let bound = SortRef::new("", "T").pi_plus([SortIndex::new("x", "S")]);
+        assert_eq!(
+            render_port(&bound),
+            "_ : pi+ (x : S) . T",
+            "an anonymous port under a binder renders under the placeholder name"
+        );
         for (outputs, expected) in [
             (vec![], "oper f : (x : A, B) --> ()"),
             (vec![SortRef::new("_0", "C")], "oper f : (x : A, B) --> C"),

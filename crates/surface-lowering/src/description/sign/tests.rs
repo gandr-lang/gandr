@@ -909,7 +909,7 @@ fn a_sign_block_defines_its_presentation()
             .iter()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
-        [3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2],
+        [3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5],
         "each constructor's names, then its recursions"
     );
     let mut declarations = alloc::vec![gandr_core_checker::Declaration::data(
@@ -1146,6 +1146,215 @@ fn the_description_is_read_off_the_value()
         Err(crate::model::PresentationFault::Unplaced),
         "a rule the placement does not place"
     );
+}
+
+/// A single-output operation built by hand.
+///
+/// # Specification
+/// trivial.
+fn operation<Named>(
+    name: Named,
+    inputs: Vec<SortRef>,
+    output: SortRef,
+) -> OperDesc
+where
+    Named: Into<Name>,
+{
+    OperDesc::new(
+        name.into(),
+        BridgeArity::single_output(inputs, output),
+        Attrs::empty(),
+    )
+}
+
+/// A signature built by hand: sorts and operations, no rule.
+///
+/// # Specification
+/// trivial.
+fn signature<Named>(
+    name: Named,
+    sorts: Vec<SortDesc>,
+    operations: Vec<OperDesc>,
+) -> SignDesc<()>
+where
+    Named: Into<Name>,
+{
+    SignDesc::new(
+        NominalId::new(NominalSerial::from(0_u64), name.into()),
+        [],
+        [],
+        operations,
+        [],
+        DeclPolarity::Data,
+        Attrs::empty(),
+    )
+    .with_sorts(sorts)
+}
+
+#[test]
+fn a_rendered_signature_reparses_to_itself()
+{
+    // Pure λ-calculus syntax, Kaposi and Xie's identity-return signature and
+    // the naturals: a representable sort with a binder over it, an indexed
+    // representable sort with a binder at an index term, and a first-order
+    // signature.
+    let lambda = signature(
+        "LC",
+        vec![SortDesc::new("Tm", DeclPolarity::Data).representable()],
+        vec![
+            operation(
+                "lam",
+                vec![SortRef::new("t", "Tm").pi_plus([SortIndex::new("x", "Tm")])],
+                SortRef::new("", "Tm"),
+            ),
+            operation(
+                "app",
+                vec![SortRef::new("t", "Tm"), SortRef::new("u", "Tm")],
+                SortRef::new("", "Tm"),
+            ),
+        ],
+    );
+    let a = FreeTerm::var("a");
+    let b = FreeTerm::var("b");
+    let identity_return = signature(
+        "IdentityReturn",
+        vec![
+            SortDesc::new("VTy", DeclPolarity::Data),
+            SortDesc::new("CTy", DeclPolarity::Data),
+            SortDesc::family("VTm", DeclPolarity::Data, [SortIndex::new("a", "VTy")])
+                .representable(),
+            SortDesc::family("CTm", DeclPolarity::Data, [SortIndex::new("b", "CTy")]),
+        ],
+        vec![
+            operation("f", vec![SortRef::new("a", "VTy")], SortRef::new("", "CTy")),
+            operation(
+                "arrow",
+                vec![SortRef::new("a", "VTy"), SortRef::new("b", "CTy")],
+                SortRef::new("", "CTy"),
+            ),
+            operation(
+                "ret",
+                vec![
+                    SortRef::new("a", "VTy"),
+                    SortRef::new("t", "VTm").applied([a.clone()]),
+                ],
+                SortRef::new("", "CTm").applied([FreeTerm::op("f", [a.clone()])]),
+            ),
+            operation(
+                "lam",
+                vec![
+                    SortRef::new("a", "VTy"),
+                    SortRef::new("b", "CTy"),
+                    SortRef::new("t", "CTm")
+                        .applied([b.clone()])
+                        .pi_plus([SortIndex::new("x", "VTm").applied([a.clone()])]),
+                ],
+                SortRef::new("", "CTm").applied([FreeTerm::op("arrow", [a, b])]),
+            ),
+        ],
+    );
+    let naturals = signature("Nat", vec![SortDesc::new("Nat", DeclPolarity::Data)], vec![
+        operation("zero", vec![], SortRef::new("", "Nat")),
+        operation(
+            "succ",
+            vec![SortRef::new("n", "Nat")],
+            SortRef::new("", "Nat"),
+        ),
+    ]);
+    // An unnamed port under a binder renders as `_ : pi+ (x : S) . T`, which
+    // an input port does not read yet (#718); every port here is named or
+    // binds nothing.
+    for original in [lambda, identity_return, naturals] {
+        let rendered = gandr_theory_levitation::serialize_desc(&original);
+        let report = described(rendered.as_ref());
+        assert_eq!(report.diagnostics, [], "{rendered:?} lowers whole");
+        let [ref sign] = *report.declarations.as_slice()
+        else {
+            panic!("{rendered:?} declares one sign")
+        };
+        assert_eq!(
+            gandr_theory_levitation::serialize_desc(&sign.description),
+            rendered,
+            "the reparsed description renders as the text it was read from"
+        );
+        let representability = |desc_sorts: &[SortDesc]| {
+            desc_sorts
+                .iter()
+                .map(|sort| (sort.name.clone(), sort.representability))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            representability(&sign.description.sorts),
+            representability(&original.sorts),
+            "every sort keeps its representability"
+        );
+        let binders = |opers: &[OperDesc]| {
+            opers
+                .iter()
+                .flat_map(|oper| oper.arity.inputs.iter().chain(&oper.arity.outputs))
+                .map(|port| port.bindings.to_vec())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            binders(&sign.description.opers),
+            binders(&original.opers),
+            "every port keeps its binders, each domain a sort over its index terms"
+        );
+    }
+}
+
+#[test]
+fn a_binder_over_an_ordinary_sort_is_refused_by_name()
+{
+    let report =
+        described("sign Bad { sort Tm : Type; oper lam : (t : pi+ (x : Tm) . Tm) --> Tm; }");
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("one refusal: {:?}", report.diagnostics)
+    };
+    assert!(
+        matches!(
+            diagnostic.fault,
+            DescriptionFault::IllFormed(ref reason)
+                if reason.kind == gandr_theory_levitation::WfKind::NonRepresentableBinder
+        ),
+        "a variable of an ordinary sort is not bound: {diagnostic:?}"
+    );
+    // A binder belongs to an operation's input port: a domain, a result, a
+    // sort's index and a circuit's wire bind nothing.
+    for (source, refused, written) in [
+        (
+            "sign Nested { sort Tm : Type+; oper lam : (t : pi+ (x : pi+ (y : Tm) . Tm) . Tm) --> Tm; }",
+            "Repaired",
+            "a binder whose domain binds",
+        ),
+        (
+            "sign Result { sort Tm : Type+; oper lam : (t : Tm) --> (u : pi+ (x : Tm) . Tm); }",
+            "Repaired",
+            "a result that binds",
+        ),
+        (
+            "sign Indexed { sort Tm : Type+; sort S(i : pi+ (x : Tm) . Tm) : Type; }",
+            "Malformed",
+            "an index that binds",
+        ),
+        (
+            "sign Wired { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : pi+ (x : Tm) . Tm) ==> (u : Tm) { node n : f(t) --> (u); }; }",
+            "Repaired",
+            "a circuit port that binds",
+        ),
+    ] {
+        let report = described(source);
+        assert!(
+            report.diagnostics.iter().any(|diagnostic| {
+                (refused == "Repaired"
+                    && matches!(diagnostic.fault, DescriptionFault::Repaired { .. }))
+                    || (refused == "Malformed" && diagnostic.fault == DescriptionFault::Malformed)
+            }),
+            "{written} is refused as {refused}: {:?}",
+            report.diagnostics
+        );
+    }
 }
 
 #[test]

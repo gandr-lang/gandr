@@ -1,6 +1,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
+use super::SigBinder;
 use super::SigFault;
 use super::SigOperation;
 use super::SigParts;
@@ -15,6 +16,7 @@ use crate::code::CodeView;
 use crate::code::Name;
 use crate::code::PrimTy;
 use crate::code::ValueTypeRef;
+use crate::desc::Representability;
 use crate::generic::DescValue;
 use crate::generic::Payload;
 use crate::rule::FreeTerm;
@@ -39,6 +41,71 @@ where
         name: name.into(),
         sort: sort.into(),
         indices: indices.into_iter().collect(),
+        bindings: Vec::new(),
+    }
+}
+
+/// An unindexed binder of the given name at a sort.
+///
+/// # Specification
+/// trivial.
+fn binder<Named, Sorted>(
+    name: Named,
+    sort: Sorted,
+) -> SigBinder
+where
+    Named: Into<Name>,
+    Sorted: Into<Name>,
+{
+    SigBinder {
+        name: name.into(),
+        sort: sort.into(),
+        indices: Vec::new(),
+    }
+}
+
+/// An unindexed sort of the given name and representability.
+///
+/// # Specification
+/// trivial.
+fn sort<Named>(
+    name: Named,
+    representability: Representability,
+) -> SigSort
+where
+    Named: Into<Name>,
+{
+    SigSort {
+        name: name.into(),
+        indices: Vec::new(),
+        representability,
+    }
+}
+
+/// Pure λ-calculus syntax as a second-order presentation: a representable
+/// sort of terms, an abstraction whose body binds a term, and an application.
+///
+/// # Specification
+/// trivial.
+fn lambda() -> SigParts
+{
+    let mut body = port("t", "Tm", []);
+    body.bindings = vec![binder("x", "Tm")];
+    SigParts {
+        sorts: vec![sort("Tm", Representability::Representable)],
+        operations: vec![
+            SigOperation {
+                name: Name::from("lam"),
+                inputs: vec![body],
+                outputs: vec![port("", "Tm", [])],
+            },
+            SigOperation {
+                name: Name::from("app"),
+                inputs: vec![port("t", "Tm", []), port("u", "Tm", [])],
+                outputs: vec![port("", "Tm", [])],
+            },
+        ],
+        rules: Vec::new(),
     }
 }
 
@@ -52,16 +119,11 @@ fn cat_like() -> SigParts
 {
     let x = || FreeTerm::var("x");
     SigParts {
-        sorts: vec![
-            SigSort {
-                name: Name::from("Ob"),
-                indices: Vec::new(),
-            },
-            SigSort {
-                name: Name::from("Hom"),
-                indices: vec![port("dom", "Ob", []), port("cod", "Ob", [])],
-            },
-        ],
+        sorts: vec![sort("Ob", Representability::Ordinary), SigSort {
+            name: Name::from("Hom"),
+            indices: vec![port("dom", "Ob", []), port("cod", "Ob", [])],
+            representability: Representability::Ordinary,
+        }],
         operations: vec![
             SigOperation {
                 name: Name::from("id"),
@@ -93,7 +155,7 @@ fn cat_like() -> SigParts
 }
 
 #[test]
-fn the_code_is_one_data_sort_of_eleven_constructors()
+fn the_code_is_one_data_sort_of_thirteen_constructors()
 {
     let desc = sig_desc(Grade::One);
     assert_eq!(
@@ -144,6 +206,8 @@ fn the_code_is_one_data_sort_of_eleven_constructors()
         ("Con", vec!["String", "Sig"]),
         ("Tuple", vec!["Sig"]),
         ("Arg", vec!["Sig", "Sig"]),
+        ("Representable", vec!["String", "Sig", "Sig"]),
+        ("Bound", vec!["String", "String", "Sig", "Sig", "Sig"]),
     ]);
 }
 
@@ -173,10 +237,7 @@ fn a_presentation_round_trips_through_its_value()
 fn a_presentation_encodes_to_its_exact_identity_bytes()
 {
     let one_sort = SigParts {
-        sorts: vec![SigSort {
-            name: Name::from("M"),
-            indices: Vec::new(),
-        }],
+        sorts: vec![sort("M", Representability::Ordinary)],
         operations: Vec::new(),
         rules: Vec::new(),
     };
@@ -209,6 +270,95 @@ fn a_presentation_encodes_to_its_exact_identity_bytes()
         SigValue::encode(&renamed).identity(),
         SigValue::encode(&parts).identity(),
         "a renamed port is another presentation"
+    );
+}
+
+#[test]
+fn a_second_order_presentation_encodes_its_binders()
+{
+    let parts = lambda();
+    let value = SigValue::encode(&parts);
+    assert_eq!(
+        value.decode(),
+        Ok(parts.clone()),
+        "the representable sort and the binder read back"
+    );
+    assert_eq!(
+        value.identity().as_ref(),
+        [
+            0, 0, 0, 0, // Presents
+            11, 0, 0, 0, // Representable
+            2, 0, 0, 0, b'T', b'm', // its name
+            1, 0, 0, 0, // End: no indices
+            1, 0, 0, 0, // End: no further sort
+            3, 0, 0, 0, // Oper
+            3, 0, 0, 0, b'l', b'a', b'm', // its name
+            12, 0, 0, 0, // Bound: its first input
+            1, 0, 0, 0, b't', // the port's name
+            2, 0, 0, 0, b'T', b'm', // its sort
+            1, 0, 0, 0, // End: no index argument
+            4, 0, 0, 0, // Port: the binder
+            1, 0, 0, 0, b'x', // the binder's name
+            2, 0, 0, 0, b'T', b'm', // its sort
+            1, 0, 0, 0, // End: no index argument
+            1, 0, 0, 0, // End: no further binder
+            1, 0, 0, 0, // End: no further input
+            4, 0, 0, 0, // Port: the output
+            0, 0, 0, 0, // unnamed
+            2, 0, 0, 0, b'T', b'm', // its sort
+            1, 0, 0, 0, // End: no index argument
+            1, 0, 0, 0, // End: no further output
+            3, 0, 0, 0, // Oper
+            3, 0, 0, 0, b'a', b'p', b'p', // its name
+            4, 0, 0, 0, // Port
+            1, 0, 0, 0, b't', // its name
+            2, 0, 0, 0, b'T', b'm', // its sort
+            1, 0, 0, 0, // End: no index argument
+            4, 0, 0, 0, // Port
+            1, 0, 0, 0, b'u', // its name
+            2, 0, 0, 0, b'T', b'm', // its sort
+            1, 0, 0, 0, // End: no index argument
+            1, 0, 0, 0, // End: no further input
+            4, 0, 0, 0, // Port: the output
+            0, 0, 0, 0, // unnamed
+            2, 0, 0, 0, b'T', b'm', // its sort
+            1, 0, 0, 0, // End: no index argument
+            1, 0, 0, 0, // End: no further output
+            1, 0, 0, 0, // End: no further operation
+            1, 0, 0, 0, // End: no rule
+        ],
+        "a representable sort and a bound port take their own tags"
+    );
+    let mut ordinary = parts.clone();
+    if let Some(only) = ordinary.sorts.first_mut() {
+        only.representability = Representability::Ordinary;
+    }
+    assert_ne!(
+        SigValue::encode(&ordinary),
+        value,
+        "representability is part of the value"
+    );
+    let mut unbound = parts.clone();
+    if let Some(lam) = unbound.operations.first_mut()
+        && let Some(body) = lam.inputs.first_mut()
+    {
+        body.bindings.clear();
+    }
+    assert_ne!(
+        SigValue::encode(&unbound),
+        value,
+        "a binder is part of the value"
+    );
+    let mut twice = parts;
+    if let Some(app) = twice.operations.get_mut(1)
+        && let Some(function) = app.inputs.first_mut()
+    {
+        function.bindings = vec![binder("y", "Tm"), binder("z", "Tm")];
+    }
+    assert_eq!(
+        SigValue::encode(&twice).decode(),
+        Ok(twice.clone()),
+        "a telescope of two binders reads back outermost first"
     );
 }
 
@@ -309,5 +459,102 @@ fn a_value_outside_the_grammar_is_refused_by_name()
         presenting(unreadable).decode(),
         Err(SigFault::Text),
         "a name that is not UTF-8"
+    );
+}
+
+/// A `Bound` port named `t` at `Tm`, under the binder chain `binders`,
+/// before `rest`.
+///
+/// # Specification
+/// trivial.
+fn bound(
+    binders: Payload,
+    rest: Payload,
+) -> DescValue
+{
+    node(
+        Tag::Bound,
+        Payload::pair(
+            Payload::leaf(&b"t"[..]),
+            Payload::pair(
+                Payload::leaf(&b"Tm"[..]),
+                Payload::pair(end(), Payload::pair(binders, rest)),
+            ),
+        ),
+    )
+}
+
+/// A plain port named `x` at `Tm`, before `rest`.
+///
+/// # Specification
+/// trivial.
+fn plain(rest: Payload) -> Payload
+{
+    Payload::rec(node(
+        Tag::Port,
+        Payload::pair(
+            Payload::leaf(&b"x"[..]),
+            Payload::pair(Payload::leaf(&b"Tm"[..]), Payload::pair(end(), rest)),
+        ),
+    ))
+}
+
+/// A presentation of one operation `f` whose inputs are the chain `inputs`
+/// and which has no output.
+///
+/// # Specification
+/// trivial.
+fn operating(inputs: DescValue) -> SigValue
+{
+    let operation = node(
+        Tag::Oper,
+        Payload::pair(
+            Payload::leaf(&b"f"[..]),
+            Payload::pair(Payload::rec(inputs), Payload::pair(end(), end())),
+        ),
+    );
+    SigValue::from_value(node(
+        Tag::Presents,
+        Payload::pair(end(), Payload::pair(Payload::rec(operation), end())),
+    ))
+}
+
+#[test]
+fn a_binder_outside_an_operation_port_is_misplaced()
+{
+    let bound_tag = ConstructorTag::from(12_usize);
+    assert_eq!(
+        operating(bound(plain(end()), end())).decode().map(|parts| {
+            parts
+                .operations
+                .into_iter()
+                .flat_map(|operation| operation.inputs)
+                .map(|input| input.bindings.len())
+                .collect::<Vec<_>>()
+        }),
+        Ok(vec![1]),
+        "an operation's port binds"
+    );
+    let binding_index = node(
+        Tag::Sort,
+        Payload::pair(
+            Payload::leaf(&b"S"[..]),
+            Payload::pair(Payload::rec(bound(plain(end()), end())), end()),
+        ),
+    );
+    assert_eq!(
+        presenting(binding_index).decode(),
+        Err(SigFault::Misplaced(bound_tag)),
+        "a sort's index port binds nothing"
+    );
+    assert_eq!(
+        operating(bound(Payload::rec(bound(plain(end()), end())), end())).decode(),
+        Err(SigFault::Misplaced(bound_tag)),
+        "a binder binds nothing of its own"
+    );
+    assert_eq!(
+        operating(bound(end(), end())).decode(),
+        Err(SigFault::Misplaced(ConstructorTag::from(1_usize))),
+        "a bound port binds at least one variable"
     );
 }

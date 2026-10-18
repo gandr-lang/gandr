@@ -154,13 +154,13 @@ const OPENERS: &[&str] = &[
 const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
 
 /// The words the surface reads as keywords where a form molds them, the
-/// compound bridge tiles included.
+/// compound bridge tiles and the restricted binder's marked tile included.
 const KEYWORDS: &[&str] = &[
     "+U", "-F", "abort", "access", "acquire", "as", "at", "become", "break", "case", "close", "co",
     "codata", "continue", "data", "def", "drop", "dup", "else", "end", "extern", "feed", "fn",
     "for", "forall", "force", "fork", "from", "glob", "handle", "hold", "if", "import", "in",
     "infix", "infixl", "infixr", "leta", "loop", "migrate", "mobile", "module", "mu", "node",
-    "offer", "op", "oper", "pack", "package", "postfix", "prefix", "pure", "rec", "recv",
+    "offer", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pure", "rec", "recv",
     "release", "resume", "return", "rule", "run", "select", "send", "sign", "sort", "tail", "then",
     "thunk", "type", "unit", "unpack", "unwind", "val", "while", "with", "world",
 ];
@@ -208,10 +208,10 @@ const OPERATORS: &[&str] = &[
     "≅",
 ];
 
-/// The primitive type spellings, and the universe.
+/// The primitive type spellings, and the universes.
 const PRIMITIVE_TYPES: &[&str] = &[
     "Any", "Boolean", "Cap", "Char", "Integer", "Never", "Path", "String", "Symbol", "Type",
-    "Unit", "Unknown", "Void", "f32", "f64", "i32", "i64", "u32", "u64",
+    "Type+", "Unit", "Unknown", "Void", "f32", "f64", "i32", "i64", "u32", "u64",
 ];
 
 /// The keywords whose next identifier names what the declaration defines.
