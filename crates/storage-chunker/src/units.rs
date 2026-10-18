@@ -137,6 +137,11 @@ impl ByteCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal and unequal values and the width's ends answer
+    ///   as `==` does.
+    /// - witness: `units::tests::const_equality_is_equality`
     pub(crate) const fn const_eq(
         self,
         other: Self,
@@ -191,6 +196,11 @@ impl BytePosition
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal and unequal values and the width's ends answer
+    ///   as `==` does.
+    /// - witness: `units::tests::const_equality_is_equality`
     pub(crate) const fn const_eq(
         self,
         other: Self,
@@ -278,6 +288,11 @@ impl RecordCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal and unequal values and the width's ends answer
+    ///   as `==` does.
+    /// - witness: `units::tests::const_equality_is_equality`
     pub(crate) const fn const_eq(
         self,
         other: Self,
@@ -395,6 +410,11 @@ impl TokenCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal and unequal values and the width's ends answer
+    ///   as `==` does.
+    /// - witness: `units::tests::const_equality_is_equality`
     pub(crate) const fn const_eq(
         self,
         other: Self,
@@ -449,6 +469,11 @@ impl BoundaryResidue
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal and unequal values and the width's ends answer
+    ///   as `==` does.
+    /// - witness: `units::tests::const_equality_is_equality`
     pub(crate) const fn const_eq(
         self,
         other: Self,
@@ -475,11 +500,41 @@ mod tests
     use super::BoundaryResidue;
     use super::ByteCount;
     use super::BytePosition;
+    use super::ConstEquality;
     use super::RecordCount;
     use super::RecordPosition;
     use super::TokenCount;
     use crate::error::ArithmeticOperation;
     use crate::error::ChunkerError;
+
+    #[test]
+    fn const_equality_is_equality()
+    {
+        let wide = [
+            (0_u64, 0_u64, ConstEquality::Equal),
+            (37, 37, ConstEquality::Equal),
+            (37, 38, ConstEquality::Unequal),
+            (0, u64::MAX, ConstEquality::Unequal),
+        ];
+        for (left, right, expected) in wide {
+            assert_eq!(ByteCount(left).const_eq(ByteCount(right)), expected);
+            assert_eq!(BytePosition(left).const_eq(BytePosition(right)), expected);
+            assert_eq!(TokenCount(left).const_eq(TokenCount(right)), expected);
+            assert_eq!(
+                BoundaryResidue(left).const_eq(BoundaryResidue(right)),
+                expected
+            );
+        }
+        let narrow = [
+            (0_u32, 0_u32, ConstEquality::Equal),
+            (37, 37, ConstEquality::Equal),
+            (37, 38, ConstEquality::Unequal),
+            (0, u32::MAX, ConstEquality::Unequal),
+        ];
+        for (left, right, expected) in narrow {
+            assert_eq!(RecordCount(left).const_eq(RecordCount(right)), expected);
+        }
+    }
 
     #[test]
     fn checked_arithmetic_preserves_values_and_failure_identity()
