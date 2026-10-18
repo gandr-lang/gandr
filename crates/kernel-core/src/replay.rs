@@ -1066,11 +1066,14 @@ pub(crate) enum EndpointReading
 /// What `pending` comes to once its returned endpoints, decodes and codomains
 /// are read: each side of a value pair normalized as
 /// [`Replay::normalize_returned`] gives it and the normal forms converted by
-/// [`convert_values`], the kernel's one conversion; a decode's code normalized
-/// to the quote it returns, and the type it quotes compared with the other
-/// side by the same structural walk, whose own set-aside pairs are read in
-/// turn; a dependent arrow's codomain compared by that walk with a plain
-/// arrow's weakened past the dependent binder (#577).
+/// [`convert_values`], the kernel's one conversion; two normal forms that are
+/// both stuck endpoints compared by the structural walk over their
+/// computations, whose own set-aside pairs — the endpoints the stuck heads
+/// carry, which the evaluator does not run — are read in turn (#698); a
+/// decode's code normalized to the quote it returns, and the type it quotes
+/// compared with the other side by the same walk; a dependent arrow's codomain
+/// compared by that walk with a plain arrow's weakened past the dependent
+/// binder (#577).
 ///
 /// # Specification
 /// - requires: every pair's values and types, and every body in `unfoldings`,
@@ -1078,9 +1081,10 @@ pub(crate) enum EndpointReading
 /// - ensures: [`EndpointReading::Converts`] exactly when, within `budget`,
 ///   every value pair's normal forms convert under [`convert_values`] — or,
 ///   when both are quotes, their quoted types converge under the walk with
-///   every pair it sets aside read the same way — and every decode's code
-///   normalizes to a quote whose quoted type converges with the other side the
-///   same way, and every dependent codomain converges the same way with its
+///   every pair it sets aside read the same way, or, when both are stuck
+///   endpoints, their computations converge the same way — and every decode's
+///   code normalizes to a quote whose quoted type converges with the other side
+///   the same way, and every dependent codomain converges the same way with its
 ///   plain codomain weakened by one binder. A normalization that stops short of
 ///   a value — budget, a partial fixpoint, an unreadable node — leaves its pair
 ///   apart, and so does a decode whose code reads to no quote and a pair whose
@@ -1094,21 +1098,25 @@ pub(crate) enum EndpointReading
 /// - reason: the `while let` loop over a worklist of set-aside pairs, not
 ///   recursion.
 /// - measure: the budget left. A pair adds to the worklist only after reading a
-///   returned code or weakening a codomain, each of which charges the budget at
-///   least one step, and the walk over one type adds finitely many pairs.
+///   returned code, reading two returned endpoints or weakening a codomain,
+///   each of which charges the budget at least one step, and the walk over one
+///   type or computation adds finitely many pairs.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint returning its value through a definition
 ///   converts, a stuck endpoint converts only with an equal one, and an
-///   endpoint returning a different value stays apart; a decode whose code
-///   returns the other side's quote converts, one whose code returns another
-///   quote or stays stuck does not; a dependent codomain that ignores its
-///   binder converts with the plain one and one that names it does not; the
-///   arena's watermark is restored.
+///   endpoint returning a different value stays apart; two stuck endpoints
+///   carrying endpoints that read alike, one through a definition and one
+///   through a β-redex, convert, and stay apart when what they carry reads
+///   apart; a decode whose code returns the other side's quote converts, one
+///   whose code returns another quote or stays stuck does not; a dependent
+///   codomain that ignores its binder converts with the plain one and one that
+///   names it does not; the arena's watermark is restored.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
 /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
 /// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
+/// - witness: `replay::tests::endpoints_a_stuck_endpoint_carries_are_read_in_turn_698`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
 #[must_use]
 pub(crate) fn read_endpoints(
@@ -1151,13 +1159,21 @@ pub(crate) fn read_endpoints(
                 {
                     continue;
                 }
-                let (Some(&Value::Quote(one)), Some(&Value::Quote(other))) =
-                    (run.arena.value(left_normal), run.arena.value(right_normal))
-                else {
-                    reading = EndpointReading::Apart;
-                    break;
-                };
-                ConversionGoal::ValueType(one, other)
+                match (run.arena.value(left_normal), run.arena.value(right_normal)) {
+                    (Some(&Value::Quote(one)), Some(&Value::Quote(other))) => {
+                        ConversionGoal::ValueType(one, other)
+                    },
+                    // The evaluator stops at a stuck head and leaves the
+                    // endpoints its arguments carry unrun: compare the heads by
+                    // structure and read those endpoints in turn.
+                    (Some(&Value::Returned(one)), Some(&Value::Returned(other))) => {
+                        ConversionGoal::Computation(one, other)
+                    },
+                    _ => {
+                        reading = EndpointReading::Apart;
+                        break;
+                    },
+                }
             },
             SetAside::Decoded { code, other } => {
                 let Ok(normal) = run.normalize_returned(code)

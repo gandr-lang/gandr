@@ -2787,6 +2787,63 @@ fn a_stuck_endpoint_reads_as_what_it_reduced_to()
     );
 }
 
+/// Two endpoints stuck at a transport along a variable path read alike when
+/// the endpoints they transport do: one through a definition's δ-step, one
+/// through a β-redex (#698). A transported endpoint that reads to another
+/// call keeps the pair apart.
+#[test]
+fn endpoints_a_stuck_endpoint_carries_are_read_in_turn_698()
+{
+    let mut arena = TermArena::new();
+    let path = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let y = arena.value_variable(DeBruijnIndex::from(0_u32));
+    // `h(y)` for the opaque `h`, constant 0, or `k`, constant 2.
+    let call = |arena: &mut TermArena, constant: usize, argument| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let forced = arena.computation_force(head);
+        arena.computation_application(forced, argument)
+    };
+    // `g`, constant 1, is `thunk { λz. h(z) }`.
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let body = call(&mut arena, 0, bound);
+    let lambda = arena.computation_lambda(body);
+    let defined = arena.value_thunk(lambda);
+    let unfoldings = Unfoldings::new(alloc::vec![
+        Unfoldable::Opaque,
+        Unfoldable::Body(defined),
+        Unfoldable::Opaque,
+    ]);
+    let transported = |arena: &mut TermArena, carried| {
+        let carried = arena.value_returned(carried);
+        let transport = arena.computation_transport(path, carried);
+        arena.value_returned(transport)
+    };
+    let through_definition = call(&mut arena, 1, y);
+    let through_definition = transported(&mut arena, through_definition);
+    let redex = arena.computation_application(lambda, y);
+    let through_redex = transported(&mut arena, redex);
+    let elsewhere = call(&mut arena, 2, y);
+    let elsewhere = transported(&mut arena, elsewhere);
+    let read = |arena: &mut TermArena, left, right| {
+        super::read_endpoints(
+            arena,
+            &unfoldings,
+            &[crate::conv::SetAside::Values(left, right)],
+            ReplayBudget::DEFAULT,
+        )
+    };
+    assert_eq!(
+        read(&mut arena, through_definition, through_redex),
+        super::EndpointReading::Converts,
+        "the transported endpoints read alike"
+    );
+    assert_eq!(
+        read(&mut arena, through_definition, elsewhere),
+        super::EndpointReading::Apart,
+        "a transported endpoint reading to another call stays apart"
+    );
+}
+
 /// Every elimination meeting a returned endpoint runs the endpoint and
 /// eliminates what it returns.
 #[test]
