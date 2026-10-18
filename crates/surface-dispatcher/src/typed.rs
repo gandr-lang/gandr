@@ -119,6 +119,7 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::constructor_classifier;
+use gandr_core_term::decoded_comp_reading;
 use gandr_core_term::equal_type_reading;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::instantiate_value_type_under;
@@ -1502,12 +1503,18 @@ impl TypeTable
         // What each written computation returns, read at the first judgement
         // the run finished of a computation written there: a `run` binder
         // answers at what its bound computation returns, wherever a rewrite
-        // of its block moved that computation (#298).
+        // of its block moved that computation (#298), and a computation judged
+        // at a decode — `force m` with `m` at `+U (T(A))` — returns what the
+        // decode reads as.
         let mut returned: BTreeMap<NodeIndex, (usize, ValueTypeId, Within)> = BTreeMap::new();
         for &(term, first, _, at, constant) in &kept {
             let (TermNode::Computation(id), TypeNode::Computation(ty)) = (term, first)
             else {
                 continue;
+            };
+            let ty = match arena.comp_type(ty) {
+                Some(&CompType::Element { .. }) => decoded_comp_reading(&mut arena, ty),
+                Some(_) | None => ty,
             };
             let Some(&CompType::Returner { result, .. }) = arena.comp_type(ty)
             else {
@@ -4434,6 +4441,27 @@ mod tests
                 "`{needle}` answers at its place in the scrutinee"
             );
         }
+    }
+
+    /// #298: a `run` binder bound to a computation the run judged at a decode
+    /// answers at what the decode returns, used or not: `force m` with `m` at
+    /// `+U (T(A))`, `T` a static abstraction, returns the abstraction's body at
+    /// `A`.
+    #[test]
+    fn a_run_binder_bound_at_a_decode_answers_at_what_it_returns_298()
+    {
+        let source = SourceText::from(
+            "def raw : (Type -> Type[-]) -> Type -> Type -> Type ;\ndef raw = \\T. \\A. \\B. +U \
+             (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)) ;\n\ndef pairs : raw(\\X. -F (X \
+             * X), Integer, Integer) ;\ndef pairs = (\n  thunk { fn (a) { return (a, a) } },\n  \
+             thunk { fn (m) { fn (k) { run p <- force m ; become (force k)(1) } } }\n) ;\n",
+        );
+        let table = table(source);
+        assert_eq!(
+            answer(&table, source, SourceText::from("p <-")),
+            agreed(Subject::Binder, SourceText::from("#{Integer, Integer}")),
+            "the unused binder answers at what the decode returns"
+        );
     }
 
     /// #298: a `run`'s tuple pattern answers at the tuple its computation

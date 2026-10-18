@@ -126,7 +126,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Pattern _", Standing::Owed(0)),
     ("Pattern constructor", Standing::Owed(0)),
     ("Pattern false", Standing::Owed(0)),
-    ("Pattern identifier", Standing::Owed(1)),
+    ("Pattern identifier", Standing::Owed(0)),
     ("Pattern number", Standing::Owed(0)),
     ("Pattern true", Standing::Owed(0)),
     ("Pattern |", Standing::Owed(0)),

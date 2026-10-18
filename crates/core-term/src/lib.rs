@@ -268,6 +268,7 @@ pub use crate::syntax::SplitMotive;
 pub use crate::syntax::Value;
 pub use crate::syntax::ValueType;
 pub use crate::syntax::Zone;
+pub use crate::syntax::decoded_comp_reading;
 pub use crate::syntax::equal_certificate_syntax;
 pub use crate::syntax::equal_type_reading;
 pub use crate::syntax::equal_type_syntax;
