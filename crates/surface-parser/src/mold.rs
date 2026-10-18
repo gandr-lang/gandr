@@ -2084,30 +2084,39 @@ impl<'pbg> Molder<'pbg>
     }
 
     /// Empty a **reserved lowercase word**'s menu when it stands in a
-    /// declaration's empty classifier slot and every one of its molds would
-    /// open a declaration-position form there: the word is a keyword out of
-    /// place, and it stands in the slot as an unmolded token.
+    /// declaration's empty slot and no mold of it fits there: the word is a
+    /// keyword out of place, and it stands in the slot as an unmolded token.
     ///
-    /// `sort M : type;` in a `theory` block writes the keyword `type` where the
-    /// member's classifier belongs. `type` molds only as a module's type
-    /// component, a member form that no open frontier continues and the
-    /// classifier slot does not admit, so the full-menu fallback pushed it
-    /// anyway: the push ghost-closed the `theory` block before the member's
-    /// classifier and re-read the rest of the source as a stray form. With
-    /// the menu empty the molder takes the unmolded path instead: the keyword
-    /// becomes grout over its own bytes in the classifier slot, the member
-    /// stays the member, and its `;` and the block's `}` continue them as
-    /// written. The parse owes one obligation, at the keyword. This is the
+    /// Two shapes qualify. `sort M : type;` in a `theory` block writes the
+    /// keyword `type` where the member's classifier belongs. `type` molds only
+    /// as a module's type component, a member form that no open frontier
+    /// continues and the classifier slot does not admit, so the full-menu
+    /// fallback pushed it anyway: the push ghost-closed the `theory` block
+    /// before the member's classifier and re-read the rest of the source as a
+    /// stray form. `def mu : Integer ;` and `oper mu : … ;` write the keyword
+    /// `mu` where the declaration's name belongs, in the slot the form's
+    /// keyword tile has just opened; `mu` molds only as the recursive type's
+    /// opener, which that slot does not admit, and the fallback pushed it
+    /// there: the rest of the declaration was read inside `mu`'s form and the
+    /// parse owed a missing closer at the end of the source (#722). With the
+    /// menu empty the molder takes the unmolded path instead: the keyword
+    /// becomes grout over its own bytes in its slot, and the parse's first
+    /// obligation is the keyword's. In a member the declaration stays whole
+    /// and the keyword is the one obligation; a top-level definition whose
+    /// name is grout also owes its name tile, inside the same declaration.
+    /// Either way the declarations after it keep their own tiles. This is the
     /// stray mid's recovery one keyword later: a stray mid flags its missing
     /// head in place rather than reading the source around it anew.
     ///
-    /// The rule is held to that one shape, and each guard is measured: over
+    /// The rule is held to those shapes, and each guard is measured: over
     /// the drop harness, widening it to any open slot, to a slot after an
     /// operand, to a non-declaration form's slot, to a declaration slot of
-    /// another sort or to a keyword opening an expression form each made some
-    /// variant owe more obligations than the record, because there the
-    /// keyword is usually written right and a delimiter before it is missing.
-    /// An item-position declaration head is admitted at every slot (the
+    /// another sort, to the empty slot after any tile of a declaration (a
+    /// `:` or a module's name, not only a keyword tile) or to a keyword
+    /// opening an expression form each made some variant owe more
+    /// obligations than the record, because there the keyword is usually
+    /// written right and a delimiter before it is missing. An item-position
+    /// declaration head is admitted at every slot (the
     /// [`MeldState::admits_at`] exemption that keeps top-level declarations
     /// reachable), so `def` after an unfinished declaration still opens the
     /// next one. _Reversal:_ a slot of another sort whose keyword recovery
@@ -2117,10 +2126,12 @@ impl<'pbg> Molder<'pbg>
     /// - requires: the token's menu, `lexeme` spelled `text`, was gathered into
     ///   `self.candidates`.
     /// - ensures: empties `self.candidates` exactly when `text` is a reserved
-    ///   lowercase keyword, the live frontier is an open slot of [`Sort::Type`]
-    ///   holding no operand, its nearest open form is of item position, and
-    ///   every candidate is a declaration head that slot does not admit; leaves
-    ///   it unchanged otherwise.
+    ///   lowercase keyword, the live frontier is an open slot holding no
+    ///   operand, its nearest open form is of item position, and either the
+    ///   slot is of [`Sort::Type`] and every candidate is a declaration head
+    ///   that slot does not admit, or the form's frontier tile is a keyword and
+    ///   the slope head ([`MeldState::head_is_frontier`]) and the slot admits
+    ///   no candidate; leaves it unchanged otherwise.
     /// - provides: the keyword-out-of-place half of the candidate menu.
     /// - fails: never.
     /// - panics: none.
@@ -2128,10 +2139,13 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — the keyword `type` in a `theory` member's classifier
     ///   slot owes exactly one obligation, at the keyword, and keeps the member
-    ///   and the block whole; `Type` there owes none. The drop harness's
-    ///   records, a differential measurement rather than a witness, hold every
-    ///   corpus variant to no more obligations than before.
+    ///   and the block whole; the keyword `mu` in a definition's or a member's
+    ///   name slot owes its first obligation at the keyword and none in the
+    ///   declaration after it; `Type` and a name that is no keyword owe none.
+    ///   The drop harness's records, a differential measurement rather than a
+    ///   witness, hold every corpus variant to no more obligations than before.
     /// - witness: `tests::acceptance::a_keyword_in_a_classifier_slot_stands_there_unmolded`
+    /// - witness: `tests::acceptance::a_keyword_in_a_name_slot_stands_there_unmolded_722`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2163,11 +2177,26 @@ impl<'pbg> Molder<'pbg>
                 pbg.mold(open)
                     .is_ok_and(|def| matches!(def.sort, Sort::Item | Sort::ModuleMember))
             });
-        let stray = classifier_slot
+        // A declaration's name slot: the slot an item-position form's keyword
+        // tile (`def`, `oper`) has just opened, empty. A keyword no mold of
+        // which the slot admits is a name written as a keyword (#722), where
+        // the full-menu fallback would open the keyword's own form and read
+        // the rest of the declaration inside it.
+        let name_slot = frontier.open.is_some_and(|open| {
+            pbg.mold(open).is_ok_and(|def| {
+                matches!(def.sort, Sort::Item | Sort::ModuleMember) && KEYWORDS.contains(&def.label)
+            })
+        }) && bool::from(state.head_is_frontier());
+        let stray = (classifier_slot
             && self.candidates.iter().all(|&mold| {
                 !bool::from(state.admits_at(mold, &frontier))
                     && bool::from(declaration_head(pbg, mold))
-            });
+            }))
+            || (name_slot
+                && self
+                    .candidates
+                    .iter()
+                    .all(|&mold| !bool::from(state.admits_at(mold, &frontier))));
         if stray {
             self.candidates.clear();
         }
