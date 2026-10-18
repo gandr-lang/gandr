@@ -860,6 +860,7 @@ impl CellAlphabet for ToyAlphabet
     ///   equate both faces; a head clash and an occurs cycle preserve prior
     ///   bindings. Eager commits and skipped occurs checks change the result.
     /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
+    /// - witness: `toy::tests::a_variable_unifies_with_itself_with_another_and_under_a_term`
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -1383,6 +1384,10 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a cell asked about any command may fire.
+    /// - witness: `toy::tests::every_toy_cell_may_fire_anywhere`
     #[inline]
     fn may_fire(
         _provenance: &Self::Provenance,
@@ -1641,6 +1646,59 @@ mod tests
             )));
             assert_eq!(seed, refused);
         }
+    }
+
+    #[test]
+    fn a_variable_unifies_with_itself_with_another_and_under_a_term()
+    {
+        let mut itself = ToySubst::default();
+        assert!(
+            bool::from(ToyAlphabet::unify_cmd(
+                &Toy::var("x"),
+                &Toy::var("x"),
+                &mut itself
+            )),
+            "a variable unifies with itself"
+        );
+        assert_eq!(ToySubst::default(), itself, "binding nothing");
+        let mut apart = ToySubst::default();
+        assert!(
+            bool::from(ToyAlphabet::unify_cmd(
+                &Toy::var("x"),
+                &Toy::var("y"),
+                &mut apart
+            )),
+            "two variables unify"
+        );
+        assert_eq!(
+            apart.apply_fully(&Toy::var("x")),
+            apart.apply_fully(&Toy::var("y")),
+            "by binding one to the other"
+        );
+        assert_ne!(ToySubst::default(), apart, "a binding is made");
+        let mut under = ToySubst::default();
+        assert!(
+            bool::from(ToyAlphabet::unify_cmd(
+                &Toy::zero(),
+                &Toy::var("w"),
+                &mut under
+            )),
+            "a variable on the right unifies with a term on the left"
+        );
+        assert_eq!(
+            Toy::zero(),
+            under.apply_fully(&Toy::var("w")),
+            "binding it to the term"
+        );
+    }
+
+    #[test]
+    fn every_toy_cell_may_fire_anywhere()
+    {
+        assert!(bool::from(ToyAlphabet::may_fire(
+            &ToyProv::Rule,
+            &Toy::zero()
+        )));
     }
 
     #[test]
