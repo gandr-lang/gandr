@@ -125,6 +125,12 @@
 //!                     OriginToken::from(usize::from(lowered.origin())),
 //!                 ));
 //!             },
+//!             DeclarationOutcome::World => {
+//!                 return Some(Declaration::world(
+//!                     lowered.constant(),
+//!                     OriginToken::from(usize::from(lowered.origin())),
+//!                 ));
+//!             },
 //!             DeclarationOutcome::Refused(_) => return None,
 //!         };
 //!         let origin = OriginToken::from(usize::from(lowered.origin()));
