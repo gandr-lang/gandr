@@ -780,7 +780,10 @@ pub(crate) fn related_endpoints(
 /// - provides: the type the checking machine redirects native evidence to.
 /// - fails: an identity refusal for a domain outside the fold, a neutral fibre
 ///   (an open innermost domain, or endpoints that are not canonical), an empty
-///   fibre, or a fibre that needs a higher form.
+///   fibre, or a fibre that needs a higher form: at a function domain, whose
+///   fold fibre is the persisted identity itself, that is
+///   [`IdentityError::HigherEvaluationRequired`], since redirecting to that
+///   fibre would check the same goal again (#719).
 /// - panics: none.
 ///
 /// # Errors
@@ -795,9 +798,11 @@ pub(crate) fn related_endpoints(
 /// # Adequacy
 /// - hypothesis: L3 — a product of Bool and Unit pairs its fibres, a universe
 ///   identity is a native path classifier, an iterated identity at a diagonal
-///   is the unit fibre's identity, and an open domain is a neutral fibre.
+///   is the unit fibre's identity, an open domain is a neutral fibre, and a
+///   function identity has no first-order fibre.
 /// - witness: `element_identity::tests::native_evidence_checks_against_the_fold_fibre`
 /// - witness: `element_identity::tests::identity_at_an_open_type_is_a_neutral_fibre`
+/// - witness: `element_identity::tests::a_tuple_at_a_function_identity_is_refused_719`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&fibre| arena.value_type(fibre).is_some()))]
 pub(crate) fn fibre(
     arena: &mut TermArena,
@@ -806,7 +811,13 @@ pub(crate) fn fibre(
     right: ValueId,
 ) -> Result<ValueTypeId, KernelError>
 {
-    native_fibre(arena, domain, left, right).map(|(fibre, _fibers)| fibre)
+    let (fibre, fibers) = native_fibre(arena, domain, left, right)?;
+    if let Ok(crate::identity_recursion::Fiber::Function { .. }) = fibers.get(fibers.root()) {
+        return Err(KernelError::Identity(
+            IdentityError::HigherEvaluationRequired,
+        ));
+    }
+    Ok(fibre)
 }
 
 /// The fibre of the identity at the dependent pair `Σ (x : first). second`
