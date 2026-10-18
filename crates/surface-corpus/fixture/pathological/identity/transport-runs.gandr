@@ -1,0 +1,32 @@
+// Where transport does not run. The machine lowers a transport, the HoTT
+// book's § 2.3 (`transport`), only where conversion computes it, and refuses
+// the rest by the family's head. Three refusals follow. At a family of path
+// types conversion computes transport along reflexivity, but the machine
+// lowers no such family. At a function family neither the normaliser nor the
+// kernel computes transport along `ua`. And `back(p)` has no image in the
+// machine as a transport's path. The rows these need are #706.
+
+/// A reflexive transport at a path-type motive does not run: the family's
+/// head is a path type (#706).
+@[ runs("unrunnable: `moved_end_run` did not focus: element transport along a motive the machine does not lower: a path type") ]
+def moved_end_run : +U (-F Path(Integer, 2, 2)) ;
+def moved_end_run = thunk { transport(\x. Path(Integer, x, x), here(2), here(2)) } ;
+
+/// A function carried along `ua` does not run. Transport at a function family
+/// has no conversion row a run could agree with, so the machine refuses it by
+/// the family's head (#706).
+@[ runs("unrunnable: `alongFunction` did not focus: element transport along a motive the machine does not lower: a thunk type") ]
+def alongFunction(
+  e : Integer ≃ Integer,
+  f : +U (Integer -> -F Integer)
+) -> -F +U (Integer -> -F Integer) {
+  transport(\X. +U (X -> -F X), ua(e), f)
+}
+
+/// Transport back along a path between types does not run. `back(p)` stands
+/// as the transport's path, a compound endpoint with no image in the machine,
+/// and transport back along `ua` has no conversion row (#706).
+@[ runs("unrunnable: `backAlong` did not focus: an identity introduction or a compound endpoint has no command-IL producer") ]
+def backAlong(p : Path(Type, Integer, Integer), y : Integer) -> -F Integer {
+  transport(\X. X, back(p), y)
+}

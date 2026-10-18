@@ -128,19 +128,36 @@
 //!
 //! # Native universe paths
 //!
-//! Native path values and `Transport` have no image in the command IL. Focusing
-//! answers `FocusRefusal::UniverseTransport` and restores the command arena and
-//! provenance to their entry marks. `Path_U` transport is computed by
-//! `core-nbe` and checked by kernel replay; accepting a native certificate does
-//! not authorize this machine to erase its evidence or invent a producer.
+//! A path between types runs as the pair of its two maps, forward then
+//! backward, and a transport as its motive's action applied to that pair and
+//! the moved value; a flow runs as its translator, and a ride as its motive's
+//! action on it ([`crate::identity`] states both tables). The lowered fragment
+//! is `ua`, `here`, native reflexivity, `equiv`, native equivalences and
+//! products, `transport` along a native path, and `tr(P, p, x)` at a motive
+//! whose every part is the decode of its binder, a part that never reads it,
+//! a product, a sum or a list — the rows `core-nbe` and the kernel compute.
 //!
-//! **Choice.** An explicit refusal, rather than lowering a path to a pair of
-//! functions without the obligations that certify it. **Reversal.** A
-//! command-level image must specify its types, eliminations and certified
-//! readback before focusing admits it. The in-memory bridge mode, higher
-//! fields, funext and guarded List observations likewise remain outside this
-//! IL. A flow is the exception: it carries no evidence the machine needs, and
-//! runs as its translator ([`crate::flow`]).
+//! **Certification.** The kernel admitted the program, a `ua` record's laws
+//! checked as its fields; the run computes the normaliser's transport rows on
+//! the same motive, and a transported first-order value reads back through the
+//! ordinary readback as the value conversion gives. Nothing about a path is
+//! erased that the kernel needs: its laws ride inside the record and nothing
+//! forces them.
+//!
+//! **What still refuses.** A transport whose motive has a part no row reads
+//! is refused as [`FocusRefusal::ElementTransport`] naming that part's
+//! [`MotiveHead`]: a function type, the path families `back`, `then` and
+//! `cong` transport in, a datatype over its binder; a telescope transport is
+//! refused as one. Funext, `ua` at a stated stratum, a session equivalence
+//! and a compound endpoint are [`FocusRefusal::ElementPath`]. The in-memory
+//! bridge mode, higher fields and guarded List observations remain outside
+//! this IL.
+//!
+//! **Choice.** A motive's action built from the rows conversion computes,
+//! rather than a lowering of every motive: a row the machine ran that
+//! conversion does not compute would print a value no `checks` row can agree
+//! with. **Reversal.** A motive shape earns its lowering when the normaliser
+//! and the kernel compute its row.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -160,6 +177,9 @@ use gandr_theory_cell_complexes::Polarity;
 
 use crate::boundary::NodeCount;
 use crate::boundary::ProducerArity;
+use crate::identity::Combinator;
+use crate::identity::Direction;
+use crate::identity::MotiveHead;
 use crate::il::CommandArena;
 use crate::il::CommandId;
 use crate::il::ConstructorTag;
@@ -347,14 +367,14 @@ impl Provenance
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum FocusRefusal
 {
-    /// Native universe transport has no command-IL destructor.
-    UniverseTransport(ComputationId),
-    /// Element transport has no command-IL destructor.
-    ElementTransport(ComputationId),
-    /// A path introduction — reflexivity, an extensionality or equivalence
-    /// statement, a session equivalence — or a compound endpoint: the command
-    /// IL carries no paths, so none has a producer to become. A flow is not
-    /// refused: it runs as its translator.
+    /// An element transport whose motive has a part no transport row reads,
+    /// named by that part's head, or a telescope transport: the machine runs
+    /// a transport only by the rows conversion computes.
+    ElementTransport(ComputationId, MotiveHead),
+    /// An identity introduction with no image — function extensionality,
+    /// `ua` at a stated stratum, a session equivalence — or a compound
+    /// endpoint. A path between types runs as its two maps and a flow as its
+    /// translator, so neither is refused.
     ElementPath(ValueId),
     /// A core value id names no node of the core arena.
     DanglingValue(ValueId),
@@ -362,9 +382,8 @@ pub enum FocusRefusal
     DanglingComputation(ComputationId),
     /// The command arena refused a node.
     Mint(MintRefusal),
-    /// A code or universe-path certificate: the command IL carries no types, so
-    /// a quoted type, a type operator or a static application has no
-    /// producer to become.
+    /// A code: the command IL carries no types, so a quoted type, a type
+    /// operator or a static application has no producer to become.
     Code(ValueId),
     /// A hole or a mark in value position: an unfinished or ill-typed program
     /// has no command-IL image, as it has no kernel one.
@@ -401,12 +420,10 @@ impl fmt::Display for FocusRefusal
     ) -> fmt::Result
     {
         match *self {
-            Self::UniverseTransport(_) => {
-                f.write_str("universe transport has no command-IL destructor")
-            },
-            Self::ElementTransport(_) => {
-                f.write_str("element transport has no command-IL destructor")
-            },
+            Self::ElementTransport(_, head) => write!(
+                f,
+                "element transport along a motive the machine does not lower: {head}"
+            ),
             Self::ElementPath(_) => f.write_str(
                 "an identity introduction or a compound endpoint has no command-IL producer",
             ),
@@ -658,19 +675,19 @@ where
     answer
 }
 
-/// Focus the work `seed` sets up, every flow combinator it meets focused once
-/// beforehand.
+/// Focus the work `seed` sets up, every identity combinator it meets focused
+/// once beforehand.
 ///
 /// # Specification
 /// - requires: `seed` only mints and pushes tasks; `finish` reads the run's one
 ///   result.
-/// - ensures: a first run over `core` records the combinators its flows and
-///   rides apply; when it met none its result is the answer. Otherwise the
-///   arena and provenance return to their marks, each wanted combinator is
-///   built closed in a scratch arena and focused by a run of its own, and a
-///   second run with those producers prepared gives the answer.
+/// - ensures: a first run over `core` records the combinators its flows, paths,
+///   rides and transports apply; when it met none its result is the answer.
+///   Otherwise the arena and provenance return to their marks, each wanted
+///   combinator is built closed in a scratch arena and focused by a run of its
+///   own, and a second run with those producers prepared gives the answer.
 /// - provides: closed combinators without a run nested in a run, and with no
-///   cost to a term that holds no flow.
+///   cost to a term that holds no identity.
 /// - fails: `seed`'s, a run's or `finish`'s refusal;
 ///   [`FocusRefusal::TranslationInvariant`] when the second run still wants a
 ///   combinator.
@@ -682,10 +699,11 @@ where
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — rides and a function flow run to the kernel rows' values,
-///   which the first run's placeholders would not compute.
+/// - hypothesis: L3 — rides, a function flow and transports run to the kernel
+///   rows' values, which the first run's placeholders would not compute.
 /// - witness: `tests::run::rides_run_by_the_motives_action`
 /// - witness: `tests::run::a_function_flow_runs_in_variance_order`
+/// - witness: `tests::run::transports_run_by_the_motives_action`
 fn with_combinators<Answer, Seed, Finish>(
     core: &CoreArena,
     arena: &mut CommandArena,
@@ -712,7 +730,7 @@ where
     let mut prepared = BTreeMap::new();
     for combinator in wanted {
         let mut scratch = CoreArena::new();
-        let root = crate::flow::build(core, combinator, &mut scratch)?;
+        let root = crate::identity::build(core, combinator, &mut scratch)?;
         let mut closed = Focusing::new(&scratch, arena, provenance);
         closed.tasks.push(Task::Value(root));
         closed.drive()?;
@@ -863,13 +881,13 @@ enum Task
         /// The named continuation.
         continuation: ConsumerId,
     },
-    /// Pop the second, then the first producer, and mint `⟨combinator |+
-    /// force(apply(first; apply(second; continuation)))⟩` over the closed
-    /// combinator's producer.
+    /// Pop the parts the combinator is applied to, the last one first, and
+    /// mint `⟨combinator |+ force(apply(first; … apply(last;
+    /// continuation)))⟩` over the closed combinator's producer.
     Combinator
     {
         /// The closed program applied.
-        combinator: crate::flow::Combinator,
+        combinator: Combinator,
         /// The continuation its answer is sent to.
         continuation: ConsumerId,
     },
@@ -890,10 +908,10 @@ struct Focusing<'run>
     producers: Vec<ProducerId>,
     /// Translated commands awaiting their parent.
     commands: Vec<CommandId>,
-    /// The flow combinators focused before this run, by combinator.
-    prepared: BTreeMap<crate::flow::Combinator, ProducerId>,
-    /// The flow combinators this run met that were not prepared.
-    wanted: BTreeSet<crate::flow::Combinator>,
+    /// The identity combinators focused before this run, by combinator.
+    prepared: BTreeMap<Combinator, ProducerId>,
+    /// The identity combinators this run met that were not prepared.
+    wanted: BTreeSet<Combinator>,
 }
 
 impl<'run> Focusing<'run>
@@ -990,7 +1008,8 @@ impl<'run> Focusing<'run>
                 Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
-            | &Task::ListCons | &Task::Combinator { .. } => self.producers.len() >= 2,
+            | &Task::ListCons => self.producers.len() >= 2,
+            | &Task::Combinator { combinator, .. } => self.producers.len() >= usize::from(combinator.applied()),
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
             | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
             | &Task::ListFold { .. } => !self.producers.is_empty() && self.commands.len() >= 2,
@@ -1152,22 +1171,20 @@ impl<'run> Focusing<'run>
                 combinator,
                 continuation,
             } => {
-                let second = self.pop_producer()?;
-                let first = self.pop_producer()?;
-                let inner = self.arena.mint_consumer(ConsumerNode::Destructor {
-                    tag: DestructorTag::Apply,
-                    producers: alloc::boxed::Box::from([second]),
-                    consumers: alloc::boxed::Box::from([continuation]),
-                })?;
-                let outer = self.arena.mint_consumer(ConsumerNode::Destructor {
-                    tag: DestructorTag::Apply,
-                    producers: alloc::boxed::Box::from([first]),
-                    consumers: alloc::boxed::Box::from([inner]),
-                })?;
+                // The last part is the innermost argument.
+                let mut observer = continuation;
+                for _part in 0 .. usize::from(combinator.applied()) {
+                    let part = self.pop_producer()?;
+                    observer = self.arena.mint_consumer(ConsumerNode::Destructor {
+                        tag: DestructorTag::Apply,
+                        producers: alloc::boxed::Box::from([part]),
+                        consumers: alloc::boxed::Box::from([observer]),
+                    })?;
+                }
                 let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
                     tag: DestructorTag::Force,
                     producers: alloc::boxed::Box::from([]),
-                    consumers: alloc::boxed::Box::from([outer]),
+                    consumers: alloc::boxed::Box::from([observer]),
                 })?;
                 let closed = self.combinator(combinator)?;
                 self.cut(FocusOrigin::Force, Polarity::Positive, closed, frame)
@@ -1557,13 +1574,16 @@ impl<'run> Focusing<'run>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a leaf's producer is pushed; a composite's finishing task and
-    ///   its children's tasks are scheduled, children left to right.
+    ///   its children's tasks are scheduled, children left to right; a path
+    ///   between types schedules the pair of its two maps and a flow its
+    ///   translator, as [`crate::identity`] tabulates.
     /// - provides: the `𝓥` rows.
     /// - fails: [`FocusRefusal::DanglingValue`], [`FocusRefusal::Code`] for a
     ///   quote of either sort, a static lambda or a static application,
-    ///   [`FocusRefusal::IncompleteValue`] for a hole or a mark,
-    ///   [`FocusRefusal::Unelaborated`] for an unelaborated computation in
-    ///   value position, or a refused mint.
+    ///   [`FocusRefusal::ElementPath`] for funext, a stratum `ua`, a session
+    ///   equivalence or a compound endpoint, [`FocusRefusal::IncompleteValue`]
+    ///   for a hole or a mark, [`FocusRefusal::Unelaborated`] for an
+    ///   unelaborated computation in value position, or a refused mint.
     /// - panics: none.
     ///
     /// # Errors
@@ -1581,6 +1601,8 @@ impl<'run> Focusing<'run>
     /// - witness: `focus::tests::a_code_is_refused_by_name`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
     /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
+    /// - witness: `tests::run::native_paths_run_as_their_maps`
+    /// - witness: `tests::run::transports_run_by_the_motives_action`
     #[spec(
         captures: [work = self.tasks.len(), results = self.producers.len()],
         ensures: |ret| match self.core.value(id) {
@@ -1704,13 +1726,39 @@ impl<'run> Focusing<'run>
                 });
                 return Ok(());
             },
-            Value::PathRefl(_)
-            | Value::PathProduct(..)
-            | Value::PathEquiv { .. }
-            | Value::Quote(_)
+            Value::Quote(_)
             | Value::QuoteComputation(_)
             | Value::StaticLambda(_)
             | Value::StaticApplication(..) => return Err(FocusRefusal::Code(id)),
+            // A path between types runs as its two maps, forward then
+            // backward.
+            Value::Here(_) | Value::PathRefl(_) => {
+                let identity = self.combinator(Combinator::Identity)?;
+                return self.constructor(ConstructorTag::Tuple(ProducerArity::from(2_usize)), &[
+                    identity, identity,
+                ]);
+            },
+            Value::Equiv(forward, backward)
+            | Value::PathEquiv {
+                forward, backward, ..
+            } => {
+                self.tasks.push(Task::Tuple(ProducerArity::from(2_usize)));
+                self.tasks.push(Task::Value(backward));
+                self.tasks.push(Task::Value(forward));
+                return Ok(());
+            },
+            Value::Univalence(record, forward) => {
+                self.tasks.push(Task::Tuple(ProducerArity::from(2_usize)));
+                self.suspend(Combinator::Inverse, &[record])?;
+                self.tasks.push(Task::Value(forward));
+                return Ok(());
+            },
+            Value::PathProduct(first, second) => {
+                self.tasks.push(Task::Tuple(ProducerArity::from(2_usize)));
+                self.suspend(Combinator::Both(Direction::Backward), &[first, second])?;
+                self.suspend(Combinator::Both(Direction::Forward), &[first, second])?;
+                return Ok(());
+            },
             // A flow runs as its translator.
             Value::Forward(translator) => {
                 self.tasks.push(Task::Value(translator));
@@ -1721,7 +1769,7 @@ impl<'run> Focusing<'run>
                 relation: gandr_core_term::session::SessionRelation::Subtyping,
                 ..
             } => {
-                let identity = self.combinator(crate::flow::Combinator::Identity)?;
+                let identity = self.combinator(Combinator::Identity)?;
                 self.producers.push(identity);
                 return Ok(());
             },
@@ -1729,8 +1777,8 @@ impl<'run> Focusing<'run>
             | Value::FunctionFlow(first, second)
             | Value::FlowProduct(first, second) => {
                 let combinator = match *node {
-                    Value::Then(..) => crate::flow::Combinator::Compose,
-                    Value::FlowProduct(..) => crate::flow::Combinator::Pair,
+                    Value::Then(..) => Combinator::Compose,
+                    Value::FlowProduct(..) => Combinator::Pair,
                     Value::Primitive { .. }
                     | Value::PathRefl(_)
                     | Value::PathProduct(..)
@@ -1765,22 +1813,11 @@ impl<'run> Focusing<'run>
                     | Value::Record(_)
                     | Value::Hole(_)
                     | Value::Mark { .. }
-                    | Value::Reify(_) => crate::flow::Combinator::Wrap,
+                    | Value::Reify(_) => Combinator::Wrap,
                 };
-                let return_point = self.innermost_covariable()?;
-                self.tasks.push(Task::Thunk);
-                self.tasks.push(Task::Combinator {
-                    combinator,
-                    continuation: return_point,
-                });
-                self.tasks.push(Task::Value(second));
-                self.tasks.push(Task::Value(first));
-                return Ok(());
+                return self.suspend(combinator, &[first, second]);
             },
-            Value::Here(_)
-            | Value::Univalence(..)
-            | Value::Funext(..)
-            | Value::Equiv(..)
+            Value::Funext(..)
             | Value::Ua { .. }
             | Value::SessionRelated { .. }
             | Value::Returned(_) => {
@@ -1803,14 +1840,16 @@ impl<'run> Focusing<'run>
     /// - requires: `continuation` was minted for the binder depth `id` stands
     ///   at.
     /// - ensures: the `𝓕` row for the node's former is scheduled or minted; a
-    ///   continuation that is not a tail is placed under no binder.
+    ///   continuation that is not a tail is placed under no binder; a ride or a
+    ///   transport applies its motive's action, as [`crate::identity`]
+    ///   tabulates.
     /// - provides: the `𝓕` rows.
     /// - fails: [`FocusRefusal::DanglingComputation`],
     ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark,
     ///   [`FocusRefusal::Session`] for a session action,
-    ///   [`FocusRefusal::UniverseTransport`] for a universe transport,
-    ///   [`FocusRefusal::ElementTransport`] for an element transport, or a
-    ///   refused mint.
+    ///   [`FocusRefusal::ElementTransport`] for a transport whose motive has a
+    ///   part no row reads, named by that part's head, and for a telescope
+    ///   transport, or a refused mint.
     /// - panics: none.
     ///
     /// # Errors
@@ -1828,6 +1867,7 @@ impl<'run> Focusing<'run>
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
     /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
     /// - witness: `focus::tests::a_session_action_is_refused_by_name`
+    /// - witness: `tests::run::a_transport_no_row_reads_is_refused_by_its_head`
     #[spec(
         captures: [work = self.tasks.len()],
         ensures: |ret| match self.core.computation(id) {
@@ -2063,9 +2103,25 @@ impl<'run> Focusing<'run>
                     self.tasks.push(Task::Value(*argument));
                 }
             },
-            Computation::Transport(..) => return Err(FocusRefusal::UniverseTransport(id)),
-            Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } => {
-                return Err(FocusRefusal::ElementTransport(id));
+            // A transport runs as its motive's action applied to the path's
+            // two maps and the moved value; along a native path the action
+            // is the forward map's.
+            Computation::Transport(path, value) => {
+                self.apply_combinator(Combinator::Forward, (path, value), continuation);
+            },
+            Computation::PathTransport {
+                motive,
+                path,
+                value,
+            } => {
+                crate::identity::readable(self.core, motive).map_err(|unread| match unread {
+                    crate::identity::Unread::Head(head) => FocusRefusal::ElementTransport(id, head),
+                    crate::identity::Unread::Dangling => FocusRefusal::TranslationInvariant,
+                })?;
+                self.apply_combinator(Combinator::Transport(motive), (path, value), continuation);
+            },
+            Computation::TelescopeTransport { .. } => {
+                return Err(FocusRefusal::ElementTransport(id, MotiveHead::Telescope));
             },
             Computation::Hole(_) | Computation::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteComputation(id));
@@ -2097,12 +2153,7 @@ impl<'run> Focusing<'run>
                 flow,
                 value,
             } => {
-                self.tasks.push(Task::Combinator {
-                    combinator: crate::flow::Combinator::Act(motive),
-                    continuation,
-                });
-                self.tasks.push(Task::Value(value));
-                self.tasks.push(Task::Value(flow));
+                self.apply_combinator(Combinator::Ride(motive), (flow, value), continuation);
             },
             Computation::Return(value) => {
                 self.tasks.push(Task::Cut {
@@ -2276,6 +2327,90 @@ impl<'run> Focusing<'run>
         self.innermost_covariable()
     }
 
+    /// Schedule `force(combinator) 𝓥⟦first⟧ 𝓥⟦second⟧` under `continuation`:
+    /// a ride or a transport, the motive's action applied to an identity's
+    /// image and the moved value.
+    ///
+    /// # Specification
+    /// - requires: `combinator` is applied to two parts.
+    /// - ensures: the combinator's application to `continuation` is scheduled
+    ///   over `first`'s and `second`'s producers, `first` translated first.
+    /// - provides: the `𝓕` row of a ride and of a transport.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — rides and transports run to the kernel rows' values;
+    ///   swapping the image and the moved value would not.
+    /// - witness: `tests::run::rides_run_by_the_motives_action`
+    /// - witness: `tests::run::transports_run_by_the_motives_action`
+    #[spec(
+        captures: work = self.tasks.len(),
+        ensures: work.checked_add(3) == Some(self.tasks.len())
+            && matches!(self.tasks.last(), Some(&Task::Value(scheduled)) if scheduled == first),
+    )]
+    fn apply_combinator(
+        &mut self,
+        combinator: Combinator,
+        (first, second): (ValueId, ValueId),
+        continuation: ConsumerId,
+    )
+    {
+        self.tasks.push(Task::Combinator {
+            combinator,
+            continuation,
+        });
+        self.tasks.push(Task::Value(second));
+        self.tasks.push(Task::Value(first));
+    }
+
+    /// Schedule `thunk(force(combinator) 𝓥⟦parts⟧…)`: an identity's image that
+    /// suspends a closed combinator applied to the identity's parts.
+    ///
+    /// # Specification
+    /// - requires: `parts` holds as many values as `combinator` is applied to.
+    /// - ensures: the thunk, the combinator's application to a fresh return
+    ///   point and each part's translation are scheduled, the first part
+    ///   translated first.
+    /// - provides: the image of a composite, a function flow, a flow product, a
+    ///   `ua`'s map back and each map of a native path product.
+    /// - fails: a refused mint of the return point.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a composite, a function flow, a flow product and a
+    ///   native path product run componentwise and in order, which a swapped or
+    ///   dropped part would not.
+    /// - witness: `tests::run::rides_run_by_the_motives_action`
+    /// - witness: `tests::run::a_function_flow_runs_in_variance_order`
+    /// - witness: `tests::run::native_paths_run_as_their_maps`
+    #[spec(
+        requires: parts.len() == usize::from(combinator.applied()),
+        captures: work = self.tasks.len(),
+        ensures: |ret| ret.is_err() || (work.checked_add(parts.len()).and_then(|grown| grown.checked_add(2)) == Some(self.tasks.len())
+            && matches!(self.tasks.get(work), Some(&Task::Thunk))),
+    )]
+    fn suspend(
+        &mut self,
+        combinator: Combinator,
+        parts: &[ValueId],
+    ) -> Result<(), FocusRefusal>
+    {
+        let return_point = self.innermost_covariable()?;
+        self.tasks.push(Task::Thunk);
+        self.tasks.push(Task::Combinator {
+            combinator,
+            continuation: return_point,
+        });
+        for &part in parts.iter().rev() {
+            self.tasks.push(Task::Value(part));
+        }
+        Ok(())
+    }
+
     /// Mint the covariable `0`.
     ///
     /// # Specification
@@ -2304,15 +2439,15 @@ impl<'run> Focusing<'run>
             .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))?)
     }
 
-    /// The producer of a closed flow combinator this run applies.
+    /// The producer of a closed identity combinator this run applies.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the producer [`with_combinators`] focused for `combinator`
     ///   before this run; for one it did not, `combinator` is recorded as
     ///   wanted and a placeholder stands in, which the rerun replaces.
-    /// - provides: the closed programs a flow's image applies to its parts,
-    ///   without a nested run.
+    /// - provides: the closed programs an identity's image applies to its
+    ///   parts, without a nested run.
     /// - fails: a refused mint.
     /// - panics: none.
     ///
@@ -2320,14 +2455,15 @@ impl<'run> Focusing<'run>
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a composite and a ride focused and run reach the
-    ///   values the kernel's rows compute, which a placeholder left in place
-    ///   would not.
+    /// - hypothesis: L3 — a composite, a ride and a transport focused and run
+    ///   reach the values the kernel's rows compute, which a placeholder left
+    ///   in place would not.
     /// - witness: `tests::run::rides_run_by_the_motives_action`
+    /// - witness: `tests::run::transports_run_by_the_motives_action`
     #[spec(ensures: |ret| ret.is_err() || self.prepared.contains_key(&combinator) || self.wanted.contains(&combinator))]
     fn combinator(
         &mut self,
-        combinator: crate::flow::Combinator,
+        combinator: Combinator,
     ) -> Result<ProducerId, FocusRefusal>
     {
         if let Some(&producer) = self.prepared.get(&combinator) {

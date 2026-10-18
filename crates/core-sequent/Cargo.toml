@@ -23,13 +23,15 @@ path = "tests/lib.rs"
 # term crate, its lift levels from the level oracle, and its cut polarity from
 # the cell substrate, so a cell pattern's polarity reaches a command unchanged.
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# logic/BigInt stays disabled. The shape crate supplies `Maybe`, the answer
+# the core's strengthening gives when a transport motive reads its binder.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-cell-complexes.workspace = true
+quenchant-shape.workspace = true
 
 # The run suite runs focused commands on the emitter's two tiers, the
 # runtime this IL is lowered to; the differential suite compares their

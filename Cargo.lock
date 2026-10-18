@@ -516,6 +516,7 @@ dependencies = [
  "gandr-theory-cell-complexes",
  "proptest",
  "quenchant-anodized",
+ "quenchant-shape",
 ]
 
 [[package]]

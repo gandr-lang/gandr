@@ -52,10 +52,14 @@
 //! blamed on that declaration, the obligation it met; any other stop short of
 //! a value is stuck; a run that could not finish, its jump budget spent, a
 //! region exhausted or a form the lowering refuses, is unfinished. Each of
-//! these reached the machine. A declaration that refers, directly or through
-//! others, to one that was refused or did not focus never reaches it: the
-//! reference is found by walking the program's references before any command
-//! runs.
+//! these reached the machine. A declaration that did not focus, or that
+//! refers, directly or through others, to one that was refused or to a code
+//! never reaches it: the reference is found by walking the program's
+//! references before any command runs. A referenced declaration whose body
+//! did not focus is carried opaque, as an owed one is: a run that reaches it
+//! is unrunnable, naming it, and a run that never does — the laws an
+//! equivalence carries beside the maps a transport applies — runs to its
+//! value.
 //!
 //! # The run stage follows the check
 //!
@@ -116,18 +120,19 @@
 //!
 //! Programmatic native `Path_U` declarations use ordinary checker export and
 //! kernel readmission; their portable evidence remains part of the artifact.
-//! The command IL does not execute native paths or transport: focusing reports
-//! `UniverseTransport` rather than treating a certificate as a runtime closure.
-//! The printer spells a native path value and an unreduced transport as the
-//! core holds them, without executing evidence while printing them.
-//! Dependency discovery traverses native classifiers, maps and product
-//! components.
+//! The command IL runs a native path as the pair of its two maps and a
+//! transport along it as the forward map, by the rows `gandr-core-sequent`'s
+//! focusing states; a transport whose motive no row reads does not focus and
+//! is reported by its head. The printer spells a native path value and an
+//! unreduced transport as the core holds them, without executing evidence
+//! while printing them. Dependency discovery traverses native classifiers,
+//! maps and product components.
 //!
 //! **Choice.** Keep admission, evaluation and presentation as separate
-//! observations. A path accepted by the kernel is not thereby executable in
-//! every downstream machine. **Reversal.** The run stage can acquire a native
-//! path image only with corresponding focusing, evaluation and readback rules;
-//! no parser syntax or coercion from `Flow_U` is implied here.
+//! observations. A path accepted by the kernel runs only where focusing has a
+//! row for it. **Reversal.** A motive the machine refuses gains a run with
+//! its focusing row; no parser syntax or coercion from `Flow_U` is implied
+//! here.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -1092,9 +1097,11 @@ impl<'source> Program<'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the first reached absent, refused or unfocused declaration is
-    ///   returned with its exact identity; an owed declaration is carried.
-    ///   Absence means the reachable reference graph contains no such obstacle.
+    /// - ensures: `constant` itself when it did not focus, else the first
+    ///   reached absent, refused or code declaration, with its exact identity;
+    ///   an owed declaration, and a referenced one whose body did not focus, is
+    ///   carried. Absence means the reachable reference graph contains no such
+    ///   obstacle.
     /// - fails: an undeclared reference reports its own index, not the run
     ///   target.
     /// - panics: none.
@@ -1103,10 +1110,11 @@ impl<'source> Program<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — direct and transitive refusal and code references are
-    ///   blocked, while owed references reach the machine; cycles are not built
-    ///   by these admitted source fixtures.
+    ///   blocked, while owed references and the laws of an equivalence reach
+    ///   the machine; cycles are not built by these admitted source fixtures.
     /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    /// - witness: `evaluate::tests::a_body_that_did_not_focus_is_carried_until_reached`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1158,11 +1166,15 @@ impl<'source> Program<'source>
                 Slot::Opaque(Opacity::Refused) => {
                     return Maybe::Present(Unrunnable::Refused(declared.name));
                 },
+                // A body outside the command IL is carried opaque until a run
+                // reaches it; a code is a type, a value of which no run holds.
                 Slot::Opaque(Opacity::Unfocused(refusal)) => {
-                    return Maybe::Present(Unrunnable::Unfocused {
-                        declaration: declared.name,
-                        refusal,
-                    });
+                    if reached == constant || matches!(refusal, FocusRefusal::Code(_)) {
+                        return Maybe::Present(Unrunnable::Unfocused {
+                            declaration: declared.name,
+                            refusal,
+                        });
+                    }
                 },
             }
         }
@@ -1555,8 +1567,8 @@ impl Runner for Program<'_>
 ///   ignored rather than followed.
 /// - ensures: one index per reference occurrence, preserving multiplicity;
 ///   quoted types and static code do not contribute references, and neither
-///   does a hole or the flow a ride is erased past. A constant root contributes
-///   only itself and an atomic non-reference root contributes none.
+///   does a hole. A constant root contributes only itself and an atomic
+///   non-reference root contributes none.
 /// - fails: never.
 /// - panics: none.
 /// - intension: traversal uses an explicit worklist without recursion.
@@ -1764,9 +1776,9 @@ fn references(
                 ) => {
                     pending.extend([Node::Value(path), Node::Value(value)]);
                 },
-                // A ride runs as the return of its value: the flow it rides is
-                // erased, so the run never reaches what the flow names.
-                Some(&Computation::Ride { value, .. }) => pending.push(Node::Value(value)),
+                Some(&Computation::Ride { flow, value, .. }) => {
+                    pending.extend([Node::Value(flow), Node::Value(value)]);
+                },
                 Some(&Computation::TelescopeTransport {
                     path,
                     start,
@@ -2085,6 +2097,37 @@ def wide : Type ; def wide = String ;"#,
         assert_eq!(
             run(&mut carried, SurfaceName::from("answer")).to_string(),
             "42"
+        );
+    }
+
+    /// A declaration whose body did not focus blocks its own run and every
+    /// run that reaches it, and no run that only carries it.
+    #[test]
+    fn a_body_that_did_not_focus_is_carried_until_reached()
+    {
+        let mut laws = program(
+            r"def law : +U (-F (+U (Path(Integer, 1, 1) -> -F Integer))) ;
+def law = thunk { transport(\y. +U (Path(Integer, y, y) -> -F Integer), here(1), thunk { fn (p) { return 1 } }) } ;
+def reached : +U (-F (+U (Path(Integer, 1, 1) -> -F Integer))) ; def reached = thunk { become force law } ;
+def kept : +U (-F (+U (-F (+U (Path(Integer, 1, 1) -> -F Integer))))) ; def kept = thunk { return reached } ;",
+        );
+        for name in ["law", "reached"] {
+            let evaluation = run(&mut laws, SurfaceName::from(name));
+            assert!(
+                matches!(
+                    evaluation,
+                    Evaluation::Unrunnable(Unrunnable::Unfocused {
+                        declaration,
+                        refusal: FocusRefusal::ElementTransport(_, gandr_core_sequent::MotiveHead::Thunk),
+                    }) if declaration == SurfaceName::from("law")
+                ),
+                "`{name}` reaches the unfocused body: {evaluation}"
+            );
+        }
+        assert_eq!(
+            run(&mut laws, SurfaceName::from("kept")).to_string(),
+            "thunk { force law }",
+            "a run that carries the unfocused body without reaching it returns"
         );
     }
 

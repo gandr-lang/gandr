@@ -21,9 +21,11 @@ use gandr_core_sequent::Definition;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::DestructorTag;
 use gandr_core_sequent::Environment;
+use gandr_core_sequent::FocusRefusal;
 use gandr_core_sequent::FreeSet;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
+use gandr_core_sequent::MotiveHead;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::PatternArm;
 use gandr_core_sequent::ProducerArity;
@@ -2522,6 +2524,211 @@ fn a_flow_product_runs_componentwise()
         expected,
         "the first flow moves the left component"
     );
+}
+
+/// `ua` of the record `(x ↦ (x, unit), ((x ↦ inl x, unit), (x ↦ inr x,
+/// unit)))`: a forward map, the left inverse `x ↦ inl x`, and laws a run
+/// never forces.
+///
+/// # Specification
+/// trivial.
+fn univalence(core: &mut CoreArena) -> ValueId
+{
+    let unit = core.value_unit();
+    let to = translator(core, paired);
+    let left = translator(core, injected_left);
+    let right = translator(core, injected_right);
+    let section = core.value_tuple(&[left, unit]);
+    let retraction = core.value_tuple(&[right, unit]);
+    let inverses = core.value_tuple(&[section, retraction]);
+    let record = core.value_tuple(&[to, inverses]);
+    let forward = gandr_core_term::identity::univalence_forward(core, record);
+    core.value_univalence(record, forward)
+}
+
+/// A transport along `ua(e)` runs as the motive's action on `e`'s forward
+/// map: the map at the decode, the value kept where the motive never reads
+/// its binder, and product, sum and list motives constructorwise; along
+/// `here` it runs as the identity.
+#[test]
+fn transports_run_by_the_motives_action()
+{
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Digits("5"));
+    let six = integer(&mut core, Digits("6"));
+    let unit = core.value_unit();
+    let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let unit_type = core.value_type_unit();
+    let identity = decoded(&mut core);
+    let path = univalence(&mut core);
+
+    let moved = core.computation_path_transport(identity, path, five);
+    let image = core.value_tuple(&[five, unit]);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, image),
+        "the decode runs the forward map"
+    );
+
+    let moved = core.computation_path_transport(integer_type, path, five);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, five),
+        "a motive that never reads its binder keeps the value"
+    );
+
+    let product = core.value_type_product(&[identity, integer_type]);
+    let pair = core.value_tuple(&[five, six]);
+    let moved = core.computation_path_transport(product, path, pair);
+    let left = core.value_tuple(&[five, unit]);
+    let image = core.value_tuple(&[left, six]);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, image),
+        "a product motive acts componentwise"
+    );
+
+    let sum = core.value_type_sum(&[unit_type, identity]);
+    let injected = core.value_injection(Side::Right.into(), five);
+    let moved = core.computation_path_transport(sum, path, injected);
+    let inner = core.value_tuple(&[five, unit]);
+    let image = core.value_injection(Side::Right.into(), inner);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, image),
+        "a sum motive acts on the payload of its own summand"
+    );
+
+    let list = core.value_type_list(identity);
+    let nil = core.value_list_nil();
+    let tail = core.value_list_cons(six, nil);
+    let cell = core.value_list_cons(five, tail);
+    let moved = core.computation_path_transport(list, path, cell);
+    let first = core.value_tuple(&[five, unit]);
+    let second = core.value_tuple(&[six, unit]);
+    let tail = core.value_list_cons(second, nil);
+    let image = core.value_list_cons(first, tail);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, image),
+        "a list motive acts on every cell in order"
+    );
+
+    let code = core.value_quote(integer_type);
+    let stayed = core.value_here(code);
+    let moved = core.computation_path_transport(identity, stayed, five);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, five),
+        "a transport along `here` keeps the value"
+    );
+}
+
+/// A native path runs as its two maps: reflexivity as the identity, an
+/// equivalence as its forward map, and a product path componentwise, both
+/// by `transport` and by a transport at the decode.
+#[test]
+fn native_paths_run_as_their_maps()
+{
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Digits("5"));
+    let six = integer(&mut core, Digits("6"));
+    let unit = core.value_unit();
+    let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let identity = decoded(&mut core);
+    let to = translator(&mut core, paired);
+    let left = translator(&mut core, injected_left);
+    let code = core.value_quote(integer_type);
+    let classifier = core.value_type_path_universe(code, code);
+
+    let reflexive = core.value_path_refl(code);
+    let moved = core.computation_transport(reflexive, five);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, five),
+        "reflexivity runs as the identity"
+    );
+
+    let image = core.value_tuple(&[five, unit]);
+    let expected = returned(&mut core, image);
+    let certified = core.value_path_equiv(classifier, to, left, alloc::sync::Arc::default());
+    let stated = core.value_equiv(to, left);
+    for (path, name) in [
+        (certified, "a certified equivalence"),
+        (stated, "an equivalence"),
+    ] {
+        let moved = core.computation_transport(path, five);
+        assert_eq!(
+            evaluated(&mut core, moved),
+            expected,
+            "{name} runs as its forward map"
+        );
+        let moved = core.computation_path_transport(identity, path, five);
+        assert_eq!(
+            evaluated(&mut core, moved),
+            expected,
+            "{name} runs as its forward map at the decode"
+        );
+    }
+
+    let flipped = core.value_path_equiv(classifier, left, to, alloc::sync::Arc::default());
+    let product = core.value_path_product(certified, flipped);
+    let pair = core.value_tuple(&[five, six]);
+    let moved = core.computation_transport(product, pair);
+    let first = core.value_tuple(&[five, unit]);
+    let second = core.value_injection(Side::Left.into(), six);
+    let image = core.value_tuple(&[first, second]);
+    let expected = returned(&mut core, image);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        expected,
+        "a product path moves each component along its own path"
+    );
+    let swapped = core.value_path_product(flipped, certified);
+    let moved = core.computation_transport(swapped, pair);
+    assert_ne!(
+        evaluated(&mut core, moved),
+        expected,
+        "the first path moves the left component"
+    );
+}
+
+/// A transport whose motive has a part no row reads does not focus: the
+/// refusal names the transport and that part's head, and the arena returns
+/// to its mark.
+#[test]
+fn a_transport_no_row_reads_is_refused_by_its_head()
+{
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Digits("5"));
+    let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let identity = decoded(&mut core);
+    let path = univalence(&mut core);
+    let returner = core.comp_type_returner(identity);
+    let arrow = core.comp_type_arrow(identity, returner);
+    let function = core.value_type_thunk(arrow);
+    let paired_function = core.value_type_product(&[integer_type, function]);
+    let family = core.value_type_path(identity, five, five);
+    let integer_returner = core.comp_type_returner(integer_type);
+    let telescope = core.computation_telescope_transport(integer_returner, path, five, five, five);
+    let mut cases = Vec::from([(telescope, MotiveHead::Telescope)]);
+    for (motive, head) in [
+        (function, MotiveHead::Thunk),
+        (paired_function, MotiveHead::Thunk),
+        (family, MotiveHead::Path),
+    ] {
+        cases.push((core.computation_path_transport(motive, path, five), head));
+    }
+    for (transport, head) in cases {
+        let mut arena = CommandArena::new();
+        let mark = arena.watermark();
+        assert_eq!(
+            focus_computation(&core, transport, &mut arena, &mut Provenance::new()),
+            Err(FocusRefusal::ElementTransport(transport, head)),
+            "the transport is refused by {head}"
+        );
+        assert_eq!(mark, arena.watermark(), "the arena is back at its mark");
+    }
 }
 
 /// The core's own constructors under the names a reified pattern uses, and

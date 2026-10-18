@@ -977,6 +977,7 @@ default-features = false
 # - core-checker
 # - core-incremental
 # - core-term
+# - core-sequent
 # - kernel-core
 # - kernel-term
 # - runtime-stencils (dev)

@@ -115,6 +115,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | ----- | ------ |
 | Covariables as indices, children before parents | [`il`](src/il.rs) |
 | Focusing, records, codes and native universe paths | [`focus`](src/focus.rs) |
+| Paths and flows as their maps, transports and rides as the motive's action | [`identity`](src/identity.rs) |
 | Unfocusing | [`unfocus`](src/unfocus.rs) |
 | The typed-IL check | [`check`](src/check.rs) |
 | Readback | [`readback`](src/readback.rs) |
