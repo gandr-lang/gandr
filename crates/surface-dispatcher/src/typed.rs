@@ -4416,6 +4416,24 @@ mod tests
         }
     }
 
+    /// #298: a `run`'s tuple pattern answers at the tuple its computation
+    /// returns, as a named binder does.
+    #[test]
+    fn a_run_s_tuple_pattern_answers_at_the_tuple_298()
+    {
+        let source = SourceText::from(
+            "data Nat : Type {\n  Zero : Nat;\n}\n\ndef pair(n : Nat) -> -F (Nat * Nat) {\n  return \
+             (n, n)\n}\n\ndef first(n : Nat) -> -F Nat {\n  run (a, b) <- pair(n) ;\n  return \
+             a\n}\n",
+        );
+        let table = table(source);
+        assert_eq!(
+            answer(&table, source, SourceText::from("(a, b) <-")),
+            agreed(Subject::Binder, SourceText::from("#{Nat, Nat}")),
+            "the tuple pattern at what `pair` returns"
+        );
+    }
+
     /// A split of a relation whose arm uses only `k` still names `t`, which
     /// the record's later fields mention: the remainder after `t` answers as
     /// two round trips through `k` and `t` (#665).
