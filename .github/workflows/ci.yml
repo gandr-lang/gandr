@@ -532,6 +532,9 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --locked --workspace --all-features --no-deps --document-private-items --profile test
+      - name: run the documentation examples
+        if: *plain-gate
+        run: mise run check:doctests
       - *upload-test-report
       - *prune-build-state
       - *archive-build-state
