@@ -566,7 +566,7 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let cases: &[&str] = &[
         // The congruence cell, members `;`-terminated.
-        r#"sign Nat {
+        r#"theory Nat {
   sort Nat : Type;
   data Zero : Nat;
   data Succ : Nat --> Nat;
@@ -591,14 +591,14 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 }
 "#,
         // The sugar ladder's named-port normal form, including `()` and `_`.
-        r#"sign N {
+        r#"theory N {
   sort Nat : Type;
   data Zero : () --> (_ : Nat);
   data Succ : (_ : Nat) --> (_ : Nat);
 }
 "#,
         // Occurrence labels and the pinned-endpoint binder.
-        r#"sign L {
+        r#"theory L {
   rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
     node w1 : p(x) ==> (m);
     node w2 : step(m) --> (o);
@@ -606,8 +606,8 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 }
 "#,
         // The invertible face, and the reserved reversible glyph.
-        "sign I { rule involutive : (b : Bit) <=> (c : Bit); }",
-        "sign R { oper negate : (b : Bit) <-> (c : Bit); }",
+        "theory I { rule involutive : (b : Bit) <=> (c : Bit); }",
+        "theory R { oper negate : (b : Bit) <-> (c : Bit); }",
         // A top-level `rule` declaration beside the top-level `oper`.
         "rule step : (x : Nat) ==> (y : Nat)",
     ];
@@ -645,12 +645,12 @@ fn codata_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Erro
     Ok(())
 }
 
-/// A data-spelled `oper` inside `sign` molds as one member so its localized
+/// A data-spelled `oper` inside `theory` molds as one member so its localized
 /// decline cannot consume the next ruled judgment.
 #[test]
-fn sign_data_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Error>>
+fn theory_data_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 {
-    let source = r#"sign Theory { sort Nat : Type; oper add(m : Nat, n : Nat) -> Nat; oper succ : (n : Nat) --> Nat; }"#;
+    let source = r#"theory Theory { sort Nat : Type; oper add(m : Nat, n : Nat) -> Nat; oper succ : (n : Nat) --> Nat; }"#;
     let result = parse(built(), SourceText::from(source))?;
     assert!(
         bool::from(result.is_clean()),
@@ -754,7 +754,7 @@ fn a_top_level_circuit_declaration_keeps_its_whole_signature() -> Result<(), Box
         );
     }
     // A bare-sort side at item position is declined, not silently dropped. The
-    // sugar ladder's bare rungs stay available inside a `sign` block, where the
+    // sugar ladder's bare rungs stay available inside a `theory` block, where the
     // member's sort hole is form-interior.
     for &src in &[
         "oper f : Nat --> Nat",
@@ -770,19 +770,19 @@ fn a_top_level_circuit_declaration_keeps_its_whole_signature() -> Result<(), Box
     let member = parse(
         pbg,
         SourceText::from(
-            "sign S { data Zero : Nat; data Succ : Nat --> Nat; oper add : (Nat, Nat) --> Nat; }",
+            "theory S { data Zero : Nat; data Succ : Nat --> Nat; oper add : (Nat, Nat) --> Nat; }",
         ),
     )?;
     assert!(
         bool::from(member.is_clean()),
-        "the bare-sort rungs stay available as `sign` members"
+        "the bare-sort rungs stay available as `theory` members"
     );
     Ok(())
 }
 
 /// The circuit form's **contextual** leads still bind as ordinary names.
 ///
-/// Only the two item-position leads (`sign` and `oper`) reserve globally. The
+/// Only the two item-position leads (`theory` and `oper`) reserve globally. The
 /// member keyword `sort` and the body statements `node` / `feed` are
 /// `≐`-successors of an open circuit block and inadmissible at every other
 /// lowercase-word slot, so the pre-filter drops their keyword mold there and a
@@ -814,14 +814,14 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
         );
     }
     // Contextual is not the same as inadmissible-elsewhere, and the bound
-    // matters: inside a `sign` block, the positions where a member's *typed*
+    // matters: inside a `theory` block, the positions where a member's *typed*
     // ports sit are past the member lead's slot, so a type variable spelled
     // `sort` molds as a type there.
     let inside: &[&str] = &[
-        "sign S { oper f : (a : sort) --> (b : Nat); sort Bit : Type; }",
-        "sign S { rule r : (rule p : sort ==> other, data x : Nat) ==> (z : Nat); }",
-        "sign S { oper f : node --> Nat; }",
-        "sign S { oper f : (a : feed) --> (b : Nat); }",
+        "theory S { oper f : (a : sort) --> (b : Nat); sort Bit : Type; }",
+        "theory S { rule r : (rule p : sort ==> other, data x : Nat) ==> (z : Nat); }",
+        "theory S { oper f : node --> Nat; }",
+        "theory S { oper f : (a : feed) --> (b : Nat); }",
     ];
     for &src in inside {
         let result = parse(pbg, SourceText::from(src))?;
@@ -839,7 +839,7 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
 }
 
 /// An application repeating a port name — `add(x, x)` — molds clean, so the
-/// linearity refusal downstream is reachable from source. Every `sign` member
+/// linearity refusal downstream is reachable from source. Every `theory` member
 /// is `;`-terminated: after a member's trailing sort hole only `;` is
 /// admissible, which never competes with hole content, so the member can no
 /// longer collapse into one repaired region.
@@ -849,7 +849,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let cases: &[&str] = &[
         // The headline shape: one wire consumed twice in a redex line.
-        r#"sign Copy {
+        r#"theory Copy {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (s : Nat);
   rule copy2 : (data x : Nat) ==> (z : Nat) {
@@ -859,7 +859,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
 "#,
         // The same reading with distinct names, and the sugar ladder's
         // unnamed-port rungs.
-        r#"sign Copy {
+        r#"theory Copy {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
   rule copy2 : (data x : Nat, data y : Nat) ==> (z : Nat) {
@@ -868,7 +868,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
 }
 "#,
         // A body-less rule member ahead of the closing brace.
-        r#"sign B {
+        r#"theory B {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
   rule copy2 : (data x : Nat) ==> (z : Nat);
@@ -893,7 +893,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
     let unterminated = parse(
         pbg,
         SourceText::from(
-            r#"sign S {
+            r#"theory S {
   sort Nat : Type
   sort T : Type;
 }
@@ -916,18 +916,18 @@ fn a_blank_line_after_a_terminated_member_molds_clean() -> Result<(), Box<dyn Er
 {
     let pbg = built();
     let cases: &[&str] = &[
-        r#"sign S {
+        r#"theory S {
   sort S : Type;
 
 }
 "#,
-        r#"sign S {
+        r#"theory S {
   sort S : Type;
 
   sort T : Type;
 }
 "#,
-        r#"sign S {
+        r#"theory S {
   sort S : Type;
 
   oper f : (S) --> S;
@@ -937,7 +937,7 @@ fn a_blank_line_after_a_terminated_member_molds_clean() -> Result<(), Box<dyn Er
   };
 }
 "#,
-        r#"sign S {
+        r#"theory S {
 
   sort S : Type;
 
@@ -964,25 +964,25 @@ fn a_blank_line_after_a_terminated_member_molds_clean() -> Result<(), Box<dyn Er
     Ok(())
 }
 
-/// A `sign` block may be named with a primitive-type spelling (`sign
+/// A `theory` block may be named with a primitive-type spelling (`theory
 /// Unknown`). The labeler's uppercase-word reservation is a disambiguation
 /// preference at slots where the reserved tile molds, never a ban on
 /// declaration names: at a slot that admits only `type_identifier` the molder
 /// falls back to the word's generic labels.
 #[test]
-fn a_sign_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Box<dyn Error>>
+fn a_theory_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
     let cases: &[&str] = &[
-        r#"sign Unknown {
+        r#"theory Unknown {
   sort Nat : Type;
 }
 "#,
-        r#"sign Boolean {
+        r#"theory Boolean {
   sort Bit : Type;
 }
 "#,
-        r#"sign Any {
+        r#"theory Any {
   sort Nat : Type;
 }
 "#,
@@ -991,7 +991,7 @@ fn a_sign_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Box<
         let result = parse(pbg, SourceText::from(src))?;
         assert!(
             bool::from(result.is_clean()),
-            "primitive-named sign block {src:?} molds clean; obligations: {:?}",
+            "primitive-named theory block {src:?} molds clean; obligations: {:?}",
             result
                 .obligations()
                 .iter()
@@ -1019,7 +1019,7 @@ fn a_sign_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Box<
     );
     // And the name slot of a primitive-named block reads the word as the
     // generic class — the two readings of one spelling, separated by position.
-    let named = parse(pbg, SourceText::from("sign Unknown { sort Nat : Type; }"))?;
+    let named = parse(pbg, SourceText::from("theory Unknown { sort Nat : Type; }"))?;
     assert_eq!(
         Some("type_identifier".to_owned()),
         mold_label_of(
@@ -1037,7 +1037,7 @@ fn a_sign_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Box<
 /// it owes and the source text each stands over: a pathological fixture that
 /// pins a recovery is held to exactly that recovery.
 const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[(
-    "fixture/pathological/modules/sign-sort-classified-by-a-keyword.gandr",
+    "fixture/pathological/modules/theory-sort-classified-by-a-keyword.gandr",
     &[(Oblig::UnmoldedTok, "type")],
 )];
 
@@ -1214,7 +1214,7 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
 fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let written = "sign Magma {\n    sort M : type;\n}";
+    let written = "theory Magma {\n    sort M : type;\n}";
     let result = parse(pbg, SourceText::from(written))?;
     let start = written.find("type").ok_or("the keyword is written")?;
     assert_eq!(
@@ -1242,10 +1242,13 @@ fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn 
         .collect();
     assert_eq!(
         tiles,
-        ["sign", "Magma", "{", "sort", "M", ":", ";", "}"],
+        ["theory", "Magma", "{", "sort", "M", ":", ";", "}"],
         "the member's terminator and the block's closer are the block's own tiles"
     );
-    let spelled = parse(pbg, SourceText::from("sign Magma {\n    sort M : Type;\n}"))?;
+    let spelled = parse(
+        pbg,
+        SourceText::from("theory Magma {\n    sort M : Type;\n}"),
+    )?;
     assert!(
         bool::from(spelled.is_clean()),
         "the classifier spelled `Type` owes nothing"
@@ -1353,7 +1356,7 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
         "data Good { }",
         "codata Good { }",
         "module Good { }",
-        "sign Good { }",
+        "theory Good { }",
         "import \"good\" as good ;",
     ] {
         let source = format!("def bad = ( 1 ;\n{survivor}");

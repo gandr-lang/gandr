@@ -188,7 +188,7 @@ impl Run<'_>
     /// # Adequacy
     /// - hypothesis: L3 — unseparated members distinguish complete from partial
     ///   consumption.
-    /// - witness: `description::sign::tests::unseparated_members_are_declined_rather_than_dropped`
+    /// - witness: `description::theory::tests::unseparated_members_are_declined_rather_than_dropped`
     #[spec(ensures: |result| result.is_ok() == self.remaining().is_empty())]
     pub(super) fn end(&self) -> Result<(), DescriptionDiagnostic>
     {

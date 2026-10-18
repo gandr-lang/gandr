@@ -860,14 +860,14 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// The retired standalone `let` spelling is deliberately not reserved.
 ///
 /// The circuit block form reserves exactly its two **item-position**
-/// leads, `sign` and `oper`: at a fresh top-level slot a lowercase word is
+/// leads, `theory` and `oper`: at a fresh top-level slot a lowercase word is
 /// otherwise an expression statement, so an unreserved form-first lead would
 /// tie its own tile against `identifier` at every declaration. Its four other
 /// leads stay **contextual** — the member keyword `sort` (beside the already-
 /// reserved `data` / `rule`) and the body statements `node` / `feed` are
-/// `≐`-successors inside an open `sign` block or circuit body, so a user
+/// `≐`-successors inside an open `theory` block or circuit body, so a user
 /// program may still bind `sort`, `node`, or `feed` as an ordinary name;
-/// `sign` and `oper` it may not. `sort` in particular could not be reserved
+/// `theory` and `oper` it may not. `sort` in particular could not be reserved
 /// even if wanted: `list.sort` is a live projection in the corpus. Contextual
 /// is not the same as inadmissible-elsewhere, and the circuit grammar module
 /// records the one slot where `sort`'s mold does collide with a type variable.
@@ -879,7 +879,7 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// access's body, so a name there is never read as the next statement.
 ///
 /// A world declaration reserves its lead `world`, an item-position lead as
-/// `sign` is, and the mobility mark its lead `mobile`, which opens a module
+/// `theory` is, and the mobility mark its lead `mobile`, which opens a module
 /// signature's field where an unreserved word would tie against the value
 /// field's `identifier`.
 const KEYWORDS: &[&str] = &[
@@ -887,8 +887,8 @@ const KEYWORDS: &[&str] = &[
     "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
     "forall", "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break",
-    "continue", "with", "import", "module", "sign", "oper", "handle", "access", "unwind", "resume",
-    "abort", "world", "mobile",
+    "continue", "with", "import", "module", "theory", "oper", "handle", "access", "unwind",
+    "resume", "abort", "world", "mobile",
 ];
 
 /// Return the grammar tile labels to enumerate for a labeled token.
@@ -1012,7 +1012,7 @@ pub fn candidate_labels<'text>(
 /// type slot. The reservation is a preference, not a ban: at a slot where the
 /// reserved tile is structurally inadmissible (a declaration's NAME position),
 /// [`Molder::gather_reserved_fallback`] re-admits the generic labels so the
-/// word can still name the declaration (`sign Unknown`). `U` and `F` are not
+/// word can still name the declaration (`theory Unknown`). `U` and `F` are not
 /// reserved: the bridges are the compound tiles `+U` and `-F`, and the bare
 /// letters are names like any other. `Cap` is reserved as `Path` is: the
 /// capability former's own tile.
@@ -1940,7 +1940,7 @@ impl<'pbg> Molder<'pbg>
     ///   Duplicate or unsorted entries, stale menus and an unconditional
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
-    /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
+    /// - witness: `tests::acceptance::a_theory_block_may_be_named_with_a_primitive_type_spelling`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2015,10 +2015,10 @@ impl<'pbg> Molder<'pbg>
     /// the primitive type) molds and the generic labels stay out, so the
     /// primitive/type-identifier tie the reservation exists to prevent never
     /// forms. But the reservation also fires at slots that admit ONLY
-    /// `constructor` / `type_identifier` — a `sign` block's name, a `sort`
+    /// `constructor` / `type_identifier` — a `theory` block's name, a `sort`
     /// member's colour, a `data` head — where the reserved tile is
     /// structurally inadmissible, and there it repaired the whole declaration
-    /// (`sign Unknown` molded nothing). When no gathered
+    /// (`theory Unknown` molded nothing). When no gathered
     /// candidate is admissible at the live frontier, the molder re-gathers
     /// with the class's generic labels appended; the reserved candidates stay
     /// in the menu so the last-resort path still flags the exact obligation
@@ -2043,7 +2043,7 @@ impl<'pbg> Molder<'pbg>
     ///   Duplicate or unsorted entries, stale menus and an unconditional
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
-    /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
+    /// - witness: `tests::acceptance::a_theory_block_may_be_named_with_a_primitive_type_spelling`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2088,11 +2088,11 @@ impl<'pbg> Molder<'pbg>
     /// open a declaration-position form there: the word is a keyword out of
     /// place, and it stands in the slot as an unmolded token.
     ///
-    /// `sort M : type;` in a `sign` block writes the keyword `type` where the
+    /// `sort M : type;` in a `theory` block writes the keyword `type` where the
     /// member's classifier belongs. `type` molds only as a module's type
     /// component, a member form that no open frontier continues and the
     /// classifier slot does not admit, so the full-menu fallback pushed it
-    /// anyway: the push ghost-closed the `sign` block before the member's
+    /// anyway: the push ghost-closed the `theory` block before the member's
     /// classifier and re-read the rest of the source as a stray form. With
     /// the menu empty the molder takes the unmolded path instead: the keyword
     /// becomes grout over its own bytes in the classifier slot, the member
@@ -2126,7 +2126,7 @@ impl<'pbg> Molder<'pbg>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the keyword `type` in a `sign` member's classifier
+    /// - hypothesis: L3 — the keyword `type` in a `theory` member's classifier
     ///   slot owes exactly one obligation, at the keyword, and keeps the member
     ///   and the block whole; `Type` there owes none. The drop harness's
     ///   records, a differential measurement rather than a witness, hold every
@@ -2190,7 +2190,7 @@ impl<'pbg> Molder<'pbg>
     ///   Duplicate or unsorted entries, stale menus and an unconditional
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
-    /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
+    /// - witness: `tests::acceptance::a_theory_block_may_be_named_with_a_primitive_type_spelling`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2233,7 +2233,7 @@ impl<'pbg> Molder<'pbg>
     ///   Duplicate or unsorted entries, stale menus and an unconditional
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
-    /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
+    /// - witness: `tests::acceptance::a_theory_block_may_be_named_with_a_primitive_type_spelling`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

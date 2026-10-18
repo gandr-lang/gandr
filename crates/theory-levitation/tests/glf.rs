@@ -18,10 +18,10 @@ use gandr_theory_levitation::NominalSerial;
 use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::ParamDesc;
 use gandr_theory_levitation::Representability;
-use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::SortDesc;
 use gandr_theory_levitation::SortIndex;
 use gandr_theory_levitation::SortRef;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::TranslationError;
 use gandr_theory_levitation::WfKind;
 use gandr_theory_levitation::check_desc;
@@ -55,9 +55,9 @@ fn signature(
     name: impl Into<Name>,
     sorts: Vec<SortDesc>,
     operations: Vec<OperDesc>,
-) -> SignDesc<()>
+) -> TheoryDesc<()>
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), name),
         [],
         [],
@@ -73,7 +73,7 @@ fn signature(
 ///
 /// # Specification
 /// trivial.
-fn lc() -> SignDesc<()>
+fn lc() -> TheoryDesc<()>
 {
     signature(
         "LC",
@@ -96,12 +96,12 @@ fn lc() -> SignDesc<()>
 /// The identity-return signature: value and computation types, values
 /// indexed by their type (representable), computations indexed by theirs, and
 /// `f`, `arrow`, `ret` and `lam : (VTm a ⇒⁺ CTm b) → CTm (arrow a b)`. Its
-/// operations and index binders are lowercase, as a `sign` block writes them,
+/// operations and index binders are lowercase, as a `theory` block writes them,
 /// so its rendering reparses.
 ///
 /// # Specification
 /// trivial.
-fn identity_return() -> SignDesc<()>
+fn identity_return() -> TheoryDesc<()>
 {
     let a = FreeTerm::var("a");
     let b = FreeTerm::var("b");
@@ -197,7 +197,7 @@ fn generation()
     // `Tm`, and naturality lifts `lam`'s substitution once. β belongs to the
     // source theory, not its binding signature. Three sorts, nine operations,
     // six equations.
-    let expected = r#"sign LC$ssc {
+    let expected = r#"theory LC$ssc {
         sort $Con : Type;
         sort $Sub(D : $Con, G : $Con) : Type;
         sort Tm(G : $Con) : Type;

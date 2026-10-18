@@ -25,9 +25,10 @@ pub enum SignatureFault
 {
     /// A signature member requires its colon-led judgment.
     MissingJudgment,
-    /// A sign block presents sorts, operations and rules, not item-level data.
+    /// A theory block presents sorts, operations and rules, not item-level
+    /// data.
     RetiredDataMember,
-    /// A sign block's written face names itself, `rule name : lhs ==> rhs`;
+    /// A theory block's written face names itself, `rule name : lhs ==> rhs`;
     /// the unnamed face is the data and codata blocks' spelling.
     WrittenFace,
     /// An expression CST node cannot silently become a circuit binder group.

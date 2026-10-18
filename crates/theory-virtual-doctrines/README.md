@@ -23,7 +23,7 @@ Virtual double categories, reflected judgments and directed laws over replayable
 
 **Why.** Relations, their restrictions and their composites need an identity criterion stronger than matching syntax or matching endpoints. Reflected judgments also need to distinguish formation errors, checking-only forms and invalid certificates. Keeping those questions above the rewriting engine lets the reflection reuse the engine's actual matching, overlap and replay semantics.
 
-**How.** Signatures, protypes, proterms and derivations use flat trees shared with the description tier. Formation and bidirectional checking walk borrowed nodes with explicit worklists. A description registry stores real `SignDesc<G>` values without interpreting the consumer's grade type. Grafts elaborate into sequential certificates; queries read overlap families and normalizing paths; directed cuts select the invertible or acyclicity-checked composition operation.
+**How.** Signatures, protypes, proterms and derivations use flat trees shared with the description tier. Formation and bidirectional checking walk borrowed nodes with explicit worklists. A description registry stores real `TheoryDesc<G>` values without interpreting the consumer's grade type. Grafts elaborate into sequential certificates; queries read overlap families and normalizing paths; directed cuts select the invertible or acyclicity-checked composition operation.
 
 ## References
 

@@ -56,12 +56,12 @@
 //!   import binds answers at none of its sites: every name it writes reads as
 //!   the import's, so a type naming its own family would print as the type it
 //!   hides.
-//! - **A described member** — a `sign` block's sorts, operations, laws and
+//! - **A described member** — a `theory` block's sorts, operations, laws and
 //!   circuits, a `data` family's constructors, operations and rules, each port
 //!   and each node of a rule's sides — is spelled at the type its member states
 //!   ([`LoweredModule::described_types`]): the typed run judges none of them,
-//!   since the description route reads them. A sign's member is read under the
-//!   members before it, named as the sign writes them.
+//!   since the description route reads them. A theory's member is read under
+//!   the members before it, named as the theory writes them.
 //!
 //! The table answers a byte offset with the innermost entry whose span holds
 //! it. Among entries of one span a binder comes first, then a written node
@@ -1071,7 +1071,7 @@ impl TypeTable
     ///   its declared type, its body's synthesised type, its data universe, or
     ///   a sealed abstract type's kind, or holding the lowering's refusal of it
     ///   as text, a `data` family's operations leaving the family's key its
-    ///   own; each node a `sign` block or a `data` family's constructors,
+    ///   own; each node a `theory` block or a `data` family's constructors,
     ///   operations and rules write is an entry at the type its member states
     ///   ([`LoweredModule::described_types`]), read under the names of the
     ///   members before it. A source the lowering refuses whole types nothing.
@@ -1088,15 +1088,15 @@ impl TypeTable
     /// - hypothesis: L3 — a function with a parameter used in its body, a
     ///   signature and its definition, a synthesised definition, a data
     ///   declaration and a mismatched body separate the term, binder, type and
-    ///   declaration entries and the expected type; a sign's members and a data
-    ///   family with an operation answer at their own types; a type written
-    ///   where a static function takes one answers as a written type; a model
-    ///   header's sign answers no term its derived types hold.
+    ///   declaration entries and the expected type; a theory's members and a
+    ///   data family with an operation answer at their own types; a type
+    ///   written where a static function takes one answers as a written type; a
+    ///   model header's theory answers no term its derived types hold.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `typed::tests::a_type_under_a_static_binder_answers_as_a_written_type`
     /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
     /// - witness: `typed::tests::both_halves_of_a_declaration_find_its_type`
-    /// - witness: `typed::tests::a_sign_member_answers_under_the_sorts_before_it`
+    /// - witness: `typed::tests::a_theory_member_answers_under_the_sorts_before_it`
     /// - witness: `typed::tests::a_data_family_is_keyed_at_its_own_type_past_its_operations`
     /// - witness: `typed::tests::a_model_header_answers_no_term_its_signature_derives_477`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.entries.iter().all(|entry|
@@ -2143,7 +2143,7 @@ impl TypeTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`scopes`]: a body's terms answer under their
-    ///   binders' names, and an endpoint under its signature's; a sign's
+    ///   binders' names, and an endpoint under its signature's; a theory's
     ///   operation under the sorts before it; a capability inside a scope's
     ///   subject names the scope.
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark`
@@ -2806,7 +2806,7 @@ impl TypeTable
     ///
     /// A family's normal form is its constructors, a value the top level
     /// names, so it reprints as [`Self::reprint_value`] reprints a value. A
-    /// `sign`'s is a term of its block, whose operations no top-level
+    /// `theory`'s is a term of its block, whose operations no top-level
     /// declaration names (#669), so it is read as a call under the block's
     /// rules and spelled again as the engine spells a normal form,
     /// `spell(nf(read(spell(t))))`.
@@ -2826,10 +2826,10 @@ impl TypeTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a sign's normal form reads back as written, a call
+    /// - hypothesis: L3 — a theory's normal form reads back as written, a call
     ///   reads to its normal form, and a name that is no block reads nothing;
     ///   the census reads the corpus's family rows as values.
-    /// - witness: `typed::tests::a_sign_s_normal_form_reads_back_under_its_rules_669`
+    /// - witness: `typed::tests::a_theory_s_normal_form_reads_back_under_its_rules_669`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark`
     #[inline]
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
@@ -3579,18 +3579,18 @@ mod tests
         );
     }
 
-    /// #669: a `sign`'s stated normal form is a term of the block, which a
+    /// #669: a `theory`'s stated normal form is a term of the block, which a
     /// top-level thunk cannot name. Read back under the block's rules it is
     /// itself, and a call reads to the normal form the engine spells.
     #[test]
-    fn a_sign_s_normal_form_reads_back_under_its_rules_669()
+    fn a_theory_s_normal_form_reads_back_under_its_rules_669()
     {
         use gandr_surface_pretty::Name;
 
         use super::reprinted;
 
         let source = SourceText::from(
-            "sign Pointed {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  \
+            "theory Pointed {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  \
              rule flipPt : flip(pt()) <=> pt();\n  rule flipFlip : flip(flip(p)) <=> p;\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -4177,10 +4177,10 @@ mod tests
     }
 
     #[test]
-    fn a_sign_member_answers_under_the_sorts_before_it()
+    fn a_theory_member_answers_under_the_sorts_before_it()
     {
         let source = SourceText::from(
-            "sign Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
+            "theory Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
              : Ob) --> Hom(a, a);\n  rule idem : id(a) ==> id(a);\n}\n",
         );
         let table = table(source);
@@ -4205,11 +4205,11 @@ mod tests
     #[test]
     fn a_model_header_answers_no_term_its_signature_derives_477()
     {
-        // The members' derived types are located at the sign the header
+        // The members' derived types are located at the theory the header
         // names; their terms once answered there, over binders the naming
-        // fallback called after the sign (`CatShape => CatShape`).
+        // fallback called after the theory (`CatShape => CatShape`).
         let source = SourceText::from(
-            "sign Cat {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : \
+            "theory Cat {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : \
              Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
              rule unitL : comp(id(a), f) <=> f;\n}\n\nmodule Fns : Model(Cat) {\n  type Ob = \
              Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : \

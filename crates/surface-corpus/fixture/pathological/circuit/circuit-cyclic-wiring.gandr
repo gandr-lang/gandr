@@ -1,5 +1,5 @@
 @[ refuses("MalformedForm") ]
-sign Loop {
+theory Loop {
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
   oper g : (a : Nat) --> (b : Nat);

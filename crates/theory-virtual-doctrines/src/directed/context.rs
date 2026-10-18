@@ -98,7 +98,7 @@ pub struct OpSig
 
 impl OpSig
 {
-    /// The **covariant** sorting of `sig` (`x : I`).
+    /// The **covariant** sorting of `theory` (`x : I`).
     #[inline]
     #[must_use]
     /// # Specification
@@ -111,7 +111,7 @@ impl OpSig
         }
     }
 
-    /// The **contravariant** sorting of `sig` (`x : Iᵒᵖ`).
+    /// The **contravariant** sorting of `theory` (`x : Iᵒᵖ`).
     #[inline]
     #[must_use]
     /// # Specification
@@ -128,15 +128,15 @@ impl OpSig
     /// flipped variance.
     ///
     /// # Specification
-    /// - ensures: the same `sig` with [`Variance::flip`] applied; `op(op(x)) ==
-    ///   x` (an involution), realized on the reflected signature alone — the
+    /// - ensures: the same `theory` with [`Variance::flip`] applied; `op(op(x))
+    ///   == x` (an involution), realized on the reflected signature alone — the
     ///   frozen [`SignatureRef`] is unchanged.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 pointwise — `op` is asserted an involution over
     ///   generated signatures and both variances; the boundary is that the
-    ///   underlying `sig` never changes.
+    ///   underlying `theory` never changes.
     /// - witness: `tests::directed::tests::op_is_an_involution_on_reflected_signatures`
     #[inline]
     #[must_use]

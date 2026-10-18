@@ -67,10 +67,10 @@ use crate::desc::DeclPolarity;
 use crate::desc::NominalId;
 use crate::desc::OperDesc;
 use crate::desc::Representability;
-use crate::desc::SignDesc;
 use crate::desc::SortDesc;
 use crate::desc::SortIndex;
 use crate::desc::SurfaceSpan;
+use crate::desc::TheoryDesc;
 use crate::rule::FreeTerm;
 use crate::rule::RuleFace;
 use crate::wellformed::WfDiagnostic;
@@ -197,7 +197,7 @@ struct Model
         && model.sorts.iter().all(|sort| sort.representability == Representability::Ordinary)
         && model.opers.iter().all(|op| op.arity.inputs.iter().all(|port| port.bindings.is_empty()))))]
 #[inline]
-pub fn first_order<G>(source: &SignDesc<G>) -> Result<SignDesc<G>, TranslationError>
+pub fn first_order<G>(source: &TheoryDesc<G>) -> Result<TheoryDesc<G>, TranslationError>
 {
     validate(source)?;
     let initial = Model {
@@ -225,7 +225,7 @@ pub fn first_order<G>(source: &SignDesc<G>) -> Result<SignDesc<G>, TranslationEr
         }
         model
     });
-    Ok(SignDesc::new(
+    Ok(TheoryDesc::new(
         NominalId::new(source.id.serial, format!("{}$ssc", source.id.name)),
         [],
         [],
@@ -261,7 +261,7 @@ pub fn first_order<G>(source: &SignDesc<G>) -> Result<SignDesc<G>, TranslationEr
 /// - witness: `tests::glf::translation_refuses_non_signatures`
 /// - witness: `tests::glf::model::admission`
 #[spec(ensures: |ref result| result.is_err() || source.sorts.iter().all(|sort| !sort.name.as_ref().starts_with('$')))]
-pub fn validate<G>(source: &SignDesc<G>) -> Result<(), TranslationError>
+pub fn validate<G>(source: &TheoryDesc<G>) -> Result<(), TranslationError>
 {
     let diagnostics = check_desc(source);
     if !diagnostics.is_empty() {
@@ -483,7 +483,7 @@ fn telescope(
 )]
 fn translate_sort<G>(
     model: &mut Model,
-    source: &SignDesc<G>,
+    source: &TheoryDesc<G>,
     sort: &SortDesc,
 )
 {
@@ -553,7 +553,7 @@ fn translate_sort<G>(
 )]
 fn representable<G>(
     model: &mut Model,
-    source: &SignDesc<G>,
+    source: &TheoryDesc<G>,
     sort: &SortDesc,
 )
 {
@@ -672,7 +672,7 @@ fn representable<G>(
 )]
 fn structural_equations<G>(
     model: &mut Model,
-    source: &SignDesc<G>,
+    source: &TheoryDesc<G>,
     sort: &SortDesc,
 )
 {
@@ -793,7 +793,7 @@ fn structural_equations<G>(
 )]
 fn translate_operation<G>(
     model: &mut Model,
-    source: &SignDesc<G>,
+    source: &TheoryDesc<G>,
     op: &OperDesc,
 )
 {

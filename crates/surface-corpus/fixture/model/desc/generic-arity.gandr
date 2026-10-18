@@ -1,13 +1,13 @@
-// A generic program over descriptions. A `sign` block is a value of `Sig`, so
+// A generic program over descriptions. A `theory` block is a value of `Theory`, so
 // an ordinary function reads any presentation by `case`; a function whose arms
 // return type quotes names a type where a type is read (`El` as unquote),
 // after Chapman, Dagand, McBride and Morris (_The Gentle Art of Levitation_,
 // doi:10.1145/1863543.1863547).
 
-/// A monoid presented as data: the block binds `Monoid : Sig`, its sort and
+/// A monoid presented as data: the block binds `Monoid : Theory`, its sort and
 /// its two operations held in one value.
 @[ checks ]
-sign Monoid {
+theory Monoid {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
@@ -16,7 +16,7 @@ sign Monoid {
 /// Structural recursion over any presentation's operation chain: one per
 /// `Oper` link, zero at its end.
 @[ checks ]
-def rec operations(chain : Sig) -> -F Integer {
+def rec operations(chain : Theory) -> -F Integer {
   case chain {
     Oper(name, inputs, outputs, rest) => { run r <- operations[<](rest); return r + 1 },
     _ => return 0
@@ -26,7 +26,7 @@ def rec operations(chain : Sig) -> -F Integer {
 /// The number of operations a presentation declares, read off its `Presents`
 /// value by the generic program above.
 @[ checks ]
-def arity(presented : Sig) -> -F Integer {
+def arity(presented : Theory) -> -F Integer {
   case presented {
     Presents(sorts, opers, rules) => become operations(opers),
     _ => return 0
@@ -38,11 +38,17 @@ def arity(presented : Sig) -> -F Integer {
 def counted : +U (-F Integer) ;
 def counted = thunk { become arity(Monoid) } ;
 
-/// A type computed from a presentation: a `case` over `Sig` whose arms return
+/// `sign` is an ordinary name now that the block's keyword is `theory` (#729):
+/// a definition so named runs the generic program as `counted` does.
+@[ runs("2") ]
+def sign : +U (-F Integer) ;
+def sign = thunk { become arity(Monoid) } ;
+
+/// A type computed from a presentation: a `case` over `Theory` whose arms return
 /// the quotes `Integer` and `Unit`. The type language gains no `case`; the call
 /// is unquoted where a type is read.
 @[ checks ]
-def counted_at(presented : Sig) -> -F Type {
+def counted_at(presented : Theory) -> -F Type {
   case presented {
     Presents(sorts, opers, rules) => return Integer,
     _ => return Unit
@@ -58,7 +64,7 @@ def typed = thunk { become arity(Monoid) } ;
 /// On a binder the call cannot run: `counted_at(presented)` stays rigid, and
 /// its two occurrences are one type.
 @[ checks ]
-def kept(presented : Sig, n : counted_at(presented)) -> -F counted_at(presented) {
+def kept(presented : Theory, n : counted_at(presented)) -> -F counted_at(presented) {
   return n
 }
 

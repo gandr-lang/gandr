@@ -433,7 +433,7 @@ impl Engine
         known.map_or(Maybe::Absent(unsorted::Absent::Unoccurred), Maybe::Present)
     }
 
-    /// Elaborate what a sign wrote as a node, through the scope.
+    /// Elaborate what a theory wrote as a node, through the scope.
     ///
     /// # Specification
     /// - ensures: each variable its node — the scope's, or for a name the scope

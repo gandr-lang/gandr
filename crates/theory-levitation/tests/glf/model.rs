@@ -29,13 +29,13 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::Representability;
-use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::SimplySorted;
 use gandr_theory_levitation::SortDesc;
 use gandr_theory_levitation::SortIndex;
 use gandr_theory_levitation::SortRef;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::TranslationError;
 use gandr_theory_levitation::VariableIndex;
 use gandr_theory_levitation::first_order;
@@ -73,7 +73,7 @@ fn t<const N: usize>(
 ///
 /// # Specification
 /// trivial.
-fn computations() -> SignDesc<()>
+fn computations() -> TheoryDesc<()>
 {
     signature(
         "Computations",
@@ -106,7 +106,7 @@ fn computations() -> SignDesc<()>
 ///
 /// # Specification
 /// trivial.
-fn mixed() -> SignDesc<()>
+fn mixed() -> TheoryDesc<()>
 {
     signature(
         "Mixed",
@@ -145,7 +145,7 @@ fn mixed() -> SignDesc<()>
 ///
 /// # Specification
 /// trivial.
-fn signatures() -> [SignDesc<()>; 3]
+fn signatures() -> [TheoryDesc<()>; 3]
 {
     [super::lc(), computations(), mixed()]
 }
@@ -154,7 +154,7 @@ fn signatures() -> [SignDesc<()>; 3]
 struct Fixture
 {
     /// The signature both views are read against.
-    signature: SignDesc<()>,
+    signature: TheoryDesc<()>,
     /// The binding view.
     binding: BindingJudgement,
     /// The first-order view, written by hand, not by the forward map.
@@ -371,7 +371,7 @@ fn encoded_variable(
 #[spec(ensures: |ref case| case.binding.context == case.first_order.context
     && SimplySorted::new(source).is_ok_and(|semantics| semantics.check(&case.binding).is_ok()))]
 fn generated(
-    source: &SignDesc<()>,
+    source: &TheoryDesc<()>,
     context: Vec<Name>,
     sort: Name,
     choices: &mut Choices,
@@ -463,7 +463,7 @@ fn generated(
 /// - witness: `tests::glf::model::identification`
 #[spec(ensures: |ref cases| cases.len() == CASES)]
 fn cases(
-    source: &SignDesc<()>,
+    source: &TheoryDesc<()>,
     choices: &mut Choices,
 ) -> Vec<Case>
 {
@@ -745,7 +745,7 @@ struct IdentityReturn
 /// - witness: `tests::glf::model::kernel`
 #[spec(ensures: |ref judgement| matches!(judgement.term.to_node().view(), TermView::Op { .. }))]
 fn identity_return_case(
-    model: &SignDesc<()>,
+    model: &TheoryDesc<()>,
     choices: &mut Choices,
 ) -> IdentityReturn
 {

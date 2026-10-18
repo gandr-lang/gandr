@@ -211,7 +211,7 @@ fn a_single_redex_block_reaches_the_cell_layer_behind_the_gate()
 {
     let descriptions = descriptions(
         r#"data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
-        sign Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
+        theory Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
             rule cong1 : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
                 node : p(x) ==> (xp); node : add(xp, y) --> (z);
             };
@@ -242,7 +242,7 @@ fn a_single_redex_block_reaches_the_cell_layer_behind_the_gate()
 fn a_two_redex_body_declines_with_both_occurrences()
 {
     let descriptions = descriptions(
-        r#"sign Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
+        r#"theory Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
         rule cong2 : (rule p : Nat ==> Nat, rule q : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
             node : p(x) ==> (xp); node : q(y) ==> (yp); node : add(xp, yp) --> (z);
         };

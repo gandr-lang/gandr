@@ -539,7 +539,7 @@ fn def_family() -> Regex
 ///
 /// The signature is written inline, `#{ … }`, or computed by a signature
 /// former applied to a declaration, `Model(CatShape)`: the signature of the
-/// models of a `sign` block, which the lowering derives from the block rather
+/// models of a `theory` block, which the lowering derives from the block rather
 /// than reading it off a written list. The two are first-token-discriminated —
 /// `#{` against a type name — so the choice stays one token deep. The former is
 /// a type name rather than a reserved word, so the lowering names an unknown
@@ -3393,7 +3393,7 @@ fn comma1(element: Regex) -> Regex
 /// lead mold (`constructor`, `identifier`) then outranks the hole's own
 /// content in the molder's local key — `Nil : Vec` reads as a member `Nil`
 /// whose signature is missing plus a nullary member `Vec`, a clean parse of
-/// the wrong tree. The `sign` block's leads are reserved words, never
+/// the wrong tree. The `theory` block's leads are reserved words, never
 /// hole-content candidates, but its members collapse the same way, so it takes
 /// the same mandatory `;` terminator (see the circuit forms).
 /// A mandatory separator restores the discrimination: after the hole only

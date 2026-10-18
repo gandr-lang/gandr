@@ -23,7 +23,7 @@ use gandr_theory_levitation::Payload;
 use gandr_theory_levitation::PayloadView;
 use gandr_theory_levitation::PrimTy;
 use gandr_theory_levitation::Side;
-use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::ValueTypeRef;
 use gandr_theory_levitation::bool_desc;
 
@@ -79,7 +79,7 @@ fn inr(payload: Payload) -> Payload
 ///
 /// # Specification
 /// trivial.
-pub fn bool_two_ctor() -> SignDesc<Grade>
+pub fn bool_two_ctor() -> TheoryDesc<Grade>
 {
     bool_desc()
 }
@@ -91,9 +91,9 @@ pub fn bool_two_ctor() -> SignDesc<Grade>
 ///
 /// # Specification
 /// trivial.
-pub fn bool_sum() -> SignDesc<Grade>
+pub fn bool_sum() -> TheoryDesc<Grade>
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(1_u64), "BoolSum"),
         Vec::new(),
         [CtorDesc::new(
@@ -115,9 +115,9 @@ pub fn bool_sum() -> SignDesc<Grade>
 ///
 /// # Specification
 /// trivial.
-pub fn rgb() -> SignDesc<Grade>
+pub fn rgb() -> TheoryDesc<Grade>
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(2_u64), "RGB"),
         Vec::new(),
         [
@@ -264,9 +264,9 @@ pub fn rgb_rotate() -> CodeIso
 ///
 /// # Specification
 /// trivial.
-pub fn int_box() -> SignDesc<Grade>
+pub fn int_box() -> TheoryDesc<Grade>
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(3_u64), "IntBox"),
         Vec::new(),
         [CtorDesc::new(

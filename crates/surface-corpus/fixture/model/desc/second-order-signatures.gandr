@@ -3,13 +3,13 @@
 // a variable of the representable sort `S` over `T` (Kaposi and Xie,
 // _Second-Order Generalised Algebraic Theories_, FSCD 2024,
 // doi:10.4230/LIPIcs.FSCD.2024.10, Definition 3 and the identity-return
-// example). Each block is a value of `Sig` that keeps both, so a program
+// example). Each block is a value of `Theory` that keeps both, so a program
 // reads them back by `case`.
 
 /// The naturals, a first-order signature: one ordinary sort, a constant and
 /// a successor.
 @[ checks ]
-sign Nat {
+theory Nat {
   sort Nat : Type;
   oper zero : () --> Nat;
   oper succ : (n : Nat) --> Nat;
@@ -18,7 +18,7 @@ sign Nat {
 /// Pure λ-calculus syntax: one representable sort of terms, an abstraction
 /// whose body binds a term, and an application.
 @[ checks ]
-sign Lambda {
+theory Lambda {
   sort Tm : Type+;
   oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
   oper app : (t : Tm, u : Tm) --> Tm;
@@ -28,7 +28,7 @@ sign Lambda {
 /// representable and indexed by their type, and an abstraction whose body
 /// binds a value of its domain.
 @[ checks ]
-sign IdentityReturn {
+theory IdentityReturn {
   sort VTy : Type;
   sort CTy : Type;
   sort VTm(a : VTy) : Type+;
@@ -42,7 +42,7 @@ sign IdentityReturn {
 /// Structural recursion over a sort chain: one per `Representable` link, none
 /// for an ordinary `Sort`.
 @[ checks ]
-def rec representable(chain : Sig) -> -F Integer {
+def rec representable(chain : Theory) -> -F Integer {
   case chain {
     Representable(name, indices, rest) => { run r <- representable[<](rest); return r + 1 },
     Sort(name, indices, rest) => become representable[<](rest),
@@ -53,7 +53,7 @@ def rec representable(chain : Sig) -> -F Integer {
 /// Structural recursion over a port chain: one per `Bound` port, none for a
 /// plain `Port`.
 @[ checks ]
-def rec bound(chain : Sig) -> -F Integer {
+def rec bound(chain : Theory) -> -F Integer {
   case chain {
     Bound(name, sort, indices, binders, rest) => { run r <- bound[<](rest); return r + 1 },
     Port(name, sort, indices, rest) => become bound[<](rest),

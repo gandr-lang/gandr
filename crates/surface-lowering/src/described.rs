@@ -3,13 +3,13 @@
 //!
 //! # A member answers at what it states
 //!
-//! A `sign` block, and a `data` family's constructors and its `oper` and
+//! A `theory` block, and a `data` family's constructors and its `oper` and
 //! `rule` members, write no term the typed run judges: the description route
 //! reads them ([`crate::description`]). It states their types here, in the core
 //! vocabulary every face spells through, at the bytes
 //! [`crate::description::written`] keeps for each node:
 //!
-//! - **A sign** reads as the telescope `Model(S)` lays its components out in
+//! - **A theory** reads as the telescope `Model(S)` lays its components out in
 //!   ([`crate::model`]): each sort a binder of its kind — `Type`, or for an
 //!   indexed sort the arrow from its indices into `Type` — and each operation a
 //!   binder of the type its component states, under the components before it. A
@@ -20,7 +20,7 @@
 //!   bound by the law's telescope; an operation's head at the operation's type;
 //!   each written sort at its universe, and the classifier `Type` at its own;
 //!   and a circuit's ports and wires at the sort the ports they meet read,
-//!   where that sort is one the sign declares unindexed. An operation one of
+//!   where that sort is one the theory declares unindexed. An operation one of
 //!   whose ports binds a variable (`t : pi+ (x : S) . T`) has no component: its
 //!   name and a bound port's name answer nowhere, while each binder's name
 //!   answers at its sort and its ports otherwise as written.
@@ -44,14 +44,14 @@
 //! A component the derivation cannot state answers nowhere, and neither does
 //! a node no position sorts.
 //!
-//! - Choice: read a sign as a telescope of variables, its sorts codes in
+//! - Choice: read a theory as a telescope of variables, its sorts codes in
 //!   `Type`, so each member answers at the type `Model(S)` derives, spelled by
-//!   the names the sign writes. Alternatives: a nominal atom per sort, which
+//!   the names the theory writes. Alternatives: a nominal atom per sort, which
 //!   the core keeps for sealed abstract types alone and no constant of the
 //!   module names; and the presentation spelled as text, which bypasses the
-//!   printer every face shares. Reversal: a sign's `Model(S)` components
-//!   lowered to core declarations of their own — beside the value `S : Sig` the
-//!   block already defines — which a face then reads as it reads any other.
+//!   printer every face shares. Reversal: a theory's `Model(S)` components
+//!   lowered to core declarations of their own — beside the value `S : Theory`
+//!   the block already defines — which a face then reads as it reads any other.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -74,9 +74,9 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
-use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
+use gandr_theory_levitation::TheoryDesc;
 use quenchant_shape::shape::Maybe;
 
 use crate::DeclarationOutcome;
@@ -303,7 +303,7 @@ struct Operation
     ty: ValueTypeId,
 }
 
-/// What a sign's members declare for the nodes after them: its sorts' names,
+/// What a theory's members declare for the nodes after them: its sorts' names,
 /// and each operation the derivation states with its telescope, its results
 /// and its type.
 ///
@@ -347,7 +347,7 @@ struct Typer<'arena>
 /// # Adequacy
 /// - hypothesis: L3 — `comp`'s result `Hom(a, c)` reads `Hom(a, b)` under the
 ///   law `unitL`'s elaborated arguments.
-/// - witness: `described::tests::a_sign_answers_at_every_member`
+/// - witness: `described::tests::a_theory_answers_at_every_member`
 #[spec(ensures: |ret| !by.is_empty() || ret.eq(term))]
 fn substitute(
     term: &FreeTerm,
@@ -554,7 +554,7 @@ impl Typer<'_>
     /// # Adequacy
     /// - hypothesis: L3 — `comp`'s three object binders bind and its two
     ///   morphisms do not; `unitL`'s law relates two applications.
-    /// - witness: `described::tests::a_sign_answers_at_every_member`
+    /// - witness: `described::tests::a_theory_answers_at_every_member`
     #[spec(captures: before = scope.binders.len(), ensures: scope.binders.len() == before)]
     fn telescope(
         &mut self,
@@ -800,13 +800,13 @@ impl Typer<'_>
         );
     }
 
-    /// Record every member of a sign presenting `presentation`, written as
+    /// Record every member of a theory presenting `presentation`, written as
     /// `written`.
     ///
     /// # Specification
-    /// - requires: `written` is where the sign reader read `presentation`'s
+    /// - requires: `written` is where the theory reader read `presentation`'s
     ///   members.
-    /// - ensures: as the module documentation states for a sign: each sort,
+    /// - ensures: as the module documentation states for a theory: each sort,
     ///   operation and law at what its `Model(S)` component states, each port
     ///   at its sort, each node of a law at its sort, each written sort at its
     ///   universe, each circuit's ports and wires at their sorts.
@@ -820,12 +820,12 @@ impl Typer<'_>
     ///   each back.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the probe signs' sorts, operations, laws and circuit
-    ///   answer at the types asserted; the identity-return `lam`'s binder
-    ///   answers at its indexed sort and its name nowhere.
-    /// - witness: `described::tests::a_sign_answers_at_every_member`
+    /// - hypothesis: L3 — the probe theories' sorts, operations, laws and
+    ///   circuit answer at the types asserted; the identity-return `lam`'s
+    ///   binder answers at its indexed sort and its name nowhere.
+    /// - witness: `described::tests::a_theory_answers_at_every_member`
     /// - witness: `described::tests::a_binder_answers_at_its_sort_and_its_operation_nowhere`
-    fn sign(
+    fn theory(
         &mut self,
         presentation: &Presentation,
         written: &WrittenMembers,
@@ -974,7 +974,7 @@ impl Typer<'_>
     ///   for it.
     /// - fails: never; a node no sort is minted for records nothing.
     /// - panics: none.
-    /// - executable: none — as [`Self::sign`].
+    /// - executable: none — as [`Self::theory`].
     ///
     /// # Termination
     /// Each node of the finite side is popped once.
@@ -984,7 +984,7 @@ impl Typer<'_>
     ///   `Hom(a, a)`, `a` at `Ob`, `comp` at its type and the variable `f` at
     ///   the code its sort returns; the identity-return signature's index
     ///   `arrow(a, b)` at `CTy`.
-    /// - witness: `described::tests::a_sign_answers_at_every_member`
+    /// - witness: `described::tests::a_theory_answers_at_every_member`
     /// - witness: `described::tests::a_binder_answers_at_its_sort_and_its_operation_nowhere`
     fn law_side(
         &mut self,
@@ -1078,17 +1078,17 @@ impl Typer<'_>
 
     /// Record a circuit rule's ports, rewrite sides and wires at the sort
     /// each meets, and each node line's operation head at its type, under
-    /// `scope`, every sort and operation of the sign.
+    /// `scope`, every sort and operation of the theory.
     ///
     /// # Specification
-    /// - requires: `scope` binds the sign's sorts and operations.
+    /// - requires: `scope` binds the theory's sorts and operations.
     /// - ensures: a wire's sort is the first its ports, its rewrite port or an
-    ///   operation's port it meets give it, where that sort is one the sign
+    ///   operation's port it meets give it, where that sort is one the theory
     ///   declares unindexed; each name written at a sorted wire answers at that
     ///   sort.
     /// - fails: never; a wire no sort reaches records nothing.
     /// - panics: none.
-    /// - executable: none — as [`Self::sign`].
+    /// - executable: none — as [`Self::theory`].
     ///
     /// # Termination
     /// Each round over the node lines sorts a wire or stops, and there are
@@ -1099,7 +1099,7 @@ impl Typer<'_>
     ///   `Nat`, and `add` at its type; a wire only a later reading reaches, a
     ///   rewrite side read off the side it rewrites and an output read off its
     ///   operation's result each answer at their sort.
-    /// - witness: `described::tests::a_sign_answers_at_every_member`
+    /// - witness: `described::tests::a_theory_answers_at_every_member`
     /// - witness: `described::tests::a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it`
     fn circuit(
         &mut self,
@@ -1252,7 +1252,7 @@ impl Typer<'_>
     /// - fails: never; a port whose sort names no family records nothing, nor
     ///   does an operation with such a port.
     /// - panics: none.
-    /// - executable: none — as [`Self::sign`].
+    /// - executable: none — as [`Self::theory`].
     ///
     /// # Termination
     /// Each node of each finite rule side is popped once.
@@ -1264,7 +1264,7 @@ impl Typer<'_>
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
     fn family(
         &mut self,
-        description: &SignDesc<DescriptionGrade>,
+        description: &TheoryDesc<DescriptionGrade>,
         written: &WrittenMembers,
         families: &BTreeMap<Name, (ValueTypeId, ValueTypeId)>,
         constructors: &BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId)>,
@@ -1450,7 +1450,7 @@ impl Typer<'_>
     ///   naming a parameter at that parameter's classifier.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — as [`Self::sign`].
+    /// - executable: none — as [`Self::theory`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Maybe(a)`'s constructors, fields, result and its
@@ -1523,7 +1523,7 @@ impl LoweredModule<'_>
     ///
     /// # Specification
     /// - requires: `arena` is the one the module was lowered into.
-    /// - ensures: for every `sign` block and every unparameterised `data`
+    /// - ensures: for every `theory` block and every unparameterised `data`
     ///   family's operations and rules, each written node at the type its
     ///   member states, as the [`crate::described`] documentation lays out,
     ///   each read in its context; a parameterised family's constructors, and
@@ -1534,10 +1534,10 @@ impl LoweredModule<'_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a sign's sorts, operations, laws and circuit, a data
-    ///   family's operations and rules, and the constructors of a family with a
-    ///   function field answer at the types asserted.
-    /// - witness: `described::tests::a_sign_answers_at_every_member`
+    /// - hypothesis: L3 — a theory's sorts, operations, laws and circuit, a
+    ///   data family's operations and rules, and the constructors of a family
+    ///   with a function field answer at the types asserted.
+    /// - witness: `described::tests::a_theory_answers_at_every_member`
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `described::tests::a_family_the_native_reading_owns_answers_at_its_signature`
     #[spec(ensures: |ret| ret.contexts.first().is_some_and(Vec::is_empty)
@@ -1604,7 +1604,7 @@ impl LoweredModule<'_>
         for described in &self.descriptions().declarations {
             match described.presentation {
                 Maybe::Present(ref presentation) => {
-                    typer.sign(presentation, &described.written);
+                    typer.theory(presentation, &described.written);
                 },
                 Maybe::Absent(_) => {
                     if described.description.polarity != DeclPolarity::Data {

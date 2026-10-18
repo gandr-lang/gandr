@@ -2418,15 +2418,17 @@ fn the_presentation_code_names_its_family_where_a_type_is_read()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        SourceText::from("sign Monoid { sort M : Type; }\ndef held : Sig ;\ndef held = Monoid ;\n"),
+        SourceText::from(
+            "theory Monoid { sort M : Type; }\ndef held : Theory ;\ndef held = Monoid ;\n",
+        ),
         &mut arena,
     );
-    let sig = module
+    let theory = module
         .declarations()
         .iter()
-        .find(|declaration| declaration.name() == SurfaceName::from("Sig"))
+        .find(|declaration| declaration.name() == SurfaceName::from("Theory"))
         .map(crate::module::LoweredDeclaration::constant)
-        .expect("a `sign` block declares the code it is a value of");
+        .expect("a `theory` block declares the code it is a value of");
     let held = module
         .declarations()
         .iter()
@@ -2439,10 +2441,10 @@ fn the_presentation_code_names_its_family_where_a_type_is_read()
     assert_eq!(
         arena.value_type(declared_type),
         Some(&ValueType::Data {
-            declaration: sig,
+            declaration: theory,
             arguments: Vec::new(),
         }),
-        "`Sig` written as a type is the family of no parameters it codes"
+        "`Theory` written as a type is the family of no parameters it codes"
     );
     assert_accepted(&judged(&module, &mut arena));
 }

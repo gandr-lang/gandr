@@ -1,11 +1,11 @@
 // The twin of `model/desc/second-order-signatures.gandr`: a binder over an
 // ordinary sort, a binder where a sort's index is written, and the universe of
-// representable sorts outside the `sign` block that reads it.
+// representable sorts outside the `theory` block that reads it.
 
 /// A port binds a variable of `Tm`, which is not representable: the
 /// description check refuses the binder by name (`NonRepresentableBinder`).
 @[ refuses("MalformedForm") ]
-sign Unbindable {
+theory Unbindable {
   sort Tm : Type;
   oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
 }
@@ -13,7 +13,7 @@ sign Unbindable {
 /// A sort's index is a plain variable: an operation's input port binds, an
 /// index does not.
 @[ refuses("MalformedForm") ]
-sign BoundIndex {
+theory BoundIndex {
   sort Tm : Type+;
   sort Scoped(i : pi+ (x : Tm) . Tm) : Type;
 }

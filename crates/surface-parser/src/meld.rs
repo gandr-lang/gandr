@@ -1990,7 +1990,7 @@ impl<'pbg> MeldState<'pbg>
     /// The trigger is a **declaration head**, not the `def` keyword: any mold
     /// that can open an item-position form at a fresh slot
     /// ([`Self::opens_declaration`]) marks the boundary, so `data`, `codata`,
-    /// `module`, `sign`, `import`, `op`, `rec`, `extern`, the `@` attribute
+    /// `module`, `theory`, `import`, `op`, `rec`, `extern`, the `@` attribute
     /// block, and the keyword-led statement heads all bound a repair exactly as
     /// `def` does. The damaged declaration and the surviving one need not be
     /// the same family.
@@ -2001,7 +2001,7 @@ impl<'pbg> MeldState<'pbg>
     /// - **No candidate may continue the open frontier.** The molder gathers
     ///   every mold sharing the token's label, across every rule context, and
     ///   only one of them will be chosen — so a decision taken per candidate
-    ///   acts on readings that lose. A `sign` block's `rule c : ( … data x :
+    ///   acts on readings that lose. A `theory` block's `rule c : ( … data x :
     ///   Nat … )` member holds a `data` tile inside an open `(`, where the
     ///   *declaration* `data` mold continues nothing and the *member* `data`
     ///   mold continues the `(` frontier. Sixteen corpus files depend on the
@@ -2013,7 +2013,7 @@ impl<'pbg> MeldState<'pbg>
     ///   f(x))` it is the run.
     /// - **The innermost open form must not be [`Sort::Item`].** An open item
     ///   form legitimately reaches past this point: a container (`module`,
-    ///   `data`, `sign`) holds the next head as a **member** of its own rule,
+    ///   `data`, `theory`) holds the next head as a **member** of its own rule,
     ///   and a declaration whose own frontier is innermost has no interior
     ///   damage to bound. Only a non-item frontier is unfinished value syntax.
     ///

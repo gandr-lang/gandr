@@ -1,4 +1,4 @@
-//! Modules ascribed the model signature a sign derives, `: Model(S)`, and
+//! Modules ascribed the model signature a theory derives, `: Model(S)`, and
 //! type families, lowered: each derived component asserted against the
 //! signature a module writes out by hand, and each component a module does
 //! not supply refused by name.
@@ -23,9 +23,9 @@ use super::rows;
 use super::span_of;
 use super::verdicts;
 
-/// The `CatShape` sign: a category's objects, morphisms, identities,
+/// The `CatShape` theory: a category's objects, morphisms, identities,
 /// composition and its three laws.
-const SIGN: &str = "sign CatShape {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp(id(a), f) ==> f;\n  rule unitR : comp(f, id(b)) ==> f;\n  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));\n}\n";
+const SIGN: &str = "theory CatShape {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp(id(a), f) ==> f;\n  rule unitR : comp(f, id(b)) ==> f;\n  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));\n}\n";
 
 /// The category of discrete setoids: types and functions, composition by
 /// sequencing, each law holding by computation.
@@ -68,29 +68,29 @@ fn a_derived_signature_states_what_the_written_one_does()
 }
 
 #[test]
-fn a_lowered_sign_exposes_its_description_and_its_model()
+fn a_lowered_theory_exposes_its_description_and_its_model()
 {
     let source = format!(
         "data Flag : Type {{ Off : Flag; On : Flag; }}\n{SIGN}module Setoids : Model(CatShape) \
          {{\n  {SETOIDS}}}\n"
     );
     let lowered = lower(source.as_str());
-    let signs: Vec<_> = lowered.module.signs().collect();
-    let [ref sign] = *signs.as_slice()
+    let theories: Vec<_> = lowered.module.theories().collect();
+    let [ref theory] = *theories.as_slice()
     else {
-        panic!("the sign alone presents a model signature, the family none: {signs:?}");
+        panic!("the theory alone presents a model signature, the family none: {theories:?}");
     };
     assert_eq!(
-        sign.named.span,
+        theory.named.span,
         span_of(source.as_str(), "CatShape", 0_usize)
     );
-    let sorts: Vec<&str> = sign
+    let sorts: Vec<&str> = theory
         .description
         .sorts
         .iter()
         .map(|sort| sort.name.as_ref())
         .collect();
-    let operations: Vec<&str> = sign
+    let operations: Vec<&str> = theory
         .description
         .opers
         .iter()
@@ -101,7 +101,7 @@ fn a_lowered_sign_exposes_its_description_and_its_model()
         (vec!["Ob", "Hom"], vec!["id", "comp"]),
         "its description's sorts and generating operations"
     );
-    let model = sign.model().unwrap();
+    let model = theory.model().unwrap();
     let components: Vec<&str> = model
         .components
         .iter()
@@ -115,7 +115,7 @@ fn a_lowered_sign_exposes_its_description_and_its_model()
 }
 
 #[test]
-fn a_model_of_an_undeclared_sign_is_refused_by_name()
+fn a_model_of_an_undeclared_theory_is_refused_by_name()
 {
     let source = "module M : Model(Nowhere) { def x = 1; }";
     assert_eq!(
@@ -129,7 +129,7 @@ fn a_model_of_an_undeclared_sign_is_refused_by_name()
                 arity: gandr_surface_lowering::HeadArity::Nullary,
             })
         )],
-        "a sign nothing declares before the module derives nothing"
+        "a theory nothing declares before the module derives nothing"
     );
 }
 

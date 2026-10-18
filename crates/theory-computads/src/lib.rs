@@ -139,7 +139,7 @@ pub use crate::elaborate::command_reading;
 pub use crate::elaborate::elaborate_call;
 pub use crate::elaborate::elaborate_data_desc;
 pub use crate::elaborate::elaborate_rule;
-pub use crate::elaborate::elaborate_sign_desc;
+pub use crate::elaborate::elaborate_theory_desc;
 pub use crate::elaborate::presented_reading;
 pub use crate::elaborate::read_command;
 pub use crate::instantiate::CellInstantiationError;

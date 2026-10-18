@@ -2,7 +2,7 @@
 //!
 //! # Descriptions and native data
 //!
-//! `data`, `codata` and `sign` declarations are also read into checked
+//! `data`, `codata` and `theory` declarations are also read into checked
 //! descriptions, and their operation and rule members into cells. A `data` form
 //! keeps one producer of its signature, the native reading (the `lower::native`
 //! module); the description route owns its members and decodes every other
@@ -11,7 +11,7 @@
 //! # Declarations read into descriptions
 //!
 //! `description::elaborate_descriptions` reads top-level `data`, `codata` and
-//! `sign` declarations, and those a mutual block `rec { … }` holds, in source
+//! `theory` declarations, and those a mutual block `rec { … }` holds, in source
 //! order, into checked descriptions. Typed family parameters and
 //! classifiers are retained separately from the description code. Constructor
 //! results must name the declared family with the same parameter variables, in
@@ -100,7 +100,7 @@ use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::NominalSerial;
 use gandr_theory_levitation::ParamDesc;
 use gandr_theory_levitation::PrimTy;
-use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::ValueTypeRef;
 use gandr_theory_levitation::ValueTypeView;
 use gandr_theory_levitation::WfDiagnostic;
@@ -245,7 +245,7 @@ impl DescriptionDiagnostic
     ///   neighboring member, and a wheel, a reversible glyph and a cycle keep
     ///   three classes apart.
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
-    /// - witness: `description::sign::tests::sign_declines_and_malformed_wiring_are_refused_apart`
+    /// - witness: `description::theory::tests::theory_declines_and_malformed_wiring_are_refused_apart`
     #[spec(ensures: |result| result.span() == Maybe::Present(self.span))]
     pub(crate) fn lowering_refusal(&self) -> LoweringRefusal<'static>
     {
@@ -304,7 +304,7 @@ quenchant_shape::reason_enum! {
         /// A description judgment, not a native value-family declaration.
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum Absent {
-            /// A `sign` block declares its sorts and cells inside the description.
+            /// A `theory` block declares its sorts and cells inside the description.
             Signature,
             /// A top-level `oper` declares one operation by its circuit.
             Circuit,
@@ -321,14 +321,14 @@ pub struct DescribedDeclaration
     /// Its name tile.
     pub named: Placed,
     /// Checked description vocabulary; diagnostics remain in the report.
-    pub description: SignDesc<DescriptionGrade>,
+    pub description: TheoryDesc<DescriptionGrade>,
     /// Written operation members, indexed exactly as `description.opers`.
     pub operation_spans: Vec<ByteSpan>,
     /// The parameter classifiers retained for native decoding.
     pub parameters: Vec<FamilyParameter>,
-    /// The written native family classifier; a `sign` block has none.
+    /// The written native family classifier; a `theory` block has none.
     pub classifier: Maybe<Placed, family_classifier::Absent>,
-    /// What a `sign` block presents to the signature of its models; a family
+    /// What a `theory` block presents to the signature of its models; a family
     /// or a top-level operation presents none.
     pub presentation: crate::model::Presented,
     /// Where the members are written.
@@ -537,7 +537,7 @@ impl<'pieces> Run<'pieces>
 /// # Adequacy
 /// - hypothesis: L3 — exact constructor codes, refusal spans and surviving
 ///   siblings distinguish a dropped member, a substituted field and an
-///   incorrectly global refusal; a `sign` with a keyword in a member's
+///   incorrectly global refusal; a `theory` with a keyword in a member's
 ///   classifier slot is refused once, at the keyword.
 /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
 /// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer_293`
@@ -598,7 +598,7 @@ pub fn elaborate_descriptions<'source>(
                 &mut report.diagnostics,
             )
         }
-        else if run.eat(Spelling("sign")).0 {
+        else if run.eat(Spelling("theory")).0 {
             reader
                 .signature(at, &mut run, serial, &mut report.diagnostics)
                 .map(|declaration| Read::Described(alloc::boxed::Box::new(declaration)))
@@ -872,7 +872,7 @@ impl Reader<'_, '_>
                 )
             })
             .collect();
-        let description = SignDesc::new(
+        let description = TheoryDesc::new(
             NominalId::new(serial, family),
             params,
             ctors,
@@ -1346,7 +1346,7 @@ mod family;
 
 mod members;
 
-mod sign;
+mod theory;
 
 pub mod written;
 

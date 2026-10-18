@@ -1079,7 +1079,7 @@ pub enum Repair
 /// - executable: none — the grammar is absent from the value.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the keyword `type` in a `sign` member's classifier slot
+/// - hypothesis: L3 — the keyword `type` in a `theory` member's classifier slot
 ///   is read with `Type` offered.
 /// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer_293`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

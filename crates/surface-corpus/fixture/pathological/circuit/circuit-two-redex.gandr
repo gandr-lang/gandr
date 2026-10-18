@@ -1,5 +1,5 @@
 @[ refuses("OutOfFragment") ]
-sign Nat {
+theory Nat {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
 

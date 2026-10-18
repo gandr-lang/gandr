@@ -131,12 +131,12 @@ fn returned(
 }
 
 #[test]
-fn a_sign_answers_at_every_member()
+fn a_theory_answers_at_every_member()
 {
     let source = SourceText::from(
-        "sign Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
+        "theory Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
          : Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
-         rule unitL : comp(id(a), f) ==> f;\n}\nsign Add {\n  sort Nat : Type;\n  oper add : \
+         rule unitL : comp(id(a), f) ==> f;\n}\ntheory Add {\n  sort Nat : Type;\n  oper add : \
          (Nat, Nat) --> Nat;\n  rule cong1 : (rule p : x ==> x′, data x : Nat, data y : Nat) \
          ==> (z : Nat) {\n    node : p(x) ==> (x′);\n    node : add(x′, y) --> (z);\n  };\n}\n",
     );
@@ -238,7 +238,7 @@ fn a_sign_answers_at_every_member()
 fn a_binder_answers_at_its_sort_and_its_operation_nowhere()
 {
     let source = SourceText::from(
-        "sign IdentityReturn {\n  sort VTy : Type;\n  sort CTy : Type;\n  sort VTm(a : VTy) : \
+        "theory IdentityReturn {\n  sort VTy : Type;\n  sort CTy : Type;\n  sort VTm(a : VTy) : \
          Type+;\n  sort CTm(b : CTy) : Type;\n  oper f : (a : VTy) --> CTy;\n  oper arrow : (a \
          : VTy, b : CTy) --> CTy;\n  oper ret : (a : VTy, t : VTm(a)) --> CTm(f(a));\n  oper \
          lam : (a : VTy, b : CTy, t : pi+ (x : VTm(a)) . CTm(b)) --> CTm(arrow(a, b));\n}\n",
@@ -300,7 +300,7 @@ fn a_binder_answers_at_its_sort_and_its_operation_nowhere()
 fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
 {
     let source = SourceText::from(
-        "sign Pointed {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  rule \
+        "theory Pointed {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  rule \
          flipPt : flip(pt()) <=> pt();\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
@@ -331,7 +331,7 @@ fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
 fn a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it()
 {
     let source = SourceText::from(
-        "sign Wired {\n  sort Nat : Type;\n  sort Bool : Type;\n  oper add : (Nat, Nat) --> \
+        "theory Wired {\n  sort Nat : Type;\n  sort Bool : Type;\n  oper add : (Nat, Nat) --> \
          Nat;\n  oper isz : (Nat) --> Bool;\n  rule late : (rule p : u ==> u2, data x : Nat, \
          data y : Nat) ==> (z : Nat) {\n    node : p(tt) ==> (tlate);\n    node : add(x, y) \
          --> (tt);\n  };\n  rule side : (rule q : x ==> wside, data x : Nat) ==> (o : Nat) {\n    \

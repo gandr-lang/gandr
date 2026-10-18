@@ -513,7 +513,7 @@ fn description_registry_retains_generic_grades_and_first_identity()
     use gandr_theory_levitation::CtorDesc;
     use gandr_theory_levitation::DeclPolarity;
     use gandr_theory_levitation::PrimTy;
-    use gandr_theory_levitation::SignDesc;
+    use gandr_theory_levitation::TheoryDesc;
     use gandr_theory_levitation::ValueTypeRef;
     use gandr_theory_virtual_doctrines::DescTable;
     use gandr_theory_virtual_doctrines::vdc::description_lookup;
@@ -524,7 +524,7 @@ fn description_registry_retains_generic_grades_and_first_identity()
         Name::from("linear"),
         Attrs::empty(),
     );
-    let original = SignDesc::new(
+    let original = TheoryDesc::new(
         id.clone(),
         [],
         [CtorDesc::new("Wrap", field, "Graded", Attrs::empty())],

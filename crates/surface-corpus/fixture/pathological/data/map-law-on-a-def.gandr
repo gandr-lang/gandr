@@ -8,7 +8,7 @@
 
 /// Mapping twice fused into mapping once, over the `def`.
 @[ refuses("MalformedForm") ]
-sign MapLaws {
+theory MapLaws {
   sort L : Type;
 
   rule mapMap : map(f, map(g, xs)) <=> map(compose(f, g), xs);

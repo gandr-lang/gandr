@@ -3,7 +3,7 @@
 //! restriction, instances, and multi-ary cells with replay.
 //!
 //! Objects, tight arrows and restriction are built directly on the crate's
-//! structures: a [`SigObj`] is a tuple of real `SignDesc`s, a tight arrow
+//! structures: a [`SigObj`] is a tuple of real `TheoryDesc`s, a tight arrow
 //! renames real constructor and operation symbols and is checked against
 //! their real `Code`s and `BridgeArity`s, and restriction recomputes real
 //! `RuleFace`s through the real `derive_cell_var_meta`. The cell machinery —
@@ -25,7 +25,7 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NameRef;
 use gandr_theory_levitation::RuleFace;
-use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::derive_cell_var_meta;
 use quenchant_shape::shape::Maybe;
 
@@ -58,7 +58,7 @@ use crate::support::SymbolPresence;
 pub struct SigObj
 {
     /// The signature factors, left to right.
-    pub factors: Vec<SignDesc<Grade>>,
+    pub factors: Vec<TheoryDesc<Grade>>,
 }
 
 impl SigObj
@@ -67,7 +67,7 @@ impl SigObj
     ///
     /// # Specification
     /// trivial.
-    pub fn single(desc: SignDesc<Grade>) -> Self
+    pub fn single(desc: TheoryDesc<Grade>) -> Self
     {
         Self {
             factors: vec![desc],
@@ -169,7 +169,7 @@ impl MorphismError
 ///
 /// # Specification
 /// trivial.
-fn identity_map(desc: &SignDesc<Grade>) -> BTreeMap<Name, Name>
+fn identity_map(desc: &TheoryDesc<Grade>) -> BTreeMap<Name, Name>
 {
     symbol_names(desc)
         .into_iter()
@@ -182,7 +182,7 @@ fn identity_map(desc: &SignDesc<Grade>) -> BTreeMap<Name, Name>
 ///
 /// # Specification
 /// trivial.
-pub fn symbol_names(desc: &SignDesc<Grade>) -> Vec<Name>
+pub fn symbol_names(desc: &TheoryDesc<Grade>) -> Vec<Name>
 {
     desc.ctors
         .iter()
@@ -424,9 +424,9 @@ pub fn check_morphism(morphism: &SigMorphism) -> Vec<MorphismError>
 struct SymbolMapping<'map>
 {
     /// The target factor's description.
-    target: &'map SignDesc<Grade>,
+    target: &'map TheoryDesc<Grade>,
     /// The routed source factor's description.
-    source: &'map SignDesc<Grade>,
+    source: &'map TheoryDesc<Grade>,
     /// The mapped target symbol.
     target_symbol: &'map Name,
     /// The source symbol it maps to.
@@ -535,7 +535,7 @@ quenchant_shape::reason_enum! {
     | Maybe::Absent(symbol::Absent::Undeclared) => desc.ctors.iter().all(|ctor| ctor.name.as_name_ref() != name),
 })]
 fn ctor_code<'desc>(
-    desc: &'desc SignDesc<Grade>,
+    desc: &'desc TheoryDesc<Grade>,
     name: NameRef<'_>,
 ) -> Maybe<&'desc Code<Grade>, symbol::Absent>
 {
@@ -552,7 +552,7 @@ fn ctor_code<'desc>(
 /// # Specification
 /// trivial.
 fn is_op(
-    desc: &SignDesc<Grade>,
+    desc: &TheoryDesc<Grade>,
     name: NameRef<'_>,
 ) -> SymbolPresence
 {
@@ -581,7 +581,7 @@ fn is_op(
     | Maybe::Absent(symbol::Absent::Undeclared) => desc.opers.iter().all(|oper| oper.name.as_name_ref() != name),
 })]
 fn op_arity<'desc>(
-    desc: &'desc SignDesc<Grade>,
+    desc: &'desc TheoryDesc<Grade>,
     name: NameRef<'_>,
 ) -> Maybe<&'desc BridgeArity, symbol::Absent>
 {

@@ -1,5 +1,5 @@
 @[ refuses("OutOfFragment") ]
-sign Copy {
+theory Copy {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (s : Nat);
 

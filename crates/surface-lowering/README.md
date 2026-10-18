@@ -45,7 +45,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `LoweredStructure`, `ValueComponent`, `ManifestComponent`, `manifest_type`, `Coerced`, `Container`, `Role`, `StructureIndex`, `AscriptionForm`, `LoweredModule::structures`, `LoweredModule::path_of` and `LoweredModule::structured_names`: modules flattened to named members, their stratum items and their structured names.
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
-- `model::derive`, `ModelSignature`, `LoweredModule::signs` and `LoweredSign`: `Model(S)` derived from the `Sig` value `sign S` defines, a module ascribed `: Model(S)` checked against it, and a sign's description and presentation handed to later passes; type members with parameters, expanding where they are applied (`module::model`).
+- `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived from the `Theory` value `theory S` defines, a module ascribed `: Model(S)` checked against it, and a theory's description and presentation handed to later passes; type members with parameters, expanding where they are applied (`module::model`).
 - Binary sessions: a session type read whole into one protocol; `send`, `select`, `offer` and `close`, and the statements `recv(c) as x ;` and `fork (c : S) t as d ;`, lowered to core session actions; `fork !`, `dup`, `acquire` and `release` reserved by name.
 - Worlds: `world w ;` as `DeclarationOutcome::World`, `A at w`, `hold`, `leta`, `migrate [w]`, `mobile type T` as `Mark`, `@[ entry(…) ]` as `LoweredModule::worlds`.
 
@@ -97,7 +97,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Module collection, one refusal per declaration, module declarations | [`module`](src/module.rs) |
 | Type members, abstract components and opaque ascription | [`module::sealing`](src/module/sealing.rs), [`lower::sealing`](src/lower/sealing.rs) |
 | `Model(S)`: the derivation, sort inference over index terms, type families, and the instance check | [`model`](src/model.rs), [`module::model`](src/module/model.rs), [`lower::model`](src/lower/model.rs) |
-| Descriptions, one producer for a data form, signature blocks, cells and circuit wiring | [`description`](src/description.rs), [`description::sign`](src/description/sign.rs), [`desc_cells`](src/desc_cells.rs) |
+| Descriptions, one producer for a data form, signature blocks, cells and circuit wiring | [`description`](src/description.rs), [`description::theory`](src/description/theory.rs), [`desc_cells`](src/desc_cells.rs) |
 | The namespace engine, its trie and the outermost scope | [`namespace`](src/namespace.rs), [`namespace::trie`](src/namespace/trie.rs), [`namespace::recognition`](src/namespace/recognition.rs) |
 | Imports | [`import`](src/import.rs) |
 | Sorts, function tails, blocks, insertions, universes, type operators, products, literals, the two sweeps | [`lower`](src/lower.rs) |

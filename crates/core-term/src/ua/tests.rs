@@ -1,4 +1,4 @@
-//! Witnesses for reading a `sign` description as a graphical species.
+//! Witnesses for reading a `theory` description as a graphical species.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -49,13 +49,13 @@ fn oper(
     )
 }
 
-/// A `sign` description named `Magma`, declaring the sort `M` and `opers`.
+/// A `theory` description named `Magma`, declaring the sort `M` and `opers`.
 ///
 /// # Specification
 /// trivial.
-fn sign(opers: Vec<OperDesc>) -> SignDesc<()>
+fn theory(opers: Vec<OperDesc>) -> TheoryDesc<()>
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "Magma"),
         Vec::new(),
         Vec::new(),
@@ -89,9 +89,9 @@ fn label(Spelled(text): Spelled<'_>) -> FieldLabel
 }
 
 #[test]
-fn a_sign_reads_as_its_generators_in_written_order()
+fn a_theory_reads_as_its_generators_in_written_order()
 {
-    let description = Description::read(&sign(alloc::vec![
+    let description = Description::read(&theory(alloc::vec![
         oper(Spelled("times"), &[Spelled("x"), Spelled("y")]),
         oper(Spelled("one"), &[]),
         oper(Spelled("plus"), &[Spelled("x"), Spelled("y")]),
@@ -128,12 +128,12 @@ fn a_sign_reads_as_its_generators_in_written_order()
 #[test]
 fn a_description_outside_the_stratum_is_refused()
 {
-    let two_sorted = sign(Vec::new()).with_sorts([
+    let two_sorted = theory(Vec::new()).with_sorts([
         SortDesc::new("M", DeclPolarity::Data),
         SortDesc::new("N", DeclPolarity::Data),
     ]);
     assert_eq!(Description::read(&two_sorted), Err(Unread::Sorts));
-    let mut ruled = sign(alloc::vec![oper(Spelled("times"), &[
+    let mut ruled = theory(alloc::vec![oper(Spelled("times"), &[
         Spelled("x"),
         Spelled("y")
     ])]);
@@ -144,7 +144,7 @@ fn a_description_outside_the_stratum_is_refused()
         SurfaceSpan::default(),
     )]);
     assert_eq!(Description::read(&ruled), Err(Unread::Rules));
-    let foreign = sign(alloc::vec![OperDesc::new(
+    let foreign = theory(alloc::vec![OperDesc::new(
         "size",
         BridgeArity::single_output([SortRef::new("x", "M")], SortRef::new("n", "Nat")),
         Attrs::empty(),

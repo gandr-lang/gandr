@@ -71,9 +71,9 @@
           "match": "\\b(pure|return|become)\\b"
         },
         {
-          "comment": "sign",
+          "comment": "theory",
           "name": "storage.type.gandr",
-          "match": "\\b(sign)\\b"
+          "match": "\\b(theory)\\b"
         },
         {
           "comment": "val",

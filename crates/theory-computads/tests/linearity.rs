@@ -20,7 +20,7 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::NominalSerial;
 use gandr_theory_levitation::RuleFace;
-use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::TheoryDesc;
 
 use crate::fixture::Ungraded;
 use crate::fixture::face;
@@ -85,11 +85,11 @@ fn a_refused_face_does_not_stop_its_linear_neighbours()
 ///
 /// # Specification
 /// trivial.
-fn bit_with<C>(rules: C) -> SignDesc<Ungraded>
+fn bit_with<C>(rules: C) -> TheoryDesc<Ungraded>
 where
     C: Into<Box<[RuleFace]>>,
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "Bit"),
         Vec::new(),
         [CtorDesc::new("Off", Code::unit(), "Bit", Attrs::empty())],

@@ -14,9 +14,9 @@
 //! side as a cut of a value against an operation frame, so a family's rule
 //! whose left-hand side applies an operation where that value stands,
 //! `add(add(m, n), k)`, has no cell: it is refused at its span as a shape the
-//! elaboration does not read. A `sign` block's law of that shape over
+//! elaboration does not read. A `theory` block's law of that shape over
 //! unindexed sorts, `turn(unturn(x)) ==> x`, compiles to no operation body, and
-//! is read over terms (`elaborate_sign_desc`): a presentation's laws are
+//! is read over terms (`elaborate_theory_desc`): a presentation's laws are
 //! elaborated under the shape reading, a family's rules under the generative
 //! one. Over an indexed sort, `comp(id(a), f) ==> f`, the law stays refused at
 //! its span: its indices are fixed by types a term does not carry. A face whose
@@ -32,7 +32,7 @@
 //! `desc_cells::tests::a_single_redex_block_reaches_the_cell_layer_behind_the_gate`,
 //! `desc_cells::tests::a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output`,
 //! `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`,
-//! `description::sign::tests::the_cat_shape_laws_are_written_faces`.
+//! `description::theory::tests::the_cat_shape_laws_are_written_faces`.
 //!
 //! `circuit::embed` reads literal port wiring into the circuit-algebra matcher.
 //! Equal spelling in different generator roles remains distinct, and an
@@ -66,7 +66,7 @@ use gandr_theory_computads::OpElaborateError;
 use gandr_theory_computads::OpFrame;
 use gandr_theory_computads::PresentedRules;
 use gandr_theory_computads::elaborate_data_desc;
-use gandr_theory_computads::elaborate_sign_desc;
+use gandr_theory_computads::elaborate_theory_desc;
 use gandr_theory_computads::presented_reading;
 use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::SurfaceSpan;
@@ -268,7 +268,7 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             circuits,
             eta,
         } = match declaration.presentation {
-            Maybe::Present(_) => elaborate_sign_desc(reading),
+            Maybe::Present(_) => elaborate_theory_desc(reading),
             Maybe::Absent(_) => elaborate_data_desc(reading),
         };
         let examined = declined_opers.is_empty()

@@ -1,5 +1,5 @@
 @[ refuses("OutOfFragment") ]
-sign ConsumedTwice {
+theory ConsumedTwice {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);
 
@@ -9,7 +9,7 @@ sign ConsumedTwice {
 }
 
 @[ refuses("OutOfFragment") ]
-sign ProducedTwice {
+theory ProducedTwice {
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
   oper g : (a : Nat) --> (b : Nat);
@@ -21,7 +21,7 @@ sign ProducedTwice {
 }
 
 @[ refuses("OutOfFragment") ]
-sign SharedRedexPort {
+theory SharedRedexPort {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);
 
@@ -37,7 +37,7 @@ sign SharedRedexPort {
 }
 
 @[ refuses("MalformedForm") ]
-sign SortDisagreement {
+theory SortDisagreement {
   sort Nat : Type;
   sort Bit : Type;
   oper narrow : (v : Nat) --> (v : Bit);

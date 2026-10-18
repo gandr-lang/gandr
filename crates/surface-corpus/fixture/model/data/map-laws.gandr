@@ -13,7 +13,7 @@
 /// `appCompose` reads a composite, `composeAssoc` orients composition, and
 /// `mapMap` is the law, mapping twice fused into mapping once.
 @[ normalizes("map(inc, map(dbl, cons(one, nil))) ~> cons(app(inc, app(dbl, one)), nil)") ]
-sign ListMap {
+theory ListMap {
   sort E : Type;
   sort F : Type;
   sort L : Type;

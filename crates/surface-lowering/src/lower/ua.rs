@@ -1,5 +1,5 @@
 //! Univalence at a stratum in the lowering: `ua[n, k](a, b, f, g)`, the path
-//! in the universe between two `sign` descriptions that an equivalence of
+//! in the universe between two `theory` descriptions that an equivalence of
 //! their species at a certified stratum derives.
 //!
 //! # The spelling
@@ -7,7 +7,7 @@
 //! `ua[n, k](a, b, f, g)` is a call whose head instantiates `ua` at two
 //! number literals. `n` is the degree the statement is made at and `k` the
 //! catalogue's bound, the largest shape the conditions are checked over. `a`
-//! and `b` name `sign` blocks, each read as the graphical species its
+//! and `b` name `theory` blocks, each read as the graphical species its
 //! generators present ([`gandr_core_term::ua::Description::read`]). `f` and
 //! `g` are records keyed by generator labels, `f` by `a`'s and `g` by `b`'s:
 //! the label names the corolla its generator stands at, and the field is the
@@ -28,17 +28,17 @@
 //!   outside the term. Reversal: a catalogue cheap enough at every bound a
 //!   program meets lets `k` be inferred and written only to narrow it.
 //! - **Descriptions are named, translators keyed by generator.** `a` and `b`
-//!   are resolved against the module's `sign` blocks by name — a block's name
-//!   also defines the block's value at `Sig`, but the species is read off the
-//!   block's description — and the record labels are the generator names a
+//!   are resolved against the module's `theory` blocks by name — a block's name
+//!   also defines the block's value at `Theory`, but the species is read off
+//!   the block's description — and the record labels are the generator names a
 //!   reader already sees in the block. The alternative, translators listed
 //!   positionally in corolla order, makes the reader recompute the corolla
 //!   catalogue to see which translator moves which generator. Reversal: a
-//!   species read off a `Sig` value lets `a` and `b` be any term that
+//!   species read off a `Theory` value lets `a` and `b` be any term that
 //!   normalises to a presentation.
 //! - **The lowering reads, the checker decides.** The lowering refuses only
 //!   what it can see in the syntax: a head that is not `ua` at two literals, an
-//!   operand count other than four, a name no `sign` block declares, a block
+//!   operand count other than four, a name no `theory` block declares, a block
 //!   with a refused member, and a block that is no graphical species. Degree,
 //!   condition, bound and the translators themselves are the checker's, so one
 //!   set of refusals names every defect a statement can have once it is
@@ -295,20 +295,20 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// The description the `sign` block `operand` names reads as, a graphical
+    /// The description the `theory` block `operand` names reads as, a graphical
     /// species.
     ///
     /// # Specification
     /// - requires: `operand` is an argument of the call at `site`.
-    /// - ensures: the description of the one `sign` block of the module
+    /// - ensures: the description of the one `theory` block of the module
     ///   declared under the name `operand` spells.
-    /// - fails: an operand that is no name; a name no `sign` block declares, or
-    ///   several do; a block with a member the description route or the cell
+    /// - fails: an operand that is no name; a name no `theory` block declares,
+    ///   or several do; a block with a member the description route or the cell
     ///   gate refused; a block [`Description::read`] refuses.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnresolvedName`] for a name no `sign` block
+    /// [`LoweringRefusal::UnresolvedName`] for a name no `theory` block
     /// declares; [`LoweringRefusal::OutOfFragment`] at the operand otherwise,
     /// with the indexed boundary for an indexed sort and the unadmitted one for
     /// every other refusal.

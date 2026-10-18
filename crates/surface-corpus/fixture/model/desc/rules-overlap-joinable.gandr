@@ -36,7 +36,7 @@ def two_plus_one_overlapping = thunk { become add(Succ(Succ(Zero)), Succ(Zero)) 
 /// mul(c, d)))`. The rewrite at the peak matches the rule's `z` against a
 /// subterm holding the peak's own `z`, which stays the peak's (#654).
 @[ checks ]
-sign Semigroup {
+theory Semigroup {
   sort S : Type;
 
   oper mul : (x : S, y : S) --> S;

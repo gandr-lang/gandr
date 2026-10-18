@@ -660,9 +660,9 @@ fn certificate_corpus() -> (CellStore, alloc::vec::Vec<Tracelet>)
     use gandr_theory_levitation::NominalId;
     use gandr_theory_levitation::OperDesc;
     use gandr_theory_levitation::RuleFace;
-    use gandr_theory_levitation::SignDesc;
     use gandr_theory_levitation::SortRef;
     use gandr_theory_levitation::SurfaceSpan;
+    use gandr_theory_levitation::TheoryDesc;
 
     let nat_op = |name: &str, inputs: alloc::vec::Vec<SortRef>| {
         OperDesc::new(
@@ -679,7 +679,7 @@ fn certificate_corpus() -> (CellStore, alloc::vec::Vec<Tracelet>)
             SurfaceSpan::new(0_usize.into(), 0_usize.into()),
         )
     };
-    let desc: SignDesc<()> = SignDesc::new(
+    let desc: TheoryDesc<()> = TheoryDesc::new(
         NominalId::new(0_u64.into(), "Nat"),
         alloc::vec::Vec::new(),
         [

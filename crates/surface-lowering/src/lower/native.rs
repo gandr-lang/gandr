@@ -2534,8 +2534,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the parameter count of the data declaration whose slot takes
-    ///   `constant`, and none for `Sig`; the undeclared absence for any other
-    ///   declaration.
+    ///   `constant`, and none for `Theory`; the undeclared absence for any
+    ///   other declaration.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -4342,8 +4342,8 @@ impl<'source> Lowerer<'_, 'source>
                         .collect()
                 })
                 .unwrap_or_default(),
-            Generators::Presentation => match self.collected.sig {
-                Maybe::Present(ref sig) => sig.arities.clone(),
+            Generators::Presentation => match self.collected.theory {
+                Maybe::Present(ref theory) => theory.arities.clone(),
                 Maybe::Absent(_) => Vec::new(),
             },
             Generators::Words(words) => {

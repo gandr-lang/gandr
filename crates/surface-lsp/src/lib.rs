@@ -30,7 +30,7 @@
 //! that declaration. The types come from a typed run over the document's
 //! text, built at the first hover after an edit and kept until the next: its
 //! entries are the nodes the run judged, the binders their uses resolve to,
-//! the written types it formed, and the members of `sign` blocks and `data`
+//! the written types it formed, and the members of `theory` blocks and `data`
 //! families at the types the description route states for them. Each type is
 //! spelled in the form the editor's `gandr.presentation.form` names, the
 //! sugared one unless it names the explicit one; a client whose markdown

@@ -111,12 +111,12 @@
 //! enters no sequent cell; an operation face keeps its own. A face applying a
 //! declined operation is declined before either reading.
 //!
-//! A `sign` block's laws call for the same reading when the sequent one cannot
-//! shape them. A law `turn(unturn(x)) ==> x` applies an operation where an
-//! argument stands; a family's operation rule of that shape is declined,
+//! A `theory` block's laws call for the same reading when the sequent one
+//! cannot shape them. A law `turn(unturn(x)) ==> x` applies an operation where
+//! an argument stands; a family's operation rule of that shape is declined,
 //! because the operation's body is compiled from its rules and no producer
 //! pattern matches a call. A presentation's laws compile to nothing — a model
-//! satisfies them — so [`elaborate_sign_desc`] reads such a law over terms
+//! satisfies them — so [`elaborate_theory_desc`] reads such a law over terms
 //! ([`DescReading::Shape`]), where it rewrites a call wherever the call stands,
 //! and [`elaborate_data_desc`] declines it ([`DescReading::Generative`]). Over
 //! unindexed sorts a critical pair of well-sorted laws is well sorted: two
@@ -288,10 +288,10 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::RuleFace;
-use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::TermArgs;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::WhiskeredCell;
 use gandr_theory_levitation::elaborate_body;
 use quenchant_shape::shape::Maybe;
@@ -827,7 +827,7 @@ quenchant_shape::reason_enum! {
 ///
 /// # Specification
 /// - provides: the generative reading of a `data` or `codata` block, whose
-///   operations run by their rules, and the shape reading of a `sign` block,
+///   operations run by their rules, and the shape reading of a `theory` block,
 ///   whose rules are laws a model satisfies and run nowhere.
 /// - executable: none — a reading is a tag the elaboration branches on.
 ///
@@ -856,7 +856,7 @@ pub enum DescReading
 /// trivial.
 #[inline]
 #[must_use]
-pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
+pub fn elaborate_data_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 {
     elaborate_desc(desc, DescReading::Generative)
 }
@@ -868,7 +868,7 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
 /// trivial.
 #[inline]
 #[must_use]
-pub fn elaborate_sign_desc<G>(desc: &SignDesc<G>) -> DescElaboration
+pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 {
     elaborate_desc(desc, DescReading::Shape)
 }
@@ -979,7 +979,7 @@ pub fn elaborate_sign_desc<G>(desc: &SignDesc<G>) -> DescElaboration
 },
 )]
 fn elaborate_desc<G>(
-    desc: &SignDesc<G>,
+    desc: &TheoryDesc<G>,
     reading: DescReading,
 ) -> DescElaboration
 {
@@ -1244,7 +1244,7 @@ fn admit_circuit_rule(
 )]
 fn mint_eta_cells<G>(
     store: &mut CellStore,
-    desc: &SignDesc<G>,
+    desc: &TheoryDesc<G>,
     opers: &[OpFrame],
 ) -> EtaElaboration
 {
@@ -1295,7 +1295,7 @@ fn mint_eta_cells<G>(
 },
 )]
 fn inverts<G>(
-    desc: &SignDesc<G>,
+    desc: &TheoryDesc<G>,
     op: &Name,
     ctor: &Name,
 ) -> InverseFacePresence
@@ -3613,7 +3613,7 @@ mod tests
     {
         let x = || FreeTerm::var("x");
         let turn = |name: &str, inner: FreeTerm| FreeTerm::ctor(name, [inner]);
-        let circle = SignDesc::<Ungraded>::new(
+        let circle = TheoryDesc::<Ungraded>::new(
             NominalId::new(NominalSerial::from(0_u64), "Circle"),
             Vec::new(),
             [
@@ -3752,7 +3752,7 @@ mod tests
             family.presented,
             "and has no term reading"
         );
-        let presentation = elaborate_sign_desc(&laws);
+        let presentation = elaborate_theory_desc(&laws);
         assert_eq!(
             vec![(
                 DeclinedFaceIndex::from(3_usize),
@@ -3789,7 +3789,7 @@ mod tests
             SortIndex::new("n", "Nat"),
         ])]
         .into();
-        let presentation = elaborate_sign_desc(&indexed);
+        let presentation = elaborate_theory_desc(&indexed);
         assert_eq!(
             family.declined_faces, presentation.declined_faces,
             "an indexed presentation declines what a family does"
@@ -4525,11 +4525,11 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn bit_with<C>(rules: C) -> SignDesc<Ungraded>
+    fn bit_with<C>(rules: C) -> TheoryDesc<Ungraded>
     where
         C: Into<Box<[RuleFace]>>,
     {
-        SignDesc::new(
+        TheoryDesc::new(
             NominalId::new(NominalSerial::from(0_u64), "Bit"),
             Vec::new(),
             [CtorDesc::new("Off", Code::unit(), "Bit", Attrs::empty())],
@@ -4548,12 +4548,12 @@ mod tests
     fn nat_with<O, C>(
         opers: O,
         rules: C,
-    ) -> SignDesc<Ungraded>
+    ) -> TheoryDesc<Ungraded>
     where
         O: Into<Box<[OperDesc]>>,
         C: Into<Box<[RuleFace]>>,
     {
-        SignDesc::new(
+        TheoryDesc::new(
             NominalId::new(NominalSerial::from(0_u64), "Nat"),
             Vec::new(),
             [
@@ -4576,11 +4576,11 @@ mod tests
         oper: N,
         lhs: FreeTerm,
         rhs: FreeTerm,
-    ) -> SignDesc<Ungraded>
+    ) -> TheoryDesc<Ungraded>
     where
         N: Into<Name>,
     {
-        SignDesc::new(
+        TheoryDesc::new(
             NominalId::new(NominalSerial::from(0_u64), "Wrap"),
             Vec::new(),
             [CtorDesc::new(
@@ -4605,7 +4605,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn wrapper(polarity: DeclPolarity) -> SignDesc<Ungraded>
+    fn wrapper(polarity: DeclPolarity) -> TheoryDesc<Ungraded>
     {
         let mut desc = wrapper_with(
             "unwrap",

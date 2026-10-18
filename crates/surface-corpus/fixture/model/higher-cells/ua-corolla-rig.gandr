@@ -6,14 +6,14 @@
 // inhabit, and two corollas it relates must have as many elements.
 
 /// A rig's binary operations, two corollas of one shape.
-sign Rig {
+theory Rig {
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);
 }
 
 /// A semigroup: one binary operation.
-sign Semi {
+theory Semi {
   sort S : Type;
   oper mul : (x : S, y : S) --> (z : S);
 }

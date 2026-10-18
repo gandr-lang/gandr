@@ -49,7 +49,7 @@ use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NameRef;
 use gandr_theory_levitation::PrimTy;
-use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::ValueTypeNode;
 use gandr_theory_levitation::ValueTypeRef;
 use gandr_theory_levitation::ValueTypeView;
@@ -336,7 +336,7 @@ pub fn decode_ref(
 #[spec(ensures: |result| result.as_ref().map_or(true, |id| arena.value_type(*id).is_some()))]
 pub fn decode_desc<G>(
     arena: &mut CoreArena,
-    description: &SignDesc<G>,
+    description: &TheoryDesc<G>,
     context: DecodeContext<'_>,
 ) -> Result<ValueTypeId, DecodeError>
 {
@@ -381,7 +381,7 @@ pub fn decode_desc<G>(
 #[spec(ensures: |result| result.as_ref().map_or(true, |signature| signature.constructors().len() == description.ctors.len() && signature.parameters().len() == description.params.len() && signature.kind() == kind))]
 pub fn decode_signature<G>(
     arena: &mut CoreArena,
-    description: &SignDesc<G>,
+    description: &TheoryDesc<G>,
     context: DecodeContext<'_>,
     parameters: Vec<ValueTypeId>,
     kind: ValueTypeId,
@@ -434,7 +434,7 @@ pub fn decode_signature<G>(
 /// - witness: `description::tests::decode_desc_declines_codata_and_the_uninhabited`
 /// - witness: `description::tests::decode_desc_declines_a_multi_sorted_signature`
 #[spec(ensures: |result| result.is_ok() == (description.polarity == DeclPolarity::Data && description.sorts.len() == 1))]
-fn single_data_sort<G>(description: &SignDesc<G>) -> Result<(), DecodeError>
+fn single_data_sort<G>(description: &TheoryDesc<G>) -> Result<(), DecodeError>
 {
     if description.polarity == DeclPolarity::Codata {
         return Err(DecodeError::CodataNu);

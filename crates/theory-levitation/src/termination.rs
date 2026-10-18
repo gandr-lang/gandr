@@ -80,7 +80,7 @@ use crate::boundary::PathOrderStatus;
 use crate::boundary::RuleIndex;
 use crate::code::Name;
 use crate::desc::OperDesc;
-use crate::desc::SignDesc;
+use crate::desc::TheoryDesc;
 use crate::rule::FreeTerm;
 use crate::rule::TermView;
 
@@ -128,7 +128,7 @@ pub enum Termination
 })]
 #[inline]
 #[must_use]
-pub fn orient_rules<G>(desc: &SignDesc<G>) -> Termination
+pub fn orient_rules<G>(desc: &TheoryDesc<G>) -> Termination
 {
     let precedence = Precedence::of(desc);
     for (index, face) in desc.rules.iter().enumerate() {
@@ -176,7 +176,7 @@ impl<'desc> Precedence<'desc>
     #[spec(ensures: |ret| ret.ranks.len() == desc.opers.len())]
     #[inline]
     #[must_use]
-    pub fn of<G>(desc: &'desc SignDesc<G>) -> Self
+    pub fn of<G>(desc: &'desc TheoryDesc<G>) -> Self
     {
         let count = desc.opers.len();
         let declared = |name: &Name| {
@@ -532,11 +532,11 @@ mod tests
     fn nat<O>(
         operations: O,
         rules: Vec<(FreeTerm, FreeTerm)>,
-    ) -> SignDesc<Grade>
+    ) -> TheoryDesc<Grade>
     where
         O: IntoIterator<Item = OperDesc>,
     {
-        SignDesc::new(
+        TheoryDesc::new(
             NominalId::new(NominalSerial::from(0_u64), "Nat"),
             Vec::new(),
             [

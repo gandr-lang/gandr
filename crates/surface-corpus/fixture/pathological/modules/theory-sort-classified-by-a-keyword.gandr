@@ -1,4 +1,4 @@
 @[ refuses("MalformedForm") ]
-sign Magma {
+theory Magma {
   sort M : type;
 }

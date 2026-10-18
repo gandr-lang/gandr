@@ -1,5 +1,5 @@
 @[ refuses("OutOfFragment") ]
-sign Cong {
+theory Cong {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);
 
@@ -16,7 +16,7 @@ sign Cong {
 }
 
 @[ refuses("OutOfFragment") ]
-sign Chain {
+theory Chain {
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
   oper g : (a : Nat) --> (b : Nat);

@@ -329,7 +329,7 @@ fn add_type_rules(
             ])),
         ]),
     ));
-    // The universe of representable sorts, `Type+`: the classifier a `sign`
+    // The universe of representable sorts, `Type+`: the classifier a `theory`
     // block's `sort` member writes for a sort a port may bind a variable of.
     // It is one marked tile, so `Type[+]`, the universe of value types, keeps
     // its bracket and the sum `Type + A` its sign. The grammar reads it at every

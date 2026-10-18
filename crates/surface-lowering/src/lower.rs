@@ -2925,7 +2925,7 @@ struct Lowerer<'run, 'source>
     nullary: BTreeMap<NodeIndex, NodeIndex>,
     /// Each callable operation's minted type and body, by slot.
     operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
-    /// Each `sign` block's definition, `S : Sig`, as its minted type and
+    /// Each `theory` block's definition, `S : Theory`, as its minted type and
     /// value, by slot.
     presented: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// The frame of every capability a capability scope binds.
@@ -13372,13 +13372,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   lowering run.
     /// - ensures: a stored refusal takes precedence, then a refusal a check
     ///   after minting filed; a world declaration is the world it names; a data
-    ///   declaration, or a described family the decoder admitted, `Sig` among
-    ///   them, is the index of its minted signature; an operation, and a `sign`
-    ///   block's definition, is the type and body minted for it; an abstract
-    ///   slot is the abstract type it lowered to, and a kind witness the check
-    ///   of its type member's code at the kind; otherwise the available
-    ///   signature — written, a function tail's, or the type a model derives —
-    ///   and body select Completed, Uncompleted or Bodied.
+    ///   declaration, or a described family the decoder admitted, `Theory`
+    ///   among them, is the index of its minted signature; an operation, and a
+    ///   `theory` block's definition, is the type and body minted for it; an
+    ///   abstract slot is the abstract type it lowered to, and a kind witness
+    ///   the check of its type member's code at the kind; otherwise the
+    ///   available signature — written, a function tail's, or the type a model
+    ///   derives — and body select Completed, Uncompleted or Bodied.
     /// - provides: the declaration outcome without manufacturing absent halves.
     /// - fails: a refused member witness is Unminted; if neither half exists,
     ///   the signature’s absence is preserved.
@@ -18562,7 +18562,7 @@ mod tests
         let pbg = grammar();
         let tree = repaired(
             &pbg,
-            SourceText::from("sign Magma {\n  sort M : type;\n}\n"),
+            SourceText::from("theory Magma {\n  sort M : type;\n}\n"),
         );
         let LoweringRefusal::MalformedForm { span, fault, .. } = refusal_in(&pbg, &tree)
         else {
@@ -18570,7 +18570,7 @@ mod tests
         };
         assert_eq!(
             span,
-            at(24_usize, 28_usize),
+            at(26_usize, 30_usize),
             "the refusal stands at the keyword itself"
         );
         let FormFault::Repaired(Repair::Keyword(stray)) = fault

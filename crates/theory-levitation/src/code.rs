@@ -3,7 +3,7 @@
 //! atom-abstraction.
 //!
 //! A [`Code`] describes one constructor's payload. The tag σ over constructors
-//! lives at the description level (the constructor table of [`SignDesc`]);
+//! lives at the description level (the constructor table of [`TheoryDesc`]);
 //! the [`Code::sum`] former additionally represents an inline sum, so a
 //! retrofitted builtin like `Boolean = 1 + 1` is one code. The fragment is
 //! first-order — no function-typed field — because that is what keeps code
@@ -13,7 +13,7 @@
 //! A field's grade is the consumer's: [`Code`] is generic over it, stores it
 //! as given, compares it structurally, and never interprets it.
 //!
-//! [`SignDesc`]: crate::SignDesc
+//! [`TheoryDesc`]: crate::TheoryDesc
 //!
 //! # Code equality
 //!

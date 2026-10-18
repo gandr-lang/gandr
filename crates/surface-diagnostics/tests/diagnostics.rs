@@ -715,9 +715,9 @@ fn a_mismatch_under_a_binder_names_it()
 fn a_refusal_spells_its_binders_by_name_418()
 {
     let text = SourceText::from(
-        "data Sig : Type {\n  Monoid : Sig;\n  Group : Sig;\n}\ndef counted_at(s : Sig) -> \
+        "data Theory : Type {\n  Monoid : Theory;\n  Group : Theory;\n}\ndef counted_at(s : Theory) -> \
              -F Type {\n  case s {\n    Monoid => return Integer,\n    Group => return \
-             String\n  }\n}\ndef moved(presented : Sig, other : Sig, n : counted_at(presented)) \
+             String\n  }\n}\ndef moved(presented : Theory, other : Theory, n : counted_at(presented)) \
              -> -F counted_at(other) {\n  n\n}\n",
     );
     let diagnostic = only(Path::new("moved.gandr"), text);
@@ -739,8 +739,8 @@ fn a_refusal_spells_its_binders_by_name_418()
             .map(ToString::to_string)
             .collect::<Vec<_>>(),
         [
-            "presented : Sig",
-            "other : Sig",
+            "presented : Theory",
+            "other : Theory",
             "n : counted_at(presented)"
         ],
         "a hypothesis's type names the binders before it"
@@ -752,7 +752,7 @@ fn a_refusal_spells_its_binders_by_name_418()
     assert!(
         notes.iter().any(|note| {
             note.contains(
-                "(presented : Sig) -> (other : Sig) -> counted_at(presented) -> -F \
+                "(presented : Theory) -> (other : Theory) -> counted_at(presented) -> -F \
                      counted_at(other)",
             )
         }),

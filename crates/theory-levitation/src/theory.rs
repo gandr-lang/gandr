@@ -1,50 +1,71 @@
-//! The presentation code: `Sig`, the datatype whose values are presentations.
+//! The presentation code: `Theory`, the datatype whose values are
+//! presentations.
 //!
-//! A `sign` block presents a theory — sorts with their index telescopes,
+//! A `theory` block presents a theory — sorts with their index telescopes,
 //! operations with their input and output ports, rules as two terms over
-//! variables — and [`sig_desc`] describes the datatype `Sig` whose values are
-//! those presentations, in the first-order fragment every declared datatype is
-//! described in. [`SigValue`] is one value of it: [`SigValue::encode`] builds
-//! it from a presentation's [`SigParts`], [`SigValue::decode`] reads them back
-//! and refuses a value the grammar does not admit, and [`SigValue::identity`]
-//! is the value's canonical encoding under [`serialize_value`]. Those bytes are
-//! the presentation's one identity: two presentations are the same exactly
-//! when their values encode alike, and no serial, name or digest stands beside
-//! them as a second one.
+//! variables — and [`theory_desc`] describes the datatype `Theory` whose values
+//! are those presentations, in the first-order fragment every declared datatype
+//! is described in. [`TheoryValue`] is one value of it: [`TheoryValue::encode`]
+//! builds it from a presentation's [`TheoryParts`], [`TheoryValue::decode`]
+//! reads them back and refuses a value the grammar does not admit, and
+//! [`TheoryValue::identity`] is the value's canonical encoding under
+//! [`serialize_value`]. Those bytes are the presentation's one identity: two
+//! presentations are the same exactly when their values encode alike, and no
+//! serial, name or digest stands beside them as a second one.
 //!
-//! # Two encodings of a `sign` block
+//! # The word
 //!
-//! A `sign` block has two encodings, and the second is read off the first.
-//! [`SigValue`] is the presentation as a value: what the block states, coded
-//! so its bytes are the presentation's identity, the core definition `S : Sig`
-//! and what `Model(S)` derives from. [`SignDesc`] is the declaration table
-//! that [`check_desc`](crate::check_desc), the first-order fold
+//! The block presents a theory and `Theory` is the datatype of presentations,
+//! so `theory Monoid { … }` binds `Monoid : Theory` and `Model(Monoid)` is the
+//! signature of its models: the object theories of Kovács and Sattler's
+//! generalised logical framework, presented by a signature in Kaposi and
+//! Xie's sense, and the word Clear, OBJ and Maude chose for the same construct
+//! (`th`, `fth`).
+//!
+//! - **Choice.** One word at both levels, the keyword and the datatype.
+//! - **Alternatives.** `sign` and `Sig`, the earlier spelling, named the
+//!   presentation rather than what it presents and spelled one concept two
+//!   ways; `signature` is overloaded by ML's module types; a second keyword
+//!   beside the first for a theory that organises rather than presents splits
+//!   one construct along a line the operations on it (inclusion, extension)
+//!   draw better.
+//! - **Reversal.** A former whose values are not presentations would take a
+//!   word of its own; the identity bytes carry constructor tags, never the
+//!   datatype's name, so a rename moves no presentation's identity.
+//!
+//! # Two encodings of a `theory` block
+//!
+//! A `theory` block has two encodings, and the second is read off the first.
+//! [`TheoryValue`] is the presentation as a value: what the block states, coded
+//! so its bytes are the presentation's identity, the core definition `S :
+//! Theory` and what `Model(S)` derives from. [`TheoryDesc`] is the declaration
+//! table that [`check_desc`](crate::check_desc), the first-order fold
 //! ([`first_order`](crate::first_order())) and the cell layer read; every
 //! `data` declaration and retrofitted former shares it, so it also has fields
 //! no presentation fills: parameters, constructors as graded and attributed
-//! codes, a polarity. The `sign` reader encodes the value once and decodes the
-//! table from it, adding three things the value cannot hold. The first is the
-//! minted nominal identity: the value's identity is structural, so two blocks
-//! that state the same members share one identity yet stay two declarations.
-//! The second is the members' spans, which are provenance and would tie
-//! identity to layout. The third is the circuit rules, which `Sig` does not
-//! code yet (§ What waits) and which travel beside the value.
+//! codes, a polarity. The `theory` reader encodes the value once and decodes
+//! the table from it, adding three things the value cannot hold. The first is
+//! the minted nominal identity: the value's identity is structural, so two
+//! blocks that state the same members share one identity yet stay two
+//! declarations. The second is the members' spans, which are provenance and
+//! would tie identity to layout. The third is the circuit rules, which `Theory`
+//! does not code yet (§ What waits) and which travel beside the value.
 //!
 //! - **Choice.** The table is a reading of the value, not a second record of
 //!   the block: one reading of the block, one identity, and the consumers of
 //!   the table unchanged.
 //! - **Alternatives.** Reading the block twice, once into each encoding, lets
-//!   the two drift. The value alone, with every consumer reading `Sig`, moves
-//!   the cell layer onto a code that does not yet hold circuit rules.
-//! - **Reversal.** Once `Sig` codes circuit rules, a `sign` block's table is
-//!   wholly a reading of its value, and its consumers can read the value
-//!   itself. The decoding lives in the `sign` reader today; moving it here, as
-//!   the one function from a value, its nominal identity and its spans to a
+//!   the two drift. The value alone, with every consumer reading `Theory`,
+//!   moves the cell layer onto a code that does not yet hold circuit rules.
+//! - **Reversal.** Once `Theory` codes circuit rules, a `theory` block's table
+//!   is wholly a reading of its value, and its consumers can read the value
+//!   itself. The decoding lives in the `theory` reader today; moving it here,
+//!   as the one function from a value, its nominal identity and its spans to a
 //!   table, is the step before.
 //!
 //! # One sort, chained
 //!
-//! `Sig` is one self-recursive sort of fifteen constructors, in tag order:
+//! `Theory` is one self-recursive sort of fifteen constructors, in tag order:
 //!
 //! | tag | constructor | fields |
 //! |---|---|---|
@@ -75,7 +96,7 @@
 //!   reading refuses today. An inline sum per field (`Code::sum`) types the
 //!   chains but leaves `case` no constructor names to match.
 //! - **Reversal.** Nested occurrences and mutual families entering the native
-//!   reading split `Sig` into its typed families; the identity bytes change
+//!   reading split `Theory` into its typed families; the identity bytes change
 //!   with the constructor table, so the split is a change of every
 //!   presentation's identity.
 //!
@@ -121,7 +142,7 @@
 //!   every face, and a membership string over the carrier, which cannot hold a
 //!   point outside it — and the description check must see such a point to
 //!   refuse it by name.
-//! - **Reversal.** A program over `Sig` that computes with a shape's points,
+//! - **Reversal.** A program over `Theory` that computes with a shape's points,
 //!   rather than carrying them, wants a numeric field the code grammar does not
 //!   have yet; that field replaces the numerals and re-keys every shaped
 //!   presentation.
@@ -133,7 +154,7 @@
 //! representable sorts, operations and their ports, ports under restricted
 //! binders, and rule faces between terms of variables, operation
 //! applications, constructor applications and results tuples. The rest of
-//! the grammar waits on a constructor `Sig` does not have yet: circuit rules
+//! the grammar waits on a constructor `Theory` does not have yet: circuit rules
 //! (a body of wired nodes and its rewrite ports), higher cells (a rule between
 //! rules), a sort's polarity (every presented sort is data), constructors and
 //! parameters (a presentation declares none), attributes, and atom binders. A
@@ -163,9 +184,9 @@ use crate::desc::DeclPolarity;
 use crate::desc::NominalId;
 use crate::desc::Representability;
 use crate::desc::ShapeFace;
-use crate::desc::SignDesc;
-use crate::desc::SignShape;
 use crate::desc::SortDesc;
+use crate::desc::TheoryDesc;
+use crate::desc::TheoryShape;
 use crate::desc::shape_parameter;
 use crate::generic::DescValue;
 use crate::generic::Payload;
@@ -176,9 +197,9 @@ use crate::rule::FreeTerm;
 use crate::rule::TermNode;
 use crate::rule::TermView;
 
-/// The names of `Sig`'s constructors, in tag order: the names a program that
+/// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const SIG_CONSTRUCTORS: [&str; 15] = [
+pub const THEORY_CONSTRUCTORS: [&str; 15] = [
     "Presents",
     "End",
     "Sort",
@@ -196,27 +217,27 @@ pub const SIG_CONSTRUCTORS: [&str; 15] = [
     "Face",
 ];
 
-/// Each constructor of `Sig`, in tag order, with its count of `String`
+/// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
 const CONSTRUCTORS: [(&str, usize, usize); 15] = [
-    (SIG_CONSTRUCTORS[0], 0, 3),
-    (SIG_CONSTRUCTORS[1], 0, 0),
-    (SIG_CONSTRUCTORS[2], 1, 2),
-    (SIG_CONSTRUCTORS[3], 1, 3),
-    (SIG_CONSTRUCTORS[4], 2, 2),
-    (SIG_CONSTRUCTORS[5], 1, 3),
-    (SIG_CONSTRUCTORS[6], 1, 0),
-    (SIG_CONSTRUCTORS[7], 1, 1),
-    (SIG_CONSTRUCTORS[8], 1, 1),
-    (SIG_CONSTRUCTORS[9], 0, 1),
-    (SIG_CONSTRUCTORS[10], 0, 2),
-    (SIG_CONSTRUCTORS[11], 1, 2),
-    (SIG_CONSTRUCTORS[12], 2, 3),
-    (SIG_CONSTRUCTORS[13], 2, 2),
-    (SIG_CONSTRUCTORS[14], 2, 1),
+    (THEORY_CONSTRUCTORS[0], 0, 3),
+    (THEORY_CONSTRUCTORS[1], 0, 0),
+    (THEORY_CONSTRUCTORS[2], 1, 2),
+    (THEORY_CONSTRUCTORS[3], 1, 3),
+    (THEORY_CONSTRUCTORS[4], 2, 2),
+    (THEORY_CONSTRUCTORS[5], 1, 3),
+    (THEORY_CONSTRUCTORS[6], 1, 0),
+    (THEORY_CONSTRUCTORS[7], 1, 1),
+    (THEORY_CONSTRUCTORS[8], 1, 1),
+    (THEORY_CONSTRUCTORS[9], 0, 1),
+    (THEORY_CONSTRUCTORS[10], 0, 2),
+    (THEORY_CONSTRUCTORS[11], 1, 2),
+    (THEORY_CONSTRUCTORS[12], 2, 3),
+    (THEORY_CONSTRUCTORS[13], 2, 2),
+    (THEORY_CONSTRUCTORS[14], 2, 1),
 ];
 
-/// One constructor of `Sig`, by its tag.
+/// One constructor of `Theory`, by its tag.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Tag
 {
@@ -281,19 +302,19 @@ impl Tag
     }
 }
 
-/// The description of `Sig`, one data sort of fifteen constructors.
+/// The description of `Theory`, one data sort of fifteen constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
 ///
 /// # Specification
-/// - ensures: no parameters, one data sort `Sig`, and the constructors
+/// - ensures: no parameters, one data sort `Theory`, and the constructors
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
 ///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape` and `Face` in that
-///   order, each at the result sort `Sig`; a constructor's `String` fields
+///   order, each at the result sort `Theory`; a constructor's `String` fields
 ///   carry `grade` and come first, two for `Port`, `Bound`, `Shape` and `Face`
 ///   and one for every other constructor that names something, and its
-///   remaining fields are `Sig`.
+///   remaining fields are `Theory`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -302,16 +323,16 @@ impl Tag
 ///   constructor table and the exact identity bytes of a presentation;
 ///   reordered constructors, a dropped field or a name read as a recursion
 ///   change them.
-/// - witness: `sig::tests::the_code_is_one_data_sort_of_fifteen_constructors`
-/// - witness: `sig::tests::a_presentation_encodes_to_its_exact_identity_bytes`
+/// - witness: `theory::tests::the_code_is_one_data_sort_of_fifteen_constructors`
+/// - witness: `theory::tests::a_presentation_encodes_to_its_exact_identity_bytes`
 #[inline]
 #[must_use]
-#[spec(ensures: |ref desc| desc.id.name.as_ref() == "Sig"
+#[spec(ensures: |ref desc| desc.id.name.as_ref() == "Theory"
     && desc.params.is_empty()
-    && desc.sorts.iter().map(|sort| sort.name.as_ref()).eq(["Sig"])
+    && desc.sorts.iter().map(|sort| sort.name.as_ref()).eq(["Theory"])
     && desc.ctors.iter().map(|ctor| ctor.name.as_ref()).eq(CONSTRUCTORS.iter().map(|&(name, _, _)| name))
-    && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "Sig"))]
-pub fn sig_desc<G>(grade: G) -> SignDesc<G>
+    && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "Theory"))]
+pub fn theory_desc<G>(grade: G) -> TheoryDesc<G>
 where
     G: Clone,
 {
@@ -327,17 +348,17 @@ where
                 ));
             }
             for _ in 0 .. recursions {
-                codes.push(Code::var("Sig"));
+                codes.push(Code::var("Theory"));
             }
             let mut code = codes.pop().unwrap_or_else(Code::unit);
             while let Some(left) = codes.pop() {
                 code = Code::prod(left, code);
             }
-            CtorDesc::new(name, code, "Sig", Attrs::empty())
+            CtorDesc::new(name, code, "Theory", Attrs::empty())
         })
         .collect();
-    SignDesc::new(
-        NominalId::new(NominalSerial::from(0_u64), "Sig"),
+    TheoryDesc::new(
+        NominalId::new(NominalSerial::from(0_u64), "Theory"),
         [],
         ctors,
         [],
@@ -345,7 +366,7 @@ where
         DeclPolarity::Data,
         Attrs::empty(),
     )
-    .with_sorts([SortDesc::new("Sig", DeclPolarity::Data)])
+    .with_sorts([SortDesc::new("Theory", DeclPolarity::Data)])
 }
 
 /// One port of a presentation: its name, empty when it was written unnamed,
@@ -358,10 +379,10 @@ where
 /// - executable: none — a data carrier with no invocation boundary.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::encode`].
-/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
+/// - hypothesis: L3 — as [`TheoryValue::encode`].
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SigPort
+pub struct TheoryPort
 {
     /// The port's name; empty for an unnamed port.
     pub name: Name,
@@ -372,7 +393,7 @@ pub struct SigPort
     /// The `pi+` binders over the port, outermost first, each a variable of a
     /// representable sort; empty for a first-order port. Only an operation's
     /// port binds.
-    pub bindings: Vec<SigBinder>,
+    pub bindings: Vec<TheoryBinder>,
 }
 
 /// One `pi+` binder of a port: the bound variable's name and its sort, a
@@ -385,10 +406,10 @@ pub struct SigPort
 /// - executable: none — a data carrier with no invocation boundary.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::encode`].
-/// - witness: `sig::tests::a_second_order_presentation_encodes_its_binders`
+/// - hypothesis: L3 — as [`TheoryValue::encode`].
+/// - witness: `theory::tests::a_second_order_presentation_encodes_its_binders`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SigBinder
+pub struct TheoryBinder
 {
     /// The bound variable's name.
     pub name: Name,
@@ -408,15 +429,15 @@ pub struct SigBinder
 /// - executable: none — a data carrier with no invocation boundary.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::encode`].
-/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
+/// - hypothesis: L3 — as [`TheoryValue::encode`].
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SigSort
+pub struct TheorySort
 {
     /// The sort's name.
     pub name: Name,
     /// The index telescope, in order.
-    pub indices: Vec<SigPort>,
+    pub indices: Vec<TheoryPort>,
     /// Whether a port may bind a variable of the sort.
     pub representability: Representability,
 }
@@ -429,17 +450,17 @@ pub struct SigSort
 /// - executable: none — a data carrier with no invocation boundary.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::encode`].
-/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
+/// - hypothesis: L3 — as [`TheoryValue::encode`].
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SigOperation
+pub struct TheoryOperation
 {
     /// The operation's name.
     pub name: Name,
     /// The input ports, in order.
-    pub inputs: Vec<SigPort>,
+    pub inputs: Vec<TheoryPort>,
     /// The output ports, in order.
-    pub outputs: Vec<SigPort>,
+    pub outputs: Vec<TheoryPort>,
 }
 
 /// One rule face of a presentation: its name and its two terms.
@@ -450,10 +471,10 @@ pub struct SigOperation
 /// - executable: none — a data carrier with no invocation boundary.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::encode`].
-/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
+/// - hypothesis: L3 — as [`TheoryValue::encode`].
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SigRule
+pub struct TheoryRule
 {
     /// The rule's name.
     pub name: Name,
@@ -463,7 +484,7 @@ pub struct SigRule
     pub right: FreeTerm,
 }
 
-/// A presentation's members as `Sig` codes them, each list in written order.
+/// A presentation's members as `Theory` codes them, each list in written order.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -471,22 +492,22 @@ pub struct SigRule
 /// - executable: none — a data carrier with no invocation boundary.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::encode`].
-/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
+/// - hypothesis: L3 — as [`TheoryValue::encode`].
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SigParts
+pub struct TheoryParts
 {
     /// The shape parameter, absent for a presentation that states none.
-    pub shape: Maybe<SignShape, shape_parameter::Absent>,
+    pub shape: Maybe<TheoryShape, shape_parameter::Absent>,
     /// The sorts.
-    pub sorts: Vec<SigSort>,
+    pub sorts: Vec<TheorySort>,
     /// The operations.
-    pub operations: Vec<SigOperation>,
+    pub operations: Vec<TheoryOperation>,
     /// The rule faces.
-    pub rules: Vec<SigRule>,
+    pub rules: Vec<TheoryRule>,
 }
 
-impl Default for SigParts
+impl Default for TheoryParts
 {
     /// The presentation of nothing: no shape and no members.
     ///
@@ -504,7 +525,7 @@ impl Default for SigParts
     }
 }
 
-/// Why a value of `Sig`'s description codes no presentation.
+/// Why a value of `Theory`'s description codes no presentation.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -513,10 +534,10 @@ impl Default for SigParts
 /// - executable: none — a data carrier with no invocation boundary.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_value_outside_the_grammar_is_refused_by_name`
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SigFault
+pub enum TheoryFault
 {
     /// A constructor stands where the grammar admits another: the root is not
     /// `Presents`, a chain holds a foreign member, or a term position holds no
@@ -532,22 +553,22 @@ pub enum SigFault
     Numeral,
 }
 
-/// A value of `Sig`: one presentation.
+/// A value of `Theory`: one presentation.
 ///
 /// # Specification
 /// - requires: nothing to construct this data through [`Self::encode`];
 ///   [`Self::from_value`] admits any value, which [`Self::decode`] judges.
-/// - ensures: the value is a value of [`sig_desc`]'s description.
+/// - ensures: the value is a value of [`theory_desc`]'s description.
 /// - executable: none — a data carrier; its operations carry the predicates.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Self::encode`] and [`Self::decode`].
-/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SigValue(DescValue);
+pub struct TheoryValue(DescValue);
 
-impl SigValue
+impl TheoryValue
 {
     /// The value coding `parts`.
     ///
@@ -572,17 +593,17 @@ impl SigValue
     ///   bytes; a dropped member, a swapped chain, a lost index, binder or face
     ///   or a forgotten representability changes the decoded parts or the
     ///   bytes.
-    /// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
-    /// - witness: `sig::tests::a_presentation_encodes_to_its_exact_identity_bytes`
-    /// - witness: `sig::tests::a_second_order_presentation_encodes_its_binders`
-    /// - witness: `sig::tests::a_shaped_presentation_codes_its_faces`
+    /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
+    /// - witness: `theory::tests::a_presentation_encodes_to_its_exact_identity_bytes`
+    /// - witness: `theory::tests::a_second_order_presentation_encodes_its_binders`
+    /// - witness: `theory::tests::a_shaped_presentation_codes_its_faces`
     #[inline]
     #[must_use]
     #[spec(
         requires: parts.sorts.iter().flat_map(|sort| sort.indices.iter()).all(|index| index.bindings.is_empty()),
         ensures: |ref value| value.0.ctor == Tag::Presents.constructor(),
     )]
-    pub fn encode(parts: &SigParts) -> Self
+    pub fn encode(parts: &TheoryParts) -> Self
     {
         let mut sorts = value(Tag::End, Vec::new());
         for sort in parts.sorts.iter().rev() {
@@ -638,7 +659,7 @@ impl SigValue
         ]))
     }
 
-    /// A value of `Sig`'s description, whatever it codes.
+    /// A value of `Theory`'s description, whatever it codes.
     ///
     /// # Specification
     /// trivial.
@@ -677,7 +698,7 @@ impl SigValue
     ///   post-order worklist, so no step recurses.
     ///
     /// # Errors
-    /// Returns the first [`SigFault`] met, root first.
+    /// Returns the first [`TheoryFault`] met, root first.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the round trip of a presentation exercising every
@@ -686,21 +707,21 @@ impl SigValue
     ///   index port, a binding binder, a binderless `Bound` port, a second
     ///   `Shape`, a size of two numerals and descending face points — each
     ///   refused by its exact fault.
-    /// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
-    /// - witness: `sig::tests::a_second_order_presentation_encodes_its_binders`
-    /// - witness: `sig::tests::a_value_outside_the_grammar_is_refused_by_name`
-    /// - witness: `sig::tests::a_binder_outside_an_operation_port_is_misplaced`
-    /// - witness: `sig::tests::a_shaped_presentation_codes_its_faces`
+    /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
+    /// - witness: `theory::tests::a_second_order_presentation_encodes_its_binders`
+    /// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
+    /// - witness: `theory::tests::a_binder_outside_an_operation_port_is_misplaced`
+    /// - witness: `theory::tests::a_shaped_presentation_codes_its_faces`
     #[inline]
     #[spec(ensures: |ref ret| ret.is_err() || self.0.ctor == Tag::Presents.constructor())]
-    pub fn decode(&self) -> Result<SigParts, SigFault>
+    pub fn decode(&self) -> Result<TheoryParts, TheoryFault>
     {
         let root = Node {
             ctor: self.0.ctor,
             payload: self.0.payload.to_node(),
         };
         let [sorts, operations, rules] = expect::<3>(root, Tag::Presents)?;
-        let mut parts = SigParts::default();
+        let mut parts = TheoryParts::default();
         let mut at = nested(sorts)?;
         if at.ctor == Tag::Shape.constructor() {
             let [name, size, faces, rest] = expect::<4>(at, Tag::Shape)?;
@@ -726,7 +747,7 @@ impl SigValue
             let name = text(name)?;
             let indices = nested(indices)?;
             let indices = read_plain(indices, unbound)?;
-            parts.sorts.push(SigSort {
+            parts.sorts.push(TheorySort {
                 name,
                 indices,
                 representability,
@@ -745,7 +766,7 @@ impl SigValue
             let inputs = read_ports(inputs)?;
             let outputs = nested(outputs)?;
             let outputs = read_ports(outputs)?;
-            parts.operations.push(SigOperation {
+            parts.operations.push(TheoryOperation {
                 name,
                 inputs,
                 outputs,
@@ -764,7 +785,7 @@ impl SigValue
             let left = read_term(left)?;
             let right = nested(right)?;
             let right = read_term(right)?;
-            parts.rules.push(SigRule { name, left, right });
+            parts.rules.push(TheoryRule { name, left, right });
             at = nested(rest)?;
         }
         Ok(parts)
@@ -773,7 +794,7 @@ impl SigValue
     /// The value's canonical bytes: the presentation's identity.
     ///
     /// # Specification
-    /// - ensures: [`serialize_value`] of the value under [`sig_desc`]'s
+    /// - ensures: [`serialize_value`] of the value under [`theory_desc`]'s
     ///   description; two values encode alike exactly when they are equal.
     /// - panics: none.
     ///
@@ -781,13 +802,13 @@ impl SigValue
     /// - hypothesis: L3 — a presentation's exact bytes pin tag order, field
     ///   order and name lengths; two presentations differing in one port name
     ///   encode apart, and the same presentation read twice encodes alike.
-    /// - witness: `sig::tests::a_presentation_encodes_to_its_exact_identity_bytes`
+    /// - witness: `theory::tests::a_presentation_encodes_to_its_exact_identity_bytes`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ref bytes| *bytes == serialize_value(&sig_desc(()), &self.0))]
+    #[spec(ensures: |ref bytes| *bytes == serialize_value(&theory_desc(()), &self.0))]
     pub fn identity(&self) -> SerializedValueBytes
     {
-        serialize_value(&sig_desc(()), &self.0)
+        serialize_value(&theory_desc(()), &self.0)
     }
 }
 
@@ -830,7 +851,7 @@ fn rec(nested: DescValue) -> Payload
 ///
 /// # Specification
 /// trivial.
-fn ports(list: &[SigPort]) -> DescValue
+fn ports(list: &[TheoryPort]) -> DescValue
 {
     let mut chain = value(Tag::End, Vec::new());
     for port in list.iter().rev() {
@@ -924,12 +945,12 @@ quenchant_shape::reason_enum! {
 ///   application over the argument chain of its arguments in order.
 /// - panics: none.
 /// - executable: none — the coding is observed by reading it back, which the
-///   round trip of [`SigValue::decode`] does.
+///   round trip of [`TheoryValue::decode`] does.
 /// - intension: a post-order worklist with a stack of coded terms.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::encode`].
-/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
+/// - hypothesis: L3 — as [`TheoryValue::encode`].
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 fn term(root: TermNode<'_>) -> DescValue
 {
     let mut pending = vec![Build::Visit(root)];
@@ -982,35 +1003,35 @@ struct Node<'value>
 ///
 /// # Specification
 /// - ensures: the `N` fields of the right-nested product, left to right.
-/// - fails: [`SigFault::Misplaced`] for another constructor;
-///   [`SigFault::Payload`] for a payload of another shape.
+/// - fails: [`TheoryFault::Misplaced`] for another constructor;
+///   [`TheoryFault::Payload`] for a payload of another shape.
 /// - panics: none.
 ///
 /// # Errors
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_value_outside_the_grammar_is_refused_by_name`
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
 #[spec(ensures: |ret| ret.is_err() || node.ctor == tag.constructor())]
 fn expect<const N: usize>(
     node: Node<'_>,
     tag: Tag,
-) -> Result<[PayloadNode<'_>; N], SigFault>
+) -> Result<[PayloadNode<'_>; N], TheoryFault>
 {
     if node.ctor != tag.constructor() {
-        return Err(SigFault::Misplaced(node.ctor));
+        return Err(TheoryFault::Misplaced(node.ctor));
     }
     let mut fields = Vec::with_capacity(N);
     let mut rest = node.payload;
     for _ in 1 .. N {
         let PayloadView::Pair(mut halves) = rest.view()
         else {
-            return Err(SigFault::Payload);
+            return Err(TheoryFault::Payload);
         };
         let (Some(left), Some(right)) = (halves.next(), halves.next())
         else {
-            return Err(SigFault::Payload);
+            return Err(TheoryFault::Payload);
         };
         fields.push(left);
         rest = right;
@@ -1018,7 +1039,7 @@ fn expect<const N: usize>(
     if N > 0 {
         fields.push(rest);
     }
-    <[PayloadNode<'_>; N]>::try_from(fields).map_err(|_unequal| SigFault::Payload)
+    <[PayloadNode<'_>; N]>::try_from(fields).map_err(|_unequal| TheoryFault::Payload)
 }
 
 quenchant_shape::reason_enum! {
@@ -1045,8 +1066,8 @@ quenchant_shape::reason_enum! {
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_value_outside_the_grammar_is_refused_by_name`
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Absent(_)) => node.ctor == Tag::End.constructor(),
     | Ok(Maybe::Present(_)) => node.ctor == tag.constructor(),
@@ -1055,12 +1076,12 @@ quenchant_shape::reason_enum! {
 fn member<const N: usize>(
     node: Node<'_>,
     tag: Tag,
-) -> Result<Maybe<[PayloadNode<'_>; N], chained::Absent>, SigFault>
+) -> Result<Maybe<[PayloadNode<'_>; N], chained::Absent>, TheoryFault>
 {
     if node.ctor == Tag::End.constructor() {
         let [] = expect::<0>(node, Tag::End)?;
         if !matches!(node.payload.view(), PayloadView::Unit) {
-            return Err(SigFault::Payload);
+            return Err(TheoryFault::Payload);
         }
         return Ok(Maybe::Absent(chained::Absent::Ended));
     }
@@ -1072,26 +1093,27 @@ fn member<const N: usize>(
 ///
 /// # Specification
 /// - ensures: the nested value's tag and payload.
-/// - fails: [`SigFault::Payload`] for a field that is no recursive occurrence.
+/// - fails: [`TheoryFault::Payload`] for a field that is no recursive
+///   occurrence.
 /// - panics: none.
 ///
 /// # Errors
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_value_outside_the_grammar_is_refused_by_name`
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
 #[spec(ensures: |ret| ret.is_ok() == matches!(field.view(), PayloadView::Rec { .. }))]
-fn nested(field: PayloadNode<'_>) -> Result<Node<'_>, SigFault>
+fn nested(field: PayloadNode<'_>) -> Result<Node<'_>, TheoryFault>
 {
     let PayloadView::Rec {
         ctor,
         payload: mut inner,
     } = field.view()
     else {
-        return Err(SigFault::Payload);
+        return Err(TheoryFault::Payload);
     };
-    let payload = inner.next().ok_or(SigFault::Payload)?;
+    let payload = inner.next().ok_or(TheoryFault::Payload)?;
     Ok(Node { ctor, payload })
 }
 
@@ -1099,27 +1121,27 @@ fn nested(field: PayloadNode<'_>) -> Result<Node<'_>, SigFault>
 ///
 /// # Specification
 /// - ensures: the field's bytes as a name.
-/// - fails: [`SigFault::Payload`] for a field that is no leaf;
-///   [`SigFault::Text`] for bytes that are not UTF-8.
+/// - fails: [`TheoryFault::Payload`] for a field that is no leaf;
+///   [`TheoryFault::Text`] for bytes that are not UTF-8.
 /// - panics: none.
 ///
 /// # Errors
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_value_outside_the_grammar_is_refused_by_name`
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
 #[spec(ensures: |ret| ret.is_ok() == matches!(
     field.view(),
     PayloadView::Leaf(bytes) if core::str::from_utf8(bytes.as_ref()).is_ok()
 ))]
-fn text(field: PayloadNode<'_>) -> Result<Name, SigFault>
+fn text(field: PayloadNode<'_>) -> Result<Name, TheoryFault>
 {
     let PayloadView::Leaf(bytes) = field.view()
     else {
-        return Err(SigFault::Payload);
+        return Err(TheoryFault::Payload);
     };
-    let spelled = core::str::from_utf8(bytes.as_ref()).map_err(|_invalid| SigFault::Text)?;
+    let spelled = core::str::from_utf8(bytes.as_ref()).map_err(|_invalid| TheoryFault::Text)?;
     Ok(Name::from(spelled))
 }
 
@@ -1142,7 +1164,7 @@ fn numerals(points: &[ShapePoint]) -> String
 /// - ensures: the numbers in order when the field is decimal numerals joined by
 ///   `,`, strictly ascending, each in its one spelling — no sign and no leading
 ///   zero but `0` itself; the empty field spells none.
-/// - fails: [`SigFault::Numeral`] for any other field, a number past the
+/// - fails: [`TheoryFault::Numeral`] for any other field, a number past the
 ///   machine's word among them.
 /// - panics: none.
 ///
@@ -1150,23 +1172,23 @@ fn numerals(points: &[ShapePoint]) -> String
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_shaped_presentation_codes_its_faces`
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_shaped_presentation_codes_its_faces`
 #[spec(ensures: |ref ret| match *ret {
     Ok(ref points) => numerals(points) == spelled.as_ref(),
-    Err(fault) => fault == SigFault::Numeral,
+    Err(fault) => fault == TheoryFault::Numeral,
 })]
-fn read_numerals(spelled: &Name) -> Result<Vec<ShapePoint>, SigFault>
+fn read_numerals(spelled: &Name) -> Result<Vec<ShapePoint>, TheoryFault>
 {
     let mut read: Vec<ShapePoint> = Vec::new();
     if spelled.as_ref().is_empty() {
         return Ok(read);
     }
     for numeral in spelled.as_ref().split(',') {
-        let number: usize = numeral.parse().map_err(|_unread| SigFault::Numeral)?;
+        let number: usize = numeral.parse().map_err(|_unread| TheoryFault::Numeral)?;
         let point = ShapePoint::from(number);
         if format!("{number}") != numeral || read.last().is_some_and(|last| *last >= point) {
-            return Err(SigFault::Numeral);
+            return Err(TheoryFault::Numeral);
         }
         read.push(point);
     }
@@ -1178,8 +1200,9 @@ fn read_numerals(spelled: &Name) -> Result<Vec<ShapePoint>, SigFault>
 /// # Specification
 /// - ensures: the shape named by `name`, of the size `size` spells, with one
 ///   face per `Face` member of the chain at `faces`, in order.
-/// - fails: as [`text`], [`member`] and [`nested`]; [`SigFault::Numeral`] for a
-///   size that is not one numeral or face points not in their one spelling.
+/// - fails: as [`text`], [`member`] and [`nested`]; [`TheoryFault::Numeral`]
+///   for a size that is not one numeral or face points not in their one
+///   spelling.
 /// - panics: none.
 /// - executable: none — a predicate would read the chain a second time.
 ///
@@ -1187,19 +1210,19 @@ fn read_numerals(spelled: &Name) -> Result<Vec<ShapePoint>, SigFault>
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_shaped_presentation_codes_its_faces`
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_shaped_presentation_codes_its_faces`
 fn read_shape(
     name: PayloadNode<'_>,
     size: PayloadNode<'_>,
     faces: PayloadNode<'_>,
-) -> Result<SignShape, SigFault>
+) -> Result<TheoryShape, TheoryFault>
 {
     let name = text(name)?;
     let size = text(size)?;
     let &[points] = read_numerals(&size)?.as_slice()
     else {
-        return Err(SigFault::Numeral);
+        return Err(TheoryFault::Numeral);
     };
     let mut node = nested(faces)?;
     let mut read = Vec::new();
@@ -1214,7 +1237,7 @@ fn read_shape(
         read.push(ShapeFace::new(face, read_numerals(&members)?));
         node = nested(rest)?;
     }
-    Ok(SignShape::new(
+    Ok(TheoryShape::new(
         name,
         ShapeSize::from(usize::from(points)),
         read,
@@ -1236,10 +1259,10 @@ fn read_shape(
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_second_order_presentation_encodes_its_binders`
-/// - witness: `sig::tests::a_binder_outside_an_operation_port_is_misplaced`
-fn read_ports(mut node: Node<'_>) -> Result<Vec<SigPort>, SigFault>
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_second_order_presentation_encodes_its_binders`
+/// - witness: `theory::tests::a_binder_outside_an_operation_port_is_misplaced`
+fn read_ports(mut node: Node<'_>) -> Result<Vec<TheoryPort>, TheoryFault>
 {
     let mut ports = Vec::new();
     loop {
@@ -1258,10 +1281,10 @@ fn read_ports(mut node: Node<'_>) -> Result<Vec<SigPort>, SigFault>
         let port = plain_at(name, sort, indices)?;
         let binders = nested(binders)?;
         if binders.ctor == Tag::End.constructor() {
-            return Err(SigFault::Misplaced(binders.ctor));
+            return Err(TheoryFault::Misplaced(binders.ctor));
         }
         let bindings = read_plain(binders, core::convert::identity)?;
-        ports.push(SigPort {
+        ports.push(TheoryPort {
             name: port.name,
             sort: port.sort,
             indices: port.indices,
@@ -1286,13 +1309,13 @@ fn read_ports(mut node: Node<'_>) -> Result<Vec<SigPort>, SigFault>
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
-/// - witness: `sig::tests::a_binder_outside_an_operation_port_is_misplaced`
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
+/// - witness: `theory::tests::a_binder_outside_an_operation_port_is_misplaced`
 fn read_plain<Read>(
     mut node: Node<'_>,
-    read: fn(SigBinder) -> Read,
-) -> Result<Vec<Read>, SigFault>
+    read: fn(TheoryBinder) -> Read,
+) -> Result<Vec<Read>, TheoryFault>
 {
     let mut members = Vec::new();
     loop {
@@ -1312,9 +1335,9 @@ fn read_plain<Read>(
 ///
 /// # Specification
 /// trivial.
-fn unbound(plain: SigBinder) -> SigPort
+fn unbound(plain: TheoryBinder) -> TheoryPort
 {
-    SigPort {
+    TheoryPort {
         name: plain.name,
         sort: plain.sort,
         indices: plain.indices,
@@ -1335,19 +1358,19 @@ fn unbound(plain: SigBinder) -> SigPort
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 fn plain_at(
     name: PayloadNode<'_>,
     sort: PayloadNode<'_>,
     indices: PayloadNode<'_>,
-) -> Result<SigBinder, SigFault>
+) -> Result<TheoryBinder, TheoryFault>
 {
     let name = text(name)?;
     let sort = text(sort)?;
     let indices = nested(indices)?;
     let indices = read_arguments(indices)?;
-    Ok(SigBinder {
+    Ok(TheoryBinder {
         name,
         sort,
         indices,
@@ -1366,9 +1389,9 @@ fn plain_at(
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
-fn read_arguments(node: Node<'_>) -> Result<Vec<FreeTerm>, SigFault>
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
+fn read_arguments(node: Node<'_>) -> Result<Vec<FreeTerm>, TheoryFault>
 {
     let arguments = argument_nodes(node)?;
     let mut terms = Vec::with_capacity(arguments.len());
@@ -1391,9 +1414,9 @@ fn read_arguments(node: Node<'_>) -> Result<Vec<FreeTerm>, SigFault>
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_value_outside_the_grammar_is_refused_by_name`
-fn argument_nodes(mut node: Node<'_>) -> Result<Vec<Node<'_>>, SigFault>
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
+fn argument_nodes(mut node: Node<'_>) -> Result<Vec<Node<'_>>, TheoryFault>
 {
     let mut nodes = Vec::new();
     loop {
@@ -1435,21 +1458,21 @@ enum Read<'value>
 /// - ensures: the inverse of [`term`]: `Var`, `App`, `Con` and `Tuple` read
 ///   back to a variable, an operation application, a constructor application
 ///   and a results tuple.
-/// - fails: [`SigFault::Misplaced`] for any other constructor; as [`expect`],
-///   [`text`] and [`argument_nodes`] beneath.
+/// - fails: [`TheoryFault::Misplaced`] for any other constructor; as
+///   [`expect`], [`text`] and [`argument_nodes`] beneath.
 /// - panics: none.
 /// - executable: none — the reading is observed by coding it again, which the
-///   round trip of [`SigValue::decode`] does.
+///   round trip of [`TheoryValue::decode`] does.
 /// - intension: a post-order worklist with a stack of read terms.
 ///
 /// # Errors
 /// As stated.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`SigValue::decode`].
-/// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
-/// - witness: `sig::tests::a_value_outside_the_grammar_is_refused_by_name`
-fn read_term(root: Node<'_>) -> Result<FreeTerm, SigFault>
+/// - hypothesis: L3 — as [`TheoryValue::decode`].
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
+/// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
+fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
 {
     let mut pending = vec![Read::Visit(root)];
     let mut read: Vec<FreeTerm> = Vec::new();
@@ -1477,7 +1500,7 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, SigFault>
                     (Applied::Tuple, chain)
                 }
                 else {
-                    return Err(SigFault::Misplaced(node.ctor));
+                    return Err(TheoryFault::Misplaced(node.ctor));
                 };
                 let chain = nested(chain)?;
                 let arguments = argument_nodes(chain)?;
@@ -1495,7 +1518,7 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, SigFault>
             },
         }
     }
-    read.pop().ok_or(SigFault::Payload)
+    read.pop().ok_or(TheoryFault::Payload)
 }
 
 #[cfg(test)]

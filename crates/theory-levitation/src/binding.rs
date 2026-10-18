@@ -42,7 +42,7 @@ use crate::boundary::VariableIndex;
 use crate::code::Name;
 use crate::desc::OperDesc;
 use crate::desc::Representability;
-use crate::desc::SignDesc;
+use crate::desc::TheoryDesc;
 use crate::first_order::TranslationError;
 use crate::tree::ArgumentCount;
 use crate::tree::Head;
@@ -246,7 +246,7 @@ impl core::error::Error for BindingError
 pub struct SimplySorted<'signature, G>
 {
     /// The validated signature; no per-signature interpreter is stored.
-    source: &'signature SignDesc<G>,
+    source: &'signature TheoryDesc<G>,
 }
 
 impl<'signature, G> SimplySorted<'signature, G>
@@ -291,7 +291,7 @@ impl<'signature, G> SimplySorted<'signature, G>
             operation.name == *name && operation.arity.outputs.iter().any(|port| !port.bindings.is_empty())),
         Err(AdmissionError::Signature(_) | AdmissionError::IndexedOccurrence(_)) => true,
     })]
-    pub fn new(source: &'signature SignDesc<G>) -> Result<Self, AdmissionError>
+    pub fn new(source: &'signature TheoryDesc<G>) -> Result<Self, AdmissionError>
     {
         if let Some(sort) = source.sorts.iter().find(|sort| !sort.indices.is_empty()) {
             return Err(AdmissionError::TermDependentSort(sort.name.clone()));

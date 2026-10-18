@@ -136,7 +136,7 @@ struct Minting<'source>
 {
     /// The module the type is read in.
     structure: StructureIndex,
-    /// Each operation of the model, by its name in the sign, with the
+    /// Each operation of the model, by its name in the theory, with the
     /// member name it reads in the module.
     operations: BTreeMap<Name, SurfaceName<'source>>,
     /// The origin every minted node carries.
@@ -344,11 +344,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the mint sweep and the abstract slots have run.
     /// - ensures: every unrefused slot whose signature is a model half holds
-    ///   the type its derived component mints, its origin the ascription's sign
-    ///   marked [`Insertion::Model`], since the source writes the sign's name
-    ///   there and not the type; a slot whose component names a refused one
-    ///   holds that refusal as a fault, and one naming a component that did not
-    ///   lower holds [`LoweringRefusal::UnstatedComponent`] with
+    ///   the type its derived component mints, its origin the ascription's
+    ///   theory marked [`Insertion::Model`], since the source writes the
+    ///   theory's name there and not the type; a slot whose component names a
+    ///   refused one holds that refusal as a fault, and one naming a component
+    ///   that did not lower holds [`LoweringRefusal::UnstatedComponent`] with
     ///   [`ModelFault::Inherited`].
     /// - provides: the declared types [`Self::outcome`] reads for model halves.
     /// - fails: never.
@@ -524,7 +524,7 @@ impl<'source> Lowerer<'_, 'source>
         Ok(id)
     }
 
-    /// Each operation of `model`, by its name in the sign, with the member
+    /// Each operation of `model`, by its name in the theory, with the member
     /// name the module reads it under.
     ///
     /// # Specification

@@ -1,5 +1,5 @@
 @[ refuses("OutOfFragment") ]
-sign Shared {
+theory Shared {
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
 

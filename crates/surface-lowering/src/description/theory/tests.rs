@@ -24,14 +24,14 @@ fn described<'source>(source: impl Into<SourceText<'source>>) -> DescriptionRepo
 }
 
 #[test]
-fn a_ruled_sign_block_lowers_its_members_into_a_description()
+fn a_ruled_theory_block_lowers_its_members_into_a_description()
 {
     let report = described(
         r#"data Nat : Type {
         Zero : Nat;
         Succ : (n : Nat) --> Nat;
     }
-    sign Nat {
+    theory Nat {
         sort Nat : Type;
         oper add : (Nat, Nat) --> Nat;
         rule cong1 : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
@@ -41,7 +41,7 @@ fn a_ruled_sign_block_lowers_its_members_into_a_description()
     }"#,
     );
     assert_eq!(report.diagnostics, []);
-    let [ref data, ref sign] = *report.declarations.as_slice()
+    let [ref data, ref theory] = *report.declarations.as_slice()
     else {
         panic!("data and signature")
     };
@@ -54,10 +54,10 @@ fn a_ruled_sign_block_lowers_its_members_into_a_description()
         ["Zero", "Succ"]
     );
     assert_eq!(
-        sign.classifier,
+        theory.classifier,
         Maybe::Absent(family_classifier::Absent::Signature)
     );
-    let [ref rule] = *sign.description.circuits.as_ref()
+    let [ref rule] = *theory.description.circuits.as_ref()
     else {
         panic!("one circuit")
     };
@@ -86,14 +86,14 @@ fn a_ruled_sign_block_lowers_its_members_into_a_description()
 #[test]
 fn an_expression_kind_signature_endpoint_is_refused_by_the_description_route()
 {
-    let source = "sign Wrong { sort Nat : Type; oper f : (a : Nat) --> (b : Nat); rule face : (f) ==> (z : Nat) { node : f(f) --> (z); }; }";
+    let source = "theory Wrong { sort Nat : Type; oper f : (a : Nat) --> (b : Nat); rule face : (f) ==> (z : Nat) { node : f(f) --> (z); }; }";
     let report = described(source);
-    let [ref sign] = *report.declarations.as_slice()
+    let [ref theory] = *report.declarations.as_slice()
     else {
         panic!("retained signature")
     };
-    assert_eq!(sign.description.opers[0].name.as_ref(), "f");
-    assert_eq!(sign.description.circuits.as_ref(), []);
+    assert_eq!(theory.description.opers[0].name.as_ref(), "f");
+    assert_eq!(theory.description.circuits.as_ref(), []);
     let refusal = report
         .diagnostics
         .iter()
@@ -114,7 +114,7 @@ fn an_expression_kind_signature_endpoint_is_refused_by_the_description_route()
 fn an_item_level_data_member_declines_with_the_nested_block_respelling()
 {
     let report = described(
-        "sign Stale { sort Nat : Type; data Zero : Nat; oper add : (Nat, Nat) --> Nat; }",
+        "theory Stale { sort Nat : Type; data Zero : Nat; oper add : (Nat, Nat) --> Nat; }",
     );
     assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.fault
         == DescriptionFault::Signature(SignatureFault::RetiredDataMember)));
@@ -127,7 +127,7 @@ fn an_item_level_data_member_declines_with_the_nested_block_respelling()
 
 /// The rewrite node of a two-output congruence: `p` rewrites the dividend
 /// before `divmod` reads it, and both of `divmod`'s ports leave the body.
-const DIVMOD_CONGRUENCE: &str = "sign Div {
+const DIVMOD_CONGRUENCE: &str = "theory Div {
   sort Nat : Type;
   oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat);
   rule pass : (rule p : Nat ==> Nat, data m : Nat, data n : Nat) ==> (q : Nat, r : Nat) {
@@ -179,7 +179,7 @@ fn a_many_out_frame_binds_every_port_and_roots_the_body()
 fn one_port_of_a_many_out_frame_is_refused_by_the_derivation()
 {
     let report = described(
-        "sign Wide { sort Nat : Type; oper tee : (a : Nat) --> (b : Nat, c : Nat); rule split : (data x : Nat) ==> (z : Nat) { node : tee(x) --> (z, w); }; }",
+        "theory Wide { sort Nat : Type; oper tee : (a : Nat) --> (b : Nat, c : Nat); rule split : (data x : Nat) ==> (z : Nat) { node : tee(x) --> (z, w); }; }",
     );
     assert!(
         report.diagnostics.iter().any(|diagnostic| matches!(
@@ -196,7 +196,7 @@ fn one_port_of_a_many_out_frame_is_refused_by_the_derivation()
 fn a_two_output_operation_keeps_both_ports_in_order()
 {
     let report = described(
-        "sign Div { sort Nat : Type; oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat); }",
+        "theory Div { sort Nat : Type; oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat); }",
     );
     assert_eq!(report.diagnostics, []);
     let [ref operation] = *report.declarations[0].description.opers
@@ -223,7 +223,7 @@ fn a_two_output_operation_keeps_both_ports_in_order()
 fn a_port_name_on_both_sides_is_two_ports()
 {
     let report = described(
-        "sign S { sort Nat : Type; sort Bit : Type; oper narrow : (v : Nat) --> (v : Bit); oper split : (b : Bit) --> (_ : Bit, _ : Bit); }",
+        "theory S { sort Nat : Type; sort Bit : Type; oper narrow : (v : Nat) --> (v : Bit); oper split : (b : Bit) --> (_ : Bit, _ : Bit); }",
     );
     assert_eq!(
         report
@@ -250,7 +250,7 @@ fn a_port_name_on_both_sides_is_two_ports()
 #[test]
 fn a_reversible_map_is_reserved_and_an_equation_is_a_face()
 {
-    let source = "sign R { sort Bit : Type; oper negate : (b : Bit) <-> (c : Bit); rule involutive : (b : Bit) <=> (c : Bit); rule face : b <=> c; }";
+    let source = "theory R { sort Bit : Type; oper negate : (b : Bit) <-> (c : Bit); rule involutive : (b : Bit) <=> (c : Bit); rule face : b <=> c; }";
     let report = described(source);
     let reserved: Vec<_> = report
         .diagnostics
@@ -277,7 +277,7 @@ fn a_reversible_map_is_reserved_and_an_equation_is_a_face()
 fn the_cat_shape_laws_are_written_faces()
 {
     let report = described(
-        "sign CatShape {
+        "theory CatShape {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
   oper id : (a : Ob) --> Hom(a, a);
@@ -344,7 +344,7 @@ fn the_cat_shape_laws_are_written_faces()
 fn a_pinned_rewrite_endpoint_reads_as_a_variable()
 {
     let report = described(
-        "sign Labelled {
+        "theory Labelled {
   sort Nat : Type;
   oper step : (i : Nat) --> (o : Nat);
   rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
@@ -367,7 +367,7 @@ fn a_pinned_rewrite_endpoint_reads_as_a_variable()
         target: FreeTerm::var("x′"),
     });
     let fixed = described(
-        "sign Labelled {
+        "theory Labelled {
   sort Nat : Type;
   oper step : (i : Nat) --> (o : Nat);
   rule twice : (rule p : x ==> x, data x : Nat) ==> (o : Nat) {
@@ -430,7 +430,7 @@ fn a_top_level_operation_declines_its_filler_by_name()
 }
 
 #[test]
-fn sign_declines_and_malformed_wiring_are_refused_apart()
+fn theory_declines_and_malformed_wiring_are_refused_apart()
 {
     let span = ByteSpan::new(0_usize.into(), 1_usize.into()).unwrap();
     let refusal = |fault| DescriptionDiagnostic { span, fault }.lowering_refusal();
@@ -467,10 +467,10 @@ fn sign_declines_and_malformed_wiring_are_refused_apart()
 }
 
 #[test]
-fn a_refused_sign_block_states_its_refusal()
+fn a_refused_theory_block_states_its_refusal()
 {
     let source = r#"@[ refuses("OutOfFragment") ]
-sign Wheel {
+theory Wheel {
   sort Nat : Type;
   oper zip : (s : Nat, t : Nat) --> (u : Nat);
   rule spin : (data stream : Nat) ==> (out : Nat) {
@@ -495,7 +495,7 @@ sign Wheel {
     let [ref wheel] = *module.declarations()
     else {
         panic!(
-            "the refused block is one declaration, and mints no `Sig`: {:?}",
+            "the refused block is one declaration, and mints no `Theory`: {:?}",
             module.declarations()
         )
     };
@@ -518,7 +518,7 @@ sign Wheel {
     assert!(
         source
             .get(usize::from(wheel.span().start()) .. usize::from(wheel.span().end()))
-            .is_some_and(|block| block.starts_with("sign Wheel")),
+            .is_some_and(|block| block.starts_with("theory Wheel")),
         "the declaration is the block, refused at its member"
     );
     let Maybe::Present(key) = wheel.definition()
@@ -584,7 +584,7 @@ fn a_refused_top_level_operation_states_its_refusal()
 fn a_feed_statement_declines_naming_the_wheel_obligation()
 {
     let report = described(
-        "sign Wheel { sort Nat : Type; oper zip : (s : Nat, t : Nat) --> (u : Nat); rule spin : (data stream : Nat) ==> (out : Nat) { node : zip(stream, state) --> (out); feed : (out) --> (state); }; }",
+        "theory Wheel { sort Nat : Type; oper zip : (s : Nat, t : Nat) --> (u : Nat); rule spin : (data stream : Nat) ==> (out : Nat) { node : zip(stream, state) --> (out); feed : (out) --> (state); }; }",
     );
     assert!(
         report.diagnostics.iter().any(
@@ -600,7 +600,7 @@ fn a_feed_statement_declines_naming_the_wheel_obligation()
 fn an_oper_filler_stays_declined_and_names_its_own_rung()
 {
     let report = described(
-        "sign Filled { sort Nat : Type; oper f : Nat --> Nat { node : f(x) --> (z); }; oper g : Nat --> Nat; }",
+        "theory Filled { sort Nat : Type; oper f : Nat --> Nat { node : f(x) --> (z); }; oper g : Nat --> Nat; }",
     );
     assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.fault
         == DescriptionFault::Signature(SignatureFault::OperationFiller)));
@@ -619,7 +619,7 @@ fn an_oper_filler_stays_declined_and_names_its_own_rung()
 fn a_fillerless_rule_member_declines_to_the_higher_cells_lane()
 {
     let report =
-        described("sign Higher { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat); }");
+        described("theory Higher { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat); }");
     assert!(
         report.diagnostics.iter().any(|diagnostic| diagnostic.fault
             == DescriptionFault::Signature(SignatureFault::HigherCell))
@@ -628,9 +628,9 @@ fn a_fillerless_rule_member_declines_to_the_higher_cells_lane()
 }
 
 #[test]
-fn a_written_face_in_a_sign_block_declines_naming_the_block_form_that_holds_it()
+fn a_written_face_in_a_theory_block_declines_naming_the_block_form_that_holds_it()
 {
-    let source = "sign Written { sort Nat : Type; rule ident ==> add; oper neg : Nat --> Nat; }";
+    let source = "theory Written { sort Nat : Type; rule ident ==> add; oper neg : Nat --> Nat; }";
     let report = described(source);
     let refusal = report
         .diagnostics
@@ -650,10 +650,10 @@ fn a_written_face_in_a_sign_block_declines_naming_the_block_form_that_holds_it()
 }
 
 #[test]
-fn a_data_spelled_sign_oper_declines_before_no_output_can_be_fabricated()
+fn a_data_spelled_theory_oper_declines_before_no_output_can_be_fabricated()
 {
     let report =
-        described("sign Old { sort Nat : Type; oper f(x : Nat) -> Nat; oper g : Nat --> Nat; }");
+        described("theory Old { sort Nat : Type; oper f(x : Nat) -> Nat; oper g : Nat --> Nat; }");
     assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.fault
         == DescriptionFault::Signature(SignatureFault::MissingJudgment)));
     assert_eq!(
@@ -670,7 +670,7 @@ fn a_data_spelled_sign_oper_declines_before_no_output_can_be_fabricated()
 #[test]
 fn a_declined_rule_member_leaves_the_members_after_it_intact()
 {
-    let source = "sign Adder { sort Nat : Type; oper add : (Nat, Nat) --> Nat; rule ident ==> add; rule swap ==> mul; oper neg : Nat --> Nat; }";
+    let source = "theory Adder { sort Nat : Type; oper add : (Nat, Nat) --> Nat; rule ident ==> add; rule swap ==> mul; oper neg : Nat --> Nat; }";
     let report = described(source);
     let refused: Vec<_> = report
         .diagnostics
@@ -698,7 +698,7 @@ fn a_declined_rule_member_leaves_the_members_after_it_intact()
 fn node_arrow_resolution_distinguishes_declared_and_unknown_heads()
 {
     let declared = described(
-        "sign Scope { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat) { node : f(x) ==> (z); }; oper f : Nat --> Nat; }",
+        "theory Scope { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat) { node : f(x) ==> (z); }; oper f : Nat --> Nat; }",
     );
     assert!(
         declared
@@ -711,7 +711,7 @@ fn node_arrow_resolution_distinguishes_declared_and_unknown_heads()
                 }))
     );
     let unknown = described(
-        "sign Scope { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat) { node : missing(x) ==> (z); }; }",
+        "theory Scope { sort Nat : Type; rule r : (data x : Nat) ==> (z : Nat) { node : missing(x) ==> (z); }; }",
     );
     assert!(unknown.diagnostics.iter().any(|diagnostic| diagnostic.fault
         == DescriptionFault::Signature(SignatureFault::UndeclaredRewrite("missing".into()))));
@@ -725,7 +725,7 @@ fn node_arrow_resolution_distinguishes_declared_and_unknown_heads()
 fn an_out_of_signature_frame_head_earns_the_declaration_tables_refusal()
 {
     let report = described(
-        "sign Stray {\n  sort Nat : Type;\n  rule stray : (data x : Nat) ==> (z : Nat) {\n    node : mystery(x) --> (z);\n  };\n}\n",
+        "theory Stray {\n  sort Nat : Type;\n  rule stray : (data x : Nat) ==> (z : Nat) {\n    node : mystery(x) --> (z);\n  };\n}\n",
     );
     assert!(report.diagnostics.iter().any(|diagnostic| matches!(
         diagnostic.fault,
@@ -740,7 +740,7 @@ fn an_out_of_signature_frame_head_earns_the_declaration_tables_refusal()
 fn a_redex_applying_an_undeclared_rewrite_earns_its_own_refusal()
 {
     let report = described(
-        "sign NoPort {\n  sort Nat : Type;\n  oper f : (a : Nat) --> (b : Nat);\n\n  rule stray : (rule p : Nat ==> Nat, data x : Nat) ==> (z : Nat) {\n    node : p(x) ==> (m);\n    node : f(m) --> (z);\n  };\n}\n",
+        "theory NoPort {\n  sort Nat : Type;\n  oper f : (a : Nat) --> (b : Nat);\n\n  rule stray : (rule p : Nat ==> Nat, data x : Nat) ==> (z : Nat) {\n    node : p(x) ==> (m);\n    node : f(m) --> (z);\n  };\n}\n",
     );
     assert_eq!(report.diagnostics, []);
     assert_eq!(report.declarations[0].description.circuits.len(), 1);
@@ -750,7 +750,7 @@ fn a_redex_applying_an_undeclared_rewrite_earns_its_own_refusal()
 fn a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal()
 {
     let report = described(
-        "sign Loop {\n  sort Nat : Type;\n  oper f : (a : Nat) --> (b : Nat);\n  oper g : (a : Nat) --> (b : Nat);\n\n  rule spin : (data x : Nat) ==> (z : Nat) {\n    node : f(w) --> (z);\n    node : g(z) --> (w);\n  };\n}\n",
+        "theory Loop {\n  sort Nat : Type;\n  oper f : (a : Nat) --> (b : Nat);\n  oper g : (a : Nat) --> (b : Nat);\n\n  rule spin : (data x : Nat) ==> (z : Nat) {\n    node : f(w) --> (z);\n    node : g(z) --> (w);\n  };\n}\n",
     );
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -769,7 +769,7 @@ fn a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal()
 fn a_repeated_argument_name_reaches_the_linearity_refusal()
 {
     let report = described(
-        "sign Copy {\n  sort Nat : Type;\n  oper add : (l : Nat, r : Nat) --> (s : Nat);\n  rule copy2 : (data x : Nat) ==> (z : Nat) {\n    node : add(x, x) --> (z);\n  };\n}\n",
+        "theory Copy {\n  sort Nat : Type;\n  oper add : (l : Nat, r : Nat) --> (s : Nat);\n  rule copy2 : (data x : Nat) ==> (z : Nat) {\n    node : add(x, x) --> (z);\n  };\n}\n",
     );
     let cells = crate::desc_cells::elaborate_desc_cells(&report.declarations);
     let [ref refusal] = *cells.diagnostics.as_slice()
@@ -786,7 +786,7 @@ fn a_repeated_argument_name_reaches_the_linearity_refusal()
 fn a_doubling_body_declines_on_the_derivation_node_budget()
 {
     let mut source = alloc::string::String::from(
-        "sign Doubling {\n  sort Nat : Type;\n  oper l : (a : Nat) --> (b : Nat);\n  oper r : (a : Nat) --> (b : Nat);\n  oper add : (a : Nat, b : Nat) --> (c : Nat);\n  rule blow : (data w0 : Nat) ==> (w12 : Nat) {\n",
+        "theory Doubling {\n  sort Nat : Type;\n  oper l : (a : Nat) --> (b : Nat);\n  oper r : (a : Nat) --> (b : Nat);\n  oper add : (a : Nat, b : Nat) --> (c : Nat);\n  rule blow : (data w0 : Nat) ==> (w12 : Nat) {\n",
     );
     for level in 1 ..= 12_u32 {
         let below = level.saturating_sub(1);
@@ -807,7 +807,7 @@ fn a_doubling_body_declines_on_the_derivation_node_budget()
     assert_eq!(report.declarations[0].description.circuits.as_ref(), []);
 }
 
-/// The constructor tree `value` holds, each constructor by its name in `Sig`
+/// The constructor tree `value` holds, each constructor by its name in `Theory`
 /// and each name quoted.
 ///
 /// # Specification
@@ -835,7 +835,7 @@ fn spelled(
                     tag, ref fields, ..
                 }) => {
                     out.push_str(
-                        gandr_theory_levitation::SIG_CONSTRUCTORS
+                        gandr_theory_levitation::THEORY_CONSTRUCTORS
                             .get(usize::from(tag))
                             .copied()
                             .unwrap_or("?"),
@@ -865,13 +865,13 @@ fn spelled(
 }
 
 #[test]
-fn a_sign_block_defines_its_presentation()
+fn a_theory_block_defines_its_presentation()
 {
     let grammar = grammar();
     let tree = parse(
         &grammar,
         SourceText::from(
-            "sign Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat; }\nsign Pointed { sort One : Type; oper pt : () --> (p : One); }\n",
+            "theory Nat { sort Nat : Type; oper add : (Nat, Nat) --> Nat; }\ntheory Pointed { sort One : Type; oper pt : () --> (p : One); }\n",
         ),
     )
     .unwrap()
@@ -888,16 +888,19 @@ fn a_sign_block_defines_its_presentation()
     assert_eq!(module.descriptions().diagnostics, []);
     let [ref code, ref nat, ref pointed] = *module.declarations()
     else {
-        panic!("`Sig` once, then each sign: {:?}", module.declarations())
+        panic!(
+            "`Theory` once, then each theory: {:?}",
+            module.declarations()
+        )
     };
     assert_eq!(
         [code, nat, pointed]
             .map(|declaration| alloc::string::String::from(declaration.name().as_ref())),
-        ["Sig", "Nat", "Pointed"]
+        ["Theory", "Nat", "Pointed"]
     );
     let crate::DeclarationOutcome::Data(index) = code.outcome()
     else {
-        panic!("`Sig` is a data family: {:?}", code.outcome())
+        panic!("`Theory` is a data family: {:?}", code.outcome())
     };
     let Maybe::Present(signature) = module.data(index)
     else {
@@ -918,13 +921,13 @@ fn a_sign_block_defines_its_presentation()
         gandr_core_checker::OriginToken::from(0_usize),
     )];
     let mut bodies = alloc::vec::Vec::new();
-    for (origin, sign) in [nat, pointed].into_iter().enumerate() {
+    for (origin, theory) in [nat, pointed].into_iter().enumerate() {
         let crate::DeclarationOutcome::Completed {
             declared_type,
             body,
-        } = sign.outcome()
+        } = theory.outcome()
         else {
-            panic!("a sign defines a value: {:?}", sign.outcome())
+            panic!("a theory defines a value: {:?}", theory.outcome())
         };
         assert_eq!(
             arena.value_type(declared_type),
@@ -932,11 +935,11 @@ fn a_sign_block_defines_its_presentation()
                 declaration: code.constant(),
                 arguments: alloc::vec::Vec::new(),
             }),
-            "of type `Sig`"
+            "of type `Theory`"
         );
         bodies.push(spelled(&arena, body));
         declarations.push(gandr_core_checker::Declaration::new(
-            sign.constant(),
+            theory.constant(),
             Maybe::Present(declared_type),
             Maybe::Present(body),
             gandr_core_checker::OriginToken::from(origin.saturating_add(1)),
@@ -968,18 +971,18 @@ fn a_sign_block_defines_its_presentation()
             gandr_core_checker::Verdict::Checked { .. },
             gandr_core_checker::Verdict::Checked { .. }
         ]),
-        "the checker forms `Sig` and checks each value at it: {verdicts:?}"
+        "the checker forms `Theory` and checks each value at it: {verdicts:?}"
     );
 }
 
 #[test]
-fn a_rule_bearing_sign_defines_its_presentation_with_its_laws()
+fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
 {
     let grammar = grammar();
     let tree = parse(
         &grammar,
         SourceText::from(
-            "sign CircleShape { sort Pt : Type; oper base : Pt; oper turn : (x : Pt) --> Pt; oper unturn : (x : Pt) --> Pt; rule turnUnturn : turn(unturn(x)) ==> x; rule unturnTurn : unturn(turn(x)) ==> x; }\nsign CatShape { sort Ob : Type; sort Hom(dom: Ob, cod: Ob) : Type; oper id : (a : Ob) --> Hom(a,a); oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c); rule unitL : comp(id(a), f) ==> f; }\n",
+            "theory CircleShape { sort Pt : Type; oper base : Pt; oper turn : (x : Pt) --> Pt; oper unturn : (x : Pt) --> Pt; rule turnUnturn : turn(unturn(x)) ==> x; rule unturnTurn : unturn(turn(x)) ==> x; }\ntheory CatShape { sort Ob : Type; sort Hom(dom: Ob, cod: Ob) : Type; oper id : (a : Ob) --> Hom(a,a); oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c); rule unitL : comp(id(a), f) ==> f; }\n",
         ),
     )
     .unwrap()
@@ -995,11 +998,14 @@ fn a_rule_bearing_sign_defines_its_presentation_with_its_laws()
     .unwrap();
     let [ref code, ref circle, ref cat] = *module.declarations()
     else {
-        panic!("`Sig` once, then each sign: {:?}", module.declarations())
+        panic!(
+            "`Theory` once, then each theory: {:?}",
+            module.declarations()
+        )
     };
     let crate::DeclarationOutcome::Data(index) = code.outcome()
     else {
-        panic!("`Sig` is a data family: {:?}", code.outcome())
+        panic!("`Theory` is a data family: {:?}", code.outcome())
     };
     let Maybe::Present(signature) = module.data(index)
     else {
@@ -1058,26 +1064,26 @@ fn a_rule_bearing_sign_defines_its_presentation_with_its_laws()
             gandr_core_checker::Verdict::Data,
             gandr_core_checker::Verdict::Checked { .. }
         ]),
-        "the checker checks the rule-bearing value at `Sig`: {verdicts:?}"
+        "the checker checks the rule-bearing value at `Theory`: {verdicts:?}"
     );
 }
 
 #[test]
 fn the_description_is_read_off_the_value()
 {
-    let source = "sign CatShape {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : Ob) --> Hom(a,a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp(id(a), f) ==> f;\n}\n";
+    let source = "theory CatShape {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : Ob) --> Hom(a,a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp(id(a), f) ==> f;\n}\n";
     let report = described(source);
     assert_eq!(report.diagnostics, []);
-    let [ref sign] = *report.declarations.as_slice()
+    let [ref theory] = *report.declarations.as_slice()
     else {
-        panic!("one sign")
+        panic!("one theory")
     };
-    let Maybe::Present(ref presentation) = sign.presentation
+    let Maybe::Present(ref presentation) = theory.presentation
     else {
-        panic!("a sign presents")
+        panic!("a theory presents")
     };
     let parts = presentation.value.decode().unwrap();
-    let description = &sign.description;
+    let description = &theory.description;
     assert_eq!(
         description
             .sorts
@@ -1142,7 +1148,7 @@ fn the_description_is_read_off_the_value()
     let mut short = presentation.clone();
     let _dropped = short.placement.faces.pop();
     assert_eq!(
-        super::described(&short, sign.description.id.clone()),
+        super::described(&short, theory.description.id.clone()),
         Err(crate::model::PresentationFault::Unplaced),
         "a rule the placement does not place"
     );
@@ -1175,11 +1181,11 @@ fn signature<Named>(
     name: Named,
     sorts: Vec<SortDesc>,
     operations: Vec<OperDesc>,
-) -> SignDesc<()>
+) -> TheoryDesc<()>
 where
     Named: Into<Name>,
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), name.into()),
         [],
         [],
@@ -1272,7 +1278,7 @@ fn a_rendered_signature_reparses_to_itself()
     let square = signature("Cells", vec![SortDesc::new("A", DeclPolarity::Data)], vec![
         operation("cell", vec![], SortRef::new("", "A")),
     ])
-    .with_shape(SignShape::new("Square", ShapeSize::from(4_usize), [
+    .with_shape(TheoryShape::new("Square", ShapeSize::from(4_usize), [
         ShapeFace::new("left", points(&[0, 2])),
         ShapeFace::new("right", points(&[3, 1])),
         ShapeFace::new("none", []),
@@ -1284,12 +1290,12 @@ fn a_rendered_signature_reparses_to_itself()
         let rendered = gandr_theory_levitation::serialize_desc(&original);
         let report = described(rendered.as_ref());
         assert_eq!(report.diagnostics, [], "{rendered:?} lowers whole");
-        let [ref sign] = *report.declarations.as_slice()
+        let [ref theory] = *report.declarations.as_slice()
         else {
-            panic!("{rendered:?} declares one sign")
+            panic!("{rendered:?} declares one theory")
         };
         assert_eq!(
-            gandr_theory_levitation::serialize_desc(&sign.description),
+            gandr_theory_levitation::serialize_desc(&theory.description),
             rendered,
             "the reparsed description renders as the text it was read from"
         );
@@ -1300,7 +1306,7 @@ fn a_rendered_signature_reparses_to_itself()
                 .collect::<Vec<_>>()
         };
         assert_eq!(
-            representability(&sign.description.sorts),
+            representability(&theory.description.sorts),
             representability(&original.sorts),
             "every sort keeps its representability"
         );
@@ -1312,12 +1318,12 @@ fn a_rendered_signature_reparses_to_itself()
                 .collect::<Vec<_>>()
         };
         assert_eq!(
-            binders(&sign.description.opers),
+            binders(&theory.description.opers),
             binders(&original.opers),
             "every port keeps its binders, each domain a sort over its index terms"
         );
         assert_eq!(
-            sign.description.shape, original.shape,
+            theory.description.shape, original.shape,
             "the shape keeps its size and its faces"
         );
     }
@@ -1328,12 +1334,12 @@ fn a_face_past_its_shape_is_refused_by_name()
 {
     for (source, kind, written) in [
         (
-            "sign Cells { shape Square : 4 { far = {1, 4}; }; sort A : Type; }",
+            "theory Cells { shape Square : 4 { far = {1, 4}; }; sort A : Type; }",
             gandr_theory_levitation::WfKind::FaceOutsideShape,
             "a face holding a point past its shape",
         ),
         (
-            "sign Cells { shape Square : 4 { left = {0}; left = {2}; }; sort A : Type; }",
+            "theory Cells { shape Square : 4 { left = {0}; left = {2}; }; sort A : Type; }",
             gandr_theory_levitation::WfKind::DuplicateFaceName,
             "a face named twice",
         ),
@@ -1352,7 +1358,7 @@ fn a_face_past_its_shape_is_refused_by_name()
         );
     }
     let report =
-        described("sign Cells { shape Square : 4 { }; shape Line : 2 { }; sort A : Type; }");
+        described("theory Cells { shape Square : 4 { }; shape Line : 2 { }; sort A : Type; }");
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
         panic!("a signature states one shape: {:?}", report.diagnostics)
@@ -1371,13 +1377,13 @@ fn the_corpus_signatures_evaluate_and_read_back_their_closed_terms()
     use gandr_theory_levitation::SimplySorted;
     use gandr_theory_levitation::VariableIndex;
 
-    // The corpus's own blocks, read as every `sign` block is: the naturals and
+    // The corpus's own blocks, read as every `theory` block is: the naturals and
     // the λ-calculus are simply sorted, so both views serve their descriptions.
     let report = described(include_str!(
         "../../../../surface-corpus/fixture/model/desc/second-order-signatures.gandr"
     ));
     assert_eq!(report.diagnostics, [], "the corpus's blocks lower whole");
-    let sign = |name: &str| {
+    let theory = |name: &str| {
         report
             .declarations
             .iter()
@@ -1405,7 +1411,7 @@ fn the_corpus_signatures_evaluate_and_read_back_their_closed_terms()
             "the two views identify the term"
         );
     };
-    let naturals = SimplySorted::new(sign("Nat")).expect("the naturals are simply sorted");
+    let naturals = SimplySorted::new(theory("Nat")).expect("the naturals are simply sorted");
     let mut numeral = BindingTerm::operation(Name::from("zero"), []);
     for _ in 0_usize .. 3_usize {
         both_views(&naturals, BindingJudgement {
@@ -1415,7 +1421,7 @@ fn the_corpus_signatures_evaluate_and_read_back_their_closed_terms()
         });
         numeral = BindingTerm::operation(Name::from("succ"), [numeral]);
     }
-    let lambda = SimplySorted::new(sign("Lambda")).expect("the λ-calculus is simply sorted");
+    let lambda = SimplySorted::new(theory("Lambda")).expect("the λ-calculus is simply sorted");
     let bound = || BindingTerm::variable(VariableIndex::from(0_usize));
     let identity = BindingTerm::operation(Name::from("lam"), [bound()]);
     let doubling = BindingTerm::operation(Name::from("lam"), [BindingTerm::operation(
@@ -1439,7 +1445,7 @@ fn the_corpus_signatures_evaluate_and_read_back_their_closed_terms()
 fn a_binder_over_an_ordinary_sort_is_refused_by_name()
 {
     let report =
-        described("sign Bad { sort Tm : Type; oper lam : (t : pi+ (x : Tm) . Tm) --> Tm; }");
+        described("theory Bad { sort Tm : Type; oper lam : (t : pi+ (x : Tm) . Tm) --> Tm; }");
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
         panic!("one refusal: {:?}", report.diagnostics)
@@ -1456,22 +1462,22 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
     // sort's index and a circuit's wire bind nothing.
     for (source, refused, written) in [
         (
-            "sign Nested { sort Tm : Type+; oper lam : (t : pi+ (x : pi+ (y : Tm) . Tm) . Tm) --> Tm; }",
+            "theory Nested { sort Tm : Type+; oper lam : (t : pi+ (x : pi+ (y : Tm) . Tm) . Tm) --> Tm; }",
             "Repaired",
             "a binder whose domain binds",
         ),
         (
-            "sign Result { sort Tm : Type+; oper lam : (t : Tm) --> (u : pi+ (x : Tm) . Tm); }",
+            "theory Result { sort Tm : Type+; oper lam : (t : Tm) --> (u : pi+ (x : Tm) . Tm); }",
             "Repaired",
             "a result that binds",
         ),
         (
-            "sign Indexed { sort Tm : Type+; sort S(i : pi+ (x : Tm) . Tm) : Type; }",
+            "theory Indexed { sort Tm : Type+; sort S(i : pi+ (x : Tm) . Tm) : Type; }",
             "Malformed",
             "an index that binds",
         ),
         (
-            "sign Wired { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : pi+ (x : Tm) . Tm) ==> (u : Tm) { node n : f(t) --> (u); }; }",
+            "theory Wired { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : pi+ (x : Tm) . Tm) ==> (u : Tm) { node n : f(t) --> (u); }; }",
             "Repaired",
             "a circuit port that binds",
         ),
@@ -1492,7 +1498,7 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
 #[test]
 fn a_member_with_no_judgment_head_declines_rather_than_vanishing()
 {
-    let source = "sign Broken {\n  sort Nat : Type;\n  rule ;\n}\n";
+    let source = "theory Broken {\n  sort Nat : Type;\n  rule ;\n}\n";
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -1513,7 +1519,7 @@ fn a_member_with_no_judgment_head_declines_rather_than_vanishing()
 fn a_terminated_block_is_not_told_it_lacks_terminators()
 {
     let report = described(
-        "sign S {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a : Ob) --> Ob;\n}\n",
+        "theory S {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a : Ob) --> Ob;\n}\n",
     );
     assert_eq!(report.diagnostics, []);
     assert_eq!(report.declarations[0].description.sorts.len(), 2);
@@ -1523,7 +1529,7 @@ fn a_terminated_block_is_not_told_it_lacks_terminators()
 #[test]
 fn unseparated_members_are_declined_rather_than_dropped()
 {
-    let source = "sign S {\n  sort Ob : Type\n  sort Ar : Type\n}\n";
+    let source = "theory S {\n  sort Ob : Type\n  sort Ar : Type\n}\n";
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -1549,7 +1555,7 @@ fn unseparated_members_are_declined_rather_than_dropped()
 fn terminated_members_are_all_presented()
 {
     let report = described(
-        "sign S {\n  sort Ob : Type;\n  sort Ar : Type;\n  oper f : (a : Ob) --> Ob;\n}\n",
+        "theory S {\n  sort Ob : Type;\n  sort Ar : Type;\n  oper f : (a : Ob) --> Ob;\n}\n",
     );
     assert_eq!(report.diagnostics, []);
     assert_eq!(report.declarations[0].description.sorts.len(), 2);
@@ -1559,7 +1565,7 @@ fn terminated_members_are_all_presented()
 #[test]
 fn an_unreadable_member_keeps_its_own_report()
 {
-    let source = "sign Adder {\n  sort Nat : Type;\n  oper add : (Nat, Nat) --> Nat;\n  rule ident ==> add;\n}\n";
+    let source = "theory Adder {\n  sort Nat : Type;\n  oper add : (Nat, Nat) --> Nat;\n  rule ident ==> add;\n}\n";
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -1578,7 +1584,7 @@ fn an_unreadable_member_keeps_its_own_report()
 #[test]
 fn a_coherence_between_composites_is_a_higher_cell()
 {
-    let source = "sign C {
+    let source = "theory C {
   sort Ob : Type;
   oper id : (a : Ob) --> Ob;
   rule unitL : id(a) ==> a;

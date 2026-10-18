@@ -13,7 +13,7 @@ The first-order code universe of gandr's levitated descriptions: codes, the decl
 
 ## Synopsis
 
-**What.** Datatypes as descriptions. A `Code<G>` is one constructor's payload in the first-order fragment `{1, var, ×, +}` with two leaf decorations: a field over a symbolic value type (`ValueTypeRef`, `PrimTy`) carrying a grade `G` and an attribute Σ (`Attrs`), and an atom-abstraction (`AtomSort`). A `SignDesc<G>` is the declaration table of one signature: its minted identity (`NominalId`), its sort set (`SortDesc`), graded parameters (`ParamDesc<G>`), constructors (`CtorDesc<G>`, the σ tag over codes), operations with multi-output arities (`OperDesc`, `BridgeArity`), rewrite faces over free terms (`RuleFace`, `FreeTerm`) and circuit rules (`CircuitRule`) whose boundary pair is derived from a wiring (`derive_boundaries`) and whose filler elaborates to a whiskered composite (`elaborate_body`). The generic programs `generic_eq`, `serialize_value` and `serialize_desc` read any description, declared or retrofitted (`bool_desc`, `option_desc`, `list_desc`, `pair_desc`, `sum_desc`); `check_desc` is the well-formedness pass; `TypedRuleFace` refines a face with a pattern context decoded by a caller-supplied decoder. The crate is `no_std` and depends on `core`, `alloc` and `quenchant-shape`.
+**What.** Datatypes as descriptions. A `Code<G>` is one constructor's payload in the first-order fragment `{1, var, ×, +}` with two leaf decorations: a field over a symbolic value type (`ValueTypeRef`, `PrimTy`) carrying a grade `G` and an attribute Σ (`Attrs`), and an atom-abstraction (`AtomSort`). A `TheoryDesc<G>` is the declaration table of one signature: its minted identity (`NominalId`), its sort set (`SortDesc`), graded parameters (`ParamDesc<G>`), constructors (`CtorDesc<G>`, the σ tag over codes), operations with multi-output arities (`OperDesc`, `BridgeArity`), rewrite faces over free terms (`RuleFace`, `FreeTerm`) and circuit rules (`CircuitRule`) whose boundary pair is derived from a wiring (`derive_boundaries`) and whose filler elaborates to a whiskered composite (`elaborate_body`). The generic programs `generic_eq`, `serialize_value` and `serialize_desc` read any description, declared or retrofitted (`bool_desc`, `option_desc`, `list_desc`, `pair_desc`, `sum_desc`); `check_desc` is the well-formedness pass; `TypedRuleFace` refines a face with a pattern context decoded by a caller-supplied decoder. The crate is `no_std` and depends on `core`, `alloc` and `quenchant-shape`.
 
 **Why.** When a datatype's description is a first-class value, a generic operation over datatypes is an ordinary program over descriptions: structural equality, a canonical wire encoding and an inspectable rendering are written once and cover builtins and declared data alike, and the cell layer above reads one table for every declaration. The fragment is first-order so that code equality is decidable, which content addressing and the matching-modulo engines key on; a levitated universe is also an inductive object a program can recurse over, which an open universe is not. The same holds for binding: a signature with restricted binders generates its own substitution calculus and its own evaluator, so a theory with binding is declared once rather than hand-written per theory.
 
@@ -22,15 +22,15 @@ The first-order code universe of gandr's levitated descriptions: codes, the decl
 ## Provided features
 
 - `Code`, `CodeNode`, `CodeView`, `CodeArgs`, `ValueTypeRef`, `ValueTypeNode`, `ValueTypeView`, `ValueTypeArgs`, `PrimTy`, `primitive_label`, `Attr`, `Attrs`, `AtomSort`, `Name`: the first-order code universe with decidable equality and hashing, recursion and fragment predicates, and right-nested products.
-- `SignDesc`, `CtorDesc`, `ParamDesc`, `OperDesc`, `SortDesc`, `SortIndex`, `NominalId`, `DeclPolarity`, `SurfaceSpan`: the declaration table, its sort-indexed constructors and the constructor layer read as single-output arities.
-- `SignShape`, `ShapeFace`, `ShapePoint`, `ShapeSize`, `shape_parameter`, `face_escape`: a signature's shape parameter — the finite shape its cells are stated over and its named faces, each the subshape of the points it lists — held as written, for the well-formedness pass to refuse a face past its shape or named twice.
+- `TheoryDesc`, `CtorDesc`, `ParamDesc`, `OperDesc`, `SortDesc`, `SortIndex`, `NominalId`, `DeclPolarity`, `SurfaceSpan`: the declaration table, its sort-indexed constructors and the constructor layer read as single-output arities.
+- `TheoryShape`, `ShapeFace`, `ShapePoint`, `ShapeSize`, `shape_parameter`, `face_escape`: a signature's shape parameter — the finite shape its cells are stated over and its named faces, each the subshape of the points it lists — held as written, for the well-formedness pass to refuse a face past its shape or named twice.
 - `BridgeArity`, `SortRef`: multi-output arities as bridge diagrams.
 - `FreeTerm`, `TermNode`, `TermView`, `TermArgs`, `RuleFace`, `RuleVarMeta`, `Variance`, `derive_cell_var_meta`: open terms over a signature, with a results tuple at the right-hand root of a many-output operation's rule, rewrite faces, and per-variable metadata derived from a face's left-hand side.
 - `CircuitRule`, `CircuitBody`, `CircuitNode`, `CircuitFrame`, `CircuitRedex`, `FrameHead`, `DerivedBoundaries`, `BoundaryReading`, `CircuitDerivationError`, `derive_boundaries`, `derive_boundaries_within`, `derive_boundary`, `derive_boundary_within`: circuit rules and the derivation of their boundary pair from a wiring, a body read out at several roots deriving a results tuple of one boundary per root.
 - `RewritePort`, `PortFace`, `InterfacePair`, `PortInstantiationError`, `WhiskeredCell`, `Whisker`, `WhiskerHead`, `ActiveCell`, `active_position`, `RedexOccurrence`, `CircuitElaborationError`, `elaborate_body`, `redex_occurrences`: rewrite-sorted ports, their instantiation at a redex line, and a block's elaboration to the boundary language's whiskered composite.
 - `DescValue`, `Payload`, `PayloadNode`, `PayloadView`, `PayloadArgs`, `Side`, `generic_eq`, `serialize_value`, `serialize_desc`: values of a description and the generic programs over them.
 - `bool_desc`, `option_desc`, `list_desc`, `pair_desc`, `sum_desc`: the primitive formers retrofitted as descriptions.
-- `sig_desc`, `SIG_CONSTRUCTORS`, `SigValue`, `SigParts`, `SigSort`, `SigOperation`, `SigPort`, `SigBinder`, `SigRule`, `SigFault`: `Sig`, the datatype whose values are presentations — representable sorts, binding ports and a shape parameter among them — a presentation's value, and its canonical bytes as the presentation's one identity.
+- `theory_desc`, `THEORY_CONSTRUCTORS`, `TheoryValue`, `TheoryParts`, `TheorySort`, `TheoryOperation`, `TheoryPort`, `TheoryBinder`, `TheoryRule`, `TheoryFault`: `Theory`, the datatype whose values are presentations — representable sorts, binding ports and a shape parameter among them — a presentation's value, and its canonical bytes as the presentation's one identity.
 - `check_desc`, `WfDiagnostic`, `WfKind`, `diagnostic_span`, `RESERVED_DERIVED_MARKERS`: the well-formedness pass over a whole declaration table.
 - `Representability`, `first_order`, `TranslationError`: a sort that may be bound, the `pi+` binder over it, and the fold of a signature into its single-substitution first-order model.
 - `SimplySorted`, `BindingTerm`, `BindingJudgement`, `FirstOrderJudgement`, `Evaluation`, `AdmissionError`, `BindingError`, `VariableIndex`: binding syntax over a simply-sorted signature, identified with the generated model's canonical terms and evaluated into a value domain and read back, from the declarations alone.
@@ -39,7 +39,7 @@ The first-order code universe of gandr's levitated descriptions: codes, the decl
 
 ## Expected features
 
-- **A grade vocabulary.** A field's grade is the type parameter `G` of `Code`, `CtorDesc`, `ParamDesc` and `SignDesc`; the consumer that owns grades supplies it. The generic programs and `check_desc` never inspect it.
+- **A grade vocabulary.** A field's grade is the type parameter `G` of `Code`, `CtorDesc`, `ParamDesc` and `TheoryDesc`; the consumer that owns grades supplies it. The generic programs and `check_desc` never inspect it.
 - **A decoder.** `PatternContext::from_field_codes` takes the function that decodes a field code into the consumer's type universe, and propagates its refusal.
 
 ## Examples
@@ -50,13 +50,13 @@ Compare and encode two values of the retrofitted `Boolean`, which carries no fie
 use gandr_theory_levitation::ConstructorTag;
 use gandr_theory_levitation::DescValue;
 use gandr_theory_levitation::Payload;
-use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::bool_desc;
 use gandr_theory_levitation::check_desc;
 use gandr_theory_levitation::generic_eq;
 use gandr_theory_levitation::serialize_value;
 
-let boolean: SignDesc<()> = bool_desc();
+let boolean: TheoryDesc<()> = bool_desc();
 assert!(check_desc(&boolean).is_empty());
 let false_value = DescValue::new(ConstructorTag::from(0_usize), Payload::unit());
 let true_value = DescValue::new(ConstructorTag::from(1_usize), Payload::unit());
@@ -121,7 +121,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Code equality | [`code`](src/code.rs) |
 | Circuit rules and their derived boundaries | [`circuit`](src/circuit.rs) |
 | Elaborating a circuit block | [`elaborate`](src/elaborate.rs) |
-| The presentation code `Sig` and what waits on the fragment | [`sig`](src/sig.rs) |
+| The presentation code `Theory` and what waits on the fragment | [`theory`](src/theory.rs) |
 | Boundary wrappers | [`boundary`](src/boundary.rs) |
 
 ## License

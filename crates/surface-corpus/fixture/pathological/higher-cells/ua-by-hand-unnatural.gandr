@@ -1,4 +1,4 @@
-sign Rig {
+theory Rig {
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);

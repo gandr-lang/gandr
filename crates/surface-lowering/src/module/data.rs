@@ -320,21 +320,21 @@ struct Formed<'source>
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: a written family names its position in the collection's data
-///   list; `Sig` names the presentation code the collection mints; words name
-///   their position in the collection's words list.
+///   list; `Theory` names the presentation code the collection mints; words
+///   name their position in the collection's words list.
 /// - executable: none — the tag holds no list to check its position against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a constructor of a written family and one of `Sig` each
-///   apply and match through their own generators.
+/// - hypothesis: L3 — a constructor of a written family and one of `Theory`
+///   each apply and match through their own generators.
 /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
-/// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+/// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Generators
 {
     /// The data declaration at this position of the collection's data list.
     Written(usize),
-    /// `Sig`, the presentation code, minted from its description.
+    /// `Theory`, the presentation code, minted from its description.
     Presentation,
     /// The words at this position of the collection's words list: the empty
     /// word, then each loop's letter and its inverse.
@@ -365,8 +365,8 @@ pub struct Constructor
     pub tag: usize,
     /// How many fields the constructor takes.
     pub arity: usize,
-    /// The generator's name tile; for a constructor of `Sig`, the name tile of
-    /// the `sign` block that minted it.
+    /// The generator's name tile; for a constructor of `Theory`, the name tile
+    /// of the `theory` block that minted it.
     pub named: Placed,
 }
 
@@ -510,7 +510,7 @@ impl<'source> Collector<'_, 'source>
         }
         else if self.pbg.tile_label(LabelText(name.as_ref())).is_some() {
             // The half that carries the refusal and the expectation stating
-            // it, as a `sign` block's held refusal does.
+            // it, as a `theory` block's held refusal does.
             if let Some(entry) = self.collected.slots.get_mut(slot.0) {
                 entry.signature = Maybe::Present(Half {
                     declaration,
