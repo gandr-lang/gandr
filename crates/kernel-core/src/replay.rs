@@ -324,6 +324,7 @@ use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
+use gandr_kernel_term::ValueTypeId;
 
 use crate::conv::Codomains;
 use crate::conv::ConversionGoal;
@@ -1218,6 +1219,62 @@ pub(crate) fn read_endpoints(
     }
     run.arena.truncate_to(watermark);
     reading
+}
+
+/// The type the decode of `code` denotes, read as [`read_endpoints`] reads a
+/// decode: `code` normalized as [`Replay::normalize_returned`] gives it, and
+/// the type its normal form quotes.
+///
+/// # Specification
+/// - requires: `code`, and every body in `unfoldings`, live in `arena`.
+/// - ensures: `Some(quoted)` exactly when `code` normalizes within `budget` to
+///   a quote of `quoted`, which then lives in `arena` with every node the
+///   reading minted for it; `None` otherwise, with `arena` holding what it held
+///   on entry.
+/// - provides: the check's reading of a decode it must see the head of — the
+///   fibre a pair's second component checks at, instantiated at a first
+///   component a code calls into (#721) — kept beside the conversion's reading
+///   so both read a returned code by the one evaluator.
+/// - fails: never — a normalization that stops reads to no type.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode whose code calls a thunk returning `⌜Unit⌝`
+///   reads to the unit type and admits `()`; one whose code returns `⌜Integer⌝`
+///   reads to the integers and refuses it.
+/// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| ret.map_or_else(|| arena.watermark() == before, |quoted| arena.value_type(quoted).is_some()),
+)]
+#[must_use]
+pub(crate) fn read_decode(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    code: ValueId,
+    budget: ReplayBudget,
+) -> Option<ValueTypeId>
+{
+    let watermark = arena.watermark();
+    let mut run = Replay {
+        arena,
+        unfoldings,
+        evaluator: unfoldings,
+        trace: core::iter::empty().peekable(),
+        reading: Reading::Forced,
+        position: 0,
+        spent: 0,
+        budget: u64::from(budget),
+        table: ContentTable::new(),
+        memo: NullMemo,
+    };
+    if let Ok(normal) = run.normalize_returned(code)
+        && let Some(&Value::Quote(quoted)) = run.arena.value(normal)
+    {
+        return Some(quoted);
+    }
+    run.arena.truncate_to(watermark);
+    None
 }
 
 /// The two sides as goal terms.
