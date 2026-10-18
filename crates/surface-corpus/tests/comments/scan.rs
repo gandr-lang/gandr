@@ -7,9 +7,9 @@ use std::path::PathBuf;
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
 
-use crate::error::CommentError;
-use crate::judge::Finding;
-use crate::judge::findings_of;
+use crate::comments::error::CommentError;
+use crate::comments::judge::Finding;
+use crate::comments::judge::findings_of;
 
 /// Every uncommented item under `fixture`, ledger keys relative to it.
 ///
@@ -35,7 +35,7 @@ use crate::judge::findings_of;
 /// - hypothesis: L3 — a directory of one uncommented source and one commented
 ///   source yields only the uncommented line; a symbolic link is not walked.
 ///   The witnesses construct that directory.
-/// - witness: `comments::scan::tests::a_walk_names_the_uncommented_source_and_skips_a_link`
+/// - witness: `tests::comments::scan::tests::a_walk_names_the_uncommented_source_and_skips_a_link`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|found| found.iter().zip(found.iter().skip(1)).all(|(left, right)| left.line() <= right.line())))]
 #[inline]
 pub fn collect(
@@ -81,8 +81,8 @@ pub fn collect(
         })?;
         found.extend(findings_of(
             pbg,
-            crate::shape::Text(&key),
-            crate::shape::Text(&text),
+            crate::comments::shape::Text(&key),
+            crate::comments::shape::Text(&text),
         )?);
     }
     found.sort_by(|left, right| left.line().cmp(&right.line()));
@@ -93,9 +93,9 @@ pub fn collect(
 ///
 /// # Specification
 /// trivial.
-fn is_gandr(path: &Path) -> crate::shape::Yes
+fn is_gandr(path: &Path) -> crate::comments::shape::Yes
 {
-    crate::shape::Yes(
+    crate::comments::shape::Yes(
         path.extension()
             .is_some_and(|extension| extension == "gandr"),
     )
@@ -116,7 +116,7 @@ fn is_gandr(path: &Path) -> crate::shape::Yes
 /// # Adequacy
 /// - hypothesis: L3 — a walked source is keyed under the fixture, and a colon
 ///   in that key is refused.
-/// - witness: `comments::scan::tests::a_walk_names_the_uncommented_source_and_skips_a_link`
+/// - witness: `tests::comments::scan::tests::a_walk_names_the_uncommented_source_and_skips_a_link`
 ///
 /// # Errors
 /// [`CommentError::File`] when the relative path cannot be a ledger key.
@@ -170,14 +170,14 @@ fn file_key(
 /// # Adequacy
 /// - hypothesis: L3 — the gate's write leaves the ledger readable as the text
 ///   it was given.
-/// - witness: `comments::gate::the_fixture_matches_the_ledger`
+/// - witness: `tests::comments::gate::the_fixture_matches_the_ledger`
 ///
 /// # Errors
 /// [`CommentError::Ledger`] when the write or the rename fails.
 #[inline]
 pub fn replace(
     path: &Path,
-    text: crate::shape::Text<'_>,
+    text: crate::comments::shape::Text<'_>,
 ) -> Result<(), CommentError>
 {
     let temporary = temporary_path(path);
@@ -216,7 +216,7 @@ mod tests
     use std::fs;
 
     use super::collect;
-    use crate::judge::grammar;
+    use crate::comments::judge::grammar;
 
     #[test]
     fn a_walk_names_the_uncommented_source_and_skips_a_link()

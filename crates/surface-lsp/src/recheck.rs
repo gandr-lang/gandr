@@ -336,7 +336,7 @@ pub fn roles() -> Result<&'static RoleTable, &'static PbgError>
 /// # Adequacy
 /// - hypothesis: L2 — over every corpus source, a document opened through it
 ///   publishes the reports the walk renders under the same root.
-/// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |session| session.root() == classify(&uri.path())))]
 pub fn open(uri: &DocumentUri) -> DocumentSession
@@ -367,7 +367,7 @@ pub fn open(uri: &DocumentUri) -> DocumentSession
 /// - hypothesis: L3 — an editor-shaped transcript over two thousand forms reads
 ///   one timing line per synchronisation, the open molding every form and the
 ///   edit a handful.
-/// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Timing
 {
@@ -428,7 +428,7 @@ impl fmt::Display for Timing
     /// # Adequacy
     /// - hypothesis: L3 — the transcript reads the molded count back out of the
     ///   line it logged.
-    /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+    /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
     #[inline]
     fn fmt(
         &self,
@@ -515,8 +515,8 @@ pub struct Rechecked
 ///   asserted at their related locations, a mismatch under a function at its
 ///   annotations then its rules in order, an unlocated rule in its message, and
 ///   a pending source at its ledger line.
-/// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
-/// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::related_information_is_the_annotations_then_the_located_contexts`
@@ -658,7 +658,7 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — a synchronisation's timing line carries the admission's
 ///   wall after the recheck's, and a refused document's carries none.
-/// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `recheck::tests::an_admission_follows_the_published_diagnostics`
 #[spec(ensures: |ret| ret.timing.forms == timing.forms && ret.timing.judged == timing.judged
     && ret.timing.wall == timing.wall
@@ -822,7 +822,7 @@ pub fn trial(
 /// # Adequacy
 /// - hypothesis: L2 — every corpus source, an importer among them, publishes
 ///   the diagnostics the walk yields for its file.
-/// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref laid) => laid.text.get(usize::from(laid.base) ..) == Some(text.as_ref()),
     Maybe::Absent(_) => true,
@@ -851,7 +851,7 @@ fn laid_out(
 /// # Adequacy
 /// - hypothesis: L2 — every corpus source, an importer among them, publishes
 ///   the diagnostics the walk yields for its file.
-/// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(moved) => usize::from(moved.start()).saturating_add(usize::from(base)) == usize::from(span.start()),
     Maybe::Absent(_) => usize::from(span.start()) < usize::from(base) || usize::from(span.end()) < usize::from(base),
@@ -932,7 +932,7 @@ fn diagnostics_of(
 /// - witness: `recheck::tests::an_unlocated_context_is_appended_to_the_message`
 /// - witness: `recheck::tests::one_refusal_is_published_at_every_verbosity`
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
-/// - witness: `session::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| ret.source == "gandr"
     && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, Seriousness::Note => Severity::HINT, Seriousness::Error | Seriousness::Ledger => Severity::ERROR }
     && ret.code.is_some() == matches!(found.identifier, Maybe::Present(_))

@@ -48,7 +48,7 @@ const FITTING_LINKS: Links = Links(63);
 /// - hypothesis: L3 — replacing a unit leaf with another former changes the
 ///   exact no-sharing measure and the independent erased-tree count.
 /// - witness: `measure::tests::an_occurrence_free_root_measures_its_own_size`
-/// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+/// - witness: `tests::measure::the_expansion_size_is_what_the_unshared_walk_visits`
 #[spec(
         captures: entry = overlay.watermark(),
         ensures: |ret| overlay.watermark() != entry && overlay.value(ret) == Some(&ValueNode::Grafted(ValueGraft::Unit))
@@ -369,7 +369,7 @@ fn leg_scope_case(overlay: &mut Overlay) -> OverlayValueId
 ///   measure changes the exact values, fault payloads and independently counted
 ///   erasures observed by the callers.
 /// - witness: `measure::tests::an_invalid_overlay_is_refused_by_name_before_measuring`
-/// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+/// - witness: `tests::measure::the_expansion_size_is_what_the_unshared_walk_visits`
 #[spec(
         ensures: |ret| ret == SharingMeasure::of(overlay, OverlayId::Value(root))
     )]

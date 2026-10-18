@@ -8,18 +8,13 @@
 //! before the next: the server answers every change before it reads the next
 //! message, so the session runs in lockstep and every intermediate text is a
 //! case. The oracle is a fresh connection opening the same text whole.
+//!
+//! The cases, in a `cfg(test)` module so the crate's lint wall reads them as
+//! test code rather than as shipping code.
 
-extern crate alloc;
-
-/// The cases, in a `cfg(test)` module so the crate's lint wall reads them as
-/// test code rather than as shipping code.
-#[cfg(test)]
-mod editor
-{
-    mod buffer;
-    mod client;
-    mod editing;
-    mod scenarios;
-    mod shapes;
-    mod typist;
-}
+mod buffer;
+mod client;
+mod editing;
+mod scenarios;
+mod shapes;
+mod typist;

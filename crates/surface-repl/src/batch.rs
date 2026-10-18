@@ -82,9 +82,9 @@ pub enum Ended
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a piped session's transcript is asserted line by line.
-/// - witness: `loop::tests::piped_value_prints_a_transcript`
-/// - witness: `loop::tests::empty_transcripts_do_not_touch_the_writer`
-/// - witness: `loop::tests::write_and_flush_failures_keep_their_kind`
+/// - witness: `tests::repl_loop::piped_value_prints_a_transcript`
+/// - witness: `tests::repl_loop::empty_transcripts_do_not_touch_the_writer`
+/// - witness: `tests::repl_loop::write_and_flush_failures_keep_their_kind`
 #[spec(ensures: |ret| !block.source.is_empty()
     || block.lines.iter().any(|row| !row.1.is_empty()) || ret.is_ok())]
 #[inline]
@@ -125,10 +125,10 @@ where
 ///   an input fault are observed. The predicate rules out editor faults; the
 ///   stream transcript and flush order need external observers, including
 ///   partial-write refusal and flush failure after both kinds of ending.
-/// - witness: `loop::tests::piped_value_prints_a_transcript`
-/// - witness: `loop::tests::an_unparseable_pipe_reports_rather_than_going_quiet`
-/// - witness: `loop::tests::unreadable_input_ends_the_batch_faulted`
-/// - witness: `loop::tests::write_and_flush_failures_keep_their_kind`
+/// - witness: `tests::repl_loop::piped_value_prints_a_transcript`
+/// - witness: `tests::repl_loop::an_unparseable_pipe_reports_rather_than_going_quiet`
+/// - witness: `tests::repl_loop::unreadable_input_ends_the_batch_faulted`
+/// - witness: `tests::repl_loop::write_and_flush_failures_keep_their_kind`
 #[spec(ensures: |ret| !matches!(ret, Ok(Ended::Faulted(Fault::Editor(_)))))]
 #[inline]
 pub fn run_batch<Input, Output>(
@@ -161,8 +161,8 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — through [`run_batch`]'s witnesses, each asserting a piped
 ///   transcript line by line.
-/// - witness: `loop::tests::piped_value_prints_a_transcript`
-/// - witness: `loop::tests::write_and_flush_failures_keep_their_kind`
+/// - witness: `tests::repl_loop::piped_value_prints_a_transcript`
+/// - witness: `tests::repl_loop::write_and_flush_failures_keep_their_kind`
 #[spec(ensures: |ret| !matches!(ret, Ok(Ended::Faulted(Fault::Editor(_)))))]
 fn transcribe<Input, Output>(
     input: Input,

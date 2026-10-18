@@ -227,7 +227,7 @@ pub struct FamilyParameter
 /// # Adequacy
 /// - hypothesis: L3 — a two-parameter family expands at each reference to its
 ///   type over the arguments.
-/// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+/// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FamilyMember
 {
@@ -278,8 +278,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a two-parameter manifest family beside a value
     ///   component lowers, and one applied to no arguments is refused.
-    /// - witness: `modules::modules::a_manifest_family_component_binds_two_parameters`
-    /// - witness: `modules::modules::a_type_component_arity_mismatch_is_refused_by_name`
+    /// - witness: `tests::modules::a_manifest_family_component_binds_two_parameters`
+    /// - witness: `tests::modules::a_type_component_arity_mismatch_is_refused_by_name`
     #[spec(
         captures: before = (types.len(), self.collected.families.len()),
         ensures: types.len() == before.0.saturating_add(1)
@@ -350,8 +350,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` model and a former naming an
     ///   undeclared sign, each asserted as the exact components or refusal.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `modules::modules::models::a_model_of_an_undeclared_sign_is_refused_by_name`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_model_of_an_undeclared_sign_is_refused_by_name`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -484,8 +484,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a two-parameter family is read whole, and one whose
     ///   parameter has no type is refused.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `modules::modules::models::a_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
     pub(super) fn family_parameters(
         cursor: &mut Cursor<'_>
     ) -> Result<Vec<FamilyParameter>, LoweringRefusal<'source>>
@@ -545,9 +545,9 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a two-index kind against a one-parameter member is
     ///   refused naming both counts, whether written as a telescope or a spine.
-    /// - witness: `modules::modules::models::a_family_of_the_wrong_telescope_is_refused`
-    /// - witness: `modules::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
-    /// - witness: `modules::modules::a_kinded_type_component_spine_declares_its_arity`
+    /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::a_kinded_type_component_spine_declares_its_arity`
     fn kind_arity(
         &self,
         kind: Placed,
@@ -619,9 +619,9 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a written and a derived family each read their
     ///   member, and a member of the wrong count is refused naming both.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `modules::modules::models::a_family_of_the_wrong_telescope_is_refused`
-    /// - witness: `modules::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
     #[spec(
         captures: before = types.len(),
         ensures: |_| types.len() <= before.saturating_add(1),
@@ -758,7 +758,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` `Hom` binds two indices.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(ensures: |ret| matches!(model, Maybe::Present(_)) || ret == OperandCount::from(0_usize))]
     fn derived_indices(
         &self,
@@ -799,8 +799,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` operations and laws each type their
     ///   member, and a missing operation is refused naming it.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `modules::modules::models::a_model_missing_an_operation_is_refused_naming_it`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_model_missing_an_operation_is_refused_naming_it`
     #[spec(
         captures: before = self.member_named(Container::Module(structure), component.name),
         ensures: |ret| match ret {
@@ -903,8 +903,8 @@ impl<'source> Collector<'_, 'source>
 ///   binding one parameter against it is refused naming both counts, and `(Type
 ///   -> Type)` and `Type -> (Type -> Type)` read through their parentheses
 ///   (#611).
-/// - witness: `modules::modules::a_kinded_type_component_spine_declares_its_arity`
-/// - witness: `modules::modules::a_kind_reads_through_its_grouping_parentheses`
+/// - witness: `tests::modules::a_kinded_type_component_spine_declares_its_arity`
+/// - witness: `tests::modules::a_kind_reads_through_its_grouping_parentheses`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |domains| domains.iter().all(|domain| domain.span.start() >= kind.span.start())))]
 pub fn spine_domains<'source>(
     pbg: &Pbg,
@@ -1029,7 +1029,7 @@ pub fn spine_domains<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — `(Type -> Type)` reads as an arrow of one domain and `((a
 ///   : Type) => Type)` as a family of one index (#611).
-/// - witness: `modules::modules::a_kind_reads_through_its_grouping_parentheses`
+/// - witness: `tests::modules::a_kind_reads_through_its_grouping_parentheses`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |inner| inner.span.start() >= kind.span.start() && inner.span.end() <= kind.span.end()))]
 pub fn ungrouped<'source>(
     pbg: &Pbg,

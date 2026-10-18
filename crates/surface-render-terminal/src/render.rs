@@ -85,10 +85,10 @@ use crate::style::Rendered;
 ///   causal shape bounds layout evidence to those fixtures. L3 — pathless and
 ///   unlocated observations distinguish lost locations; plain/styled pairs
 ///   expose added colour; literal path controls expose false sanitization.
-/// - witness: `render::render::a_type_mismatch_renders_as_a_located_report`
-/// - witness: `render::render::each_causal_shape_renders_as_its_golden`
-/// - witness: `render::render::one_refusal_renders_at_every_verbosity`
-/// - witness: `render::render::forced_styling_colors_actual_facade_annotations`
+/// - witness: `tests::render::a_type_mismatch_renders_as_a_located_report`
+/// - witness: `tests::render::each_causal_shape_renders_as_its_golden`
+/// - witness: `tests::render::one_refusal_renders_at_every_verbosity`
+/// - witness: `tests::render::forced_styling_colors_actual_facade_annotations`
 /// - witness: `render::tests::literal_path_controls_are_not_styling_or_framing`
 #[spec(ensures: |ref ret| match verbosity {
     Verbosity::Json => ret.as_ref().starts_with('{') && !ret.as_ref().contains('\n'),

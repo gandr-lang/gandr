@@ -13,10 +13,10 @@
 //! any frontier over a promise, and of two promises keeps the left one
 //! unforced, so a document too wide to lay out falls back to its vertical form
 //! (`taint::tests::merge_frontier_wins_over_ready_taint`,
-//! `algebra::tests::render_tainted_root_uses_complete_left_biased_output`). A
+//! `tests::algebra::render_tainted_root_uses_complete_left_biased_output`). A
 //! tainted result is complete output; `Rendered::width_tainted` reports the
 //! taint and never a truncation
-//! (`algebra::tests::tainted_contexts_preserve_taint_and_output`).
+//! (`tests::algebra::tainted_contexts_preserve_taint_and_output`).
 
 use alloc::vec::Vec;
 

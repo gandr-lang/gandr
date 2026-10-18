@@ -1098,7 +1098,7 @@ pub struct Firing
 /// - witness: `horn::tests::paper_example_reaches_the_published_fixpoint`
 /// - witness: `horn::tests::paper_loop_variant_diverges_everywhere`
 /// - witness: `horn::tests::saturation_preserves_seeded_infinity_without_a_firing`
-/// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
+/// - witness: `tests::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
 #[derive(Clone, Debug)]
 pub struct Saturation
 {
@@ -1155,7 +1155,7 @@ pub struct Saturation
 /// - witness: `horn::tests::saturation_preserves_seeded_infinity_without_a_firing`
 /// - witness: `horn::tests::paper_example_reaches_the_published_fixpoint`
 /// - witness: `horn::tests::paper_loop_variant_diverges_everywhere`
-/// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
+/// - witness: `tests::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
 #[spec(
     requires: {
         let variables: alloc::collections::BTreeSet<_> = seed

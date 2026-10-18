@@ -10,6 +10,7 @@ license.workspace = true
 keywords = ["anodized", "gandr", "perf", "profiling"]
 categories = ["development-tools::profiling"]
 publish.workspace = true
+autotests = false
 
 [[bin]]
 name = "spec-cost"
@@ -18,6 +19,12 @@ path = "src/main.rs"
 [[bin]]
 name = "spec-cost-ratio"
 path = "src/bin/spec-cost-ratio.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the specification attribute; the shape
 # crate the `Maybe` a lookup outside every specification returns.

@@ -184,7 +184,7 @@ pub fn execute<'source>(composed: &mut Composed<'source>) -> Ran<'source>
 ///   empty-program compositions reach and remain at the maximum lowering count.
 ///   The parse-error counter branch is stated by the predicate, not
 ///   independently triggered by these valid built-in-grammar fixtures.
-/// - witness: `run::run::run_source_runs_source_text`
+/// - witness: `tests::run::run_source_runs_source_text`
 /// - witness: `script::tests::run_source_counts_lowerings_with_saturation`
 #[inline]
 #[spec(
@@ -247,9 +247,9 @@ impl ScriptRun<'_>
     /// - hypothesis: L3 — an absent path directly observes the fault status;
     ///   file-backed value and refusal runs observe the source status. These
     ///   are finite examples, not every nested evaluation failure.
-    /// - witness: `run::run::run_source_file_reports_the_path_of_an_absent_file`
-    /// - witness: `run::run::run_source_file_runs_a_script_file`
-    /// - witness: `run::run::run_source_file_surfaces_a_source_failure_unchanged`
+    /// - witness: `tests::run::run_source_file_reports_the_path_of_an_absent_file`
+    /// - witness: `tests::run::run_source_file_runs_a_script_file`
+    /// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match *self {
@@ -319,10 +319,10 @@ impl Script
     ///   fixtures assert their paths and outcomes. L2 comparisons with the same
     ///   in-memory source cover pipeline agreement, not an independent oracle
     ///   for arbitrary programs or all filesystem failures.
-    /// - witness: `run::run::run_source_file_runs_a_script_file`
-    /// - witness: `run::run::run_source_file_accepts_an_executable_shebang_line`
-    /// - witness: `run::run::run_source_file_reports_the_path_of_an_absent_file`
-    /// - witness: `run::run::run_source_file_surfaces_a_source_failure_unchanged`
+    /// - witness: `tests::run::run_source_file_runs_a_script_file`
+    /// - witness: `tests::run::run_source_file_accepts_an_executable_shebang_line`
+    /// - witness: `tests::run::run_source_file_reports_the_path_of_an_absent_file`
+    /// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
     #[inline]
     #[spec(
         captures: [expected_path = self.path.as_path()],

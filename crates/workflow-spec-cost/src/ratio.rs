@@ -459,7 +459,7 @@ fn times(
 ///   dropping a count, keeping the shorter time or ordering ascending changes
 ///   the asserted pairing.
 /// - witness: `ratio::tests::tests_pair_by_binary_and_name`
-/// - witness: `ratio::ratio::a_recorded_pair_reports_each_test_against_the_baseline`
+/// - witness: `tests::ratio::a_recorded_pair_reports_each_test_against_the_baseline`
 #[inline]
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |pairing| pairing
     .compared
@@ -543,7 +543,7 @@ impl fmt::Display for Comparisons<'_>
     ///   floor that is ignored, a limit that cuts a flagged test, or a total
     ///   over the wrong tests changes the asserted text.
     /// - witness: `ratio::tests::the_report_lists_every_flagged_test_above_the_floor`
-    /// - witness: `ratio::ratio::a_recorded_pair_reports_each_test_against_the_baseline`
+    /// - witness: `tests::ratio::a_recorded_pair_reports_each_test_against_the_baseline`
     #[inline]
     fn fmt(
         &self,

@@ -103,7 +103,7 @@ impl AsRef<str> for RejectionReason
     /// # Adequacy
     /// - hypothesis: L3 — a reason built from a borrowed and from an owned text
     ///   reads as that text.
-    /// - witness: `namespace::namespace::a_rejection_reason_reads_as_the_text_it_was_given`
+    /// - witness: `tests::namespace::a_rejection_reason_reads_as_the_text_it_was_given`
     #[inline]
     fn as_ref(&self) -> &str
     {
@@ -143,9 +143,9 @@ impl fmt::Display for RejectionReason
 /// # Adequacy
 /// - hypothesis: L3 — rejecting handlers refuse each event kind at a known
 ///   path, distinguishing the policy refusal from a structural scope failure.
-/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_missing_selection`
-/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_shadow`
-/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_hook`
+/// - witness: `tests::namespace::a_rejecting_handler_refuses_a_missing_selection`
+/// - witness: `tests::namespace::a_rejecting_handler_refuses_a_shadow`
+/// - witness: `tests::namespace::a_rejecting_handler_refuses_a_hook`
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EventRejection
@@ -249,10 +249,10 @@ impl Error for EventRejection
 /// # Adequacy
 /// - hypothesis: L3 — a nested emptiness check, collision and hook expose their
 ///   accumulated paths, and one mixed run fixes their order.
-/// - witness: `namespace::namespace::a_nested_event_reports_the_accumulated_prefix`
-/// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
-/// - witness: `namespace::namespace::a_nested_hook_reports_the_accumulated_prefix`
-/// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+/// - witness: `tests::namespace::a_nested_event_reports_the_accumulated_prefix`
+/// - witness: `tests::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+/// - witness: `tests::namespace::a_nested_hook_reports_the_accumulated_prefix`
+/// - witness: `tests::namespace::the_permissive_handler_records_all_three_events`
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum NamespaceEvent<Label>
@@ -296,10 +296,10 @@ pub enum NamespaceEvent<Label>
 /// # Adequacy
 /// - hypothesis: L3 — permissive and rejecting handlers cover all three
 ///   callback kinds and both successful and refused runs.
-/// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
-/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_missing_selection`
-/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_shadow`
-/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_hook`
+/// - witness: `tests::namespace::the_permissive_handler_records_all_three_events`
+/// - witness: `tests::namespace::a_rejecting_handler_refuses_a_missing_selection`
+/// - witness: `tests::namespace::a_rejecting_handler_refuses_a_shadow`
+/// - witness: `tests::namespace::a_rejecting_handler_refuses_a_hook`
 pub trait NamespaceEventHandler<Data, Tag>
 {
     /// The hook vocabulary this handler interprets.
@@ -325,8 +325,8 @@ pub trait NamespaceEventHandler<Data, Tag>
     /// # Adequacy
     /// - hypothesis: L3 — permissive and rejecting handlers settle one missing
     ///   selection; the caller observes continued or aborted execution.
-    /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
-    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_missing_selection`
+    /// - witness: `tests::namespace::the_permissive_handler_records_all_three_events`
+    /// - witness: `tests::namespace::a_rejecting_handler_refuses_a_missing_selection`
     fn not_found(
         &mut self,
         path: &NamePath,
@@ -350,8 +350,8 @@ pub trait NamespaceEventHandler<Data, Tag>
     /// # Adequacy
     /// - hypothesis: L3 — a later binding survives a permissive collision,
     ///   while the rejecting policy aborts at that collision.
-    /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
-    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_shadow`
+    /// - witness: `tests::namespace::the_permissive_handler_records_all_three_events`
+    /// - witness: `tests::namespace::a_rejecting_handler_refuses_a_shadow`
     fn shadow(
         &mut self,
         path: &NamePath,
@@ -377,8 +377,8 @@ pub trait NamespaceEventHandler<Data, Tag>
     /// # Adequacy
     /// - hypothesis: L3 — one hook preserves its subject under the permissive
     ///   policy and one is refused by the rejecting policy.
-    /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
-    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_hook`
+    /// - witness: `tests::namespace::the_permissive_handler_records_all_three_events`
+    /// - witness: `tests::namespace::a_rejecting_handler_refuses_a_hook`
     fn hook(
         &mut self,
         path: &NamePath,
@@ -406,8 +406,8 @@ pub trait NamespaceEventHandler<Data, Tag>
 /// # Adequacy
 /// - hypothesis: L3 — a three-event run observes order and chosen payloads; a
 ///   clear followed by another run observes log reuse.
-/// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
-/// - witness: `namespace::namespace::clearing_a_permissive_handler_forgets_what_it_recorded`
+/// - witness: `tests::namespace::the_permissive_handler_records_all_three_events`
+/// - witness: `tests::namespace::clearing_a_permissive_handler_forgets_what_it_recorded`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PermissiveHandler<Label>
@@ -465,7 +465,7 @@ impl<Label> PermissiveHandler<Label>
     /// # Adequacy
     /// - hypothesis: L3 — a handler holding an event, cleared, then recording
     ///   one more, asserted as the exact log both times.
-    /// - witness: `namespace::namespace::clearing_a_permissive_handler_forgets_what_it_recorded`
+    /// - witness: `tests::namespace::clearing_a_permissive_handler_forgets_what_it_recorded`
     #[spec(
         ensures: self.events.is_empty(),
     )]
@@ -498,7 +498,7 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — one run performing all three events, asserted as the
     ///   exact log.
-    /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+    /// - witness: `tests::namespace::the_permissive_handler_records_all_three_events`
     #[spec(
         captures: before = self.events.len(),
         ensures: |ret| {
@@ -535,7 +535,7 @@ where
     /// - hypothesis: L3 — one run performing all three events, asserted as the
     ///   exact log and namespace. Generic payload identity is witnessed here;
     ///   the runtime predicate needs no equality bound on payloads or tags.
-    /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+    /// - witness: `tests::namespace::the_permissive_handler_records_all_three_events`
     #[spec(
         captures: before = self.events.len(),
         ensures: |ret| {
@@ -574,7 +574,7 @@ where
     ///   exact log and namespace. Labels and payloads need no equality bound;
     ///   the runtime predicate checks the event path and retained binding
     ///   count.
-    /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+    /// - witness: `tests::namespace::the_permissive_handler_records_all_three_events`
     #[spec(
         captures: before = (self.events.len(), subject.binding_count()),
         ensures: |ret| {

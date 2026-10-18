@@ -93,7 +93,7 @@ impl Culprit
     ///   malformed source, render different labels, and neither is the class;
     ///   each repair a malformed form carries renders its own label. Other
     ///   variants' wording is not pinned.
-    /// - witness: `diagnostics::diagnostics::refusals_of_one_class_label_what_their_locus_is`
+    /// - witness: `tests::diagnostics::refusals_of_one_class_label_what_their_locus_is`
     /// - witness: `culprit::tests::every_repair_labels_what_is_missing`
     #[spec(ensures: |ret| !ret.0.is_empty() && !ret.0.contains(['\r', '\n']))]
     #[inline]

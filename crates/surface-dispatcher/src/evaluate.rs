@@ -849,7 +849,7 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::tests::each_outcome_class_has_its_status`
     /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
     /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
-    /// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+    /// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
     /// - witness: `evaluate::tests::every_engine_spells_a_run_alike`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -1074,7 +1074,7 @@ impl<'source> Program<'source>
     /// - hypothesis: L3 — a function whose body applies a member its module's
     ///   signature hides, and runs naming only exported members of a sealed
     ///   module.
-    /// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+    /// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
     #[spec(ensures: |ret| !self.hidden.is_empty() || matches!(ret, Maybe::Absent(carried::Absent::Carried)))]
     fn hidden_in(
         &self,
@@ -1465,7 +1465,7 @@ impl<'source> Program<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a model whose helpers stand outside its signature, and
 ///   sealed modules whose runs name only their exports.
-/// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+/// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
 #[spec(ensures: |ref ret| ret.keys().all(|constant| module.declarations().iter().any(|declaration| declaration.constant() == *constant)))]
 fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
 {
@@ -1517,7 +1517,7 @@ fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
 /// # Adequacy
 /// - hypothesis: L3 — as [`hidden_members`]: a model's interface operations
 ///   reach its helpers through their bodies.
-/// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+/// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
 #[spec(ensures: |ref ret| hidden.keys().all(|constant| ret.contains(constant)))]
 fn reaching(
     declarations: &BTreeMap<ConstantIndex, Declared<'_>>,

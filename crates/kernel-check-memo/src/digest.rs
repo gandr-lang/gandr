@@ -70,7 +70,7 @@ impl From<DigestWord> for u64
 ///   the closed-form content count in the unshared workload. This catches
 ///   position-derived keys, but does not certify arbitrary consumer hashes.
 /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
-/// - witness: `differential::tests::a_content_key_collapses_the_unshared_spelling_too`
+/// - witness: `tests::differential::tests::a_content_key_collapses_the_unshared_spelling_too`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ContentDigest
 {

@@ -64,7 +64,7 @@ pub struct Glyphs<'text>(pub &'text str);
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`OneLine`].
-/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
 pub trait Compose
 {
     /// The leaf `glyphs`.
@@ -138,7 +138,7 @@ pub trait Compose
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every golden spelling is composed through it.
-/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
 fn held<T>(
     docs: &[T],
     doc: Doc,
@@ -162,7 +162,7 @@ fn held<T>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every golden spelling is composed through it.
-/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
 fn numbered<T>(
     docs: &mut Vec<T>,
     kept: T,
@@ -211,7 +211,7 @@ impl<'builder, 'meter> Paged<'builder, 'meter>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every laid-out golden is rendered from it.
-    /// - witness: `goldens::tests::arrow_chain_breaks_before_each_continuation`
+    /// - witness: `tests::goldens::arrow_chain_breaks_before_each_continuation`
     pub fn handle(
         &self,
         doc: Doc,
@@ -352,7 +352,7 @@ struct Written
 ///   analyses written on one line equal their layout at a page no line
 ///   overflows; a choice taken the wrong way or a soft line kept as a break
 ///   changes the text.
-/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OneLine
@@ -396,7 +396,7 @@ impl OneLine
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OneLine`].
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     pub fn into_text(
         mut self,
         doc: Doc,

@@ -34,8 +34,8 @@ use core::fmt;
 /// # Adequacy
 /// - hypothesis: L3 — a finding of each lint is identified by its spelling in
 ///   the JSON image and on the terminal.
-/// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
-/// - witness: `diagnostics::diagnostics::an_inferred_run_is_a_finding_whose_fix_writes_its_keyword`
+/// - witness: `tests::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
+/// - witness: `tests::diagnostics::an_inferred_run_is_a_finding_whose_fix_writes_its_keyword`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Lint
 {

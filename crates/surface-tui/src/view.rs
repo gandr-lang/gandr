@@ -117,11 +117,11 @@ impl From<usize> for Cells
 ///   these observations. Empty geometry and input beyond the coordinate limit
 ///   have separate cursor/tail witnesses; arbitrary terminal fonts are outside
 ///   this finite domain.
-/// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
-/// - witness: `launch::tests::a_submitted_keyword_is_painted_in_the_keyword_colour`
-/// - witness: `launch::tests::an_outcome_refusal_is_visible_in_the_transcript_pane`
-/// - witness: `launch::tests::the_transcript_pane_follows_the_newest_rows`
-/// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
+/// - witness: `tests::launch::a_fixed_session_paints_as_the_golden`
+/// - witness: `tests::launch::a_submitted_keyword_is_painted_in_the_keyword_colour`
+/// - witness: `tests::launch::an_outcome_refusal_is_visible_in_the_transcript_pane`
+/// - witness: `tests::launch::the_transcript_pane_follows_the_newest_rows`
+/// - witness: `tests::launch::a_waiting_buffer_shows_in_the_input_pane`
 /// - witness: `view::tests::an_input_pane_without_editable_cells_requests_no_cursor`
 /// - witness: `view::tests::input_wider_than_a_terminal_coordinate_keeps_its_actual_tail`
 #[inline]
@@ -163,8 +163,8 @@ pub fn draw(
 ///   exceeding a small viewport are observed as exact backend rows. Wrong
 ///   ordering, oldest-first clipping and missing borders alter the fixtures;
 ///   arbitrary terminal fonts and larger histories are outside this domain.
-/// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
-/// - witness: `launch::tests::the_transcript_pane_follows_the_newest_rows`
+/// - witness: `tests::launch::a_fixed_session_paints_as_the_golden`
+/// - witness: `tests::launch::the_transcript_pane_follows_the_newest_rows`
 fn draw_transcript(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -212,7 +212,7 @@ fn draw_transcript(
 ///   byte-based cursor placement, visible out-of-pane cursors and saturating
 ///   before clipping change these observations. Terminal font differences are
 ///   outside the headless backend's width model.
-/// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
+/// - witness: `tests::launch::a_waiting_buffer_shows_in_the_input_pane`
 /// - witness: `view::tests::an_input_pane_without_editable_cells_requests_no_cursor`
 /// - witness: `view::tests::input_wider_than_a_terminal_coordinate_keeps_its_actual_tail`
 /// - witness: `view::tests::input_cursor_counts_cells_not_utf8_bytes`
@@ -271,7 +271,7 @@ fn draw_input(
 ///   observes text segments and colours. Missing leads, payload loss, wrong
 ///   clipping and role substitutions change the observations. Unlisted terminal
 ///   colour appearance is outside these deterministic fixtures.
-/// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
+/// - witness: `tests::launch::a_fixed_session_paints_as_the_golden`
 /// - witness: `view::tests::echo_clipping_keeps_utf8_gaps_and_first_accepted_spans`
 #[spec(ensures: |ref ret| ret.spans.iter().flat_map(|span| span.content.bytes())
     .eq(<&'static str>::from(row.lead).bytes().chain(row.text.bytes())))]
@@ -322,7 +322,7 @@ fn paint<'block>(
 ///   predicate reads only the spans past the captured prefix, the ones this
 ///   call appended.
 /// - witness: `view::tests::echo_clipping_keeps_utf8_gaps_and_first_accepted_spans`
-/// - witness: `launch::tests::a_submitted_keyword_is_painted_in_the_keyword_colour`
+/// - witness: `tests::launch::a_submitted_keyword_is_painted_in_the_keyword_colour`
 #[spec(
     captures: [prefix = painted.len()],
     ensures: painted.get(prefix ..).is_some_and(|appended| appended.iter()

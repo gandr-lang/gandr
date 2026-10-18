@@ -188,8 +188,8 @@ impl From<InstanceIndex> for usize
 /// # Adequacy
 /// - hypothesis: L3 — a functor's body and parameter enter no namespace while
 ///   its instances do.
-/// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
-/// - witness: `modules::modules::functors::a_functor_body_never_reaches_the_kernel`
+/// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+/// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Stratum
 {
@@ -233,7 +233,7 @@ pub struct WrittenParameter<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a functor over an abstract type and a value of it applies
 ///   to a sealed argument.
-/// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
+/// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ParameterForm
 {
@@ -278,8 +278,8 @@ pub struct ParameterComponent<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a functor's template slots yield no declaration and each
 ///   application's image mirrors its body.
-/// - witness: `modules::modules::functors::a_functor_body_never_reaches_the_kernel`
-/// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
+/// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
+/// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Functor<'source>
 {
@@ -321,8 +321,8 @@ pub struct Functor<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a value component of the argument at the parameter's type
 ///   checks and one at another type is refused at its witness.
-/// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
-/// - witness: `modules::modules::functors::an_argument_is_matched_against_the_parameter`
+/// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+/// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Matched<'source>
 {
@@ -375,7 +375,7 @@ pub enum Matched<'source>
 /// # Adequacy
 /// - hypothesis: L3 — two applications of one functor to one argument bind two
 ///   instances, each with its own atoms.
-/// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
+/// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Instance<'source>
 {
@@ -414,7 +414,7 @@ impl Instance<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Instance`].
-    /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(image) => functor.body_first <= slot && slot < functor.end
             && usize::from(image).checked_sub(usize::from(self.body_first)) == usize::from(slot).checked_sub(usize::from(functor.body_first)),
@@ -493,7 +493,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a parameter of an abstract type and a value of it is
     ///   read by the body at its atom and its constant.
-    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     #[spec(
         captures: before = (self.collected.functors.len(), self.collected.structures.len()),
         ensures: self.collected.functors.len() == before.0.saturating_add(1)
@@ -651,7 +651,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::declare_parameter`].
-    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.0 == before && self.collected.slots.len() == before.saturating_add(1)
@@ -698,7 +698,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a family component of a parameter is refused at its
     ///   name.
-    /// - witness: `modules::modules::functors::a_parameter_reads_only_types_and_values`
+    /// - witness: `tests::modules::functors::a_parameter_reads_only_types_and_values`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() == before.saturating_add(1),
@@ -736,7 +736,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a functor's template slots yield no declaration.
-    /// - witness: `modules::modules::functors::a_functor_body_never_reaches_the_kernel`
+    /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
     #[spec(
         captures: before = self.collected.functors.len(),
         ensures: self.collected.functors.len() == before,
@@ -779,8 +779,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — two applications bind two instances, and an argument
     ///   missing a component refuses its binding.
-    /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
-    /// - witness: `modules::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
     #[spec(
         captures: before = (self.collected.instances.len(), self.collected.slots.len()),
         ensures: self.collected.instances.len() <= before.0.saturating_add(1)
@@ -881,10 +881,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an argument naming a sealed module and one naming no
     ///   module.
-    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `modules::modules::functors::an_argument_is_matched_against_the_parameter`
-    /// - witness: `modules::modules::functors::an_argument_naming_a_functor_is_unresolved`
-    /// - witness: `modules::modules::functors::a_dotted_argument_reads_the_nested_module_it_names`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `tests::modules::functors::an_argument_naming_a_functor_is_unresolved`
+    /// - witness: `tests::modules::functors::a_dotted_argument_reads_the_nested_module_it_names`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.0 < self.collected.structures.len()))]
     fn argument(
         &self,
@@ -960,8 +960,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an argument exporting every component and one missing
     ///   one.
-    /// - witness: `modules::modules::functors::an_argument_is_matched_against_the_parameter`
-    /// - witness: `modules::modules::functors::a_type_component_binds_the_argument_type_of_its_own_name`
+    /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `tests::modules::functors::a_type_component_binds_the_argument_type_of_its_own_name`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Argued::Value(slot)) => matches!(component.form, ParameterForm::Value(_)) && slot.0 < self.collected.slots.len(),
         | Maybe::Present(Argued::Type(found)) => !matches!(component.form, ParameterForm::Value(_)) && found.name == component.name,
@@ -1020,8 +1020,8 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::apply`].
-    /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
-    /// - witness: `modules::modules::functors::a_functor_body_never_reaches_the_kernel`
+    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
     #[spec(
         captures: before = (self.collected.instances.len(), self.collected.structures.len()),
         ensures: self.collected.instances.len() == before.0.saturating_add(1)
@@ -1220,7 +1220,7 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::apply`].
-    /// - witness: `modules::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.0 == before && self.collected.slots.len() == before.saturating_add(1),

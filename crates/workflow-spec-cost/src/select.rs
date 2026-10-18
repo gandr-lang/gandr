@@ -115,7 +115,7 @@ impl FromStr for WorkloadCount
     /// - hypothesis: L3 — `--tests 0` exits 2 and `--tests 2` profiles two
     ///   tests; a count that admitted zero or ignored the number changes
     ///   either.
-    /// - witness: `cli::cli::a_malformed_invocation_exits_two`
+    /// - witness: `tests::cli::a_malformed_invocation_exits_two`
     /// - witness: `select::tests::the_slowest_enforcing_tests_are_chosen`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>

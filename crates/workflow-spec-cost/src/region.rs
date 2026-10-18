@@ -165,7 +165,7 @@ impl Regions
     /// - hypothesis: L3 — a fake workspace with specifications in two crates
     ///   and a `target` directory holding one more; a scan that read `target`,
     ///   missed a crate or keyed files differently changes the ranking.
-    /// - witness: `cli::cli::a_profile_is_charged_to_its_outermost_specification`
+    /// - witness: `tests::cli::a_profile_is_charged_to_its_outermost_specification`
     #[inline]
     pub fn scan(root: &Path) -> Result<Self, CostError>
     {

@@ -43,8 +43,8 @@ use crate::digest::ContentDigest;
 ///   arena positions. L3 colliding unequal contents and equal contents on
 ///   distinct planes separate digest-only and plane-blind agreement. These
 ///   witnesses cover the shipped fixtures, not arbitrary implementations.
-/// - witness: `differential::tests::memoized_and_memoless_agree_answer_for_answer`
-/// - witness: `differential::tests::a_content_key_collapses_the_unshared_spelling_too`
+/// - witness: `tests::differential::tests::memoized_and_memoless_agree_answer_for_answer`
+/// - witness: `tests::differential::tests::a_content_key_collapses_the_unshared_spelling_too`
 /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
 /// - witness: `memo::tests::entries_are_accounted_to_their_own_plane`
 pub trait MemoKey
@@ -90,7 +90,7 @@ pub trait MemoKey
     ///   hashes from content hashes. L3 an equal digest for unequal content
     ///   must still produce distinct answers and a colliding miss, separating a
     ///   bucket selector from an equality decision.
-    /// - witness: `differential::tests::a_content_key_collapses_the_unshared_spelling_too`
+    /// - witness: `tests::differential::tests::a_content_key_collapses_the_unshared_spelling_too`
     /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
     fn digest(&self) -> ContentDigest;
 

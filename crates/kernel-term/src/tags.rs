@@ -367,8 +367,8 @@ use crate::wire::WireTag;
 ///   between frozen and reserved tags. Named version, magic and tag refusals
 ///   separate field confusion and accidental acceptance; changing the protocol
 ///   requires revising its conformance evidence.
-/// - witness: `sharing_format::sharing_format::a_foreign_magic_is_refused_at_the_header`
-/// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+/// - witness: `tests::sharing_format::a_foreign_magic_is_refused_at_the_header`
+/// - witness: `tests::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 pub const MAGIC: [u8; 4] = *b"GKX1";
@@ -408,8 +408,8 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 ///   between frozen and reserved tags. Named version, magic and tag refusals
 ///   separate field confusion and accidental acceptance; changing the protocol
 ///   requires revising its conformance evidence.
-/// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
-/// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+/// - witness: `tests::sharing_format::a_predecessor_version_is_refused_by_name`
+/// - witness: `tests::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 pub const FORMAT_VERSION: FormatVersion = FormatVersion(6);
@@ -565,7 +565,7 @@ pub const NODE_SHARE_COMP_TYPE: WireTag = WireTag(0x23);
 ///   separate field confusion and accidental acceptance; changing the protocol
 ///   requires revising its conformance evidence.
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-/// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+/// - witness: `tests::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 pub const SHARING_BLOCK_FIRST: WireTag = NODE_SHARE_VALUE;
 /// The last tag of the reserved stored-sharing block: the fourth held slot,
@@ -585,7 +585,7 @@ pub const SHARING_BLOCK_FIRST: WireTag = NODE_SHARE_VALUE;
 ///   separate field confusion and accidental acceptance; changing the protocol
 ///   requires revising its conformance evidence.
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-/// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+/// - witness: `tests::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 pub const SHARING_BLOCK_LAST: WireTag = WireTag(0x27);
 

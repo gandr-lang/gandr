@@ -31,11 +31,11 @@ The source formatter: a parsed gandr source laid out at a page width through `ga
 
 ## Provided features
 
-- `format`: a parsed source formatted at a page width. Witnesses: `format::tests::sweeps::every_source_keeps_its_meaning_and_formats_once`, `format::tests::top_level_forms_and_comments_keep_their_lines`, `format::tests::a_repaired_form_is_copied_as_written`, `format::tests::the_source_line_ending_is_kept`, `format::tests::pieces_place_each_top_level_form`.
-- The layout of a form. Witnesses: `format::tests::a_long_declaration_breaks_its_parameters_before_its_type`, `format::tests::a_block_breaks_one_item_per_line_when_it_does_not_fit`, `format::tests::attributes_and_documentation_keep_their_lines`, `format::tests::a_continuation_line_indents_under_its_statement`, `format::tests::strings_shell_blocks_and_holes_are_copied_as_written`.
+- `format`: a parsed source formatted at a page width. Witnesses: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`, `tests::format::top_level_forms_and_comments_keep_their_lines`, `tests::format::a_repaired_form_is_copied_as_written`, `tests::format::the_source_line_ending_is_kept`, `tests::format::pieces_place_each_top_level_form`.
+- The layout of a form. Witnesses: `tests::format::a_long_declaration_breaks_its_parameters_before_its_type`, `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`, `tests::format::attributes_and_documentation_keep_their_lines`, `tests::format::a_continuation_line_indents_under_its_statement`, `tests::format::strings_shell_blocks_and_holes_are_copied_as_written`.
 - `Formatted`, `Piece`, `Layout`: the text, and each top-level form's source and formatted spans, for an editor that applies a formatting change form by form.
 - `FormatOptions`, and `PageWidth` re-exported from `gandr-surface-layout`.
-- `Form`: the spelling a source is laid out in, asked for by `FormatOptions::form` and declared at a source's head with `@[ form(explicit) ]` or `@[ form(sugared) ]`, the declaration winning; the formatter keeps every token, so it lays out only the source's own spelling and refuses any other by name (crate docs, § The form a source is spelled in). Witnesses: `format::tests::an_explicit_source_keeps_its_explicit_spelling`, `format::tests::a_form_the_source_does_not_declare_is_refused`.
+- `Form`: the spelling a source is laid out in, asked for by `FormatOptions::form` and declared at a source's head with `@[ form(explicit) ]` or `@[ form(sugared) ]`, the declaration winning; the formatter keeps every token, so it lays out only the source's own spelling and refuses any other by name (crate docs, § The form a source is spelled in). Witnesses: `tests::format::an_explicit_source_keeps_its_explicit_spelling`, `tests::format::a_form_the_source_does_not_declare_is_refused`.
 - `FormatError`, `Change`: why a source was not formatted.
 
 ## Expected features

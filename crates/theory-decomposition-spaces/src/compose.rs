@@ -94,7 +94,7 @@ pub enum CompositionObstruction<A: CellAlphabet = SequentAlphabet>
 /// # Adequacy
 /// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
 ///   flow edges, changed boundaries and lost certificate steps.
-/// - witness: `composition::tests::invertible_composition_of_a_ground_chain_replays`
+/// - witness: `tests::composition::invertible_composition_of_a_ground_chain_replays`
 #[spec(ensures: |ret| ret.overlap == a.overlap && ret.joins_at == b.joins_at && ret.path_a.iter().eq(a.path_a.iter().chain(&b.path_a)) && ret.path_b.iter().eq(a.path_b.iter().chain(&b.path_b)))]
 #[inline]
 #[must_use]
@@ -128,7 +128,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
 ///   flow edges, changed boundaries and lost certificate steps.
-/// - witness: `composition::tests::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
+/// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
 #[spec(ensures: |ret| match ret { Ok(ref value) => value.overlap == a.overlap && value.joins_at == b.joins_at && value.path_a.iter().eq(a.path_a.iter().chain(&b.path_a)) && value.path_b.iter().eq(a.path_b.iter().chain(&b.path_b)), Err(CompositionObstruction::Cycle { ref cycle }) => !cycle.is_empty(), Err(CompositionObstruction::Graph { .. } | CompositionObstruction::NodeCapacityExceeded) => true })]
 /// # Errors
 /// Returns a cycle, graph validation failure, or exhausted identifier space.
@@ -159,7 +159,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
 ///   flow edges, changed boundaries and lost certificate steps.
-/// - witness: `composition::tests::invertible_composition_of_a_ground_chain_replays`
+/// - witness: `tests::composition::invertible_composition_of_a_ground_chain_replays`
 #[spec(ensures: |ret| ret.overlap == a.overlap && ret.joins_at == b.joins_at && ret.path_a.iter().eq(a.path_a.iter().chain(&b.path_a)) && ret.path_b.iter().eq(a.path_b.iter().chain(&b.path_b)))]
 #[inline]
 fn graft<A>(
@@ -200,7 +200,7 @@ impl<A: CellAlphabet> VarFlowGraph<A>
     /// # Adequacy
     /// - hypothesis: L3 seam-role boundaries and replay witnesses separate
     ///   omitted flow edges, changed boundaries and lost certificate steps.
-    /// - witness: `composition::tests::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
+    /// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |graph| graph.nodes.len() == graph.adjacency.len() && graph.adjacency.iter().flatten().all(|node| usize::try_from(u32::from(*node)).is_ok_and(|index| index < graph.nodes.len()))))]
     #[inline]
     fn build(
@@ -244,7 +244,7 @@ impl<A: CellAlphabet> VarFlowGraph<A>
     /// # Adequacy
     /// - hypothesis: L3 seam-role boundaries and replay witnesses separate
     ///   omitted flow edges, changed boundaries and lost certificate steps.
-    /// - witness: `composition::tests::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
+    /// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -353,7 +353,7 @@ impl<A: CellAlphabet> GraphBuilder<A>
     /// # Adequacy
     /// - hypothesis: L3 seam-role boundaries and replay witnesses separate
     ///   omitted flow edges, changed boundaries and lost certificate steps.
-    /// - witness: `composition::tests::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
+    /// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |id| self.index.get(&(cell, A::hole_of(var))) == Some(id) && usize::try_from(u32::from(*id)).is_ok_and(|index| self.nodes.get(index).is_some_and(|entry| entry.0 == cell && A::hole_of(&entry.1) == A::hole_of(var)))))]
     #[inline]
     fn intern(
@@ -388,7 +388,7 @@ impl<A: CellAlphabet> GraphBuilder<A>
     /// # Adequacy
     /// - hypothesis: L3 seam-role boundaries and replay witnesses separate
     ///   omitted flow edges, changed boundaries and lost certificate steps.
-    /// - witness: `composition::tests::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
+    /// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
     #[spec(ensures: |ret| usize::try_from(u32::from(from)).ok().and_then(|index| self.adjacency.get(index)).is_none_or(|row| row.iter().filter(|node| **node == to).count() == 1))]
     #[inline]
     fn edge(
@@ -429,7 +429,7 @@ impl<A: CellAlphabet> GraphBuilder<A>
 /// # Adequacy
 /// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
 ///   flow edges, changed boundaries and lost certificate steps.
-/// - witness: `composition::tests::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
+/// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
 #[spec(ensures: |ret| bool::from(ret) == matches!(role, SeamRole::Forward | SeamRole::Both))]
 #[inline]
 fn emits(role: SeamRole) -> VarianceFlowRole
@@ -446,7 +446,7 @@ fn emits(role: SeamRole) -> VarianceFlowRole
 /// # Adequacy
 /// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
 ///   flow edges, changed boundaries and lost certificate steps.
-/// - witness: `composition::tests::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
+/// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
 #[spec(ensures: |ret| bool::from(ret) == matches!(role, SeamRole::Backward | SeamRole::Both))]
 #[inline]
 fn absorbs(role: SeamRole) -> VarianceFlowRole
@@ -464,7 +464,7 @@ fn absorbs(role: SeamRole) -> VarianceFlowRole
 /// # Adequacy
 /// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
 ///   flow edges, changed boundaries and lost certificate steps.
-/// - witness: `composition::tests::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
+/// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
 #[spec(ensures: |ret| ret.iter().all(|cell| tracelet.path_a.iter().chain(&tracelet.path_b).any(|step| step.cell == *cell)) && tracelet.path_a.iter().chain(&tracelet.path_b).all(|step| ret.iter().filter(|cell| **cell == step.cell).count() == 1))]
 #[inline]
 fn participating_cells<A>(tracelet: &Tracelet<A>) -> Vec<CellId>
@@ -490,7 +490,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
 ///   flow edges, changed boundaries and lost certificate steps.
-/// - witness: `composition::tests::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
+/// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
 #[spec(ensures: |ret| A::metavariables(cmd).iter().all(|var| ret.iter().filter(|hole| **hole == A::hole_of(var)).count() == 1) && ret.iter().all(|hole| A::metavariables(cmd).iter().any(|var| A::hole_of(var) == *hole)))]
 #[inline]
 fn seam_holes<A>(cmd: &A::Cmd) -> Vec<A::Hole>
@@ -517,7 +517,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 seam-role boundaries and replay witnesses separate omitted
 ///   flow edges, changed boundaries and lost certificate steps.
-/// - witness: `composition::tests::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
+/// - witness: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
 #[spec(ensures: |ret| ret.iter().all(|&(cell, ref var, role)| cells.contains(&cell) && matches!(store.get(cell), Maybe::Present(entry) if A::hole_flow(entry.meta(), hole).contains(&(var.clone(), role)))))]
 #[inline]
 fn endpoints<A>(

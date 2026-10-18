@@ -458,7 +458,7 @@ echo 'merge residue check OK: no conflict markers or merge-driver trailers in tr
 # rewrites the ledger and is not this gate.
 ["check:corpus-comments"]
 description = "A comment on every fixture item, ratcheted against the ledger"
-run = "cargo test --locked --package gandr-surface-corpus --test comments -- --nocapture"
+run = "cargo test --locked --package gandr-surface-corpus --test tests comments:: -- --nocapture"
 
 # Workflow tools are build-time policy, never package dependencies. Check
 # Cargo's resolved metadata, including renamed and transitive dependencies,

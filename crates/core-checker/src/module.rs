@@ -110,7 +110,7 @@
 //! declared type names `U` — and inside the decoder's own fixpoint its
 //! constant in the family's fields reads as its self binder, as
 //! [`crate::recursion::stage_branch`] states. Witness:
-//! `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`.
+//! `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`.
 //!
 //! The block is one admission, so one refused family refuses it whole: every
 //! family the run accepted takes the first family's refusal, as the kernel's
@@ -118,8 +118,8 @@
 //! a recursion over the sum of them — a rose tree's node and its forest,
 //! measured together — descends through either, as
 //! [`crate::recursion::families`] states. Witnesses:
-//! `recursive_data::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`,
-//! `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`.
+//! `tests::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`,
+//! `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -201,7 +201,7 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — a universe and its decoder admitted as one block, and a
 ///   declaration after the block admitted alone.
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(ensures: match *open {
     Maybe::Present(end) => run.first().is_some_and(|leader| leader.constant() < end),
     Maybe::Absent(_) => true,
@@ -346,8 +346,8 @@ enum Members
 /// - hypothesis: L3 — a family whose own fields are positive, in a block with a
 ///   family consuming it, is refused as the block is; a universe whose decoder
 ///   is refused is refused with it.
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 fn refuse_whole(
     blocks: &[(ConstantIndex, ConstantIndex)],
     judged: &mut [Judged],

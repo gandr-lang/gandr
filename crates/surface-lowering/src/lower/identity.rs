@@ -1501,7 +1501,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   readings.
     /// - witness: `lower::identity::tests::a_bound_name_shadows_an_identity_operation`
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
-    /// - witness: `modules::modules::a_forward_member_reference_is_refused_by_position`
+    /// - witness: `tests::modules::a_forward_member_reference_is_refused_by_position`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

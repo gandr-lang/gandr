@@ -126,7 +126,7 @@ pub struct Owed
 /// # Adequacy
 /// - hypothesis: L3 — a rose tree's node and its list of children, one block,
 ///   recurse through each other at one stage.
-/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
+/// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
 pub fn families(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
@@ -172,7 +172,7 @@ pub fn families(
 ///   stages each summand.
 /// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
 /// - witness: `recursion::tests::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
-/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
+/// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
 #[spec(ensures: |ret| match ret {
     Ok(Maybe::Present(opened)) => context.arena().comp_type(opened.own).is_some() && context.arena().comp_type(opened.inside).is_some(),
     Ok(Maybe::Absent(reason)) => reason == Unstaged::Unknown,
@@ -302,7 +302,7 @@ impl Dependence
 ///   steps below the fixpoint's stage; a case on a stratified value at no stage
 ///   binds its negative field at a root its own scrutinee does not fit.
 /// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
-/// - witness: `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call`
+/// - witness: `tests::recursive_data::currys_consumer_is_refused_at_its_call`
 #[spec(ensures: |ret| match ret {
     Ok((read, Maybe::Present(_))) => read == scrutinee || matches!(context.arena().value_type(scrutinee), Some(&ValueType::Staged { base, .. }) if base == read),
     Ok((read, Maybe::Absent(_))) => read == scrutinee,
@@ -455,8 +455,8 @@ const fn computation_part(part: Part) -> Result<CompTypeId, CheckRefusal>
 /// - hypothesis: L3 — a function field over its own family is rebuilt at the
 ///   case's stage, so a call through it on the chain before the link is
 ///   admitted and one on the link itself is refused.
-/// - witness: `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`
-/// - witness: `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call`
+/// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `tests::recursive_data::currys_consumer_is_refused_at_its_call`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |rebuilt| matches!((part, *rebuilt),
     (Part::Value(_), Part::Value(_)) | (Part::Computation(_), Part::Computation(_)))))]
 fn rebuild(
@@ -580,8 +580,8 @@ fn rebuild(
 ///   the stage, and a field holding none stays.
 /// - witness: `recursion::tests::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
 /// - witness: `recursion::tests::a_type_parameter_instantiates_at_a_staged_code`
-/// - witness: `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call`
-/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `tests::recursive_data::currys_consumer_is_refused_at_its_call`
+/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| staged == field
     || context.arena().value_type(staged).is_some()))]
 pub fn stage_field(
@@ -686,8 +686,8 @@ pub fn stage_field(
 ///   constructor's own result is refused.
 /// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
 /// - witness: `recursion::tests::a_type_parameter_instantiates_at_a_staged_code`
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
-/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(staged, _)| context.arena().comp_type(staged).is_some()))]
 pub fn stage_branch(
     context: &mut CheckingContext<'_>,

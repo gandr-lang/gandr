@@ -229,7 +229,7 @@ pub enum MeasureFault
 ///   their five counters. Swapping fields or counting a shared leg twice
 ///   changes exact tuples or the independently counted erased tree.
 /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
-/// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+/// - witness: `tests::measure::the_expansion_size_is_what_the_unshared_walk_visits`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct SharingMeasure
 {
@@ -310,14 +310,14 @@ impl SharingMeasure
     /// - witness: `measure::tests::an_expansion_past_the_counter_is_refused_at_its_node`
     /// - witness: `measure::tests::an_invalid_overlay_is_refused_by_name_before_measuring`
     /// - witness: `measure::tests::the_measure_is_a_function_of_what_the_root_reaches`
-    /// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
-    /// - witness: `measure::measure::a_deep_overlay_is_measured_inside_a_small_stack`
+    /// - witness: `tests::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+    /// - witness: `tests::measure::a_deep_overlay_is_measured_inside_a_small_stack`
     /// - witness:
-    ///   `deep_evaluation::deep_evaluation::the_deep_evaluation_cases_measure_as_their_erasure_inside_a_small_stack`
+    ///   `tests::deep_evaluation::the_deep_evaluation_cases_measure_as_their_erasure_inside_a_small_stack`
     /// - witness:
-    ///   `deep_readback::deep_readback::the_deep_readback_cases_measure_as_their_erasure_inside_a_small_stack`
+    ///   `tests::deep_readback::the_deep_readback_cases_measure_as_their_erasure_inside_a_small_stack`
     /// - witness:
-    ///   `teardown::teardown::the_teardown_overlays_are_measured_inside_a_small_stack`
+    ///   `tests::teardown::the_teardown_overlays_are_measured_inside_a_small_stack`
     #[inline]
     #[spec(
         ensures: |ret| match ret {
@@ -476,7 +476,7 @@ impl OccurrenceCount
     ///   counter field changes the exact public totals; the predicate states
     ///   the checked arithmetic.
     /// - witness: `measure::tests::a_share_with_many_occurrences_inlines_its_leg_at_each`
-    /// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+    /// - witness: `tests::measure::the_expansion_size_is_what_the_unshared_walk_visits`
     #[spec(
         ensures: |ret| ret == self.0.checked_add(u64::from(u32::from(arity))).map(Self).ok_or(MeasureFault::Overflow { quantity: MeasuredQuantity::Occurrences, node: share })
     )]
@@ -723,7 +723,7 @@ impl Measuring<'_>
     ///   separated by every measure the suites assert. Leaving a result or leg
     ///   behind violates the completion predicate; dropping a visit changes the
     ///   independently observed root measure.
-    /// - witness: `measure::measure::a_deep_overlay_is_measured_inside_a_small_stack`
+    /// - witness: `tests::measure::a_deep_overlay_is_measured_inside_a_small_stack`
     /// - witness: `measure::tests::a_measure_that_ends_with_a_leg_still_in_scope_is_refused`
     #[spec(
         ensures: |ret| ret.map_or(true, |measured| self.visits.is_empty() && self.legs.is_empty() && self.results.is_empty() && measured.expansion.0 >= 1_u64 && measured.depth.0 <= self.shares.0)

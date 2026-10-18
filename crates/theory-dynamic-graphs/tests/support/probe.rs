@@ -138,7 +138,7 @@ pub struct Row
 /// # Adequacy
 /// - hypothesis: finite fixture streams distinguish invalid graph observations
 ///   and incomplete comparisons through L2 agreement and L3 exact boundaries.
-/// - witness: `dynamic_graphs::probe::tests::the_probe_catches_a_seeded_converse_divergence`
+/// - witness: `tests::probe::tests::the_probe_catches_a_seeded_converse_divergence`
 #[inline]
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |row| usize::try_from(u64::from(row.compared)) == Ok(row.first_divergence.map_or(offers.len(), |depth| usize::from(depth).saturating_add(1)))))]
 pub fn compare(
@@ -206,7 +206,7 @@ pub fn compare(
 /// # Adequacy
 /// - hypothesis: finite fixture streams distinguish invalid graph observations
 ///   and incomplete comparisons through L2 agreement and L3 exact boundaries.
-/// - witness: `dynamic_graphs::probe::tests::the_dichotomy_boundary_is_measured`
+/// - witness: `tests::probe::tests::the_dichotomy_boundary_is_measured`
 #[inline]
 #[spec(ensures: |ret| ret.len() == usize::from(length) && { let choices = regime.choices(); ret.iter().all(|offset| choices.contains(offset)) })]
 pub fn offsets_for(

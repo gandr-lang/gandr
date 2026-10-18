@@ -91,7 +91,7 @@ impl Report
 /// # Adequacy
 /// - hypothesis: finite fixture streams distinguish invalid graph observations
 ///   and incomplete comparisons through L2 agreement and L3 exact boundaries.
-/// - witness: `dynamic_graphs::differential::tests::the_differential_catches_a_seeded_wrong_verdict`
+/// - witness: `tests::differential::tests::the_differential_catches_a_seeded_wrong_verdict`
 #[inline]
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |report| usize::try_from(u64::from(report.offers)) == Ok(offers.len()) && report.admitted.plus(report.repaired).plus(report.refused) == report.offers))]
 pub fn run(

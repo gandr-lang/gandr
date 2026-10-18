@@ -10,6 +10,13 @@ license.workspace = true
 keywords = ["canonical-form", "gandr", "serialization", "sharing", "term-arena"]
 categories = ["data-structures"]
 publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 # The certified trusted base depends only on other kernel crates and
 # core/alloc. Pinned absence types add no runtime allocation or std

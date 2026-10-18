@@ -158,8 +158,8 @@ impl fmt::Display for Label
     ///   labels; all required shapes expose their surface notation. These
     ///   observations distinguish lost notation and label placement, not
     ///   arbitrary wording or failing destinations.
-    /// - witness: `diagnostics::diagnostics::a_labeled_context_retains_its_locus_and_cause`
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
+    /// - witness: `tests::diagnostics::a_labeled_context_retains_its_locus_and_cause`
+    /// - witness: `tests::diagnostics::a_type_mismatch_is_located_at_its_term`
     #[inline]
     fn fmt(
         &self,
@@ -223,8 +223,8 @@ impl<'step> Comparison<'step>
     /// # Adequacy
     /// - hypothesis: L3 — a value mismatch reads both spellings in their roles,
     ///   and a lowering refusal reads none.
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
-    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
+    /// - witness: `tests::diagnostics::a_type_mismatch_is_located_at_its_term`
+    /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
     #[spec(ensures: |ret| match refusal {
         Refusal::Checking(checked) => {
             let side = |node: Maybe<TypeNode, _>| match node {
@@ -285,7 +285,7 @@ impl fmt::Display for Comparison<'_>
     /// # Adequacy
     /// - hypothesis: L3 — a value mismatch shows both sides in their roles and
     ///   a shape mismatch the found side alone.
-    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
+    /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
     #[inline]
     fn fmt(
         &self,
@@ -333,8 +333,8 @@ impl fmt::Display for PrimaryLabel<'_>
     /// # Adequacy
     /// - hypothesis: L3 — a mismatch label carries its types after its text,
     ///   and an unresolved name's label carries none.
-    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
-    /// - witness: `diagnostics::diagnostics::refusals_of_one_class_label_what_their_locus_is`
+    /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
+    /// - witness: `tests::diagnostics::refusals_of_one_class_label_what_their_locus_is`
     #[inline]
     fn fmt(
         &self,
@@ -476,8 +476,8 @@ impl Annotations
     ///   rejected span and first-occurrence role. A run-budget refusal exposes
     ///   the no-source-location boundary. Other lowering constructors are not
     ///   individually enumerated.
-    /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
-    /// - witness: `diagnostics::diagnostics::a_refused_declaration_is_located`
+    /// - witness: `tests::diagnostics::a_report_exposes_the_context_it_marks`
+    /// - witness: `tests::diagnostics::a_refused_declaration_is_located`
     /// - witness: `locus::tests::run_refusals_have_no_invented_source_locus`
     #[spec(ensures: |ref ret| {
         let label = Label::Culprit(Culprit::of(Refusal::Lowering(refusal)));
@@ -610,8 +610,8 @@ impl Annotations
     ///   producer's primary label and causal spans. Distinct origin records and
     ///   missing nodes distinguish wrong locations from missing metadata. Other
     ///   producer payloads are outside these finite fixtures.
-    /// - witness: `diagnostics::diagnostics::a_refused_declaration_is_located`
-    /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+    /// - witness: `tests::diagnostics::a_refused_declaration_is_located`
+    /// - witness: `tests::diagnostics::a_report_exposes_the_context_it_marks`
     /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
     #[spec(ensures: |ref ret| {
         let label = Label::Culprit(Culprit::of(refusal));
@@ -660,8 +660,8 @@ impl Annotations
 ///   order; selected whole-declaration failures expose fallback precedence; a
 ///   session mismatch and disagreeing offer arms expose the fork and the first
 ///   arm. Other checker constructors are not individually enumerated.
-/// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
-/// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+/// - witness: `tests::diagnostics::a_type_mismatch_is_located_at_its_term`
+/// - witness: `tests::diagnostics::a_report_exposes_the_context_it_marks`
 /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
 /// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
 /// - witness: `locus::tests::session_refusals_point_at_the_fork_and_name_the_action`
@@ -968,7 +968,7 @@ quenchant_shape::reason_enum! {
 ///   origins distinguish lost metadata from fabricated spans. Finite typed
 ///   tables also expose shifted records; arbitrary provenance histories are
 ///   outside these observations.
-/// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+/// - witness: `tests::diagnostics::a_report_exposes_the_context_it_marks`
 /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
 #[spec(ensures: |ret| match (origin, ret) {
     (Maybe::Present(held), Maybe::Present(span)) => span == held.span(),
@@ -1043,7 +1043,7 @@ pub fn node(
 ///   substitution and the unnamed/unrecorded distinction. Shape contexts
 ///   exercise the required-shape label. Other source spans are outside these
 ///   finite fixtures.
-/// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+/// - witness: `tests::diagnostics::a_report_exposes_the_context_it_marks`
 /// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
 #[spec(ensures: |ret| match (span, ret) {
     (Maybe::Present(span), Maybe::Present(annotation)) =>
@@ -1094,7 +1094,7 @@ impl fmt::Display for Checked
     /// - witness: `locus::tests::checker_titles_preserve_numeric_roles`
     /// - witness: `locus::tests::session_refusals_point_at_the_fork_and_name_the_action`
     /// - witness: `locus::tests::a_corolla_condition_failing_at_degree_one_names_the_catalogue_and_above_it_the_shape`
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
+    /// - witness: `tests::diagnostics::a_type_mismatch_is_located_at_its_term`
     #[inline]
     fn fmt(
         &self,
@@ -1552,7 +1552,7 @@ impl fmt::Display for Shape
     /// # Adequacy
     /// - hypothesis: L1 — located reports exercise the diagnostic consumer, not
     ///   exhaustive shape wording or destination failures.
-    /// - witness: `diagnostics::diagnostics::a_type_mismatch_is_located_at_its_term`
+    /// - witness: `tests::diagnostics::a_type_mismatch_is_located_at_its_term`
     #[inline]
     fn fmt(
         &self,

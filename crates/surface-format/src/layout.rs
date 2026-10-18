@@ -242,10 +242,10 @@ struct Group<'source>
 /// # Adequacy
 /// - hypothesis: L3 — goldens at a narrow and a wide page fix each layout rule,
 ///   and the corpus checks every form's tokens and meaning survive.
-/// - witness: `format::tests::a_block_breaks_one_item_per_line_when_it_does_not_fit`
-/// - witness: `format::tests::a_long_declaration_breaks_its_parameters_before_its_type`
-/// - witness: `format::tests::a_continuation_line_indents_under_its_statement`
-/// - witness: `format::tests::sweeps::every_source_keeps_its_meaning_and_formats_once`
+/// - witness: `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`
+/// - witness: `tests::format::a_long_declaration_breaks_its_parameters_before_its_type`
+/// - witness: `tests::format::a_continuation_line_indents_under_its_statement`
+/// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
 #[spec(ensures: |ret| ret.as_ref().is_err() || !leaves.is_empty())]
 pub fn lay_out(
     leaves: &[Leaf<'_>],

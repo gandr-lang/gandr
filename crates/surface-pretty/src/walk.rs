@@ -120,7 +120,7 @@
 //! tainted promise, and two tainted promises retain the left alternative. At
 //! zero columns, both the inline space and the two-column continuation
 //! indentation exceed the computation width; the broken separator remains the
-//! fallback (`goldens::tests::doubly_tainted_pair_keeps_the_broken_separator`).
+//! fallback (`tests::goldens::doubly_tainted_pair_keeps_the_broken_separator`).
 //! A wider computation width admits more memoized states. The choice reverses
 //! when a wider computation width improves a presentation at an acceptable
 //! cost.
@@ -347,10 +347,10 @@ enum Kind
 /// - hypothesis: L3 — the finite golden type and value fixtures observe the
 ///   former partition through exact spelling, while misplaced bridges expose
 ///   cross-family classifications. Payload values are not classified here.
-/// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-/// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
-/// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-/// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
 #[spec(ensures: |ret| match ret {
     | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
         | Former::Stack(..) | Former::List(_)
@@ -593,8 +593,8 @@ enum Reach
 /// - hypothesis: L3 — misplaced bridges and deep values observe refusal; the
 ///   exact depth boundary with an unknown former separates depth-first
 ///   precedence from admission. Arbitrary source behavior is not involved.
-/// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-/// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
 /// - witness: `walk::tests::depth_boundaries_preserve_precedence_and_saturation`
 #[spec(ensures: |ret| {
     let valued = matches!(admits, Admits::Value | Admits::Stated);
@@ -747,8 +747,8 @@ struct Arm<'source, Node>
 /// # Adequacy
 /// - hypothesis: L3 — a data case over a nullary and a unary constructor spells
 ///   each branch under its pattern, the unary one's field bound.
-/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-/// - witness: `goldens::tests::a_constructor_at_the_depth_limit_binds_every_field`
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `tests::goldens::a_constructor_at_the_depth_limit_binds_every_field`
 #[spec(ensures: |ret| ret.name.is_some() || ret.fields == 0_usize)]
 fn arm<S>(
     source: &S,
@@ -820,13 +820,13 @@ where
 /// - hypothesis: L3 — finite composite grammar fixtures and misplaced bridge
 ///   children observe arity, child order, binders and admitted families.
 ///   Arbitrary node representations are outside this spelling evidence.
-/// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-/// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
-/// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
-/// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-/// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
-/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-/// - witness: `goldens::tests::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+/// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
 #[spec(ensures: |ref ret| match *former {
     | Former::Product(arity) | Former::Sum(arity) | Former::RecordType(arity) => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
@@ -1185,7 +1185,7 @@ where
 ///   increments, increments in type positions and wrapping; the deep value
 ///   golden observes the resulting presentation boundary.
 /// - witness: `walk::tests::depth_boundaries_preserve_precedence_and_saturation`
-/// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
+/// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
 #[spec(ensures: |ret| ret.0 == if kind == Kind::Value { depth.0.saturating_add(1_u32) } else { depth.0 })]
 fn below(
     depth: ValueDepth,
@@ -1325,7 +1325,7 @@ impl Nesting
 /// # Adequacy
 /// - hypothesis: L3 — a recursive protocol with every former spells as the
 ///   grammar writes it at its root and at a state inside its recursion.
-/// - witness: `goldens::tests::session_types_spell_their_protocol_and_payloads`
+/// - witness: `tests::goldens::session_types_spell_their_protocol_and_payloads`
 #[spec(ensures: |ret| ret.0.iter().all(|segment| match *segment {
     | Segment::Text(ref text) => !text.is_empty(),
     | Segment::Payload(slot) => protocol.nodes().iter().any(|node| {
@@ -1479,7 +1479,7 @@ impl Brace
     /// # Adequacy
     /// - hypothesis: L3 — products, sums and lazy pairs in the grammar fixtures
     ///   distinguish a swapped delimiter.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
     #[spec(ensures: |ret| matches!((self, ret.0.as_bytes()),
         (Self::Hash, b"#{") | (Self::Plus, b"+{") | (Self::Ampersand, b"&{")
     ))]
@@ -1780,7 +1780,7 @@ const fn writes<T>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Walk::inlined`].
-/// - witness: `goldens::tests::a_run_bound_call_in_a_type_prints_nested_676`
+/// - witness: `tests::goldens::a_run_bound_call_in_a_type_prints_nested_676`
 #[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Bind(..)))]
 fn bound_call<S>(
     source: &S,
@@ -2116,8 +2116,8 @@ impl<'names> Binders<'names>
     ///   capture and reordered generation. A counter at its maximum exposes the
     ///   refusal boundary and verifies that cached positions remain available;
     ///   the intervening billions of candidates are not allocated.
-    /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
-    /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
+    /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `tests::goldens::a_binder_skips_the_names_the_type_mentions`
     /// - witness: `walk::tests::binder_exhaustion_preserves_existing_names`
     #[spec(
         captures: [cached = self.generated.get(position.0).map(|name| name.0.as_ptr())],
@@ -2171,7 +2171,7 @@ impl<'names> Binders<'names>
 ///   ordinal distinguish off-by-one letters, missing suffixes and overflow. The
 ///   remaining ordinal interval is not enumerated.
 /// - witness: `walk::tests::candidate_names_cross_rounds_without_losing_the_last_ordinal`
-/// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
+/// - witness: `tests::goldens::a_binder_skips_the_names_the_type_mentions`
 #[spec(ensures: |ref ret| match *ret {
     | Maybe::Present(ref name) => {
         let letter = name.0.as_bytes().first().copied().and_then(|byte| byte.checked_sub(b'a'));
@@ -2225,8 +2225,8 @@ fn candidate(ordinal: Ordinal) -> Maybe<BinderName, binder::Absent>
 /// - hypothesis: L3 — a stable cyclic source refuses, and a binder skips an
 ///   encountered name. The retained scan-to-walk mutation fixture bounds only
 ///   subsequent traversal, not name consistency for changing sources.
-/// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-/// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::a_binder_skips_the_names_the_type_mentions`
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
 /// - witness: `walk::tests::the_name_scan_visits_exactly_its_budget`
 #[spec(ensures: |ref ret| match *ret {
@@ -2296,7 +2296,7 @@ where
 /// - hypothesis: L3 — both ground sorts at zero and positive levels, a
 ///   parameter sort and a variable level distinguish polarity, lost levels and
 ///   unsupported forms. The fixtures do not enumerate large constants.
-/// - witness: `goldens::tests::universes_spell_their_sort_and_level`
+/// - witness: `tests::goldens::universes_spell_their_sort_and_level`
 #[spec(ensures: |ref ret| match (sort, ret) {
     | (Sort::Parameter(_), &Maybe::Absent(universe::Absent::ParameterSort)) => true,
     | (Sort::Ground(_), &Maybe::Absent(universe::Absent::LevelVariable)) => level.atoms().next().is_some(),
@@ -2350,8 +2350,8 @@ fn universe(
 /// - hypothesis: L3 — the finite escaped-control string, signed integer and
 ///   numeric fixtures observe delimiters, sign, digits and fractional parts.
 ///   Arbitrary Unicode strings and all magnitudes are not enumerated.
-/// - witness: `goldens::tests::string_controls_stay_in_one_escaped_literal`
-/// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+/// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
+/// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
 #[spec(ensures: |ref ret| !ret.0.contains(['\r', '\n', '\t', '\0']) && match *literal {
     | Literal::Integer(ref integer) => {
         let digits = match integer.sign() {
@@ -2482,7 +2482,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — misplaced, unreadable and unbound nodes each spell
     ///   `?` under their own reason.
-    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
     #[spec(ensures: |ref ret| self.unspelled.contains(&reason) && self.fidelity == Fidelity::Approximate
         && matches!(*ret, Ok(()) | Err(PresentationError::Build(_))))]
     #[cfg_attr(
@@ -2518,7 +2518,7 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — exact literal spellings expose corrupted leaf text; a
     ///   zero text-byte budget exposes swallowed build refusals. Other meters
     ///   and allocation failures are outside these fixtures.
-    /// - witness: `goldens::tests::string_controls_stay_in_one_escaped_literal`
+    /// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
     /// - witness: `walk::tests::failed_atoms_do_not_push_pieces_or_restore_fidelity`
     #[spec(
         requires: !glyphs.0.contains(['\r', '\n', '\t']),
@@ -2552,7 +2552,7 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — leaf spellings and a zero text-byte budget
     ///   distinguish a missing atom, phantom pieces on failure and a wrong
     ///   failure phase.
-    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `walk::tests::failed_atoms_do_not_push_pieces_or_restore_fidelity`
     #[spec(
         requires: !glyphs.0.contains(['\r', '\n', '\t']),
@@ -2595,8 +2595,8 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — deep, opaque and unreadable nodes expose omitted
     ///   approximation; a refused atom exposes a fidelity reset on failure.
     ///   Unrepresented allocator failures are outside this evidence.
-    /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
-    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `walk::tests::failed_atoms_do_not_push_pieces_or_restore_fidelity`
     #[spec(
         requires: !glyphs.0.contains(['\r', '\n', '\t']),
@@ -2634,7 +2634,7 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — ordinary names, a literal question mark, empty names
     ///   and each forbidden control distinguish content from approximation.
     ///   Other Unicode names are outside these finite fixtures.
-    /// - witness: `goldens::tests::fidelity_follows_nodes_not_the_characters_of_a_name`
+    /// - witness: `tests::goldens::fidelity_follows_nodes_not_the_characters_of_a_name`
     /// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity],
@@ -2699,9 +2699,9 @@ impl Walk<'_, '_>
     ///   into the first and the third summand, and a table record that answers
     ///   no label distinguish a swapped label, a wrong separator and a missing
     ///   label claimed faithful.
-    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
-    /// - witness: `goldens::tests::n_ary_tuples_and_injections_spell_between_their_braces`
-    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::n_ary_tuples_and_injections_spell_between_their_braces`
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity],
         ensures: |ref ret| (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
@@ -2778,11 +2778,11 @@ impl Walk<'_, '_>
     ///   and capture; a free variable reads its context binder's name and one
     ///   past the context exposes a fabricated name. The fixtures do not open
     ///   enough binders to exhaust the candidate counter.
-    /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
-    /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
-    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `tests::goldens::a_binder_skips_the_names_the_type_mentions`
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.pieces.len() == entry
@@ -2856,8 +2856,8 @@ impl Walk<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::variable_leaf`].
-    /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
-    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity],
         ensures: |ref ret| (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
@@ -2930,7 +2930,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a redex of one and of two arguments, each argument
     ///   occurring in the reduct, observe the order the binders open in.
-    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct_401`
+    /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
     #[spec(
         captures: [opened = self.opened.len()],
         ensures: |ref ret| ret.is_err() || self.opened.len() == opened.saturating_add(arity.0),
@@ -2972,7 +2972,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — finite composite spellings expose reordered operands;
     ///   an incomplete join and an empty stack expose a swallowed underflow.
-    /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
+    /// - witness: `tests::goldens::pair_of_injections_pins_sum_notation`
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
     #[spec(
         captures: [entry = self.pieces.len(), top = self.pieces.last().copied()],
@@ -3005,7 +3005,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — the sugared goldens' chains and tuples of two and
     ///   three expose reordered operands.
-    /// - witness: `goldens::tests::the_sugared_form_writes_every_sugar_its_shape_admits`
+    /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
     #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| match *ret {
@@ -3057,8 +3057,8 @@ impl Walk<'_, '_>
     ///   over a codomain a static redex returns, and keep the thunk over a
     ///   dependent arrow; a source that becomes a cycle of thunks over
     ///   returners after its scan stays within the walk's reads.
-    /// - witness: `goldens::tests::the_sugared_form_writes_every_sugar_its_shape_admits`
-    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct_401`
+    /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
+    /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
     #[spec(
         captures: [entry = self.remaining],
@@ -3238,7 +3238,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a lowered typed bind spells as its source, and an
     ///   ascription outside that shape stands as its body.
-    /// - witness: `goldens::tests::a_typed_bind_spells_as_written`
+    /// - witness: `tests::goldens::a_typed_bind_spells_as_written`
     #[spec(
         captures: [entry = self.remaining],
         ensures: |ref ret| self.remaining <= entry
@@ -3284,7 +3284,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — the sugared goldens' tuples and domain lists at the
     ///   wide and the narrow page expose a lost separator or closer.
-    /// - witness: `goldens::tests::the_sugared_form_writes_every_sugar_its_shape_admits`
+    /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
     #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
@@ -3329,8 +3329,8 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — bridge and arrow fixtures distinguish wrong
     ///   precedence and missing parentheses. The finite grammar cases do not
     ///   exhaust all possible composite trees.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
     #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
@@ -3383,8 +3383,8 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — narrow and wide continuations and a zero-column pair
     ///   distinguish missing spaces, wrong indentation and reversed
     ///   width-tainted alternatives. Other widths are not enumerated.
-    /// - witness: `goldens::tests::arrow_chain_breaks_before_each_continuation`
-    /// - witness: `goldens::tests::doubly_tainted_pair_keeps_the_broken_separator`
+    /// - witness: `tests::goldens::arrow_chain_breaks_before_each_continuation`
+    /// - witness: `tests::goldens::doubly_tainted_pair_keeps_the_broken_separator`
     #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
@@ -3424,9 +3424,9 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — narrow and wide brackets and the zero-column pair
     ///   distinguish a misplaced closer, a spurious flat space and reversed
     ///   width-tainted alternatives; other widths are not enumerated.
-    /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
-    /// - witness: `goldens::tests::record_value_breaks_fields_at_the_narrow_page`
-    /// - witness: `goldens::tests::doubly_tainted_pair_keeps_the_broken_separator`
+    /// - witness: `tests::goldens::pair_of_injections_pins_sum_notation`
+    /// - witness: `tests::goldens::record_value_breaks_fields_at_the_narrow_page`
+    /// - witness: `tests::goldens::doubly_tainted_pair_keeps_the_broken_separator`
     #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
@@ -3468,7 +3468,7 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — a lambda over a bind at the wide page and at a page
     ///   it overflows distinguishes a missing indent, a closer left inline and
     ///   a statement separator that breaks apart from its block.
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
@@ -3510,8 +3510,8 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a bind run by a bind and a returner at a call's head
     ///   distinguish a block from parentheses and from a bare operand.
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-    /// - witness: `goldens::tests::a_block_body_holds_its_sequence_bare`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_block_body_holds_its_sequence_bare`
     #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
@@ -3564,14 +3564,14 @@ impl Walk<'_, '_>
     ///   misplaced nodes distinguish missing work, reversed children, binder
     ///   scope leakage and lost approximation. Mutable-source fixtures bound
     ///   traversal but do not prove name consistency across mutations.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
-    /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
-    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-    /// - witness: `goldens::tests::a_scoped_capability_names_its_scope_400`
-    /// - witness: `goldens::tests::a_returner_lists_each_interface_of_its_row_between_commas`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_scoped_capability_names_its_scope_400`
+    /// - witness: `tests::goldens::a_returner_lists_each_interface_of_its_row_between_commas`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened
@@ -4220,8 +4220,8 @@ impl Walk<'_, '_>
     ///   arguments, and one whose abstraction is applied past its chain,
     ///   observe the reduct and the arguments left. Longer stable spines and
     ///   arbitrary changing sources are not enumerated.
-    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
-    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct_401`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
     /// - witness: `walk::tests::spine_schedules_operator_first_at_the_depth_limit`
     #[spec(
         captures: [entry = tasks.len()],
@@ -4334,7 +4334,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a thunk over an arrow into a static redex of a
     ///   returner spells as the alias over the reduct's result.
-    /// - witness: `goldens::tests::a_static_redex_prints_as_its_reduct_401`
+    /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
     #[spec(captures: [entry = tasks.len()], ensures: tasks.len() > entry)]
     fn returned<S>(
         source: &S,
@@ -4401,9 +4401,9 @@ impl Walk<'_, '_>
     ///   literal projection on two arguments observe the reduct and the binder
     ///   each argument stands for, and a literal whose body does more than
     ///   return stays a call.
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-    /// - witness: `goldens::tests::a_call_collects_its_arguments_up_to_the_depth_limit`
-    /// - witness: `goldens::tests::a_called_function_literal_prints_as_what_it_returns_675`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_call_collects_its_arguments_up_to_the_depth_limit`
+    /// - witness: `tests::goldens::a_called_function_literal_prints_as_what_it_returns_675`
     #[spec(
         captures: [entry = tasks.len()],
         ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
@@ -4523,7 +4523,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — one run and two runs, the second's call naming the
     ///   first's binder, observe each call standing for its binder in order.
-    /// - witness: `goldens::tests::a_run_bound_call_in_a_type_prints_nested_676`
+    /// - witness: `tests::goldens::a_run_bound_call_in_a_type_prints_nested_676`
     #[spec(
         captures: [entry = tasks.len()],
         ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
@@ -4585,10 +4585,10 @@ impl Walk<'_, '_>
     ///   order. The binder cache witness covers counter exhaustion separately;
     ///   layout refusal at this exact join is outside the finite spelling
     ///   fixtures.
-    /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
-    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-    /// - witness: `goldens::tests::an_arrow_binder_spells_as_the_source_names_it`
+    /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::an_arrow_binder_spells_as_the_source_names_it`
     #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity,
             unnamed = matches!(self.names.get(self.opened.len().saturating_add(offset.0)), Some(&None))],
@@ -4675,7 +4675,7 @@ impl Walk<'_, '_>
     ///   written name a constant of the type holds, or an outer binder's, falls
     ///   back to a generated one; generated names skip a written name an outer
     ///   binder took.
-    /// - witness: `goldens::tests::an_arrow_binder_spells_as_the_source_names_it`
+    /// - witness: `tests::goldens::an_arrow_binder_spells_as_the_source_names_it`
     #[spec(
         captures: [opened = self.opened.len()],
         ensures: self.opened.len() == opened.saturating_add(1_usize)
@@ -4725,7 +4725,7 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a handler's clause names and a data case's
     ///   constructors spell as written; an unnamed constructor spells `?`.
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
     #[spec(ensures: |ref ret| !ret.0.contains(['\n', '\r', '\t']) && !ret.0.is_empty())]
     #[cfg_attr(
@@ -4787,11 +4787,11 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — the computation golden reads every computation
     ///   former, the type golden a path and a family, the value golden a
     ///   constructor; a swapped part or a lost binder changes the golden.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-    /// - witness: `goldens::tests::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
-    /// - witness: `goldens::tests::a_prelude_operator_is_written_as_its_operator`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
+    /// - witness: `tests::goldens::a_prelude_operator_is_written_as_its_operator`
     #[spec(
         captures: [forms = self.forms.len()],
         ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
@@ -5475,14 +5475,14 @@ impl Walk<'_, '_>
     ///   wrong operators, parentheses, child order and binder scopes. An
     ///   incomplete join exposes missing-operand refusal; arbitrary trees and
     ///   every builder limit are not enumerated.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
-    /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
-    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
-    /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::pair_of_injections_pins_sum_notation`
+    /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
-    /// - witness: `goldens::tests::a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow_398`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow_398`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
@@ -5895,9 +5895,9 @@ impl Walk<'_, '_>
 ///   breaks and depth cutoffs. A scanned leaf that becomes a cycle exposes a
 ///   missing second-pass budget through the read count and approximation. Other
 ///   mutations of a source during presentation are not enumerated.
-/// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-/// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
-/// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
 #[spec(ensures: |ref ret| match *ret {
     | Ok(Walked::Built { doc, .. }) => doc != Doc::EMPTY,

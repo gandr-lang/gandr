@@ -156,7 +156,7 @@ impl SupportContext
     /// # Adequacy
     /// - hypothesis: L3 — the surface is the plane projection, separated by a
     ///   check that reaches both wiring sites and finds both planes non-empty.
-    /// - witness: `acceptance::acceptance::the_rewrite_planes_account_separately_through_a_real_check`
+    /// - witness: `tests::acceptance::the_rewrite_planes_account_separately_through_a_real_check`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret == self.rewrites.plane_entry_count(plane))]

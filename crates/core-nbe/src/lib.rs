@@ -327,10 +327,10 @@
 //!
 //! Readback, sharing and static-normalization witnesses use one structural tree
 //! oracle. Its static-term and quoted-type boundaries are witnessed by
-//! `readback_terms::readback_terms::the_comparator_reads_static_formers` and
-//! `readback_terms::readback_terms::the_comparator_descends_into_quoted_type_families`;
+//! `tests::readback_terms::the_comparator_reads_static_formers` and
+//! `tests::readback_terms::the_comparator_descends_into_quoted_type_families`;
 //! the latter also refuses identical quotes with missing type children.
-//! `readback_terms::readback_terms::native_tree_comparison_preserves_endpoints_maps_and_evidence`
+//! `tests::readback_terms::native_tree_comparison_preserves_endpoints_maps_and_evidence`
 //! separates native endpoint order, translator syntax and evidence payloads
 //! across distinct arenas. The substitution oracle separately witnesses
 //! outermost versus innermost redex selection and ordered-sibling preservation.

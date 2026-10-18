@@ -41,7 +41,7 @@
 //! code, and a second vocabulary for one fact would have a reader learn two
 //! names. Reversal: a warning that is not a would-be refusal gets its own
 //! vocabulary. Witness:
-//! `diagnostics::diagnostics::a_shadowed_builtin_is_a_warning`.
+//! `tests::diagnostics::a_shadowed_builtin_is_a_warning`.
 //!
 //! # An inferred exit is a lint's finding, carrying its fix
 //!
@@ -52,7 +52,7 @@
 //! keyword, `return ` or `become `, at the tail's first byte: the edit that
 //! writes the exit the lowering would infer, after which the lowering infers
 //! nothing there and the lint finds nothing. Witness:
-//! `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`.
+//! `tests::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`.
 //!
 //! # An inferred run is a lint's finding, carrying its fix
 //!
@@ -64,7 +64,7 @@
 //! it begins a statement or a block's tail, which a block would read as a
 //! bind: the edit that writes the run the checker would infer, after which
 //! the computation is a written run and the lint finds nothing. Witness:
-//! `diagnostics::diagnostics::an_inferred_run_is_a_finding_whose_fix_writes_its_keyword`.
+//! `tests::diagnostics::an_inferred_run_is_a_finding_whose_fix_writes_its_keyword`.
 //!
 //! # The settle note says what was expected and why it did not happen
 //!
@@ -392,8 +392,8 @@ pub enum Subject<'step>
 /// - hypothesis: L3 — a refusal, an unsettled declaration, a goal, a source
 ///   refused whole, a warning and a ledger line each build their kind; finite
 ///   UTF-8 boundaries expose clamping.
-/// - witness: `diagnostics::diagnostics::a_refused_declaration_is_located`
-/// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+/// - witness: `tests::diagnostics::a_refused_declaration_is_located`
+/// - witness: `tests::diagnostics::each_verb_prints_its_entries`
 /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
 #[spec(ensures: |ref ret| ret.annotations.iter().all(|annotation| text.fragment(annotation.locus.span).is_ok())
     && match ret.span { Maybe::Present(span) => text.fragment(span).is_ok(), Maybe::Absent(_) => true })]
@@ -659,10 +659,10 @@ impl Report<'_>
     ///   across refused declarations and whole-source refusal; unproduced
     ///   expectations and goals distinguish the non-refusal branches, and a
     ///   lint finding its lint.
-    /// - witness: `diagnostics::diagnostics::a_refused_declaration_is_located`
-    /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
-    /// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
-    /// - witness: `diagnostics::diagnostics::an_inferred_run_is_a_finding_whose_fix_writes_its_keyword`
+    /// - witness: `tests::diagnostics::a_refused_declaration_is_located`
+    /// - witness: `tests::diagnostics::each_verb_prints_its_entries`
+    /// - witness: `tests::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
+    /// - witness: `tests::diagnostics::an_inferred_run_is_a_finding_whose_fix_writes_its_keyword`
     #[spec(ensures: |ret| ret == match self.subject {
         Subject::Refused { refusal, .. } => Class::Refusal(refusal.classify()),
         Subject::Unsettled { unsettlement, .. } => Class::Unsettled(unsettlement),
@@ -723,8 +723,8 @@ impl Report<'_>
     /// - hypothesis: L3 — checker and lowering refusals expose their stable
     ///   vocabulary identifiers; a lint finding exposes the lint's; a goal
     ///   exposes statement absence.
-    /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
-    /// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
+    /// - witness: `tests::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
+    /// - witness: `tests::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
     #[spec(ensures: |ret| match (self.subject, ret) {
         (Subject::Refused { refusal, .. }, Maybe::Present(identifier)) => identifier == Identifier::Refusal(refusal.name().spelling()),
         (Subject::Source(refusal), Maybe::Present(identifier)) => identifier == Identifier::Refusal(Refusal::Lowering(refusal).name().spelling()),
@@ -767,7 +767,7 @@ impl Report<'_>
     /// # Adequacy
     /// - hypothesis: L3 — a type mismatch compares both of its types; a goal
     ///   compares none.
-    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
+    /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
     #[spec(ensures: |ret| match self.subject {
         Subject::Refused { refusal, spellings, .. } => ret == Comparison::of(refusal, spellings),
         Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) | Subject::Ledger { .. } => ret == Comparison::none(),
@@ -804,7 +804,7 @@ impl Report<'_>
     /// - hypothesis: L3 — finite real producer spans and UTF-8 boundary cases
     ///   expose unvalidated or clamped locations; independent primary and
     ///   context validation preserves the surviving causal slot.
-    /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+    /// - witness: `tests::diagnostics::a_report_exposes_the_context_it_marks`
     /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
     #[spec(ensures: |ref ret| {
         let primary = match ret.primary {
@@ -968,7 +968,7 @@ impl fmt::Display for TitleText<'_>
     /// # Adequacy
     /// - hypothesis: L3 — unresolved-name and goal titles retain source names
     ///   and numeric roles; mismatch titles expose no core addresses.
-    /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
+    /// - witness: `tests::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
     #[inline]
     fn fmt(
         &self,
@@ -1049,7 +1049,7 @@ impl fmt::Display for MessageText<'_>
     ///   single-line message naming no grammar sort; a type mismatch's message
     ///   differs from its producer's title.
     /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
-    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
+    /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
     #[inline]
     fn fmt(
         &self,
@@ -1100,7 +1100,7 @@ impl fmt::Display for NoteText<'_>
     /// - hypothesis: L3 — a declaration expected to check, one owing three
     ///   obligations and one expecting another refusal each say what they
     ///   expected, with their counts and names.
-    /// - witness: `diagnostics::diagnostics::the_settle_note_says_what_was_expected_in_words`
+    /// - witness: `tests::diagnostics::the_settle_note_says_what_was_expected_in_words`
     #[inline]
     fn fmt(
         &self,
@@ -1175,7 +1175,7 @@ impl fmt::Display for UpstreamNoteText<'_>
     /// # Adequacy
     /// - hypothesis: L3 — a declaration calling a refused one is noted as left
     ///   unsettled by that refusal, naming both.
-    /// - witness: `diagnostics::diagnostics::a_declaration_naming_a_refused_one_is_a_note`
+    /// - witness: `tests::diagnostics::a_declaration_naming_a_refused_one_is_a_note`
     #[inline]
     fn fmt(
         &self,

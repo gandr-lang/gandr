@@ -929,7 +929,7 @@ impl<'arena> Children<'arena>
     /// - witness: `free::tests::binders_lower_only_their_own_intuitionistic_occurrences`
     /// - witness: `free::tests::a_quoted_dependent_arrow_binds_only_its_codomain`
     /// - witness: `free::tests::missing_nodes_and_unanswered_children_have_distinct_refusals`
-    /// - witness: `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+    /// - witness: `tests::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(ensures: |ret| (ret.is_ok() == match node {
         Reached::Term(CoreTerm::Value(id)) => core.value(id).is_some(),

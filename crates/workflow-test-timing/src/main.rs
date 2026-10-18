@@ -73,10 +73,10 @@ struct Cli
 /// - hypothesis: L3 — a stored report, an empty store, a failing `gh`, an
 ///   unknown flag and `--help`; a swapped stream or exit code changes the
 ///   observed process result.
-/// - witness: `cli::cli::a_report_reads_the_newest_stored_runs`
-/// - witness: `cli::cli::an_empty_store_is_refused`
-/// - witness: `cli::cli::a_failing_gh_is_reported_with_its_message`
-/// - witness: `cli::cli::a_malformed_invocation_exits_two`
+/// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
+/// - witness: `tests::cli::an_empty_store_is_refused`
+/// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
+/// - witness: `tests::cli::a_malformed_invocation_exits_two`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(REFUSED))]
 fn main() -> ExitCode
 {
@@ -120,9 +120,9 @@ fn main() -> ExitCode
 /// - hypothesis: L3 — the offline report over three stored runs reads only the
 ///   newest two when asked for two; a fetch through a fake `gh` stores and
 ///   reads the runs it lists; an empty store is refused.
-/// - witness: `cli::cli::a_report_reads_the_newest_stored_runs`
-/// - witness: `cli::cli::fetched_runs_are_stored_and_read_back`
-/// - witness: `cli::cli::an_empty_store_is_refused`
+/// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
+/// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
+/// - witness: `tests::cli::an_empty_store_is_refused`
 fn report(cli: Cli) -> Result<(), TimingError>
 {
     let repository = Repository::from(cli.repo);

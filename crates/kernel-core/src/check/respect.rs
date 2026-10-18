@@ -151,7 +151,7 @@ pub(super) enum Reading
 /// - hypothesis: L3 — as [`respected`]: the fold reading admits a fixpoint over
 ///   the circle that a bare reading of its case would refuse, and a fold over a
 ///   path at a looped point respects its words' cancellations.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+/// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 /// - witness: `presented::tests::a_path_at_a_looped_point_reads_as_its_words`
 #[spec(ensures: |ret| match ret { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, .. } if marked == fixpoint), Maybe::Absent(reason) => reason == root::Absent::NotOverCase })]
 pub(super) fn fold_root(
@@ -200,7 +200,7 @@ pub(super) fn fold_root(
 /// # Adequacy
 /// - hypothesis: L3 — the same case over a free circle is admitted with no
 ///   obligation, and over the presented circle is decided against its rules.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+/// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 #[spec(ensures: |ret| match ret { Maybe::Present(owed) => owed == reading, Maybe::Absent(_) => true })]
 pub(super) fn obliged(
     arena: &TermArena,
@@ -255,8 +255,8 @@ pub(super) fn obliged(
 ///   refused at the first rule, as the checker refuses and admits them; a fold
 ///   into the integers is admitted on its two laws and refused at the rule
 ///   whose law states the other cancellation.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
-/// - witness: `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+/// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+/// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
 #[spec(
     captures: before = arena.watermark(),
     ensures: |ret| arena.watermark() == before
@@ -380,7 +380,7 @@ enum Related
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`].
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+/// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::ArenaFault)))]
 fn obligation(
     arena: &mut TermArena,
@@ -462,7 +462,7 @@ fn obligation(
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`]: the circle's one variable is the
 ///   innermost binder.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+/// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 #[spec(ensures: |ret| u32::from(ret) == u32::from(bound).checked_sub(u32::from(variable)).and_then(|past| past.checked_sub(1_u32)).unwrap_or_default())]
 fn pattern_binder(
     bound: VariableCount,
@@ -504,7 +504,7 @@ fn pattern_binder(
 /// - hypothesis: L3 — as the checker's reading: a fold over the integers into a
 ///   path between two sums, its arms composing the recursive call with a lemma,
 ///   is admitted; a fold into the circle's paths is refused.
-/// - witness: `native_formers::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
+/// - witness: `tests::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
 #[spec(
     captures: arrowed = matches!(arena.comp_type(arrow), Some(&(CompType::Arrow { .. } | CompType::Pi { .. }))),
     ensures: |ret| ret == Related::Apart || arrowed,
@@ -614,7 +614,7 @@ enum Sethood
 /// # Adequacy
 /// - hypothesis: L3 — as the checker's reading: the integers are a set and the
 ///   circle is not.
-/// - witness: `native_formers::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
+/// - witness: `tests::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
 #[spec(ensures: |ret| ret == Sethood::Unread || matches!(arena.value_type(carrier), Some(&ValueType::Data { ref arguments, .. }) if arguments.is_empty()))]
 fn sethood(
     arena: &TermArena,
@@ -699,7 +699,7 @@ fn sethood(
 /// # Adequacy
 /// - hypothesis: L3 — the winding number is admitted on the circle's two
 ///   cancellation laws and refused when the laws are crossed.
-/// - witness: `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+/// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::ArenaFault | KernelError::DataArgumentArity)))]
 fn lawful(
     arena: &mut TermArena,
@@ -851,7 +851,7 @@ enum Argument
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`sequenced`].
-/// - witness: `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+/// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
 #[spec(ensures: |ref ret| ret.read.is_empty()
     && !matches!(arena.computation(ret.head), Some(&Computation::Application(..))))]
 fn spine_of(
@@ -901,7 +901,7 @@ fn spine_of(
 /// - hypothesis: L3 — the winding number's cancellation law, whose endpoint
 ///   calls `turn` on the run of `unturn` on the fold's run, meets the fold's
 ///   side, and a crossed law does not.
-/// - witness: `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+/// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
 #[spec(ensures: |ret| arena.computation(ret).is_some())]
 fn sequenced(
     arena: &mut TermArena,
@@ -992,7 +992,7 @@ fn sequenced(
 /// # Adequacy
 /// - hypothesis: L3 — as [`lawful`]: the circle has no parameters, and a
 ///   variable at another type is read at its classifier.
-/// - witness: `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+/// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
 #[spec(ensures: |ret| !signature.parameters.is_empty() || ret.as_ref() == Ok(&field))]
 fn instantiate_field(
     arena: &mut TermArena,

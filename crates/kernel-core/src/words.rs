@@ -146,7 +146,7 @@ enum Action
 /// # Adequacy
 /// - hypothesis: L3 — `mul(b, Base)` is one call of two arguments moving at the
 ///   first, and its loop arm reads the second as `Base`.
-/// - witness: `native_formers::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
+/// - witness: `tests::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Node
 {
@@ -183,7 +183,7 @@ enum Pending
 /// # Adequacy
 /// - hypothesis: L3 — `mul(mul(b, Base), invLooper(b))` reads as two routes,
 ///   and the image of the loop is the first's then the second's.
-/// - witness: `native_formers::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
+/// - witness: `tests::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Routes
 {
@@ -266,7 +266,7 @@ impl Routes
 /// - hypothesis: L3 — `loop` answered at every point is read as its word and
 ///   conjugated to itself; were the name left rigid, the loop at every point
 ///   would be refused.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_none_or(|body| head(arena, unfoldings.presentations(), body) != Head::Other))]
 fn named(
     arena: &TermArena,
@@ -303,8 +303,8 @@ fn named(
 /// - hypothesis: L3 — reflexivity, the empty word and the loop's letters are
 ///   told apart in every loop witness; a misread head would move or fix the
 ///   wrong word.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
-/// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| match ret {
     Head::Letter { rest, .. } => arena.value(rest).is_some(),
     Head::Empty => matches!(arena.value(word), Some(&(Value::Here { .. } | Value::Constructor { .. }))),
@@ -364,7 +364,7 @@ fn head(
 /// # Adequacy
 /// - hypothesis: L3 — the conjugated and mapped loop witnesses splice closed
 ///   words letter by letter.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(ref letters, end)| head(arena, presentations, end) == Head::Empty && letters.iter().all(|&letter| matches!(head(arena, presentations, letter), Head::Letter { .. }))))]
 fn spelled(
     arena: &TermArena,
@@ -397,7 +397,7 @@ fn spelled(
 /// # Adequacy
 /// - hypothesis: L3 — the flip once carries reflexivity to the loop twice only
 ///   when its image, the inverse letter, is inverted back to the loop.
-/// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| FreeCells::generator(ret) == FreeCells::generator(tag) && (ret == tag) == (tag == FreeCells::nil()))]
 fn inverse(tag: ConstructorTag) -> ConstructorTag
 {
@@ -448,7 +448,7 @@ fn relettered(
 /// # Adequacy
 /// - hypothesis: L3 — conjugation at `Path(Circle, x, x)` inverts the loop on
 ///   the left; a word left uninverted would not cancel.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_none_or(|built| spelled(arena, presentations, built).is_some()))]
 fn inverted(
     arena: &mut TermArena,
@@ -485,7 +485,7 @@ fn inverted(
 /// # Adequacy
 /// - hypothesis: L3 — reflexivity at `Path(Circle, Base, x)` becomes the loop
 ///   only when the empty word is spliced before it.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.value(built).is_some()))]
 fn concatenated(
     arena: &mut TermArena,
@@ -526,8 +526,8 @@ fn concatenated(
 /// - hypothesis: L3 — each witness family reads one action per endpoint: the
 ///   point fixed, `x` moving, and the flip's and the collapse's calls as
 ///   routes; a misread action carries the answer elsewhere.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
-/// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| match ret {
     Some(Action::Moving) => matches!(arena.value(endpoint), Some(&Value::Variable(_))),
     Some(Action::Through(ref read)) => !read.leaves.is_empty(),
@@ -575,9 +575,9 @@ where
 ///   and the flip once as one call, which the witness tells apart by their
 ///   verdicts; `mul(b, Base)` reads as one call of two arguments moving at the
 ///   first; `mul(mul(b, Base), invLooper(b))` as two routes.
-/// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
-/// - witness: `native_formers::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
-/// - witness: `native_formers::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
+/// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `tests::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
+/// - witness: `tests::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|read| !read.leaves.is_empty()
     && read.leaves.iter().all(|&(node, position)| read.nodes.get(node).is_some_and(|node| position < node.arguments.len()))))]
 fn routes<M>(
@@ -670,7 +670,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`routes`].
-/// - witness: `native_formers::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
+/// - witness: `tests::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(_, ref arguments)| !arguments.is_empty()))]
 fn spine(
     arena: &TermArena,
@@ -711,7 +711,7 @@ fn spine(
 /// # Adequacy
 /// - hypothesis: L3 — a loop arm is read at the circle's point `Base`, where
 ///   the flip's arm answers the inverse letter.
-/// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| ret.is_none_or(|built| matches!(arena.value(built), Some(&Value::Constructor { .. }))))]
 pub fn point(
     arena: &mut TermArena,
@@ -758,7 +758,7 @@ pub fn point(
 /// - hypothesis: L3 — a composite and an inverse transported along a word
 ///   written inline admit at the circle's point and refuse at the wrong
 ///   endpoints; reading the words as their own type refuses by shape.
-/// - witness: `native_formers::native_formers::a_word_written_as_a_transport_path_is_that_path`
+/// - witness: `tests::native_formers::a_word_written_as_a_transport_path_is_that_path`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(domain, left, right)|
     matches!(arena.value_type(ty), Some(&ValueType::Path { domain: d, left: l, right: r }) if d == domain && l == left && r == right)
         || (left == right && matches!(arena.value(left), Some(&Value::Constructor { .. })))))]
@@ -816,7 +816,7 @@ enum Arm
 /// - hypothesis: L3 — `mul`'s case is over its first argument, which the loop
 ///   moves along one route of `mul(mul(b, Base), invLooper(b))` and leaves at
 ///   the point along the other.
-/// - witness: `native_formers::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
+/// - witness: `tests::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
 #[spec(ensures: |ret| ret.is_none_or(|(case, over)| over.0 < arguments.len() && matches!(arena.computation(case), Some(&Computation::DataCase { .. }))))]
 fn case_of(
     arena: &TermArena,
@@ -876,8 +876,8 @@ fn case_of(
 /// - hypothesis: L3 — the flip's written arm and the collapse's unwritten one
 ///   decide the flip twice and the collapse admitted and the flip once refused;
 ///   `mul`'s arm reads its second argument at the value the call passes.
-/// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
-/// - witness: `native_formers::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
+/// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `tests::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
 #[spec(ensures: |ret| ret.is_none_or(|arm| match arm { Arm::Written(written) => arena.computation(written).is_some(), Arm::Unwritten => true }))]
 fn loop_arm<M>(
     arena: &mut TermArena,
@@ -964,7 +964,7 @@ where
 /// - hypothesis: L3 — `mul(⟨mul(Base, Base)⟩, y)` runs its first argument, and
 ///   at `Base` the branch is the second: the loop through `mul`'s second
 ///   argument is itself, the second route of `rotInv1`'s diagonal.
-/// - witness: `native_formers::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
+/// - witness: `tests::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()))]
 fn select<M>(
     arena: &mut TermArena,
@@ -1114,7 +1114,7 @@ where
 /// - hypothesis: L3 — `mul(mul(b, Base), invLooper(b))` moves the loop through
 ///   the outer `mul`'s first argument, then its second: `loop` then
 ///   `back(loop)`, which the obligation over `b` reads as the empty word.
-/// - witness: `native_formers::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
+/// - witness: `tests::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()) && (ret.is_none() || !routes.leaves.is_empty()))]
 fn image<M>(
     arena: &mut TermArena,
@@ -1183,8 +1183,8 @@ where
 ///   collapse's is reflexivity, and the flip twice binds the first image into
 ///   the second's cong; `mul(b, Base)`'s image of the loop is `selfloop(Base)`;
 ///   each verdict turns on the image.
-/// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
-/// - witness: `native_formers::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
+/// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `tests::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()))]
 fn route_image<M>(
     arena: &mut TermArena,
@@ -1317,11 +1317,11 @@ where
 ///   word. The circle's corpus rows replay through the same reducts in
 ///   `gandr-surface-corpus`'s
 ///   `kernel_export::kernel_loop_elimination_readmission`.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
-/// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
-/// - witness: `native_formers::native_formers::a_composite_along_a_returned_path_cancels_to_the_empty_word`
-/// - witness: `native_formers::native_formers::a_word_appends_on_its_first_word`
-/// - witness: `native_formers::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `tests::native_formers::a_composite_along_a_returned_path_cancels_to_the_empty_word`
+/// - witness: `tests::native_formers::a_word_appends_on_its_first_word`
+/// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
 #[spec(ensures: |ret| match ret {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
@@ -1556,8 +1556,8 @@ where
 ///   parameter, and a letter before a parameter moved along another is the
 ///   letter before the parameters' composite; the replay re-derives what the
 ///   checker accepted by those rows only when it reads them too.
-/// - witness: `native_formers::native_formers::a_word_appends_on_its_first_word`
-/// - witness: `native_formers::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+/// - witness: `tests::native_formers::a_word_appends_on_its_first_word`
+/// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
 #[spec(ensures: |ret| match ret {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
@@ -1618,7 +1618,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`appended`], whose rows fire only in this family.
-/// - witness: `native_formers::native_formers::a_word_appends_on_its_first_word`
+/// - witness: `tests::native_formers::a_word_appends_on_its_first_word`
 #[spec(ensures: |ret| ret.is_none_or(|left| arena.value(left).is_some()))]
 fn singleton<M>(
     arena: &mut TermArena,
@@ -1667,7 +1667,7 @@ where
 /// - hypothesis: L3 — a composite whose first word is a call returning the
 ///   empty word reduces to its second word in both engines; were the call left
 ///   held, the replay would refuse what the checker accepted.
-/// - witness: `native_formers::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+/// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
 #[spec(ensures: |ret| ret.is_none_or(|held| arena.computation(held).is_some()))]
 pub fn held_operand<M>(
     arena: &mut TermArena,

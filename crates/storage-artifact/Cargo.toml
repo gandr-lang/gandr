@@ -10,6 +10,13 @@ license.workspace = true
 keywords = ["content-addressing", "gandr", "kernel", "no-std"]
 categories = ["data-structures", "no-std"]
 publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 # The pinned anodized facade supplies core-only specification helpers; BLAKE3
 # is the manifest identity's digest; the kernel's term crate decodes and

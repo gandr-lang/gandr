@@ -453,7 +453,7 @@ pub enum ObstructionSeverity
 ///   every arm is asserted exactly, because an arm silently moving to the
 ///   refusing side is precisely the defect this function exists to prevent.
 /// - witness: `pathway::tests::every_obstruction_arm_is_classified_exactly`
-/// - witness: `pathway::tests::a_kill_signal_stops_the_query_rather_than_refusing_a_candidate`
+/// - witness: `tests::pathway::a_kill_signal_stops_the_query_rather_than_refusing_a_candidate`
 #[spec(ensures: |ret| matches!(ret, ObstructionSeverity::RefusesCandidate) == matches!(obstruction, NormalFormObstruction::StepDoesNotFire { .. } | NormalFormObstruction::PathMissesTheJoin { .. } | NormalFormObstruction::ContentAddressCollision { .. } | NormalFormObstruction::CanonicalKeyCollision { .. }))]
 #[inline]
 #[must_use]
@@ -525,7 +525,7 @@ pub struct CertifiedCandidate<A: CellAlphabet = SequentAlphabet>
 ///   split is separated by a candidate that merely misses its join and by one
 ///   raising a kill signal.
 /// - witness: `pathway::tests::a_candidate_that_misses_its_join_is_refused`
-/// - witness: `pathway::tests::a_kill_signal_stops_the_query_rather_than_refusing_a_candidate`
+/// - witness: `tests::pathway::a_kill_signal_stops_the_query_rather_than_refusing_a_candidate`
 #[spec(ensures: |ret| match ret {
     Ok(Maybe::Present(ref candidate)) => candidate.normal_form.peak == *peak && candidate.normal_form.joins_at == *joins_at,
     Ok(Maybe::Absent(CandidateRefusal::Refused { ref obstruction })) => obstruction_severity(obstruction) == ObstructionSeverity::RefusesCandidate,
@@ -566,7 +566,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 normal-form equality separates duplicate candidates from
 ///   distinct derivations; equality never rests on a digest alone.
-/// - witness: `pathway::tests::a_backward_extension_is_returned_once_with_its_exact_frontier`
+/// - witness: `tests::pathway::a_backward_extension_is_returned_once_with_its_exact_frontier`
 #[spec(ensures: |ret| bool::from(ret) == held.iter().any(|pathway| pathway.normal_form == candidate.normal_form))]
 #[inline]
 fn compressed_in<A>(

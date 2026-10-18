@@ -919,7 +919,7 @@ impl<T> OrderMaintenance<T>
     ///   every generated edit sequence, so label or comparison perturbations
     ///   diverge; L3 residue for the reflexive and failure arms, pinned by
     ///   exact `Ordering` variants and a foreign handle.
-    /// - witness: `oracle::oracle::matches_reference_model`
+    /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::comparison_is_reflexive_and_total`
     /// - witness: `order::tests::foreign_handle_is_rejected`
     #[inline]
@@ -1028,7 +1028,7 @@ impl<T> OrderMaintenance<T>
     ///   sequence are both compared against a naive `Vec` model after every
     ///   generated edit, so any mutant that drops, repeats, or reorders an
     ///   element diverges; L3 residue for the empty structure.
-    /// - witness: `oracle::oracle::matches_reference_model`
+    /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::new_is_empty`
     #[inline]
     #[must_use]
@@ -1062,7 +1062,7 @@ impl<T> OrderMaintenance<T>
     ///   handle and payload sequence is compared after every generated edit; L3
     ///   residue for the front relabel arm, where the predecessor is absent, on
     ///   a narrow universe whose front gap is exhausted.
-    /// - witness: `oracle::oracle::matches_reference_model`
+    /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::push_front_reverses`
     /// - witness: `order::tests::relabel_at_front_preserves_order`
     #[inline]
@@ -1095,7 +1095,7 @@ impl<T> OrderMaintenance<T>
     ///   payload sequence is compared after every generated edit; L3 residue
     ///   for the capacity boundary, where a two-bit universe admits exactly two
     ///   elements and refuses the third with the exact error variant.
-    /// - witness: `oracle::oracle::matches_reference_model`
+    /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::push_back_preserves_order`
     /// - witness: `order::tests::capacity_exhausts_in_a_tiny_universe`
     /// - witness: `order::tests::retired_slot_capacity_exhaustion_is_typed`
@@ -1134,7 +1134,7 @@ impl<T> OrderMaintenance<T>
     ///   residue for the stale-handle and foreign-handle arms, pinned by the
     ///   exact error variant, and for the relabel arm, driven by repeated
     ///   insertion behind one fixed anchor.
-    /// - witness: `oracle::oracle::matches_reference_model`
+    /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::insert_after_and_before_place_correctly`
     /// - witness: `order::tests::relabel_after_anchor_preserves_order`
     /// - witness: `order::tests::stale_handle_insert_errors`
@@ -1180,7 +1180,7 @@ impl<T> OrderMaintenance<T>
     /// - hypothesis: L2 for placement — the reference model inserts at `index`
     ///   and the whole sequence is compared after every generated edit; L3
     ///   residue for the stale-handle arm, pinned by the exact error variant.
-    /// - witness: `oracle::oracle::matches_reference_model`
+    /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::insert_after_and_before_place_correctly`
     /// - witness: `order::tests::stale_handle_insert_errors`
     #[inline]
@@ -1229,7 +1229,7 @@ impl<T> OrderMaintenance<T>
     ///   every generated edit; L3 residue for the three link arms (interior,
     ///   head, tail), the sole-element arm, the repeat-removal arm, and the
     ///   generation-exhaustion arm that retires a slot instead of freeing it.
-    /// - witness: `oracle::oracle::matches_reference_model`
+    /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::remove_middle_unlinks_and_invalidates`
     /// - witness: `order::tests::remove_head_and_tail`
     /// - witness: `order::tests::remove_only_element_empties`
@@ -1785,7 +1785,7 @@ impl<T> OrderMaintenance<T>
     /// - hypothesis: L2 — the sequence model checks placement and surviving
     ///   values; L3 separates a direct gap, a front or anchored relabel,
     ///   capacity refusal and a dangling neighbour.
-    /// - witness: `oracle::oracle::matches_reference_model`
+    /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::relabel_at_front_preserves_order`
     /// - witness: `order::tests::relabel_after_anchor_preserves_order`
     /// - witness: `order::tests::capacity_exhausts_in_a_tiny_universe`
@@ -1857,7 +1857,7 @@ impl<T> OrderMaintenance<T>
     /// - hypothesis: L2 — the independent sequence model detects lost, repeated
     ///   or misplaced payloads; L3 covers both ends, interior insertion and
     ///   slot reuse.
-    /// - witness: `oracle::oracle::matches_reference_model`
+    /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::insert_after_and_before_place_correctly`
     /// - witness: `order::tests::slot_reuse_distinguishes_generation`
     #[inline]
@@ -1944,7 +1944,7 @@ impl<T> OrderMaintenance<T>
     ///   explicit expected sequence; L3 separates front and anchored widening
     ///   from whole-universe capacity refusal. The exit certificate observes
     ///   adjacency, not the discarded minimal-window search.
-    /// - witness: `oracle::oracle::relabel_stress_at_full_universe`
+    /// - witness: `tests::oracle::relabel_stress_at_full_universe`
     /// - witness: `order::tests::relabel_at_front_preserves_order`
     /// - witness: `order::tests::relabel_after_anchor_preserves_order`
     /// - witness: `order::tests::capacity_exhausts_in_a_tiny_universe`
@@ -2122,7 +2122,7 @@ impl<T> OrderMaintenance<T>
     ///   segment and unchanged outer values; L3 distinguishes front placement
     ///   from insertion after the anchor. The moved payload is not cloned into
     ///   a contract snapshot.
-    /// - witness: `oracle::oracle::relabel_stress_at_full_universe`
+    /// - witness: `tests::oracle::relabel_stress_at_full_universe`
     /// - witness: `order::tests::relabel_at_front_preserves_order`
     /// - witness: `order::tests::relabel_after_anchor_preserves_order`
     #[inline]
@@ -2222,7 +2222,7 @@ impl<T> OrderMaintenance<T>
     ///   to live sequence indices.
     /// - witness: `order::tests::relabel_after_anchor_preserves_order`
     /// - witness: `order::tests::relabel_at_front_preserves_order`
-    /// - witness: `oracle::oracle::relabel_stress_at_full_universe`
+    /// - witness: `tests::oracle::relabel_stress_at_full_universe`
     /// - witness: `order::tests::spread_labels_match_exact_rounding_and_wide_products`
     #[inline]
     #[spec(
@@ -2280,7 +2280,7 @@ impl<T> OrderMaintenance<T>
     /// - witness: `order::tests::spread_labels_match_exact_rounding_and_wide_products`
     /// - witness: `order::tests::relabel_after_anchor_preserves_order`
     /// - witness: `order::tests::relabel_at_front_preserves_order`
-    /// - witness: `oracle::oracle::relabel_stress_at_full_universe`
+    /// - witness: `tests::oracle::relabel_stress_at_full_universe`
     #[inline]
     #[spec(
         requires: position.0 < occupants.0
@@ -2336,7 +2336,7 @@ impl<T> OrderMaintenance<T>
     ///   sequence after relabeling; L3 checks front, anchored and endpoint link
     ///   rewrites. Only live sequence indices and bounds belong to this
     ///   routine's precondition.
-    /// - witness: `oracle::oracle::matches_reference_model`
+    /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::relabel_at_front_preserves_order`
     /// - witness: `order::tests::relabel_after_anchor_preserves_order`
     #[inline]
@@ -2453,7 +2453,7 @@ impl<'order, T> Iterator for Iter<'order, T>
     /// - hypothesis: L2 — the model checks the entire yielded sequence; L3
     ///   separates each cursor advance, absorbing end-of-list absence and
     ///   refusal at a dangling link. No claim is made about malformed cycles.
-    /// - witness: `oracle::oracle::matches_reference_model`
+    /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::iterator_follows_links_and_preserves_terminal_absence`
     #[spec(
         captures: before = self.cursor,

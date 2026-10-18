@@ -191,9 +191,9 @@ fn type_of(
 /// # Adequacy
 /// - hypothesis: L2 — selected corpus signatures agree with source spelling; L3
 ///   — owed signatures and dependent types retain their names and syntax.
-/// - witness: `loop::tests::corpus_types_spell_as_their_source_writes_them`
-/// - witness: `loop::tests::a_hole_encodes_as_a_goal_line`
-/// - witness: `loop::tests::a_dependent_function_names_its_type_with_its_binder`
+/// - witness: `tests::repl_loop::corpus_types_spell_as_their_source_writes_them`
+/// - witness: `tests::repl_loop::a_hole_encodes_as_a_goal_line`
+/// - witness: `tests::repl_loop::a_dependent_function_names_its_type_with_its_binder`
 #[spec(ensures: |ret| match *spelling {
     Maybe::Present(ref presentation) => ret.strip_prefix(AsRef::<str>::as_ref(&name))
         .and_then(|rest| rest.strip_prefix(" : ")) == Some(presentation.as_ref()),
@@ -223,7 +223,7 @@ fn typed_line(
 /// # Adequacy
 /// - hypothesis: L3 — a repaired end-of-input buffer is reported; the predicate
 ///   parses the code and byte endpoints without formatting a second copy.
-/// - witness: `loop::tests::an_incomplete_buffer_is_submitted_at_end_of_input`
+/// - witness: `tests::repl_loop::an_incomplete_buffer_is_submitted_at_end_of_input`
 #[spec(ensures: |ret| ret.strip_prefix("warning[")
     .and_then(|rest| rest.split_once("]: ")).is_some_and(|(code, body)|
         code.parse::<gandr_surface_render_remote::DiagnosticCode>().is_ok_and(|parsed| parsed == card.code)
@@ -321,12 +321,12 @@ fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
 ///   declaration completed by a later chunk, a probe, and a run of each class
 ///   the fragment writes are each asserted at their exact lines and
 ///   disposition.
-/// - witness: `loop::tests::an_outcome_only_refusal_is_visible_in_the_repl`
-/// - witness: `loop::tests::a_hole_encodes_as_a_goal_line`
-/// - witness: `loop::tests::a_definition_is_visible_on_the_next_line`
-/// - witness: `loop::tests::a_refused_chunk_is_not_kept`
-/// - witness: `loop::tests::a_later_definition_settles_an_earlier_goal`
-/// - witness: `loop::tests::the_type_command_answers_without_keeping_the_probe`
+/// - witness: `tests::repl_loop::an_outcome_only_refusal_is_visible_in_the_repl`
+/// - witness: `tests::repl_loop::a_hole_encodes_as_a_goal_line`
+/// - witness: `tests::repl_loop::a_definition_is_visible_on_the_next_line`
+/// - witness: `tests::repl_loop::a_refused_chunk_is_not_kept`
+/// - witness: `tests::repl_loop::a_later_definition_settles_an_earlier_goal`
+/// - witness: `tests::repl_loop::the_type_command_answers_without_keeping_the_probe`
 /// - witness: `render::tests::eval_renders_each_outcome_class`
 #[spec(captures: [
     subject = offer.subject,

@@ -642,7 +642,7 @@ impl PotentialMaintenance
     /// - witness: `potential::tests::a_zero_weight_cycle_is_satisfiable`
     /// - witness: `potential::tests::a_positive_weight_cycle_is_refuted`
     /// - witness: `potential::tests::a_refuted_offer_restores_the_valuation`
-    /// - witness: `dynamic_graphs::probe::tests::acyclicity_refuses_a_superset_of_what_offsets_refute`
+    /// - witness: `tests::probe::tests::acyclicity_refuses_a_superset_of_what_offsets_refute`
     #[inline]
     #[spec(ensures: |ret| {
         let offered = matches!((self.value(edge.source), self.value(edge.target)),

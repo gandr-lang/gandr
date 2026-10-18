@@ -67,13 +67,13 @@
 //!   package's import-connected component judged once.
 //!
 //! Witnesses:
-//! `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`,
-//! `namespace::namespace::an_aliased_import_qualifies_its_source_s_names`,
-//! `namespace::namespace::two_imports_binding_one_name_refuse_its_use`,
-//! `namespace::namespace::a_pending_declaration_is_not_exported`,
-//! `namespace::namespace::an_unresolved_import_refuses_its_source`,
-//! `namespace::namespace::a_declaration_an_import_binds_again_is_refused`,
-//! `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal` and
+//! `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`,
+//! `tests::namespace::an_aliased_import_qualifies_its_source_s_names`,
+//! `tests::namespace::two_imports_binding_one_name_refuse_its_use`,
+//! `tests::namespace::a_pending_declaration_is_not_exported`,
+//! `tests::namespace::an_unresolved_import_refuses_its_source`,
+//! `tests::namespace::a_declaration_an_import_binds_again_is_refused`,
+//! `tests::namespace::duplicate_source_import_alias_becomes_a_refusal` and
 //! `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`.
 
 use alloc::collections::BTreeMap;
@@ -224,7 +224,7 @@ pub enum ImportResolution
 /// - hypothesis: L3 — a quoted URI with escapes is retained decoded beside its
 ///   exact alias and span, even when no such address exists. Raw constructors
 ///   remain able to represent caller-supplied metadata.
-/// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
+/// - witness: `tests::namespace::an_import_binds_its_alias_and_resolves_no_address`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ImportDeclaration<'source>
 {
@@ -366,7 +366,7 @@ quenchant_shape::reason_enum! {
 ///   positions with an empty export. Repeating the same URI and alias still
 ///   refuses, preserves the entire state and leaves the next position
 ///   available; one alias in two sources binds in each.
-/// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
 /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
 /// - witness: `import::tests::each_source_binds_its_own_aliases`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -511,10 +511,10 @@ impl<'source> ModuleImports<'source>
     ///   bypass refusal or consume the next position; one alias in two sources
     ///   binds in each. Witnesses check the exact bindings and the complete
     ///   rejected state.
-    /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-    /// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
-    /// - witness: `namespace::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
-    /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
+    /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+    /// - witness: `tests::namespace::an_import_binds_its_alias_and_resolves_no_address`
+    /// - witness: `tests::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
+    /// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
     /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
     /// - witness: `import::tests::each_source_binds_its_own_aliases`
     #[cfg_attr(
@@ -610,7 +610,7 @@ impl<'source> ModuleImports<'source>
 ///   identical URI duplicates dispatch a refusal. These import scenarios do not
 ///   enumerate arbitrary modifier hooks, whose implementation forwards its
 ///   subject.
-/// - witness: `namespace::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
+/// - witness: `tests::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
 /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct OneSource;
@@ -651,7 +651,7 @@ impl NamespaceEventHandler<ImportIndex, ByteSpan> for OneSource
     ///   dispatch this callback. Enforcement checks event kind, path and
     ///   reason; the public refusal observes both source spans and unchanged
     ///   import state.
-    /// - witness: `namespace::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
+    /// - witness: `tests::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
     /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
     ///
     /// # Errors

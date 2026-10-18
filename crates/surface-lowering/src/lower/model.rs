@@ -161,7 +161,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a two-parameter family whose type names both
     ///   parameters lowers with both bound.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(
         captures: before = seeds.len(),
         ensures: seeds.len() >= before,
@@ -213,8 +213,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `Hom(a, b)` expands, and `Hom(a)` is refused by its
     ///   arity.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `modules::modules::models::a_family_applied_to_too_few_indices_is_refused`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_family_applied_to_too_few_indices_is_refused`
     #[spec(ensures: |ret| ret.is_err() || self.plans.get(usize::from(site.at.node)) == Some(&Plan::Expansion(family, applied)))]
     pub(super) fn expansion(
         &mut self,
@@ -257,7 +257,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::expansion`].
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
     pub(super) fn mint_expansion(
         &self,
@@ -294,7 +294,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `Hom(a, a)` is the member's type with both parameters
     ///   at `a`.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
     fn expand(
         &self,
@@ -357,8 +357,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` operations and laws mint the written
     ///   signature's types, and a law over a refused family inherits it.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `modules::modules::models::a_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -431,7 +431,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_models`].
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn mint_component(
         &self,
@@ -536,7 +536,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `comp` and `id` are found for the `CatShape` laws.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(ensures: |ret| ret.len() <= model.components.len())]
     fn operation_names(
         &self,
@@ -569,7 +569,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `Ob` reads the universe the member writes and `Hom(a,
     ///   b)` the member's family over two variables.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn sort_type(
         &self,
@@ -660,7 +660,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` law endpoints mint the written
     ///   endpoints' values.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value(id).is_some()))]
     fn term_value(
         &self,
@@ -734,7 +734,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `comp` reads the member `comp`.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(ensures: |ret| ret.is_err() || minting.operations.contains_key(name))]
     fn operation_constant(
         &self,
@@ -783,9 +783,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the written and derived `CatShape` families agree,
     ///   and a family whose parameter is at another type is refused naming it.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `modules::modules::models::a_family_of_the_wrong_telescope_is_refused`
-    /// - witness: `modules::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -911,9 +911,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — `(a : Ob, b : Ob) => Type` states `Ob` twice, the
     ///   second carried under the first, and `Type -> Type -> Type` states
     ///   `Type` twice.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `modules::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
-    /// - witness: `modules::modules::a_kinded_type_component_spine_declares_its_arity`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::a_kinded_type_component_spine_declares_its_arity`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |types| types.iter().all(|&id| sink.arena.value_type(id).is_some())))]
     fn written_indices(
         &self,
@@ -1003,7 +1003,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Hom(dom : Ob, cod : Ob)` states `Ob` twice.
-    /// - witness: `modules::modules::models::a_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |types| types.iter().all(|&id| sink.arena.value_type(id).is_some())))]
     fn derived_indices(
         &self,
@@ -1076,9 +1076,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the written `CatShape` family checks its member at
     ///   its kind, and a family read against a static arrow, bare or in
     ///   parentheses (#611), checks as an operator.
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
-    /// - witness: `modules::modules::a_kind_reads_through_its_grouping_parentheses`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `tests::modules::a_kind_reads_through_its_grouping_parentheses`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present((kind_id, body)) if sink.arena.value_type(kind_id).is_some() && sink.arena.value(body).is_some()))]
     fn family_witness(
         &self,
@@ -1134,7 +1134,7 @@ impl<'source> Lowerer<'_, 'source>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `a` under `comp`'s five binders counts `b` and `c`.
-/// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+/// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
 #[spec(ensures: |ret| ret.is_err() || context.binders.iter().any(|binder| binder.name == *name))]
 fn variable<'source>(
     context: Context<'_>,

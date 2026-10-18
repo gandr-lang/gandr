@@ -43,7 +43,7 @@ impl Lowerer<'_, '_>
     /// - hypothesis: L3 — a sealed module whose type member names an unbound
     ///   type refuses its atom and every client of it, while an unrelated
     ///   declaration still lowers.
-    /// - witness: `modules::modules::a_sealed_component_over_a_refused_member_is_refused_with_it`
+    /// - witness: `tests::modules::a_sealed_component_over_a_refused_member_is_refused_with_it`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -108,9 +108,9 @@ impl Lowerer<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a sealed component with no kind, one with a written
     ///   universe and a transparent one each lower to the exact declaration.
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
-    /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
+    /// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

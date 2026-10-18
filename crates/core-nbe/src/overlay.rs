@@ -812,7 +812,7 @@ impl Overlay
     ///   prefix; the deep four-family fixture separates heap teardown from
     ///   host-stack depth.
     /// - witness: `overlay::tests::truncating_to_a_watermark_drops_later_nodes`
-    /// - witness: `teardown::teardown::a_deep_overlay_validates_and_is_released_in_both_orders_inside_a_small_stack`
+    /// - witness: `tests::teardown::a_deep_overlay_validates_and_is_released_in_both_orders_inside_a_small_stack`
     #[inline]
     #[spec(
         captures: entry_mark = self.watermark(),

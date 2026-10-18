@@ -163,7 +163,7 @@ impl From<WitnessPrefixLength> for usize
 /// - hypothesis: L2 — generated queries independently replay their evidence. L3
 ///   — an empty reflexive derivation and forged clause, shift and unavailable
 ///   body cases expose a bad mode, insufficient targets or invalid replay.
-/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `tests::entailment_oracle::prop_fixed_poset_evidence_validates`
 /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
 /// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -217,7 +217,7 @@ impl EntailmentWitness
 /// - hypothesis: L2 — generated refutations validate independently. L3 mutates
 ///   assignments, seeds, clause satisfaction and the recorded goal and crosses
 ///   the arithmetic ceiling; exact refusals distinguish an invalid model.
-/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `tests::entailment_oracle::prop_fixed_poset_evidence_validates`
 /// - witness: `entail::tests::perturbed_countermodel_arms_are_rejected`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntailmentCountermodel
@@ -372,7 +372,7 @@ impl Entailment
 ///   constants at equality and one past a variable offset, fresh query
 ///   variables and strict versus non-strict hypotheses, exposing a lost bottom
 ///   generator, scope omission or incorrect shifts.
-/// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
+/// - witness: `tests::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
 /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
 /// - witness: `entail::tests::queries_mentioning_undeclared_variables_work`
 /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
@@ -416,8 +416,8 @@ pub struct QueryEncoding
 ///   oracle, and generated hypothesis queries validate both evidence branches.
 ///   L3 — equality versus a unit shift and a non-total hypothesis distinguish
 ///   wrong strictness, constant mishandling and spurious totality.
-/// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
-/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `tests::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
+/// - witness: `tests::entailment_oracle::prop_fixed_poset_evidence_validates`
 /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
 /// - witness: `entail::tests::non_total_order_is_refused_with_a_countermodel`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|evidence| match *evidence {
@@ -536,7 +536,7 @@ impl LandmarkPoset
     ///   hypothesis paths — landmark order used, the strict against non-strict
     ///   split, and the refusal of a non-total order — each pinned by a unit
     ///   golden.
-    /// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
+    /// - witness: `tests::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
     /// - witness: `entail::tests::landmark_order_is_entailed`
     /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
     /// - witness: `entail::tests::non_total_order_is_refused_with_a_countermodel`
@@ -590,7 +590,7 @@ impl LandmarkPoset
     ///   is `leq` after `succ` under a fixed poset; the L3 residue is
     ///   hypothesis strictness, where `x < y` needs `x+1 ≤ y` declared rather
     ///   than `x ≤ y`, pinned by the strictness golden.
-    /// - witness: `entailment_oracle::entailment_oracle::prop_lt_equals_succ_leq_under_the_fixed_poset`
+    /// - witness: `tests::entailment_oracle::prop_lt_equals_succ_leq_under_the_fixed_poset`
     /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
     /// - witness: `entail::tests::entailment_is_irreflexive_for_lt_on_admitted_posets`
     #[cfg_attr(
@@ -637,8 +637,8 @@ impl LandmarkPoset
     ///   transitivity. L3 separates an asserted order from its unjustified
     ///   reverse and distinguishes hypotheses that reach a constant goal from
     ///   an uncovered goal.
-    /// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
-    /// - witness: `entailment_oracle::entailment_oracle::prop_entailment_order_laws_under_the_fixed_poset`
+    /// - witness: `tests::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
+    /// - witness: `tests::entailment_oracle::prop_entailment_order_laws_under_the_fixed_poset`
     /// - witness: `entail::tests::landmark_order_is_entailed`
     /// - witness: `entail::tests::hypotheses_reach_constant_goals`
     #[cfg_attr(
@@ -680,7 +680,7 @@ impl LandmarkPoset
     ///   non-strict queries. L3 — reflexivity and hypotheses with zero versus
     ///   one unit of gap expose an inclusive comparison or a missing successor
     ///   shift.
-    /// - witness: `entailment_oracle::entailment_oracle::prop_lt_equals_succ_leq_under_the_fixed_poset`
+    /// - witness: `tests::entailment_oracle::prop_lt_equals_succ_leq_under_the_fixed_poset`
     /// - witness: `entail::tests::entailment_is_irreflexive_for_lt_on_admitted_posets`
     /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
     #[cfg_attr(
@@ -729,7 +729,7 @@ impl LandmarkPoset
 ///   asserting the exact variant, acceptance pinned by the property that every
 ///   oracle witness validates.
 /// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
-/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `tests::entailment_oracle::prop_fixed_poset_evidence_validates`
 #[spec(ensures: |ret| ret.is_ok() == encode_query(poset, left, right, witness.strict())
     .is_ok_and(|encoding| {
         replay_derivation(&encoding.clauses, HornShift::ONE, encoding.seed, witness.derivation())
@@ -800,7 +800,7 @@ pub fn validate_entailment_witness(
 ///   countermodel asserting the exact variant, acceptance pinned by the
 ///   property that every oracle countermodel validates.
 /// - witness: `entail::tests::perturbed_countermodel_arms_are_rejected`
-/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `tests::entailment_oracle::prop_fixed_poset_evidence_validates`
 #[spec(ensures: |ret| ret.is_ok() == encode_query(poset, left, right, countermodel.strict())
     .is_ok_and(|encoding| {
         let model: Option<BTreeMap<_, _>> = encoding.seed.keys().map(|variable| {
@@ -925,7 +925,7 @@ pub fn validate_entailment_countermodel(
 ///   order oracle exactly; the L3 residue is the constant-carrying bottom
 ///   encoding, pinned by the constant boundary triple.
 /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
-/// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
+/// - witness: `tests::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|encoding| {
     let scope = encoding.seed.keys().filter_map(|variable| match *variable {
         HVar::Var(variable) => Some(variable),
@@ -1043,7 +1043,7 @@ pub fn encode_query(
 ///   lengths. Replay alone cannot reject a valid but longer prefix.
 /// - witness: `entail::tests::witness_prefix_is_the_first_covering_prefix`
 /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
-/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `tests::entailment_oracle::prop_fixed_poset_evidence_validates`
 #[spec(ensures: |ret| {
     let covers = |length| goals.iter().all(|goal| {
         seed.get(&goal.variable()).is_some_and(|maximum| goal.offset() <= *maximum)

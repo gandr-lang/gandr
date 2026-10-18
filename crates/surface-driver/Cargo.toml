@@ -16,10 +16,17 @@ categories = ["development-tools"]
 # Publishing is manual: flipping this field is itself the deliberate act of a
 # manual publish.
 publish.workspace = true
+autotests = false
 
 [[bin]]
 name = "gandr"
 path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. serde_json encodes the run's summary line

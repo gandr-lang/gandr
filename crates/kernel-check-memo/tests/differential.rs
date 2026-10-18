@@ -29,7 +29,6 @@
 //! memo exactly as the shared one does — which is the content key's payoff
 //! stated as a number rather than as an argument.
 
-extern crate alloc;
 use alloc::collections::BTreeMap;
 
 use anodized::spec;
@@ -121,7 +120,7 @@ impl WalkCount
     /// - hypothesis: L3 — any u64 count is admitted; zero and MAX - 1 have
     ///   exact successors, while MAX must return `TallyOverflow`. Exact values
     ///   separate a missing increment, an early ceiling and wrapping.
-    /// - witness: `differential::tests::counter_arithmetic_boundaries`
+    /// - witness: `tests::differential::tests::counter_arithmetic_boundaries`
     #[spec(ensures: |ret| ret.map(|count| count.0) == self.0.checked_add(1).ok_or(WorkloadError::TallyOverflow))]
     fn successor(self) -> Result<Self, WorkloadError>
     {
@@ -147,8 +146,8 @@ impl WalkCount
 /// - hypothesis: L3 — leaf tags and ordered pairs have exact framed bytes;
 ///   reversing unequal children must change the encoding. L1 the unshared
 ///   spelling collapses by content despite distinct arena positions.
-/// - witness: `differential::tests::arena_and_framing_boundaries`
-/// - witness: `differential::tests::a_content_key_collapses_the_unshared_spelling_too`
+/// - witness: `tests::differential::tests::arena_and_framing_boundaries`
+/// - witness: `tests::differential::tests::a_content_key_collapses_the_unshared_spelling_too`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ContentEncoding(Vec<u8>);
@@ -202,7 +201,7 @@ impl Plane
     /// # Adequacy
     /// - hypothesis: L3 — zero and a nonzero leaf tag on both planes separate
     ///   payload-dependent value from constant unit weight by exact outcomes.
-    /// - witness: `differential::tests::plane_fold_boundaries`
+    /// - witness: `tests::differential::tests::plane_fold_boundaries`
     #[spec(ensures: |ret| ret == match self { Self::Value => Outcome(u64::from(tag.0)), Self::Weight => Outcome(1) })]
     fn leaf_outcome(
         self,
@@ -232,7 +231,7 @@ impl Plane
     ///   u128 sum plus one, narrowed only at the end. L3 asymmetric operands
     ///   separate the value-plane order; zero, MAX - 1 and MAX separate
     ///   ordinary weight, final-step overflow and operand-sum overflow.
-    /// - witness: `differential::tests::plane_fold_boundaries`
+    /// - witness: `tests::differential::tests::plane_fold_boundaries`
     #[spec(ensures: |ret| match self {
         Self::Value => ret == Ok(Outcome(left.0.rotate_left(1) ^ right.0.rotate_left(3) ^ 0x9e37_79b9)),
         Self::Weight => ret.map(|outcome| u128::from(outcome.0))
@@ -285,7 +284,7 @@ impl Plane
 ///   distinguish the two cases and operand order by exact nodes and encodings.
 ///   The first and last minted indices are resolved; an index at the length is
 ///   refused.
-/// - witness: `differential::tests::arena_and_framing_boundaries`
+/// - witness: `tests::differential::tests::arena_and_framing_boundaries`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Node
 {
@@ -317,9 +316,9 @@ enum Node
 ///   minted leaves and ordered pairs by exact values and encodings. L1 the
 ///   depth-zero and depth-one spellings separate identity from sharing, while
 ///   closed-form counts at three larger depths detect topology mistakes.
-/// - witness: `differential::tests::arena_and_framing_boundaries`
-/// - witness: `differential::tests::workload_shape_boundaries`
-/// - witness: `differential::tests::the_collapse_is_a_closed_form_at_three_depths`
+/// - witness: `tests::differential::tests::arena_and_framing_boundaries`
+/// - witness: `tests::differential::tests::workload_shape_boundaries`
+/// - witness: `tests::differential::tests::the_collapse_is_a_closed_form_at_three_depths`
 #[derive(Clone, Debug)]
 struct Arena
 {
@@ -358,7 +357,7 @@ impl Arena
     /// - hypothesis: L3 — empty, first, last and one-past-end lookups
     ///   distinguish index shifts and false success by exact `Node` values or
     ///   `NodeOutOfRange`.
-    /// - witness: `differential::tests::arena_and_framing_boundaries`
+    /// - witness: `tests::differential::tests::arena_and_framing_boundaries`
     #[spec(ensures: |ret| ret == self.nodes.get(id.0).copied().ok_or(WorkloadError::NodeOutOfRange))]
     fn node(
         &self,
@@ -386,7 +385,7 @@ impl Arena
     /// - hypothesis: L3 — leaf and pair encodings at minted indices, and empty
     ///   or one-past-end lookup, distinguish mismatched indices and a
     ///   fabricated encoding by exact bytes or `MissingEncoding`.
-    /// - witness: `differential::tests::arena_and_framing_boundaries`
+    /// - witness: `tests::differential::tests::arena_and_framing_boundaries`
     #[spec(ensures: |ret| ret == self.encodings.get(id.0).ok_or(WorkloadError::MissingEncoding))]
     fn encoding(
         &self,
@@ -410,7 +409,7 @@ impl Arena
     /// # Adequacy
     /// - hypothesis: L3 — empty, singleton and multi-node arenas separate
     ///   absence from the last minted identifier, catching an off-by-one root.
-    /// - witness: `differential::tests::arena_and_framing_boundaries`
+    /// - witness: `tests::differential::tests::arena_and_framing_boundaries`
     #[spec(ensures: |ret| ret.map(|id| id.0) == self.nodes.len().checked_sub(1).ok_or(WorkloadError::NodeOutOfRange))]
     fn root(&self) -> Result<NodeId, WorkloadError>
     {
@@ -441,7 +440,7 @@ impl Arena
     ///   one plane and differ across planes; a minted node whose encoding is
     ///   missing must refuse. This separates arena identity, plane omission and
     ///   fabricated content from the required support.
-    /// - witness: `differential::tests::arena_and_framing_boundaries`
+    /// - witness: `tests::differential::tests::arena_and_framing_boundaries`
     #[spec(requires: id.0 < self.nodes.len(),
         ensures: |ret| ret.as_ref().ok().is_none_or(|support| support.plane == plane
             && self.encodings.get(id.0) == Some(&support.content)))]
@@ -471,7 +470,7 @@ impl Arena
     ///   leaf tags produce exact nodes and encodings at consecutive fresh
     ///   indices. Repeated equal tags still mint distinct indices without
     ///   changing content.
-    /// - witness: `differential::tests::arena_and_framing_boundaries`
+    /// - witness: `tests::differential::tests::arena_and_framing_boundaries`
     #[spec(requires: self.nodes.len() == self.encodings.len(),
         captures: [previous = self.nodes.len()],
         ensures: |ret| ret.0 == previous && previous.checked_add(1) == Some(self.nodes.len())
@@ -509,7 +508,7 @@ impl Arena
     ///   child encoding must refuse before either arena vector grows. The
     ///   encoding-size ceiling belongs to the framing operation, not node-index
     ///   arithmetic.
-    /// - witness: `differential::tests::arena_and_framing_boundaries`
+    /// - witness: `tests::differential::tests::arena_and_framing_boundaries`
     #[spec(requires: left.0 < self.nodes.len() && right.0 < self.nodes.len(),
         captures: [nodes_before = self.nodes.len(), encodings_before = self.encodings.len()],
         ensures: |ret| match ret {
@@ -558,7 +557,7 @@ impl Arena
 ///   omitted framing, byte-order and replacement mutations. The u32 conversion
 ///   sets the size ceiling; allocating a larger-than-u32 payload is outside
 ///   these bounded witnesses.
-/// - witness: `differential::tests::arena_and_framing_boundaries`
+/// - witness: `tests::differential::tests::arena_and_framing_boundaries`
 #[spec(captures: [prefix_len = bytes.0.len()],
     ensures: |ret| match u32::try_from(encoding.0.len()) {
         Ok(length) => ret.is_ok() && prefix_len.checked_add(4).and_then(|len| len.checked_add(encoding.0.len())) == Some(bytes.0.len())
@@ -601,8 +600,8 @@ const LEAF: LeafTag = LeafTag(7);
 ///   operands distinguish a leaf from one pair layer; at depths four, six and
 ///   eight, closed-form expansion counts separate missing or extra levels.
 ///   Successful results must be a predecessor chain, not merely the right size.
-/// - witness: `differential::tests::workload_shape_boundaries`
-/// - witness: `differential::tests::the_collapse_is_a_closed_form_at_three_depths`
+/// - witness: `tests::differential::tests::workload_shape_boundaries`
+/// - witness: `tests::differential::tests::the_collapse_is_a_closed_form_at_three_depths`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|arena|
         u64::try_from(arena.nodes.len()).ok() == u64::from(depth.0).checked_add(1)
         && arena.nodes.iter().enumerate().all(|(index, node)| match *node {
@@ -640,8 +639,8 @@ fn shared_composite(depth: Depth) -> Result<Arena, WorkloadError>
 ///   occurrence count. L3 a shift at the machine width must refuse before
 ///   allocation. The enormous adjacent valid tree is not built by this bounded
 ///   witness.
-/// - witness: `differential::tests::workload_shape_boundaries`
-/// - witness: `differential::tests::the_unshared_spelling_costs_the_memoless_walk_identically`
+/// - witness: `tests::differential::tests::workload_shape_boundaries`
+/// - witness: `tests::differential::tests::the_unshared_spelling_costs_the_memoless_walk_identically`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|arena|
         occurrence_count(depth).ok().map(|count| count.0) == u64::try_from(arena.nodes.len()).ok())
         && (depth.0 < usize::BITS || matches!(ret, Err(WorkloadError::DepthOverflow))))]
@@ -685,9 +684,9 @@ fn unshared_spelling(depth: Depth) -> Result<Arena, WorkloadError>
 /// - hypothesis: L3 — equal leaves at distinct indices agree, but identical
 ///   content on the other plane differs. L2 the two memo instantiations agree
 ///   on outcomes; L1 the unshared spelling retains content-based collapse.
-/// - witness: `differential::tests::arena_and_framing_boundaries`
-/// - witness: `differential::tests::memoized_and_memoless_agree_answer_for_answer`
-/// - witness: `differential::tests::a_content_key_collapses_the_unshared_spelling_too`
+/// - witness: `tests::differential::tests::arena_and_framing_boundaries`
+/// - witness: `tests::differential::tests::memoized_and_memoless_agree_answer_for_answer`
+/// - witness: `tests::differential::tests::a_content_key_collapses_the_unshared_spelling_too`
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Support
 {
@@ -724,7 +723,7 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 ///   L3 empty and nonempty encodings, two planes and two bases have exact
 ///   independently calculated words, catching omitted plane bytes, reordered
 ///   bytes and a reused basis.
-/// - witness: `differential::tests::digest_and_agreement_boundaries`
+/// - witness: `tests::differential::tests::digest_and_agreement_boundaries`
 #[spec(ensures: |ret| u128::from(u64::from(ret))
     == core::iter::once(plane.tag().0).chain(encoding.0.iter().copied())
         .fold(u128::from(u64::from(basis)), |state, byte|
@@ -771,8 +770,8 @@ impl MemoKey for Support
     ///   reused bases, while equal content at different positions agrees and
     ///   changing plane separates the fixture keys. This certifies this fixture
     ///   digest, not collision freedom for arbitrary inputs.
-    /// - witness: `differential::tests::digest_and_agreement_boundaries`
-    /// - witness: `differential::tests::arena_and_framing_boundaries`
+    /// - witness: `tests::differential::tests::digest_and_agreement_boundaries`
+    /// - witness: `tests::differential::tests::arena_and_framing_boundaries`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -805,8 +804,8 @@ impl MemoKey for Support
     /// - hypothesis: L3 — equal encodings, differing bytes and differing planes
     ///   separate agreement from both byte-blind and plane-blind comparisons.
     ///   Relocation leaves the relation unchanged because indices are absent.
-    /// - witness: `differential::tests::digest_and_agreement_boundaries`
-    /// - witness: `differential::tests::arena_and_framing_boundaries`
+    /// - witness: `tests::differential::tests::digest_and_agreement_boundaries`
+    /// - witness: `tests::differential::tests::arena_and_framing_boundaries`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -848,8 +847,8 @@ impl MemoKey for Support
 ///   event kind on each plane must change only its own counter or refuse
 ///   unchanged. L1 the workload observes exact expansion and hit totals, rather
 ///   than accepting any nonzero activity.
-/// - witness: `differential::tests::tally_boundaries`
-/// - witness: `differential::tests::the_exercised_paths_are_asserted_rather_than_reported`
+/// - witness: `tests::differential::tests::tally_boundaries`
+/// - witness: `tests::differential::tests::the_exercised_paths_are_asserted_rather_than_reported`
 #[derive(Clone, Debug, Default)]
 struct Tally
 {
@@ -887,7 +886,7 @@ impl Tally
     ///   - 1 advance exactly while MAX refuses without changing either map.
     ///   Both planes and both event kinds are observed, separating crossed
     ///   counters, an absent-plane default, early guards and partial mutation.
-    /// - witness: `differential::tests::tally_boundaries`
+    /// - witness: `tests::differential::tests::tally_boundaries`
     #[spec(captures: [before = self.expansions(plane)],
         ensures: |ret| ret.map(|()| self.expansions(plane).0)
             == before.0.checked_add(1).ok_or(WorkloadError::TallyOverflow)
@@ -919,7 +918,7 @@ impl Tally
     ///   advance exactly while MAX refuses without changing either map. Both
     ///   planes and both event kinds are observed, separating crossed counters,
     ///   an absent-plane default, early guards and partial mutation.
-    /// - witness: `differential::tests::tally_boundaries`
+    /// - witness: `tests::differential::tests::tally_boundaries`
     #[spec(captures: [before = self.hits(plane)],
         ensures: |ret| ret.map(|()| self.hits(plane).0)
             == before.0.checked_add(1).ok_or(WorkloadError::TallyOverflow)
@@ -945,7 +944,7 @@ impl Tally
     /// # Adequacy
     /// - hypothesis: L3 — absent planes and distinct populated counters
     ///   distinguish zero defaults, a crossed event map and the wrong plane.
-    /// - witness: `differential::tests::tally_boundaries`
+    /// - witness: `tests::differential::tests::tally_boundaries`
     #[spec(ensures: |ret| ret == self.expansions.get(&plane).copied().unwrap_or(WalkCount(0)))]
     fn expansions(
         &self,
@@ -966,7 +965,7 @@ impl Tally
     /// # Adequacy
     /// - hypothesis: L3 — absent planes and distinct populated counters
     ///   distinguish zero defaults, a crossed event map and the wrong plane.
-    /// - witness: `differential::tests::tally_boundaries`
+    /// - witness: `tests::differential::tests::tally_boundaries`
     #[spec(ensures: |ret| ret == self.hits.get(&plane).copied().unwrap_or(WalkCount(0)))]
     fn hits(
         &self,
@@ -992,8 +991,8 @@ impl Tally
 /// - hypothesis: L3 — a leaf, an asymmetric pair and an already memoized root
 ///   have exact outcomes and expansion/hit counts. They separate operand
 ///   reversal, combining too soon and re-expanding a served root.
-/// - witness: `differential::tests::workload_shape_boundaries`
-/// - witness: `differential::tests::a_served_root_skips_expansion_on_both_planes`
+/// - witness: `tests::differential::tests::workload_shape_boundaries`
+/// - witness: `tests::differential::tests::a_served_root_skips_expansion_on_both_planes`
 #[derive(Clone, Copy, Debug)]
 enum Frame
 {
@@ -1049,11 +1048,11 @@ enum Frame
 ///   separate skipped or repeated work. L3 a leaf, asymmetric pair and served
 ///   root distinguish missing root charges, operand reversal and an unused hit
 ///   path; a ceiling tally refuses instead of wrapping.
-/// - witness: `differential::tests::memoized_and_memoless_agree_answer_for_answer`
-/// - witness: `differential::tests::the_collapse_is_a_closed_form_at_three_depths`
-/// - witness: `differential::tests::workload_shape_boundaries`
-/// - witness: `differential::tests::a_served_root_skips_expansion_on_both_planes`
-/// - witness: `differential::tests::tally_boundaries`
+/// - witness: `tests::differential::tests::memoized_and_memoless_agree_answer_for_answer`
+/// - witness: `tests::differential::tests::the_collapse_is_a_closed_form_at_three_depths`
+/// - witness: `tests::differential::tests::workload_shape_boundaries`
+/// - witness: `tests::differential::tests::a_served_root_skips_expansion_on_both_planes`
+/// - witness: `tests::differential::tests::tally_boundaries`
 #[spec(requires: !arena.nodes.is_empty(),
     captures: [expansions_before = tally.expansions(plane), hits_before = tally.hits(plane)],
     ensures: |ret| ret.is_err() || (tally.expansions(plane) >= expansions_before
@@ -1146,8 +1145,8 @@ where
 ///   its encoding is absent, while active recording reports the missing
 ///   encoding. This catches eager support construction. Valid active records
 ///   are then recalled through their content key with the exact outcome.
-/// - witness: `differential::tests::recording_liveness_boundary`
-/// - witness: `differential::tests::a_served_root_skips_expansion_on_both_planes`
+/// - witness: `tests::differential::tests::recording_liveness_boundary`
+/// - witness: `tests::differential::tests::a_served_root_skips_expansion_on_both_planes`
 #[spec(requires: node.0 < arena.nodes.len(),
     ensures: |ret| !matches!(Memo::ACTIVITY, MemoActivity::Inactive) || ret.is_ok())]
 fn remember<Memo>(
@@ -1186,9 +1185,9 @@ where
 ///   planes. L1 exact expansion, hit and entry counts distinguish crossed
 ///   planes or observations from different runs; a served-root run separates
 ///   zero expansion from zero activity.
-/// - witness: `differential::tests::memoized_and_memoless_agree_answer_for_answer`
-/// - witness: `differential::tests::the_exercised_paths_are_asserted_rather_than_reported`
-/// - witness: `differential::tests::a_served_root_skips_expansion_on_both_planes`
+/// - witness: `tests::differential::tests::memoized_and_memoless_agree_answer_for_answer`
+/// - witness: `tests::differential::tests::the_exercised_paths_are_asserted_rather_than_reported`
+/// - witness: `tests::differential::tests::a_served_root_skips_expansion_on_both_planes`
 #[derive(Clone, Debug)]
 struct Run
 {
@@ -1227,10 +1226,10 @@ struct Run
 ///   must agree answer-for-answer. L1 each plane has its own closed-form event
 ///   and entry counts. L3 a leaf, asymmetric pair and second run over a served
 ///   root separate plane swaps, operand order and fresh-versus-reused work.
-/// - witness: `differential::tests::memoized_and_memoless_agree_answer_for_answer`
-/// - witness: `differential::tests::the_collapse_is_a_closed_form_at_three_depths`
-/// - witness: `differential::tests::workload_shape_boundaries`
-/// - witness: `differential::tests::a_served_root_skips_expansion_on_both_planes`
+/// - witness: `tests::differential::tests::memoized_and_memoless_agree_answer_for_answer`
+/// - witness: `tests::differential::tests::the_collapse_is_a_closed_form_at_three_depths`
+/// - witness: `tests::differential::tests::workload_shape_boundaries`
+/// - witness: `tests::differential::tests::a_served_root_skips_expansion_on_both_planes`
 #[spec(requires: !arena.nodes.is_empty(),
     ensures: |ret| ret.as_ref().ok().is_none_or(|run|
         run.entries == memo.entry_count() && run.value_entries == memo.plane_entry_count(Plane::Value)
@@ -1275,8 +1274,8 @@ where
 ///   one, 62 and 63 must return exact counts; 64 and the u32 ceiling must
 ///   refuse. These distinguish the intermediate-shift overflow from a genuinely
 ///   unrepresentable result and catch off-by-one guards.
-/// - witness: `differential::tests::occurrence_count_ceiling_is_representable`
-/// - witness: `differential::tests::the_collapse_is_a_closed_form_at_three_depths`
+/// - witness: `tests::differential::tests::occurrence_count_ceiling_is_representable`
+/// - witness: `tests::differential::tests::the_collapse_is_a_closed_form_at_three_depths`
 #[spec(ensures: |ret| ret.map(|count| count.0)
     == depth.0.checked_add(1).and_then(|power| 1_u128.checked_shl(power))
         .and_then(|value| value.checked_sub(1))
@@ -1310,7 +1309,7 @@ fn occurrence_count(depth: Depth) -> Result<WalkCount, WorkloadError>
 /// - hypothesis: L0 — u32 depth plus one always fits the u64 result domain. L3
 ///   zero and the u32 ceiling have exact results, separating a forgotten
 ///   increment from an unnecessary narrowing or overflow refusal.
-/// - witness: `differential::tests::counter_arithmetic_boundaries`
+/// - witness: `tests::differential::tests::counter_arithmetic_boundaries`
 #[spec(ensures: |ret| ret.map(|count| count.0) == u64::from(depth.0).checked_add(1).ok_or(WorkloadError::DepthOverflow))]
 fn distinct_content_count(depth: Depth) -> Result<WalkCount, WorkloadError>
 {
@@ -1348,7 +1347,7 @@ fn served_count(depth: Depth) -> WalkCount
 /// - hypothesis: L0 — twice any u32 depth plus one fits u64. L3 zero, one and
 ///   the u32 ceiling distinguish missing root goals, wrong factors and
 ///   premature narrowing by exact answers.
-/// - witness: `differential::tests::counter_arithmetic_boundaries`
+/// - witness: `tests::differential::tests::counter_arithmetic_boundaries`
 #[spec(ensures: |ret| ret.map(|count| count.0) == u64::from(depth.0).checked_mul(2).and_then(|count| count.checked_add(1)).ok_or(WorkloadError::DepthOverflow))]
 fn goal_count(depth: Depth) -> Result<WalkCount, WorkloadError>
 {
@@ -1373,7 +1372,7 @@ fn goal_count(depth: Depth) -> Result<WalkCount, WorkloadError>
 /// - hypothesis: L1 — arbitrary u64 operands are added in u128 before checking
 ///   the target ceiling. L3 zero, an exact MAX sum and MAX plus one distinguish
 ///   omitted operands, premature refusal and wrapping.
-/// - witness: `differential::tests::counter_arithmetic_boundaries`
+/// - witness: `tests::differential::tests::counter_arithmetic_boundaries`
 #[spec(ensures: |ret| ret.map(|count| u128::from(count.0))
     == u128::from(first.0).checked_add(u128::from(second.0)).filter(|count| *count <= u128::from(u64::MAX)).ok_or(WorkloadError::TallyOverflow))]
 fn sum_counts(
@@ -1405,7 +1404,7 @@ fn sum_counts(
 /// - hypothesis: L3 — zero and the largest input are compared with checked
 ///   usize conversion, exercising success or refusal according to the target
 ///   width. Exact counts separate truncation from an identity conversion.
-/// - witness: `differential::tests::counter_arithmetic_boundaries`
+/// - witness: `tests::differential::tests::counter_arithmetic_boundaries`
 #[spec(ensures: |ret| ret.map(usize::from) == usize::try_from(count.0).map_err(|_error| WorkloadError::TallyOverflow))]
 fn as_entries(count: WalkCount) -> Result<MemoEntryCount, WorkloadError>
 {
@@ -1429,7 +1428,7 @@ fn as_entries(count: WalkCount) -> Result<MemoEntryCount, WorkloadError>
 ///   both u64 and usize ceilings. L3 zero, one, the largest fitting half and
 ///   one above it distinguish an omitted factor, early refusal and wrapping
 ///   before the representation conversion.
-/// - witness: `differential::tests::counter_arithmetic_boundaries`
+/// - witness: `tests::differential::tests::counter_arithmetic_boundaries`
 #[spec(ensures: |ret| ret.map(usize::from)
     == u128::from(count.0).checked_mul(2).filter(|count| *count <= u128::from(u64::MAX))
         .and_then(|count| usize::try_from(count).ok()).ok_or(WorkloadError::TallyOverflow))]

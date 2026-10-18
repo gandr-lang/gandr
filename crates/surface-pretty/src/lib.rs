@@ -468,14 +468,14 @@ impl fmt::Display for Presentation
 ///   observe wrong formers, grouping and line endings over fixed sources. A
 ///   scanned leaf that becomes a cycle distinguishes the second-pass budget;
 ///   other source mutations, page widths and layout ceilings are not exhausted.
-/// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-/// - witness: `goldens::tests::n_ary_products_and_sums_spell_between_their_braces`
-/// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
-/// - witness: `goldens::tests::dependent_function_type_breaks_before_codomain`
-/// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
-/// - witness: `goldens::tests::arrow_chain_breaks_before_each_continuation`
-/// - witness: `goldens::tests::nullary_declared_data_uses_its_bare_name`
-/// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `tests::goldens::n_ary_products_and_sums_spell_between_their_braces`
+/// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+/// - witness: `tests::goldens::dependent_function_type_breaks_before_codomain`
+/// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
+/// - witness: `tests::goldens::arrow_chain_breaks_before_each_continuation`
+/// - witness: `tests::goldens::nullary_declared_data_uses_its_bare_name`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
 #[spec(ensures: |ref ret| match *ret {
     Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
@@ -520,14 +520,14 @@ where
 ///   values read back from evaluation. These distinguish lost escaping,
 ///   notation and depth boundaries, not every numeric magnitude or layout
 ///   refusal.
-/// - witness: `goldens::tests::string_controls_stay_in_one_escaped_literal`
-/// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
-/// - witness: `goldens::tests::n_ary_tuples_and_injections_spell_between_their_braces`
-/// - witness: `goldens::tests::record_value_breaks_fields_at_the_narrow_page`
-/// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
-/// - witness: `goldens::tests::fidelity_follows_nodes_not_the_characters_of_a_name`
-/// - witness: `goldens::tests::here_witness_pins_identity_notation`
-/// - witness: `goldens::tests::univalence_spells_its_stratum_and_descriptions`
+/// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
+/// - witness: `tests::goldens::pair_of_injections_pins_sum_notation`
+/// - witness: `tests::goldens::n_ary_tuples_and_injections_spell_between_their_braces`
+/// - witness: `tests::goldens::record_value_breaks_fields_at_the_narrow_page`
+/// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
+/// - witness: `tests::goldens::fidelity_follows_nodes_not_the_characters_of_a_name`
+/// - witness: `tests::goldens::here_witness_pins_identity_notation`
+/// - witness: `tests::goldens::univalence_spells_its_stratum_and_descriptions`
 #[spec(ensures: |ref ret| match *ret {
     Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
     Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
@@ -577,7 +577,7 @@ where
 ///   constant and a call of a returner, at the wide and a narrow page,
 ///   distinguish a written exit, a lost `pure`, a missing block and binder
 ///   capture; case analyses are asserted approximate.
-/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
 #[spec(ensures: |ref ret| match *ret {
     Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
     Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
@@ -627,7 +627,7 @@ where
 ///   and calls, written on one line equal their layout at a page no line
 ///   overflows; a choice taken the wrong way or a soft break kept changes the
 ///   text.
-/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
 #[spec(ensures: |ref ret| match *ret {
     Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
     Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
@@ -686,10 +686,10 @@ enum Layout
 ///   breaks and line-ending policy; cyclic and deep sources distinguish
 ///   approximation. A scanned leaf becoming a cycle observes the independent
 ///   walk budget; other source mutations and meter refusals are not exhausted.
-/// - witness: `goldens::tests::arrow_chain_breaks_before_each_continuation`
-/// - witness: `goldens::tests::string_controls_stay_in_one_escaped_literal`
-/// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-/// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
+/// - witness: `tests::goldens::arrow_chain_breaks_before_each_continuation`
+/// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
 #[spec(ensures: |ref ret| match *ret {
     Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),

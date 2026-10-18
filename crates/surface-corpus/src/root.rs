@@ -96,9 +96,9 @@
 //! one outside both roots, or behind a symbolic link, which the walk does not
 //! follow — and the registration witness finds every such file by listing the
 //! crate's directories, links followed, and fails naming each one:
-//! `corpus::corpus::every_corpus_source_is_registered` in
+//! `tests::corpus::every_corpus_source_is_registered` in
 //! `gandr-surface-dispatcher`, its positive control
-//! `corpus::corpus::a_planted_orphan_is_not_registered`, which plants an orphan
+//! `tests::corpus::a_planted_orphan_is_not_registered`, which plants an orphan
 //! outside the roots and one behind a link and expects exactly those two. No
 //! count is pinned, so a source added where the walk reaches it moves a count
 //! and reddens nothing, and one added where it does not reddens the witness,

@@ -62,9 +62,9 @@ pub struct ScalarWidth
 ///   observed through emitted spaces and the typed indentation refusal;
 ///   wrapping, lost nesting and confusion between indentation and incoming
 ///   column change output or error.
-/// - witness: `algebra::tests::nest_raises_indentation_by_a_checked_amount`
-/// - witness: `algebra::tests::nest_reports_overflow_rather_than_wrapping_the_indentation`
-/// - witness: `algebra::tests::align_sets_indentation_to_the_current_column`
+/// - witness: `tests::algebra::nest_raises_indentation_by_a_checked_amount`
+/// - witness: `tests::algebra::nest_reports_overflow_rather_than_wrapping_the_indentation`
+/// - witness: `tests::algebra::align_sets_indentation_to_the_current_column`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct NestAmount
@@ -91,8 +91,8 @@ pub struct NestAmount
 ///   arithmetic/limit precedence change these observations; shared identities
 ///   must not be charged twice.
 /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+/// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `tests::algebra::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct MaxDocNodes
@@ -119,8 +119,8 @@ pub struct MaxDocNodes
 ///   arithmetic/limit precedence change these observations; shared identities
 ///   must not be charged twice.
 /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+/// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `tests::algebra::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct MaxTextBytes
@@ -147,8 +147,8 @@ pub struct MaxTextBytes
 ///   arithmetic/limit precedence change these observations; shared identities
 ///   must not be charged twice.
 /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+/// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `tests::algebra::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct MaxVerbatimLines
@@ -178,8 +178,8 @@ pub struct MaxVerbatimLines
 ///   arithmetic/limit precedence change these observations; shared identities
 ///   must not be charged twice.
 /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+/// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `tests::algebra::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct MaxBuildSteps
@@ -206,8 +206,8 @@ pub struct MaxBuildSteps
 ///   arithmetic/limit precedence change these observations; shared identities
 ///   must not be charged twice.
 /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+/// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `tests::algebra::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct DocNodesUsed
@@ -234,8 +234,8 @@ pub struct DocNodesUsed
 ///   arithmetic/limit precedence change these observations; shared identities
 ///   must not be charged twice.
 /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+/// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `tests::algebra::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct TextBytesUsed
@@ -262,8 +262,8 @@ pub struct TextBytesUsed
 ///   arithmetic/limit precedence change these observations; shared identities
 ///   must not be charged twice.
 /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+/// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `tests::algebra::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct VerbatimLinesUsed
@@ -290,8 +290,8 @@ pub struct VerbatimLinesUsed
 ///   arithmetic/limit precedence change these observations; shared identities
 ///   must not be charged twice.
 /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+/// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `tests::algebra::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct BuildStepsUsed
@@ -321,8 +321,8 @@ pub struct BuildStepsUsed
 ///   arithmetic/limit precedence change these observations; shared identities
 ///   must not be charged twice.
 /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+/// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `tests::algebra::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct LimitBound
@@ -403,9 +403,9 @@ pub struct ComputationWidth(u32);
 ///   observed through emitted spaces and the typed indentation refusal;
 ///   wrapping, lost nesting and confusion between indentation and incoming
 ///   column change output or error.
-/// - witness: `algebra::tests::nest_raises_indentation_by_a_checked_amount`
-/// - witness: `algebra::tests::nest_reports_overflow_rather_than_wrapping_the_indentation`
-/// - witness: `algebra::tests::align_sets_indentation_to_the_current_column`
+/// - witness: `tests::algebra::nest_raises_indentation_by_a_checked_amount`
+/// - witness: `tests::algebra::nest_reports_overflow_rather_than_wrapping_the_indentation`
+/// - witness: `tests::algebra::align_sets_indentation_to_the_current_column`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub(crate) struct Column(u32);
@@ -426,9 +426,9 @@ pub(crate) struct Column(u32);
 ///   observed through emitted spaces and the typed indentation refusal;
 ///   wrapping, lost nesting and confusion between indentation and incoming
 ///   column change output or error.
-/// - witness: `algebra::tests::nest_raises_indentation_by_a_checked_amount`
-/// - witness: `algebra::tests::nest_reports_overflow_rather_than_wrapping_the_indentation`
-/// - witness: `algebra::tests::align_sets_indentation_to_the_current_column`
+/// - witness: `tests::algebra::nest_raises_indentation_by_a_checked_amount`
+/// - witness: `tests::algebra::nest_reports_overflow_rather_than_wrapping_the_indentation`
+/// - witness: `tests::algebra::align_sets_indentation_to_the_current_column`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub(crate) struct Indentation(u32);
@@ -450,7 +450,7 @@ pub(crate) struct Indentation(u32);
 ///   priority, wrapping, or confusing breaks with bytes changes the selected
 ///   cost or refusal.
 /// - witness: `measure::tests::cost_and_byte_addition_preserve_components_and_error_priority`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct SquaredOverflow(u64);
@@ -472,7 +472,7 @@ pub struct SquaredOverflow(u64);
 ///   priority, wrapping, or confusing breaks with bytes changes the selected
 ///   cost or refusal.
 /// - witness: `measure::tests::cost_and_byte_addition_preserve_components_and_error_priority`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct LineBreaks(u64);
@@ -494,7 +494,7 @@ pub struct LineBreaks(u64);
 ///   priority, wrapping, or confusing breaks with bytes changes the selected
 ///   cost or refusal.
 /// - witness: `measure::tests::cost_and_byte_addition_preserve_components_and_error_priority`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct OutputBytes(u64);
@@ -1163,7 +1163,7 @@ impl DocNodesUsed
     ///   arithmetic-before-limit precedence changes these observations; public
     ///   shared-document witnesses cover lifetime accounting.
     /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-    /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+    /// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
     #[spec(
         ensures: |ret| { let next = u128::from(self.nodes).saturating_add(u128::from(1_u64));
             let ceiling = Some(u64::from(limit.nodes));
@@ -1218,7 +1218,7 @@ impl TextBytesUsed
     ///   arithmetic-before-limit precedence changes these observations; public
     ///   shared-document witnesses cover lifetime accounting.
     /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-    /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+    /// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
     #[spec(
         ensures: |ret| { let next = u128::from(self.bytes).saturating_add(u128::from(amount.bytes));
             let ceiling = u64::try_from(limit.bytes).ok();
@@ -1278,7 +1278,7 @@ impl VerbatimLinesUsed
     ///   arithmetic-before-limit precedence changes these observations; public
     ///   shared-document witnesses cover lifetime accounting.
     /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-    /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+    /// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
     #[spec(
         ensures: |ret| { let next = u128::from(self.lines).saturating_add(u128::from(amount.lines));
             let ceiling = Some(u64::from(limit.lines));
@@ -1334,7 +1334,7 @@ impl BuildStepsUsed
     ///   arithmetic-before-limit precedence changes these observations; public
     ///   shared-document witnesses cover lifetime accounting.
     /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
-    /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+    /// - witness: `tests::algebra::each_build_ceiling_refuses_exactly_at_its_boundary`
     #[spec(
         ensures: |ret| { let next = u128::from(self.steps).saturating_add(u128::from(1_u64));
             let ceiling = Some(limit.steps);

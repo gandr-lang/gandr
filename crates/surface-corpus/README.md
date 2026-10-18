@@ -41,7 +41,7 @@ The expectation language over a lowered module and its verdicts — the `checks`
 
 The crate-level doctest (`src/lib.rs`, § Example) is the example: it lowers a module of two declarations, one owing a hole and one stating the refusal it earns, checks it, settles it on the fixture root and reads the tally — settled, a ledger of one, unsealed. `cargo nextest run -p gandr-surface-corpus` runs it with the crate's tests. Source-level settlement witnesses parse, lower and check their modules; counter and formatter boundary witnesses also construct values directly to reach saturation and sink failures.
 
-Five headline sources — `fixture/model/higher-cells/ua-corolla.gandr`, `fixture/model/identity/transport-dependent.gandr`, `fixture/model/identity/transport-path.gandr`, `fixture/model/identity/funext.gandr` and `fixture/model/identity/circle.gandr` — keep a golden of every hover beside their role goldens, as `crates/surface-grammar/tests/highlight/<source>.hover`: one line per run of positions answered alike, its span, the text, the hover text and its range. A change that moves a hover moves a line; `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-lsp --test editor -E 'test(the_headline_sources_hover_as_their_goldens)'` rewrites them, and the diff is the review.
+Five headline sources — `fixture/model/higher-cells/ua-corolla.gandr`, `fixture/model/identity/transport-dependent.gandr`, `fixture/model/identity/transport-path.gandr`, `fixture/model/identity/funext.gandr` and `fixture/model/identity/circle.gandr` — keep a golden of every hover beside their role goldens, as `crates/surface-grammar/tests/highlight/<source>.hover`: one line per run of positions answered alike, its span, the text, the hover text and its range. A change that moves a hover moves a line; `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-lsp --test tests -E 'test(the_headline_sources_hover_as_their_goldens)'` rewrites them, and the diff is the review.
 
 ## Writing to the corpus
 
@@ -71,7 +71,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The closed refusal vocabulary, native universe-path refusals | [`refusal`](src/refusal.rs) |
 | Membership, the corpus directories, one walk, the pending set | [`root`](src/root.rs) |
 | The kernel export suite | [`kernel_export`](src/kernel_export.rs) |
-| A comment on every fixture item, the ledger ratchet | [`src/lib.rs`](src/lib.rs), [`comments`](tests/comments/lib.rs) |
+| A comment on every fixture item, the ledger ratchet | [`src/lib.rs`](src/lib.rs), [`comments`](tests/comments.rs) |
 
 ## License
 

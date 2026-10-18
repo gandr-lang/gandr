@@ -20,7 +20,7 @@
 //! never reached and cannot replace this dynamic support; the incremental
 //! checker's conservative footprint serves a different purpose. Native
 //! signature support and adoption are exercised by
-//! `native_formers::native_formers::native_signature_support_and_adoption`.
+//! `tests::native_formers::native_signature_support_and_adoption`.
 
 use alloc::vec::Vec;
 

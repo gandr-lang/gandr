@@ -94,7 +94,7 @@ pub(super) struct Signature<'signature>
 /// # Adequacy
 /// - hypothesis: L3 — distinct declarations remain distinct even with equal
 ///   fields.
-/// - witness: `native_formers::native_formers::nominal_identity_and_constructor_refusals`
+/// - witness: `tests::native_formers::nominal_identity_and_constructor_refusals`
 #[spec(ensures: |ret| ret.is_ok() == matches!(entries.get(usize::from(index)).map(AdmittedDeclaration::content), Some(DeclarationContent::Data { .. })))]
 pub(super) fn signature(
     entries: &[AdmittedDeclaration],
@@ -139,8 +139,8 @@ pub(super) fn signature(
 /// - hypothesis: L3 — `Nat`'s `succ` field and `List A`'s `cons` tail form
 ///   through the block; the same head in a definition after admission resolves
 ///   through the prefix; a universe's family resolves in its mutual block.
-/// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted`
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+/// - witness: `tests::recursive_data::recursive_blocks_are_admitted`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
 #[spec(ensures: |ret| ret.is_ok() == (matches!(judgement.block, super::Block::Inside { position, .. } if position == index)
     || matches!(judgement.member(index), Maybe::Present((member, super::occurrence::Membership::Family)) if matches!(member.content(), DeclarationContent::Data { .. }))
     || matches!(judgement.entries.get(usize::from(index)).map(AdmittedDeclaration::content), Some(DeclarationContent::Data { .. }))))]
@@ -197,7 +197,7 @@ pub(super) fn resolve<'session>(
 /// # Adequacy
 /// - hypothesis: L3 — a forged kind cannot establish a data formation
 ///   judgement.
-/// - witness: `native_formers::native_formers::data_signature_formation_checks_fields_and_parameters`
+/// - witness: `tests::native_formers::data_signature_formation_checks_fields_and_parameters`
 #[spec(ensures: |ret| ret.is_ok() == matches!(arena.value_type(kind), Some(ValueType::Universe { sort: GroundSort::Value, .. })))]
 pub(super) fn level(
     arena: &TermArena,
@@ -248,7 +248,7 @@ pub(super) fn level(
 /// # Adequacy
 /// - hypothesis: L3 — two dependent parameters distinguish reversal and
 ///   capture.
-/// - witness: `native_formers::native_formers::data_parameters_preserve_open_indices`
+/// - witness: `tests::native_formers::data_parameters_preserve_open_indices`
 #[spec(ensures: |ret| prefix.0 != 0 || ret.as_ref() == Ok(&subject))]
 pub(super) fn instantiate(
     arena: &mut TermArena,
@@ -285,7 +285,7 @@ pub(super) fn instantiate(
 /// # Adequacy
 /// - hypothesis: L3 — a list's tail reads its element parameter past the head's
 ///   binder, and a dependent field keeps the binder it names.
-/// - witness: `recursive_data::recursive_data::dependent_fields_are_admitted`
+/// - witness: `tests::recursive_data::dependent_fields_are_admitted`
 #[spec(ensures: |ret| prefix.0 != 0 || ret.as_ref() == Ok(&subject))]
 pub(super) fn field_type(
     arena: &mut TermArena,
@@ -334,8 +334,8 @@ pub(super) fn field_type(
 /// - hypothesis: L3 — equal carriers do not erase identity, arity or payload
 ///   typing, and a field naming the code before it checks at that code's
 ///   decode.
-/// - witness: `native_formers::native_formers::nominal_identity_and_constructor_refusals`
-/// - witness: `recursive_data::recursive_data::dependent_fields_are_admitted`
+/// - witness: `tests::native_formers::nominal_identity_and_constructor_refusals`
+/// - witness: `tests::recursive_data::dependent_fields_are_admitted`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckValue(..)))))]
 pub(super) fn constructor(
     arena: &mut TermArena,
@@ -481,7 +481,7 @@ pub(super) fn constructor(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a dependent motive rejects a branch at a wrong index.
-/// - witness: `native_formers::native_formers::data_case_checks_coverage_and_motive`
+/// - witness: `tests::native_formers::data_case_checks_coverage_and_motive`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id| arena.comp_type(*id).is_some()))]
 pub(super) fn branch_type(
     arena: &mut TermArena,
@@ -583,10 +583,10 @@ pub(super) type Scrutinised = (
 /// # Adequacy
 /// - hypothesis: L3 — omitted and surplus arms both refuse before branch
 ///   checking; a circle case with its loop arm checks the arm.
-/// - witness: `native_formers::native_formers::data_case_checks_coverage_and_motive`
-/// - witness: `recursive_data::recursive_data::a_recursion_descends_on_its_first_parameter`
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
-/// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `tests::native_formers::data_case_checks_coverage_and_motive`
+/// - witness: `tests::recursive_data::a_recursion_descends_on_its_first_parameter`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
+/// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckComp(..)))))]
 pub(super) fn case(
     arena: &mut TermArena,
@@ -764,7 +764,7 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a case of no branches over `Path(N, Succ(Zero), Zero)` at
 ///   the naturals modulo two admits, and one over `Path(N, Succ(Succ(Zero)),
 ///   Zero)`, whose normal forms agree, is refused by name.
-/// - witness: `native_formers::native_formers::an_absurd_case_rests_on_apart_endpoints`
+/// - witness: `tests::native_formers::an_absurd_case_rests_on_apart_endpoints`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::NotApart(_) | KernelError::NotADataType { .. } | KernelError::ArenaFault)))]
 pub(super) fn absurd(
     arena: &mut TermArena,
@@ -847,7 +847,7 @@ pub(super) fn absurd(
 /// # Adequacy
 /// - hypothesis: L3 — a variable carrying a wider nested record can be returned
 ///   at a narrower type, but reversal and a mismatched nested field cannot.
-/// - witness: `native_formers::native_formers::record_width_depth_projection_and_absent_fields`
+/// - witness: `tests::native_formers::record_width_depth_projection_and_absent_fields`
 #[spec(ensures: |ret| ret.is_err() || { let (matched_left_value, matched_right_value) = (arena.value_type(expected),arena.value_type(actual));
 if let Some(matched_left_node) = matched_left_value && let ValueType::Record(ref wanted) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let ValueType::Record(ref found) = *matched_right_node { wanted.keys().all(|label| found.contains_key(label)) }
  else { crate::conv::convertible_value_types(arena,expected,actual) == crate::conv::Convertibility::Convertible }

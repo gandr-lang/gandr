@@ -164,11 +164,11 @@ pub use crate::record::SegmentBytes;
 ///   before writing any node. It distinguishes lost bytes, history-sensitive
 ///   identities and writes before parameter admission, not arbitrary store
 ///   failures, tree limits or all parameter combinations.
-/// - witness: `artifact_contract::artifact_contract::the_same_artifact_mints_the_same_identity`
-/// - witness: `artifact_contract::artifact_contract::a_permuted_build_order_yields_the_same_identity`
-/// - witness: `artifact_contract::artifact_contract::any_perturbation_changes_the_identity`
-/// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
-/// - witness: `artifact_contract::artifact_contract::unsupported_build_parameters_do_not_write_nodes`
+/// - witness: `tests::artifact_contract::the_same_artifact_mints_the_same_identity`
+/// - witness: `tests::artifact_contract::a_permuted_build_order_yields_the_same_identity`
+/// - witness: `tests::artifact_contract::any_perturbation_changes_the_identity`
+/// - witness: `tests::artifact_contract::round_trip_over_generated_environments`
+/// - witness: `tests::artifact_contract::unsupported_build_parameters_do_not_write_nodes`
 #[inline]
 #[spec(ensures: |ret| match ret {
     Ok(ref manifest) => *manifest.commitment() == params.boundary_commitment()

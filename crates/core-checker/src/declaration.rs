@@ -458,7 +458,7 @@ impl Declaration
     /// # Adequacy
     /// - hypothesis: L3 — a fold over the circle is admitted on its laws and
     ///   refused without them or with a law stating another path.
-    /// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+    /// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
     #[spec(
         captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.laws.len(), laws.len()),
         ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1

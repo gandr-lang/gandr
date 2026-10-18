@@ -70,7 +70,7 @@ pub trait LineSource
     /// # Adequacy
     /// - hypothesis: L3 — the scripted source records prompts and retains
     ///   unread events when the driver sees an ending.
-    /// - witness: `loop::tests::terminal_endings_stop_reads_and_flush_once`
+    /// - witness: `tests::repl_loop::terminal_endings_stop_reads_and_flush_once`
     fn read(
         &mut self,
         prompt: Prompt,
@@ -119,7 +119,7 @@ impl LineSource for Terminal
     /// - hypothesis: L3 — the face it feeds is asserted over a scripted source;
     ///   the editor's own reads, an interrupt and the end of input were
     ///   exercised by hand on a pseudo-terminal.
-    /// - witness: `loop::tests::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+    /// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
     #[spec(ensures: |ret| !matches!(ret,
         Read::Failed(Fault::Grammar(_) | Fault::Input(_) | Fault::Session(_))))]
     fn read(
@@ -163,8 +163,8 @@ impl LineSource for Terminal
 /// - hypothesis: L3 — over a scripted source, the prompts asked, an interrupted
 ///   buffer's absence from the transcript, and the block of a buffer left open
 ///   at the end are asserted exactly.
-/// - witness: `loop::tests::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
-/// - witness: `loop::tests::terminal_endings_stop_reads_and_flush_once`
+/// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+/// - witness: `tests::repl_loop::terminal_endings_stop_reads_and_flush_once`
 #[inline]
 pub fn drive<Source, Output>(
     source: &mut Source,
@@ -198,8 +198,8 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — through [`drive`]'s witness, the prompts and the
 ///   transcript asserted exactly.
-/// - witness: `loop::tests::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
-/// - witness: `loop::tests::terminal_endings_stop_reads_and_flush_once`
+/// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+/// - witness: `tests::repl_loop::terminal_endings_stop_reads_and_flush_once`
 fn converse<Source, Output>(
     source: &mut Source,
     output: &mut Output,
@@ -258,7 +258,7 @@ where
 /// - hypothesis: L3 — the face is asserted over a scripted source through
 ///   [`drive`]; the editor on a terminal, which the test runner lacks, was
 ///   exercised by hand on a pseudo-terminal.
-/// - witness: `loop::tests::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+/// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
 #[spec(ensures: |ret| !matches!(ret, Ok(Ended::Faulted(Fault::Input(_)))))]
 #[inline]
 pub fn run_interactive<Output>(

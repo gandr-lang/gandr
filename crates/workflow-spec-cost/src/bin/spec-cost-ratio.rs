@@ -71,9 +71,9 @@ struct Cli
 /// - hypothesis: L3 — a recorded pair, a missing report and a malformed
 ///   threshold; a swapped stream or exit code changes the observed process
 ///   result.
-/// - witness: `ratio::ratio::a_recorded_pair_reports_each_test_against_the_baseline`
-/// - witness: `ratio::ratio::a_missing_report_is_refused_by_its_path`
-/// - witness: `ratio::ratio::a_malformed_threshold_exits_two`
+/// - witness: `tests::ratio::a_recorded_pair_reports_each_test_against_the_baseline`
+/// - witness: `tests::ratio::a_missing_report_is_refused_by_its_path`
+/// - witness: `tests::ratio::a_malformed_threshold_exits_two`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(REFUSED))]
 fn main() -> ExitCode
 {
@@ -113,8 +113,8 @@ fn main() -> ExitCode
 /// # Adequacy
 /// - hypothesis: L3 — a recorded pair prints the asserted comparison and a
 ///   missing report is refused by its path.
-/// - witness: `ratio::ratio::a_recorded_pair_reports_each_test_against_the_baseline`
-/// - witness: `ratio::ratio::a_missing_report_is_refused_by_its_path`
+/// - witness: `tests::ratio::a_recorded_pair_reports_each_test_against_the_baseline`
+/// - witness: `tests::ratio::a_missing_report_is_refused_by_its_path`
 fn compare(cli: Cli) -> Result<(), CostError>
 {
     let read = |path: &PathBuf| {

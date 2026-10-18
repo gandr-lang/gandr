@@ -52,8 +52,8 @@ use crate::namespace::trie::binding;
 /// # Adequacy
 /// - hypothesis: L3 — closing outside a section and refusing a collision
 ///   produce distinct variants while the retained namespace is observed.
-/// - witness: `namespace::namespace::closing_without_an_open_section_fails`
-/// - witness: `namespace::namespace::a_refused_multi_entry_import_leaves_the_visible_namespace_as_it_was`
+/// - witness: `tests::namespace::closing_without_an_open_section_fails`
+/// - witness: `tests::namespace::a_refused_multi_entry_import_leaves_the_visible_namespace_as_it_was`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ScopeError
 {
@@ -132,11 +132,11 @@ struct Namespaces<Data, Tag>
 /// - hypothesis: L3 — import and include differ in export visibility; two
 ///   nested sections restore their parents in stack order, and failed closes
 ///   consume the section at both modifier and merge boundaries.
-/// - witness: `namespace::namespace::import_touches_only_the_visible_namespace`
-/// - witness: `namespace::namespace::include_touches_both_namespaces`
-/// - witness: `namespace::namespace::nested_sections_close_innermost_first`
-/// - witness: `namespace::namespace::a_refused_closing_modifier_restores_the_parent_and_closes_the_section`
-/// - witness: `namespace::namespace::a_refused_closing_merge_keeps_its_prefix_and_closes_the_section`
+/// - witness: `tests::namespace::import_touches_only_the_visible_namespace`
+/// - witness: `tests::namespace::include_touches_both_namespaces`
+/// - witness: `tests::namespace::nested_sections_close_innermost_first`
+/// - witness: `tests::namespace::a_refused_closing_modifier_restores_the_parent_and_closes_the_section`
+/// - witness: `tests::namespace::a_refused_closing_merge_keeps_its_prefix_and_closes_the_section`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Scope<Data, Tag>
 {
@@ -189,8 +189,8 @@ impl<Data, Tag> Scope<Data, Tag>
     /// # Adequacy
     /// - hypothesis: L3 — both namespaces asserted exactly over a non-empty
     ///   initial namespace, and a later import over it performing shadow.
-    /// - witness: `namespace::namespace::init_visible_seeds_only_the_visible_namespace`
-    /// - witness: `namespace::namespace::a_user_binding_over_the_prelude_is_a_shadow_event`
+    /// - witness: `tests::namespace::init_visible_seeds_only_the_visible_namespace`
+    /// - witness: `tests::namespace::a_user_binding_over_the_prelude_is_a_shadow_event`
     #[spec(
         captures: before = init_visible.binding_count(),
         ensures: |ret| {
@@ -264,7 +264,7 @@ impl<Data, Tag> Scope<Data, Tag>
     /// - hypothesis: L3 — a declaration over a seeded namespace with members,
     ///   the namespace, a former member and an unrelated namespace asserted
     ///   exactly after.
-    /// - witness: `recognition::recognition::a_declaration_displaces_the_whole_builtin_subtree`
+    /// - witness: `tests::recognition::a_declaration_displaces_the_whole_builtin_subtree`
     #[spec(
         captures: before = (
             usize::from(self.current.visible.binding_count()),
@@ -316,9 +316,9 @@ where
     ///   [`Self::import_subtree`] on the same input; the merge order, by a
     ///   rejected collision after a merged sibling, both namespaces asserted
     ///   exactly.
-    /// - witness: `namespace::namespace::include_touches_both_namespaces`
-    /// - witness: `namespace::namespace::import_touches_only_the_visible_namespace`
-    /// - witness: `namespace::namespace::include_merges_the_visible_namespace_before_the_export`
+    /// - witness: `tests::namespace::include_touches_both_namespaces`
+    /// - witness: `tests::namespace::import_touches_only_the_visible_namespace`
+    /// - witness: `tests::namespace::include_merges_the_visible_namespace_before_the_export`
     #[spec(
         captures: before = (
             usize::from(self.current.visible.binding_count()),
@@ -380,9 +380,9 @@ where
     /// - hypothesis: L3 — which namespaces are touched, against
     ///   [`Self::include_subtree`]; the prefixing, by an import under a
     ///   non-root prefix; atomicity, by a rejection after a merged sibling.
-    /// - witness: `namespace::namespace::import_touches_only_the_visible_namespace`
-    /// - witness: `namespace::namespace::an_import_arrives_under_its_prefix`
-    /// - witness: `namespace::namespace::a_refused_multi_entry_import_leaves_the_visible_namespace_as_it_was`
+    /// - witness: `tests::namespace::import_touches_only_the_visible_namespace`
+    /// - witness: `tests::namespace::an_import_arrives_under_its_prefix`
+    /// - witness: `tests::namespace::a_refused_multi_entry_import_leaves_the_visible_namespace_as_it_was`
     #[spec(
         captures: before = (
             usize::from(self.current.visible.binding_count()),
@@ -441,9 +441,9 @@ where
     /// - hypothesis: L3 — which namespace is rewritten, against
     ///   [`Self::modify_export`]; that the rewrite lands only on success, by a
     ///   rejected event over a non-empty namespace.
-    /// - witness: `namespace::namespace::modifying_visible_leaves_export_alone`
-    /// - witness: `namespace::namespace::modifying_export_leaves_visible_alone`
-    /// - witness: `namespace::namespace::a_refused_modifier_leaves_the_visible_namespace_as_it_was`
+    /// - witness: `tests::namespace::modifying_visible_leaves_export_alone`
+    /// - witness: `tests::namespace::modifying_export_leaves_visible_alone`
+    /// - witness: `tests::namespace::a_refused_modifier_leaves_the_visible_namespace_as_it_was`
     #[spec(
         captures: before = (
             self.current.visible.binding_count(),
@@ -487,8 +487,8 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — which namespace the modifier reads, by a visible
     ///   binding the export lacks; that the rewrite lands only on success.
-    /// - witness: `namespace::namespace::modifying_export_leaves_visible_alone`
-    /// - witness: `namespace::namespace::a_refused_modifier_leaves_the_export_namespace_as_it_was`
+    /// - witness: `tests::namespace::modifying_export_leaves_visible_alone`
+    /// - witness: `tests::namespace::a_refused_modifier_leaves_the_export_namespace_as_it_was`
     #[spec(
         captures: before = (
             self.current.visible.binding_count(),
@@ -538,8 +538,8 @@ where
     ///   merges, by a selection over bindings the export lacks against a
     ///   non-empty prior export; that the export is undisturbed until the
     ///   modifier succeeds, by a rejected event against the same.
-    /// - witness: `namespace::namespace::export_visible_re_exports_a_selection`
-    /// - witness: `namespace::namespace::a_refused_re_export_leaves_the_prior_export_as_it_was`
+    /// - witness: `tests::namespace::export_visible_re_exports_a_selection`
+    /// - witness: `tests::namespace::a_refused_re_export_leaves_the_prior_export_as_it_was`
     #[spec(
         captures: before = (
             self.current.visible.binding_count(),
@@ -587,8 +587,8 @@ where
     /// - hypothesis: L3 — which namespace the child inherits and that its
     ///   export starts empty, over a parent with both namespaces non-empty;
     ///   stack order, by two nested sections closed in turn.
-    /// - witness: `namespace::namespace::a_section_inherits_the_visible_namespace_and_exports_nothing_yet`
-    /// - witness: `namespace::namespace::nested_sections_close_innermost_first`
+    /// - witness: `tests::namespace::a_section_inherits_the_visible_namespace_and_exports_nothing_yet`
+    /// - witness: `tests::namespace::nested_sections_close_innermost_first`
     #[spec(
         captures: before = (
             self.current.visible.binding_count(),
@@ -640,14 +640,14 @@ where
     ///   under the identity, under a selection and with none open; the restored
     ///   parent, over a parent holding its own binding and over two nested
     ///   sections.
-    /// - witness: `namespace::namespace::a_section_exports_under_its_prefix`
-    /// - witness: `namespace::namespace::a_sections_imports_evaporate_at_close`
-    /// - witness: `namespace::namespace::a_sections_closing_modifier_chooses_what_it_passes_on`
-    /// - witness: `namespace::namespace::closing_without_an_open_section_fails`
-    /// - witness: `namespace::namespace::closing_a_section_restores_what_the_parent_already_held`
-    /// - witness: `namespace::namespace::nested_sections_close_innermost_first`
-    /// - witness: `namespace::namespace::a_refused_closing_modifier_restores_the_parent_and_closes_the_section`
-    /// - witness: `namespace::namespace::a_refused_closing_merge_keeps_its_prefix_and_closes_the_section`
+    /// - witness: `tests::namespace::a_section_exports_under_its_prefix`
+    /// - witness: `tests::namespace::a_sections_imports_evaporate_at_close`
+    /// - witness: `tests::namespace::a_sections_closing_modifier_chooses_what_it_passes_on`
+    /// - witness: `tests::namespace::closing_without_an_open_section_fails`
+    /// - witness: `tests::namespace::closing_a_section_restores_what_the_parent_already_held`
+    /// - witness: `tests::namespace::nested_sections_close_innermost_first`
+    /// - witness: `tests::namespace::a_refused_closing_modifier_restores_the_parent_and_closes_the_section`
+    /// - witness: `tests::namespace::a_refused_closing_merge_keeps_its_prefix_and_closes_the_section`
     #[spec(
         captures: before = (
             self.enclosing.len(),

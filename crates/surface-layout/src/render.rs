@@ -144,10 +144,10 @@ impl PartialEq<RenderedText> for &str
 ///   render surface. Byte/scalar confusion, duplicate output charges, lost
 ///   taint or partial success change these observations. Failure never returns
 ///   a rendered value; counters may record work already performed.
-/// - witness: `algebra::tests::render_text_and_layout_metadata_are_exact`
-/// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
-/// - witness: `algebra::tests::render_tainted_root_preserves_promise_columns_and_indentation`
-/// - witness: `algebra::tests::render_limits_fail_without_partial_output`
+/// - witness: `tests::algebra::render_text_and_layout_metadata_are_exact`
+/// - witness: `tests::algebra::render_preserves_verbatim_bytes_and_physical_endings`
+/// - witness: `tests::algebra::render_tainted_root_preserves_promise_columns_and_indentation`
+/// - witness: `tests::algebra::render_limits_fail_without_partial_output`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rendered
@@ -182,10 +182,10 @@ pub struct Rendered
 ///   render surface. Byte/scalar confusion, duplicate output charges, lost
 ///   taint or partial success change these observations. Failure never returns
 ///   a rendered value; counters may record work already performed.
-/// - witness: `algebra::tests::render_text_and_layout_metadata_are_exact`
-/// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
-/// - witness: `algebra::tests::render_tainted_root_preserves_promise_columns_and_indentation`
-/// - witness: `algebra::tests::render_limits_fail_without_partial_output`
+/// - witness: `tests::algebra::render_text_and_layout_metadata_are_exact`
+/// - witness: `tests::algebra::render_preserves_verbatim_bytes_and_physical_endings`
+/// - witness: `tests::algebra::render_tainted_root_preserves_promise_columns_and_indentation`
+/// - witness: `tests::algebra::render_limits_fail_without_partial_output`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[spec(
     captures: before = meter.usage(),

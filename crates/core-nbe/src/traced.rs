@@ -209,7 +209,7 @@ where
     ///   this entry under both stances. Copying a shared rib under the spinal
     ///   policy changes the measured output; returning the input or retaining a
     ///   refused duplicate changes freshness or rollback.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
     /// - witness: `traced::tests::trace_bound_operations_preserve_the_overlay_when_they_refuse`
     #[inline]
     #[spec(
@@ -247,7 +247,7 @@ where
     ///   through this entry under both stances. Changing the computation
     ///   treatment changes its erasure, and retaining a refused duplicate
     ///   changes the entry watermark.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
     /// - witness: `traced::tests::trace_bound_operations_preserve_the_overlay_when_they_refuse`
     #[inline]
     #[spec(
@@ -295,9 +295,9 @@ where
     ///   both stances; losing that restoration or minting a result in the wrong
     ///   polarity changes these observations.
     /// - witness:
-    ///   `deep_evaluation::deep_evaluation::a_spinal_value_chain_evaluates_as_the_erased_one`
+    ///   `tests::deep_evaluation::a_spinal_value_chain_evaluates_as_the_erased_one`
     /// - witness:
-    ///   `deep_readback::deep_readback::a_spinal_value_chain_reads_back_as_the_erased_one`
+    ///   `tests::deep_readback::a_spinal_value_chain_reads_back_as_the_erased_one`
     /// - witness: `traced::tests::trace_bound_operations_preserve_the_overlay_when_they_refuse`
     #[inline]
     #[spec(
@@ -362,12 +362,12 @@ where
     ///   conversion decision; conflating evaluation with certification or
     ///   retaining scratch changes those boundaries.
     /// - witness:
-    ///   `deep_evaluation::deep_evaluation::a_spinal_curried_application_evaluates_as_the_erased_one`
+    ///   `tests::deep_evaluation::a_spinal_curried_application_evaluates_as_the_erased_one`
     /// - witness:
-    ///   `deep_evaluation::deep_evaluation::a_spinal_bind_chain_evaluates_as_the_erased_one`
+    ///   `tests::deep_evaluation::a_spinal_bind_chain_evaluates_as_the_erased_one`
     /// - witness:
-    ///   `deep_readback::deep_readback::a_spinal_suspension_chain_reads_back_as_the_erased_one`
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    ///   `tests::deep_readback::a_spinal_suspension_chain_reads_back_as_the_erased_one`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     /// - witness: `traced::tests::trace_bound_operations_preserve_the_overlay_when_they_refuse`
     #[inline]
     #[spec(

@@ -78,9 +78,9 @@ pub struct Row<'block>
 /// # Adequacy
 /// - hypothesis: L3 — a piped session's transcript is asserted line by line,
 ///   and a block's rows are asserted mark by mark.
-/// - witness: `loop::tests::piped_value_prints_a_transcript`
-/// - witness: `loop::tests::a_block_lays_out_as_rows`
-/// - witness: `loop::tests::row_kinds_and_unicode_boundaries_keep_their_meaning`
+/// - witness: `tests::repl_loop::piped_value_prints_a_transcript`
+/// - witness: `tests::repl_loop::a_block_lays_out_as_rows`
+/// - witness: `tests::repl_loop::row_kinds_and_unicode_boundaries_keep_their_meaning`
 #[spec(ensures: |ret| match kind {
     OutKind::Source => matches!(ret.text.as_bytes(), &[0xe2, 0x96, 0xb8, b' '])
         && matches!(ret.indent.as_bytes(), &[b' ', b' ']),
@@ -142,8 +142,8 @@ const fn mark(kind: OutKind) -> Mark
 /// - hypothesis: L3 — a two-row echo, a three-row diagnostic with an empty
 ///   middle row, every output kind, Unicode byte offsets, CRLF and lone
 ///   carriage returns are asserted row by row.
-/// - witness: `loop::tests::a_block_lays_out_as_rows`
-/// - witness: `loop::tests::row_kinds_and_unicode_boundaries_keep_their_meaning`
+/// - witness: `tests::repl_loop::a_block_lays_out_as_rows`
+/// - witness: `tests::repl_loop::row_kinds_and_unicode_boundaries_keep_their_meaning`
 fn line_rows(
     kind: OutKind,
     text: SourceText<'_>,
@@ -198,9 +198,9 @@ fn line_rows(
 /// - hypothesis: L3 — a block with a two-row echo and a multi-row diagnostic is
 ///   asserted row by row, kinds, leads, texts and starts; a piped session's
 ///   transcript, written from these rows, is asserted line by line.
-/// - witness: `loop::tests::a_block_lays_out_as_rows`
-/// - witness: `loop::tests::piped_value_prints_a_transcript`
-/// - witness: `loop::tests::row_kinds_and_unicode_boundaries_keep_their_meaning`
+/// - witness: `tests::repl_loop::a_block_lays_out_as_rows`
+/// - witness: `tests::repl_loop::piped_value_prints_a_transcript`
+/// - witness: `tests::repl_loop::row_kinds_and_unicode_boundaries_keep_their_meaning`
 #[inline]
 pub fn rows(block: &TranscriptBlock) -> impl Iterator<Item = Row<'_>>
 {

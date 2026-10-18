@@ -32,7 +32,7 @@ use crate::decision::ConversionDecision;
 ///   retained counts at both shipped implementations. They distinguish a
 ///   suppressed active path and nonzero null counts. They do not measure
 ///   optimizer elimination of decision construction.
-/// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
+/// - witness: `tests::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SinkActivity
 {
@@ -91,8 +91,8 @@ impl From<DecisionCount> for usize
 ///   shipped sinks, comparing exact verdicts and retained counts. Shared heads,
 ///   distinct atoms and asymmetric layers distinguish interference and a
 ///   recording path that was never exercised; arbitrary sinks are not covered.
-/// - witness: `differential::differential::recording_does_not_move_the_verdict`
-/// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
+/// - witness: `tests::differential::recording_does_not_move_the_verdict`
+/// - witness: `tests::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
 pub trait TraceSink<Id>
 {
     /// Whether this implementation ever retains a decision, known at compile
@@ -112,7 +112,7 @@ pub trait TraceSink<Id>
     /// - hypothesis: L2 — four valid comparisons observe zero retained
     ///   decisions with the null sink and exact nonzero counts with the log.
     ///   This separates a suppressed active path, not generated-code costs.
-    /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
+    /// - witness: `tests::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
     const ACTIVITY: SinkActivity;
 
     /// Record one decision without imposing a storage policy on the caller.
@@ -135,7 +135,7 @@ pub trait TraceSink<Id>
     ///   log preserves a mixed, repeated sequence element for element. These
     ///   observers separate dropped or reordered events, not every possible
     ///   implementation of the declaration.
-    /// - witness: `differential::differential::recording_does_not_move_the_verdict`
+    /// - witness: `tests::differential::recording_does_not_move_the_verdict`
     /// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
     fn record(
         &mut self,
@@ -189,7 +189,7 @@ pub trait TraceSink<Id>
 ///   nonzero reported count. L2 — the finite workload observes the same
 ///   verdicts at both sinks; hidden global state is outside this observer.
 /// - witness: `sink::tests::the_null_sink_retains_nothing`
-/// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
+/// - witness: `tests::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NullSink;
 
@@ -209,8 +209,8 @@ impl<Id> TraceSink<Id> for NullSink
     /// - hypothesis: L2 — the finite workload observes zero retained decisions
     ///   and unchanged verdicts at this instantiation. Generated-code cost is
     ///   not measured by these witnesses.
-    /// - witness: `differential::differential::recording_does_not_move_the_verdict`
-    /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
+    /// - witness: `tests::differential::recording_does_not_move_the_verdict`
+    /// - witness: `tests::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
     const ACTIVITY: SinkActivity = SinkActivity::Inactive;
 
     /// Discards the decision.
@@ -282,7 +282,7 @@ impl<Id> TraceSink<Id> for NullSink
 ///   deduplication and reordering. L2 replay independently checks the bounded
 ///   strategy workload, not arbitrary consumer traces.
 /// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
-/// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
+/// - witness: `tests::differential::the_kernel_replays_the_trace_without_searching`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TraceLog<Id>
@@ -348,7 +348,7 @@ impl<Id> TraceSink<Id> for TraceLog<Id>
     /// - hypothesis: L2 — four valid comparisons expose exact nonzero retained
     ///   counts, distinguishing a guard that suppresses the recording path.
     ///   This witnesses the shipped log, not optimizer behavior.
-    /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
+    /// - witness: `tests::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
     const ACTIVITY: SinkActivity = SinkActivity::Active;
 
     /// Appends the decision to the log.
@@ -391,7 +391,7 @@ impl<Id> TraceSink<Id> for TraceLog<Id>
     ///   and at the number handed in afterwards, so an off-by-one or a constant
     ///   answer is separated.
     /// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
-    /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
+    /// - witness: `tests::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
     #[inline]
     #[spec(ensures: |ret| usize::from(ret) == self.decisions.len())]
     fn recorded_count(&self) -> DecisionCount

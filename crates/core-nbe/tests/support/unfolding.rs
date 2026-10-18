@@ -99,9 +99,9 @@ pub struct Unfolded(pub u64);
 ///   each immediate child. The independent overlay measures observe the full
 ///   count, including repeated DAG paths and opaque bind bases; the local
 ///   predicate does not replay that walk.
-/// - witness: `deep_evaluation::deep_evaluation::the_deep_evaluation_cases_measure_as_their_erasure_inside_a_small_stack`
-/// - witness: `deep_readback::deep_readback::the_deep_readback_cases_measure_as_their_erasure_inside_a_small_stack`
-/// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+/// - witness: `tests::deep_evaluation::the_deep_evaluation_cases_measure_as_their_erasure_inside_a_small_stack`
+/// - witness: `tests::deep_readback::the_deep_readback_cases_measure_as_their_erasure_inside_a_small_stack`
+/// - witness: `tests::measure::the_expansion_size_is_what_the_unshared_walk_visits`
 #[spec(
     requires: match root {
         CoreNode::Value(id) => erased.value(id).is_some(),

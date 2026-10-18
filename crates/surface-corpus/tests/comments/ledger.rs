@@ -4,7 +4,7 @@ use alloc::collections::BTreeSet;
 
 use anodized::spec;
 
-use crate::judge::Finding;
+use crate::comments::judge::Finding;
 
 /// The ledger's first line: the shape of every line after it.
 const HEADER: &str = "# path:name:digest, the digest the first sixteen hex digits of BLAKE3 over \
@@ -43,11 +43,11 @@ impl Discrepancy
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn line(&self) -> crate::shape::Line<'_>
+    pub fn line(&self) -> crate::comments::shape::Line<'_>
     {
         match *self {
             Self::Unledgered { ref line, .. } | Self::Stale { ref line } => {
-                crate::shape::Line(line)
+                crate::comments::shape::Line(line)
             },
         }
     }
@@ -58,9 +58,9 @@ impl Discrepancy
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn is_stale(&self) -> crate::shape::Yes
+    pub fn is_stale(&self) -> crate::comments::shape::Yes
     {
-        crate::shape::Yes(matches!(*self, Self::Stale { .. }))
+        crate::comments::shape::Yes(matches!(*self, Self::Stale { .. }))
     }
 }
 
@@ -80,7 +80,7 @@ impl core::fmt::Display for Discrepancy
     /// # Adequacy
     /// - hypothesis: L3 — each variant's line contains its key and only the
     ///   unledgered variant says the ledger does not hold it.
-    /// - witness: `comments::ledger::tests::each_disagreement_names_its_line`
+    /// - witness: `tests::comments::ledger::tests::each_disagreement_names_its_line`
     #[inline]
     fn fmt(
         &self,
@@ -118,16 +118,16 @@ impl core::fmt::Display for Discrepancy
 /// # Adequacy
 /// - hypothesis: L3 — a missing line, a stale line and an exact match are three
 ///   observations; a blank line and the header are not a fourth finding.
-/// - witness: `comments::judge::tests::an_uncommented_item_is_refused_by_name`
-/// - witness: `comments::judge::tests::a_ledgered_item_passes`
-/// - witness: `comments::judge::tests::a_stale_ledger_line_is_refused`
-/// - witness: `comments::ledger::tests::a_blank_ledger_line_is_not_debt`
+/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_refused_by_name`
+/// - witness: `tests::comments::judge::tests::a_ledgered_item_passes`
+/// - witness: `tests::comments::judge::tests::a_stale_ledger_line_is_refused`
+/// - witness: `tests::comments::ledger::tests::a_blank_ledger_line_is_not_debt`
 #[spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left.line() <= right.line()))]
 #[inline]
 #[must_use]
 pub fn discrepancies(
     found: &[Finding],
-    ledger: crate::shape::Text<'_>,
+    ledger: crate::comments::shape::Text<'_>,
 ) -> Vec<Discrepancy>
 {
     let owed: BTreeSet<&str> = found.iter().map(|finding| finding.line().0).collect();
@@ -163,7 +163,7 @@ pub fn discrepancies(
 /// # Adequacy
 /// - hypothesis: L3 — empty, one line and two unsorted repeated lines render in
 ///   order under the header, each once, each terminated.
-/// - witness: `comments::ledger::tests::the_ledger_text_is_sorted_and_terminated`
+/// - witness: `tests::comments::ledger::tests::the_ledger_text_is_sorted_and_terminated`
 #[spec(ensures: |ret| ret.starts_with(HEADER) && ret.ends_with('\n'))]
 #[inline]
 #[must_use]
@@ -185,7 +185,7 @@ pub fn ledger_text(found: &[Finding]) -> String
 ///
 /// # Specification
 /// trivial.
-fn ledger_lines(ledger: crate::shape::Text<'_>) -> BTreeSet<String>
+fn ledger_lines(ledger: crate::comments::shape::Text<'_>) -> BTreeSet<String>
 {
     ledger
         .0
@@ -203,11 +203,11 @@ mod tests
     use super::HEADER;
     use super::discrepancies;
     use super::ledger_text;
-    use crate::judge::Finding;
+    use crate::comments::judge::Finding;
 
     /// # Specification
     /// trivial.
-    fn finding(line: crate::shape::Text<'_>) -> Finding
+    fn finding(line: crate::comments::shape::Text<'_>) -> Finding
     {
         Finding::from_line(line)
     }
@@ -237,7 +237,10 @@ mod tests
     #[test]
     fn a_blank_ledger_line_is_not_debt()
     {
-        let rows = discrepancies(&[], crate::shape::Text(&format!("{HEADER}\n\n  \n")));
+        let rows = discrepancies(
+            &[],
+            crate::comments::shape::Text(&format!("{HEADER}\n\n  \n")),
+        );
         assert!(
             rows.is_empty(),
             "neither a blank ledger line nor the header is a stale finding"
@@ -249,9 +252,9 @@ mod tests
     {
         assert_eq!(ledger_text(&[]), format!("{HEADER}\n"));
         let text = ledger_text(&[
-            finding(crate::shape::Text("b:z")),
-            finding(crate::shape::Text("a:m")),
-            finding(crate::shape::Text("b:z")),
+            finding(crate::comments::shape::Text("b:z")),
+            finding(crate::comments::shape::Text("a:m")),
+            finding(crate::comments::shape::Text("b:z")),
         ]);
         assert_eq!(text, format!("{HEADER}\na:m\nb:z\n"));
     }

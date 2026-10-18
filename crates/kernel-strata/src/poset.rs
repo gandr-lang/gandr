@@ -563,7 +563,7 @@ impl DerivationStep
 /// - hypothesis: L2 — generated evidence replays independently. L3 mutates
 ///   clause indices, shifts and step availability; the exact refusal separates
 ///   an invalid derivation from a valid pumping certificate.
-/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `tests::entailment_oracle::prop_fixed_poset_evidence_validates`
 /// - witness: `poset::tests::perturbed_loop_witness_arms_are_rejected`
 /// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
 #[repr(transparent)]
@@ -1526,7 +1526,7 @@ fn push_family(
 /// - witness: `poset::tests::replay_distinguishes_body_and_head_overflow`
 /// - witness: `poset::tests::perturbed_loop_witness_arms_are_rejected`
 /// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
-/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `tests::entailment_oracle::prop_fixed_poset_evidence_validates`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|maxima|
     derivation.steps().iter().all(|step| step.shift() >= min_shift &&
         clauses.get(usize::from(step.clause())).is_some_and(|clause|

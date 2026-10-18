@@ -295,7 +295,7 @@
 //! binds before it, ending in the body, so the body reads the components at the
 //! indices the split gave them and a split of no components crosses as its
 //! body. The kernel then judges the projections and binds by its own rules.
-//! `native_formers::native_formers::a_split_crosses_as_its_projection_binds`
+//! `tests::native_formers::a_split_crosses_as_its_projection_binds`
 //! crosses a split of a variable pair, which a wrong shift would project from
 //! its first component, a split of a closed triple and a split of the unit.
 //!
@@ -1052,7 +1052,7 @@ impl Readmission
     ///   asserted at each declaration's exact name and the kernel position each
     ///   reference reads; a nominal declaration decoded under its own name.
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
-    /// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1422,7 +1422,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a lone family offers nothing, and a universe naming its
 ///   decoder offers the two.
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(ensures: |ret| ret.is_empty() || ret.len() >= 2)]
 fn block_offers<'report>(
     arena: &CoreArena,
@@ -1805,7 +1805,7 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — as [`cross`] and [`cross_block`].
 /// - witness: `bridge::tests::a_lowered_value_definition_admits`
 /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refused| matches!(refused.0, Outcome::Refused(_))))]
 fn stage<Vouch>(
     environment: &mut Environment,
@@ -1984,7 +1984,7 @@ fn settle(
 /// # Adequacy
 /// - hypothesis: L3 — a universe and its decoder cross and are admitted
 ///   together; a block one member of which is refused crosses nothing.
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(captures: entries = environment.entries().len(), ensures: |ret| ret.len() == members.len()
     && (ret.iter().all(|crossed| matches!(crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
         || environment.entries().len() == entries))]
@@ -2215,7 +2215,7 @@ impl Positions
     ///   an axiom or failing to remap its position changes those observations.
     /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
     /// - witness: `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`
-    /// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
     #[spec(
         requires: self.admitted.last_key_value().is_none_or(|(&last, _)| last < constant)
             && !self.unfoldings.contains_key(&admitted.position()),
@@ -3754,7 +3754,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   verbatim, and one read normalizing, withheld.
     /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
     #[spec(ensures: |ret| ret.is_err()
         || self.positions.admitted.get(&constant).copied() == ret.ok()
         || self.crossing.binary_search_by_key(&constant, |&(member, _)| member).is_ok_and(|found| self.crossing.get(found).map(|&(_, kernel)| kernel) == ret.as_ref().ok().copied())
@@ -4736,8 +4736,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::returning_a_literal_lowers`
     /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
     /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
-    /// - witness: `native_formers::native_formers::empty_data_elimination_preserves_the_ambient_scope`
-    /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `tests::native_formers::empty_data_elimination_preserves_the_ambient_scope`
+    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
         captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) })],
         ensures: |ret| match held {
@@ -6304,7 +6304,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - hypothesis: L3 — a split reading each of three components crosses as
     ///   the binds that read them, and a split of the unit crosses as its body;
     ///   a wrong shift or order changes the kernel's verdict.
-    /// - witness: `native_formers::native_formers::a_split_crosses_as_its_projection_binds`
+    /// - witness: `tests::native_formers::a_split_crosses_as_its_projection_binds`
     #[spec(ensures: |ret| usize::from(arity) != 0_usize || ret == body)]
     fn split_reduct(
         &mut self,

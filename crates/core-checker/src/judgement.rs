@@ -3731,7 +3731,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
-    /// - witness: `native_formers::native_formers::record_width_depth_and_projection`
+    /// - witness: `tests::native_formers::record_width_depth_and_projection`
     #[spec(ensures: |ret| match ret {
         | Ok(Step::Ascend(produced)) => matches!((goal, produced),
             (Goal::Value { direction: Direction::Synthesise, .. }, Produced::ValueType(_))
@@ -4762,7 +4762,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
-    /// - witness: `native_formers::native_formers::a_composite_along_a_returned_path_cancels_in_both_checkers`
+    /// - witness: `tests::native_formers::a_composite_along_a_returned_path_cancels_in_both_checkers`
     /// - witness: `judgement::tests::an_ascription_checks_its_body_and_synthesises_its_type`
     #[spec(
         captures: before = self.frames.len(),
@@ -5046,7 +5046,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::an_introduction_against_the_wrong_former_is_a_shape_mismatch`
     /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
-    /// - witness: `recursive_data::recursive_data::a_fixpoint_checks_at_every_computation_type`
+    /// - witness: `tests::recursive_data::a_fixpoint_checks_at_every_computation_type`
     /// - witness: `recursion::tests::a_recursion_descends_on_its_first_parameter`
     #[spec(
         captures: before = self.frames.len(),
@@ -8016,7 +8016,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   read the path at the circle's point and replay in the kernel; the
     ///   composite set against reflexivity is refused at its endpoints, where
     ///   reading the words as their own type would refuse by shape.
-    /// - witness: `native_formers::native_formers::a_word_written_as_a_transport_path_is_that_path_in_both_checkers_397`
+    /// - witness: `tests::native_formers::a_word_written_as_a_transport_path_is_that_path_in_both_checkers_397`
     #[spec(ensures: |ret| match ret {
         | Ok(PathReading::Known { carrier, left, right }) => self.context.arena().value_type(carrier).is_some()
             && self.context.arena().value(left).is_some()

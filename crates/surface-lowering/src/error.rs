@@ -425,7 +425,7 @@ impl fmt::Display for FormFault
 /// - hypothesis: L3 — an opaque operator component is asserted as a typed
 ///   refusal; a transparent one and a manifest component are admitted instead
 ///   of conflated with it.
-/// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
+/// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AscriptionForm
 {
@@ -562,8 +562,8 @@ impl fmt::Display for CrossedExit
 /// # Adequacy
 /// - hypothesis: L3 — a family binding too few parameters and one binding a
 ///   parameter at another sort are refused with their faults.
-/// - witness: `modules::modules::models::a_family_of_the_wrong_telescope_is_refused`
-/// - witness: `modules::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
+/// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
+/// - witness: `tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TelescopeFault
 {

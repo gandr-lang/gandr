@@ -113,7 +113,7 @@ pub struct Move<'text>
 /// # Adequacy
 /// - hypothesis: L3 — a word of two letters spells as a right-nested cons, and
 ///   an applied constructor as its call.
-/// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+/// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Placement
 {
@@ -212,7 +212,7 @@ impl Borrow<str> for Name<'_>
     ///   spelling; arbitrary key sets and Unicode ordering are not enumerated.
     ///   The predicate asks for the held text itself, by address and length,
     ///   which implies equal text without reading it.
-    /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
+    /// - witness: `tests::goldens::a_binder_skips_the_names_the_type_mentions`
     #[spec(ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(self.0)))]
     #[inline]
     fn borrow(&self) -> &str
@@ -309,9 +309,9 @@ impl From<Component> for usize
 ///   variant selection and child order, while malformed table fixtures expose
 ///   misplaced and dangling children. Provenance across arbitrary source
 ///   instances is outside the observations available on a former.
-/// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-/// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
-/// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
 #[derive(Clone, Copy, Debug)]
 pub enum Former<'source, Node>
 {
@@ -958,9 +958,9 @@ pub trait Source
     ///   constructor spellings, dangling handles and misplaced children. These
     ///   distinguish wrong node classification and absence handling for the
     ///   supplied readers, not arbitrary trait implementations.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
-    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
     fn read(
         &self,
         node: Self::Node,
@@ -997,10 +997,10 @@ pub trait Source
     ///   arity one to three and of records of two fields, in order, and none
     ///   past the arity or for another former; a reversed or shifted component
     ///   changes a golden spelling.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::n_ary_products_and_sums_spell_between_their_braces`
-    /// - witness: `goldens::tests::session_types_spell_their_protocol_and_payloads`
-    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::n_ary_products_and_sums_spell_between_their_braces`
+    /// - witness: `tests::goldens::session_types_spell_their_protocol_and_payloads`
+    /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
     /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
     fn component(
         &self,
@@ -1033,8 +1033,8 @@ pub trait Source
     /// - hypothesis: L3 — core-backed records of two fields spell each field
     ///   under its own label, and a handler's clauses each under its operation;
     ///   a shifted or swapped label changes the golden.
-    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     fn label(
         &self,
         node: Self::Node,
@@ -1062,7 +1062,7 @@ pub trait Source
     /// - hypothesis: L3 — a data case over a family of a nullary and a unary
     ///   constructor spells each branch under its constructor's pattern, its
     ///   field bound; a shifted tag changes the golden.
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     #[inline]
     fn constructor(
         &self,
@@ -1094,7 +1094,7 @@ pub trait Source
     /// - hypothesis: L3 — a type under two named context binders and one
     ///   unnamed spells each free variable by its own binder's name and the
     ///   unnamed one `?`; reversed context order changes the golden.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
     #[inline]
     fn context(&self) -> &[Option<Name<'_>>]
     {
@@ -1122,7 +1122,7 @@ pub trait Source
     /// - hypothesis: L3 — a capability in the region of a named scope spells
     ///   `at` that scope's name, and one past the named scopes spells without
     ///   it, approximately.
-    /// - witness: `goldens::tests::a_scoped_capability_names_its_scope_400`
+    /// - witness: `tests::goldens::a_scoped_capability_names_its_scope_400`
     #[inline]
     fn regions(&self) -> &[Option<Name<'_>>]
     {
@@ -1149,7 +1149,7 @@ pub trait Source
     /// # Adequacy
     /// - hypothesis: L3 — a dependent arrow whose binder the source names
     ///   spells that name at the binder and at every occurrence.
-    /// - witness: `goldens::tests::an_arrow_binder_spells_as_the_source_names_it`
+    /// - witness: `tests::goldens::an_arrow_binder_spells_as_the_source_names_it`
     #[inline]
     fn arrow_binder(
         &self,

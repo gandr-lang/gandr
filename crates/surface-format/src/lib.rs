@@ -341,17 +341,17 @@ pub enum Layout
 ///   source's digest and material; goldens fix each layout rule at a narrow and
 ///   a wide page, and exact texts fix the top-level joins, the verbatim forms,
 ///   a repaired form, the line ending and the pieces.
-/// - witness: `format::tests::sweeps::every_source_keeps_its_meaning_and_formats_once`
-/// - witness: `format::tests::a_block_breaks_one_item_per_line_when_it_does_not_fit`
-/// - witness: `format::tests::top_level_forms_and_comments_keep_their_lines`
-/// - witness: `format::tests::a_repaired_form_is_copied_as_written`
-/// - witness: `format::tests::the_source_line_ending_is_kept`
-/// - witness: `format::tests::pieces_place_each_top_level_form`
-/// - witness: `format::tests::a_form_written_against_the_one_before_starts_its_own_line`
-/// - witness: `format::tests::a_separator_written_on_the_next_line_joins_its_statement`
-/// - witness: `format::tests::a_source_split_evenly_between_endings_keeps_line_feeds`
-/// - witness: `format::tests::an_explicit_source_keeps_its_explicit_spelling`
-/// - witness: `format::tests::a_form_the_source_does_not_declare_is_refused`
+/// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
+/// - witness: `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`
+/// - witness: `tests::format::top_level_forms_and_comments_keep_their_lines`
+/// - witness: `tests::format::a_repaired_form_is_copied_as_written`
+/// - witness: `tests::format::the_source_line_ending_is_kept`
+/// - witness: `tests::format::pieces_place_each_top_level_form`
+/// - witness: `tests::format::a_form_written_against_the_one_before_starts_its_own_line`
+/// - witness: `tests::format::a_separator_written_on_the_next_line_joins_its_statement`
+/// - witness: `tests::format::a_source_split_evenly_between_endings_keeps_line_feeds`
+/// - witness: `tests::format::an_explicit_source_keeps_its_explicit_spelling`
+/// - witness: `tests::format::a_form_the_source_does_not_declare_is_refused`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
 pub fn format(
@@ -626,8 +626,8 @@ fn material<'leaves, 'source>(
 /// - hypothesis: L3 — a source declaring the explicit form keeps it under
 ///   either option, after an import as at its first line; the same source with
 ///   no declaration is refused a form.
-/// - witness: `format::tests::an_explicit_source_keeps_its_explicit_spelling`
-/// - witness: `format::tests::a_form_the_source_does_not_declare_is_refused`
+/// - witness: `tests::format::an_explicit_source_keeps_its_explicit_spelling`
+/// - witness: `tests::format::a_form_the_source_does_not_declare_is_refused`
 fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
 {
     let tokens: Vec<&str> = leaves

@@ -713,7 +713,7 @@ impl AcyclicityMaintenance
     /// - witness: `maintenance::tests::a_violating_edge_is_repaired_locally`
     /// - witness: `maintenance::tests::a_cycle_closing_edge_is_refused_with_its_walk`
     /// - witness: `maintenance::tests::a_self_loop_is_refused`
-    /// - witness: `dynamic_graphs::differential::tests::incremental_verdicts_equal_the_batch_answer`
+    /// - witness: `tests::differential::tests::incremental_verdicts_equal_the_batch_answer`
     #[inline]
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |verdict| match *verdict {
         EdgeVerdict::Admitted => self.compare(edge.source, edge.target) == Ok(Ordering::Less),

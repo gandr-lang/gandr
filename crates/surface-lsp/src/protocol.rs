@@ -440,7 +440,7 @@ impl TryFrom<f64> for QuietSetting
     /// # Adequacy
     /// - hypothesis: L3 — a configuration naming `0.05` holds for fifty
     ///   milliseconds and one naming `0` holds nothing.
-    /// - witness: `session::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+    /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
     #[spec(ensures: |ret| ret.is_err() || seconds >= 0.0_f64)]
     #[inline]
     fn try_from(seconds: f64) -> Result<Self, Self::Error>
@@ -594,7 +594,7 @@ impl InitializeResult
     ///   against a pinned supported-method golden; changed encoding, sync mode,
     ///   token legend or capability flags change that observation.
     /// - witness: `server::tests::initialize_advertises_the_token_legend`
-    /// - witness: `capabilities::capabilities::advertised_capabilities_name_the_token_legend`
+    /// - witness: `tests::capabilities::advertised_capabilities_name_the_token_legend`
     #[spec(ensures: |ret|
         matches!(ret.capabilities.position_encoding.as_bytes(), &[b'u', b't', b'f', b'-', b'1', b'6'])
             && ret.capabilities.text_document_sync.open_close

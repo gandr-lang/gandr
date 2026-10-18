@@ -10,6 +10,13 @@ license.workspace = true
 keywords = ["gandr", "transcript", "tui"]
 categories = ["development-tools"]
 publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 # The face drives the read-evaluate loop, which needs its grammar to start and
 # renders refusals plainly; it paints the loop's transcript rows over the

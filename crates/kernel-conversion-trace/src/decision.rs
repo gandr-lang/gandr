@@ -77,7 +77,7 @@
 ///   reduction moved to the empty side. These observers separate side loss and
 ///   side reversal for the bounded fixtures, not arbitrary consumer arenas.
 /// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
-/// - witness: `differential::differential::a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with`
+/// - witness: `tests::differential::a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ConversionSide
 {
@@ -180,8 +180,8 @@ impl From<SubgoalPosition> for u32
 ///   deduplication and reordering. L2 — replay recomputes the verdict and
 ///   refuses malformed branches on the bounded layered-term workload.
 /// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
-/// - witness: `differential::differential::a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with`
-/// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
+/// - witness: `tests::differential::a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with`
+/// - witness: `tests::differential::the_kernel_replays_the_trace_without_searching`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ConversionDecision<Id>
 {

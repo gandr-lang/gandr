@@ -1698,8 +1698,8 @@ fn head_term(
 /// - witness: `readback::tests::an_opened_closure_reports_the_evaluations_own_fault`
 /// - witness: `readback::tests::a_readback_declines_on_fuel_rather_than_running_on`
 /// - witness: `readback::tests::one_budget_bounds_the_readback_and_the_evaluations_it_drives`
-/// - witness: `readback_terms::readback_terms::an_unreduced_term_reads_back_as_the_id_it_was_evaluated_from`
-/// - witness: `deep_readback::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
+/// - witness: `tests::readback_terms::an_unreduced_term_reads_back_as_the_id_it_was_evaluated_from`
+/// - witness: `tests::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all, fields(fuel = u32::from(fuel), unfolding = matches!(mode, ReadbackMode::Unfolding))))]
 #[inline]
 #[spec(ensures: |ret| ret.is_err()
@@ -1767,11 +1767,11 @@ pub fn readback_value(
 /// - witness: `readback::tests::a_spine_that_misses_its_polarity_is_refused`
 /// - witness: `readback::tests::the_binder_ceiling_is_refused_rather_than_reused`
 /// - witness: `readback::tests::one_budget_bounds_the_readback_and_the_evaluations_it_drives`
-/// - witness: `readback_terms::readback_terms::a_redex_normalizes_to_the_term_written_out_by_hand`
-/// - witness: `readback_terms::readback_terms::a_redex_under_a_binder_normalizes_to_the_term_written_out_by_hand`
-/// - witness: `readback_terms::readback_terms::a_case_that_fires_normalizes_to_the_branch_it_took`
-/// - witness: `readback_terms::readback_terms::a_stuck_elimination_normalizes_to_the_spine_written_out_by_hand`
-/// - witness: `deep_readback::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
+/// - witness: `tests::readback_terms::a_redex_normalizes_to_the_term_written_out_by_hand`
+/// - witness: `tests::readback_terms::a_redex_under_a_binder_normalizes_to_the_term_written_out_by_hand`
+/// - witness: `tests::readback_terms::a_case_that_fires_normalizes_to_the_branch_it_took`
+/// - witness: `tests::readback_terms::a_stuck_elimination_normalizes_to_the_spine_written_out_by_hand`
+/// - witness: `tests::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all, fields(fuel = u32::from(fuel), unfolding = matches!(mode, ReadbackMode::Unfolding))))]
 #[inline]
 #[spec(ensures: |ret| ret.is_err()
@@ -1961,8 +1961,8 @@ pub fn read_written(
 /// - witness: `readback::tests::a_readback_declines_on_fuel_rather_than_running_on`
 /// - witness: `readback::tests::a_reduced_value_is_rebuilt_from_the_domain`
 /// - witness: `readback::tests::one_budget_bounds_the_readback_and_the_evaluations_it_drives`
-/// - witness: `deep_readback::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
-/// - witness: `deep_readback::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
+/// - witness: `tests::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
+/// - witness: `tests::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
 #[spec(
     requires: !machine.tasks.is_empty(),
     ensures: |ret| ret.is_err() || machine.tasks.is_empty(),

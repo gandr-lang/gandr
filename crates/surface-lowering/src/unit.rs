@@ -128,7 +128,7 @@ impl fmt::Display for SourceIndex
 /// - hypothesis: L3 — two byte-identical attributed forms in two sources of one
 ///   unit are filed apart and each settles under its own expectation.
 /// - witness: `attribute::tests::two_declarations_keep_separate_entry_lists`
-/// - witness: `namespace::namespace::one_form_in_two_sources_files_its_attributes_apart_596`
+/// - witness: `tests::namespace::one_form_in_two_sources_files_its_attributes_apart_596`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct UnitKey
 {

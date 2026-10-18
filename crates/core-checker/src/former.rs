@@ -144,7 +144,7 @@ use crate::formation::level_of;
 ///
 /// # Adequacy
 /// - hypothesis: L3 — both universe sorts and a non-universe separate the rule.
-/// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
+/// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|level| matches!(context.arena().value_type(kind), Some(ValueType::Universe { sort: Sort::Ground(GroundSort::Value), level: held }) if held == level)) == ret.is_ok())]
 pub fn kind_level(
     context: &CheckingContext<'_>,
@@ -191,10 +191,10 @@ pub fn kind_level(
 /// - hypothesis: L3 — dependent parameters, an invalid field, an excessive
 ///   field universe, admitted self references and refused occurrences
 ///   distinguish the admission premises.
-/// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
-/// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
-/// - witness: `recursive_data::recursive_data::readmission_agrees_with_the_checker_on_every_occurrence_class`
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`
+/// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
+/// - witness: `tests::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::readmission_agrees_with_the_checker_on_every_occurrence_class`
+/// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth
     && (matches!(context.data_in_scope(position), Maybe::Absent(_))
         || context.data_signatures().contains_key(&position)
@@ -280,8 +280,8 @@ pub fn form_signature(
 /// - hypothesis: L3 — a rule placing a constructor of the family at a field of
 ///   another type is refused by name in both checkers, and the circle's
 ///   cancellations admit.
-/// - witness: `native_formers::native_formers::a_misplaced_rule_is_refused_in_both_checkers`
-/// - witness: `native_formers::native_formers::a_presented_word_meets_its_reduced_word_in_both_checkers`
+/// - witness: `tests::native_formers::a_misplaced_rule_is_refused_in_both_checkers`
+/// - witness: `tests::native_formers::a_presented_word_meets_its_reduced_word_in_both_checkers`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::RuleNotPresentable { .. })))]
 fn present(
     context: &CheckingContext<'_>,
@@ -317,9 +317,9 @@ fn present(
 /// - hypothesis: L3 — as [`present`], and a fold's law reads each pattern
 ///   variable at its slot; a rule binding the second field of a pair over a
 ///   parameter is refused rather than read at the first field's scope.
-/// - witness: `native_formers::native_formers::a_misplaced_rule_is_refused_in_both_checkers`
-/// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
-/// - witness: `native_formers::native_formers::a_rule_binding_a_dependent_field_is_refused_in_both_checkers`
+/// - witness: `tests::native_formers::a_misplaced_rule_is_refused_in_both_checkers`
+/// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+/// - witness: `tests::native_formers::a_rule_binding_a_dependent_field_is_refused_in_both_checkers`
 #[spec(ensures: |ret| ret.len() == signature.constructors().len())]
 pub fn slot_table(
     arena: &gandr_core_term::CoreArena,
@@ -396,7 +396,7 @@ quenchant_shape::reason_enum! {
 ///   distinct constructors and over the circle's loop, a definition, against
 ///   its empty word check, and over `S(P(Z))` against `Z` and over an open
 ///   endpoint are refused by name, in both checkers.
-/// - witness: `native_formers::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
+/// - witness: `tests::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::NotADataType(_) | CheckRefusal::Undecided { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::OutOfFragment { .. })))]
 pub fn apart(
     context: &mut CheckingContext<'_>,
@@ -446,7 +446,7 @@ pub fn apart(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`apart`].
-/// - witness: `native_formers::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
+/// - witness: `tests::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
 #[spec(captures: before = fields.len(), ensures: |ret| matches!(ret, TermReading::Constructor(_)) || fields.len() == before)]
 fn node(
     (arena, definitions): (&gandr_core_term::CoreArena, &crate::code::CodeDefinitions),
@@ -552,7 +552,7 @@ pub fn form_abstract(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — equal carriers at distinct positions stay nominal.
-/// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
+/// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|signature| matches!(context.arena().value_type(datatype), Some(ValueType::Data { declaration, arguments }) if matches!(context.data_in_scope(*declaration), Maybe::Present(ref held) if held == signature) && signature.parameters().len() == arguments.len())) == ret.is_ok())]
 pub fn signature(
     context: &mut CheckingContext<'_>,
@@ -589,7 +589,7 @@ pub fn signature(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two open arguments distinguish reversal and capture.
-/// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
+/// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
 #[spec(ensures: |ret| usize::from(prefix) != 0 || ret == Ok(subject))]
 pub fn instantiate(
     context: &mut CheckingContext<'_>,
@@ -799,7 +799,7 @@ pub fn field_outside(
 /// - hypothesis: L3 — dependent results and unequal fields separate motive
 ///   substitution, binder shifting and field order; a result naming its field
 ///   and one naming none separate the Π from the plain arrow.
-/// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
+/// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
 /// - witness: `former::tests::a_branch_binds_a_field_only_where_its_result_names_it`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().comp_type(id).is_some()) == ret.is_ok())]
 pub fn branch_type(

@@ -72,7 +72,7 @@ impl core::fmt::Display for CommentError
     /// # Adequacy
     /// - hypothesis: L3 — every variant's rendering names its input; a dropped
     ///   field or a swapped variant changes the asserted line.
-    /// - witness: `comments::error::tests::every_refusal_names_its_input`
+    /// - witness: `tests::comments::error::tests::every_refusal_names_its_input`
     #[inline]
     fn fmt(
         &self,

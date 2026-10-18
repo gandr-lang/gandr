@@ -33,8 +33,8 @@ impl Erasure<'_, '_>
     /// - hypothesis: L3 — parameterized constructors, dependent cases and
     ///   nested records distinguish missing children and changed order after
     ///   admission.
-    /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
-    /// - witness: `native_formers::native_formers::record_width_depth_and_projection`
+    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `tests::native_formers::record_width_depth_and_projection`
     #[spec(ensures: |ret| ret.is_err() || !matches!(ret, Ok(Step::Descend(_))) || !self.frames.is_empty())]
     pub(super) fn prepare_native(
         &mut self,
@@ -230,8 +230,8 @@ impl Erasure<'_, '_>
     /// - hypothesis: L3 — admission after a refused declaration changes kernel
     ///   positions; nominal confusion, lost labels and lost motives are exposed
     ///   by constructor and projection judgments over the exported artifact.
-    /// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
-    /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(ensures: |ret| match ret {
         Ok(Step::Ascend(AnyNode::Value(image))) => matches!(root,CoreNode::Term(TermNode::Value(at)) if self.reached().values.get(&at) == Some(&Image::Erased(image))),
         Ok(Step::Ascend(AnyNode::Computation(image))) => matches!(root,CoreNode::Term(TermNode::Computation(at)) if self.reached().computations.get(&at) == Some(&Image::Erased(image))),

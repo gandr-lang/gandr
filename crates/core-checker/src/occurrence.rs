@@ -33,7 +33,7 @@
 //! `OccurrenceSite` and each classified as malformed source. A declaration the
 //! checker admits, the kernel admits on readmission; one it refuses never
 //! reaches the bridge. Witness:
-//! `recursive_data::recursive_data::readmission_agrees_with_the_checker_on_every_occurrence_class`.
+//! `tests::recursive_data::readmission_agrees_with_the_checker_on_every_occurrence_class`.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -274,8 +274,8 @@ pub enum Stratification
 /// # Adequacy
 /// - hypothesis: L3 — a family with a negative field below its stage is
 ///   stratified, and a list's element parameter is strictly positive.
-/// - witness: `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`
-/// - witness: `recursive_data::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
+/// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Accessibility
 {
@@ -395,8 +395,8 @@ enum Uniformity
 /// # Adequacy
 /// - hypothesis: L3 — a lone family and a mutual block of a family and its
 ///   decoder are each walked by the block they are admitted in.
-/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Block
 {
@@ -543,8 +543,8 @@ struct Scope
 ///   of order is non-uniform; `List A` applied to `A`, directly and under a
 ///   function field's binder, is uniform, and so is its tail past the head's
 ///   binder.
-/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
-/// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `tests::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
 #[spec(ensures: |ret| ret == Uniformity::NonUniform || arguments.len() == scope.telescope.0)]
 fn uniform(
     arena: &CoreArena,
@@ -657,7 +657,7 @@ const fn found(
 /// # Adequacy
 /// - hypothesis: L3 — a list's element stands only at a field's own type and
 ///   stays strictly positive; a parameter under a function's domain does not.
-/// - witness: `recursive_data::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
+/// - witness: `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
 fn mark(
     parameters: &mut [Variance],
     index: DeBruijnIndex,
@@ -919,14 +919,14 @@ impl Extend<(AnyNode, Reach)> for Pending
 ///   positive element finds nothing; a decoder named in a field of its mutual
 ///   block finds nothing, and a family named under a domain through a
 ///   definition of the block is negative.
-/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
-/// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
-/// - witness: `recursive_data::recursive_data::a_field_naming_its_own_or_a_later_position_is_refused_by_name`
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
-/// - witness: `recursive_data::recursive_data::a_definition_of_the_block_is_read_through_602`
-/// - witness: `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`
-/// - witness: `recursive_data::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
-/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `tests::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::a_field_naming_its_own_or_a_later_position_is_refused_by_name`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::a_definition_of_the_block_is_read_through_602`
+/// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
+/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|later| *later >= block.end))]
 fn worst<Earlier>(
     arena: &CoreArena,
@@ -1554,13 +1554,13 @@ const fn refusal(
 ///   a universe naming its decoder in a field is admitted with the decoder in
 ///   its block; a family named under a domain through a definition of its block
 ///   is refused.
-/// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
-/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
-/// - witness: `recursive_data::recursive_data::a_definition_of_the_block_is_read_through_602`
-/// - witness: `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`
-/// - witness: `recursive_data::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
-/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `tests::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::a_definition_of_the_block_is_read_through_602`
+/// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
+/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(|refusal| matches!(refusal,
     CheckRefusal::CrossBlockReference { .. }
     | CheckRefusal::NegativeOccurrence(_)
@@ -1651,7 +1651,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a lone family reaches one past itself, and a universe
 ///   naming its decoder reaches one past the decoder.
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(ensures: |ret| ret > position)]
 pub fn reach(
     arena: &CoreArena,

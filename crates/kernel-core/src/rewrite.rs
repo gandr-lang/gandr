@@ -606,7 +606,7 @@ enum RewriteTask
 /// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
-/// - witness: `adversarial_depth::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
+/// - witness: `tests::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
 #[spec(ensures: |ret| (amount.0 != 0 || ret == subject)
     && if arena.value_type(subject).is_some() {
         arena.value_type(ret).is_some()
@@ -808,7 +808,7 @@ where
 /// - witness: `rewrite::tests::a_closed_type_instantiates_to_itself`
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
-/// - witness: `adversarial_depth::adversarial_depth::the_rewrite_machines_are_total_on_a_chain_deep_term`
+/// - witness: `tests::adversarial_depth::the_rewrite_machines_are_total_on_a_chain_deep_term`
 #[spec(ensures: |ret| arena.comp_type(subject).map_or(ret == subject, |source|
     matches!(source, &CompType::Element { .. }) || arena.comp_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
@@ -940,7 +940,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a list's tail instantiated past the head's binder reads
 ///   the element argument; a wrong depth reads the head instead.
-/// - witness: `recursive_data::recursive_data::dependent_fields_are_admitted`
+/// - witness: `tests::recursive_data::dependent_fields_are_admitted`
 #[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
     matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
@@ -1109,7 +1109,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — the loop obligation over `a` held at `b = Base` leaves
 ///   the obligation over `a` alone; a wrong index holds `a` instead.
-/// - witness: `native_formers::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
+/// - witness: `tests::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
 #[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
     arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
 pub(crate) fn substitute_computation_at<M>(
@@ -1218,7 +1218,7 @@ where
 ///   unreadable roots: exact ids and watermarks separate needless minting and
 ///   invalid memo aliases.
 /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
-/// - witness: `adversarial_depth::adversarial_depth::the_rewrite_machines_are_total_on_a_chain_deep_term`
+/// - witness: `tests::adversarial_depth::the_rewrite_machines_are_total_on_a_chain_deep_term`
 /// - witness: `rewrite::tests::a_zero_shift_reuses_its_code_carrying_subject`
 /// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
 /// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`

@@ -768,7 +768,7 @@ impl<'session> Judgement<'session>
     /// - hypothesis: L3 — a universe whose field decodes a later definition of
     ///   its block reaches the decoder's stage check rather than an unbound
     ///   constant.
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
     #[spec(ensures: |ret| match (self.block, ret.block) {
         (Block::Mutual { members, .. }, Block::Mutual { members: kept, .. }) => members.len() == kept.len(),
         _ => true,
@@ -800,7 +800,7 @@ impl<'session> Judgement<'session>
     /// # Adequacy
     /// - hypothesis: L3 — a universe's family and its decoder each resolve in
     ///   the block, and the position past it does not.
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
     #[spec(ensures: |ret| match ret {
         Maybe::Present((_, membership)) => membership != occurrence::Membership::Other,
         Maybe::Absent(_) => true,
@@ -957,7 +957,7 @@ enum CodeObligation
 /// # Adequacy
 /// - hypothesis: L3 — a universe whose field decodes a later definition of its
 ///   block reaches the decoder's stage check on the drained code.
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole`
+/// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Owing
 {
@@ -1640,7 +1640,7 @@ impl Produced
     /// # Adequacy
     /// - hypothesis: L3 — a formation answer cannot satisfy a term goal; the
     ///   mirror-plane poison witness observes recomputation and the verdict.
-    /// - witness: `acceptance::acceptance::a_formation_shaped_answer_in_a_term_support_is_declined_and_recomputed`
+    /// - witness: `tests::acceptance::a_formation_shaped_answer_in_a_term_support_is_declined_and_recomputed`
     ///
     /// [`Absent::Formation`]: term_outcome::Absent::Formation
     #[spec(ensures: |ret| matches!((outcome, &ret),
@@ -2321,7 +2321,7 @@ fn strengthened(
 ///   field names its decoder at the decoder's declared type.
 /// - witness: `env::tests::a_definition_referencing_a_prior_one_checks`
 /// - witness: `env::tests::a_forward_constant_reference_is_unbound`
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
 ///
 /// [`Absent::Unadmitted`]: constant_type::Absent::Unadmitted
 #[spec(ensures: |ret| judgement.entries.get(usize::from(index)).is_none_or(
@@ -5316,7 +5316,7 @@ pub fn check_declaration(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a decoder's type over its universe forms in the block.
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
 #[spec(captures: entry_mark = arena.watermark(), ensures:
     entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark)]
 pub(crate) fn form_declared(
@@ -5393,11 +5393,11 @@ pub(crate) fn form_declared(
 ///   typing, and poisoned histories change answers on both planes,
 ///   demonstrating why the per-call history requirement is part of the
 ///   contract.
-/// - witness: `acceptance::acceptance::memoized_checking_agrees_with_memoless_checking`
-/// - witness: `acceptance::acceptance::a_poisoned_term_entry_turns_a_refusal_into_an_acceptance`
-/// - witness: `acceptance::acceptance::a_poisoned_type_entry_turns_admission_into_a_universe_refusal`
+/// - witness: `tests::acceptance::memoized_checking_agrees_with_memoless_checking`
+/// - witness: `tests::acceptance::a_poisoned_term_entry_turns_a_refusal_into_an_acceptance`
+/// - witness: `tests::acceptance::a_poisoned_type_entry_turns_admission_into_a_universe_refusal`
 /// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
-/// - witness: `recursive_data::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
 #[spec(captures: [entry_mark = arena.watermark(),
     entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
     entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
@@ -5717,7 +5717,7 @@ where
 ///   showing that a resource refusal is not an ill-typedness judgement.
 /// - witness: `check::tests::a_dependent_identity_checks_through_its_codes`
 /// - witness: `check::tests::a_code_that_is_not_of_its_declared_universe_refuses`
-/// - witness: `acceptance::acceptance::draining_code_obligations_reaches_the_checking_machine`
+/// - witness: `tests::acceptance::draining_code_obligations_reaches_the_checking_machine`
 /// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
 /// - witness: `element_identity::tests::native_evidence_checks_against_the_fold_fibre`
 #[spec(captures: [entry_mark = arena.watermark(), entry_empty = owed.is_empty(),

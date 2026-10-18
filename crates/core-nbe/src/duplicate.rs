@@ -258,16 +258,16 @@ pub enum DuplicationFault
 ///   duplicated inside a small stack. Reusing the input root or retaining
 ///   scratch on refusal violates the predicate; changing a former or child
 ///   order changes the erasure oracle.
-/// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-/// - witness: `duplication::duplication::a_copying_duplicate_is_the_expansion`
+/// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+/// - witness: `tests::duplication::a_copying_duplicate_is_the_expansion`
 /// - witness:
-///   `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+///   `tests::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
 /// - witness:
-///   `duplication::duplication::a_spinal_duplicate_distributes_an_abstraction_over_its_ribs`
+///   `tests::duplication::a_spinal_duplicate_distributes_an_abstraction_over_its_ribs`
 /// - witness:
-///   `duplication::duplication::a_refused_duplication_leaves_the_overlay_as_it_found_it`
+///   `tests::duplication::a_refused_duplication_leaves_the_overlay_as_it_found_it`
 /// - witness:
-///   `teardown::teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack`
+///   `tests::teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack`
 #[inline]
 #[spec(
     captures: entry = overlay.watermark(),
@@ -307,8 +307,8 @@ pub fn duplicate_value(
 ///   twice, read off the evaluator's step count. Reusing the input root or
 ///   retaining scratch on refusal violates the predicate; changing a former or
 ///   child order changes the erasure oracle.
-/// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-/// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+/// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+/// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
 #[inline]
 #[spec(
     captures: entry = overlay.watermark(),
@@ -346,9 +346,9 @@ pub fn duplicate_computation(
 /// - hypothesis: L1/L3 — failing to roll back a partial walk or changing its
 ///   root family violates the predicate; erasure and expansion witnesses
 ///   distinguish a valid but incorrect reconstruction.
-/// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-/// - witness: `duplication::duplication::a_copying_duplicate_is_the_expansion`
-/// - witness: `duplication::duplication::a_refused_duplication_leaves_the_overlay_as_it_found_it`
+/// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+/// - witness: `tests::duplication::a_copying_duplicate_is_the_expansion`
+/// - witness: `tests::duplication::a_refused_duplication_leaves_the_overlay_as_it_found_it`
 #[spec(
     captures: entry = overlay.watermark(),
     ensures: |ret| ret.map_or_else(|_| overlay.watermark() == entry, |rebuilt| rebuilt != root && core::mem::discriminant(&rebuilt) == core::mem::discriminant(&root) && overlay.validate(rebuilt).is_ok())
@@ -454,7 +454,7 @@ impl Under
     ///   omitting a branch binder changes the survey witness. The erasure
     ///   oracle covers the remaining former orderings.
     /// - witness: `duplicate::tests::surveys_lower_only_the_binders_above_each_child`
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
     #[spec(
         ensures: |ret| {
             let child = |node, binders| Some(Child { node, binders });
@@ -650,7 +650,7 @@ fn innermost(
 ///   intuitionistic changes the independent boundary witness; the erasure
 ///   property observes the resulting rib placement.
 /// - witness: `duplicate::tests::surveys_lower_only_the_binders_above_each_child`
-/// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+/// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |reached| reached.contains_key(&root) && reached.keys().all(|node| overlay.shape(*node).is_ok()))
 )]
@@ -798,8 +798,8 @@ enum LegShape
 /// - hypothesis: L3 — classifying a thunk over a return as an abstraction, or
 ///   missing a bare lambda, changes the chosen treatment and the witnessed rib
 ///   counts.
-/// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
-/// - witness: `duplication::duplication::a_spinal_duplicate_distributes_an_abstraction_over_its_ribs`
+/// - witness: `tests::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+/// - witness: `tests::duplication::a_spinal_duplicate_distributes_an_abstraction_over_its_ribs`
 #[spec(
     ensures: |ret| (ret == LegShape::Abstraction) == match leg {
         OverlayId::Value(id) => overlay.value(id).is_some_and(|held| match *held {
@@ -845,9 +845,9 @@ fn leg_shape(
 /// - hypothesis: L3 — treating a whole leg like an abstraction or copying a rib
 ///   in the spinal stance changes the measured expansion or retained-share
 ///   shape.
-/// - witness: `duplication::duplication::a_copying_duplicate_is_the_expansion`
-/// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
-/// - witness: `duplication::duplication::a_spinal_duplicate_distributes_an_abstraction_over_its_ribs`
+/// - witness: `tests::duplication::a_copying_duplicate_is_the_expansion`
+/// - witness: `tests::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+/// - witness: `tests::duplication::a_spinal_duplicate_distributes_an_abstraction_over_its_ribs`
 #[spec(
     ensures: |ret| ret == match shape {
         LegShape::Whole => if policy.copies(SharedPart::Rib) == Copied::Copied { Treatment::Inline } else { Treatment::Keep },
@@ -1196,8 +1196,8 @@ impl Walk<'_>
     /// - hypothesis: L1/L3 — a leftover result or open frame violates the
     ///   completion predicate; the independent erasure walk rejects a completed
     ///   but wrong reconstruction, and the deep witness catches host recursion.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-    /// - witness: `teardown::teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack`
     /// - witness: `duplicate::tests::a_walk_that_ends_with_a_frame_open_is_refused`
     #[spec(
         ensures: |ret| ret.map_or(true, |rebuilt| self.tasks.is_empty() && self.results.is_empty() && self.frames.is_empty() && rebuilt != root && self.overlay.validate(rebuilt).is_ok())
@@ -1243,8 +1243,8 @@ impl Walk<'_>
     /// - hypothesis: L1/L3 — queued work must name existing input scopes,
     ///   cursors and nodes; the erasure and rib witnesses distinguish dropping,
     ///   swapping or executing a valid task at the wrong time.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     #[spec(
         captures: tasks = self.tasks.len(),
         ensures: |ret| ret.is_err() || (self.results.last().is_none_or(|node| self.overlay.shape(*node).is_ok()) && self.tasks.get(tasks..).is_some_and(|queued| queued.iter().all(|task| match *task {
@@ -1297,8 +1297,8 @@ impl Walk<'_>
     /// - hypothesis: L1/L3 — silently skipping a rebuilding entry violates the
     ///   progress predicate; keeping a rib on the spine or rebuilding a dry
     ///   node changes the erasure or the full-laziness step observation.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     #[spec(
         captures: [tasks = self.tasks.len(), results = self.results.len()],
         ensures: |ret| ret.is_err() || (self.tasks.len() >= tasks && self.results.len() >= results && (matches!(mode, Mode::Dry { .. } | Mode::DryPrefix { .. }) || self.tasks.len() > tasks || self.results.len() > results))
@@ -1363,7 +1363,7 @@ impl Walk<'_>
     /// - hypothesis: L3 — confusing an inner share with an outer one, or
     ///   changing the binder index used by the rib test, changes a
     ///   classification and the observed maximal-rib sharing.
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     /// - witness: `duplicate::tests::surveys_lower_only_the_binders_above_each_child`
     /// - witness: `duplicate::tests::a_share_is_spine_only_where_an_escape_reaches_inside_the_inner_frames`
     #[spec(
@@ -1408,7 +1408,7 @@ impl Walk<'_>
     /// - hypothesis: L1/L3 — copying the wrong core term, reusing the original
     ///   id or minting in the dry pass violates the predicate; the public
     ///   erasure oracle checks the retained opaque meaning.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
     #[spec(
         captures: [results = self.results.len(), entry = self.overlay.watermark()],
         ensures: |ret| match mode {
@@ -1475,7 +1475,7 @@ impl Walk<'_>
     /// - hypothesis: L1/L3 — resolving an occurrence in its use site rather
     ///   than its leg scope changes the queued task; treating a covered or
     ///   exhausted binding as usable changes the refusal.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
     /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
     #[spec(
         captures: [tasks = self.tasks.len(), results = self.results.len(), cursors = self.cursors.len()],
@@ -1550,8 +1550,8 @@ impl Walk<'_>
     /// - hypothesis: L3/L1 — scheduling the body before its leg, binding a dry
     ///   share as live or skipping the dry pass violates the task or scope
     ///   relation; the retained-share and rib witnesses distinguish treatments.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     #[spec(
         captures: [tasks = self.tasks.len(), scopes = self.scopes.len(), cursors = self.cursors.len(), results = self.results.len()],
         ensures: |ret| ret.is_err() || (self.results.len() == results && match mode {
@@ -1660,7 +1660,7 @@ impl Walk<'_>
     ///   retained refusal witness.
     /// - witness: `duplicate::tests::nullary_grafts_cannot_stand_in_an_abstraction_prefix`
     /// - witness: `duplicate::tests::surveys_lower_only_the_binders_above_each_child`
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
     #[spec(
         captures: tasks = self.tasks.len(),
         ensures: |ret| ret.is_err() || Under::of(self.overlay, node).is_ok_and(|under| {
@@ -1755,8 +1755,8 @@ impl Walk<'_>
     /// - hypothesis: L3/L1 — binding the share to an older frame or entering
     ///   its body in the outer scope violates the opening predicate and changes
     ///   the erased occurrence.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-    /// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
     #[spec(
         captures: [frames = self.frames.len(), scopes = self.scopes.len(), tasks = self.tasks.len()],
         ensures: |ret| ret.is_err() || (self.frames.len() == frames.saturating_add(1) && self.frames.last() == Some(&Taken::default()) && self.scopes.len() == scopes.saturating_add(1) && self.scopes.last() == Some(&ScopeCell { binding: Binding::Kept { frame: FrameIndex(frames) }, parent: scope }) && self.tasks.len() == tasks.saturating_add(1) && self.sharing(share).is_ok_and(|sharing| self.tasks.last() == Some(&Task::Enter { node: sharing.body, scope: ScopeId(scopes), mode })))
@@ -1799,8 +1799,8 @@ impl Walk<'_>
     /// - hypothesis: L3/L1 — reversing the leg and body, losing an occurrence
     ///   count or leaving the frame open changes the resulting share or its
     ///   validation.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-    /// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
     #[spec(
         captures: [results = self.results.len(), frames = self.frames.len(), body = self.results.last().copied(), leg = self.results.len().checked_sub(2).and_then(|offset| self.results.get(offset)).copied(), taken = self.frames.last().copied()],
         ensures: |ret| ret.is_err() || (self.results.len().saturating_add(1) == results && self.frames.len().saturating_add(1) == frames && body.zip(leg).zip(taken).is_some_and(|((body, leg), taken)| self.results.last().is_some_and(|shared| self.overlay.shape(*shared) == Ok(Shape::Shared(Sharing { body, leg, arity: ShareArity::from(taken.0) })))))
@@ -1835,7 +1835,7 @@ impl Walk<'_>
     /// - hypothesis: L3 — advancing the wrong cursor, preserving a stale arity
     ///   or wrapping a full rib counter changes the next frame or refusal.
     /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     #[spec(
         captures: [frames = self.frames.len(), held = self.cursors.get(cursor.0).copied()],
         ensures: |ret| held.and_then(|held| held.met.0.checked_add(1_u32).map(|met| Cursor { ribs: held.ribs, met: RibCount(met) })).map_or_else(
@@ -1879,8 +1879,8 @@ impl Walk<'_>
     /// - hypothesis: L3/L1 — closing ribs before rebuilding the body or using
     ///   the wrong first rib frame changes the pending tasks, bound scope and
     ///   full-laziness observation.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     #[spec(
         captures: [tasks = self.tasks.len(), scopes = self.scopes.len()],
         ensures: |ret| ret.is_err() || (self.tasks.len() == tasks.saturating_add(2) && self.tasks.get(tasks) == Some(&Task::CloseRibs(cursor)) && self.scopes.len() == scopes.saturating_add(1) && self.sharing(share).is_ok_and(|sharing| self.cursors.get(cursor.0).is_some_and(|held| self.scopes.last() == Some(&ScopeCell { binding: Binding::Distributed { leg: sharing.leg, scope, ribs: held.ribs }, parent: scope }) && self.tasks.last() == Some(&Task::Enter { node: sharing.body, scope: ScopeId(scopes), mode }))))
@@ -1933,8 +1933,8 @@ impl Walk<'_>
     /// - hypothesis: L3/L1 — omitting a rib share, closing an extra frame or
     ///   replacing the rebuilt body violates the nesting and stack relation;
     ///   erasure and measured sharing check leg order and arities.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     #[spec(
         captures: [results = self.results.len(), frames = self.frames.len(), held = self.cursors.get(cursor.0).copied(), body = self.results.last().copied()],
         ensures: |ret| ret.is_err() || held.is_some_and(|held| usize::try_from(held.met.0).is_ok_and(|count| {
@@ -1988,8 +1988,8 @@ impl Walk<'_>
     /// - hypothesis: L3/L1 — repeating or skipping a rib counter, or minting
     ///   its occurrence in the wrong family, violates the predicate; rib
     ///   positions and full-laziness observations check the frame chosen.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     #[spec(
         captures: [results = self.results.len(), held = self.cursors.get(cursor.0).copied()],
         ensures: |ret| ret.is_err() || (self.results.len() == results.saturating_add(1) && held.is_some_and(|held| self.cursors.get(cursor.0).is_some_and(|next| next.ribs == held.ribs && held.met.0.checked_add(1_u32) == Some(next.met.0)) && self.results.last().is_some_and(|pointed| core::mem::discriminant(pointed) == core::mem::discriminant(&node) && matches!(self.overlay.shape(*pointed), Ok(Shape::Bound(_))))))
@@ -2039,7 +2039,7 @@ impl Walk<'_>
     ///   or wrapping the occurrence counter changes the returned bound node or
     ///   refusal.
     /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
     #[spec(
         captures: taken = self.frames.get(frame.0).copied(),
         ensures: |ret| ret.map_or(true, |pointed| taken.is_some_and(|taken| self.frames.get(frame.0).is_some_and(|next| taken.0.checked_add(1_u32) == Some(next.0)) && core::mem::discriminant(&pointed) == core::mem::discriminant(&node) && self.overlay.shape(pointed).is_ok_and(|shape| match shape {
@@ -2111,8 +2111,8 @@ impl Walk<'_>
     /// - hypothesis: L3/L1 — exchanging the leg and body or losing the arity
     ///   violates the exact minted shape; erasure and retained-share counts
     ///   witness its consumer meaning.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-    /// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
     #[spec(
         ensures: |ret| ret.map_or(true, |shared| shared != body && core::mem::discriminant(&shared) == core::mem::discriminant(&body) && self.overlay.shape(shared) == Ok(Shape::Shared(Sharing { arity, leg, body })))
     )]
@@ -2161,7 +2161,7 @@ impl Walk<'_>
     ///   asymmetric former witness distinguish a changed constructor or
     ///   payload.
     /// - witness: `duplicate::tests::assembly_preserves_formers_payloads_and_child_order`
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
     #[spec(
         captures: [results = self.results.len(), top = [self.results.last().copied(), self.results.len().checked_sub(2).and_then(|offset| self.results.get(offset)).copied(), self.results.len().checked_sub(3).and_then(|offset| self.results.get(offset)).copied()]],
         ensures: |ret| ret.map_or(true, |rebuilt| rebuilt != node && core::mem::discriminant(&rebuilt) == core::mem::discriminant(&node) && Under::of(self.overlay, node).is_ok_and(|before| Under::of(self.overlay, rebuilt).is_ok_and(|after| {
@@ -2346,8 +2346,8 @@ impl Walk<'_>
     /// - hypothesis: L3/L1 — accepting a graft as a share or changing its
     ///   arity, leg or body changes the checked shape and the independently
     ///   erased result.
-    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
-    /// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+    /// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `tests::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
     #[spec(
         ensures: |ret| ret == self.overlay.shape(share).ok().and_then(|shape| match shape { Shape::Shared(sharing) => Some(sharing), Shape::Opaque(_) | Shape::Bound(_) | Shape::Grafted(_) => None }).ok_or(DuplicationFault::MachineInvariant)
     )]
@@ -2457,7 +2457,7 @@ impl Walk<'_>
     /// - hypothesis: L3 — aliasing another distribution or inheriting its met
     ///   count changes the next rib frame or overflow boundary.
     /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     #[spec(
         captures: count = self.cursors.len(),
         ensures: |ret| ret.0 == count && self.cursors.len() == count.saturating_add(1) && self.cursors.get(ret.0) == Some(&Cursor { ribs, met: RibCount::default() })
@@ -2515,7 +2515,7 @@ enum Below
 ///   admitting a nullary graft instead of refusing it violates the prefix
 ///   boundary.
 /// - witness: `duplicate::tests::nullary_grafts_cannot_stand_in_an_abstraction_prefix`
-/// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+/// - witness: `tests::duplication::spinal_duplication_is_invisible_to_erasure`
 #[spec(
     ensures: |ret| ret == match node {
         OverlayId::Value(id) => if matches!(overlay.value(id), Some(&ValueNode::Grafted(ValueGraft::Thunk(_)))) { Ok(Below::Lambda) } else { Err(DuplicationFault::MachineInvariant) },

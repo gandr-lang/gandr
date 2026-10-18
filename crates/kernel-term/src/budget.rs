@@ -74,10 +74,10 @@ use anodized::spec;
 ///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
 ///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
 /// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
-/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
-/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
-/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
-/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `tests::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `tests::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct GlobalIndex(pub u32);
@@ -129,10 +129,10 @@ impl From<GlobalIndex> for u32
 ///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
 ///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
 /// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
-/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
-/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
-/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
-/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `tests::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `tests::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EntryOffset(pub usize);
@@ -214,10 +214,10 @@ impl GlobalIndex
 ///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
 ///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
 /// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
-/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
-/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
-/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
-/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `tests::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `tests::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TableEntryCount(pub usize);
@@ -300,10 +300,10 @@ impl core::fmt::Display for TableEntryCount
 ///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
 ///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
 /// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
-/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
-/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
-/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
-/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `tests::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `tests::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ExpandedWork(pub u64);
@@ -419,10 +419,10 @@ impl ExpandedWork
 ///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
 ///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
 /// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
-/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
-/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
-/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
-/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `tests::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `tests::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LevelAtomOffset(pub u64);
@@ -474,8 +474,8 @@ impl From<LevelAtomOffset> for u64
 ///   the bound is permitted; reversing the comparison, changing strictness or
 ///   using the wrong axis is distinguished. The deepest small-stack round trip
 ///   witnesses retained headroom.
-/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
-/// - witness: `adversarial_depth::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
+/// - witness: `tests::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
 pub const MAX_EXPANDED_TERM_WORK: ExpandedWork = ExpandedWork(1 << 20);
 
 /// The cap on the number of subterm-table entries in an artifact, enforced as
@@ -499,8 +499,8 @@ pub const MAX_EXPANDED_TERM_WORK: ExpandedWork = ExpandedWork(1 << 20);
 ///   the bound is permitted; reversing the comparison, changing strictness or
 ///   using the wrong axis is distinguished. The deepest small-stack round trip
 ///   witnesses retained headroom.
-/// - witness: `sharing_format::sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over`
-/// - witness: `adversarial_depth::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
+/// - witness: `tests::sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
 pub const MAX_TABLE_ENTRIES: TableEntryCount = TableEntryCount(1 << 18);
 
 /// The cap on the artifact-total expanded tree work: the saturating sum over
@@ -524,8 +524,8 @@ pub const MAX_TABLE_ENTRIES: TableEntryCount = TableEntryCount(1 << 18);
 ///   the bound is permitted; reversing the comparison, changing strictness or
 ///   using the wrong axis is distinguished. The deepest small-stack round trip
 ///   witnesses retained headroom.
-/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
-/// - witness: `adversarial_depth::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
+/// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `tests::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
 pub const MAX_ARTIFACT_EXPANDED_WORK: ExpandedWork = ExpandedWork(1 << 24);
 
 /// The cap on a level atom's successor offset.
@@ -552,8 +552,8 @@ pub const MAX_ARTIFACT_EXPANDED_WORK: ExpandedWork = ExpandedWork(1 << 24);
 ///   the bound is permitted; reversing the comparison, changing strictness or
 ///   using the wrong axis is distinguished. The deepest small-stack round trip
 ///   witnesses retained headroom.
-/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
-/// - witness: `adversarial_depth::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
+/// - witness: `tests::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
 pub const MAX_DECODED_LEVEL_OFFSET: LevelAtomOffset = LevelAtomOffset(4096);
 
 /// The deterministic decode-budget metrics of an artifact.
@@ -579,10 +579,10 @@ pub const MAX_DECODED_LEVEL_OFFSET: LevelAtomOffset = LevelAtomOffset(4096);
 ///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
 ///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
 /// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
-/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
-/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
-/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
-/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `tests::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `tests::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DecodeMetrics
 {
@@ -611,9 +611,9 @@ impl DecodeMetrics
     ///   declaration segments. L3 cap-adjacent artifacts distinguish swapped
     ///   quantities and omitted declaration contributions; the tests do not
     ///   validate arbitrary graphs exhaustively.
-    /// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
-    /// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
-    /// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+    /// - witness: `tests::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+    /// - witness: `tests::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+    /// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
     #[spec(
         ensures: |ret| ret.table_entries.0 == table_entries.0
                 && ret.max_declaration_expanded_work.0 == max_declaration_expanded_work.0

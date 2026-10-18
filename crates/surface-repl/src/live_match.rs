@@ -21,7 +21,7 @@ use gandr_surface_session::MatchAnalysis;
 /// # Adequacy
 /// - hypothesis: L3 — an external consumer observes possible branches before a
 ///   fill and distinct yes/no branches after it, through the real writer.
-/// - witness: `live_match::tests::a_fill_updates_the_external_match_transcript`
+/// - witness: `tests::live_match::a_fill_updates_the_external_match_transcript`
 #[spec(ensures: |ret| ret.lines.len() == analysis.branches().len().saturating_add(2))]
 #[inline]
 #[must_use]

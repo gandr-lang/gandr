@@ -225,7 +225,7 @@ fn token_of_role(role: HlRole) -> Maybe<(TokenType, TokenModifiers), token_of_ro
 ///   line.
 /// - witness: `tokens::tests::a_one_line_keyword_encodes_as_five_integers`
 /// - witness: `tokens::tests::a_multiline_span_splits_and_drops_the_terminator`
-/// - witness: `session::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
+/// - witness: `tests::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
 #[spec(ensures: |ret| ret.0.len().is_multiple_of(INTEGERS_PER_TOKEN)
     && ret.0.chunks_exact(INTEGERS_PER_TOKEN).all(|token|
         matches!(token, &[_, _, length, kind, bits] if length > 0
