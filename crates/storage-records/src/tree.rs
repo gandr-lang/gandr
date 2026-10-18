@@ -189,8 +189,12 @@ impl RecordTree
     /// # Adequacy
     /// - hypothesis: L3 — a built three-record tree holds; a substituted record
     ///   count, swapped records, swapped children, a moved span and a leaf
-    ///   payload replaced under its identity each fail.
+    ///   payload replaced under its identity each fail; and each conjunct
+    ///   refuses alone, every other intact: equal adjacent keys, an unpaired
+    ///   child, a root sealed over another node, a child naming another leaf,
+    ///   and a child claiming another first key or count.
     /// - witness: `tree::tests::built_state_refinements_reject_cache_corruption`
+    /// - witness: `tree::tests::each_conjunct_of_the_invariant_refuses_alone`
     fn well_formed(&self) -> Holds
     {
         if RecordCount::of_slice(self.records.as_ref()) != Ok(self.root.record_count())
@@ -1324,5 +1328,120 @@ mod tests
         assert!(!anodized::types::Spec::predicate(&tree));
         tree.leaves[0_usize].node = node;
         assert!(anodized::types::Spec::predicate(&tree));
+    }
+
+    /// Each conjunct of the tree's invariant refuses on its own: equal adjacent
+    /// keys, a child list longer than the leaves, a root sealed over another
+    /// node, a child naming another leaf's identity, and a child claiming
+    /// another first key or another record count, each with every other
+    /// conjunct intact.
+    #[test]
+    fn each_conjunct_of_the_invariant_refuses_alone()
+    {
+        use super::ChildRef;
+        use crate::record::Record;
+
+        let params = |cap: u32| {
+            TreeParams::new(
+                TreeKind::CURRENT,
+                EncodingVersion::CURRENT,
+                HashAlgorithm::CURRENT,
+                SeparatorConvention::CURRENT,
+                BoundaryParams::new(
+                    BoundaryProfile::CURRENT,
+                    BoundaryMaskBits::MIN,
+                    BoundaryRecordCap::try_from(cap).expect("the cap is admissible"),
+                ),
+            )
+        };
+        let built = |cap: u32, records: &[RecordRef<'_>]| {
+            let tree = RecordTree::build(records, params(cap)).expect("the ordered corpus builds");
+            assert!(
+                anodized::types::Spec::predicate(&tree),
+                "the built tree holds"
+            );
+            tree
+        };
+        let one = [RecordRef::new(b"a", b"1"), RecordRef::new(b"m", b"2")];
+        let three = [
+            RecordRef::new(b"a", b"1"),
+            RecordRef::new(b"m", b"2"),
+            RecordRef::new(b"z", b"3"),
+        ];
+
+        // A root that is itself the one leaf: no child or leaf entry checks the
+        // second key, so only the sortedness check sees it repeat the first.
+        let mut tree = built(64_u32, &one);
+        assert!(
+            tree.leaves.is_empty(),
+            "two records make one leaf at this cap"
+        );
+        tree.records[1_usize] = Record::from(RecordRef::new(b"a", b"2"));
+        assert!(
+            !anodized::types::Spec::predicate(&tree),
+            "equal adjacent keys"
+        );
+
+        // A child the root does not pair with a leaf: the leaves pair with
+        // none, so only the counts' agreement sees it.
+        let mut tree = built(64_u32, &one);
+        tree.children = [ChildRef::new(
+            &b"a"[..],
+            tree.root_node.identity(),
+            RecordCount::from(2_u64),
+        )]
+        .into();
+        assert!(
+            !anodized::types::Spec::predicate(&tree),
+            "a child with no leaf"
+        );
+
+        // A root sealed over another node, with its own node's bytes intact.
+        let mut tree = built(1_u32, &three);
+        let other = tree.leaves[0_usize].node.identity();
+        tree.root = TreeRoot::seal(params(1_u32), RecordCount::from(3_u64), other)
+            .expect("the substituted node has a manifest");
+        assert!(
+            !anodized::types::Spec::predicate(&tree),
+            "a root bound to another node"
+        );
+
+        // A child naming the next leaf's identity, its key and count intact.
+        let mut tree = built(1_u32, &three);
+        let first = &tree.children[0_usize];
+        let renamed = ChildRef::new(
+            first.first_key().as_ref(),
+            tree.leaves[1_usize].node.identity(),
+            first.record_count(),
+        );
+        tree.children[0_usize] = renamed;
+        assert!(
+            !anodized::types::Spec::predicate(&tree),
+            "a child naming another leaf"
+        );
+
+        // A child claiming another first key, its identity and count intact.
+        let mut tree = built(1_u32, &three);
+        let first = &tree.children[0_usize];
+        let rekeyed = ChildRef::new(&b"b"[..], first.identity(), first.record_count());
+        tree.children[0_usize] = rekeyed;
+        assert!(
+            !anodized::types::Spec::predicate(&tree),
+            "a child claiming another key"
+        );
+
+        // A child claiming another count, its key and identity intact.
+        let mut tree = built(1_u32, &three);
+        let first = &tree.children[0_usize];
+        let recounted = ChildRef::new(
+            first.first_key().as_ref(),
+            first.identity(),
+            RecordCount::from(2_u64),
+        );
+        tree.children[0_usize] = recounted;
+        assert!(
+            !anodized::types::Spec::predicate(&tree),
+            "a child claiming another count"
+        );
     }
 }

@@ -864,9 +864,14 @@ pub fn hash_node(bytes: EncodedNode<'_>) -> NodeHash
 /// - hypothesis: L2 compares decoded payloads with forty distinct input records
 ///   and an empty run; a literal one-record encoding and digest distinguish
 ///   common encoder/decoder framing faults. No generated-corpus claim is made.
+///   L3 at each budget's ceiling: the ceiling's record count passes the count
+///   budget and one more is refused by it, and a leaf of exactly the byte
+///   ceiling encodes.
 /// - witness: `node::tests::leaves_round_trip`
 /// - witness: `node::tests::an_empty_leaf_round_trips`
 /// - witness: `node::tests::the_node_identity_is_pinned`
+/// - witness: `node::tests::the_leaf_record_count_ceiling_is_inclusive`
+/// - witness: `node::tests::a_node_of_exactly_the_byte_ceiling_encodes_and_decodes`
 #[inline]
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|node| {
     decode_node(node.as_borrowed(), &mut DecodeWork::new()).is_ok_and(|decoded| match decoded {
@@ -945,9 +950,14 @@ pub fn encode_leaf(records: &[RecordRef<'_>]) -> Result<OwnedEncodedNode, Record
 /// # Adequacy
 /// - hypothesis: L2 on three distinct child claims compares all decoded fields
 ///   and total six; L3 on the empty slice requires the shape refusal. These
-///   fixed cases do not establish agreement over arbitrary generated trees.
+///   fixed cases do not establish agreement over arbitrary generated trees. L3
+///   at each budget's ceiling: the ceiling's child count passes the count
+///   budget and one more is refused by it, and a node of exactly the byte
+///   ceiling encodes.
 /// - witness: `node::tests::internal_nodes_round_trip`
 /// - witness: `node::tests::an_internal_node_needs_children`
+/// - witness: `node::tests::the_internal_child_count_ceiling_is_inclusive`
+/// - witness: `node::tests::a_node_of_exactly_the_byte_ceiling_encodes_and_decodes`
 #[inline]
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|node| {
     decode_node(node.as_borrowed(), &mut DecodeWork::new()).is_ok_and(|decoded| match decoded {
@@ -1182,6 +1192,8 @@ pub fn verify_stored_node(node: StoredNode<'_>) -> Result<(), RecordTreeError>
 /// - witness: `node::tests::an_oversized_node_is_refused`
 /// - witness: `node::tests::an_overstated_record_count_is_refused`
 /// - witness: `node::tests::decode_work_records_attempts_and_preserves_early_refusals`
+/// - witness: `node::tests::a_node_of_exactly_the_byte_ceiling_encodes_and_decodes`
+/// - witness: `node::tests::the_leaf_record_count_ceiling_is_inclusive`
 #[inline]
 #[spec(
     captures: entry = (u64::from(work.nodes()), u64::from(work.records())),
@@ -1313,6 +1325,7 @@ fn push_header(
 /// - witness: `node::tests::unsorted_leaf_records_are_refused`
 /// - witness: `node::tests::an_overstated_record_count_is_refused`
 /// - witness: `node::tests::decode_work_records_attempts_and_preserves_early_refusals`
+/// - witness: `node::tests::the_leaf_record_count_ceiling_is_inclusive`
 #[spec(
     captures: entry = (work.nodes(), u64::from(work.records())),
     ensures: |ret| work.nodes() == entry.0 && ret.as_ref().ok().is_none_or(|leaf|
@@ -2170,6 +2183,97 @@ mod tests
             decode(oversized.as_bytes()),
             Err(RecordTreeError::BudgetExceeded { .. })
         ));
+    }
+
+    /// The budget an encode or decode refusal names, if it is one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn budget<T>(result: &Result<T, RecordTreeError>) -> Option<crate::error::FailureContext>
+    {
+        match *result {
+            Err(RecordTreeError::BudgetExceeded { context }) => Some(context),
+            Ok(_) | Err(_) => None,
+        }
+    }
+
+    #[test]
+    fn the_leaf_record_count_ceiling_is_inclusive()
+    {
+        // Empty records: a leaf of the ceiling's count passes the count
+        // budget and is refused by the byte budget it then outgrows; one more
+        // record is refused by the count.
+        let empty = RecordRef::new(b"", b"");
+        let ceiling = usize::try_from(u64::from(MAX_LEAF_RECORDS)).expect("the ceiling fits");
+        let mut records = vec![empty; ceiling];
+        assert_eq!(
+            budget(&encode_leaf(records.as_slice())),
+            Some("node byte length".into()),
+            "the ceiling's count is admitted"
+        );
+        records.push(empty);
+        assert_eq!(
+            budget(&encode_leaf(records.as_slice())),
+            Some("leaf record count".into()),
+            "one past the ceiling is refused for its count"
+        );
+        // A declared count at the ceiling with no payload is malformed, not
+        // over budget.
+        let declared = leaf_prefix(MAX_LEAF_RECORDS);
+        assert!(matches!(
+            decode(declared.as_bytes()),
+            Err(RecordTreeError::MalformedNode { .. })
+        ));
+    }
+
+    #[test]
+    fn the_internal_child_count_ceiling_is_inclusive()
+    {
+        let child = ChildRef::new(b"", node_hash(HashSeed(1_u8)), RecordCount::from(1_u64));
+        let ceiling =
+            usize::try_from(u64::from(crate::wire::MAX_NODE_CHILDREN)).expect("the ceiling fits");
+        let mut children = vec![child.clone(); ceiling];
+        assert_eq!(
+            budget(&encode_internal(children.as_slice())),
+            Some("node byte length".into()),
+            "the ceiling's count is admitted"
+        );
+        children.push(child);
+        assert_eq!(
+            budget(&encode_internal(children.as_slice())),
+            Some("internal child count".into()),
+            "one past the ceiling is refused for its count"
+        );
+    }
+
+    #[test]
+    fn a_node_of_exactly_the_byte_ceiling_encodes_and_decodes()
+    {
+        let ceiling = usize::from(MAX_NODE_BYTES);
+        let framed = encode_leaf(&[RecordRef::new(b"a", b"")]).expect("a small leaf encodes");
+        let value = vec![0_u8; ceiling.saturating_sub(framed.as_ref().len())];
+        let leaf = encode_leaf(&[RecordRef::new(b"a", value.as_slice())])
+            .expect("a leaf of the ceiling's length encodes");
+        assert_eq!(leaf.as_ref().len(), ceiling);
+        assert!(
+            decode(leaf.as_borrowed()).is_ok(),
+            "the ceiling's length decodes"
+        );
+
+        let framed = encode_internal(&[ChildRef::new(
+            b"",
+            node_hash(HashSeed(1_u8)),
+            RecordCount::from(1_u64),
+        )])
+        .expect("a small internal node encodes");
+        let separator = vec![0xab_u8; ceiling.saturating_sub(framed.as_ref().len())];
+        let internal = encode_internal(&[ChildRef::new(
+            separator,
+            node_hash(HashSeed(1_u8)),
+            RecordCount::from(1_u64),
+        )])
+        .expect("an internal node of the ceiling's length encodes");
+        assert_eq!(internal.as_ref().len(), ceiling);
     }
 
     #[test]
