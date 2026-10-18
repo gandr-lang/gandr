@@ -95,48 +95,50 @@ fn lc() -> SignDesc<()>
 
 /// The identity-return signature: value and computation types, values
 /// indexed by their type (representable), computations indexed by theirs, and
-/// `F`, `Arrow`, `ret` and `lam : (VTm A ⇒⁺ CTm B) → CTm (Arrow A B)`.
+/// `f`, `arrow`, `ret` and `lam : (VTm a ⇒⁺ CTm b) → CTm (arrow a b)`. Its
+/// operations and index binders are lowercase, as a `sign` block writes them,
+/// so its rendering reparses.
 ///
 /// # Specification
 /// trivial.
 fn identity_return() -> SignDesc<()>
 {
-    let a = FreeTerm::var("A");
-    let b = FreeTerm::var("B");
+    let a = FreeTerm::var("a");
+    let b = FreeTerm::var("b");
     signature(
         "IdentityReturn",
         vec![
             SortDesc::new("VTy", DeclPolarity::Data),
             SortDesc::new("CTy", DeclPolarity::Data),
-            SortDesc::family("VTm", DeclPolarity::Data, [SortIndex::new("A", "VTy")])
+            SortDesc::family("VTm", DeclPolarity::Data, [SortIndex::new("a", "VTy")])
                 .representable(),
-            SortDesc::family("CTm", DeclPolarity::Data, [SortIndex::new("B", "CTy")]),
+            SortDesc::family("CTm", DeclPolarity::Data, [SortIndex::new("b", "CTy")]),
         ],
         vec![
-            op("F", vec![SortRef::new("A", "VTy")], SortRef::new("", "CTy")),
+            op("f", vec![SortRef::new("a", "VTy")], SortRef::new("", "CTy")),
             op(
-                "Arrow",
-                vec![SortRef::new("A", "VTy"), SortRef::new("B", "CTy")],
+                "arrow",
+                vec![SortRef::new("a", "VTy"), SortRef::new("b", "CTy")],
                 SortRef::new("", "CTy"),
             ),
             op(
                 "ret",
                 vec![
-                    SortRef::new("A", "VTy"),
+                    SortRef::new("a", "VTy"),
                     SortRef::new("t", "VTm").applied([a.clone()]),
                 ],
-                SortRef::new("", "CTm").applied([FreeTerm::op("F", [a.clone()])]),
+                SortRef::new("", "CTm").applied([FreeTerm::op("f", [a.clone()])]),
             ),
             op(
                 "lam",
                 vec![
-                    SortRef::new("A", "VTy"),
-                    SortRef::new("B", "CTy"),
+                    SortRef::new("a", "VTy"),
+                    SortRef::new("b", "CTy"),
                     SortRef::new("t", "CTm")
                         .applied([b.clone()])
                         .pi_plus([SortIndex::new("x", "VTm").applied([a.clone()])]),
                 ],
-                SortRef::new("", "CTm").applied([FreeTerm::op("Arrow", [a, b])]),
+                SortRef::new("", "CTm").applied([FreeTerm::op("arrow", [a, b])]),
             ),
         ],
     )
@@ -271,8 +273,8 @@ fn indexed_signature_translates_without_name_cases()
             .map(ToString::to_string)
             .collect::<Vec<_>>(),
         [
-            "$extend_VTm(G, A)",
-            "$sub_CTy(G, $extend_VTm(G, A), B, $p_VTm(G, A))",
+            "$extend_VTm(G, a)",
+            "$sub_CTy(G, $extend_VTm(G, a), b, $p_VTm(G, a))",
         ]
     );
     assert!(body.bindings.is_empty());

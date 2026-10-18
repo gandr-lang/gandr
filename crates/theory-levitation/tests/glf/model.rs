@@ -756,14 +756,14 @@ fn identity_return_case(
         .expect("the generated λ");
     assert_eq!(
         lam.arity.inputs[3].arguments[0].to_string(),
-        "$extend_VTm(G, A)"
+        "$extend_VTm(G, a)"
     );
     let ret = model
         .opers
         .iter()
         .find(|operation| operation.name.as_ref() == "ret")
         .expect("the generated return");
-    assert_eq!(ret.arity.outputs[0].arguments[1].to_string(), "F(A)");
+    assert_eq!(ret.arity.outputs[0].arguments[1].to_string(), "f(a)");
     let count = *choices.pick(&[1_usize, 2, 3, 4]);
     let domains: Vec<Parameter> = core::iter::repeat_with(|| *choices.pick(&Parameter::ALL))
         .take(count)
@@ -779,11 +779,11 @@ fn identity_return_case(
     for _ in 0 .. usize::from(index) {
         variable = FreeTerm::op("$sub_VTm", [variable, FreeTerm::op("$p_VTm", [])]);
     }
-    let mut ty = FreeTerm::op("F", [result.term()]);
+    let mut ty = FreeTerm::op("f", [result.term()]);
     let mut term = FreeTerm::op(ret.name.clone(), [result.term(), variable]);
     for domain in domains.into_iter().rev() {
         term = FreeTerm::op(lam.name.clone(), [domain.term(), ty.clone(), term]);
-        ty = FreeTerm::op("Arrow", [domain.term(), ty]);
+        ty = FreeTerm::op("arrow", [domain.term(), ty]);
     }
     IdentityReturn { ty, term }
 }
@@ -800,7 +800,7 @@ struct TrustedImage
 }
 
 /// Map a closed identity-return judgement into the kernel's arena, without
-/// recursion: `Arrow`, `F`, `lam`, `ret` and `$q` under `$p`s become the
+/// recursion: `arrow`, `f`, `lam`, `ret` and `$q` under `$p`s become the
 /// kernel's arrow, returner, λ, return and de Bruijn variable.
 ///
 /// # Specification
@@ -841,7 +841,7 @@ fn trusted_image(
             panic!("outside the identity-return fragment");
         };
         match (former.as_ref(), introduction.as_ref()) {
-            ("Arrow", "lam") => {
+            ("arrow", "lam") => {
                 let domain = Parameter::read(type_arguments.next().expect("a domain"));
                 assert_eq!(
                     Parameter::read(arguments.next().expect("an annotation")),
@@ -852,7 +852,7 @@ fn trusted_image(
                 let _codomain = arguments.next().expect("a body type");
                 term = arguments.next().expect("a body");
             },
-            ("F", "ret") => {
+            ("f", "ret") => {
                 let result = Parameter::read(type_arguments.next().expect("a result"));
                 assert_eq!(
                     Parameter::read(arguments.next().expect("an annotation")),

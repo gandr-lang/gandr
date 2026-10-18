@@ -20,7 +20,10 @@
 //!   bound by the law's telescope; an operation's head at the operation's type;
 //!   each written sort at its universe, and the classifier `Type` at its own;
 //!   and a circuit's ports and wires at the sort the ports they meet read,
-//!   where that sort is one the sign declares unindexed.
+//!   where that sort is one the sign declares unindexed. An operation one of
+//!   whose ports binds a variable (`t : pi+ (x : S) . T`) has no component: its
+//!   name and a bound port's name answer nowhere, while each binder's name
+//!   answers at its sort and its ports otherwise as written.
 //! - **A data family's** constructors, operations and rules read over the
 //!   module's own unparameterised families: a constant constructor's name
 //!   answers at its family, one with fields at `+U (A₁ -> … -> -F F)`, each
@@ -81,14 +84,18 @@ use crate::description::DescriptionGrade;
 use crate::description::FamilyParameter;
 use crate::description::written::WrittenCircuit;
 use crate::description::written::WrittenMembers;
+use crate::description::written::WrittenOperation;
 use crate::description::written::WrittenPort;
 use crate::description::written::WrittenSort;
 use crate::description::written::WrittenTerm;
 use crate::model::Binder;
 use crate::model::Dependent;
 use crate::model::Members;
+use crate::model::ModelFault;
 use crate::model::ModelForm;
+use crate::model::Port;
 use crate::model::Presentation;
+use crate::model::PresentedOperation;
 use crate::model::SortTerm;
 use crate::model::Tail;
 use crate::model::dependence;
@@ -294,6 +301,23 @@ struct Operation
     result: ValueTypeId,
     /// Its type, `+U (A₁ -> … -> -F B)`.
     ty: ValueTypeId,
+}
+
+/// What a sign's members declare for the nodes after them: its sorts' names,
+/// and each operation the derivation states with its telescope, its results
+/// and its type.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+struct Declared<'form>
+{
+    /// The sorts' names, in written order.
+    sorts: Vec<Name>,
+    /// Each stated operation's telescope and results.
+    operations: BTreeMap<Name, (&'form [Binder], &'form [SortTerm])>,
+    /// Each stated operation's type, with the context it is stated in.
+    heads: BTreeMap<Name, (ValueTypeId, ContextIndex)>,
 }
 
 /// The minting of every described node's type into one arena.
@@ -615,8 +639,11 @@ impl Typer<'_>
         }
     }
 
-    /// Record each variable of a written sort's index terms at its binder's
-    /// sort among `telescope`, under `scope`.
+    /// Record each node of a written sort's index terms, `raw` as written and
+    /// `elaborated` as the derivation reads it, under `scope`, as
+    /// [`Self::law_side`] records a law's side: a variable at its binder's
+    /// sort among `telescope`, an application at its operation's result and
+    /// its head at the operation's type.
     ///
     /// # Specification
     /// trivial.
@@ -624,46 +651,22 @@ impl Typer<'_>
         &mut self,
         scope: &Scope,
         telescope: &[Binder],
-        sort: &SortTerm,
+        declared: &Declared<'_>,
+        raw: &SortTerm,
+        elaborated: &SortTerm,
         written: &WrittenSort,
     )
     {
-        let context = self.context(scope);
-        for (term, nodes) in sort.indices.iter().zip(&written.indices) {
-            let mut pending = Vec::from([term.to_node()]);
-            let mut at = nodes.nodes.iter();
-            while let Some(node) = pending.pop() {
-                let Some(written) = at.next()
-                else {
-                    break;
-                };
-                match node.view() {
-                    TermView::Var(name) => {
-                        if let Some(binder) =
-                            telescope.iter().rev().find(|binder| binder.name == *name)
-                            && let Some(ty) = self.sort(scope, &binder.sort)
-                        {
-                            self.emit(written.span, DescribedRole::Term, ty, context);
-                        }
-                    },
-                    TermView::Op { args, .. }
-                    | TermView::Ctor { args, .. }
-                    | TermView::Results { args } => {
-                        let first = pending.len();
-                        pending.extend(args);
-                        if let Some(added) = pending.get_mut(first ..) {
-                            added.reverse();
-                        }
-                    },
-                }
-            }
+        let terms = raw.indices.iter().zip(&elaborated.indices);
+        for ((term, image), nodes) in terms.zip(&written.indices) {
+            self.law_side(scope, telescope, declared, term, nodes, Some(image));
         }
     }
 
-    /// Record each port of `ports`, written as `written`, the last binders of
-    /// `telescope` — those before them are inserted — its name at its sort
-    /// under the binders before it, its sort at its universe, and its sort's
-    /// index variables.
+    /// Record each port of `ports`, written as `written` and presented as
+    /// `raws`, the last binders of `telescope` — those before them are
+    /// inserted — its name at its sort under the binders before it, its sort
+    /// at its universe, and its sort's index terms.
     ///
     /// # Specification
     /// trivial.
@@ -672,22 +675,26 @@ impl Typer<'_>
         scope: &mut Scope,
         telescope: &[Binder],
         dependent: &[Dependent],
+        raws: &[Port],
         written: &[WrittenPort],
-        sorts: &[Name],
+        declared: &Declared<'_>,
     )
     {
         let first = telescope.len().saturating_sub(written.len());
         let base = scope.binders.len();
         for (at, (binder, &binds)) in telescope.iter().zip(dependent).enumerate() {
-            if let Some(port) = at.checked_sub(first).and_then(|place| written.get(place)) {
-                self.port(scope, telescope, &binder.sort, port, sorts);
+            if let Some(place) = at.checked_sub(first)
+                && let (Some(port), Some(raw)) = (written.get(place), raws.get(place))
+            {
+                self.port(scope, telescope, declared, &raw.sort, &binder.sort, port);
             }
             scope.push(&binder.name, binds);
         }
         scope.binders.truncate(base);
     }
 
-    /// Record one port of sort `sort`, written as `port`, under `scope`.
+    /// Record one port of sort `sort`, presented as `raw` and written as
+    /// `port`, under `scope`.
     ///
     /// # Specification
     /// trivial.
@@ -695,9 +702,10 @@ impl Typer<'_>
         &mut self,
         scope: &Scope,
         telescope: &[Binder],
+        declared: &Declared<'_>,
+        raw: &SortTerm,
         sort: &SortTerm,
         port: &WrittenPort,
-        sorts: &[Name],
     )
     {
         if let Maybe::Present(named) = port.named
@@ -706,8 +714,90 @@ impl Typer<'_>
             let context = self.context(scope);
             self.emit(named, DescribedRole::Name, ty, context);
         }
-        self.occurrence(&port.sort, &sort.sort, sorts);
-        self.indices(scope, telescope, sort, &port.sort);
+        self.occurrence(&port.sort, &sort.sort, &declared.sorts);
+        self.indices(scope, telescope, declared, raw, sort, &port.sort);
+    }
+
+    /// Record the ports of `operation`, one of whose ports binds, written as
+    /// `member`, under `scope`. `Model(S)` states no component for it, so its
+    /// name answers nowhere; its ports read as the written telescope states
+    /// them, each under every port before it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn binding(
+        &mut self,
+        scope: &mut Scope,
+        operation: &PresentedOperation,
+        member: &WrittenOperation,
+        declared: &Declared<'_>,
+    )
+    {
+        let telescope: Vec<Binder> = operation
+            .inputs
+            .iter()
+            .map(|port| Binder {
+                name: port.name.clone(),
+                sort: port.sort.clone(),
+            })
+            .collect();
+        let base = scope.binders.len();
+        for (port, written) in operation.inputs.iter().zip(&member.inputs) {
+            self.bound(scope, &telescope, port, written, declared);
+            scope.push(&port.name, Dependent(true));
+        }
+        for (port, written) in operation.outputs.iter().zip(&member.outputs) {
+            self.bound(scope, &telescope, port, written, declared);
+        }
+        scope.binders.truncate(base);
+    }
+
+    /// Record one port `port` of a binding operation, written as `written`,
+    /// under `scope`: a first-order port as [`Self::port`] does; a bound
+    /// port's binders each at its sort, the binders' sorts and its own at
+    /// their universe, and their index terms. A bound port's name answers
+    /// nowhere: no core type states a `pi+` port. No derivation elaborates
+    /// these sorts, so each is read as written.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bound(
+        &mut self,
+        scope: &Scope,
+        telescope: &[Binder],
+        port: &Port,
+        written: &WrittenPort,
+        declared: &Declared<'_>,
+    )
+    {
+        if port.binders.is_empty() {
+            self.port(scope, telescope, declared, &port.sort, &port.sort, written);
+            return;
+        }
+        for (binder, at) in port.binders.iter().zip(&written.binders) {
+            if let Some(ty) = self.sort(scope, &binder.sort) {
+                let context = self.context(scope);
+                self.emit(at.named, DescribedRole::Name, ty, context);
+            }
+            self.occurrence(&at.sort, &binder.sort.sort, &declared.sorts);
+            self.indices(
+                scope,
+                telescope,
+                declared,
+                &binder.sort,
+                &binder.sort,
+                &at.sort,
+            );
+        }
+        self.occurrence(&written.sort, &port.sort.sort, &declared.sorts);
+        self.indices(
+            scope,
+            telescope,
+            declared,
+            &port.sort,
+            &port.sort,
+            &written.sort,
+        );
     }
 
     /// Record every member of a sign presenting `presentation`, written as
@@ -722,7 +812,8 @@ impl Typer<'_>
     ///   universe, each circuit's ports and wires at their sorts.
     /// - fails: never; a presentation whose members cannot be read records
     ///   nothing, and a component the derivation cannot state records none of
-    ///   the nodes its type would read.
+    ///   the nodes its type would read, save a binding operation's ports, which
+    ///   read as written.
     /// - panics: none.
     /// - executable: none — each node answers at a type minted into the arena,
     ///   which no predicate over the presentation restates; the witness reads
@@ -730,8 +821,10 @@ impl Typer<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the probe signs' sorts, operations, laws and circuit
-    ///   answer at the types asserted.
+    ///   answer at the types asserted; the identity-return `lam`'s binder
+    ///   answers at its indexed sort and its name nowhere.
     /// - witness: `described::tests::a_sign_answers_at_every_member`
+    /// - witness: `described::tests::a_binder_answers_at_its_sort_and_its_operation_nowhere`
     fn sign(
         &mut self,
         presentation: &Presentation,
@@ -743,7 +836,11 @@ impl Typer<'_>
             return;
         };
         let model = derive_members(&members, &presentation.circuits);
-        let names: Vec<Name> = members.sorts.iter().map(|sort| sort.name.clone()).collect();
+        let mut declared = Declared {
+            sorts: members.sorts.iter().map(|sort| sort.name.clone()).collect(),
+            operations: BTreeMap::new(),
+            heads: BTreeMap::new(),
+        };
         let mut scope = Scope::default();
         let mut forms = model.components.iter().map(|component| &component.form);
         let closed = self.context(&Scope::default());
@@ -765,17 +862,23 @@ impl Typer<'_>
                     self.emit(member.named, DescribedRole::Name, kind, context);
                 }
                 let dependent = dependence(indices, tail);
-                self.ports(&mut scope, indices, &dependent, &member.indices, &names);
+                self.ports(
+                    &mut scope,
+                    indices,
+                    &dependent,
+                    &sort.indices,
+                    &member.indices,
+                    &declared,
+                );
             }
             scope.push(&sort.name, Dependent(true));
         }
-        let mut heads: BTreeMap<Name, (ValueTypeId, ContextIndex)> = BTreeMap::new();
-        let mut operations: BTreeMap<Name, (&[Binder], &[SortTerm])> = BTreeMap::new();
         for (operation, member) in members.operations.iter().zip(&written.operations) {
+            let form = forms.next();
             if let Some(&Ok(ModelForm::Operation {
                 ref telescope,
                 ref results,
-            })) = forms.next()
+            })) = form
             {
                 let tail = Tail::Results(results);
                 if let Some(ty) =
@@ -783,24 +886,37 @@ impl Typer<'_>
                 {
                     let context = self.context(&scope);
                     self.emit(member.named, DescribedRole::Name, ty, context);
-                    let _first = heads.insert(operation.name.clone(), (ty, context));
+                    let _first = declared.heads.insert(operation.name.clone(), (ty, context));
                 }
-                let _first = operations.insert(operation.name.clone(), (telescope, results));
+                let _first = declared
+                    .operations
+                    .insert(operation.name.clone(), (telescope, results));
                 let dependent = dependence(telescope, tail);
-                self.ports(&mut scope, telescope, &dependent, &member.inputs, &names);
+                self.ports(
+                    &mut scope,
+                    telescope,
+                    &dependent,
+                    &operation.inputs,
+                    &member.inputs,
+                    &declared,
+                );
                 let base = scope.binders.len();
                 for (binder, &binds) in telescope.iter().zip(&dependent) {
                     scope.push(&binder.name, binds);
                 }
-                for (result, port) in results.iter().zip(&member.outputs) {
-                    self.port(&scope, telescope, result, port, &names);
+                let outputs = results.iter().zip(&operation.outputs);
+                for ((result, raw), port) in outputs.zip(&member.outputs) {
+                    self.port(&scope, telescope, &declared, &raw.sort, result, port);
                 }
                 scope.binders.truncate(base);
+            }
+            else if form == Some(&Err(ModelFault::Binding)) {
+                self.binding(&mut scope, operation, member, &declared);
             }
             else {
                 let presented = operation.inputs.iter().chain(&operation.outputs);
                 for (port, at) in presented.zip(member.inputs.iter().chain(&member.outputs)) {
-                    self.occurrence(&at.sort, &port.sort.sort, &names);
+                    self.occurrence(&at.sort, &port.sort.sort, &declared.sorts);
                 }
             }
             scope.push(&operation.name, Dependent(true));
@@ -837,20 +953,12 @@ impl Typer<'_>
                 (&law.right, &member.right, stated.map(|stated| stated.3)),
             ];
             for (side, nodes, elaborated) in sides {
-                self.law_side(
-                    &scope,
-                    binders,
-                    &operations,
-                    &heads,
-                    side,
-                    nodes,
-                    elaborated,
-                );
+                self.law_side(&scope, binders, &declared, side, nodes, elaborated);
             }
             scope.binders.truncate(base);
         }
         for member in &written.circuits {
-            self.circuit(&scope, &members, member, &heads);
+            self.circuit(&scope, &members, member, &declared.heads);
         }
     }
 
@@ -874,18 +982,15 @@ impl Typer<'_>
     /// # Adequacy
     /// - hypothesis: L3 — `comp(id(a), f)` answers at `Hom(a, b)`, `id(a)` at
     ///   `Hom(a, a)`, `a` at `Ob`, `comp` at its type and the variable `f` at
-    ///   the code its sort returns.
+    ///   the code its sort returns; the identity-return signature's index
+    ///   `arrow(a, b)` at `CTy`.
     /// - witness: `described::tests::a_sign_answers_at_every_member`
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the scope, the law's binders, the operations' forms and types, the side, its nodes and its elaboration are each read"
-    )]
+    /// - witness: `described::tests::a_binder_answers_at_its_sort_and_its_operation_nowhere`
     fn law_side(
         &mut self,
         scope: &Scope,
         telescope: &[Binder],
-        operations: &BTreeMap<Name, (&[Binder], &[SortTerm])>,
-        heads: &BTreeMap<Name, (ValueTypeId, ContextIndex)>,
+        declared: &Declared<'_>,
         side: &FreeTerm,
         nodes: &WrittenTerm,
         elaborated: Option<&FreeTerm>,
@@ -910,7 +1015,7 @@ impl Typer<'_>
                 },
                 TermView::Op { name, args } => {
                     if let (Maybe::Present(head), Some(&(ty, stated))) =
-                        (written.head, heads.get(name))
+                        (written.head, declared.heads.get(name))
                     {
                         self.emit(head, DescribedRole::Term, ty, stated);
                     }
@@ -922,14 +1027,18 @@ impl Typer<'_>
                         Some(TermView::Op { args, .. }) => Some(args.collect()),
                         Some(_) | None => None,
                     };
-                    let single =
-                        operations
-                            .get(name)
-                            .and_then(|&(binders, results)| match *results {
-                                [ref result] => Some((binders, result)),
-                                _ => None,
-                            });
-                    if let (Some((binders, result)), Some(images)) = (single, images.as_deref()) {
+                    let single = declared
+                        .operations
+                        .get(name)
+                        .and_then(|&(binders, results)| match *results {
+                            [ref result] => Some((binders, result)),
+                            _ => None,
+                        });
+                    // A side read as written supplies no implicit argument: its
+                    // node answers only where the operation binds none.
+                    if let (Some((binders, result)), Some(images)) = (single, images.as_deref())
+                        && binders.len() == images.len()
+                    {
                         let owned: Vec<FreeTerm> =
                             images.iter().map(|image| image.to_term()).collect();
                         let by: BTreeMap<&Name, &FreeTerm> = binders

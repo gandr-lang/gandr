@@ -74,6 +74,7 @@ impl Reader<'_, '_>
                 (vec![SortRef::new("result", self.text(result).0)], vec![
                     WrittenPort {
                         named: Maybe::Absent(port_name::Absent::Unnamed),
+                        binders: Vec::new(),
                         sort: WrittenSort {
                             span: result.span,
                             indices: Vec::new(),
@@ -143,6 +144,7 @@ impl Reader<'_, '_>
             ports.push(SortRef::new(self.text(name).0, self.text(sort).0));
             written.push(WrittenPort {
                 named: Maybe::Present(name.span),
+                binders: Vec::new(),
                 sort: WrittenSort {
                     span: sort.span,
                     indices: Vec::new(),

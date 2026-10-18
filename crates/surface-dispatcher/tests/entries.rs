@@ -152,6 +152,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type Path", Standing::Owed(0)),
     ("Type String", Standing::Owed(0)),
     ("Type Type", Standing::Owed(0)),
+    ("Type Type+", Standing::Owed(0)),
     ("Type Unit", Standing::Owed(0)),
     ("Type Void", Standing::Owed(0)),
     ("Type \\", Standing::Owed(0)),

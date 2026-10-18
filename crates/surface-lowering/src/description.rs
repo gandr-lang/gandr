@@ -938,6 +938,7 @@ impl Reader<'_, '_>
         let port = |named: Maybe<ByteSpan, written::port_name::Absent>, sort: Placed| {
             written::WrittenPort {
                 named,
+                binders: Vec::new(),
                 sort: written::WrittenSort {
                     span: sort.span,
                     indices: Vec::new(),

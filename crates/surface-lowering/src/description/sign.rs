@@ -30,6 +30,34 @@
 //! `description::sign::tests::a_feed_statement_declines_naming_the_wheel_obligation`,
 //! `description::sign::tests::sign_declines_and_malformed_wiring_are_refused_apart`.
 //!
+//! # Second-order members
+//!
+//! A sort member classified `Type+` is representable, and an operation's
+//! input port may write its sort under restricted binders, `t : pi+ (x : S) .
+//! T`, each binding a variable of a representable sort `S` over `T`, outermost
+//! first (Kaposi and Xie, _Second-Order Generalised Algebraic Theories_, FSCD
+//! 2024, Definition 3). The reader codes both in the value — a sort at
+//! `Representable`, a port at `Bound` with its binder chain — so a block
+//! written as the description's rendering reads back to that description. A
+//! binder over an ordinary sort is the description check's
+//! `NonRepresentableBinder`; a sort's index is a plain variable and is refused
+//! as malformed under a binder; a binder's domain and a result do not parse
+//! under one. `Model(S)` refuses an operation that binds by name: its models
+//! are those of its first-order translation.
+//!
+//! **Choice.** The binder is a form of the input port, not a type former: `pi+`
+//! is a marked tile, read only where a parameter list writes a named port. The
+//! alternative was a type rule at every type slot, refused by the lowering
+//! outside a port; its parenthesis, name, colon and dot molds then competed in
+//! every damaged type the parser repairs, and the one-token-drop records
+//! recovered worse at dozens of corpus tokens, where the port form leaves
+//! every record no worse. The choice reverses when a binder is admitted as a
+//! type elsewhere, where a type rule is what reads it. `Type+` stays a type
+//! atom: one tile no other form shares. Witnesses:
+//! `description::sign::tests::a_rendered_signature_reparses_to_itself`,
+//! `description::sign::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`,
+//! `model::tests::an_underivable_component_keeps_its_fault`.
+//!
 //! # A presentation is a value
 //!
 //! The reader reads a block's members once, into the parts of a presentation
@@ -92,8 +120,10 @@ use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::NominalSerial;
 use gandr_theory_levitation::OperDesc;
+use gandr_theory_levitation::Representability;
 use gandr_theory_levitation::RewritePort;
 use gandr_theory_levitation::RuleFace;
+use gandr_theory_levitation::SigBinder;
 use gandr_theory_levitation::SigOperation;
 use gandr_theory_levitation::SigParts;
 use gandr_theory_levitation::SigPort;
@@ -122,6 +152,7 @@ use super::family_classifier;
 use super::split_members;
 use super::written::RuleDirection;
 use super::written::RuleOrientation;
+use super::written::WrittenBound;
 use super::written::WrittenCircuit;
 use super::written::WrittenCircuitPort;
 use super::written::WrittenFace;
@@ -158,6 +189,10 @@ struct Boundary
     input_sorts: Vec<Placed>,
     /// Each output port's written sort, in order.
     output_sorts: Vec<Placed>,
+    /// Each input port's restricted binders, outermost first, in order.
+    input_binders: Vec<Vec<WrittenBinder>>,
+    /// Each output port's restricted binders, outermost first, in order.
+    output_binders: Vec<Vec<WrittenBinder>>,
     /// Each input port's name tile, in order.
     input_names: Vec<Maybe<ByteSpan, port_name::Absent>>,
     /// Each output port's name tile, in order.
@@ -168,16 +203,28 @@ struct Boundary
     written_rewrites: Vec<WrittenRewrite>,
 }
 
-/// One side of a signature: its ports, each port's written sort and name
-/// tile, in order.
+/// One side of a signature: its ports, each port's written sort, binders and
+/// name tile, in order.
 struct Side
 {
     /// The ports.
     ports: Vec<SortRef>,
     /// Each port's written sort.
     sorts: Vec<Placed>,
+    /// Each port's restricted binders, outermost first.
+    binders: Vec<Vec<WrittenBinder>>,
     /// Each port's name tile.
     names: Vec<Maybe<ByteSpan, port_name::Absent>>,
+}
+
+/// A restricted binder as a port writes it, `pi+ (name : domain) .`.
+#[derive(Clone, Copy)]
+struct WrittenBinder
+{
+    /// The bound variable's name tile.
+    name: Placed,
+    /// The bound variable's written sort.
+    domain: Placed,
 }
 
 /// A declared head determines a node arrow before any body is read.
@@ -427,10 +474,12 @@ impl Reader<'_, '_>
     ///
     /// # Specification
     /// - ensures: the sort as `Sig` codes it — its index ports in written
-    ///   order, each port's sort read as a sort over index terms — beside its
-    ///   name tile and where its name, its classifier and each index are
+    ///   order, each port's sort read as a sort over index terms, and its
+    ///   representability, `Type+` representable and `Type` ordinary — beside
+    ///   its name tile and where its name, its classifier and each index are
     ///   written.
-    /// - fails: an incomplete judgment earns a member-local refusal.
+    /// - fails: an incomplete judgment earns a member-local refusal; a
+    ///   classifier other than the two universes is a type-shape refusal.
     /// - panics: none.
     /// - executable: none — the written telescope is source syntax the result
     ///   does not retain beside the sort.
@@ -439,12 +488,14 @@ impl Reader<'_, '_>
     /// Returns malformed syntax or an unreadable port.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an indexed sort beside a plain one is read whole, and
-    ///   two unseparated sorts are declined rather than read as one.
+    /// - hypothesis: L3 — an indexed sort beside a plain one is read whole, two
+    ///   unseparated sorts are declined rather than read as one, and a
+    ///   representable sort is read apart from an ordinary one.
     /// - witness: `description::sign::tests::a_terminated_block_is_not_told_it_lacks_terminators`
     /// - witness: `description::sign::tests::unseparated_members_are_declined_rather_than_dropped`
     /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
     /// - witness: `described::tests::a_sign_answers_at_every_member`
+    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
     fn signature_sort(
         &self,
         run: &mut Run<'_>,
@@ -465,9 +516,11 @@ impl Reader<'_, '_>
                     name: self.text(index).0.into(),
                     sort: term.sort,
                     indices: term.indices,
+                    bindings: Vec::new(),
                 });
                 written.push(WrittenPort {
                     named: Maybe::Present(index.span),
+                    binders: Vec::new(),
                     sort: at,
                 });
                 if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
@@ -479,14 +532,17 @@ impl Reader<'_, '_>
             return Err(run.signature_fault(SignatureFault::MissingJudgment));
         }
         let classifier = run.take()?;
-        if self.text(classifier).0 != "Type" {
-            return Err(run.fault(DescriptionFault::TypeShape));
-        }
+        let representability = match self.text(classifier).0 {
+            "Type" => Representability::Ordinary,
+            "Type+" => Representability::Representable,
+            _ => return Err(run.fault(DescriptionFault::TypeShape)),
+        };
         run.end()?;
         Ok((
             SigSort {
                 name: self.text(name).0.into(),
                 indices,
+                representability,
             },
             name,
             WrittenSortMember {
@@ -556,11 +612,13 @@ impl Reader<'_, '_>
             &boundary.inputs,
             &boundary.input_sorts,
             &boundary.input_names,
+            &boundary.input_binders,
         )?;
         let (outputs, written_outputs) = self.presented_ports(
             &boundary.outputs,
             &boundary.output_sorts,
             &boundary.output_names,
+            &boundary.output_binders,
         )?;
         Ok((
             SigOperation {
@@ -577,38 +635,59 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// Each port of one side as `Sig` codes it, its written sort read as a
-    /// sort over index terms, and where it is written.
+    /// Each port of one side as `Sig` codes it, its written sort and each of
+    /// its binders' domains read as a sort over index terms, and where it is
+    /// written.
     ///
     /// # Specification
     /// - ensures: one port per entry of `ports`, in order, under its written
-    ///   name or, unnamed, the empty one, and one written port per port, its
-    ///   name tile from `names` and its sort's bytes and index terms.
-    /// - fails: as [`Self::sort_term`].
+    ///   name or, unnamed, the empty one, with one binder per written binder,
+    ///   outermost first, each under its written name over its domain's sort;
+    ///   and one written port per port, its name tile from `names` and its
+    ///   sort's bytes and index terms.
+    /// - fails: a sort or a binder's domain [`Self::sort_term`] cannot read.
     /// - panics: none.
     /// - executable: none — the sorts read are source syntax.
     ///
     /// # Errors
-    /// Returns `Malformed` for a sort that is neither a name nor an
-    /// application.
+    /// Returns `Malformed` for a sort or a domain that is neither a name nor
+    /// an application.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::signature_operation`]; an unnamed port
-    ///   leaves the value unchanged wherever it is written.
+    ///   leaves the value unchanged wherever it is written; the λ-calculus
+    ///   `lam` port and the identity-return `lam` port, whose binder's domain
+    ///   is an indexed sort, read back their binder and their sort.
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
     /// - witness: `described::tests::a_sign_answers_at_every_member`
     /// - witness: `description::sign::tests::the_description_is_read_off_the_value`
+    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
     fn presented_ports(
         &self,
         ports: &[SortRef],
         sorts: &[Placed],
         names: &[Maybe<ByteSpan, port_name::Absent>],
+        binders: &[Vec<WrittenBinder>],
     ) -> Result<(Vec<SigPort>, Vec<WrittenPort>), DescriptionDiagnostic>
     {
         let mut presented = Vec::with_capacity(ports.len());
         let mut written = Vec::with_capacity(ports.len());
-        for ((port, &sort), &named) in ports.iter().zip(sorts).zip(names) {
+        for (((port, &sort), &named), bound) in ports.iter().zip(sorts).zip(names).zip(binders) {
             let (term, at) = self.sort_term(sort)?;
+            let mut bindings = Vec::with_capacity(bound.len());
+            let mut binders_at = Vec::with_capacity(bound.len());
+            for binder in bound {
+                let (domain, domain_at) = self.sort_term(binder.domain)?;
+                bindings.push(SigBinder {
+                    name: self.text(binder.name).0.into(),
+                    sort: domain.sort,
+                    indices: domain.indices,
+                });
+                binders_at.push(WrittenBound {
+                    named: binder.name.span,
+                    sort: domain_at,
+                });
+            }
             presented.push(SigPort {
                 name: if port.name.as_ref().starts_with(FRESH_PORT) {
                     Name::from("")
@@ -618,8 +697,13 @@ impl Reader<'_, '_>
                 },
                 sort: term.sort,
                 indices: term.indices,
+                bindings,
             });
-            written.push(WrittenPort { named, sort: at });
+            written.push(WrittenPort {
+                named,
+                binders: binders_at,
+                sort: at,
+            });
         }
         Ok((presented, written))
     }
@@ -891,6 +975,7 @@ impl Reader<'_, '_>
                 sort: port.sort.clone(),
                 written: WrittenPort {
                     named,
+                    binders: Vec::new(),
                     sort: WrittenSort {
                         span: sort.span,
                         indices: Vec::new(),
@@ -952,6 +1037,7 @@ impl Reader<'_, '_>
                 Side {
                     ports: Vec::new(),
                     sorts: Vec::new(),
+                    binders: Vec::new(),
                     names: Vec::new(),
                 },
                 first,
@@ -962,6 +1048,8 @@ impl Reader<'_, '_>
             outputs: outputs.ports,
             input_sorts: inputs.sorts,
             output_sorts: outputs.sorts,
+            input_binders: inputs.binders,
+            output_binders: outputs.binders,
             input_names: inputs.names,
             output_names: outputs.names,
             rewrites,
@@ -974,8 +1062,9 @@ impl Reader<'_, '_>
     ///
     /// # Specification
     /// - ensures: typed ports and rewrite binders retain source order and
-    ///   names, each port its written sort and name tile, and each rewrite
-    ///   binder where its name and sides are written.
+    ///   names, each port its written sort, its restricted binders outermost
+    ///   first and its name tile, and each rewrite binder where its name and
+    ///   sides are written.
     /// - fails: a parenthesized expression is not coerced to a circuit
     ///   interface.
     /// - panics: none.
@@ -987,11 +1076,13 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a rewrite binder beside data ports keeps its name and
-    ///   face, a parenthesized expression is refused as an endpoint, and an
-    ///   endpoint written twice is a variable unless a sort carries its name.
+    ///   face, a parenthesized expression is refused as an endpoint, an
+    ///   endpoint written twice is a variable unless a sort carries its name,
+    ///   and a port under a binder keeps it.
     /// - witness: `description::sign::tests::a_ruled_sign_block_lowers_its_members_into_a_description`
     /// - witness: `description::sign::tests::an_expression_kind_signature_endpoint_is_refused_by_the_description_route`
     /// - witness: `description::sign::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
+    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
     fn port_side(
         &self,
         run: &mut Run<'_>,
@@ -1004,6 +1095,7 @@ impl Reader<'_, '_>
         let mut side = Side {
             ports: Vec::new(),
             sorts: Vec::new(),
+            binders: Vec::new(),
             names: Vec::new(),
         };
         let wire = |at: Placed| WrittenWire {
@@ -1050,11 +1142,13 @@ impl Reader<'_, '_>
                         fault: DescriptionFault::Signature(SignatureFault::ExpressionEndpoint),
                     });
                 }
-                let (name, sort, named) = if run.eat(Spelling(":")).0 {
+                let (name, sort, named, binders) = if run.eat(Spelling(":")).0 {
+                    let binders = run.binders()?;
                     (
                         self.port_name(first),
                         run.take()?,
                         Maybe::Present(first.span),
+                        binders,
                     )
                 }
                 else {
@@ -1062,10 +1156,12 @@ impl Reader<'_, '_>
                         fresh_port(first),
                         first,
                         Maybe::Absent(port_name::Absent::Unnamed),
+                        Vec::new(),
                     )
                 };
                 side.ports.push(SortRef::new(name, self.text(sort).0));
                 side.sorts.push(sort);
+                side.binders.push(binders);
                 side.names.push(named);
             }
             if !grouped {
@@ -1138,6 +1234,46 @@ impl Reader<'_, '_>
 
 impl Run<'_>
 {
+    /// Read the restricted binders a port's sort is written under, `pi+ (x :
+    /// S) .` each, outermost first.
+    ///
+    /// # Specification
+    /// - ensures: one binder per `pi+` the run continues with, in order, each
+    ///   its name tile and its written domain; a run that continues with none
+    ///   reads none and is left where it was.
+    /// - fails: a binder short of its opening parenthesis, name, colon, domain,
+    ///   closing parenthesis or dot is malformed.
+    /// - panics: none.
+    /// - executable: none — the binders read are source syntax.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the λ-calculus `lam` port and the identity-return
+    ///   `lam` port read back their one binder, and a port with none reads
+    ///   none.
+    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
+    fn binders(&mut self) -> Result<Vec<WrittenBinder>, DescriptionDiagnostic>
+    {
+        let mut binders = Vec::new();
+        while self.eat(Spelling("pi+")).0 {
+            if !self.eat(Spelling("(")).0 {
+                return Err(self.fault(DescriptionFault::Malformed));
+            }
+            let name = self.take()?;
+            if !self.eat(Spelling(":")).0 {
+                return Err(self.fault(DescriptionFault::Malformed));
+            }
+            let domain = self.take()?;
+            if !self.eat(Spelling(")")).0 || !self.eat(Spelling(".")).0 {
+                return Err(self.fault(DescriptionFault::Malformed));
+            }
+            binders.push(WrittenBinder { name, domain });
+        }
+        Ok(binders)
+    }
+
     /// Locate a typed signature refusal at its written member.
     ///
     /// # Specification
@@ -1265,10 +1401,12 @@ fn fresh_port(at: Placed) -> Name
 ///
 /// # Specification
 /// - ensures: one data sort per sort the value codes, its index telescope each
-///   index port's name over its sort's spelling; one operation per operation,
-///   its arity the ports in order, an unnamed one at its placeholder; one face
-///   per rule, its variables derived from its left side and its provenance the
-///   whole member the placement records; no parameter, constructor or circuit.
+///   index port's name over its sort's spelling, representable when the value
+///   codes it so; one operation per operation, its arity the ports in order, an
+///   unnamed one at its placeholder, each port under its binders, each binder's
+///   domain its sort's name over its index terms; one face per rule, its
+///   variables derived from its left side and its provenance the whole member
+///   the placement records; no parameter, constructor or circuit.
 /// - fails: as [`Presentation::members`]: a value that codes no presentation,
 ///   or a rule no member places.
 /// - panics: none.
@@ -1281,9 +1419,11 @@ fn fresh_port(at: Placed) -> Name
 /// # Adequacy
 /// - hypothesis: L3 — a block's description agrees with the value it defines,
 ///   member for member, an unnamed port at its placeholder and a face at its
-///   member's span; a rule the placement does not place is refused.
+///   member's span; a rule the placement does not place is refused; a rendered
+///   second-order signature's representable sorts and binders read back.
 /// - witness: `description::sign::tests::the_description_is_read_off_the_value`
 /// - witness: `description::sign::tests::the_cat_shape_laws_are_written_faces`
+/// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
 fn described(
     presentation: &Presentation,
     id: NominalId,
@@ -1300,14 +1440,18 @@ fn described(
         .sorts
         .iter()
         .map(|sort| {
-            SortDesc::family(
+            let family = SortDesc::family(
                 sort.name.clone(),
                 DeclPolarity::Data,
                 sort.indices
                     .iter()
                     .map(|index| SortIndex::new(index.name.clone(), spelled(index)))
                     .collect::<Vec<_>>(),
-            )
+            );
+            match sort.representability {
+                Representability::Ordinary => family,
+                Representability::Representable => family.representable(),
+            }
         })
         .collect();
     let operations: Vec<OperDesc> = parts.operations.iter().map(operation_desc).collect();
@@ -1338,7 +1482,7 @@ fn described(
 }
 
 /// The operation `operation` codes, its arity its ports in order, an unnamed
-/// one at its placeholder.
+/// one at its placeholder, each under its binders.
 ///
 /// # Specification
 /// trivial.
@@ -1349,16 +1493,42 @@ fn operation_desc(operation: &SigOperation) -> OperDesc
         .inputs
         .iter()
         .zip(names.by_ref())
-        .map(|(port, name)| SortRef::new(name, spelled(port)))
+        .map(|(port, name)| port_ref(port, name))
         .collect();
     let outputs: Vec<SortRef> = operation
         .outputs
         .iter()
         .zip(names)
-        .map(|(port, name)| SortRef::new(name, spelled(port)))
+        .map(|(port, name)| port_ref(port, name))
         .collect();
     let arity = BridgeArity::tupled(inputs, outputs);
     OperDesc::new(operation.name.clone(), arity, Attrs::empty())
+}
+
+/// The port `port` codes, under `name`: its sort spelled, and each binder as
+/// its name over its domain, the domain's sort name applied to its index
+/// terms, which is how `check_desc` resolves a binder's representability.
+///
+/// # Specification
+/// trivial.
+fn port_ref(
+    port: &SigPort,
+    name: Name,
+) -> SortRef
+{
+    let reference = SortRef::new(name, spelled(port));
+    if port.bindings.is_empty() {
+        return reference;
+    }
+    reference.pi_plus(
+        port.bindings
+            .iter()
+            .map(|binder| {
+                SortIndex::new(binder.name.clone(), binder.sort.clone())
+                    .applied(binder.indices.clone())
+            })
+            .collect::<Vec<_>>(),
+    )
 }
 
 /// A port's sort as the description spells it: its name, applied to its

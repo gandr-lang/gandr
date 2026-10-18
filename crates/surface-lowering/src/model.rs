@@ -152,12 +152,14 @@ pub struct SortTerm
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: the port's name — for an unnamed one, the placeholder `_i` its
-///   position `i` among its member's ports gives it — and its sort.
+///   position `i` among its member's ports gives it — its sort, and the
+///   variables it binds, outermost first.
 /// - executable: none — a port is data the derivation reads.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`SortTerm`].
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
+/// - witness: `model::tests::an_underivable_component_keeps_its_fault`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Port
 {
@@ -165,6 +167,9 @@ pub struct Port
     pub name: Name,
     /// Its sort.
     pub sort: SortTerm,
+    /// The `pi+` binders over it, each a named variable of a representable
+    /// sort; empty for a first-order port.
+    pub binders: Vec<Binder>,
 }
 
 /// A sort a sign declares, with its index telescope.
@@ -414,7 +419,8 @@ impl Presentation
     }
 }
 
-/// The ports `coded`, each under the next of `names`.
+/// The ports `coded`, each under the next of `names`, its binders under their
+/// own names.
 ///
 /// # Specification
 /// trivial.
@@ -434,6 +440,17 @@ where
                 sort: port.sort,
                 indices: port.indices,
             },
+            binders: port
+                .bindings
+                .into_iter()
+                .map(|binder| Binder {
+                    name: binder.name,
+                    sort: SortTerm {
+                        sort: binder.sort,
+                        indices: binder.indices,
+                    },
+                })
+                .collect(),
         })
         .collect()
 }
@@ -548,8 +565,8 @@ pub enum ModelForm
 /// - executable: none — a fault is data a refusal carries.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an ill-sorted law, an unsorted variable and a circuit
-///   rule each keep their own fault.
+/// - hypothesis: L3 — an ill-sorted law, an unsorted variable, a circuit rule
+///   and a binding operation each keep their own fault.
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ModelFault
@@ -572,6 +589,10 @@ pub enum ModelFault
     /// A component naming a sort or an operation whose own derivation
     /// failed.
     Inherited,
+    /// An operation one of whose ports binds a variable: a second-order
+    /// operation, whose models are the first-order translation's, not a
+    /// structure on the value universe.
+    Binding,
 }
 
 impl core::fmt::Display for ModelFault
@@ -595,6 +616,9 @@ impl core::fmt::Display for ModelFault
             Self::Circuit => "is a circuit rule, whose sphere a model does not read yet",
             Self::Constructor => "applies a constructor, which a sign does not declare",
             Self::Inherited => "names a component the model cannot state",
+            Self::Binding => {
+                "binds a variable over a port, whose models are its first-order translation's"
+            },
         })
     }
 }
@@ -679,7 +703,8 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 ///   operation's telescope binds its free sort variables before its ports, a
 ///   law's binds the variables in another variable's sort first, and every
 ///   application carries every argument its operation binds; a component that
-///   cannot be stated keeps its fault, and one naming such a component is
+///   cannot be stated keeps its fault, an operation one of whose ports binds a
+///   variable keeps [`ModelFault::Binding`], and one naming such a component is
 ///   [`ModelFault::Inherited`].
 /// - fails: never; a fault is kept on its component.
 /// - panics: none.
@@ -688,7 +713,8 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the `CatShape` presentation and an ill-sorted, an
-///   unsorted and a circuit member, each asserted as the exact components.
+///   unsorted, a circuit and a binding member, each asserted as the exact
+///   components.
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
 /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
@@ -714,12 +740,22 @@ pub(crate) fn derive_members(
         });
     }
     for operation in &members.operations {
-        let head = infer::derive_head(
-            &heads,
-            infer::HeadKind::Operation,
-            &operation.inputs,
-            &operation.outputs,
-        );
+        let binds = operation
+            .inputs
+            .iter()
+            .chain(&operation.outputs)
+            .any(|port| !port.binders.is_empty());
+        let head = if binds {
+            Err(ModelFault::Binding)
+        }
+        else {
+            infer::derive_head(
+                &heads,
+                infer::HeadKind::Operation,
+                &operation.inputs,
+                &operation.outputs,
+            )
+        };
         let form = head.clone().map(|derived| ModelForm::Operation {
             telescope: derived.binders,
             results: derived.results,

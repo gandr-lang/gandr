@@ -70,7 +70,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow", "item.singleton", "expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 56 && rules.iter().take(35).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(35).take(3).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(38).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow", "item.singleton", "expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 57 && rules.iter().take(36).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(36).take(3).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(39).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -100,7 +100,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 35 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 36 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -328,6 +328,17 @@ fn add_type_rules(
                 tile(TileLabel("]")),
             ])),
         ]),
+    ));
+    // The universe of representable sorts, `Type+`: the classifier a `sign`
+    // block's `sort` member writes for a sort a port may bind a variable of.
+    // It is one marked tile, so `Type[+]`, the universe of value types, keeps
+    // its bracket and the sum `Type + A` its sign. The grammar reads it at every
+    // type slot; the lowering admits it only as a sort member's classifier.
+    rules.push(rule(
+        RuleName("representable_universe_type"),
+        ty,
+        type_atom,
+        tile(TileLabel("Type+")),
     ));
     rules.push(rule(
         RuleName("at_type"),

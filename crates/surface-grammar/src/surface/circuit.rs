@@ -732,7 +732,7 @@ fn result_group() -> Regex
 fn parameter() -> Regex
 {
     alt([
-        port(),
+        input_port(),
         seq([
             t(TileLabel("rule")),
             t(TileLabel("identifier")),
@@ -747,6 +747,52 @@ fn parameter() -> Regex
             t(TileLabel(":")),
             h(Sort::Type),
         ]),
+    ])
+}
+
+/// Build one input port: a plain [`port`] whose named form may write its type
+/// under restricted binders, `t : pi+ (x : S) . T` — `T` under one variable of
+/// the representable sort `S`, the binding a second-order signature's
+/// operation writes (Kaposi and Xie's `S ⇒⁺ T`). A telescope nests outermost
+/// first, `pi+ (x : S) . pi+ (y : S) . T`.
+///
+/// The binder belongs to the port, not to the type language: a rule in every
+/// type slot would put its parenthesis, name, colon and dot molds before
+/// every damaged type the parser repairs, and results never bind.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a named port over zero or more binders, or a bare type, keeping
+///   the unnamed-port sugar separate.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.get(2).is_some_and(|binders| matches!(binders.shape(), RegexShape::Repeat(_))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type))))]
+fn input_port() -> Regex
+{
+    alt([
+        seq([
+            port_name(),
+            t(TileLabel(":")),
+            repeat(seq([
+                t(TileLabel("pi+")),
+                t(TileLabel("(")),
+                t(TileLabel("identifier")),
+                t(TileLabel(":")),
+                h(Sort::Type),
+                t(TileLabel(")")),
+                t(TileLabel(".")),
+            ])),
+            h(Sort::Type),
+        ]),
+        h(Sort::Type),
     ])
 }
 
