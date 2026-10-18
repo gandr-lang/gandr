@@ -49,6 +49,7 @@ members = [
   "crates/theory-levitation",
   "crates/theory-nominal-automata",
   "crates/theory-orders",
+  "crates/theory-shapes",
   "crates/theory-sites",
   "crates/theory-spec-combinators",
   "crates/theory-virtual-doctrines",
@@ -155,6 +156,7 @@ default-features = false
 # - theory-levitation
 # - theory-nominal-automata
 # - theory-orders
+# - theory-shapes
 # - theory-sites
 # - theory-spec-combinators
 # - theory-virtual-doctrines

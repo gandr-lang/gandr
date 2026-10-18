@@ -1,0 +1,27 @@
+[package]
+name = "gandr-theory-shapes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Finite shapes for gandr: decidable subshapes, their outer pushout, and conjunctive face entailment with a derivation or a countermodel"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["face-theory", "gandr", "no-std", "shapes"]
+categories = ["data-structures", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
+[dependencies]
+anodized.workspace = true
+
+[lints]
+workspace = true
