@@ -127,7 +127,7 @@ impl Machine<'_, '_>
         if declared.len() != count {
             return Err(CheckRefusal::ConstructorArity(term));
         }
-        self.wait(Frame::NativeYield(Produced::ValueType(datatype)));
+        self.wait(Frame::NativeYield(Produced::ValueType(datatype.into())));
         for (index, &field_type) in declared.iter().enumerate().rev() {
             let expected = former::field_at(
                 self.context,
@@ -1107,7 +1107,8 @@ impl Machine<'_, '_>
         };
         let arena = self.context.arena_mut();
         let result = instantiate_comp_type(arena, motive, scrutinee);
-        let lifted = shift_comp_type_under(arena, motive, Binders::ONE, Binders::from(2_u32));
+        let lifted =
+            shift_comp_type_under(arena, motive, Binders::ONE, Binders::from(2_u32)).settle(arena);
         let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
         let inner = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let pair = arena.value_tuple(&[outer, inner]);

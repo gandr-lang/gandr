@@ -98,7 +98,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::instantiate_comp_type;
 use gandr_core_term::shift_comp_type;
-use gandr_core_term::shift_computation_under_traced;
+use gandr_core_term::shift_computation_under;
 use gandr_core_term::shift_value;
 use gandr_core_term::shift_value_type;
 use gandr_kernel_term::ConstantIndex;
@@ -231,9 +231,8 @@ pub fn respected(
         let bound = u32::from(rule.variables());
         let amount = Binders::from(bound);
         let arena = context.arena_mut();
-        let datatype = shift_value_type(arena, datatype, amount);
-        let head =
-            shift_computation_under_traced(arena, head, Binders::NONE, amount, &mut Vec::new());
+        let datatype = shift_value_type(arena, datatype, amount).settle(arena);
+        let head = shift_computation_under(arena, head, Binders::NONE, amount).settle(arena);
         let mut side = |nodes: &[RuleNode]| {
             build_side(nodes, &arities, |node, fields| match node {
                 RuleNode::Variable(variable) => arena.value_variable(
@@ -346,7 +345,7 @@ fn parallel_in_a_set(
 ) -> Related
 {
     let arena = context.arena_mut();
-    let arrow = shift_comp_type(arena, arrow, amount);
+    let arrow = shift_comp_type(arena, arrow, amount).settle(arena);
     let (from, to) = if let Some(&CompType::Pi { codomain, .. }) = arena.comp_type(arrow) {
         (
             instantiate_comp_type(arena, codomain, left),
@@ -607,7 +606,8 @@ fn lawful(
         .slots(&crate::former::slot_table(arena, declaration, signature))
         .map_err(|_fault| CheckRefusal::MachineInvariant)?;
     let bound = u32::from(rule.variables());
-    let carrier = shift_value_type(context.arena_mut(), carrier, Binders::from(bound));
+    let carrier = shift_value_type(context.arena_mut(), carrier, Binders::from(bound))
+        .settle(context.arena_mut());
     let parameters = gandr_core_term::BinderDepth::from(signature.parameters().len());
     // A law over no variable may state its path bare; any other states it
     // behind one parameter per variable.
@@ -813,16 +813,11 @@ fn sequenced(
         }
         let depth = bound.len();
         let amount = Binders::from(u32::try_from(depth).unwrap_or(u32::MAX));
-        let mut built = shift_computation_under_traced(
-            arena,
-            spine.head,
-            Binders::NONE,
-            amount,
-            &mut Vec::new(),
-        );
+        let mut built =
+            shift_computation_under(arena, spine.head, Binders::NONE, amount).settle(arena);
         for &argument in &spine.read {
             let value = match argument {
-                Argument::Kept(kept) => shift_value(arena, kept, amount),
+                Argument::Kept(kept) => shift_value(arena, kept, amount).settle(arena),
                 Argument::Bound(position) => {
                     let past = depth.saturating_sub(position).saturating_sub(1);
                     arena.value_variable(

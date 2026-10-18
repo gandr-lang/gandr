@@ -90,10 +90,12 @@
 //! A carried support is syntactic: it over-approximates dependence. A
 //! β-removable or singleton-typed use still occurs, so the support names it.
 //! It keys, footprints, schedules and bounds capture, where an
-//! over-approximation splits work and never merges two answers. It never
-//! decides a strengthening: whether a type can be lowered out of a binder is
-//! the judgement's question, answered by unification over the type, and the
-//! bind rule's strengthening stays the refusal it is.
+//! over-approximation splits work and never merges two answers. It decides
+//! the syntactic strengthening — a type whose support selects a binder
+//! mentions it, exactly where an occurrence walk would find it — and never a
+//! semantic one: whether a type that mentions a binder can still be lowered
+//! out of it is the judgement's question, answered by unification over the
+//! type, and the bind rule's strengthening stays the refusal it is.
 //!
 //! # References
 //!

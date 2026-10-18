@@ -451,7 +451,8 @@ fn scrutinees(
         else {
             return Ok(held);
         };
-        let sort = shift_value_type(context.arena_mut(), declared, Binders::past(index));
+        let sort = shift_value_type(context.arena_mut(), declared, Binders::past(index))
+            .settle(context.arena_mut());
         let Some(first) = loops(context, sort).first().copied()
         else {
             return Ok(held);

@@ -1480,11 +1480,9 @@ impl Typer<'_>
         let mut classifiers = Vec::with_capacity(count);
         for (place, &classifier) in signature.parameters().iter().enumerate() {
             let lift = u32::try_from(count.saturating_sub(place)).unwrap_or(u32::MAX);
-            classifiers.push(gandr_core_term::shift_value_type(
-                self.arena,
-                classifier,
-                Binders::from(lift),
-            ));
+            let lifted =
+                gandr_core_term::shift_value_type(self.arena, classifier, Binders::from(lift));
+            classifiers.push(lifted.settle(self.arena));
         }
         for (fields, member) in signature.constructors().iter().zip(&written.constructors) {
             let ty = if fields.is_empty() {
@@ -1496,7 +1494,11 @@ impl Typer<'_>
             self.emit(member.named, DescribedRole::Name, ty, context);
             let mut earlier = Binders::NONE;
             for (&field, port) in fields.iter().zip(&member.fields) {
-                let outside = gandr_core_term::strengthen_value_type(self.arena, field, earlier);
+                let outside =
+                    match gandr_core_term::strengthen_value_type(self.arena, field, earlier) {
+                        Maybe::Present(lowered) => Maybe::Present(lowered.settle(self.arena)),
+                        Maybe::Absent(reason) => Maybe::Absent(reason),
+                    };
                 earlier = earlier.deeper();
                 if let Maybe::Present(named) = port.named
                     && let Maybe::Present(outside) = outside

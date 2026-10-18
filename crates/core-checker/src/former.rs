@@ -608,7 +608,8 @@ pub fn instantiate(
         };
         let depth =
             Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);
-        let argument = gandr_core_term::shift_value(context.arena_mut(), argument, depth);
+        let argument = gandr_core_term::shift_value(context.arena_mut(), argument, depth)
+            .settle(context.arena_mut());
         subject = gandr_core_term::instantiate_value_type(context.arena_mut(), subject, argument);
     }
     Ok(subject)
@@ -659,7 +660,8 @@ pub fn field_type(
         };
         let depth =
             Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);
-        let argument = gandr_core_term::shift_value(context.arena_mut(), argument, depth);
+        let argument = gandr_core_term::shift_value(context.arena_mut(), argument, depth)
+            .settle(context.arena_mut());
         subject = gandr_core_term::instantiate_value_type_under(
             context.arena_mut(),
             subject,
@@ -714,7 +716,8 @@ pub fn field_at(
         };
         let depth =
             Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);
-        let value = gandr_core_term::shift_value(context.arena_mut(), value, depth);
+        let value = gandr_core_term::shift_value(context.arena_mut(), value, depth)
+            .settle(context.arena_mut());
         subject = gandr_core_term::instantiate_value_type(context.arena_mut(), subject, value);
     }
     Ok(subject)
@@ -767,7 +770,7 @@ pub fn field_outside(
     let subject = field_type(context, datatype, field, earlier)?;
     Ok(
         match gandr_core_term::strengthen_value_type(context.arena_mut(), subject, earlier) {
-            Maybe::Present(lowered) => Maybe::Present(lowered),
+            Maybe::Present(lowered) => Maybe::Present(lowered.settle(context.arena_mut())),
             Maybe::Absent(_) => Maybe::Absent(outside::Absent::Dependent),
         },
     )
@@ -816,7 +819,8 @@ pub fn branch_type(
         .ok_or(CheckRefusal::MachineInvariant)?;
     let count = u32::try_from(fields.len()).map_err(|_cause| CheckRefusal::MachineInvariant)?;
     let shifted_type =
-        gandr_core_term::shift_value_type(context.arena_mut(), datatype, Binders::from(count));
+        gandr_core_term::shift_value_type(context.arena_mut(), datatype, Binders::from(count))
+            .settle(context.arena_mut());
     let values = (0 .. count)
         .rev()
         .map(|index| {
@@ -833,7 +837,8 @@ pub fn branch_type(
         motive,
         Binders::ONE,
         Binders::from(count),
-    );
+    )
+    .settle(context.arena_mut());
     let mut result =
         gandr_core_term::instantiate_comp_type(context.arena_mut(), shifted, constructor);
     for (index, &field) in fields.iter().enumerate().rev() {
@@ -841,7 +846,10 @@ pub fn branch_type(
             Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);
         let domain = field_type(context, datatype, field, earlier)?;
         result = match gandr_core_term::strengthen_comp_type(context.arena_mut(), result) {
-            Maybe::Present(closed) => context.arena_mut().comp_type_arrow(domain, closed),
+            Maybe::Present(closed) => {
+                let closed = closed.settle(context.arena_mut());
+                context.arena_mut().comp_type_arrow(domain, closed)
+            },
             Maybe::Absent(_) => context.arena_mut().comp_type_pi(domain, result),
         };
     }

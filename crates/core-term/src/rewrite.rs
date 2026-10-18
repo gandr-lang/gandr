@@ -1,6 +1,7 @@
 //! The rewrites a dependent type needs: shifting a type into a deeper context,
 //! instantiating a dependent codomain at an argument, and strengthening a type
-//! out from under the binder it was synthesized beneath.
+//! out from under the binder it was synthesized beneath — the first and the
+//! last as updates of the relocation an id carries, the second as a walk.
 //!
 //! # Why a type is rewritten at all
 //!
@@ -13,15 +14,18 @@
 //! be lowered back out of it, which fails exactly when the type mentions the
 //! binder.
 //!
-//! # One engine, three rewrites
+//! # One engine, its rewrites
 //!
-//! The three differ only at a variable occurrence; every other former is a
+//! The rewrites differ only at a variable occurrence; every other former is a
 //! congruence that rewrites its children, each at the depth its position sits
 //! at, and mints a node only where a child changed. The engine is iterative —
 //! a heap task stack, children opened in reverse and closed in order — so a
 //! deep type costs heap rather than stack, and memoized per node at the depth
 //! it is reached at, so a shared subterm is rewritten once however many paths
-//! reach it.
+//! reach it. A rewrite that acts only on free indices at or past the depth it
+//! is at answers a node whose carried support stops below that depth with the
+//! node itself, without entering it, so a walk visits only the paths that lead
+//! to an index it moves.
 //!
 //! A substitution carries its replacement under the binders it crosses: at
 //! depth `d` the occurrence the depth names becomes the replacement shifted by
@@ -70,23 +74,29 @@
 //! # Binder machines
 //!
 //! A dependent arrow's codomain stands under one binder, so the checker shifts
-//! and instantiates types. `shift_value_type` and `shift_comp_type` raise the
-//! free indices of the intuitionistic zone at or past a cutoff;
+//! and instantiates types. A shift and a strengthening are root updates: they
+//! mint nothing, answering the subject's id under a [`Relocation`] — the raise
+//! or lowering of every free intuitionistic index at or past a cutoff, fitted
+//! to the node's carried support — that a later shift folds into where the two
+//! fold, and [`Relocated::settle`] reads into a plain id by the one eager walk,
+//! [`Rewrite::Relocate`], entering only nodes whose support reaches its
+//! cutoff. `strengthen_comp_type` reads its answer off the carried support:
+//! a type whose support selects the binder is refused with
+//! `strengthening::Absent::MentionsBinder`, and any other is lowered.
 //! `instantiate_comp_type` substitutes a value for the innermost index and
-//! lowers the rest; `strengthen_comp_type` lowers a type out of one binder or
-//! refuses with `strengthening::Absent::MentionsBinder` when the type mentions
-//! it. Each runs on a heap task stack, never recursing, and memoizes per node
-//! and binder depth, so a shared subterm is rewritten once per depth it is
-//! reached at. A replacement carried under a binder is shifted once per depth
-//! and recorded, so substitution avoids capture without renaming anything. The
-//! linear zone is left alone: no former in the vocabulary binds into it.
+//! lowers the rest in one walk. A replacement carried under a binder is
+//! shifted once per depth and recorded, so substitution avoids capture without
+//! renaming anything. The linear zone is left alone: no former in the
+//! vocabulary binds into it.
 //!
 //! Alternatives: recursive rewrites, which the workspace's recursion lint
-//! forbids and which a deep type would overflow; and explicit substitutions
-//! held lazily in the arena, which every reader would then have to push
-//! through. Reversal: a measured family whose cost is dominated by the eager
-//! rewrite, which would hold substitutions as closures the way the normalizer
-//! already does.
+//! forbids and which a deep type would overflow; a relocation composed into
+//! every arena read, which changes every reader across the workspace and
+//! hands each an owned node; and a relocation stored on every child edge,
+//! which is not closed under composition (see [`crate::relocation`]) and so
+//! would settle on every non-folding update anyway. Reversal: a measured
+//! family whose cost is dominated by the settle at a consumer, which would
+//! carry relocations through the readers that consumer reaches.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -105,6 +115,11 @@ use crate::arena::ValueTypeId;
 use crate::hole::HoleId;
 use crate::hole::MarkIndex;
 use crate::hole::TermId;
+use crate::relocation::Offset;
+use crate::relocation::Relocated;
+use crate::relocation::Relocation;
+use crate::relocation::folding;
+use crate::support::ThinningRef;
 use crate::syntax::CompType;
 use crate::syntax::ComponentCount;
 use crate::syntax::Computation;
@@ -275,6 +290,30 @@ mod renamed
     }
 }
 
+/// Why a walk answers a node unread.
+mod free
+{
+    /// The single reason a node carries no free index a walk acts on.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub(super) enum Absent
+    {
+        /// Every free index the node selects stands inside the depth.
+        Inside,
+    }
+}
+
+/// Why a node's support could not be read.
+mod unminted
+{
+    /// The single reason a node carries no support.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub(super) enum Absent
+    {
+        /// The id names no node of the arena.
+        Dangling,
+    }
+}
+
 /// Why a strengthening answered nothing.
 pub mod strengthening
 {
@@ -305,8 +344,10 @@ enum Node
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Rewrite
 {
-    /// Raise every free index by the count.
-    Shift(Binders),
+    /// Move every free index by the offset: the eager reading of a
+    /// relocation, and the raise a replacement takes under the binders it is
+    /// carried past.
+    Relocate(Offset),
     /// Replace the index the depth names by the value, and lower every index
     /// outside it.
     Substitute(ValueId),
@@ -320,9 +361,6 @@ enum Rewrite
     /// of a decoded returned code carried under the bind
     /// [`Rewrite::Instantiate`] puts ahead of it.
     Rotate(Binders),
-    /// Lower every index outside the depth, recording a mention of the index
-    /// the depth names.
-    Lower,
     /// Replace every hole of the name, in the filling's family, by the filling.
     Fill(HoleId, Node),
     /// Wrap every node the engine's sites name in the mark it names.
@@ -341,13 +379,13 @@ enum Rewrite
     /// Replace every occurrence of the constant by the intuitionistic
     /// variable counting past the depth to the index.
     Abstract(ConstantIndex, DeBruijnIndex),
-    /// Raise every free index by the count, as a shift does, and answer each
-    /// run the engine's slots name by the variable of the bind its region
+    /// Raise every free index by the count, as a relocation does, and answer
+    /// each run the engine's slots name by the variable of the bind its region
     /// mints for it.
     Splice(Binders),
 }
 
-/// Whether a lowering met the binder it lowers out of.
+/// Whether an instantiation met the binder it instantiates beneath a node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Mention
 {
@@ -397,8 +435,6 @@ struct Engine<'arena>
     tasks: Vec<Task>,
     /// The results of closed nodes, awaiting their parents.
     results: Vec<Node>,
-    /// Whether a lowering met its binder.
-    mention: Mention,
     /// The nodes a wrap marks, each with its mark.
     sites: BTreeMap<Node, MarkIndex>,
     /// The entries an environment substitution replaces free indices by,
@@ -439,7 +475,6 @@ impl<'arena> Engine<'arena>
             memo: BTreeMap::new(),
             tasks: Vec::new(),
             results: Vec::new(),
-            mention: Mention::Absent,
             sites: BTreeMap::new(),
             environment: Vec::new(),
             nesting: BTreeMap::new(),
@@ -459,7 +494,8 @@ impl<'arena> Engine<'arena>
     /// - requires: the subject graph is acyclic wherever its nodes resolve; the
     ///   pending and result stacks are empty. Unreadable ids are admitted.
     /// - ensures: the rewritten node, in the subject's family; an unreadable
-    ///   subject answers itself.
+    ///   subject, and one whose support the rewrite does not reach, answers
+    ///   itself.
     /// - provides: the whole iterative walk, memoized per node and depth.
     /// - fails: never.
     /// - panics: none.
@@ -475,7 +511,7 @@ impl<'arena> Engine<'arena>
     #[spec(
         requires: self.tasks.is_empty() && self.results.is_empty(),
         ensures: |ret| self.tasks.is_empty() && self.results.is_empty()
-            && self.memo.get(&(subject, depth, rewrite)) == Some(&ret)
+            && (self.memo.get(&(subject, depth, rewrite)) == Some(&ret) || ret == subject)
             && core::mem::discriminant(&ret) == core::mem::discriminant(&subject),
     )]
     fn run(
@@ -522,8 +558,12 @@ impl<'arena> Engine<'arena>
         self.results.pop().unwrap_or(subject)
     }
 
-    /// Open one node: answer it at once when the memo or a variable rule can,
-    /// and otherwise schedule its close after its children.
+    /// Open one node: answer it at once when the memo, its support or a
+    /// variable rule can, and otherwise schedule its close after its children.
+    ///
+    /// A relocation, a substitution, an instantiation and an environment
+    /// substitution act only on free indices at or past the depth, so a node
+    /// whose carried support selects none answers itself unread.
     ///
     /// # Specification
     /// - requires: `depth` is the number of binders crossed to reach `node`.
@@ -534,19 +574,22 @@ impl<'arena> Engine<'arena>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a memo hit returns the stored result, a free
-    ///   occurrence answers immediately, and substitution beneath a binder
-    ///   schedules a shifted replacement; the shared-chain and capture
-    ///   witnesses separate missing publication, duplicate work and premature
-    ///   replacement.
+    /// - hypothesis: L3 — a memo hit returns the stored result, a node whose
+    ///   support stops below the depth answers itself without entering the
+    ///   memo, a free occurrence answers immediately, and substitution beneath
+    ///   a binder schedules a shifted replacement; the shared-chain, skip and
+    ///   capture witnesses separate missing publication, duplicate work, a walk
+    ///   into a closed child and premature replacement.
     /// - witness: `rewrite::tests::a_shared_type_is_rewritten_once_per_node`
+    /// - witness: `rewrite::tests::a_walk_enters_only_nodes_whose_support_reaches_its_depth`
     /// - witness: `rewrite::tests::substitution_replaces_a_free_occurrence`
     /// - witness: `rewrite::tests::substitution_avoids_capture`
     /// - witness: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`
     #[spec(
         captures: [pending = self.tasks.len(), ready = self.results.len()],
         ensures: (ready.checked_add(1) == Some(self.results.len()) && self.tasks.len() == pending
-            && self.memo.get(&(node, depth, rewrite)) == self.results.last())
+            && (self.memo.get(&(node, depth, rewrite)) == self.results.last()
+                || self.results.last() == Some(&node)))
             || (self.results.len() == ready && self.tasks.len() > pending
                 && matches!(self.tasks.get(pending), Some(Task::Close(held, at, step) | Task::Record(held, at, step))
                     if *held == node && *at == depth && *step == rewrite)),
@@ -565,6 +608,17 @@ impl<'arena> Engine<'arena>
                 self.note_read(node, depth);
             }
             self.results.push(done);
+            return;
+        }
+        if matches!(
+            rewrite,
+            Rewrite::Relocate(_)
+                | Rewrite::Substitute(_)
+                | Rewrite::Instantiate(..)
+                | Rewrite::Environment
+        ) && self.outermost_free(node, depth) == Maybe::Absent(free::Absent::Inside)
+        {
+            self.results.push(node);
             return;
         }
         if let Maybe::Present(answer) = self.slotted(node, depth, rewrite) {
@@ -648,7 +702,7 @@ impl<'arena> Engine<'arena>
                     self.tasks.push(Task::Open(
                         Node::Value(replacement),
                         Binders::NONE,
-                        Rewrite::Shift(under),
+                        Rewrite::Relocate(Offset::raise(under)),
                     ));
                 },
             }
@@ -659,6 +713,44 @@ impl<'arena> Engine<'arena>
         }
         self.tasks.push(Task::Close(node, depth, rewrite));
         self.push_children(node, depth, rewrite);
+    }
+
+    /// The outermost free intuitionistic index `node`'s carried support
+    /// selects, when it stands at or past `depth`.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling node selects nothing.
+    /// - ensures: the greatest selected intuitionistic index when it is at or
+    ///   past `depth`; [`free::Absent::Inside`] when the support is empty or
+    ///   stops below `depth`.
+    /// - provides: the test that lets a walk answer a node without entering it:
+    ///   read off the node, never a walk below it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed child, a child free only below the depth and
+    ///   one free at it separate the skip from the walk.
+    /// - witness: `rewrite::tests::a_walk_enters_only_nodes_whose_support_reaches_its_depth`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(outermost) => u32::from(outermost) >= depth.0,
+        Maybe::Absent(free::Absent::Inside) => true,
+    })]
+    fn outermost_free(
+        &self,
+        node: Node,
+        depth: Binders,
+    ) -> Maybe<DeBruijnIndex, free::Absent>
+    {
+        let support = match node {
+            Node::Value(id) => self.arena.value_support(id),
+            Node::Computation(id) => self.arena.computation_support(id),
+            Node::ValueType(id) => self.arena.value_type_support(id),
+            Node::CompType(id) => self.arena.comp_type_support(id),
+        };
+        match support.and_then(|support| support.view().indices(Zone::Intuitionistic).next_back()) {
+            Some(outermost) if u32::from(outermost) >= depth.0 => Maybe::Present(outermost),
+            Some(_) | None => Maybe::Absent(free::Absent::Inside),
+        }
     }
 
     /// Note that `node`, reached at `depth` by an instantiation, reads the
@@ -768,7 +860,7 @@ impl<'arena> Engine<'arena>
         self.tasks.push(Task::Open(
             Node::Computation(call),
             Binders::NONE,
-            Rewrite::Shift(depth),
+            Rewrite::Relocate(Offset::raise(depth)),
         ));
         Maybe::Present(())
     }
@@ -981,11 +1073,10 @@ impl<'arena> Engine<'arena>
                         .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)),
                 ))
             },
-            Rewrite::Shift(_)
+            Rewrite::Relocate(_)
             | Rewrite::Substitute(_)
             | Rewrite::Instantiate(..)
             | Rewrite::Rotate(_)
-            | Rewrite::Lower
             | Rewrite::Fill(..)
             | Rewrite::Wrap
             | Rewrite::Environment
@@ -1083,7 +1174,9 @@ impl<'arena> Engine<'arena>
             self.tasks.push(Task::Open(
                 Node::Computation(later),
                 Binders::NONE,
-                Rewrite::Shift(Binders::ONE.deeper_by(ComponentCount::from(before))),
+                Rewrite::Relocate(Offset::raise(
+                    Binders::ONE.deeper_by(ComponentCount::from(before)),
+                )),
             ));
         }
     }
@@ -1138,44 +1231,50 @@ impl<'arena> Engine<'arena>
 
     /// The rewritten form of one intuitionistic occurrence.
     ///
-    /// **This is the only place the binding rewrites differ.** A shift and a
-    /// splice raise an index at or past the depth and spare one inside it; a
-    /// substitution spares an index inside the depth, replaces the one the
-    /// depth names and lowers every one past it; a lowering does the same with
-    /// no replacement, recording that the named index occurred; an environment
-    /// substitution replaces every index past the depth by the entry it counts
-    /// to, and lowers one past the environment by its length. A fill, a wrap,
-    /// an elaboration and a renaming leave every occurrence as it stands.
+    /// **This is the only place the binding rewrites differ.** A relocation
+    /// moves an index at or past the depth by its offset and spares one inside
+    /// it, and a splice raises one the same way; a substitution spares an
+    /// index inside the depth, replaces the one the depth names and lowers
+    /// every one past it; an environment substitution replaces every index
+    /// past the depth by the entry it counts to, and lowers one past the
+    /// environment by its length. A fill, a wrap, an elaboration and a
+    /// renaming leave every occurrence as it stands.
     ///
     /// # Specification
     /// - requires: `depth` is the number of binders crossed to reach the
     ///   occurrence `id` at `index`.
     /// - ensures: the rule above; a substitution's replacement at a positive
-    ///   depth is answered as a carry, to be shifted by the depth.
+    ///   depth is answered as a carry, to be raised by the depth.
     /// - provides: the whole variable rule of the rewrites.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — indices below, at and above depths zero and one
-    ///   separate all three binding rewrite rules; a zero shift, a saturating
-    ///   shift and an open replacement distinguish identity, clamping and
-    ///   capture avoidance. An environment of two entries read at depths zero
-    ///   and one separates an inner index, each entry and an index past the
-    ///   environment.
+    ///   separate all three binding rewrite rules; a zero offset, a lowering, a
+    ///   saturating raise and an open replacement distinguish identity, sign,
+    ///   clamping and capture avoidance. An environment of two entries read at
+    ///   depths zero and one separates an inner index, each entry and an index
+    ///   past the environment.
     /// - witness: `rewrite::tests::occurrence_rules_separate_depth_boundaries`
     /// - witness: `rewrite::tests::an_environment_substitution_replaces_every_free_index`
     #[spec(
-        captures: mentioned = self.mention,
         ensures: |ret| match rewrite {
-            | Rewrite::Shift(amount) | Rewrite::Splice(amount) => self.mention == mentioned && if u32::from(index) < depth.0 || amount == Binders::NONE {
+            | Rewrite::Relocate(offset) => if u32::from(index) < depth.0 || offset == Offset::ZERO {
+                ret == Occurrence::Answered(id)
+            } else {
+                matches!(ret, Occurrence::Answered(answer) if matches!(self.arena.value(answer),
+                    Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
+                        if Binders(u32::from(*actual)) == offset.moved(Binders(u32::from(index)))))
+            },
+            | Rewrite::Splice(amount) => if u32::from(index) < depth.0 || amount == Binders::NONE {
                 ret == Occurrence::Answered(id)
             } else {
                 matches!(ret, Occurrence::Answered(answer) if matches!(self.arena.value(answer),
                     Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                         if u32::from(*actual) == u32::from(index).saturating_add(amount.0)))
             },
-            | Rewrite::Substitute(replacement) | Rewrite::Instantiate(replacement, _) => self.mention == mentioned && match u32::from(index).cmp(&depth.0) {
+            | Rewrite::Substitute(replacement) | Rewrite::Instantiate(replacement, _) => match u32::from(index).cmp(&depth.0) {
                 | core::cmp::Ordering::Less => ret == Occurrence::Answered(id),
                 | core::cmp::Ordering::Equal => if depth == Binders::NONE {
                     ret == Occurrence::Answered(replacement)
@@ -1184,7 +1283,7 @@ impl<'arena> Engine<'arena>
                     if matches!(self.arena.value(answer), Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                         if u32::from(*actual).checked_add(1) == Some(u32::from(index)))),
             },
-            | Rewrite::Rotate(band) => self.mention == mentioned && match u32::from(index).checked_sub(depth.0) {
+            | Rewrite::Rotate(band) => match u32::from(index).checked_sub(depth.0) {
                 | Some(past) if past == band.0 => matches!(ret, Occurrence::Answered(answer) if matches!(self.arena.value(answer),
                     Some(Value::Variable { zone: Zone::Intuitionistic, index: actual }) if u32::from(*actual) == depth.0)),
                 | Some(past) if past < band.0 => matches!(ret, Occurrence::Answered(answer) if matches!(self.arena.value(answer),
@@ -1192,19 +1291,10 @@ impl<'arena> Engine<'arena>
                         if Some(u32::from(*actual)) == u32::from(index).checked_add(1))),
                 | Some(_) | None => ret == Occurrence::Answered(id),
             },
-            | Rewrite::Lower => match u32::from(index).cmp(&depth.0) {
-                | core::cmp::Ordering::Less => ret == Occurrence::Answered(id) && self.mention == mentioned,
-                | core::cmp::Ordering::Equal => ret == Occurrence::Answered(id) && self.mention == Mention::Present,
-                | core::cmp::Ordering::Greater => self.mention == mentioned
-                    && matches!(ret, Occurrence::Answered(answer) if matches!(self.arena.value(answer),
-                        Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
-                            if u32::from(*actual).checked_add(1) == Some(u32::from(index)))),
-            },
             | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) => {
-                self.mention == mentioned && ret == Occurrence::Answered(id)
+                ret == Occurrence::Answered(id)
             },
-            | Rewrite::Environment => self.mention == mentioned
-                && (u32::from(index) >= depth.0 || ret == Occurrence::Answered(id)),
+            | Rewrite::Environment => u32::from(index) >= depth.0 || ret == Occurrence::Answered(id),
         },
     )]
     fn occurrence(
@@ -1217,7 +1307,19 @@ impl<'arena> Engine<'arena>
     {
         let position = Binders(u32::from(index));
         match rewrite {
-            Rewrite::Shift(amount) | Rewrite::Splice(amount) => {
+            Rewrite::Relocate(offset) => {
+                if position < depth || offset == Offset::ZERO {
+                    Occurrence::Answered(id)
+                }
+                else {
+                    let moved = offset.moved(position);
+                    Occurrence::Answered(
+                        self.arena
+                            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(moved.0)),
+                    )
+                }
+            },
+            Rewrite::Splice(amount) => {
                 if position < depth || amount == Binders::NONE {
                     Occurrence::Answered(id)
                 }
@@ -1261,14 +1363,6 @@ impl<'arena> Engine<'arena>
                     )
                 },
                 Some(_) | None => Occurrence::Answered(id),
-            },
-            Rewrite::Lower => match position.cmp(&depth) {
-                core::cmp::Ordering::Less => Occurrence::Answered(id),
-                core::cmp::Ordering::Equal => {
-                    self.mention = Mention::Present;
-                    Occurrence::Answered(id)
-                },
-                core::cmp::Ordering::Greater => Occurrence::Answered(self.lowered(position)),
             },
             Rewrite::Fill(..)
             | Rewrite::Wrap
@@ -1317,14 +1411,13 @@ impl<'arena> Engine<'arena>
     /// # Specification
     /// - requires: `position` is strictly above some depth, so it is positive.
     /// - ensures: a fresh intuitionistic variable at `position - 1`.
-    /// - provides: the lowering half of substitution and strengthening.
+    /// - provides: the lowering half of substitution.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — lowering index one and an index above a crossed
-    ///   binder distinguishes subtraction from identity and the wrong zone; the
-    ///   occurrence matrix also preserves a previously recorded mention.
+    ///   binder distinguishes subtraction from identity and the wrong zone.
     /// - witness: `rewrite::tests::occurrence_rules_separate_depth_boundaries`
     #[spec(requires: position.0 > 0,
         ensures: |ret| matches!(self.arena.value(ret), Some(Value::Variable { zone: Zone::Intuitionistic, index })
@@ -3559,47 +3652,421 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
     }
 }
 
+/// The support `node` carries, read in place.
+///
+/// # Specification
+/// - requires: nothing; a dangling id is admissible.
+/// - ensures: the node's carried support; [`unminted::Absent::Dangling`] when
+///   `node` names no node of `arena`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the arena's support reads, which it dispatches to.
+/// - witness: `rewrite::tests::a_strengthening_reads_the_carried_support`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(_) => true,
+    Maybe::Absent(unminted::Absent::Dangling) => match node {
+        Node::Value(id) => arena.value(id).is_none(),
+        Node::Computation(id) => arena.computation(id).is_none(),
+        Node::ValueType(id) => arena.value_type(id).is_none(),
+        Node::CompType(id) => arena.comp_type(id).is_none(),
+    },
+})]
+fn carried(
+    arena: &CoreArena,
+    node: Node,
+) -> Maybe<ThinningRef<'_>, unminted::Absent>
+{
+    let support = match node {
+        Node::Value(id) => arena.value_support(id),
+        Node::Computation(id) => arena.computation_support(id),
+        Node::ValueType(id) => arena.value_type_support(id),
+        Node::CompType(id) => arena.comp_type_support(id),
+    };
+    support.map_or(Maybe::Absent(unminted::Absent::Dangling), |support| {
+        Maybe::Present(support.view())
+    })
+}
+
+/// Move `node`'s free indices past `scope` by `offset` at once, minting the
+/// moved tree: the eager reading of a relocation, for one too wide to hold
+/// and for [`Relocated::settle`].
+///
+/// # Specification
+/// - requires: `offset` lowers no index of `node` past `scope` below `scope`.
+/// - ensures: the moved node, in `node`'s family; `node` itself when its
+///   support stops below `scope`.
+/// - provides: the one walk the shifts and strengthenings keep.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — settled raises of generated trees agree with the
+///   level-based reference read deeper. L3 — the binding sites and a lowering
+///   separate scope, sign and the spared binders.
+/// - witness: `rewrite::tests::a_settled_shift_agrees_with_the_level_reference`
+/// - witness: `rewrite::tests::binding_sites_distinguish_free_bound_and_linear_indices`
+#[spec(ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&node))]
+fn moved_eagerly(
+    arena: &mut CoreArena,
+    node: Node,
+    scope: Binders,
+    offset: Offset,
+) -> Node
+{
+    Engine::new(arena).run(node, scope, Rewrite::Relocate(offset))
+}
+
+/// [`moved_eagerly`] by `at`, reporting every node it copied, each beside
+/// its copy, into `carried`.
+///
+/// # Specification
+/// - requires: as [`moved_eagerly`].
+/// - ensures: as [`moved_eagerly`]; `carried` gains one entry per node the walk
+///   replaced, and nothing for a relocation that moves nothing.
+/// - provides: the settled copy a caller keeping metadata per node copies its
+///   records onto.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a traced raise reports exactly the rewritten nodes, and
+///   the identity reports nothing.
+/// - witness: `rewrite::tests::a_traced_shift_raises_only_past_its_scope`
+#[spec(captures: before = carried.len(), ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&node)
+    && carried.len() >= before)]
+fn settled_traced(
+    arena: &mut CoreArena,
+    node: Node,
+    at: Relocation,
+    carried: &mut Vec<Carried>,
+) -> Node
+{
+    if at == Relocation::IDENTITY {
+        return node;
+    }
+    let mut engine = Engine::new(arena);
+    let moved = engine.run(node, at.cutoff(), Rewrite::Relocate(at.offset()));
+    report(&engine.memo, carried);
+    moved
+}
+
+/// [`moved_eagerly`] by `at`: the node minted where the relocation reads it.
+///
+/// # Specification
+/// trivial.
+fn settled(
+    arena: &mut CoreArena,
+    node: Node,
+    at: Relocation,
+) -> Node
+{
+    if at == Relocation::IDENTITY {
+        return node;
+    }
+    moved_eagerly(arena, node, at.cutoff(), at.offset())
+}
+
+/// `node` read through `at` and then through `next`, as an update of the
+/// relocation at its root: the one relocation the two fold to on `node`'s
+/// support, or else `node` settled through `at` and read through `next`. A
+/// `next` too wide to hold moves the settled node eagerly by `offset` past
+/// `scope`.
+///
+/// # Specification
+/// - requires: `at` is fitted to `node`'s support; `next` and `offset` with
+///   `scope` are one move of the scope `at` reads `node` into.
+/// - ensures: a node and a relocation fitted to its support that read as `node`
+///   through `at` and then `next`; `node` itself, nothing minted, whenever the
+///   two fold.
+/// - provides: the root update every shift and strengthening is.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a plain subject raised mints nothing, a relocated one
+///   whose second raise folds mints nothing, and one whose second raise does
+///   not fold reads back as the two raises in turn.
+/// - witness: `rewrite::tests::a_shift_is_a_root_update`
+/// - witness: `rewrite::tests::a_renaming_composes_on_a_child_read_and_applies_at_a_variable`
+#[spec(ensures: |ret| core::mem::discriminant(&ret.0) == core::mem::discriminant(&node))]
+fn updated(
+    arena: &mut CoreArena,
+    (node, at): (Node, Relocation),
+    next: Maybe<Relocation, folding::Absent>,
+    scope: Binders,
+    offset: Offset,
+) -> (Node, Relocation)
+{
+    let Maybe::Present(next) = next
+    else {
+        let plain = settled(arena, node, at);
+        return (
+            moved_eagerly(arena, plain, scope, offset),
+            Relocation::IDENTITY,
+        );
+    };
+    let folded = match carried(arena, node) {
+        Maybe::Present(support) if at == Relocation::IDENTITY => {
+            Maybe::Present(next.fitted(support))
+        },
+        Maybe::Present(support) => at.then(next, support),
+        Maybe::Absent(unminted::Absent::Dangling) => Maybe::Present(at),
+    };
+    if let Maybe::Present(folded) = folded {
+        return (node, folded);
+    }
+    let plain = settled(arena, node, at);
+    match carried(arena, plain) {
+        Maybe::Present(support) => (plain, next.fitted(support)),
+        Maybe::Absent(unminted::Absent::Dangling) => (plain, next),
+    }
+}
+
+impl Relocated<ValueId>
+{
+    /// The value minted where the relocation reads it: the boundary a
+    /// consumer that holds plain ids crosses.
+    ///
+    /// # Specification
+    /// - requires: the relocated id names a value of `arena`.
+    /// - ensures: the node itself under the identity; otherwise the value with
+    ///   every free index the relocation moves moved, minted where it changed,
+    ///   entering only nodes whose support the relocation reaches.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as the value types' [`Relocated::settle`].
+    /// - witness: `rewrite::tests::a_settled_shift_agrees_with_the_level_reference`
+    #[spec(ensures: |ret| (self.relocation() != Relocation::IDENTITY || ret == self.node())
+        && (ret == self.node() || arena.value(ret).is_some()))]
+    #[inline]
+    #[must_use]
+    pub fn settle(
+        self,
+        arena: &mut CoreArena,
+    ) -> ValueId
+    {
+        match settled(arena, Node::Value(self.node()), self.relocation()) {
+            Node::Value(id) => id,
+            Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => self.node(),
+        }
+    }
+
+    /// [`Self::settle`], reporting every node it copied into `carried`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn settle_traced(
+        self,
+        arena: &mut CoreArena,
+        carried: &mut Vec<Carried>,
+    ) -> ValueId
+    {
+        match settled_traced(arena, Node::Value(self.node()), self.relocation(), carried) {
+            Node::Value(id) => id,
+            Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => self.node(),
+        }
+    }
+}
+
+impl Relocated<ComputationId>
+{
+    /// The computation minted where the relocation reads it.
+    ///
+    /// # Specification
+    /// - requires: the relocated id names a computation of `arena`.
+    /// - ensures: as the values' [`Relocated::settle`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a traced raise of a computation past its scope.
+    /// - witness: `rewrite::tests::a_traced_shift_raises_only_past_its_scope`
+    #[spec(ensures: |ret| (self.relocation() != Relocation::IDENTITY || ret == self.node())
+        && (ret == self.node() || arena.computation(ret).is_some()))]
+    #[inline]
+    #[must_use]
+    pub fn settle(
+        self,
+        arena: &mut CoreArena,
+    ) -> ComputationId
+    {
+        match settled(arena, Node::Computation(self.node()), self.relocation()) {
+            Node::Computation(id) => id,
+            Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => self.node(),
+        }
+    }
+
+    /// [`Self::settle`], reporting every node it copied into `carried`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn settle_traced(
+        self,
+        arena: &mut CoreArena,
+        carried: &mut Vec<Carried>,
+    ) -> ComputationId
+    {
+        match settled_traced(
+            arena,
+            Node::Computation(self.node()),
+            self.relocation(),
+            carried,
+        ) {
+            Node::Computation(id) => id,
+            Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => self.node(),
+        }
+    }
+}
+
+impl Relocated<ValueTypeId>
+{
+    /// The value type minted where the relocation reads it.
+    ///
+    /// # Specification
+    /// - requires: the relocated id names a value type of `arena`.
+    /// - ensures: the node itself under the identity; otherwise the type with
+    ///   every free index the relocation moves moved, minted where it changed,
+    ///   entering only nodes whose support the relocation reaches.
+    /// - provides: the plain type a constructor, the normaliser or a side table
+    ///   keyed by type takes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — settled raises of generated trees agree with the
+    ///   level-based reference read deeper, and settled lowerings with it read
+    ///   shallower.
+    /// - witness: `rewrite::tests::a_settled_shift_agrees_with_the_level_reference`
+    /// - witness: `rewrite::tests::a_strengthening_reads_the_carried_support`
+    #[spec(ensures: |ret| (self.relocation() != Relocation::IDENTITY || ret == self.node())
+        && (ret == self.node() || arena.value_type(ret).is_some()))]
+    #[inline]
+    #[must_use]
+    pub fn settle(
+        self,
+        arena: &mut CoreArena,
+    ) -> ValueTypeId
+    {
+        match settled(arena, Node::ValueType(self.node()), self.relocation()) {
+            Node::ValueType(id) => id,
+            Node::Value(_) | Node::Computation(_) | Node::CompType(_) => self.node(),
+        }
+    }
+
+    /// [`Self::settle`], reporting every node it copied into `carried`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn settle_traced(
+        self,
+        arena: &mut CoreArena,
+        carried: &mut Vec<Carried>,
+    ) -> ValueTypeId
+    {
+        match settled_traced(
+            arena,
+            Node::ValueType(self.node()),
+            self.relocation(),
+            carried,
+        ) {
+            Node::ValueType(id) => id,
+            Node::Value(_) | Node::Computation(_) | Node::CompType(_) => self.node(),
+        }
+    }
+}
+
+impl Relocated<CompTypeId>
+{
+    /// The computation type minted where the relocation reads it.
+    ///
+    /// # Specification
+    /// - requires: the relocated id names a computation type of `arena`.
+    /// - ensures: as the value types' [`Relocated::settle`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as the value types' [`Relocated::settle`].
+    /// - witness: `rewrite::tests::a_settled_shift_agrees_with_the_level_reference`
+    #[spec(ensures: |ret| (self.relocation() != Relocation::IDENTITY || ret == self.node())
+        && (ret == self.node() || arena.comp_type(ret).is_some()))]
+    #[inline]
+    #[must_use]
+    pub fn settle(
+        self,
+        arena: &mut CoreArena,
+    ) -> CompTypeId
+    {
+        match settled(arena, Node::CompType(self.node()), self.relocation()) {
+            Node::CompType(id) => id,
+            Node::Value(_) | Node::Computation(_) | Node::ValueType(_) => self.node(),
+        }
+    }
+
+    /// [`Self::settle`], reporting every node it copied into `carried`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn settle_traced(
+        self,
+        arena: &mut CoreArena,
+        carried: &mut Vec<Carried>,
+    ) -> CompTypeId
+    {
+        match settled_traced(
+            arena,
+            Node::CompType(self.node()),
+            self.relocation(),
+            carried,
+        ) {
+            Node::CompType(id) => id,
+            Node::Value(_) | Node::Computation(_) | Node::ValueType(_) => self.node(),
+        }
+    }
+}
+
 /// Shift a value type `amount` binders deeper: every free intuitionistic index
-/// rises by `amount`.
+/// rises by `amount`, as an update of the relocation at its root.
 ///
 /// # Specification
 /// - requires: `subject` names a value type of `arena`, formed in some context
-///   `Γ`.
-/// - ensures: the same type read in `Γ` extended by `amount` further binders;
-///   `subject` itself when it is closed or `amount` is zero, so a closed type
-///   costs no minting.
+///   `Γ`, plain or read through a relocation.
+/// - ensures: the same type read in `Γ` extended by `amount` further binders,
+///   as the subject's node under its relocation and then the raise, folded to
+///   one relocation fitted to its support, so a closed type, or any type at a
+///   zero `amount`, answers the subject as it stands; nothing is minted unless
+///   the two do not fold or `amount` passes what a relocation holds.
 /// - provides: the read of a context slot's type at an occurrence.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — 600 deterministic bounded codomains agree with a
-///   capture-free level-based reference under open substitution, with L3
-///   free/bound index boundaries and closed-type identity.
-/// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
-/// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
-#[spec(captures: entry = arena.watermark(),
-    ensures: |ret| (amount != Binders::NONE || (ret == subject && arena.watermark() == entry))
-        && (ret == subject || arena.value_type(ret).is_some()))]
+/// - hypothesis: L3 — a raise of an open type leaves every family's length
+///   where it was and reads back raised; a closed type and a zero amount answer
+///   the subject plain. L2 — settled, it agrees with the level-based reference.
+/// - witness: `rewrite::tests::a_shift_is_a_root_update`
+/// - witness: `rewrite::tests::a_settled_shift_agrees_with_the_level_reference`
+#[spec(ensures: |ret| (amount != Binders::NONE || ret == Into::<Relocated<ValueTypeId>>::into(subject))
+    && (ret.node() == Into::<Relocated<ValueTypeId>>::into(subject).node()
+        || arena.value_type(ret.node()).is_some()))]
 #[inline]
 #[must_use]
-pub fn shift_value_type(
+pub fn shift_value_type<Subject>(
     arena: &mut CoreArena,
-    subject: ValueTypeId,
+    subject: Subject,
     amount: Binders,
-) -> ValueTypeId
+) -> Relocated<ValueTypeId>
+where
+    Subject: Into<Relocated<ValueTypeId>> + Copy,
 {
-    if amount == Binders::NONE {
-        return subject;
-    }
-    match Engine::new(arena).run(
-        Node::ValueType(subject),
-        Binders::NONE,
-        Rewrite::Shift(amount),
-    ) {
-        Node::ValueType(id) => id,
-        Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
-    }
+    shift_value_type_under(arena, subject, Binders::NONE, amount)
 }
 
 /// Abstract the constant `constant` out of the value type `subject` as the
@@ -3642,43 +4109,38 @@ pub fn abstract_constant_value_type(
     }
 }
 
-/// Shift a computation type `amount` binders deeper.
+/// Shift a computation type `amount` binders deeper, as an update of the
+/// relocation at its root.
 ///
 /// # Specification
 /// - requires: `subject` names a computation type of `arena`, formed in some
-///   context `Γ`.
-/// - ensures: the same type read in `Γ` extended by `amount` further binders;
-///   `subject` itself when it is closed or `amount` is zero.
+///   context `Γ`, plain or read through a relocation.
+/// - ensures: the same type read in `Γ` extended by `amount` further binders,
+///   as [`shift_value_type`] reads a value type.
 /// - provides: the expected type a binder's body is checked against when the
 ///   binder does not scope the type.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — free and bound indices separated within one subject.
+/// - hypothesis: L3 — free and bound indices separated within one subject, read
+///   back through the relocation and settled.
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
-#[spec(captures: entry = arena.watermark(),
-    ensures: |ret| (amount != Binders::NONE || (ret == subject && arena.watermark() == entry))
-        && (ret == subject || arena.comp_type(ret).is_some()))]
+/// - witness: `rewrite::tests::a_shift_is_a_root_update`
+#[spec(ensures: |ret| (amount != Binders::NONE || ret == Into::<Relocated<CompTypeId>>::into(subject))
+    && (ret.node() == Into::<Relocated<CompTypeId>>::into(subject).node()
+        || arena.comp_type(ret.node()).is_some()))]
 #[inline]
 #[must_use]
-pub fn shift_comp_type(
+pub fn shift_comp_type<Subject>(
     arena: &mut CoreArena,
-    subject: CompTypeId,
+    subject: Subject,
     amount: Binders,
-) -> CompTypeId
+) -> Relocated<CompTypeId>
+where
+    Subject: Into<Relocated<CompTypeId>> + Copy,
 {
-    if amount == Binders::NONE {
-        return subject;
-    }
-    match Engine::new(arena).run(
-        Node::CompType(subject),
-        Binders::NONE,
-        Rewrite::Shift(amount),
-    ) {
-        Node::CompType(id) => id,
-        Node::Value(_) | Node::Computation(_) | Node::ValueType(_) => subject,
-    }
+    shift_comp_type_under(arena, subject, Binders::NONE, amount)
 }
 
 /// Instantiate a dependent codomain at an argument: `C[v / x]`.
@@ -3847,14 +4309,13 @@ pub fn instantiate_value_type_under(
     }
 }
 
-/// Lower a computation type out from under its innermost binder.
+/// Lower a computation type out from under its innermost binder, as an
+/// update of the relocation at its root.
 ///
 /// # Specification
 /// - requires: `subject` names a computation type of `arena` formed in some
 ///   context `Γ` extended by one binder.
-/// - ensures: the same type in `Γ`, every index outside the binder lowered by
-///   one, when no occurrence names the binder;
-///   [`strengthening::Absent::MentionsBinder`] when one does.
+/// - ensures: as [`strengthen_value_type`] past one binder.
 /// - provides: the result type of a bind or a case, synthesized under the
 ///   binder its continuation introduces.
 /// - fails: never; a mention is a named absence.
@@ -3862,53 +4323,101 @@ pub fn instantiate_value_type_under(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a type that mentions the binder and one that mentions
-///   only an outer index separate the two answers.
+///   only an outer index separate the two answers, the second read back lowered
+///   and minting nothing.
 /// - witness: `rewrite::tests::strengthening_refuses_a_mention_and_lowers_the_rest`
+/// - witness: `rewrite::tests::a_strengthening_reads_the_carried_support`
 #[spec(ensures: |ret| match ret {
-    | Maybe::Present(id) => id == subject || arena.comp_type(id).is_some(),
+    | Maybe::Present(lowered) => lowered.node() == subject || arena.comp_type(lowered.node()).is_some(),
     | Maybe::Absent(strengthening::Absent::MentionsBinder) => true,
 })]
 #[inline]
 pub fn strengthen_comp_type(
     arena: &mut CoreArena,
     subject: CompTypeId,
-) -> Maybe<CompTypeId, strengthening::Absent>
+) -> Maybe<Relocated<CompTypeId>, strengthening::Absent>
 {
-    let mut engine = Engine::new(arena);
-    let lowered = engine.run(Node::CompType(subject), Binders::NONE, Rewrite::Lower);
-    match (engine.mention, lowered) {
-        (Mention::Present, _) => Maybe::Absent(strengthening::Absent::MentionsBinder),
-        (Mention::Absent, Node::CompType(id)) => Maybe::Present(id),
-        (Mention::Absent, Node::Value(_) | Node::Computation(_) | Node::ValueType(_)) => {
-            Maybe::Present(subject)
+    if let Maybe::Absent(reason) = mentions_none_below(arena, Node::CompType(subject), Binders::ONE)
+    {
+        return Maybe::Absent(reason);
+    }
+    let lowered = updated(
+        arena,
+        (Node::CompType(subject), Relocation::IDENTITY),
+        Relocation::lowering(Binders::ONE),
+        Binders::ONE,
+        Offset::lower(Binders::ONE),
+    );
+    Maybe::Present(match lowered {
+        (Node::CompType(id), at) => Relocated::pending(id, at),
+        (Node::Value(_) | Node::Computation(_) | Node::ValueType(_), _) => Relocated::from(subject),
+    })
+}
+
+/// Whether `node`'s carried support selects none of the innermost `past`
+/// intuitionistic binders: the whole of a strengthening's decision.
+///
+/// The support decides the syntactic strengthening the bind rule has always
+/// made — a type that mentions the binder is refused, wherever the mention
+/// stands — and nothing beyond it: whether a type that mentions its binder
+/// could still be lowered is the judgement's question, and it stays the
+/// refusal it is.
+///
+/// # Specification
+/// - requires: nothing; a dangling node mentions nothing.
+/// - ensures: present exactly when no selected intuitionistic index is below
+///   `past`; [`strengthening::Absent::MentionsBinder`] otherwise.
+/// - provides: the test every strengthening reads, off the node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a type naming the binder deep under other formers, one
+///   naming only an outer index and a closed one separate the answers.
+/// - witness: `rewrite::tests::a_strengthening_reads_the_carried_support`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(()) => true,
+    Maybe::Absent(strengthening::Absent::MentionsBinder) => past != Binders::NONE,
+})]
+fn mentions_none_below(
+    arena: &CoreArena,
+    node: Node,
+    past: Binders,
+) -> Maybe<(), strengthening::Absent>
+{
+    match carried(arena, node) {
+        Maybe::Present(support) => match support.indices(Zone::Intuitionistic).next() {
+            Some(innermost) if u32::from(innermost) < past.0 => {
+                Maybe::Absent(strengthening::Absent::MentionsBinder)
+            },
+            Some(_) | None => Maybe::Present(()),
         },
+        Maybe::Absent(unminted::Absent::Dangling) => Maybe::Present(()),
     }
 }
 
-/// Lower a value type out from under its `past` innermost binders.
+/// Lower a value type out from under its `past` innermost binders, as an
+/// update of the relocation at its root.
 ///
 /// # Specification
 /// - requires: `subject` names a value type of `arena` formed in some context
 ///   `Γ` extended by `past` binders.
-/// - ensures: the same type in `Γ`, every index outside the binders lowered by
-///   `past`, when no occurrence names one of them;
-///   [`strengthening::Absent::MentionsBinder`] when one does; the subject
-///   itself past no binder.
+/// - ensures: when the subject's carried support selects none of the `past`
+///   binders, the same type in `Γ`: `subject` under a lowering by `past` fitted
+///   to its support, minting nothing; the subject plain past no binder.
+///   [`strengthening::Absent::MentionsBinder`] when the support selects one.
 /// - provides: a constructor field's type read outside the binders of the
 ///   fields before it, where it names none of them.
 /// - fails: never; a mention is a named absence.
 /// - panics: none.
 ///
-/// # Termination
-/// - reason: a `for` loop over the binders, each lowered by one rewrite.
-/// - measure: the binders left.
-///
 /// # Adequacy
 /// - hypothesis: L3 — a type that mentions a binder and one that mentions only
-///   an outer index separate the two answers, past one binder and past two.
+///   an outer index separate the two answers, past one binder and past two, the
+///   second read back lowered with every family's length unchanged.
 /// - witness: `rewrite::tests::a_value_type_strengthens_unless_it_names_a_binder`
+/// - witness: `rewrite::tests::a_strengthening_reads_the_carried_support`
 #[spec(ensures: |ret| match ret {
-    | Maybe::Present(id) => id == subject || arena.value_type(id).is_some(),
+    | Maybe::Present(lowered) => lowered.node() == subject || arena.value_type(lowered.node()).is_some(),
     | Maybe::Absent(strengthening::Absent::MentionsBinder) => past != Binders::NONE,
 })]
 #[inline]
@@ -3916,21 +4425,22 @@ pub fn strengthen_value_type(
     arena: &mut CoreArena,
     subject: ValueTypeId,
     past: Binders,
-) -> Maybe<ValueTypeId, strengthening::Absent>
+) -> Maybe<Relocated<ValueTypeId>, strengthening::Absent>
 {
-    let mut lowered = subject;
-    for _binder in 0 .. u32::from(past) {
-        let mut engine = Engine::new(arena);
-        let next = engine.run(Node::ValueType(lowered), Binders::NONE, Rewrite::Lower);
-        lowered = match (engine.mention, next) {
-            (Mention::Present, _) => {
-                return Maybe::Absent(strengthening::Absent::MentionsBinder);
-            },
-            (Mention::Absent, Node::ValueType(id)) => id,
-            (Mention::Absent, Node::Value(_) | Node::Computation(_) | Node::CompType(_)) => lowered,
-        };
+    if let Maybe::Absent(reason) = mentions_none_below(arena, Node::ValueType(subject), past) {
+        return Maybe::Absent(reason);
     }
-    Maybe::Present(lowered)
+    let lowered = updated(
+        arena,
+        (Node::ValueType(subject), Relocation::IDENTITY),
+        Relocation::lowering(past),
+        past,
+        Offset::lower(past),
+    );
+    Maybe::Present(match lowered {
+        (Node::ValueType(id), at) => Relocated::pending(id, at),
+        (Node::Value(_) | Node::Computation(_) | Node::CompType(_), _) => Relocated::from(subject),
+    })
 }
 
 /// The classifier of a constructor of `family` over the field telescope
@@ -3967,43 +4477,57 @@ pub fn constructor_classifier(
 ) -> ValueTypeId
 {
     let past = Binders::from(u32::try_from(fields.len()).unwrap_or(u32::MAX));
-    let shifted = shift_value_type(arena, family, past);
+    let shifted = shift_value_type(arena, family, past).settle(arena);
     let mut chain = arena.comp_type_returner(shifted);
     for &field in fields.iter().rev() {
         chain = match strengthen_comp_type(arena, chain) {
-            Maybe::Present(lowered) => arena.comp_type_arrow(field, lowered),
+            Maybe::Present(lowered) => {
+                let lowered = lowered.settle(arena);
+                arena.comp_type_arrow(field, lowered)
+            },
             Maybe::Absent(_) => arena.comp_type_pi(field, chain),
         };
     }
     arena.value_type_thunk(chain)
 }
 
-/// Shift free value occurrences, preserving variables bound within the value.
+/// Shift free value occurrences, preserving variables bound within the
+/// value, as an update of the relocation at its root.
 ///
 /// # Specification
-/// - requires: the subject is live in this arena.
-/// - ensures: free intuitionistic indices rise by the amount; zero is identity.
+/// - requires: the subject is live in this arena, plain or read through a
+///   relocation.
+/// - ensures: as [`shift_value_type`], for a value.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — nominal arguments and record fields retain their ambient
 ///   scope.
 /// - witness: `rewrite::tests::native_motives_preserve_binder_and_field_order`
-#[spec(captures: entry = arena.watermark(), ensures: |ret| (amount != Binders::NONE || (ret == subject && arena.watermark() == entry)) && (ret == subject || arena.value(ret).is_some()))]
+#[spec(ensures: |ret| (amount != Binders::NONE || ret == Into::<Relocated<ValueId>>::into(subject))
+    && (ret.node() == Into::<Relocated<ValueId>>::into(subject).node()
+        || arena.value(ret.node()).is_some()))]
 #[must_use]
 #[inline]
-pub fn shift_value(
+pub fn shift_value<Subject>(
     arena: &mut CoreArena,
-    subject: ValueId,
+    subject: Subject,
     amount: Binders,
-) -> ValueId
+) -> Relocated<ValueId>
+where
+    Subject: Into<Relocated<ValueId>> + Copy,
 {
-    if amount == Binders::NONE {
-        return subject;
-    }
-    match Engine::new(arena).run(Node::Value(subject), Binders::NONE, Rewrite::Shift(amount)) {
-        Node::Value(id) => id,
-        Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => subject,
+    let subject = subject.into();
+    let scope = Binders::NONE;
+    match updated(
+        arena,
+        (Node::Value(subject.node()), subject.relocation()),
+        Relocation::raise(amount, scope),
+        scope,
+        Offset::raise(amount),
+    ) {
+        (Node::Value(id), at) => Relocated::pending(id, at),
+        (Node::Computation(_) | Node::ValueType(_) | Node::CompType(_), _) => subject,
     }
 }
 
@@ -4038,13 +4562,16 @@ pub fn instantiate_value_type(
     }
 }
 
-/// Shift a computation type while preserving a prefix of local binders.
+/// Shift a computation type while preserving a prefix of local binders, as an
+/// update of the relocation at its root.
 ///
 /// # Specification
-/// - requires: the subject is live; scope counts the local intuitionistic
-///   binders.
-/// - ensures: only indices outside that scope rise by the amount; zero is
-///   identity.
+/// - requires: the subject is live, plain or read through a relocation; scope
+///   counts the local intuitionistic binders.
+/// - ensures: the subject's node under its relocation and then a raise by
+///   `amount` past `scope`, folded to one relocation fitted to its support, so
+///   only indices outside that scope rise; the subject as it stands at a zero
+///   amount or where nothing outside the scope is free.
 /// - provides: insertion of constructor fields outside a case motive's
 ///   scrutinee binder.
 /// - panics: none.
@@ -4053,32 +4580,40 @@ pub fn instantiate_value_type(
 /// - hypothesis: L3 — a motive distinguishes its scrutinee binder from an
 ///   ambient index.
 /// - witness: `rewrite::tests::native_motives_preserve_binder_and_field_order`
-#[spec(captures: entry = arena.watermark(), ensures: |ret| (amount != Binders::NONE || (ret == subject && arena.watermark() == entry)) && (ret == subject || arena.comp_type(ret).is_some()))]
+#[spec(ensures: |ret| (amount != Binders::NONE || ret == Into::<Relocated<CompTypeId>>::into(subject))
+    && (ret.node() == Into::<Relocated<CompTypeId>>::into(subject).node()
+        || arena.comp_type(ret.node()).is_some()))]
 #[must_use]
 #[inline]
-pub fn shift_comp_type_under(
+pub fn shift_comp_type_under<Subject>(
     arena: &mut CoreArena,
-    subject: CompTypeId,
+    subject: Subject,
     scope: Binders,
     amount: Binders,
-) -> CompTypeId
+) -> Relocated<CompTypeId>
+where
+    Subject: Into<Relocated<CompTypeId>> + Copy,
 {
-    if amount == Binders::NONE {
-        return subject;
-    }
-    match Engine::new(arena).run(Node::CompType(subject), scope, Rewrite::Shift(amount)) {
-        Node::CompType(id) => id,
-        Node::Computation(_) | Node::ValueType(_) | Node::Value(_) => subject,
+    let subject = subject.into();
+    match updated(
+        arena,
+        (Node::CompType(subject.node()), subject.relocation()),
+        Relocation::raise(amount, scope),
+        scope,
+        Offset::raise(amount),
+    ) {
+        (Node::CompType(id), at) => Relocated::pending(id, at),
+        (Node::Value(_) | Node::Computation(_) | Node::ValueType(_), _) => subject,
     }
 }
 
-/// Shift a value type while preserving a prefix of local binders.
+/// Shift a value type while preserving a prefix of local binders, as an
+/// update of the relocation at its root.
 ///
 /// # Specification
-/// - requires: the subject is live; scope counts the local intuitionistic
-///   binders.
-/// - ensures: only indices outside that scope rise by the amount; zero is
-///   identity.
+/// - requires: the subject is live, plain or read through a relocation; scope
+///   counts the local intuitionistic binders.
+/// - ensures: as [`shift_comp_type_under`].
 /// - provides: a family under its own binder carried under one binder more, as
 ///   the identity at a dependent pair carries its second factor under the first
 ///   coordinate's path.
@@ -4087,22 +4622,71 @@ pub fn shift_comp_type_under(
 /// # Adequacy
 /// - hypothesis: L3 — a family keeps its own binder and lifts an ambient index.
 /// - witness: `rewrite::tests::a_value_type_under_its_binder_lifts_only_the_ambient_index`
-#[spec(captures: entry = arena.watermark(), ensures: |ret| (amount != Binders::NONE || (ret == subject && arena.watermark() == entry)) && (ret == subject || arena.value_type(ret).is_some()))]
+#[spec(ensures: |ret| (amount != Binders::NONE || ret == Into::<Relocated<ValueTypeId>>::into(subject))
+    && (ret.node() == Into::<Relocated<ValueTypeId>>::into(subject).node()
+        || arena.value_type(ret.node()).is_some()))]
 #[must_use]
 #[inline]
-pub fn shift_value_type_under(
+pub fn shift_value_type_under<Subject>(
     arena: &mut CoreArena,
-    subject: ValueTypeId,
+    subject: Subject,
     scope: Binders,
     amount: Binders,
-) -> ValueTypeId
+) -> Relocated<ValueTypeId>
+where
+    Subject: Into<Relocated<ValueTypeId>> + Copy,
 {
-    if amount == Binders::NONE {
-        return subject;
+    let subject = subject.into();
+    match updated(
+        arena,
+        (Node::ValueType(subject.node()), subject.relocation()),
+        Relocation::raise(amount, scope),
+        scope,
+        Offset::raise(amount),
+    ) {
+        (Node::ValueType(id), at) => Relocated::pending(id, at),
+        (Node::Value(_) | Node::Computation(_) | Node::CompType(_), _) => subject,
     }
-    match Engine::new(arena).run(Node::ValueType(subject), scope, Rewrite::Shift(amount)) {
-        Node::ValueType(id) => id,
-        Node::Computation(_) | Node::CompType(_) | Node::Value(_) => subject,
+}
+
+/// Shift a computation while preserving a prefix of local binders, as an
+/// update of the relocation at its root.
+///
+/// # Specification
+/// - requires: the subject is live, plain or read through a relocation; scope
+///   counts the local intuitionistic binders.
+/// - ensures: as [`shift_comp_type_under`].
+/// - provides: a computation moved under binders a lowering puts around it.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a computation's own binder, an index inside the scope and
+///   one past it, settled with its copies reported.
+/// - witness: `rewrite::tests::a_traced_shift_raises_only_past_its_scope`
+#[spec(ensures: |ret| (amount != Binders::NONE || ret == Into::<Relocated<ComputationId>>::into(subject))
+    && (ret.node() == Into::<Relocated<ComputationId>>::into(subject).node()
+        || arena.computation(ret.node()).is_some()))]
+#[must_use]
+#[inline]
+pub fn shift_computation_under<Subject>(
+    arena: &mut CoreArena,
+    subject: Subject,
+    scope: Binders,
+    amount: Binders,
+) -> Relocated<ComputationId>
+where
+    Subject: Into<Relocated<ComputationId>> + Copy,
+{
+    let subject = subject.into();
+    match updated(
+        arena,
+        (Node::Computation(subject.node()), subject.relocation()),
+        Relocation::raise(amount, scope),
+        scope,
+        Offset::raise(amount),
+    ) {
+        (Node::Computation(id), at) => Relocated::pending(id, at),
+        (Node::Value(_) | Node::ValueType(_) | Node::CompType(_), _) => subject,
     }
 }
 
@@ -4965,140 +5549,6 @@ pub fn rename_value_type_traced(
     let renamed = engine.run(Node::ValueType(subject), Binders::NONE, Rewrite::Rename);
     report(&engine.memo, carried);
     match renamed {
-        Node::ValueType(id) => id,
-        Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
-    }
-}
-
-/// Raise every free intuitionistic index of `subject` past its innermost
-/// `scope` binders by `amount`, reporting every node it rewrote beside the
-/// node it rewrote it from.
-///
-/// # Specification
-/// - requires: `subject` is live in `arena`.
-/// - ensures: `subject` with every free index counting past its innermost
-///   `scope` binders raised by `amount` and every index below kept; `carried`
-///   gains one pair per node the shift changed, as
-///   [`substitute_environment_traced`] reports them; `subject` itself, nothing
-///   minted and nothing reported when `amount` is none.
-/// - provides: carrying a computation under binders placed between its own
-///   innermost `scope` binders and the rest of its context, for a caller that
-///   keeps a table beside the arena.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a lambda over its own index, an index below the scope and
-///   one past it raises only the last, and reports the variable, the triple,
-///   the return and the lambda; no amount mints and reports nothing.
-/// - witness: `rewrite::tests::a_traced_shift_raises_only_past_its_scope`
-#[spec(captures: entry = (arena.watermark(), carried.len()), ensures: |ret| carried.len() >= entry.1
-    && (amount != Binders::NONE || (ret == subject && arena.watermark() == entry.0 && carried.len() == entry.1)))]
-#[inline]
-#[must_use]
-pub fn shift_computation_under_traced(
-    arena: &mut CoreArena,
-    subject: ComputationId,
-    scope: Binders,
-    amount: Binders,
-    carried: &mut Vec<Carried>,
-) -> ComputationId
-{
-    if amount == Binders::NONE {
-        return subject;
-    }
-    let mut engine = Engine::new(arena);
-    let shifted = engine.run(Node::Computation(subject), scope, Rewrite::Shift(amount));
-    report(&engine.memo, carried);
-    match shifted {
-        Node::Computation(id) => id,
-        Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => subject,
-    }
-}
-
-/// [`shift_comp_type_under`], reporting every node it rewrote beside the node
-/// it rewrote it from.
-///
-/// # Specification
-/// - requires: `subject` is live in `arena`.
-/// - ensures: `subject` with every free index counting past its innermost
-///   `scope` binders raised by `amount` and every index below kept; `carried`
-///   gains one pair per node the shift changed, as
-///   [`substitute_environment_traced`] reports them; `subject` itself, nothing
-///   minted and nothing reported when `amount` is none.
-/// - provides: carrying a written type under binders, for a caller that keeps a
-///   table beside the arena and answers each copy where its source was written.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a path type between an index inside the scope and one
-///   past it raises only the second endpoint, and reports it, the path and the
-///   returner; no amount mints and reports nothing.
-/// - witness: `rewrite::tests::a_traced_type_shift_reports_each_copy`
-#[spec(captures: entry = (arena.watermark(), carried.len()), ensures: |ret| carried.len() >= entry.1
-    && (amount != Binders::NONE || (ret == subject && arena.watermark() == entry.0 && carried.len() == entry.1)))]
-#[inline]
-#[must_use]
-pub fn shift_comp_type_under_traced(
-    arena: &mut CoreArena,
-    subject: CompTypeId,
-    scope: Binders,
-    amount: Binders,
-    carried: &mut Vec<Carried>,
-) -> CompTypeId
-{
-    if amount == Binders::NONE {
-        return subject;
-    }
-    let mut engine = Engine::new(arena);
-    let shifted = engine.run(Node::CompType(subject), scope, Rewrite::Shift(amount));
-    report(&engine.memo, carried);
-    match shifted {
-        Node::CompType(id) => id,
-        Node::Value(_) | Node::ValueType(_) | Node::Computation(_) => subject,
-    }
-}
-
-/// [`shift_value_type_under`], reporting every node it rewrote beside the node
-/// it rewrote it from.
-///
-/// # Specification
-/// - requires: `subject` is live in `arena`.
-/// - ensures: `subject` with every free index counting past its innermost
-///   `scope` binders raised by `amount` and every index below kept; `carried`
-///   gains one pair per node the shift changed, as
-///   [`substitute_environment_traced`] reports them; `subject` itself, nothing
-///   minted and nothing reported when `amount` is none.
-/// - provides: carrying a written type under binders, for a caller that keeps a
-///   table beside the arena and answers each copy where its source was written.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a path type between an index inside the scope and one
-///   past it raises only the second endpoint and reports it and the path; no
-///   amount mints and reports nothing.
-/// - witness: `rewrite::tests::a_traced_value_type_shift_reports_each_copy`
-#[spec(captures: entry = (arena.watermark(), carried.len()), ensures: |ret| carried.len() >= entry.1
-    && (amount != Binders::NONE || (ret == subject && arena.watermark() == entry.0 && carried.len() == entry.1)))]
-#[inline]
-#[must_use]
-pub fn shift_value_type_under_traced(
-    arena: &mut CoreArena,
-    subject: ValueTypeId,
-    scope: Binders,
-    amount: Binders,
-    carried: &mut Vec<Carried>,
-) -> ValueTypeId
-{
-    if amount == Binders::NONE {
-        return subject;
-    }
-    let mut engine = Engine::new(arena);
-    let shifted = engine.run(Node::ValueType(subject), scope, Rewrite::Shift(amount));
-    report(&engine.memo, carried);
-    match shifted {
         Node::ValueType(id) => id,
         Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
     }

@@ -55,6 +55,30 @@
 //! plain one where it is minted, which no producer can do before the family
 //! is read. Reversal: a core with one arrow former.
 //!
+//! # A relocated side is read through its relocation
+//!
+//! A variable's slot type reaches the value bridge moved to the depth it is
+//! read at as a root update, a [`Relocated`] id, and the walk reads it
+//! without minting the moved tree. Where both sides stand at a former whose
+//! comparison is types beneath and a leaf — a product, a sum, a record, a
+//! list, a thunk, a stack, a static or dependent pair, a lift, a universe, a
+//! base type, a lazy pair, a returner over the empty row, an arrow of either
+//! kind — each child pair is pushed carrying its parent's relocation, under
+//! one more binder at a dependent pair's second factor and a dependent
+//! arrow's codomain; the plain codomain an arrow meets a dependent one with
+//! is weakened by a root update too. Everything else is settled first and
+//! compared as before: a decode or a sealed atom, whose unfolding is
+//! certified beneath the context's binders; a data type, a path, a flow, a
+//! run, a session, a capability, a staged type and a world, whose comparisons
+//! read terms, protocols, grants or the stage order; a returner over a row.
+//! An owed flex–rigid equation always has a decode on one side, so deferral
+//! sees only settled pairs, and a refusal names the synthesised type settled.
+//! The alternatives were settling at the variable rule, which mints the moved
+//! tree on every read, and composing the relocation into every reader, which
+//! the views, goals and refusals would all carry. Reversal: when the
+//! judgement's goals read relocated types themselves, the settled formers
+//! here move to reading through one by one.
+//!
 //! # A stage is decided by the order
 //!
 //! A type refined at a stage of a structural fixpoint (`A^s`) is subsumed,
@@ -144,6 +168,9 @@ use gandr_core_term::Binders;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Relocated;
+use gandr_core_term::Relocation;
 use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -241,16 +268,17 @@ impl fmt::Display for ConversionCount
     }
 }
 
-/// A pair of nodes of one family, to be compared.
+/// A pair of nodes of one family, to be compared. A type is read through the
+/// relocation it carries, a code or a term as it stands.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Pairing
 {
     /// Two value types.
-    Values(ValueTypeId, ValueTypeId),
+    Values(Relocated<ValueTypeId>, Relocated<ValueTypeId>),
     /// Directional structural record inclusion; other types remain invariant.
-    Assignable(ValueTypeId, ValueTypeId),
+    Assignable(Relocated<ValueTypeId>, Relocated<ValueTypeId>),
     /// Two computation types.
-    Comps(CompTypeId, CompTypeId),
+    Comps(Relocated<CompTypeId>, Relocated<CompTypeId>),
     /// Two codes, each read at its head.
     Codes(ValueId, ValueId),
     /// Invariant term-valued indices, with the kernel's structural equality.
@@ -259,9 +287,80 @@ enum Pairing
     /// every admitted definition unfolding.
     Endpoints(ValueId, ValueId),
     /// A value type used where the second type is permitted.
-    SubValues(ValueTypeId, ValueTypeId),
+    SubValues(Relocated<ValueTypeId>, Relocated<ValueTypeId>),
     /// A computation type used where the second row is permitted.
-    SubComps(CompTypeId, CompTypeId),
+    SubComps(Relocated<CompTypeId>, Relocated<CompTypeId>),
+}
+
+/// How a walk relates the type pairs beneath the pair it is at.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Variance
+{
+    /// Each pair is the same type on both sides.
+    Invariant,
+    /// Each pair is a found type against a wanted one.
+    Subtyping,
+}
+
+impl Variance
+{
+    /// The pairing of two value types at this variance.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn values(
+        self,
+        found: Relocated<ValueTypeId>,
+        wanted: Relocated<ValueTypeId>,
+    ) -> Pairing
+    {
+        match self {
+            Self::Invariant => Pairing::Values(found, wanted),
+            Self::Subtyping => Pairing::SubValues(found, wanted),
+        }
+    }
+
+    /// The pairing of two computation types at this variance.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn comps(
+        self,
+        found: Relocated<CompTypeId>,
+        wanted: Relocated<CompTypeId>,
+    ) -> Pairing
+    {
+        match self {
+            Self::Invariant => Pairing::Comps(found, wanted),
+            Self::Subtyping => Pairing::SubComps(found, wanted),
+        }
+    }
+}
+
+/// Why a pair of types was not read through their relocations.
+mod through
+{
+    /// The reason the walk reads the pair as plain types.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub(super) enum Absent
+    {
+        /// Neither side carries a relocation.
+        Plain,
+        /// The formers met are not read through a relocation: a decode, whose
+        /// code is compared as a term, or a former whose comparison reads
+        /// terms, sessions, capabilities or stages.
+        Unread,
+    }
+}
+
+/// What reading a pair through its relocations found.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Read
+{
+    /// The pair agrees once the pairs pushed beneath it do.
+    Pushed,
+    /// The pair disagrees at its root.
+    Apart,
 }
 
 /// The decision's verdict on a pair.
@@ -292,7 +391,9 @@ pub enum Agreement
 /// checked against.
 ///
 /// # Specification
-/// - requires: both types are formed, in the context's arena.
+/// - requires: both types are formed, in the context's arena; the synthesised
+///   one plain or read through the relocation it carries, as a variable's slot
+///   type arrives.
 /// - ensures: when both types are universes at their weak heads, success
 ///   exactly when they share a sort and the synthesised level lies at or below
 ///   the expected one, below only in the value sort, which records a [`Lift`]
@@ -306,11 +407,11 @@ pub enum Agreement
 /// - fails: [`CheckRefusal::SortMismatch`] for two universes of different
 ///   sorts; [`CheckRefusal::LevelMismatch`] for a level above the expected one,
 ///   or below it in the computation sort; [`CheckRefusal::TypeMismatch`] with
-///   [`Mismatch::Value`] naming `at` and both types when they differ otherwise;
-///   [`CheckRefusal::CapabilityForged`] when a capability is expected and the
-///   synthesised type is of another known former;
-///   [`CheckRefusal::StageNotBelow`] naming `at` when a stage the order refuses
-///   is wanted; [`CheckRefusal::CapabilityAmplified`] and
+///   [`Mismatch::Value`] naming `at` and both types, the synthesised one
+///   settled, when they differ otherwise; [`CheckRefusal::CapabilityForged`]
+///   when a capability is expected and the synthesised type is of another known
+///   former; [`CheckRefusal::StageNotBelow`] naming `at` when a stage the order
+///   refuses is wanted; [`CheckRefusal::CapabilityAmplified`] and
 ///   [`CheckRefusal::CapabilityEscaped`] when [`convert`] finds a capability
 ///   granting less or living shorter than the one expected; the unfolding's
 ///   refusal when a decode does not unfold.
@@ -328,8 +429,10 @@ pub enum Agreement
 ///   is the smallness rule, the refusal it builds and the count, separated by
 ///   an agreeing and a differing pair, a value code checked at its own level,
 ///   one level up and one level down, a computation code one level up, and a
-///   code of the other sort, each answer and count asserted.
+///   code of the other sort, each answer and count asserted; a relocated
+///   synthesised type answers as its settled reading does.
 /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
+/// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
 /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
 /// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
 /// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
@@ -338,12 +441,14 @@ pub enum Agreement
     captures: before = tally.0,
     ensures: |ret| tally.0 == before.saturating_add(1)
         && match ret {
-            | Err(CheckRefusal::TypeMismatch(Mismatch::Value { at: named, synthesised: found, expected: wanted })) => named == at && found == synthesised && wanted == expected,
+            | Err(CheckRefusal::TypeMismatch(Mismatch::Value { at: named, synthesised: found, expected: wanted })) => named == at && wanted == expected
+                && (Relocated::from(found) == Into::<Relocated<ValueTypeId>>::into(synthesised)
+                    || Into::<Relocated<ValueTypeId>>::into(synthesised).relocation() != Relocation::IDENTITY),
             | Err(CheckRefusal::SortMismatch { at: named, .. } | CheckRefusal::LevelMismatch { at: named, .. }) => named == at,
             | _ => true,
         }
         && if let (Ok(ValueTypeView::Universe { sort: found_sort, level: found }), Ok(ValueTypeView::Universe { sort: wanted_sort, level: wanted })) =
-            (value_type_view(context.arena(), synthesised), value_type_view(context.arena(), expected)) {
+            (value_type_view(context.arena(), Into::<Relocated<ValueTypeId>>::into(synthesised).node()), value_type_view(context.arena(), expected)) {
             let lifts = found_sort == GroundSort::Value && bool::from(found.lt(wanted));
             ret.is_ok() == (found_sort == wanted_sort && (found == wanted || lifts))
                 && (ret.is_err() || !lifts || !matches!(context.deferrals().emission, crate::elaboration::Emission::Off)
@@ -352,16 +457,19 @@ pub enum Agreement
             true
         },
 )]
-pub fn value_bridge(
+pub fn value_bridge<Synthesised>(
     context: &mut CheckingContext<'_>,
     at: ValueId,
-    synthesised: ValueTypeId,
+    synthesised: Synthesised,
     expected: ValueTypeId,
     tally: &mut ConversionCount,
 ) -> Result<(), CheckRefusal>
+where
+    Synthesised: Into<Relocated<ValueTypeId>> + Copy,
 {
     *tally = tally.crossed();
-    let found = context.whnf_value_type(synthesised)?;
+    let synthesised = synthesised.into();
+    let found = value_head(context, synthesised)?;
     let wanted = context.whnf_value_type(expected)?;
     if let (
         ValueTypeView::Universe {
@@ -373,14 +481,14 @@ pub fn value_bridge(
             level: wanted_level,
         },
     ) = (
-        value_type_view(context.arena(), found)?,
+        value_type_view(context.arena(), found.node())?,
         value_type_view(context.arena(), wanted)?,
     ) {
         let (found_level, wanted_level) = (found_level.clone(), wanted_level.clone());
         if found_sort != wanted_sort {
             return Err(CheckRefusal::SortMismatch {
                 at,
-                synthesised: found,
+                synthesised: found.settle(context.arena_mut()),
                 expected: wanted,
             });
         }
@@ -394,28 +502,33 @@ pub fn value_bridge(
         }
         return Err(CheckRefusal::LevelMismatch {
             at,
-            synthesised: found,
+            synthesised: found.settle(context.arena_mut()),
             expected: wanted,
         });
     }
+    let agreement = convert(context, Pairing::Assignable(found, Relocated::from(wanted)))?;
+    if agreement == Agreement::Convertible {
+        return Ok(());
+    }
+    let forged = agreement == Agreement::Apart
+        && matches!(
+            value_type_view(context.arena(), wanted)?,
+            ValueTypeView::Capability { .. }
+        )
+        && !matches!(
+            value_type_view(context.arena(), found.node())?,
+            ValueTypeView::Capability { .. }
+        );
+    // A refusal names the types as they print: the synthesised one settled.
+    let synthesised = synthesised.settle(context.arena_mut());
     let mismatch = Mismatch::Value {
         at,
         synthesised,
         expected,
     };
-    match convert(context, Pairing::Assignable(found, wanted))? {
+    match agreement {
         Agreement::Convertible => Ok(()),
-        Agreement::Apart
-            if matches!(
-                value_type_view(context.arena(), wanted)?,
-                ValueTypeView::Capability { .. }
-            ) && !matches!(
-                value_type_view(context.arena(), found)?,
-                ValueTypeView::Capability { .. }
-            ) =>
-        {
-            Err(CheckRefusal::CapabilityForged { at, expected })
-        },
+        Agreement::Apart if forged => Err(CheckRefusal::CapabilityForged { at, expected }),
         Agreement::Apart => Err(CheckRefusal::TypeMismatch(mismatch)),
         Agreement::Amplified => Err(CheckRefusal::CapabilityAmplified(mismatch)),
         Agreement::Escaped => Err(CheckRefusal::CapabilityEscaped {
@@ -479,7 +592,10 @@ pub fn comp_bridge(
         synthesised,
         expected,
     };
-    match convert(context, Pairing::SubComps(synthesised, expected))? {
+    match convert(
+        context,
+        Pairing::SubComps(Relocated::from(synthesised), Relocated::from(expected)),
+    )? {
         Agreement::Convertible => Ok(()),
         Agreement::Apart | Agreement::NotBelow { .. } => Err(CheckRefusal::TypeMismatch(mismatch)),
         Agreement::Amplified => Err(CheckRefusal::CapabilityAmplified(mismatch)),
@@ -627,7 +743,10 @@ pub fn equivalent(
     right: ValueTypeId,
 ) -> Result<Agreement, CheckRefusal>
 {
-    convert(context, Pairing::Values(left, right))
+    convert(
+        context,
+        Pairing::Values(Relocated::from(left), Relocated::from(right)),
+    )
 }
 
 /// Whether two path endpoints a type conversion met are the same term, keeping
@@ -774,22 +893,17 @@ fn convert(
             continue;
         }
         let subtyping = matches!(pairing, Pairing::SubValues(..) | Pairing::SubComps(..));
-        let values = |a, b| {
-            if subtyping {
-                Pairing::SubValues(a, b)
-            }
-            else {
-                Pairing::Values(a, b)
-            }
+        let variance = if subtyping {
+            Variance::Subtyping
+        }
+        else {
+            Variance::Invariant
         };
-        let comps = |a, b| {
-            if subtyping {
-                Pairing::SubComps(a, b)
-            }
-            else {
-                Pairing::Comps(a, b)
-            }
+        let values = |a: ValueTypeId, b: ValueTypeId| {
+            variance.values(Relocated::from(a), Relocated::from(b))
         };
+        let comps =
+            |a: CompTypeId, b: CompTypeId| variance.comps(Relocated::from(a), Relocated::from(b));
         let agrees = match pairing {
             Pairing::Terms(left, right) => {
                 root_knowledge(context, left)? == Knowledge::Unknown
@@ -805,11 +919,12 @@ fn convert(
                     || endpoints_agree(context, left, right)? == Agreement::Convertible
             },
             Pairing::Assignable(left, right) => {
-                let left = context.whnf_value_type(left)?;
-                let right = context.whnf_value_type(right)?;
+                let left = value_head(context, left)?;
+                let right = value_head(context, right)?;
+                let arena = context.arena();
                 match (
-                    value_type_view(context.arena(), left)?,
-                    value_type_view(context.arena(), right)?,
+                    value_type_view(arena, left.node())?,
+                    value_type_view(arena, right.node())?,
                 ) {
                     (ValueTypeView::Record(found), ValueTypeView::Record(wanted)) => {
                         for (label, &expected) in wanted {
@@ -817,7 +932,10 @@ fn convert(
                             else {
                                 return Ok(Agreement::Apart);
                             };
-                            pending.push(Pairing::Assignable(synthesised, expected));
+                            pending.push(Pairing::Assignable(
+                                arena.place_value_type(synthesised, left.relocation()),
+                                arena.place_value_type(expected, right.relocation()),
+                            ));
                         }
                     },
                     _ => pending.push(Pairing::SubValues(left, right)),
@@ -825,8 +943,15 @@ fn convert(
                 true
             },
             Pairing::Values(left, right) | Pairing::SubValues(left, right) => {
-                let left = context.whnf_value_type(left)?;
-                let right = context.whnf_value_type(right)?;
+                let left = value_head(context, left)?;
+                let right = value_head(context, right)?;
+                match relocated_values(context.arena(), (left, right), variance, &mut pending)? {
+                    Maybe::Present(Read::Pushed) => continue,
+                    Maybe::Present(Read::Apart) => return Ok(Agreement::Apart),
+                    Maybe::Absent(through::Absent::Plain | through::Absent::Unread) => {},
+                }
+                let left = left.settle(context.arena_mut());
+                let right = right.settle(context.arena_mut());
                 if context.defer(TypeNode::Value(left), TypeNode::Value(right))
                     == crate::elaboration::Deferred::Yes
                 {
@@ -1111,11 +1236,9 @@ fn convert(
                         };
                         match crate::session::relate(context, left, right, relation)? {
                             Maybe::Present(payloads) => {
-                                pending.extend(
-                                    payloads
-                                        .into_iter()
-                                        .map(|(left, right)| Pairing::Values(left, right)),
-                                );
+                                pending.extend(payloads.into_iter().map(|(left, right)| {
+                                    Pairing::Values(Relocated::from(left), Relocated::from(right))
+                                }));
                                 true
                             },
                             Maybe::Absent(_) => false,
@@ -1200,8 +1323,15 @@ fn convert(
                 }
             },
             Pairing::Comps(left, right) | Pairing::SubComps(left, right) => {
-                let left = context.whnf_comp_type(left)?;
-                let right = context.whnf_comp_type(right)?;
+                let left = comp_head(context, left)?;
+                let right = comp_head(context, right)?;
+                match relocated_comps(context.arena_mut(), (left, right), variance, &mut pending)? {
+                    Maybe::Present(Read::Pushed) => continue,
+                    Maybe::Present(Read::Apart) => return Ok(Agreement::Apart),
+                    Maybe::Absent(through::Absent::Plain | through::Absent::Unread) => {},
+                }
+                let left = left.settle(context.arena_mut());
+                let right = right.settle(context.arena_mut());
                 if context.defer(TypeNode::Computation(left), TypeNode::Computation(right))
                     == crate::elaboration::Deferred::Yes
                 {
@@ -1252,8 +1382,14 @@ fn convert(
                                     same_shape = false;
                                     break;
                                 }
-                                pending.push(Pairing::Values(a.payload, b.payload));
-                                pending.push(Pairing::Values(a.reply, b.reply));
+                                pending.push(Pairing::Values(
+                                    Relocated::from(a.payload),
+                                    Relocated::from(b.payload),
+                                ));
+                                pending.push(Pairing::Values(
+                                    Relocated::from(a.reply),
+                                    Relocated::from(b.reply),
+                                ));
                             }
                             if !same_shape {
                                 break;
@@ -1303,9 +1439,9 @@ fn convert(
                             codomain: right_codomain,
                         },
                     ) => {
-                        let right_codomain =
+                        let weakened =
                             shift_comp_type(context.arena_mut(), right_codomain, Binders::ONE);
-                        pending.push(comps(left_codomain, right_codomain));
+                        pending.push(variance.comps(Relocated::from(left_codomain), weakened));
                         pending.push(values(right_domain, left_domain));
                         true
                     },
@@ -1319,9 +1455,9 @@ fn convert(
                             codomain: right_codomain,
                         },
                     ) => {
-                        let left_codomain =
+                        let weakened =
                             shift_comp_type(context.arena_mut(), left_codomain, Binders::ONE);
-                        pending.push(comps(left_codomain, right_codomain));
+                        pending.push(variance.comps(weakened, Relocated::from(right_codomain)));
                         pending.push(values(right_domain, left_domain));
                         true
                     },
@@ -1406,7 +1542,10 @@ fn convert(
                                     if at != bt || af.len() != bf.len() {
                                         return Ok(Agreement::Apart);
                                     }
-                                    pending.push(Pairing::Values(*a, *b));
+                                    pending.push(Pairing::Values(
+                                        Relocated::from(*a),
+                                        Relocated::from(*b),
+                                    ));
                                     pending.extend(
                                         af.iter().zip(bf).map(|(&a, &b)| Pairing::Codes(a, b)),
                                     );
@@ -1448,7 +1587,10 @@ fn convert(
                                 && let Value::Quote(ref right_quoted) = *matched_right_value
                             {
                                 {
-                                    pending.push(Pairing::Values(*left_quoted, *right_quoted));
+                                    pending.push(Pairing::Values(
+                                        Relocated::from(*left_quoted),
+                                        Relocated::from(*right_quoted),
+                                    ));
                                     true
                                 }
                             }
@@ -1458,7 +1600,10 @@ fn convert(
                                     *matched_right_value
                             {
                                 {
-                                    pending.push(Pairing::Comps(*left_quoted, *right_quoted));
+                                    pending.push(Pairing::Comps(
+                                        Relocated::from(*left_quoted),
+                                        Relocated::from(*right_quoted),
+                                    ));
                                     true
                                 }
                             }
@@ -1561,6 +1706,487 @@ fn convert(
         }
     }
     Ok(Agreement::Convertible)
+}
+
+/// `side` at its weak head, as [`CheckingContext::whnf_value_type`] reads a
+/// plain type: a relocated side whose former is already a weak head stays
+/// relocated, and one at a decode or a sealed atom is settled first, since an
+/// unfolding is certified beneath the context's binders.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a plain side's weak head, plain; a relocated side itself when its
+///   node is neither a decode nor an atom; otherwise the weak head of the side
+///   settled.
+/// - fails: as [`CheckingContext::whnf_value_type`], and the view's refusal for
+///   a node outside the fragment.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a relocated decode, a relocated former and a plain type
+///   each converted against their settled readings.
+/// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
+#[spec(ensures: |ret| ret.is_err() || side.relocation() != Relocation::IDENTITY
+    || ret.as_ref().is_ok_and(|head| head.relocation() == Relocation::IDENTITY))]
+fn value_head(
+    context: &mut CheckingContext<'_>,
+    side: Relocated<ValueTypeId>,
+) -> Result<Relocated<ValueTypeId>, CheckRefusal>
+{
+    if side.relocation() == Relocation::IDENTITY {
+        return Ok(Relocated::from(context.whnf_value_type(side.node())?));
+    }
+    match value_type_view(context.arena(), side.node())? {
+        ValueTypeView::Element { .. } | ValueTypeView::Abstract(_) => {
+            let settled = side.settle(context.arena_mut());
+            Ok(Relocated::from(context.whnf_value_type(settled)?))
+        },
+        ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
+        | ValueTypeView::Stack { .. }
+        | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Path { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
+        | ValueTypeView::Sum(_)
+        | ValueTypeView::List(_)
+        | ValueTypeView::Integer
+        | ValueTypeView::String
+        | ValueTypeView::Unit
+        | ValueTypeView::Thunk(_)
+        | ValueTypeView::Universe { .. }
+        | ValueTypeView::Lift { .. }
+        | ValueTypeView::Product(_)
+        | ValueTypeView::StaticPi { .. }
+        | ValueTypeView::Sigma { .. }
+        | ValueTypeView::Capability { .. }
+        | ValueTypeView::Session(_)
+        | ValueTypeView::Staged { .. }
+        | ValueTypeView::World(_)
+        | ValueTypeView::Unknown => Ok(side),
+    }
+}
+
+/// `side` at its weak head, as [`value_head`] reads a value type: a relocated
+/// decode is settled before it unfolds.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`value_head`], over computation types, a decode the one
+///   former settled.
+/// - fails: as [`CheckingContext::whnf_comp_type`], and the view's refusal for
+///   a node outside the fragment.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`value_head`].
+/// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
+#[spec(ensures: |ret| ret.is_err() || side.relocation() != Relocation::IDENTITY
+    || ret.as_ref().is_ok_and(|head| head.relocation() == Relocation::IDENTITY))]
+fn comp_head(
+    context: &mut CheckingContext<'_>,
+    side: Relocated<CompTypeId>,
+) -> Result<Relocated<CompTypeId>, CheckRefusal>
+{
+    if side.relocation() == Relocation::IDENTITY {
+        return Ok(Relocated::from(context.whnf_comp_type(side.node())?));
+    }
+    match comp_type_view(context.arena(), side.node())? {
+        CompTypeView::Element { .. } => {
+            let settled = side.settle(context.arena_mut());
+            Ok(Relocated::from(context.whnf_comp_type(settled)?))
+        },
+        CompTypeView::With(..)
+        | CompTypeView::Returner { .. }
+        | CompTypeView::Arrow { .. }
+        | CompTypeView::Pi { .. }
+        | CompTypeView::Unknown => Ok(side),
+    }
+}
+
+/// Read two value types at their weak heads through the relocations they
+/// carry, pushing the pairs beneath them each under its parent's relocation
+/// and the binders its position crosses.
+///
+/// The formers read through are those whose comparison is a pair of types
+/// beneath and a leaf: a decode is not, since its code is compared as a term,
+/// nor a data type, a path, a session, a capability, a stage or a world, whose
+/// comparisons read terms, protocols, grants or the stage order — the caller
+/// settles those and compares them plain.
+///
+/// # Specification
+/// - requires: both sides at their weak heads.
+/// - ensures: [`through::Absent::Plain`] when neither side is relocated;
+///   [`through::Absent::Unread`], pushing nothing, when a side is a decode or
+///   the pair is not two of the formers read through; otherwise what the plain
+///   walk answers for the settled pair, the pairs it would push carried
+///   relocated in its order: the second factor of a dependent pair under one
+///   more binder, every other child under its parent's relocation.
+/// - fails: the view's refusal for a node outside the fragment.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — relocated products, records, sums, lists, thunks, stacks,
+///   static and dependent pairs, universes and leaves, agreeing and differing,
+///   each against its settled reading.
+/// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
+#[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Absent(through::Absent::Plain)))
+    || (left.relocation() == Relocation::IDENTITY && right.relocation() == Relocation::IDENTITY))]
+fn relocated_values(
+    arena: &CoreArena,
+    (left, right): (Relocated<ValueTypeId>, Relocated<ValueTypeId>),
+    variance: Variance,
+    pending: &mut Vec<Pairing>,
+) -> Result<Maybe<Read, through::Absent>, CheckRefusal>
+{
+    let (at_left, at_right) = (left.relocation(), right.relocation());
+    if at_left == Relocation::IDENTITY && at_right == Relocation::IDENTITY {
+        return Ok(Maybe::Absent(through::Absent::Plain));
+    }
+    let child = |id: ValueTypeId, at: Relocation| arena.place_value_type(id, at);
+    let body = |id: CompTypeId, at: Relocation| arena.place_comp_type(id, at);
+    let read = match (
+        value_type_view(arena, left.node())?,
+        value_type_view(arena, right.node())?,
+    ) {
+        (ValueTypeView::Element { .. }, _) | (_, ValueTypeView::Element { .. }) => {
+            return Ok(Maybe::Absent(through::Absent::Unread));
+        },
+        (ValueTypeView::Unknown, _)
+        | (_, ValueTypeView::Unknown)
+        | (ValueTypeView::Integer, ValueTypeView::Integer)
+        | (ValueTypeView::String, ValueTypeView::String)
+        | (ValueTypeView::Unit, ValueTypeView::Unit) => Read::Pushed,
+        (
+            ValueTypeView::Universe {
+                sort: left_sort,
+                level: left_level,
+            },
+            ValueTypeView::Universe {
+                sort: right_sort,
+                level: right_level,
+            },
+        ) => {
+            if left_sort == right_sort && left_level == right_level {
+                Read::Pushed
+            }
+            else {
+                Read::Apart
+            }
+        },
+        (ValueTypeView::Thunk(left_body), ValueTypeView::Thunk(right_body)) => {
+            pending.push(variance.comps(body(left_body, at_left), body(right_body, at_right)));
+            Read::Pushed
+        },
+        (ValueTypeView::List(left_item), ValueTypeView::List(right_item)) => {
+            pending.push(variance.values(child(left_item, at_left), child(right_item, at_right)));
+            Read::Pushed
+        },
+        (
+            ValueTypeView::Lift {
+                inner: left_inner,
+                target: left_target,
+            },
+            ValueTypeView::Lift {
+                inner: right_inner,
+                target: right_target,
+            },
+        ) => {
+            pending.push(variance.values(child(left_inner, at_left), child(right_inner, at_right)));
+            if left_target == right_target {
+                Read::Pushed
+            }
+            else {
+                Read::Apart
+            }
+        },
+        (ValueTypeView::Sum(left_parts), ValueTypeView::Sum(right_parts))
+        | (ValueTypeView::Product(left_parts), ValueTypeView::Product(right_parts)) => {
+            if left_parts.len() == right_parts.len() {
+                pending.extend(left_parts.iter().zip(right_parts).rev().map(
+                    |(&found, &wanted)| {
+                        variance.values(child(found, at_left), child(wanted, at_right))
+                    },
+                ));
+                Read::Pushed
+            }
+            else {
+                Read::Apart
+            }
+        },
+        (ValueTypeView::Record(left_fields), ValueTypeView::Record(right_fields)) => {
+            if left_fields.len() == right_fields.len() && left_fields.keys().eq(right_fields.keys())
+            {
+                pending.extend(left_fields.values().zip(right_fields.values()).map(
+                    |(&found, &wanted)| {
+                        variance.values(child(found, at_left), child(wanted, at_right))
+                    },
+                ));
+                Read::Pushed
+            }
+            else {
+                Read::Apart
+            }
+        },
+        (
+            ValueTypeView::Stack {
+                input: left_input,
+                output: left_output,
+            },
+            ValueTypeView::Stack {
+                input: right_input,
+                output: right_output,
+            },
+        ) => {
+            pending.extend([
+                variance.comps(body(right_input, at_right), body(left_input, at_left)),
+                variance.comps(body(left_output, at_left), body(right_output, at_right)),
+            ]);
+            Read::Pushed
+        },
+        (
+            ValueTypeView::StaticPi {
+                domain: left_domain,
+                codomain: left_codomain,
+            },
+            ValueTypeView::StaticPi {
+                domain: right_domain,
+                codomain: right_codomain,
+            },
+        ) => {
+            pending.push(variance.values(
+                child(left_codomain, at_left),
+                child(right_codomain, at_right),
+            ));
+            pending
+                .push(variance.values(child(right_domain, at_right), child(left_domain, at_left)));
+            Read::Pushed
+        },
+        // The second factors stand under one binder each, which a relocation
+        // read beneath it passes over.
+        (
+            ValueTypeView::Sigma {
+                first: left_first,
+                second: left_second,
+            },
+            ValueTypeView::Sigma {
+                first: right_first,
+                second: right_second,
+            },
+        ) => {
+            pending.push(variance.values(
+                child(left_second, at_left.under(Binders::ONE)),
+                child(right_second, at_right.under(Binders::ONE)),
+            ));
+            pending.push(variance.values(child(left_first, at_left), child(right_first, at_right)));
+            Read::Pushed
+        },
+        (
+            ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::Stack { .. }
+            | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Path { .. }
+            | ValueTypeView::Flow { .. }
+            | ValueTypeView::Run(_)
+            | ValueTypeView::Sum(_)
+            | ValueTypeView::List(_)
+            | ValueTypeView::Integer
+            | ValueTypeView::String
+            | ValueTypeView::Unit
+            | ValueTypeView::Thunk(_)
+            | ValueTypeView::Universe { .. }
+            | ValueTypeView::Lift { .. }
+            | ValueTypeView::Product(_)
+            | ValueTypeView::StaticPi { .. }
+            | ValueTypeView::Sigma { .. }
+            | ValueTypeView::Abstract(_)
+            | ValueTypeView::Capability { .. }
+            | ValueTypeView::Session(_)
+            | ValueTypeView::Staged { .. }
+            | ValueTypeView::World(_),
+            _,
+        ) => return Ok(Maybe::Absent(through::Absent::Unread)),
+    };
+    Ok(Maybe::Present(read))
+}
+
+/// Read two computation types at their weak heads through the relocations
+/// they carry, as [`relocated_values`] reads value types: the codomain of a
+/// dependent arrow under one more binder, and a plain arrow's codomain against
+/// a dependent one weakened past its binder by a root update.
+///
+/// # Specification
+/// - requires: both sides at their weak heads.
+/// - ensures: as [`relocated_values`], for lazy pairs, returners over the empty
+///   row, and arrows of either kind; a returner over a row and a decode are
+///   [`through::Absent::Unread`].
+/// - fails: the view's refusal for a node outside the fragment.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — relocated returners, arrows, dependent arrows and their
+///   mixtures, agreeing and differing, each against its settled reading.
+/// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
+#[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Absent(through::Absent::Plain)))
+    || (left.relocation() == Relocation::IDENTITY && right.relocation() == Relocation::IDENTITY))]
+fn relocated_comps(
+    arena: &mut CoreArena,
+    (left, right): (Relocated<CompTypeId>, Relocated<CompTypeId>),
+    variance: Variance,
+    pending: &mut Vec<Pairing>,
+) -> Result<Maybe<Read, through::Absent>, CheckRefusal>
+{
+    let (at_left, at_right) = (left.relocation(), right.relocation());
+    if at_left == Relocation::IDENTITY && at_right == Relocation::IDENTITY {
+        return Ok(Maybe::Absent(through::Absent::Plain));
+    }
+    let read = match (
+        comp_type_view(arena, left.node())?,
+        comp_type_view(arena, right.node())?,
+    ) {
+        (CompTypeView::Element { .. }, _) | (_, CompTypeView::Element { .. }) => {
+            return Ok(Maybe::Absent(through::Absent::Unread));
+        },
+        (CompTypeView::Unknown, _) | (_, CompTypeView::Unknown) => Read::Pushed,
+        (
+            CompTypeView::With(left_first, left_second),
+            CompTypeView::With(right_first, right_second),
+        ) => {
+            pending.extend([
+                variance.comps(
+                    arena.place_comp_type(left_first, at_left),
+                    arena.place_comp_type(right_first, at_right),
+                ),
+                variance.comps(
+                    arena.place_comp_type(left_second, at_left),
+                    arena.place_comp_type(right_second, at_right),
+                ),
+            ]);
+            Read::Pushed
+        },
+        (
+            CompTypeView::Returner {
+                result: left_result,
+                effects: left_effects,
+            },
+            CompTypeView::Returner {
+                result: right_result,
+                effects: right_effects,
+            },
+        ) if left_effects.signatures().len() == 0 => {
+            if variance == Variance::Subtyping || right_effects.signatures().len() == 0 {
+                pending.push(variance.values(
+                    arena.place_value_type(left_result, at_left),
+                    arena.place_value_type(right_result, at_right),
+                ));
+                Read::Pushed
+            }
+            else {
+                Read::Apart
+            }
+        },
+        (
+            CompTypeView::Arrow {
+                domain: left_domain,
+                codomain: left_codomain,
+            },
+            CompTypeView::Arrow {
+                domain: right_domain,
+                codomain: right_codomain,
+            },
+        ) => {
+            pending.push(variance.comps(
+                arena.place_comp_type(left_codomain, at_left),
+                arena.place_comp_type(right_codomain, at_right),
+            ));
+            pending.push(variance.values(
+                arena.place_value_type(right_domain, at_right),
+                arena.place_value_type(left_domain, at_left),
+            ));
+            Read::Pushed
+        },
+        (
+            CompTypeView::Pi {
+                domain: left_domain,
+                codomain: left_codomain,
+            },
+            CompTypeView::Pi {
+                domain: right_domain,
+                codomain: right_codomain,
+            },
+        ) => {
+            pending.push(variance.comps(
+                arena.place_comp_type(left_codomain, at_left.under(Binders::ONE)),
+                arena.place_comp_type(right_codomain, at_right.under(Binders::ONE)),
+            ));
+            pending.push(variance.values(
+                arena.place_value_type(right_domain, at_right),
+                arena.place_value_type(left_domain, at_left),
+            ));
+            Read::Pushed
+        },
+        (
+            CompTypeView::Pi {
+                domain: left_domain,
+                codomain: left_codomain,
+            },
+            CompTypeView::Arrow {
+                domain: right_domain,
+                codomain: right_codomain,
+            },
+        ) => {
+            let dependent = arena.place_comp_type(left_codomain, at_left.under(Binders::ONE));
+            let plain = arena.place_comp_type(right_codomain, at_right);
+            let weakened = shift_comp_type(arena, plain, Binders::ONE);
+            pending.push(variance.comps(dependent, weakened));
+            pending.push(variance.values(
+                arena.place_value_type(right_domain, at_right),
+                arena.place_value_type(left_domain, at_left),
+            ));
+            Read::Pushed
+        },
+        (
+            CompTypeView::Arrow {
+                domain: left_domain,
+                codomain: left_codomain,
+            },
+            CompTypeView::Pi {
+                domain: right_domain,
+                codomain: right_codomain,
+            },
+        ) => {
+            let plain = arena.place_comp_type(left_codomain, at_left);
+            let weakened = shift_comp_type(arena, plain, Binders::ONE);
+            let dependent = arena.place_comp_type(right_codomain, at_right.under(Binders::ONE));
+            pending.push(variance.comps(weakened, dependent));
+            pending.push(variance.values(
+                arena.place_value_type(right_domain, at_right),
+                arena.place_value_type(left_domain, at_left),
+            ));
+            Read::Pushed
+        },
+        (
+            CompTypeView::Returner { .. }
+            | CompTypeView::With(..)
+            | CompTypeView::Arrow { .. }
+            | CompTypeView::Pi { .. },
+            _,
+        ) => return Ok(Maybe::Absent(through::Absent::Unread)),
+    };
+    Ok(Maybe::Present(read))
 }
 
 /// What the code or index `node` reads as at its root: unknown when it is a

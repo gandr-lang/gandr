@@ -11,7 +11,7 @@
 //!
 //! |Former|Mode|Rule|
 //! |---|---|---|
-//! |variable|synthesise|the type its binder declared, shifted past the binders opened since|
+//! |variable|synthesise|the type its binder declared, relocated past the binders opened since: a root update the value bridge reads through, settled where any other rule reads it|
 //! |constant|synthesise|the type its declaration supplied|
 //! |unit, integer and string literal|synthesise|the atom|
 //! |quote `⌜A⌝`, `⌜C⌝`|synthesise|the quoted type is formed; the quote has the universe of its family's sort at the type's level|
@@ -431,6 +431,7 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ContextError;
+use gandr_core_term::Relocated;
 use gandr_core_term::Sort;
 use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
@@ -671,7 +672,7 @@ pub fn synthesise_value_with_failure(
     let (produced, conversions) = Machine::run(context, goal)?;
     match produced {
         Produced::ValueType(produced) => Ok(Synthesised {
-            produced: FormedValueType::derived(produced),
+            produced: FormedValueType::derived(produced.settle(context.arena_mut())),
             conversions,
         }),
         Produced::CompType(_) | Produced::Checked => {
@@ -1042,8 +1043,11 @@ enum Goal
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Produced
 {
-    /// A synthesised value type.
-    ValueType(ValueTypeId),
+    /// A synthesised value type, read through the relocation it carries: a
+    /// variable's slot type moved to the depth it is read at. The value
+    /// bridge reads it through; every other rule settles it where it reads
+    /// it.
+    ValueType(Relocated<ValueTypeId>),
     /// A synthesised computation type.
     CompType(CompTypeId),
     /// A check that succeeded, or a type formed.
@@ -2834,9 +2838,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .checked_sub(usize::from(depth))
             .ok_or(CheckRefusal::MachineInvariant)?;
         let added = u32::try_from(added).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
-        let answer = shift_comp_type(self.context.arena_mut(), answer, Binders::from(added));
+        let answer = shift_comp_type(self.context.arena_mut(), answer, Binders::from(added))
+            .settle(self.context.arena_mut());
         let stack = self.context.arena_mut().value_type_stack(captured, answer);
-        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(1_u32));
+        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(1_u32))
+            .settle(self.context.arena_mut());
         self.context.binders().open(Zone::Intuitionistic, stack);
         self.wait(Frame::LambdaBody);
         Ok(Step::Descend(Goal::Computation {
@@ -2953,7 +2959,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .arena_mut()
             .comp_type_returner_with_effects(answer_result, residual);
         comp_bridge(self.context, at, natural, answer, &mut self.conversions)?;
-        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(1_u32));
+        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(1_u32))
+            .settle(self.context.arena_mut());
         self.context.binders().open(Zone::Intuitionistic, result);
         self.wait(Frame::HandlerReturn { at, answer });
         Ok(Step::Descend(Goal::Computation {
@@ -3023,8 +3030,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .arena_mut()
             .comp_type_returner_with_effects(reply, effects);
         let stack = self.context.arena_mut().value_type_stack(input, answer);
-        let stack = shift_value_type(self.context.arena_mut(), stack, Binders::from(1_u32));
-        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(2_u32));
+        let stack = shift_value_type(self.context.arena_mut(), stack, Binders::from(1_u32))
+            .settle(self.context.arena_mut());
+        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(2_u32))
+            .settle(self.context.arena_mut());
         let position = position.next()?;
         self.context.binders().open(Zone::Intuitionistic, payload);
         self.context.binders().open(Zone::Intuitionistic, stack);
@@ -3266,7 +3275,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let region = self.next_region()?;
         let arena = self.context.arena_mut();
         let capability = arena.value_type_capability(authority, CapabilityGrade::Durable, region);
-        let expected = shift_comp_type(arena, subject, Binders::from(1_u32));
+        let expected = shift_comp_type(arena, subject, Binders::from(1_u32)).settle(arena);
         self.context
             .binders()
             .open(Zone::Intuitionistic, capability);
@@ -3304,7 +3313,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
-        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(1_u32));
+        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(1_u32))
+            .settle(self.context.arena_mut());
         self.context.binders().open(Zone::Intuitionistic, result);
         self.wait(Frame::HandlerReturn { at, answer });
         Ok(Step::Descend(Goal::Computation {
@@ -3877,7 +3887,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
         term: ValueId,
     ) -> Result<Step, CheckRefusal>
     {
-        let produced = |found: FormedValueType| Ok(Step::Ascend(Produced::ValueType(found.id())));
+        let produced = |found: FormedValueType| {
+            Ok(Step::Ascend(Produced::ValueType(Relocated::from(
+                found.id(),
+            ))))
+        };
         match *self.value(term)? {
             Value::Constructor { .. } => self.native_constructor(term),
             Value::Record(_) => self.native_record(term),
@@ -3890,7 +3904,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::Primitive { primitive, .. } => {
                 let computation = primitive.declared_type(self.context.arena_mut());
                 let classifier = self.context.arena_mut().value_type_thunk(computation);
-                Ok(Step::Ascend(Produced::ValueType(classifier)))
+                Ok(Step::Ascend(Produced::ValueType(Relocated::from(
+                    classifier,
+                ))))
             },
             Value::PathRefl(code) => {
                 let _endpoint = crate::formation::path_code(self.context.arena(), code)?;
@@ -3898,7 +3914,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .context
                     .arena_mut()
                     .value_type_path_universe(code, code);
-                Ok(Step::Ascend(Produced::ValueType(classifier)))
+                Ok(Step::Ascend(Produced::ValueType(Relocated::from(
+                    classifier,
+                ))))
             },
             Value::PathProduct(first, second) => {
                 self.wait(Frame::PathProductFirst {
@@ -3944,6 +3962,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             {
                 Ok(declared) => {
                     self.located_here(term, index)?;
+                    // The slot's type moved to this depth as a root update:
+                    // the value bridge reads it through the relocation, and
+                    // every other rule settles it where it reads it.
                     let read =
                         shift_value_type(self.context.arena_mut(), declared, Binders::past(index));
                     Ok(Step::Ascend(Produced::ValueType(read)))
@@ -4160,7 +4181,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             }),
             Value::Hole(_) | Value::Mark { .. } => {
                 let unknown = self.context.arena_mut().value_type_unknown();
-                Ok(Step::Ascend(Produced::ValueType(unknown)))
+                Ok(Step::Ascend(Produced::ValueType(Relocated::from(unknown))))
             },
         }
     }
@@ -5129,7 +5150,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 };
                 let arena = self.context.arena_mut();
                 let recursive = arena.value_type_thunk(own);
-                let scoped = shift_comp_type(arena, inside, Binders::from(1_u32));
+                let scoped = shift_comp_type(arena, inside, Binders::from(1_u32)).settle(arena);
                 // A structural fixpoint is the definition's own when its body
                 // thunks it: inside it, a case reads the definition's
                 // constant in its family's fields as this binder.
@@ -5472,13 +5493,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let arena = self.context.arena_mut();
         let paths = arena.value_type_path(first, left_first, right_first);
         let at_right = instantiate_value_type(arena, second, right_first);
-        let at_right = shift_value_type(arena, at_right, Binders::ONE);
-        let motive = shift_value_type_under(arena, second, Binders::ONE, Binders::ONE);
+        let at_right = shift_value_type(arena, at_right, Binders::ONE).settle(arena);
+        let motive =
+            shift_value_type_under(arena, second, Binders::ONE, Binders::ONE).settle(arena);
         let path = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let moved = shift_value(arena, left_second, Binders::ONE);
+        let moved = shift_value(arena, left_second, Binders::ONE).settle(arena);
         let transport = arena.computation_path_transport(motive, path, moved);
         let transported = arena.value_returned(transport);
-        let target = shift_value(arena, right_second, Binders::ONE);
+        let target = shift_value(arena, right_second, Binders::ONE).settle(arena);
         let over = arena.value_type_path(at_right, transported, target);
 
         Ok((paths, over))
@@ -5530,7 +5552,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
         match matched_static_pi(self.context.arena_mut(), head) {
             Maybe::Present((domain, codomain)) => {
                 let scoped =
-                    shift_value_type(self.context.arena_mut(), codomain, Binders::from(1_u32));
+                    shift_value_type(self.context.arena_mut(), codomain, Binders::from(1_u32))
+                        .settle(self.context.arena_mut());
                 Ok((domain, scoped))
             },
             Maybe::Absent(absent) => Err(unmatched(
@@ -5595,7 +5618,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         self.context.arena_mut(),
                         function.codomain(),
                         Binders::from(1_u32),
-                    );
+                    )
+                    .settle(self.context.arena_mut());
                     Ok((function.domain(), scoped))
                 },
                 CodomainScope::UnderBinder => Ok((function.domain(), function.codomain())),
@@ -6462,6 +6486,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             (Frame::NativeCollect, Produced::ValueType(field)) => {
+                let field = field.settle(self.context.arena_mut());
                 self.native_types.push(field);
                 Ok(Step::Ascend(Produced::Checked))
             },
@@ -6491,7 +6516,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .zip(self.native_types.drain(base ..))
                     .collect();
                 let record = self.context.arena_mut().value_type_record(fields);
-                Ok(Step::Ascend(Produced::ValueType(record)))
+                Ok(Step::Ascend(Produced::ValueType(record.into())))
             },
             (Frame::NativeTuple { base }, Produced::Checked) => {
                 let product = self.context.arena_mut().value_type_product(
@@ -6500,9 +6525,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         .ok_or(CheckRefusal::MachineInvariant)?,
                 );
                 self.native_types.truncate(base);
-                Ok(Step::Ascend(Produced::ValueType(product)))
+                Ok(Step::Ascend(Produced::ValueType(product.into())))
             },
             (Frame::NativeCase(term), Produced::ValueType(datatype)) => {
+                let datatype = datatype.settle(self.context.arena_mut());
                 self.native_case(term, datatype)
             },
             (
@@ -6551,12 +6577,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             (Frame::SigmaSplitScrutinee(term), Produced::ValueType(classifier)) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 self.sigma_split(term, classifier)
             },
             (Frame::SigmaSplitMotive { term, sigma }, Produced::Checked) => {
                 self.sigma_split_body(term, sigma)
             },
             (Frame::NativeProjection(term), Produced::ValueType(record)) => {
+                let record = record.settle(self.context.arena_mut());
                 self.native_projection(term, record)
             },
             (
@@ -6578,6 +6606,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 _,
             ) => Err(CheckRefusal::MachineInvariant),
             (Frame::Resume { stack, body }, Produced::ValueType(classifier)) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let (input, output) = self.stack_expected(stack, classifier)?;
                 self.wait(Frame::PrimitiveResult { result: output });
                 Ok(Step::Descend(Goal::Computation {
@@ -6623,6 +6652,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Produced::CompType(subject),
             ) => self.handle_subject(at, answer, interface, subject),
             (Frame::ExerciseCapability { at }, Produced::ValueType(classifier)) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 self.exercise(at, classifier)
             },
             (
@@ -6669,6 +6699,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 else {
                     return Err(CheckRefusal::DependentStack { at, synthesised });
                 };
+                let lowered = lowered.settle(self.context.arena_mut());
                 self.close()?;
                 let result = self.accumulate_effects(body, bound, lowered)?;
                 Ok(Step::Ascend(Produced::CompType(result)))
@@ -6707,6 +6738,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::ValueType(classifier),
             ) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let first = crate::product::component(self.context, at, classifier)?;
                 self.wait(Frame::PathProductSecond {
                     product,
@@ -6728,6 +6760,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::ValueType(classifier),
             ) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let second = crate::product::component(self.context, at, classifier)?;
                 if first.reading == crate::product::Reading::Element
                     || second.reading == crate::product::Reading::Element
@@ -6741,7 +6774,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }
                 let classifier =
                     crate::product::classifier(self.context.arena_mut(), first, second);
-                Ok(Step::Ascend(Produced::ValueType(classifier)))
+                Ok(Step::Ascend(Produced::ValueType(classifier.into())))
             },
             (
                 Frame::PathBackward {
@@ -6760,9 +6793,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             (Frame::PathChecked { path_type }, Produced::Checked) => {
-                Ok(Step::Ascend(Produced::ValueType(path_type)))
+                Ok(Step::Ascend(Produced::ValueType(path_type.into())))
             },
             (Frame::TransportPath { path, value }, Produced::ValueType(classifier)) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let (source, target) = self.path_endpoints(path, classifier)?;
                 let result = self.context.arena_mut().comp_type_returner(target);
                 self.wait(Frame::TransportOperand { result });
@@ -6772,11 +6806,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             (Frame::HereSynthesised { point }, Produced::ValueType(carrier)) => {
+                let carrier = carrier.settle(self.context.arena_mut());
                 let path = self
                     .context
                     .arena_mut()
                     .value_type_path(carrier, point, point);
-                Ok(Step::Ascend(Produced::ValueType(path)))
+                Ok(Step::Ascend(Produced::ValueType(path.into())))
             },
             (
                 Frame::HereEndpoints {
@@ -6791,6 +6826,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             (Frame::FunextLeft { at, left, right }, Produced::ValueType(classifier)) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 self.wait(Frame::FunextRight {
                     at,
                     left,
@@ -6817,7 +6853,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .context
                     .arena_mut()
                     .value_type_path(classifier, left, right);
-                Ok(Step::Ascend(Produced::ValueType(path)))
+                Ok(Step::Ascend(Produced::ValueType(path.into())))
             },
             (
                 Frame::EquivForward {
@@ -6827,6 +6863,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::ValueType(classifier),
             ) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let codes = crate::equiv::codes(self.context, at, classifier)?;
                 let inverse = crate::equiv::translator(self.context, (codes.1, codes.0));
                 self.wait(Frame::EquivBackward {
@@ -6852,7 +6889,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let decided = crate::equiv::decide(self.context, at, (forward, backward), codes)?;
                 let path = decided.identity(self.context.arena_mut());
                 self.context.record_equivalence(at, decided);
-                Ok(Step::Ascend(Produced::ValueType(path)))
+                Ok(Step::Ascend(Produced::ValueType(path.into())))
             },
             (
                 Frame::UnivalenceRecord {
@@ -6862,6 +6899,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::ValueType(classifier),
             ) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let premises =
                     crate::univalence::premises(self.context, at, (record, forward), classifier)?;
                 let owner = self.owner;
@@ -6887,13 +6925,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             (Frame::UnivalenceChecked { path }, Produced::Checked) => {
-                Ok(Step::Ascend(Produced::ValueType(path)))
+                Ok(Step::Ascend(Produced::ValueType(path.into())))
             },
             (Frame::UaTranslators { at }, Produced::Checked) => {
                 let universal = crate::ua::decide(self.context, at)?;
                 self.context.record_native(at, universal.path());
                 let identity = universal.identity(self.context.arena_mut());
-                Ok(Step::Ascend(Produced::ValueType(identity)))
+                Ok(Step::Ascend(Produced::ValueType(identity.into())))
             },
             (Frame::Ran { at }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
@@ -6931,7 +6969,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     ) => Nesting::Ran(purity),
                 };
                 self.context.record_nesting(at, decided);
-                Ok(Step::Ascend(Produced::ValueType(result)))
+                Ok(Step::Ascend(Produced::ValueType(result.into())))
             },
             (Frame::ReturnedEndpoint { at }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
@@ -6939,11 +6977,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     CompTypeView::Returner { result, effects }
                         if effects.purity() == gandr_core_term::effect::Purity::Pure =>
                     {
-                        Ok(Step::Ascend(Produced::ValueType(result)))
+                        Ok(Step::Ascend(Produced::ValueType(result.into())))
                     },
                     CompTypeView::Unknown => {
                         let unknown = self.context.arena_mut().value_type_unknown();
-                        Ok(Step::Ascend(Produced::ValueType(unknown)))
+                        Ok(Step::Ascend(Produced::ValueType(unknown.into())))
                     },
                     CompTypeView::Returner { .. }
                     | CompTypeView::With(..)
@@ -6958,6 +6996,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Frame::ElementTransportPath { at, motive, value },
                 Produced::ValueType(classifier),
             ) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let PathReading::Known {
                     carrier,
                     left,
@@ -7012,17 +7051,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.context.record_flow(at, statement);
                 let identity =
                     crate::flow::identity(self.context.arena_mut(), relation, (source, target));
-                Ok(Step::Ascend(Produced::ValueType(identity)))
+                Ok(Step::Ascend(Produced::ValueType(identity.into())))
             },
             (Frame::StaySynthesised { at, point }, Produced::ValueType(carrier)) => {
+                let carrier = carrier.settle(self.context.arena_mut());
                 crate::flow::record_simulation(self.context, at, carrier, (point, point))?;
                 let flow = self
                     .context
                     .arena_mut()
                     .value_type_flow(carrier, point, point);
-                Ok(Step::Ascend(Produced::ValueType(flow)))
+                Ok(Step::Ascend(Produced::ValueType(flow.into())))
             },
             (Frame::ThenFirst { at, second }, Produced::ValueType(first)) => {
+                let first = first.settle(self.context.arena_mut());
                 self.wait(Frame::ThenSecond { at, first });
                 Ok(Step::Descend(Goal::Value {
                     term: second,
@@ -7030,6 +7071,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             (Frame::ThenSecond { at, first }, Produced::ValueType(synthesised)) => {
+                let synthesised = synthesised.settle(self.context.arena_mut());
                 let Value::Then(_, second) = *self.value(at)?
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -7054,7 +7096,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .context
                     .arena_mut()
                     .value_type_flow(carrier, source, end);
-                Ok(Step::Ascend(Produced::ValueType(composite)))
+                Ok(Step::Ascend(Produced::ValueType(composite.into())))
             },
             (
                 Frame::FlowProductFirst {
@@ -7064,6 +7106,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::ValueType(classifier),
             ) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let first = crate::product::flow_component(self.context, at, classifier)?;
                 self.wait(Frame::FlowProductSecond { at: second, first });
                 Ok(Step::Descend(Goal::Value {
@@ -7072,12 +7115,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             (Frame::FlowProductSecond { at, first }, Produced::ValueType(classifier)) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let second = crate::product::flow_component(self.context, at, classifier)?;
                 let product =
                     crate::product::flow_classifier(self.context.arena_mut(), first, second);
-                Ok(Step::Ascend(Produced::ValueType(product)))
+                Ok(Step::Ascend(Produced::ValueType(product.into())))
             },
             (Frame::RideFlow { at, motive, .. }, Produced::ValueType(flow)) => {
+                let flow = flow.settle(self.context.arena_mut());
                 let (carrier, ..) =
                     crate::flow::endpoints(self.context, TermNode::Computation(at), flow)?;
                 self.context.binders().open(Zone::Intuitionistic, carrier);
@@ -7113,14 +7158,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::CompType(result)))
             },
             (Frame::ForwardTranslator { at, translator }, Produced::ValueType(classifier)) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let codes = crate::forward::codes(self.context, at, classifier)?;
                 let decided = crate::forward::decide(self.context, at, translator, codes)?;
                 let flow = decided.classifier();
                 self.context
                     .record_directed(at, crate::forward::Directed::Forward(decided));
-                Ok(Step::Ascend(Produced::ValueType(flow)))
+                Ok(Step::Ascend(Produced::ValueType(flow.into())))
             },
             (Frame::ArrowDomain { at, codomain }, Produced::ValueType(domain_type)) => {
+                let domain_type = domain_type.settle(self.context.arena_mut());
                 self.wait(Frame::ArrowCodomain { at, domain_type });
                 Ok(Step::Descend(Goal::Value {
                     term: codomain,
@@ -7128,6 +7175,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             (Frame::ArrowCodomain { at, domain_type }, Produced::ValueType(codomain_type)) => {
+                let codomain_type = codomain_type.settle(self.context.arena_mut());
                 let Value::FunctionFlow(domain, codomain) = *self.value(at)?
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -7140,9 +7188,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 )?;
                 self.context
                     .record_directed(at, crate::forward::Directed::Function(flow));
-                Ok(Step::Ascend(Produced::ValueType(flow)))
+                Ok(Step::Ascend(Produced::ValueType(flow.into())))
             },
             (Frame::ArrowAgainst { at, expected }, Produced::ValueType(synthesised)) => {
+                let synthesised = synthesised.settle(self.context.arena_mut());
                 let Value::FunctionFlow(domain, codomain) = *self.value(at)?
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -7171,6 +7220,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             (Frame::TelescopePath { at }, Produced::ValueType(classifier)) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let PathReading::Known {
                     carrier,
                     left,
@@ -7239,6 +7289,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::ValueType(classifier),
             ) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let Computation::TelescopeTransport {
                     path,
                     start,
@@ -7299,9 +7350,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::ValueType(classifier),
             ) => {
+                let classifier = classifier.settle(self.context.arena_mut());
                 let summands = self.sum_expected(scrutinee, classifier)?;
                 let expected =
-                    shift_comp_type(self.context.arena_mut(), expected, Binders::from(1_u32));
+                    shift_comp_type(self.context.arena_mut(), expected, Binders::from(1_u32))
+                        .settle(self.context.arena_mut());
                 let Some(case) = self.context.arena().computation(at)
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -7344,7 +7397,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     expected,
                 },
                 Produced::ValueType(classifier),
-            ) => self.split(at, scrutinee, classifier, expected),
+            ) => {
+                let classifier = classifier.settle(self.context.arena_mut());
+                self.split(at, scrutinee, classifier, expected)
+            },
             (Frame::SplitBody(arity), Produced::Checked) => {
                 for _ in 0_usize .. usize::from(arity) {
                     self.close()?;
@@ -7367,6 +7423,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             (Frame::Force { value }, Produced::ValueType(synthesised)) => {
+                let synthesised = synthesised.settle(self.context.arena_mut());
                 let head = self.context.whnf_value_type(synthesised)?;
                 match matched_thunk(self.context.arena_mut(), head) {
                     Maybe::Present(body) => Ok(Step::Ascend(Produced::CompType(body))),
@@ -7451,11 +7508,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                                 &mut self.conversions,
                             )?;
                         }
-                        Direction::Check(shift_comp_type(
-                            self.context.arena_mut(),
-                            expected,
-                            Binders::from(1_u32),
-                        ))
+                        let arena = self.context.arena_mut();
+                        Direction::Check(
+                            shift_comp_type(arena, expected, Binders::from(1_u32)).settle(arena),
+                        )
                     },
                 };
                 self.context.binders().open(Zone::Intuitionistic, result);
@@ -7471,6 +7527,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 else {
                     return Err(CheckRefusal::DependentBind { at, synthesised });
                 };
+                let lowered = lowered.settle(self.context.arena_mut());
                 self.close()?;
                 let lowered = self.accumulate_effects(at, bound, lowered)?;
                 Ok(Step::Ascend(Produced::CompType(lowered)))
@@ -7496,7 +7553,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             (Frame::Quote(quoted), Produced::Checked) => {
-                Ok(Step::Ascend(Produced::ValueType(self.quoted(quoted)?)))
+                let quoted = self.quoted(quoted)?;
+                Ok(Step::Ascend(Produced::ValueType(quoted.into())))
             },
             (Frame::FormNext(next), Produced::Checked) => Ok(Step::Descend(Goal::Form(next))),
             (Frame::FormUnder { domain, under }, Produced::Checked) => {
@@ -7509,6 +7567,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             (Frame::FormElement(node), Produced::ValueType(synthesised)) => {
+                let synthesised = synthesised.settle(self.context.arena_mut());
                 self.decodes(node, synthesised)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
@@ -7531,6 +7590,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::ValueType(synthesised),
             ) => {
+                let synthesised = synthesised.settle(self.context.arena_mut());
                 let head = self.context.whnf_value_type(synthesised)?;
                 let (domain, codomain) = match matched_static_pi(self.context.arena_mut(), head) {
                     Maybe::Present(classifiers) => classifiers,
@@ -7573,6 +7633,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::ValueType(synthesised),
             ) => {
+                let synthesised = synthesised.settle(self.context.arena_mut());
                 value_bridge(
                     self.context,
                     argument,
@@ -7667,14 +7728,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::Access { .. }
                     | CheckRefusal::Located { .. }) => other,
                 })?;
-                Ok(Step::Ascend(Produced::ValueType(codomain)))
+                Ok(Step::Ascend(Produced::ValueType(codomain.into())))
             },
             (Frame::StaticOperand { codomain }, Produced::Checked) => {
-                Ok(Step::Ascend(Produced::ValueType(codomain)))
+                Ok(Step::Ascend(Produced::ValueType(codomain.into())))
             },
             (Frame::Unknowing(TermNode::Value(_)), Produced::Checked) => {
                 let unknown = self.context.arena_mut().value_type_unknown();
-                Ok(Step::Ascend(Produced::ValueType(unknown)))
+                Ok(Step::Ascend(Produced::ValueType(unknown.into())))
             },
             (Frame::Unknowing(TermNode::Computation(_)), Produced::Checked) => {
                 let unknown = self.context.arena_mut().comp_type_unknown();
@@ -7706,14 +7767,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
             ) => self.forked(at, direction, session),
             (Frame::ForkParent { at, direction }, produced) => self.joined(at, direction, produced),
             (Frame::HoldValue { at, direction }, Produced::ValueType(held)) => {
+                let held = held.settle(self.context.arena_mut());
                 self.held(at, direction, held)
             },
             (Frame::HoldBody { at, direction }, produced) => self.dropped(at, direction, produced),
             (Frame::AccessBody { at, .. }, produced) => self.accessed(at, produced),
             (Frame::AccessUnwind { produced, .. }, Produced::Checked) => Ok(Step::Ascend(produced)),
             (Frame::ResumeValue { at, view }, Produced::Checked) => self.resumed(at, view),
-            (Frame::WorldHold { .. }, Produced::ValueType(held)) => self.held_here(held),
+            (Frame::WorldHold { .. }, Produced::ValueType(held)) => {
+                let held = held.settle(self.context.arena_mut());
+                self.held_here(held)
+            },
             (Frame::LetaValue { at, direction }, Produced::ValueType(handle)) => {
+                let handle = handle.settle(self.context.arena_mut());
                 self.opened_at(at, direction, handle)
             },
             (Frame::LetaBody { at }, produced) => self.leta_closed(at, produced),
@@ -7885,7 +7951,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             });
         }
         let binders = u32::try_from(count).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
-        let expected = shift_comp_type(self.context.arena_mut(), expected, Binders::from(binders));
+        let expected = shift_comp_type(self.context.arena_mut(), expected, Binders::from(binders))
+            .settle(self.context.arena_mut());
         for (index, shift) in (0_u32 .. binders).enumerate() {
             let component = match components {
                 Components::Known(ref parts) => {
@@ -7894,7 +7961,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Components::Unknown(unknown) => unknown,
             };
             let component =
-                shift_value_type(self.context.arena_mut(), component, Binders::from(shift));
+                shift_value_type(self.context.arena_mut(), component, Binders::from(shift))
+                    .settle(self.context.arena_mut());
             self.context.binders().open(Zone::Intuitionistic, component);
         }
         self.wait(Frame::SplitBody(arity));
@@ -8378,9 +8446,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             }),
             ListPhase::Nil => {
                 let result =
-                    shift_value_type(self.context.arena_mut(), result, Binders::from(1_u32));
+                    shift_value_type(self.context.arena_mut(), result, Binders::from(1_u32))
+                        .settle(self.context.arena_mut());
                 let expected =
-                    shift_comp_type(self.context.arena_mut(), classifier, Binders::from(2_u32));
+                    shift_comp_type(self.context.arena_mut(), classifier, Binders::from(2_u32))
+                        .settle(self.context.arena_mut());
                 self.context.binders().open(Zone::Intuitionistic, element);
                 self.context.binders().open(Zone::Intuitionistic, result);
                 (ListPhase::Cons, Goal::Computation {

@@ -2236,7 +2236,10 @@ fn a_result_of_the_wrong_kind_is_a_machine_fault()
     let unit_type = arena.value_type_unit();
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     assert_eq!(
-        checked(Produced::ValueType(unit_type), ConversionCount::default()),
+        checked(
+            Produced::ValueType(unit_type.into()),
+            ConversionCount::default()
+        ),
         Err(CheckRefusal::MachineInvariant),
         "a check run that ends on a type is reported, not trusted"
     );
@@ -2254,7 +2257,7 @@ fn a_result_of_the_wrong_kind_is_a_machine_fault()
         root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
     };
     let refusal = machine
-        .resume(Frame::LambdaBody, Produced::ValueType(unit_type))
+        .resume(Frame::LambdaBody, Produced::ValueType(unit_type.into()))
         .unwrap_err();
     assert_eq!(
         refusal,

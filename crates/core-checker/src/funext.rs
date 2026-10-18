@@ -786,12 +786,14 @@ fn coverage(
                             let past = Binders::from(right_pattern.binders);
                             let arena = context.arena_mut();
                             let shifted_left =
-                                gandr_core_term::shift_value(arena, left_pattern.left, past);
+                                gandr_core_term::shift_value(arena, left_pattern.left, past)
+                                    .settle(arena);
                             let shifted_right = if left_pattern.left == left_pattern.right {
                                 shifted_left
                             }
                             else {
                                 gandr_core_term::shift_value(arena, left_pattern.right, past)
+                                    .settle(arena)
                             };
                             let left = arena.value_tuple(&[shifted_left, right_pattern.left]);
                             let right = if shifted_left == shifted_right
@@ -927,13 +929,13 @@ fn resume(
         Continuation::Tail => arena.computation_return(value),
         Continuation::Bind(body) => {
             let mut carried = Vec::new();
-            let weakened = gandr_core_term::shift_computation_under_traced(
+            let weakened = gandr_core_term::shift_computation_under(
                 arena,
                 body,
                 Binders::from(1_u32),
                 extension,
-                &mut carried,
-            );
+            )
+            .settle_traced(arena, &mut carried);
             gandr_core_term::instantiate_computation_traced(arena, weakened, value, &mut carried)
         },
     }

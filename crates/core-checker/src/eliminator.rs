@@ -304,7 +304,7 @@ fn function_hypothesis(
     (fields, from): (Binders, Binders),
 ) -> Result<CompTypeId, DerivationRefusal>
 {
-    let shifted = gandr_core_term::shift_comp_type(arena, chain, from);
+    let shifted = gandr_core_term::shift_comp_type(arena, chain, from).settle(arena);
     let mut domains: Vec<(ValueTypeId, CompBinding)> = Vec::new();
     let mut focus = shifted;
     let mut dependent = Binders::NONE;
@@ -326,7 +326,7 @@ fn function_hypothesis(
         }
     }
     let past = plus(fields, dependent)?;
-    let mut rebuilt = gandr_core_term::shift_comp_type(arena, closed, past);
+    let mut rebuilt = gandr_core_term::shift_comp_type(arena, closed, past).settle(arena);
     for &(domain, binding) in domains.iter().rev() {
         rebuilt = match binding {
             CompBinding::Closed => arena.comp_type_arrow(domain, rebuilt),
@@ -408,7 +408,10 @@ pub fn derive(
     let arguments = variables(arena, parameters);
     let family = arena.value_type_data(position, arguments);
     let mut shapes: Vec<Vec<FieldShape>> = Vec::new();
-    let closed = gandr_core_term::strengthen_comp_type(arena, motive);
+    let closed = match gandr_core_term::strengthen_comp_type(arena, motive) {
+        Maybe::Present(lowered) => Maybe::Present(lowered.settle(arena)),
+        Maybe::Absent(reason) => Maybe::Absent(reason),
+    };
     for (tag, fields) in signature.constructors().iter().enumerate() {
         let mut row = Vec::new();
         for (field, &root) in fields.iter().enumerate() {
@@ -428,11 +431,12 @@ pub fn derive(
     let mut method_types = Vec::new();
     for ((tag, fields), row) in signature.constructors().iter().enumerate().zip(&shapes) {
         let width = count(fields)?;
-        let shifted_family = gandr_core_term::shift_value_type(arena, family, width);
+        let shifted_family = gandr_core_term::shift_value_type(arena, family, width).settle(arena);
         let values = variables(arena, width);
         let constructor =
             arena.value_constructor(shifted_family, ConstructorTag::from(tag), values);
-        let lifted = gandr_core_term::shift_comp_type_under(arena, motive, Binders::ONE, width);
+        let lifted = gandr_core_term::shift_comp_type_under(arena, motive, Binders::ONE, width)
+            .settle(arena);
         let mut ty = gandr_core_term::instantiate_comp_type(arena, lifted, constructor);
         // Each field's distance from the innermost field binder.
         let mut after = Binders::NONE;
@@ -476,7 +480,8 @@ pub fn derive(
     let declared = arena.value_type_thunk(classifier);
     // The body: under the parameters, the methods, `rec` and `x`.
     let scoped_motive =
-        gandr_core_term::shift_comp_type_under(arena, motive, Binders::ONE, plus(methods, two)?);
+        gandr_core_term::shift_comp_type_under(arena, motive, Binders::ONE, plus(methods, two)?)
+            .settle(arena);
     let mut branches: Vec<ComputationId> = Vec::new();
     let mut preceding = Binders::NONE;
     for (fields, row) in signature.constructors().iter().zip(&shapes) {

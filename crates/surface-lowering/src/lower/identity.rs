@@ -3086,7 +3086,8 @@ impl<'source> Lowerer<'_, 'source>
                 // The transport reads the map only lifted under its motive's
                 // binder: the lift is the written map's copy, so it answers
                 // at the map's bytes.
-                let lifted = gandr_core_term::shift_value(sink.arena, first, Binders::ONE);
+                let lifted = gandr_core_term::shift_value(sink.arena, first, Binders::ONE)
+                    .settle(sink.arena);
                 record_copies(sink, mark, &[Carried::Value(first, lifted)], inserted);
                 mark = sink.arena.watermark();
                 gandr_core_term::identity::cong_lifted(sink.arena, carrier, lifted, left, second)
@@ -3472,7 +3473,8 @@ impl<'source> Lowerer<'_, 'source>
         };
         if let Some(read) = in_type {
             let lift = between(read, from, |binds| binds);
-            return Maybe::Present(gandr_core_term::shift_value_type(sink.arena, written, lift));
+            let lifted = gandr_core_term::shift_value_type(sink.arena, written, lift);
+            return Maybe::Present(lifted.settle(sink.arena));
         }
         let lift = between(frame, from, |_| true);
         let wrapped = sink.arena.comp_type_returner(written);
@@ -3594,7 +3596,8 @@ impl<'source> Lowerer<'_, 'source>
                 sink.arena,
                 argument,
                 Binders::from(u32::try_from(outside).unwrap_or(u32::MAX)),
-            );
+            )
+            .settle(sink.arena);
             instantiated =
                 gandr_core_term::instantiate_comp_type(sink.arena, instantiated, carried);
         }
@@ -3939,13 +3942,8 @@ fn telescope(
         _ => return written,
     };
     let rest = if outer_arrow {
-        gandr_core_term::shift_comp_type_under_traced(
-            arena,
-            rest,
-            Binders::NONE,
-            Binders::ONE,
-            copies,
-        )
+        gandr_core_term::shift_comp_type_under(arena, rest, Binders::NONE, Binders::ONE)
+            .settle_traced(arena, copies)
     }
     else {
         rest
@@ -3959,13 +3957,8 @@ fn telescope(
         return written;
     }
     let body = if inner_arrow {
-        gandr_core_term::shift_comp_type_under_traced(
-            arena,
-            body,
-            Binders::NONE,
-            Binders::ONE,
-            copies,
-        )
+        gandr_core_term::shift_comp_type_under(arena, body, Binders::NONE, Binders::ONE)
+            .settle_traced(arena, copies)
     }
     else {
         body

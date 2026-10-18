@@ -27,6 +27,7 @@ use crate::fixture::seed;
 use crate::fixture::type_recipe;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
+use crate::refusal::Mismatch;
 use crate::refusal::TypeNode;
 
 #[test]
@@ -37,12 +38,15 @@ fn one_id_converts_without_being_read()
     let dangling = dangling_value_type();
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     assert_eq!(
-        convert(&mut context, Pairing::Values(dangling, dangling)),
+        convert(
+            &mut context,
+            Pairing::Values(dangling.into(), dangling.into())
+        ),
         Ok(Agreement::Convertible),
         "one id is one node, so the pair is accepted without its node being read"
     );
     assert_eq!(
-        convert(&mut context, Pairing::Values(unit, dangling)),
+        convert(&mut context, Pairing::Values(unit.into(), dangling.into())),
         Err(CheckRefusal::DanglingNode {
             node: CoreNode::Type(TypeNode::Value(dangling)),
         }),
@@ -66,7 +70,7 @@ fn equal_trees_at_distinct_ids_convert()
     assert_ne!(left, right, "the two trees sit at distinct ids");
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     assert_eq!(
-        convert(&mut context, Pairing::Values(left, right)),
+        convert(&mut context, Pairing::Values(left.into(), right.into())),
         Ok(Agreement::Convertible),
         "conversion compares trees, not ids"
     );
@@ -102,44 +106,50 @@ fn returner_rows_are_covariant_but_signature_types_are_invariant()
     let accepts_pure = arena.comp_type_arrow(pure_thunk, pure);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     assert_eq!(
-        convert(&mut context, Pairing::SubComps(pure, effectful)),
-        Ok(Agreement::Convertible)
-    );
-    assert_eq!(
-        convert(&mut context, Pairing::SubComps(effectful, pure)),
-        Ok(Agreement::Apart)
-    );
-    assert_eq!(
-        convert(&mut context, Pairing::Comps(pure, effectful)),
-        Ok(Agreement::Apart)
-    );
-    assert_eq!(
         convert(
             &mut context,
-            Pairing::SubValues(pure_thunk, effectful_thunk)
+            Pairing::SubComps(pure.into(), effectful.into())
         ),
         Ok(Agreement::Convertible)
     );
     assert_eq!(
         convert(
             &mut context,
-            Pairing::SubComps(accepts_effectful, accepts_pure)
+            Pairing::SubComps(effectful.into(), pure.into())
+        ),
+        Ok(Agreement::Apart)
+    );
+    assert_eq!(
+        convert(&mut context, Pairing::Comps(pure.into(), effectful.into())),
+        Ok(Agreement::Apart)
+    );
+    assert_eq!(
+        convert(
+            &mut context,
+            Pairing::SubValues(pure_thunk.into(), effectful_thunk.into())
         ),
         Ok(Agreement::Convertible)
     );
     assert_eq!(
         convert(
             &mut context,
-            Pairing::SubComps(accepts_pure, accepts_effectful)
+            Pairing::SubComps(accepts_effectful.into(), accepts_pure.into())
+        ),
+        Ok(Agreement::Convertible)
+    );
+    assert_eq!(
+        convert(
+            &mut context,
+            Pairing::SubComps(accepts_pure.into(), accepts_effectful.into())
         ),
         Ok(Agreement::Apart)
     );
     assert_eq!(
-        convert(&mut context, Pairing::SubComps(first, second)),
+        convert(&mut context, Pairing::SubComps(first.into(), second.into())),
         Ok(Agreement::Apart)
     );
     assert_eq!(
-        convert(&mut context, Pairing::SubComps(second, first)),
+        convert(&mut context, Pairing::SubComps(second.into(), first.into())),
         Ok(Agreement::Apart)
     );
 }
@@ -183,7 +193,7 @@ fn stack_is_contravariant_in_b_covariant_in_c_positive()
     let wide = arena.value_type_stack(pure, effectful);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     assert_eq!(
-        convert(&mut context, Pairing::SubValues(narrow, wide)),
+        convert(&mut context, Pairing::SubValues(narrow.into(), wide.into())),
         Ok(Agreement::Convertible)
     );
 }
@@ -200,7 +210,7 @@ fn stack_variance_negative()
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     for (sub, sup) in [(wide, narrow), (pure_to_pure, narrow), (wide, pure_to_pure)] {
         assert_eq!(
-            convert(&mut context, Pairing::SubValues(sub, sup)),
+            convert(&mut context, Pairing::SubValues(sub.into(), sup.into())),
             Ok(Agreement::Apart)
         );
     }
@@ -231,16 +241,16 @@ fn differing_trees_are_apart_in_either_order()
     let loop_path = arena.value_type_path(integer, inner, inner);
     let open_path = arena.value_type_path(integer, inner, outer);
     let pairs = [
-        Pairing::Values(integer, string),
-        Pairing::Values(unit, thunk_integer),
-        Pairing::Values(thunk_integer, thunk_string),
-        Pairing::Comps(returns_integer, arrow),
-        Pairing::Values(small, large),
-        Pairing::Values(small, negative),
-        Pairing::Values(lifted_once, lifted_twice),
-        Pairing::Values(lifted_once, integer),
-        Pairing::Values(decode_inner, decode_outer),
-        Pairing::Values(loop_path, open_path),
+        Pairing::Values(integer.into(), string.into()),
+        Pairing::Values(unit.into(), thunk_integer.into()),
+        Pairing::Values(thunk_integer.into(), thunk_string.into()),
+        Pairing::Comps(returns_integer.into(), arrow.into()),
+        Pairing::Values(small.into(), large.into()),
+        Pairing::Values(small.into(), negative.into()),
+        Pairing::Values(lifted_once.into(), lifted_twice.into()),
+        Pairing::Values(lifted_once.into(), integer.into()),
+        Pairing::Values(decode_inner.into(), decode_outer.into()),
+        Pairing::Values(loop_path.into(), open_path.into()),
         Pairing::Endpoints(inner, outer),
     ];
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
@@ -311,10 +321,10 @@ fn a_vacuous_dependent_arrow_is_the_plain_arrow_577()
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     for (dependent, plain, expected) in cases {
         for pairing in [
-            Pairing::Comps(dependent, plain),
-            Pairing::Comps(plain, dependent),
-            Pairing::SubComps(dependent, plain),
-            Pairing::SubComps(plain, dependent),
+            Pairing::Comps(dependent.into(), plain.into()),
+            Pairing::Comps(plain.into(), dependent.into()),
+            Pairing::SubComps(dependent.into(), plain.into()),
+            Pairing::SubComps(plain.into(), dependent.into()),
         ] {
             assert_eq!(convert(&mut context, pairing), Ok(expected), "{pairing:?}");
         }
@@ -341,11 +351,11 @@ fn the_unknown_type_is_consistent_beside_a_differing_former()
     let unknown_left_string = arena.value_type_product(&[unknown, string]);
     let unit_code = arena.value_unit();
     let consistent = [
-        Pairing::Values(unknown, integer),
-        Pairing::Values(decode_hole, integer),
-        Pairing::Values(decode_marked, decode_variable),
-        Pairing::Values(known_left, unknown_left),
-        Pairing::Comps(unknown_computation, returns_integer),
+        Pairing::Values(unknown.into(), integer.into()),
+        Pairing::Values(decode_hole.into(), integer.into()),
+        Pairing::Values(decode_marked.into(), decode_variable.into()),
+        Pairing::Values(known_left.into(), unknown_left.into()),
+        Pairing::Comps(unknown_computation.into(), returns_integer.into()),
         Pairing::Codes(hole, variable),
         Pairing::Terms(hole, variable),
         Pairing::Endpoints(hole, variable),
@@ -376,7 +386,7 @@ fn the_unknown_type_is_consistent_beside_a_differing_former()
     assert_eq!(
         convert(
             &mut context,
-            Pairing::Values(known_left, unknown_left_string)
+            Pairing::Values(known_left.into(), unknown_left_string.into())
         ),
         Ok(Agreement::Apart),
         "the unknown factor agrees, the differing one does not"
@@ -414,22 +424,28 @@ fn a_decode_of_a_defined_code_converts_with_its_body()
         body,
     );
     assert_eq!(
-        convert(&mut context, Pairing::Values(decoded, integer)),
+        convert(
+            &mut context,
+            Pairing::Values(decoded.into(), integer.into())
+        ),
         Ok(Agreement::Convertible),
         "the decode unfolds to the type its body quotes"
     );
     assert_eq!(
-        convert(&mut context, Pairing::Comps(under_arrow, plain_arrow)),
+        convert(
+            &mut context,
+            Pairing::Comps(under_arrow.into(), plain_arrow.into())
+        ),
         Ok(Agreement::Convertible),
         "and does so beneath every former the walk descends"
     );
     assert_eq!(
-        convert(&mut context, Pairing::Values(decoded, string)),
+        convert(&mut context, Pairing::Values(decoded.into(), string.into())),
         Ok(Agreement::Apart),
         "the unfolded type is compared, not assumed"
     );
     assert_eq!(
-        convert(&mut context, Pairing::Values(rigid, integer)),
+        convert(&mut context, Pairing::Values(rigid.into(), integer.into())),
         Ok(Agreement::Apart),
         "a code with no body stays rigid"
     );
@@ -481,32 +497,32 @@ fn static_codes_compare_by_head_argument_and_body()
     );
     for (pairing, agreement, message) in [
         (
-            Pairing::Values(decoded_instance, written),
+            Pairing::Values(decoded_instance.into(), written.into()),
             Agreement::Convertible,
             "an instance of a defined operator converts with its reduct",
         ),
         (
-            Pairing::Values(at_integer, again),
+            Pairing::Values(at_integer.into(), again.into()),
             Agreement::Convertible,
             "two rigid instances agree by head and argument",
         ),
         (
-            Pairing::Values(at_integer, at_string),
+            Pairing::Values(at_integer.into(), at_string.into()),
             Agreement::Apart,
             "a different argument is apart",
         ),
         (
-            Pairing::Values(at_integer, other_head),
+            Pairing::Values(at_integer.into(), other_head.into()),
             Agreement::Apart,
             "a different head is apart",
         ),
         (
-            Pairing::Values(at_identity, at_other_identity),
+            Pairing::Values(at_identity.into(), at_other_identity.into()),
             Agreement::Convertible,
             "two static lambdas over one body agree",
         ),
         (
-            Pairing::Values(at_identity, at_constant),
+            Pairing::Values(at_identity.into(), at_constant.into()),
             Agreement::Apart,
             "static lambdas over different bodies are apart",
         ),
@@ -596,7 +612,7 @@ fn a_dangling_type_is_refused()
     let dangling = dangling_value_type();
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     assert_eq!(
-        convert(&mut context, Pairing::Values(unit, dangling)),
+        convert(&mut context, Pairing::Values(unit.into(), dangling.into())),
         Err(CheckRefusal::DanglingNode {
             node: CoreNode::Type(TypeNode::Value(dangling)),
         }),
@@ -647,18 +663,18 @@ proptest! {
         let second_copy = TypeRecipe::build(&second, &mut arena);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         prop_assert_eq!(
-            convert(&mut context, Pairing::Values(first_tree, first_copy)),
+            convert(&mut context, Pairing::Values(first_tree.into(), first_copy.into())),
             Ok(Agreement::Convertible),
             "a tree converts with its copy at fresh ids"
         );
-        let verdict = convert(&mut context, Pairing::Values(first_tree, second_tree));
+        let verdict = convert(&mut context, Pairing::Values(first_tree.into(), second_tree.into()));
         prop_assert_eq!(
-            convert(&mut context, Pairing::Values(second_tree, first_tree)),
+            convert(&mut context, Pairing::Values(second_tree.into(), first_tree.into())),
             verdict,
             "the decision is symmetric"
         );
         prop_assert_eq!(
-            convert(&mut context, Pairing::Values(first_copy, second_copy)),
+            convert(&mut context, Pairing::Values(first_copy.into(), second_copy.into())),
             verdict,
             "replacing either side by a copy at fresh ids keeps the verdict"
         );
@@ -737,10 +753,10 @@ fn a_sealed_atom_relates_to_no_representation()
     let [atom, _, integer, unit] = sealed_pair(&mut context);
     for other in [integer, unit] {
         for pairing in [
-            Pairing::Values(atom, other),
-            Pairing::Values(other, atom),
-            Pairing::SubValues(atom, other),
-            Pairing::SubValues(other, atom),
+            Pairing::Values(atom.into(), other.into()),
+            Pairing::Values(other.into(), atom.into()),
+            Pairing::SubValues(atom.into(), other.into()),
+            Pairing::SubValues(other.into(), atom.into()),
         ] {
             assert_eq!(
                 convert(&mut context, pairing),
@@ -761,12 +777,12 @@ fn sealed_atoms_relate_by_identity_alone()
         .arena_mut()
         .value_type_abstract(ConstantIndex::from(0_usize));
     assert_eq!(
-        convert(&mut context, Pairing::Values(first, again)),
+        convert(&mut context, Pairing::Values(first.into(), again.into())),
         Ok(Agreement::Convertible),
         "one atom converts with itself at a fresh id"
     );
     assert_eq!(
-        convert(&mut context, Pairing::Values(first, second)),
+        convert(&mut context, Pairing::Values(first.into(), second.into())),
         Ok(Agreement::Apart),
         "two atoms with one representation stay apart"
     );
@@ -991,18 +1007,18 @@ fn invariant_types_agree_exactly_where_their_parts_do()
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     for (left, right, agreement, what) in values {
         assert_eq!(
-            convert(&mut context, Pairing::Values(left, right)),
+            convert(&mut context, Pairing::Values(left.into(), right.into())),
             Ok(agreement),
             "{what}"
         );
     }
     assert_eq!(
-        convert(&mut context, Pairing::Comps(element, twin)),
+        convert(&mut context, Pairing::Comps(element.into(), twin.into())),
         Ok(Agreement::Convertible),
         "a decoded computation converts with its twin"
     );
     assert_eq!(
-        convert(&mut context, Pairing::Comps(element, higher)),
+        convert(&mut context, Pairing::Comps(element.into(), higher.into())),
         Ok(Agreement::Apart),
         "decoded computations at different targets are apart"
     );
@@ -1036,12 +1052,12 @@ fn a_row_meets_its_signatures_in_a_wider_row_by_name()
     let wide = arena.comp_type_returner_with_effects(unit, wide);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     assert_eq!(
-        convert(&mut context, Pairing::SubComps(narrow, wide)),
+        convert(&mut context, Pairing::SubComps(narrow.into(), wide.into())),
         Ok(Agreement::Convertible),
         "`{{B}}` meets its one signature past `A` in `{{A, B}}`"
     );
     assert_eq!(
-        convert(&mut context, Pairing::SubComps(wide, narrow)),
+        convert(&mut context, Pairing::SubComps(wide.into(), narrow.into())),
         Ok(Agreement::Apart),
         "`{{A, B}}` has a signature `{{B}}` lacks"
     );
@@ -1112,7 +1128,7 @@ fn invariant_capabilities_agree_on_authority_grade_and_region()
         (found, scoped, Agreement::Apart, "another region is apart"),
     ] {
         assert_eq!(
-            convert(&mut context, Pairing::Values(left, right)),
+            convert(&mut context, Pairing::Values(left.into(), right.into())),
             Ok(agreement),
             "{what}"
         );
@@ -1136,13 +1152,182 @@ fn a_path_type_is_apart_from_data_it_does_not_read_as()
     let path = arena.value_type_path(carrier, point, point);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     assert_eq!(
-        convert(&mut context, Pairing::Values(path, unrelated)),
+        convert(&mut context, Pairing::Values(path.into(), unrelated.into())),
         Ok(Agreement::Apart),
         "a path no words read is apart from a data type"
     );
     assert_eq!(
-        convert(&mut context, Pairing::Values(unrelated, path)),
+        convert(&mut context, Pairing::Values(unrelated.into(), path.into())),
         Ok(Agreement::Apart),
         "and so is the data type from the path"
+    );
+}
+
+/// A type read through a relocation converts exactly as the type it settles
+/// to. Each former the walk reads through, and a decode beside them, is built
+/// over a free type variable at three depths; each is moved by a raise of
+/// every free index and by one past a binder it keeps, and compared against
+/// every type of the three families, plain and moved alike, invariantly and
+/// under subtyping, and across the value bridge: every answer, refusal and
+/// count is the settled pair's.
+#[test]
+fn a_relocated_type_converts_as_its_settled_reading()
+{
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    use gandr_core_term::Binders;
+    use gandr_core_term::Relocated;
+    use gandr_core_term::ValueTypeId;
+    use gandr_core_term::shift_value_type;
+    use gandr_core_term::shift_value_type_under;
+    use gandr_kernel_term::FieldLabel;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let one = Level::constant(LevelConstant::from(1_u64));
+    let defined = arena.value_constant(ConstantIndex::from(0_usize));
+    let decoded = arena.value_type_element(defined, Level::zero());
+    let body = arena.value_quote(integer);
+    let at = arena.value_quote(integer);
+    let variable = |arena: &mut CoreArena, index: u32| {
+        let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        arena.value_type_element(code, Level::zero())
+    };
+    // Every type over the free variable `index`: the dependent pair's second
+    // factor and the dependent arrow's codomain read it one binder deeper,
+    // so the vacuous dependent arrow is the plain one.
+    let family = |arena: &mut CoreArena, index: u32| {
+        let free = variable(arena, index);
+        let beneath = variable(arena, index.saturating_add(1));
+        let bound = variable(arena, 0);
+        let returns = arena.comp_type_returner(free);
+        let returns_beneath = arena.comp_type_returner(beneath);
+        let returns_bound = arena.comp_type_returner(bound);
+        let arrow = arena.comp_type_arrow(free, returns);
+        let vacuous = arena.comp_type_pi(free, returns_beneath);
+        let dependent = arena.comp_type_pi(free, returns_bound);
+        let lazy = arena.comp_type_with(returns, arrow);
+        let record = arena.value_type_record(BTreeMap::from([(
+            FieldLabel::from(String::from("a")),
+            free,
+        )]));
+        Vec::from([
+            free,
+            arena.value_type_product(&[free, integer]),
+            record,
+            arena.value_type_sum(&[integer, free]),
+            arena.value_type_list(free),
+            arena.value_type_thunk(returns),
+            arena.value_type_thunk(arrow),
+            arena.value_type_thunk(vacuous),
+            arena.value_type_thunk(dependent),
+            arena.value_type_thunk(lazy),
+            arena.value_type_stack(returns, arrow),
+            arena.value_type_static_pi(free, free),
+            arena.value_type_sigma(free, beneath),
+            arena.value_type_lift(free, one.clone()),
+            arena.value_type_product(&[decoded, free]),
+        ])
+    };
+    let types = [0_u32, 1, 2]
+        .into_iter()
+        .flat_map(|index| family(&mut arena, index))
+        .collect::<Vec<ValueTypeId>>();
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[small]);
+    context.define(
+        ConstantIndex::from(0_usize),
+        crate::formation::FormedValueType::derived(small),
+        body,
+    );
+    let moves: [fn(&mut CoreArena, ValueTypeId) -> Relocated<ValueTypeId>; 2] = [
+        |arena, subject| shift_value_type(arena, subject, Binders::ONE),
+        |arena, subject| shift_value_type_under(arena, subject, Binders::ONE, Binders::ONE),
+    ];
+    let (mut convertible, mut apart) = (0_usize, 0_usize);
+    for &subject in &types {
+        for relocate in moves {
+            let moved = relocate(context.arena_mut(), subject);
+            let settled = moved.settle(context.arena_mut());
+            for &other in &types {
+                let other_moved = relocate(context.arena_mut(), other);
+                let other_settled = other_moved.settle(context.arena_mut());
+                for (left, right, plain) in [
+                    (moved, Relocated::from(other), (settled, other)),
+                    (Relocated::from(other), moved, (other, settled)),
+                    (moved, other_moved, (settled, other_settled)),
+                ] {
+                    let wanted = convert(
+                        &mut context,
+                        Pairing::Values(plain.0.into(), plain.1.into()),
+                    );
+                    assert_eq!(
+                        convert(&mut context, Pairing::Values(left, right)),
+                        wanted,
+                        "{left:?} against {right:?} answers as {plain:?}"
+                    );
+                    assert_eq!(
+                        convert(&mut context, Pairing::SubValues(left, right)),
+                        convert(
+                            &mut context,
+                            Pairing::SubValues(plain.0.into(), plain.1.into())
+                        ),
+                        "{left:?} below {right:?} answers as {plain:?}"
+                    );
+                    match wanted {
+                        Ok(Agreement::Convertible) => convertible = convertible.saturating_add(1),
+                        Ok(Agreement::Apart) => apart = apart.saturating_add(1),
+                        Ok(
+                            Agreement::NotBelow { .. } | Agreement::Amplified | Agreement::Escaped,
+                        )
+                        | Err(_) => {},
+                    }
+                }
+                let (mut relocated_tally, mut settled_tally) =
+                    (ConversionCount::default(), ConversionCount::default());
+                let crossed = value_bridge(&mut context, at, moved, other, &mut relocated_tally);
+                let wanted = value_bridge(&mut context, at, settled, other, &mut settled_tally);
+                // The arena shares no trees, so a refusal names the settled
+                // type at the id its own settling minted.
+                if let (
+                    Err(CheckRefusal::TypeMismatch(Mismatch::Value {
+                        at: refused_at,
+                        synthesised: named,
+                        expected,
+                    })),
+                    Err(CheckRefusal::TypeMismatch(Mismatch::Value {
+                        at: wanted_at,
+                        synthesised: wanted_named,
+                        expected: wanted_expected,
+                    })),
+                ) = (crossed, wanted)
+                {
+                    assert_eq!(
+                        (refused_at, expected, wanted_named),
+                        (wanted_at, wanted_expected, settled),
+                        "{moved:?} is refused at {other:?} as {settled:?} is"
+                    );
+                    assert_eq!(
+                        convert(&mut context, Pairing::Values(named.into(), settled.into())),
+                        Ok(Agreement::Convertible),
+                        "the refusal names {moved:?} settled"
+                    );
+                }
+                else {
+                    assert_eq!(
+                        crossed, wanted,
+                        "{moved:?} crosses to {other:?} as {settled:?} does"
+                    );
+                }
+                assert_eq!(relocated_tally, settled_tally, "and counts as it does");
+            }
+        }
+    }
+    assert!(
+        convertible > 0 && apart > 0,
+        "the pairs agree and differ: {convertible} convertible, {apart} apart"
     );
 }

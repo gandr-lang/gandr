@@ -729,7 +729,7 @@ proptest! {
         let mut arena = CoreArena::new();
         let generated = build(&mut arena, &levels, &steps);
         let amount = Binders::from(u32::try_from(fresh.len()).expect("small"));
-        let weakened = shift_value_type(&mut arena, generated.root, amount);
+        let weakened = shift_value_type(&mut arena, generated.root, amount).settle(&mut arena);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         open_universes(&mut context, &levels);
         let before = classified(&mut context, generated.root);

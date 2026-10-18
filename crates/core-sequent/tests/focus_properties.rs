@@ -48,7 +48,7 @@ use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_type_syntax;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::shift_comp_type_under;
-use gandr_core_term::shift_computation_under_traced;
+use gandr_core_term::shift_computation_under;
 use gandr_core_term::shift_value_type_under;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
@@ -712,16 +712,15 @@ fn raised(
         Subject::Value(value) => arena.computation_return(value),
         Subject::Computation(computation) => computation,
         Subject::ValueType(ty) => {
-            return Compared::Type(shift_value_type_under(arena, ty, scope, Binders::ONE));
+            let shifted = shift_value_type_under(arena, ty, scope, Binders::ONE).settle(arena);
+            return Compared::Type(shifted);
         },
         Subject::CompType(ty) => {
-            let shifted = shift_comp_type_under(arena, ty, scope, Binders::ONE);
+            let shifted = shift_comp_type_under(arena, ty, scope, Binders::ONE).settle(arena);
             return Compared::Type(arena.value_type_thunk(shifted));
         },
     };
-    let mut carried = Vec::new();
-    let shifted =
-        shift_computation_under_traced(arena, computation, scope, Binders::ONE, &mut carried);
+    let shifted = shift_computation_under(arena, computation, scope, Binders::ONE).settle(arena);
     Compared::Value(arena.value_thunk(shifted))
 }
 
