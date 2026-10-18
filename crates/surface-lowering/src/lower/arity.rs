@@ -2490,8 +2490,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   of `binders`, as [`Self::names_own_binder`] reads them; otherwise the
     ///   last entry's type wrapped, innermost first, by one link per binder:
     ///   `Σ` over its entry's type when the entries name the binder, the eager
-    ///   product of two otherwise; every node with the written origin; nothing
-    ///   when a type did not lower.
+    ///   product of two otherwise; every node with the written origin, and each
+    ///   `Σ` with where its label is written, the name its binder takes (#728);
+    ///   nothing when a type did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2531,7 +2532,11 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
             nested = if bool::from(self.names_own_binder(last, parameter.frame)) {
-                sink.arena.value_type_sigma(first, nested)
+                let id = sink.arena.value_type_sigma(first, nested);
+                if let Maybe::Present(label) = self.origin_at(parameter.binder) {
+                    sink.origins.record_pair(id, label);
+                }
+                id
             }
             else {
                 sink.arena.value_type_product(&[first, nested])
