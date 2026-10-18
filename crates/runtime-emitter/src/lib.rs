@@ -52,16 +52,20 @@
 //!
 //! # The patchers
 //!
-//! Two hosts have a patcher, selected by the build script's `gandr_patcher`
-//! configuration: macOS arm64 (Mach-O, `BRANCH26` continuations, `GOT_LOAD`
-//! pairs relaxed to `movz`/`movk` or `adrp`/`add`) and Linux x86-64 (ELF under
-//! the static relocation model, `PLT32`/`PC32` displacements and `32`/`32S`
-//! absolute fields). Every other host takes the executor. The x86-64 patcher
-//! applies each relocation's addend as a linker does — the compiler folds an
-//! immediate's bias into it — where a patcher refusing explicit addends would
-//! refuse every RIP-relative operand. Executable memory is a `MAP_JIT`
-//! mapping toggled per thread on macOS and a `memfd` mapped twice, writable
-//! and executable-below-2-GiB, on Linux; the region module states why.
+//! Three hosts have a patcher, selected by the build script's `gandr_patcher`
+//! configuration: arm64 on macOS (Mach-O, `BRANCH26` continuations,
+//! `GOT_LOAD` pairs) and on Linux (ELF under the default position-independent
+//! model, the same three kinds as `JUMP26` and `ADR_GOT_PAGE` /
+//! `LD64_GOT_LO12_NC`), each pair relaxed to `movz`/`movk` or `adrp`/`add`;
+//! and Linux x86-64 (ELF under the static relocation model, `PLT32`/`PC32`
+//! displacements and `32`/`32S` absolute fields). Every other host takes the
+//! executor. The x86-64 patcher applies each relocation's addend as a linker
+//! does — the compiler folds an immediate's bias into it — where a patcher
+//! refusing explicit addends would refuse every RIP-relative operand; the
+//! arm64 object carries none, and the build script refuses one. Executable
+//! memory is a `MAP_JIT` mapping toggled per thread on macOS and a `memfd`
+//! mapped twice, writable and executable, on Linux — the executable view below
+//! 2 GiB on x86-64; the region module states why.
 //!
 //! # The runtime support
 //!

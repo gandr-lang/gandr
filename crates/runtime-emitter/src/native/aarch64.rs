@@ -1,14 +1,17 @@
-//! The arm64 patcher: the three relocation kinds the Mach-O stencil object
-//! uses, applied to a copied stencil, with the GOT load relaxed away.
+//! The arm64 patcher: the three relocation kinds the Mach-O and ELF stencil
+//! objects use, applied to a copied stencil, with the GOT load relaxed away.
 //!
 //! On `aarch64-apple-darwin` every operand hole arrives as a GOT load — an
 //! `adrp` (`GOT_LOAD_PAGE21`) and an `ldr` (`GOT_LOAD_PAGEOFF12`) of the
 //! hole's slot — whatever the relocation or code model: Mach-O has no
-//! absolute-immediate relocation for arm64. The emitter needs no GOT: it
-//! knows each operand when it copies, so it rewrites each half in place, as a
-//! linker relaxes a GOT load to a symbol it can see. The build script refused
-//! any `ldr` whose base and target registers differ, so each half rewrites
-//! one register:
+//! absolute-immediate relocation for arm64. `aarch64-unknown-linux-gnu`
+//! under the default position-independent model emits the same pair as
+//! `ADR_GOT_PAGE` and `LD64_GOT_LO12_NC`, and its continuations as `JUMP26`,
+//! so the build script maps both objects onto these three kinds. The emitter
+//! needs no GOT: it knows each operand when it copies, so it rewrites each
+//! half in place, as a linker relaxes a GOT load to a symbol it can see. The
+//! build script refused any `ldr` whose base and target registers differ, so
+//! each half rewrites one register:
 //!
 //! | operand | `adrp` becomes | `ldr` becomes |
 //! | --- | --- | --- |

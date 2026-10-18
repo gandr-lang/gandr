@@ -409,8 +409,8 @@ path = "crates/kernel-term"
 default-features = false
 
 # Copy-and-patch emission: the lowering of the command IL, the patchers for
-# macOS arm64 and Linux x86-64, the content cache and the native tier's
-# policy, falling back to the portable executor.
+# arm64 on macOS and Linux and for Linux x86-64, the content cache and the
+# native tier's policy, falling back to the portable executor.
 # consumers:
 # - core-sequent (dev)
 # - runtime-stencils (dev)
@@ -841,10 +841,11 @@ version = "0.17.1"
 default-features = false
 
 # The C library's raw bindings: the emitter's executable regions — `MAP_JIT`
-# and the per-thread write toggle on macOS, a `memfd` mapped twice below
-# 2 GiB on Linux. Chosen over rustix, also in the graph, because rustix
-# exposes neither `MAP_JIT` nor `pthread_jit_write_protect_np`; the choice
-# reverses if it grows both. The record is in the emitter's crate docs.
+# and the per-thread write toggle on macOS, a `memfd` mapped twice on Linux,
+# the executable view below 2 GiB on x86-64. Chosen over rustix, also in the
+# graph, because rustix exposes neither `MAP_JIT` nor
+# `pthread_jit_write_protect_np`; the choice reverses if it grows both. The
+# record is in the emitter's crate docs.
 # features:
 # - none: the bindings alone; `std` adds nothing the emitter calls
 # consumers:
