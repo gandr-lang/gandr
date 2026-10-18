@@ -697,6 +697,7 @@ jobs:
       - *archive-build-state
       - *upload-build-state
       - *save-test-state
+      - *delete-superseded-state
       - *lane-timing
 
   # The plain baseline: every workspace test without enforcement, timed daily
