@@ -446,6 +446,128 @@ fn a_code_carrying_type_rewrites_through_its_code()
     );
 }
 
+/// An instantiation at a call binds the call ahead of each decode whose
+/// returned code reads the binder, raised past the binders between,
+/// substitutes the decodes that do not read it, stands the call's value for the
+/// binder outside every code, and holds the call in place in a path endpoint
+/// (#720).
+#[test]
+fn an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it()
+{
+    let mut arena = TermArena::new();
+    // `El ⟨force(head) argument⟩`, each by its index.
+    let decode = |arena: &mut TermArena, head: u32, argument: u32| {
+        let head = arena.value_variable(DeBruijnIndex::from(head));
+        let forced = arena.computation_force(head);
+        let argument = arena.value_variable(DeBruijnIndex::from(argument));
+        let call = arena.computation_application(forced, argument);
+        let code = arena.value_returned(call);
+        arena.value_type_element(code, Level::zero())
+    };
+    // `El ⟨c ← force(f) g; force(tm) c⟩`: the call bound ahead of the family.
+    let bound = |arena: &mut TermArena, (f, g): (u32, u32), tm: u32| {
+        let head = arena.value_variable(DeBruijnIndex::from(f));
+        let forced = arena.computation_force(head);
+        let argument = arena.value_variable(DeBruijnIndex::from(g));
+        let ahead = arena.computation_application(forced, argument);
+        let family = arena.value_variable(DeBruijnIndex::from(tm));
+        let forced = arena.computation_force(family);
+        let read = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let applied = arena.computation_application(forced, read);
+        let bind = arena.computation_bind(ahead, applied);
+        let code = arena.value_returned(bind);
+        arena.value_type_element(code, Level::zero())
+    };
+    // Outside the binder `tm` is 0, `extend` 1 and `g` 2; under it, one more.
+    let head = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let forced = arena.computation_force(head);
+    let g = arena.value_variable(DeBruijnIndex::from(2_u32));
+    let call = arena.computation_application(forced, g);
+    let argument = arena.value_returned(call);
+    // `Path(Unit, ⟨force(head) at⟩, at)`: a returned code as an endpoint.
+    let endpoint = |arena: &mut TermArena, head: u32, at: ValueId| {
+        let head = arena.value_variable(DeBruijnIndex::from(head));
+        let forced = arena.computation_force(head);
+        let call = arena.computation_application(forced, at);
+        let code = arena.value_returned(call);
+        let unit = arena.value_type_unit();
+        arena.value_type_path(unit, code, at)
+    };
+    // `tm(x)`, `tm(g)`, `x` outside any code, `tm(x)` under a binder, and an
+    // endpoint reading `x`.
+    let reads = decode(&mut arena, 1, 0);
+    let spares = decode(&mut arena, 1, 3);
+    let x = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let bare = arena.value_type_element(x, Level::zero());
+    let unit = arena.value_type_unit();
+    let deeper = decode(&mut arena, 2, 1);
+    let deeper = arena.comp_type_returner(deeper);
+    let deeper = arena.comp_type_pi(unit, deeper);
+    let under = arena.value_type_thunk(deeper);
+    let ends = endpoint(&mut arena, 1, x);
+    let product = arena.value_type_product(&[reads, spares, bare, under, ends]);
+    let codomain = arena.comp_type_returner(product);
+    let mut table = ContentTable::new();
+    let mut memo = RewriteMemo::new();
+    let instantiated = super::substitute_comp_type_at_call(
+        &mut arena,
+        &mut table,
+        &mut memo,
+        codomain,
+        (argument, call),
+    );
+    let Some(&CompType::Returner(result)) = arena.comp_type(instantiated)
+    else {
+        panic!("an instantiated returner is a returner");
+    };
+    let Some(ValueType::Product(components)) = arena.value_type(result).cloned()
+    else {
+        panic!("over a product");
+    };
+    let &[reads, spares, bare, under, ends] = &*components
+    else {
+        panic!("of five components");
+    };
+    let expected_reads = bound(&mut arena, (1, 2), 1);
+    let expected_spares = decode(&mut arena, 0, 2);
+    let expected_bare = arena.value_type_element(argument, Level::zero());
+    let unit = arena.value_type_unit();
+    let deeper = bound(&mut arena, (2, 3), 2);
+    let deeper = arena.comp_type_returner(deeper);
+    let deeper = arena.comp_type_pi(unit, deeper);
+    let expected_under = arena.value_type_thunk(deeper);
+    let expected_ends = endpoint(&mut arena, 0, argument);
+    for (what, found, expected) in [
+        (
+            "a decode reading the binder binds the call",
+            reads,
+            expected_reads,
+        ),
+        (
+            "a decode sparing it is substituted",
+            spares,
+            expected_spares,
+        ),
+        (
+            "the binder outside a code is the argument",
+            bare,
+            expected_bare,
+        ),
+        (
+            "under a binder the call rises past it",
+            under,
+            expected_under,
+        ),
+        ("an endpoint holds the call in place", ends, expected_ends),
+    ] {
+        assert_eq!(
+            content_digest(&arena, AnyNode::ValueType(found)),
+            content_digest(&arena, AnyNode::ValueType(expected)),
+            "{what}"
+        );
+    }
+}
+
 /// The differential the memo's soundness rests on: the same function at two
 /// type parameters answers alike.
 ///

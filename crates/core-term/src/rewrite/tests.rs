@@ -3295,3 +3295,103 @@ fn every_former_is_kept_when_nothing_beneath_it_changes_and_carries_what_does()
         );
     }
 }
+
+#[test]
+fn an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it()
+{
+    let mut arena = CoreArena::new();
+    // `El ⟨force(head) argument⟩`, each by its index.
+    let decode = |arena: &mut CoreArena, head: u32, argument: u32| {
+        let head = variable(arena, DeBruijnIndex::from(head));
+        let forced = arena.computation_force(head);
+        let argument = variable(arena, DeBruijnIndex::from(argument));
+        let call = arena.computation_application(forced, argument);
+        let code = arena.value_returned(call);
+        arena.value_type_element(code, Level::zero())
+    };
+    // `El ⟨c ← force(f) g; force(tm) c⟩`: the call bound ahead of the family.
+    let bound = |arena: &mut CoreArena, (f, g): (u32, u32), tm: u32| {
+        let head = variable(arena, DeBruijnIndex::from(f));
+        let forced = arena.computation_force(head);
+        let argument = variable(arena, DeBruijnIndex::from(g));
+        let ahead = arena.computation_application(forced, argument);
+        let family = variable(arena, DeBruijnIndex::from(tm));
+        let forced = arena.computation_force(family);
+        let read = variable(arena, DeBruijnIndex::from(0_u32));
+        let applied = arena.computation_application(forced, read);
+        let bind = arena.computation_bind(ahead, applied);
+        let code = arena.value_returned(bind);
+        arena.value_type_element(code, Level::zero())
+    };
+    // Outside the binder `tm` is 0, `extend` 1 and `g` 2; under it, one more.
+    let head = variable(&mut arena, DeBruijnIndex::from(1_u32));
+    let forced = arena.computation_force(head);
+    let g = variable(&mut arena, DeBruijnIndex::from(2_u32));
+    let call = arena.computation_application(forced, g);
+    let argument = arena.value_nested(call);
+    // `Path(Unit, ⟨force(head) at⟩, at)`: a returned code as an endpoint.
+    let endpoint = |arena: &mut CoreArena, head: u32, at: ValueId| {
+        let head = variable(arena, DeBruijnIndex::from(head));
+        let forced = arena.computation_force(head);
+        let call = arena.computation_application(forced, at);
+        let code = arena.value_returned(call);
+        let unit = arena.value_type_unit();
+        arena.value_type_path(unit, code, at)
+    };
+    // `tm(x)`, `tm(g)`, `x` outside any code, `tm(x)` under a binder, and an
+    // endpoint reading `x`.
+    let reads = decode(&mut arena, 1, 0);
+    let spares = decode(&mut arena, 1, 3);
+    let x = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let bare = arena.value_type_element(x, Level::zero());
+    let unit = arena.value_type_unit();
+    let deeper = decode(&mut arena, 2, 1);
+    let deeper = arena.comp_type_returner(deeper);
+    let deeper = arena.comp_type_pi(unit, deeper);
+    let under = arena.value_type_thunk(deeper);
+    let x = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let ends = endpoint(&mut arena, 1, x);
+    let product = arena.value_type_product(&[reads, spares, bare, under, ends]);
+    let codomain = arena.comp_type_returner(product);
+    let instantiated = super::instantiate_comp_type_at_call(&mut arena, codomain, argument, call);
+    let Some(&CompType::Returner { result, .. }) = arena.comp_type(instantiated)
+    else {
+        panic!("a returner");
+    };
+    let Some(ValueType::Product(components)) = arena.value_type(result).cloned()
+    else {
+        panic!("a product");
+    };
+    let &[reads, spares, bare, under, ends] = &*components
+    else {
+        panic!("five components");
+    };
+    // The decode reading the binder binds the call ahead of its code; the one
+    // that does not is substituted plainly; the binder outside any code is the
+    // argument; under an inner binder the call rises past it; an endpoint
+    // holds the call in place, as the lowering writes one.
+    let expected = [
+        bound(&mut arena, (1, 2), 1),
+        decode(&mut arena, 0, 2),
+        arena.value_type_element(argument, Level::zero()),
+    ];
+    let unit = arena.value_type_unit();
+    let deeper = bound(&mut arena, (2, 3), 2);
+    let deeper = arena.comp_type_returner(deeper);
+    let deeper = arena.comp_type_pi(unit, deeper);
+    let deeper = arena.value_type_thunk(deeper);
+    let held = endpoint(&mut arena, 0, argument);
+    for (what, found, expected) in [
+        ("a decode reading the binder", reads, expected[0]),
+        ("a decode sparing it", spares, expected[1]),
+        ("the binder outside a code", bare, expected[2]),
+        ("a decode under an inner binder", under, deeper),
+        ("an endpoint reading the binder", ends, held),
+    ] {
+        assert_eq!(
+            crate::syntax::equal_type_syntax(&arena, found, expected),
+            crate::CertificateEquality::Equal,
+            "{what}"
+        );
+    }
+}

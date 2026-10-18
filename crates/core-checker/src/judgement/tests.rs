@@ -2560,6 +2560,71 @@ fn a_dependent_application_instantiates_its_codomain_at_the_argument()
 }
 
 #[test]
+fn a_family_at_a_call_argument_converts_with_the_type_written_with_it_720()
+{
+    // def ext : U (Integer -> F Integer) ;
+    // def tm : U (Integer -> F Type) ;
+    // def q : U ((g : Integer) -> F El⟨c ← ext(g); tm(c)⟩) ;
+    // def use : U ((a : Integer) -> El⟨tm(a)⟩ -> F Unit) ;
+    // use(ext(0), q(0)) : F Unit
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let extending = arena.comp_type_arrow(integer, returns_integer);
+    let extending = arena.value_type_thunk(extending);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let returns_small = arena.comp_type_returner(small);
+    let family = arena.comp_type_arrow(integer, returns_small);
+    let family = arena.value_type_thunk(family);
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let at = |arena: &mut CoreArena, constant: usize, argument: ValueId| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let forced = arena.computation_force(head);
+        arena.computation_application(forced, argument)
+    };
+    // `q`'s codomain as the lowering writes it: the call bound ahead.
+    let g = variable(&mut arena, 0);
+    let ahead = at(&mut arena, 0, g);
+    let c = variable(&mut arena, 0);
+    let read = at(&mut arena, 1, c);
+    let bound = arena.computation_bind(ahead, read);
+    let code = arena.value_returned(bound);
+    let decoded = arena.value_type_element(code, Level::zero());
+    let returns_decoded = arena.comp_type_returner(decoded);
+    let point = arena.comp_type_pi(integer, returns_decoded);
+    let point = arena.value_type_thunk(point);
+    // `use`'s second domain, the family at its first binder.
+    let a = variable(&mut arena, 0);
+    let read = at(&mut arena, 1, a);
+    let code = arena.value_returned(read);
+    let decoded = arena.value_type_element(code, Level::zero());
+    let unit = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit);
+    let consumer = arena.comp_type_arrow(decoded, returns_unit);
+    let consumer = arena.comp_type_pi(integer, consumer);
+    let consumer = arena.value_type_thunk(consumer);
+    let zero = arena.value_literal(integer_literal());
+    let extended = at(&mut arena, 0, zero);
+    let extended = arena.value_nested(extended);
+    let zero = arena.value_literal(integer_literal());
+    let pointed = at(&mut arena, 2, zero);
+    let pointed = arena.value_nested(pointed);
+    let first = at(&mut arena, 3, extended);
+    let applied = arena.computation_application(first, pointed);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[extending, family, point, consumer]);
+    let expected = form_comp_type(&mut context, returns_unit).unwrap();
+    let verdict = check_comp(&mut context, applied, expected);
+    assert!(
+        verdict.is_ok(),
+        "`use`'s second domain at the call `ext(0)` is `El⟨c ← ext(0); tm(c)⟩`, as `q(0)`'s \
+         type is written: {verdict:?}"
+    );
+}
+
+#[test]
 fn a_hole_synthesises_the_unknown_type_and_checks_against_any()
 {
     let mut arena = CoreArena::new();

@@ -310,6 +310,16 @@ enum Rewrite
     /// Replace the index the depth names by the value, and lower every index
     /// outside it.
     Substitute(ValueId),
+    /// Substitute the value as [`Rewrite::Substitute`] does, except at a
+    /// decode whose returned code reads the binder: there the call runs
+    /// ahead, bound as the lowering binds a type-read call argument, and the
+    /// code reads the bind's variable for the binder.
+    Instantiate(ValueId, ComputationId),
+    /// Move the index the count names to the innermost free position, one
+    /// past the depth, and raise every free index below it by one: the body
+    /// of a decoded returned code carried under the bind
+    /// [`Rewrite::Instantiate`] puts ahead of it.
+    Rotate(Binders),
     /// Lower every index outside the depth, recording a mention of the index
     /// the depth names.
     Lower,
@@ -361,6 +371,9 @@ enum Task
     /// Wrap an elaborated region's spliced body, on top of the stack, in the
     /// binds of its runs beneath it, outermost first.
     Hoist(ComputationId, Binders),
+    /// Answer an instantiated decode by its call, raised, bound ahead of its
+    /// code's body, rotated: the two results on top of the stack.
+    BindAhead(Node, Binders, Rewrite),
 }
 
 /// What one variable occurrence rewrites to.
@@ -405,6 +418,12 @@ struct Engine<'arena>
     closings: Vec<Carried>,
     /// The constants and atoms a renaming replaces; nothing outside one.
     renaming: &'arena Renaming,
+    /// The nodes, each at its depth, an instantiation found reading the
+    /// binder it instantiates.
+    reads: alloc::collections::BTreeSet<(Node, Binders)>,
+    /// Whether each node an instantiation has open reads its binder, the
+    /// innermost last.
+    reading: Vec<Mention>,
 }
 
 impl<'arena> Engine<'arena>
@@ -429,6 +448,8 @@ impl<'arena> Engine<'arena>
             binds: Vec::new(),
             closings: Vec::new(),
             renaming: &NOTHING_RENAMED,
+            reads: alloc::collections::BTreeSet::new(),
+            reading: Vec::new(),
         }
     }
 
@@ -469,6 +490,11 @@ impl<'arena> Engine<'arena>
             match task {
                 Task::Open(node, depth, step) => self.open(node, depth, step),
                 Task::Close(node, depth, step) => {
+                    if let Rewrite::Instantiate(_, call) = step
+                        && self.close_reading(node, depth, (step, call)) == Maybe::Present(())
+                    {
+                        continue;
+                    }
                     let runs = self.elaborated_runs(node, step);
                     let rewritten = self.close(node);
                     if let (
@@ -490,6 +516,7 @@ impl<'arena> Engine<'arena>
                     }
                 },
                 Task::Hoist(region, depth) => self.hoist(region, depth),
+                Task::BindAhead(node, depth, step) => self.bind_ahead(node, depth, step),
             }
         }
         self.results.pop().unwrap_or(subject)
@@ -532,6 +559,11 @@ impl<'arena> Engine<'arena>
     )
     {
         if let Some(&done) = self.memo.get(&(node, depth, rewrite)) {
+            if let Rewrite::Instantiate(..) = rewrite
+                && self.reads.contains(&(node, depth))
+            {
+                self.note_read(node, depth);
+            }
             self.results.push(done);
             return;
         }
@@ -600,6 +632,11 @@ impl<'arena> Engine<'arena>
                 index,
             }) = self.arena.value(id)
         {
+            if let Rewrite::Instantiate(..) = rewrite
+                && u32::from(index) == depth.0
+            {
+                self.note_read(node, depth);
+            }
             match self.occurrence(id, index, depth, rewrite) {
                 Occurrence::Answered(rewritten) => {
                     let rewritten = self.wrapped(node, Node::Value(rewritten), rewrite);
@@ -617,8 +654,180 @@ impl<'arena> Engine<'arena>
             }
             return;
         }
+        if let Rewrite::Instantiate(..) = rewrite {
+            self.reading.push(Mention::Absent);
+        }
         self.tasks.push(Task::Close(node, depth, rewrite));
         self.push_children(node, depth, rewrite);
+    }
+
+    /// Note that `node`, reached at `depth` by an instantiation, reads the
+    /// binder it instantiates, and so does every node open around it.
+    ///
+    /// # Specification
+    /// - requires: `node` is being opened or closed at `depth` by
+    ///   [`Rewrite::Instantiate`].
+    /// - ensures: `(node, depth)` is among the reads, and the innermost open
+    ///   node's reading, if any, is [`Mention::Present`].
+    /// - provides: the reading [`Self::close_reading`] decides a decode by,
+    ///   kept per node and depth so a memo hit answers it as well.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a code reading the binder and one sparing it separate
+    ///   a read noted from one missed: a missed read substitutes the call's
+    ///   value where the bind belongs.
+    /// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+    #[spec(ensures: self.reads.contains(&(node, depth))
+        && self.reading.last().is_none_or(|&held| held == Mention::Present))]
+    fn note_read(
+        &mut self,
+        node: Node,
+        depth: Binders,
+    )
+    {
+        let _first = self.reads.insert((node, depth));
+        if let Some(open) = self.reading.last_mut() {
+            *open = Mention::Present;
+        }
+    }
+
+    /// Close an instantiation's node: a decode whose code is a returned call
+    /// reading the binder schedules the call bound ahead of that code's body,
+    /// `El ⟨c ← call; body[c / x]⟩`, and answers nothing yet.
+    ///
+    /// # Specification
+    /// - requires: `node`'s close is due under [`Rewrite::Instantiate`] at
+    ///   `call`, its children's results on top of the result stack and its own
+    ///   reading on top of the reading stack.
+    /// - ensures: the reading is popped and, when it is present, noted for
+    ///   `node` and the node open around it. A decode whose code is a returned
+    ///   computation that reads the binder drops its code's result and
+    ///   schedules [`Task::BindAhead`] over that computation rotated at `depth`
+    ///   ([`Rewrite::Rotate`]) and `call` raised by `depth`, answering
+    ///   [`Maybe::Present`]; any other node answers absent, its children's
+    ///   results left for the ordinary close.
+    /// - provides: the one point an instantiation at a call differs from a
+    ///   substitution of its value. Only a decode's code binds, because only a
+    ///   call a type decodes runs its call arguments first in the lowering
+    ///   (`mint_called`); a returned code elsewhere, a path endpoint say, holds
+    ///   its calls in place and is substituted as written.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decode reading the binder at depth zero and under
+    ///   an inner binder, a decode that does not read it, and an endpoint
+    ///   reading it separate the bind, the rotation and the plain substitution.
+    /// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+    #[spec(captures: pending = self.tasks.len(),
+        ensures: |ret| matches!(ret, Maybe::Absent(())) || self.tasks.len() == pending.saturating_add(3))]
+    fn close_reading(
+        &mut self,
+        node: Node,
+        depth: Binders,
+        (rewrite, call): (Rewrite, ComputationId),
+    ) -> Maybe<(), ()>
+    {
+        if self.reading.pop() != Some(Mention::Present) {
+            return Maybe::Absent(());
+        }
+        self.note_read(node, depth);
+        let code = match node {
+            Node::ValueType(id) => {
+                let Some(&ValueType::Element { code, .. }) = self.arena.value_type(id)
+                else {
+                    return Maybe::Absent(());
+                };
+                code
+            },
+            Node::CompType(id) => {
+                let Some(&CompType::Element { code, .. }) = self.arena.comp_type(id)
+                else {
+                    return Maybe::Absent(());
+                };
+                code
+            },
+            Node::Value(_) | Node::Computation(_) => return Maybe::Absent(()),
+        };
+        if !self.reads.contains(&(Node::Value(code), depth)) {
+            return Maybe::Absent(());
+        }
+        let Some(&Value::Returned(body)) = self.arena.value(code)
+        else {
+            return Maybe::Absent(());
+        };
+        let _substituted = self.results.pop();
+        self.tasks.push(Task::BindAhead(node, depth, rewrite));
+        self.tasks.push(Task::Open(
+            Node::Computation(body),
+            Binders::NONE,
+            Rewrite::Rotate(depth),
+        ));
+        self.tasks.push(Task::Open(
+            Node::Computation(call),
+            Binders::NONE,
+            Rewrite::Shift(depth),
+        ));
+        Maybe::Present(())
+    }
+
+    /// Bind the raised call ahead of the rotated body on top of the result
+    /// stack, and answer the decode `node` at that bind returned.
+    ///
+    /// # Specification
+    /// - requires: the rotated body on top of the result stack, the raised call
+    ///   beneath it, as [`Self::close_reading`] scheduled them.
+    /// - ensures: both popped; the decode of one returned bind, at `node`'s
+    ///   level, pushed and recorded as `node`'s answer at `depth` under
+    ///   `rewrite`.
+    /// - provides: the close of a decode an instantiation binds ahead.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the bind's two halves are distinct terms, so a
+    ///   swapped or dropped half answers a different code.
+    /// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+    #[spec(captures: ready = self.results.len(),
+        ensures: self.results.len() == ready.saturating_sub(1)
+            && self.memo.get(&(node, depth, rewrite)) == self.results.last())]
+    fn bind_ahead(
+        &mut self,
+        node: Node,
+        depth: Binders,
+        rewrite: Rewrite,
+    )
+    {
+        let read = self.results.pop();
+        let ahead = self.results.pop();
+        let code = match (ahead, read) {
+            (Some(Node::Computation(ahead)), Some(Node::Computation(read))) => {
+                let bound = self.arena.computation_bind(ahead, read);
+                Maybe::Present(self.arena.value_returned(bound))
+            },
+            _ => Maybe::Absent(()),
+        };
+        let answer = match (node, code) {
+            (Node::ValueType(id), Maybe::Present(code)) => match self.arena.value_type(id) {
+                Some(&ValueType::Element { ref target, .. }) => {
+                    let target = target.clone();
+                    Node::ValueType(self.arena.value_type_element(code, target))
+                },
+                _ => node,
+            },
+            (Node::CompType(id), Maybe::Present(code)) => match self.arena.comp_type(id) {
+                Some(&CompType::Element { ref target, .. }) => {
+                    let target = target.clone();
+                    Node::CompType(self.arena.comp_type_element(code, target))
+                },
+                _ => node,
+            },
+            _ => node,
+        };
+        let _previous = self.memo.insert((node, depth, rewrite), answer);
+        self.results.push(answer);
     }
 
     /// What a renaming answers for `node` when `node` is a leaf it names.
@@ -774,6 +983,8 @@ impl<'arena> Engine<'arena>
             },
             Rewrite::Shift(_)
             | Rewrite::Substitute(_)
+            | Rewrite::Instantiate(..)
+            | Rewrite::Rotate(_)
             | Rewrite::Lower
             | Rewrite::Fill(..)
             | Rewrite::Wrap
@@ -964,7 +1175,7 @@ impl<'arena> Engine<'arena>
                     Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                         if u32::from(*actual) == u32::from(index).saturating_add(amount.0)))
             },
-            | Rewrite::Substitute(replacement) => self.mention == mentioned && match u32::from(index).cmp(&depth.0) {
+            | Rewrite::Substitute(replacement) | Rewrite::Instantiate(replacement, _) => self.mention == mentioned && match u32::from(index).cmp(&depth.0) {
                 | core::cmp::Ordering::Less => ret == Occurrence::Answered(id),
                 | core::cmp::Ordering::Equal => if depth == Binders::NONE {
                     ret == Occurrence::Answered(replacement)
@@ -972,6 +1183,14 @@ impl<'arena> Engine<'arena>
                 | core::cmp::Ordering::Greater => matches!(ret, Occurrence::Answered(answer)
                     if matches!(self.arena.value(answer), Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                         if u32::from(*actual).checked_add(1) == Some(u32::from(index)))),
+            },
+            | Rewrite::Rotate(band) => self.mention == mentioned && match u32::from(index).checked_sub(depth.0) {
+                | Some(past) if past == band.0 => matches!(ret, Occurrence::Answered(answer) if matches!(self.arena.value(answer),
+                    Some(Value::Variable { zone: Zone::Intuitionistic, index: actual }) if u32::from(*actual) == depth.0)),
+                | Some(past) if past < band.0 => matches!(ret, Occurrence::Answered(answer) if matches!(self.arena.value(answer),
+                    Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
+                        if Some(u32::from(*actual)) == u32::from(index).checked_add(1))),
+                | Some(_) | None => ret == Occurrence::Answered(id),
             },
             | Rewrite::Lower => match u32::from(index).cmp(&depth.0) {
                 | core::cmp::Ordering::Less => ret == Occurrence::Answered(id) && self.mention == mentioned,
@@ -1014,13 +1233,34 @@ impl<'arena> Engine<'arena>
                     )
                 }
             },
-            Rewrite::Substitute(replacement) => match position.cmp(&depth) {
-                core::cmp::Ordering::Less => Occurrence::Answered(id),
-                core::cmp::Ordering::Equal if depth == Binders::NONE => {
-                    Occurrence::Answered(replacement)
+            Rewrite::Substitute(replacement) | Rewrite::Instantiate(replacement, _) => {
+                match position.cmp(&depth) {
+                    core::cmp::Ordering::Less => Occurrence::Answered(id),
+                    core::cmp::Ordering::Equal if depth == Binders::NONE => {
+                        Occurrence::Answered(replacement)
+                    },
+                    core::cmp::Ordering::Equal => Occurrence::Carried(replacement, depth),
+                    core::cmp::Ordering::Greater => Occurrence::Answered(self.lowered(position)),
+                }
+            },
+            Rewrite::Rotate(band) => match position.0.checked_sub(depth.0) {
+                Some(past) if past == band.0 => Occurrence::Answered(
+                    self.arena
+                        .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(depth.0)),
+                ),
+                Some(past) if past < band.0 => {
+                    // reason: an index inside the band sits below the binder the
+                    // band names, so one more stays representable.
+                    let raised = u32::from(arith::saturating_add(
+                        arith::Int::from(position.0),
+                        arith::Int::from(1_u32),
+                    ));
+                    Occurrence::Answered(
+                        self.arena
+                            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(raised)),
+                    )
                 },
-                core::cmp::Ordering::Equal => Occurrence::Carried(replacement, depth),
-                core::cmp::Ordering::Greater => Occurrence::Answered(self.lowered(position)),
+                Some(_) | None => Occurrence::Answered(id),
             },
             Rewrite::Lower => match position.cmp(&depth) {
                 core::cmp::Ordering::Less => Occurrence::Answered(id),
@@ -3473,6 +3713,59 @@ pub fn instantiate_comp_type(
         Node::CompType(codomain),
         Binders::NONE,
         Rewrite::Substitute(argument),
+    ) {
+        Node::CompType(id) => id,
+        Node::Value(_) | Node::Computation(_) | Node::ValueType(_) => codomain,
+    }
+}
+
+/// Instantiate a dependent codomain at an argument written as a call, in the
+/// form the lowering writes a type-read call argument in.
+///
+/// The lowering binds a call a type decodes ahead of the call it stands in,
+/// `c ← g(x); f(c)` (`mint_called`), so a type written `f(g(x))` decodes that
+/// bind. An instantiation at the same call binds it the same way: each decode
+/// whose returned code reads the binder becomes `El ⟨c ← call; body[c / x]⟩`,
+/// and everywhere else the call stands for its value, `argument` — in a path
+/// endpoint, say, where the lowering holds a call in place. The type-position
+/// form of a call argument is therefore one form, and conversion compares it
+/// as syntax (#720). Alternatives: reading `⟨c ← M; N⟩` as `N[⟨M⟩]` in the
+/// conversion, a kernel conversion extension with a soundness argument of
+/// its own; and lowering the call in place, which loses the bound variable
+/// standing below the stage. Reversal: a type repeating one call argument
+/// mints one bind per decode that reads it, so a measured cost from sharing
+/// lost between those binds would hold the call once, outside them.
+///
+/// # Specification
+/// - requires: as [`instantiate_comp_type`]; `argument` stands for the value
+///   `call` returns, and `call` is scoped where `argument` is.
+/// - ensures: as [`instantiate_comp_type`] at `argument`, except that every
+///   decode whose returned code reads the binder decodes a returned bind of
+///   `call`, raised past the binders between, into that code's computation with
+///   the binder read as the bind's variable.
+/// - provides: the result type of applying a dependent arrow to a call.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode reading the binder at depth zero and under an
+///   inner binder, a decode that does not read it, and a path endpoint reading
+///   it separate the bind, the rotation and the plain substitution.
+/// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+#[spec(ensures: |ret| ret == codomain || arena.comp_type(ret).is_some())]
+#[inline]
+#[must_use]
+pub fn instantiate_comp_type_at_call(
+    arena: &mut CoreArena,
+    codomain: CompTypeId,
+    argument: ValueId,
+    call: ComputationId,
+) -> CompTypeId
+{
+    match Engine::new(arena).run(
+        Node::CompType(codomain),
+        Binders::NONE,
+        Rewrite::Instantiate(argument, call),
     ) {
         Node::CompType(id) => id,
         Node::Value(_) | Node::Computation(_) | Node::ValueType(_) => codomain,

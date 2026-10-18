@@ -313,6 +313,7 @@ use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_value_type;
 use crate::rewrite::substitute_comp_type;
+use crate::rewrite::substitute_comp_type_at_call;
 use crate::rewrite::substitute_value_type;
 use crate::seal;
 use crate::stage_order::StageOrder;
@@ -4917,7 +4918,11 @@ where
                         // a codomain that mentions nothing is handed back
                         // unchanged at no cost. A plain code a later argument of
                         // the spine holds at a stage instantiates at that staged
-                        // code, re-derived as the checker read it.
+                        // code, re-derived as the checker read it. A returned
+                        // call instantiates as the lowering writes a call a type
+                        // decodes: bound ahead of each decode's returned code
+                        // that reads the binder (#720), the form a type written
+                        // with the call holds.
                         Some(&CompType::Pi { domain, codomain }) => {
                             let spine = frames.iter().rev().map_while(|frame| {
                                 if let Frame::SynthApply(later) = *frame {
@@ -4937,8 +4942,20 @@ where
                                 Maybe::Absent(recursion::Unstaged::Plain) => argument,
                             };
                             let (table, rewrites) = session.rewrite_parts();
-                            let instantiated =
-                                substitute_comp_type(arena, table, rewrites, codomain, instance);
+                            let instantiated = match arena.value(instance) {
+                                Some(&Value::Returned(call)) if instance == argument => {
+                                    substitute_comp_type_at_call(
+                                        arena,
+                                        table,
+                                        rewrites,
+                                        codomain,
+                                        (instance, call),
+                                    )
+                                },
+                                _ => {
+                                    substitute_comp_type(arena, table, rewrites, codomain, instance)
+                                },
+                            };
                             frames.push(Frame::ProduceComp(instantiated));
                             goal = Goal::CheckValue(argument, domain);
                             continue 'expand;

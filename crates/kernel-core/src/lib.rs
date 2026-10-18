@@ -692,6 +692,7 @@ pub use crate::rewrite::RewritePlane;
 pub use crate::rewrite::RewriteSupport;
 pub use crate::rewrite::shift_value_type;
 pub use crate::rewrite::substitute_comp_type;
+pub use crate::rewrite::substitute_comp_type_at_call;
 pub use crate::support::LooseDepth;
 pub use crate::support::LooseDepths;
 pub use crate::support::NodeOutcome;
