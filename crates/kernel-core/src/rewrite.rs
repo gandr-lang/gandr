@@ -57,6 +57,8 @@
 //! make a comparison finish earlier and can never change a verdict; the trusted
 //! base still takes no interning table of *decoded* values.
 
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -499,7 +501,7 @@ impl MemoKey for RewriteSupport
 pub type RewriteMemo = OrderedMemo<RewriteSupport, RewriteOutcome>;
 
 /// Which rewrite the engine is running, with its parameter.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Rewrite
 {
     /// Raise every free index at or above `cutoff` by `amount`.
@@ -526,11 +528,45 @@ enum Rewrite
         /// The variable it reads as at the root.
         index: DeBruijnIndex,
     },
+    /// Substitute `replacement` as [`Rewrite::Substitute`] does, except at a
+    /// decode whose returned code reads the binder: there `call` runs ahead,
+    /// bound as the lowering binds a type-read call argument, and the code
+    /// reads the bind's variable for the binder.
+    Instantiate
+    {
+        /// The value the call stands for, in the context outside the binder.
+        replacement: ValueId,
+        /// The call, in the context outside the binder.
+        call: ComputationId,
+    },
+    /// Move the free index `band` to the innermost free position and raise
+    /// every free index below it by one: a decoded returned code's body
+    /// carried under the bind [`Rewrite::Instantiate`] puts ahead of it.
+    Rotate
+    {
+        /// The free index moved innermost, counted from the root.
+        band: BinderDepth,
+    },
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a rewrite goal has no session memo key.
+    mod keyed {
+        /// The goal is memoized within its own walk only.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// An instantiation at a call, or the rotation it carries a body
+            /// with, decides a decode by whether its returned code reads the
+            /// binder, which a content key does not carry.
+            Local,
+        }
+    }
 }
 
 impl Rewrite
 {
-    /// This rewrite's goal for `subject` at `depth`.
+    /// This rewrite's goal for `subject` at `depth`, when the session memo
+    /// keys it.
     ///
     /// # Specification
     /// trivial.
@@ -539,9 +575,9 @@ impl Rewrite
         self,
         subject: AnyNode,
         depth: BinderDepth,
-    ) -> RewriteGoal
+    ) -> Maybe<RewriteGoal, keyed::Absent>
     {
-        match self {
+        Maybe::Present(match self {
             Self::Shift { cutoff, amount } => RewriteGoal::Shift {
                 subject,
                 depth,
@@ -559,7 +595,10 @@ impl Rewrite
                 constant,
                 index,
             },
-        }
+            Self::Instantiate { .. } | Self::Rotate { .. } => {
+                return Maybe::Absent(keyed::Absent::Local);
+            },
+        })
     }
 }
 
@@ -580,6 +619,9 @@ enum RewriteTask
     /// The result on top of the stack is this goal's answer, produced by a
     /// scheduled sub-walk rather than by a close; record it.
     Record(AnyNode, BinderDepth, Rewrite),
+    /// The rotated body on top of the stack and the raised call beneath it
+    /// answer this decode at the call bound ahead of its code's body.
+    BindAhead(AnyNode, BinderDepth, Rewrite),
 }
 
 /// The shifted or substituted form of a value-type node.
@@ -830,6 +872,61 @@ where
         table,
         memo,
         rewrite,
+        AnyNode::CompType(subject),
+        BinderDepth::NONE,
+    )
+    .comp_type_or(subject)
+}
+
+/// The computation type `subject` with its innermost binder instantiated at a
+/// call, in the form the lowering writes a type-read call argument in.
+///
+/// Each decode whose returned code reads the binder decodes
+/// `⟨c ← call; body[c / x]⟩`, and `replacement`, the value the call stands
+/// for, stands for the binder everywhere else — in a path endpoint, say, where
+/// the lowering holds a call in place.
+///
+/// A type written `f(g(x))` decodes the bind `c ← g(x); f(c)`, so a codomain
+/// instantiated at the call `g(x)` reads the same syntax, and conversion
+/// compares the two as such (#720). The goals of this walk are memoized within
+/// it alone: whether a decode's code reads the binder decides its answer, and
+/// the session's content key does not carry that.
+///
+/// # Specification
+/// - requires: as [`substitute_comp_type`]; `call` is scoped where
+///   `replacement` is, and `replacement` stands for the value it returns.
+/// - ensures: as [`substitute_comp_type`] at `replacement`, except that each
+///   decode whose returned code reads the binder decodes a returned bind of
+///   `call`, raised past the binders between, into that code's computation with
+///   the binder read as the bind's variable.
+/// - provides: the result type of a dependent application whose argument is a
+///   call.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode reading the binder at depth zero and under an
+///   inner binder, a decode that does not read it, and a path endpoint reading
+///   it separate the bind, the rotation and the plain substitution.
+/// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+#[spec(ensures: |ret| arena.comp_type(subject).map_or(ret == subject, |_| arena.comp_type(ret).is_some()))]
+#[inline]
+#[must_use]
+pub fn substitute_comp_type_at_call<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    subject: CompTypeId,
+    (replacement, call): (ValueId, ComputationId),
+) -> CompTypeId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Instantiate { replacement, call },
         AnyNode::CompType(subject),
         BinderDepth::NONE,
     )
@@ -1199,16 +1296,20 @@ where
 ///   the node each names. An open pushes either its node's children, whose ids
 ///   are strictly below their parent's within a family, or — at the
 ///   carried-occurrence arm alone — one sub-walk open on the replacement. A
-///   close and a record push nothing.
+///   close pushes nothing, except an instantiation's close of a decode whose
+///   returned code reads its binder, which pushes two sub-walk opens, on the
+///   call and on the code's body. A record and a bind-ahead push nothing.
 /// - boundedness: the arena is finite and acyclic by the minting invariant, and
 ///   a minted node is never opened, so the set of openable nodes is finite. The
-///   carried-occurrence arm is the only one whose scheduled open is not a
-///   child, and **its nesting is exactly one deep**: it fires only for a
-///   substitution, and the sub-walk it schedules is a *shift*, for which
-///   [`carried_occurrence`] returns nothing — so the sub-walk descends its own
-///   children and can never schedule a third walk. Its subject is the
-///   replacement, which is fixed before the outer walk starts and is therefore
-///   not a node the outer walk can grow.
+///   carried-occurrence arm and the decode close are the only ones whose
+///   scheduled opens are not children, and **their nesting is exactly one
+///   deep**: they fire only for a substitution or an instantiation, and the
+///   sub-walks they schedule are a *shift* and a *rotation*, for which
+///   [`carried_occurrence`] returns nothing and whose closes push nothing — so
+///   a sub-walk descends its own children and can never schedule a third walk.
+///   Their subjects are the replacement, the call and a decoded code's body,
+///   each fixed in the arena before the outer walk reaches it and therefore not
+///   a node the outer walk can grow.
 /// - input recursion: none.
 ///
 /// # Adequacy
@@ -1256,18 +1357,41 @@ where
     }
     let mut tasks: Vec<RewriteTask> = Vec::new();
     let mut results: Vec<RewriteOutcome> = Vec::new();
+    // Goals the session memo does not key — an instantiation at a call and the
+    // rotation it carries a body with — are memoized within this walk, beside
+    // the nodes an instantiation found reading its binder and, for each node it
+    // has open, whether that node reads it, innermost last.
+    let mut local: BTreeMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome> = BTreeMap::new();
+    let mut reads: BTreeSet<(AnyNode, BinderDepth)> = BTreeSet::new();
+    let mut reading: Vec<Mention> = Vec::new();
     tasks.push(RewriteTask::Open(root, initial_depth, rewrite));
     while let Some(task) = tasks.pop() {
         match task {
             RewriteTask::Open(node, depth, step) => {
+                let instantiating = matches!(step, Rewrite::Instantiate { .. });
                 // An inactive memo never answers, so its support is never
                 // built: the memoless walk encodes nothing.
-                if matches!(M::ACTIVITY, MemoActivity::Active) {
-                    let support = RewriteSupport::build(table, arena, step.goal(node, depth));
-                    if let Some(hit) = memo.recall(&support) {
-                        results.push(*hit.outcome());
-                        continue;
+                let hit = match step.goal(node, depth) {
+                    Maybe::Present(goal) if matches!(M::ACTIVITY, MemoActivity::Active) => {
+                        let support = RewriteSupport::build(table, arena, goal);
+                        memo.recall(&support).map(|hit| *hit.outcome())
+                    },
+                    Maybe::Present(_) => None,
+                    Maybe::Absent(keyed::Absent::Local) => local.get(&(node, depth, step)).copied(),
+                };
+                if let Some(outcome) = hit {
+                    if instantiating && reads.contains(&(node, depth)) {
+                        note_read(&mut reads, &mut reading, (node, depth));
                     }
+                    results.push(outcome);
+                    continue;
+                }
+                if instantiating
+                    && let AnyNode::Value(id) = node
+                    && let Some(&Value::Variable(index)) = arena.value(id)
+                    && u32::from(index) == depth.0
+                {
+                    note_read(&mut reads, &mut reading, (node, depth));
                 }
                 // The one arm that answers through a sub-walk rather than
                 // through its children: the occurrence being substituted, where
@@ -1290,36 +1414,203 @@ where
                     Maybe::Absent(
                         carrying::Absent::Shift
                         | carrying::Absent::Abstraction
+                        | carrying::Absent::Rotation
                         | carrying::Absent::NoCrossedBinders
                         | carrying::Absent::DifferentOccurrence
                         | carrying::Absent::UnreadableValue,
                     ) => {},
                 }
+                if instantiating {
+                    reading.push(Mention::Absent);
+                }
                 tasks.push(RewriteTask::Close(node, depth, step));
                 push_rewrite_children(arena, node, depth, &mut tasks, step);
             },
             RewriteTask::Close(node, depth, step) => {
-                let outcome = close_rewrite(arena, step, node, depth, &mut results);
-                if matches!(M::ACTIVITY, MemoActivity::Active) {
-                    let support = RewriteSupport::build(table, arena, step.goal(node, depth));
-                    // A memo at its ceiling declines to record. The walk
-                    // proceeds unmemoized from there, which costs reuse and
-                    // never the answer.
-                    let _recorded = memo.remember(support, outcome);
+                // An instantiation's decode whose returned code reads the
+                // binder runs the call ahead of the code's body, as the
+                // lowering writes a call a type decodes: the substituted code
+                // is dropped, and the body is carried under the bind by a
+                // rotation. A returned code anywhere else, a path endpoint
+                // say, holds its calls in place and is substituted as written.
+                if let Rewrite::Instantiate { call, .. } = step
+                    && reading.pop() == Some(Mention::Present)
+                {
+                    note_read(&mut reads, &mut reading, (node, depth));
+                    let code = match node {
+                        AnyNode::ValueType(id) => match arena.value_type(id) {
+                            Some(&ValueType::Element { code, .. }) => Maybe::Present(code),
+                            _ => Maybe::Absent(()),
+                        },
+                        AnyNode::CompType(id) => match arena.comp_type(id) {
+                            Some(&CompType::Element { code, .. }) => Maybe::Present(code),
+                            _ => Maybe::Absent(()),
+                        },
+                        AnyNode::Value(_) | AnyNode::Computation(_) => Maybe::Absent(()),
+                    };
+                    if let Maybe::Present(code) = code
+                        && reads.contains(&(AnyNode::Value(code), depth))
+                        && let Some(&Value::Returned(body)) = arena.value(code)
+                    {
+                        let _substituted = results.pop();
+                        tasks.push(RewriteTask::BindAhead(node, depth, step));
+                        tasks.push(RewriteTask::Open(
+                            AnyNode::Computation(body),
+                            BinderDepth::NONE,
+                            Rewrite::Rotate { band: depth },
+                        ));
+                        tasks.push(RewriteTask::Open(
+                            AnyNode::Computation(call),
+                            BinderDepth::NONE,
+                            Rewrite::Shift {
+                                cutoff: BinderDepth::NONE,
+                                amount: depth,
+                            },
+                        ));
+                        continue;
+                    }
                 }
+                let outcome = close_rewrite(arena, step, node, depth, &mut results);
+                // A memo at its ceiling declines to record. The walk proceeds
+                // unmemoized from there, which costs reuse and never the answer.
+                remember_rewrite(
+                    (table, arena, memo),
+                    &mut local,
+                    (node, depth, step),
+                    outcome,
+                );
                 results.push(outcome);
             },
             RewriteTask::Record(node, depth, step) => {
-                if matches!(M::ACTIVITY, MemoActivity::Active)
-                    && let Some(&outcome) = results.last()
-                {
-                    let support = RewriteSupport::build(table, arena, step.goal(node, depth));
-                    let _recorded = memo.remember(support, outcome);
+                if let Some(&outcome) = results.last() {
+                    remember_rewrite(
+                        (table, arena, memo),
+                        &mut local,
+                        (node, depth, step),
+                        outcome,
+                    );
                 }
+            },
+            RewriteTask::BindAhead(node, depth, step) => {
+                let read = results.pop();
+                let ahead = results.pop();
+                let code = match (ahead, read) {
+                    (
+                        Some(RewriteOutcome::Computation(ahead)),
+                        Some(RewriteOutcome::Computation(read)),
+                    ) => {
+                        let bound = arena.computation_bind(ahead, read);
+                        Maybe::Present(arena.value_returned(bound))
+                    },
+                    _ => Maybe::Absent(()),
+                };
+                let outcome = match (node, code) {
+                    (AnyNode::ValueType(id), Maybe::Present(code)) => match arena.value_type(id) {
+                        Some(&ValueType::Element { ref target, .. }) => {
+                            let target = target.clone();
+                            RewriteOutcome::ValueType(arena.value_type_element(code, target))
+                        },
+                        _ => outcome_of(node),
+                    },
+                    (AnyNode::CompType(id), Maybe::Present(code)) => match arena.comp_type(id) {
+                        Some(&CompType::Element { ref target, .. }) => {
+                            let target = target.clone();
+                            RewriteOutcome::CompType(arena.comp_type_element(code, target))
+                        },
+                        _ => outcome_of(node),
+                    },
+                    _ => outcome_of(node),
+                };
+                remember_rewrite(
+                    (table, arena, memo),
+                    &mut local,
+                    (node, depth, step),
+                    outcome,
+                );
+                results.push(outcome);
             },
         }
     }
     results.pop().unwrap_or_else(|| outcome_of(root))
+}
+
+/// Whether an open node of an instantiation reads the binder it instantiates.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Mention
+{
+    /// Nothing beneath the node read the binder yet.
+    Absent,
+    /// Something beneath the node read the binder.
+    Present,
+}
+
+/// Note that `node` at its depth reads the binder an instantiation
+/// instantiates, and so does the node open around it.
+///
+/// # Specification
+/// - requires: an instantiation reached `node` at the depth it names.
+/// - ensures: `node` at its depth is among `reads`, and the innermost open
+///   node's reading, if any, is present.
+/// - provides: the reading an instantiation decides a decode by, kept per node
+///   and depth so a hit of the walk's own memo answers it too.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a code reading the binder and one sparing it separate a
+///   read noted from one missed: a missed read substitutes the call's value
+///   where the bind belongs.
+/// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+#[spec(ensures: reads.contains(&key) && reading.last().is_none_or(|&held| held == Mention::Present))]
+fn note_read(
+    reads: &mut BTreeSet<(AnyNode, BinderDepth)>,
+    reading: &mut [Mention],
+    key: (AnyNode, BinderDepth),
+)
+{
+    let _first = reads.insert(key);
+    if let Some(open) = reading.last_mut() {
+        *open = Mention::Present;
+    }
+}
+
+/// Record one goal's outcome: in the session memo when it keys the goal and
+/// is active, in the walk's own memo when it does not key it.
+///
+/// # Specification
+/// - requires: `outcome` is the goal's answer.
+/// - ensures: a goal the session keys is offered to `memo` under its support
+///   when the memo is active; any other goal is in `local` with `outcome`.
+/// - provides: the one recording step every close, record and bind-ahead takes.
+/// - fails: never; a memo at its ceiling declines, which costs reuse alone.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an instantiation's goals are recorded in the walk's own
+///   memo, and the memoized rewrite agrees with the memoless one on the
+///   session's goals.
+/// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+/// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
+#[spec(ensures: !matches!(step.goal(node, depth), Maybe::Absent(_)) || local.get(&(node, depth, step)) == Some(&outcome))]
+fn remember_rewrite<M>(
+    (table, arena, memo): (&mut ContentTable, &TermArena, &mut M),
+    local: &mut BTreeMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome>,
+    (node, depth, step): (AnyNode, BinderDepth, Rewrite),
+    outcome: RewriteOutcome,
+) where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    match step.goal(node, depth) {
+        Maybe::Present(goal) => {
+            if matches!(M::ACTIVITY, MemoActivity::Active) {
+                let support = RewriteSupport::build(table, arena, goal);
+                let _recorded = memo.remember(support, outcome);
+            }
+        },
+        Maybe::Absent(keyed::Absent::Local) => {
+            let _previous = local.insert((node, depth, step), outcome);
+        },
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -1332,6 +1623,8 @@ quenchant_shape::reason_enum! {
             Shift,
             /// Abstracting a constant substitutes no replacement.
             Abstraction,
+            /// A rotation renames indices and substitutes no replacement.
+            Rotation,
             /// A replacement at depth zero crosses no binders.
             NoCrossedBinders,
             /// The node is not the variable occurrence being substituted.
@@ -1352,10 +1645,10 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - requires: `depth` is the number of binders the walk has crossed to reach
 ///   `node`.
-/// - ensures: the replacement exactly when this is a substitution, some binder
-///   has been crossed, and the node is the variable occurrence the depth names;
-///   nothing in every other case, including a substitution at depth zero, which
-///   takes the ordinary close path instead.
+/// - ensures: the replacement exactly when this is a substitution or an
+///   instantiation, some binder has been crossed, and the node is the variable
+///   occurrence the depth names; nothing in every other case, including a
+///   substitution at depth zero, which takes the ordinary close path instead.
 /// - provides: a replacement or [`Absent`]: `Shift` selects shifting,
 ///   `NoCrossedBinders` needs no raise, `DifferentOccurrence` is not the
 ///   target, and `UnreadableValue` leaves the ordinary unreadable-node path in
@@ -1377,7 +1670,8 @@ quenchant_shape::reason_enum! {
 #[spec(ensures: |ret| match rewrite {
     Rewrite::Shift { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Shift)),
     Rewrite::Abstract { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Abstraction)),
-    Rewrite::Substitute { replacement } => {
+    Rewrite::Rotate { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Rotation)),
+    Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => {
         if depth.0 == 0 {
             matches!(ret, Maybe::Absent(carrying::Absent::NoCrossedBinders))
         } else if let AnyNode::Value(id) = node {
@@ -1401,9 +1695,12 @@ fn carried_occurrence(
 ) -> Maybe<ValueId, carrying::Absent>
 {
     let replacement = match rewrite {
-        Rewrite::Substitute { replacement } => replacement,
+        Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => {
+            replacement
+        },
         Rewrite::Shift { .. } => return Maybe::Absent(carrying::Absent::Shift),
         Rewrite::Abstract { .. } => return Maybe::Absent(carrying::Absent::Abstraction),
+        Rewrite::Rotate { .. } => return Maybe::Absent(carrying::Absent::Rotation),
     };
     if depth == BinderDepth::NONE {
         return Maybe::Absent(carrying::Absent::NoCrossedBinders);
@@ -2161,7 +2458,7 @@ Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => 
         Some(&Value::Variable(_)) => true,
         Some(&Value::Constant(found)) => match rewrite {
             Rewrite::Abstract { constant, .. } if constant == found => matches!(arena.value(ret), Some(&Value::Variable(_))),
-            Rewrite::Abstract { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } => ret == id,
+            Rewrite::Abstract { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Rotate { .. } => ret == id,
         },
         Some(node) => arena.value(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten)),
     },
@@ -2484,7 +2781,11 @@ fn close_value(
                 ));
                 arena.value_variable(DeBruijnIndex::from(raised))
             },
-            Rewrite::Abstract { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } => id,
+            Rewrite::Abstract { .. }
+            | Rewrite::Shift { .. }
+            | Rewrite::Substitute { .. }
+            | Rewrite::Instantiate { .. }
+            | Rewrite::Rotate { .. } => id,
         },
         Value::ListNil | Value::Literal(_) => id,
         Value::Tuple(ref components) => {
@@ -2604,7 +2905,7 @@ fn close_value(
 /// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
 #[spec(
     requires: matches!(arena.value(id), Some(&Value::Variable(actual)) if actual == index),
-    requires: !matches!(rewrite, Rewrite::Substitute { .. }) || depth.0 == 0 || u32::from(index) != depth.0,
+    requires: !matches!(rewrite, Rewrite::Substitute { .. } | Rewrite::Instantiate { .. }) || depth.0 == 0 || u32::from(index) != depth.0,
     ensures: |ret| match rewrite {
         Rewrite::Abstract { .. } => ret == id,
         Rewrite::Shift { cutoff, amount } => {
@@ -2615,10 +2916,15 @@ fn close_value(
                 arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_add(amount.0))))
             }
         },
-        Rewrite::Substitute { replacement } => match u32::from(index).cmp(&depth.0) {
+        Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => match u32::from(index).cmp(&depth.0) {
             core::cmp::Ordering::Less => ret == id,
             core::cmp::Ordering::Equal => ret == replacement,
             core::cmp::Ordering::Greater => arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_sub(1)))),
+        },
+        Rewrite::Rotate { band } => match u32::from(index).checked_sub(depth.0) {
+            Some(past) if past == band.0 => arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(depth.0))),
+            Some(past) if past < band.0 => arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_add(1)))),
+            Some(_) | None => ret == id,
         },
     },
 )]
@@ -2656,20 +2962,37 @@ fn rewrite_variable(
                 }
             }
         },
-        Rewrite::Substitute { replacement } => match index.cmp(&depth) {
-            core::cmp::Ordering::Less => id,
-            // Reached only at depth zero: every deeper occurrence answers
-            // through the scheduled carrying shift, which the engine takes
-            // before it ever schedules this close.
-            core::cmp::Ordering::Equal => replacement,
-            core::cmp::Ordering::Greater => {
-                // index > depth >= 0, so removing this binder cannot underflow.
-                let lowered = u32::from(arith::sub(
+        Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => {
+            match index.cmp(&depth) {
+                core::cmp::Ordering::Less => id,
+                // Reached only at depth zero: every deeper occurrence answers
+                // through the scheduled carrying shift, which the engine takes
+                // before it ever schedules this close.
+                core::cmp::Ordering::Equal => replacement,
+                core::cmp::Ordering::Greater => {
+                    // index > depth >= 0, so removing this binder cannot underflow.
+                    let lowered = u32::from(arith::sub(
+                        arith::Int::from(index.0),
+                        arith::Int::from(1_u32),
+                    ));
+                    arena.value_variable(DeBruijnIndex::from(lowered))
+                },
+            }
+        },
+        // The band's index moves innermost, to the bind's variable, and every
+        // free index inside the band rises past it; the rest stand.
+        Rewrite::Rotate { band } => match index.0.checked_sub(depth.0) {
+            Some(past) if past == band.0 => arena.value_variable(DeBruijnIndex::from(depth.0)),
+            Some(past) if past < band.0 => {
+                // reason: an index inside the band sits below the band's own,
+                // so one more stays representable.
+                let raised = u32::from(arith::saturating_add(
                     arith::Int::from(index.0),
                     arith::Int::from(1_u32),
                 ));
-                arena.value_variable(DeBruijnIndex::from(lowered))
+                arena.value_variable(DeBruijnIndex::from(raised))
             },
+            Some(_) | None => id,
         },
     }
 }

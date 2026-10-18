@@ -238,6 +238,7 @@ pub use crate::rewrite::constructor_classifier;
 pub use crate::rewrite::elaborate_nested_traced;
 pub use crate::rewrite::fill_hole;
 pub use crate::rewrite::instantiate_comp_type;
+pub use crate::rewrite::instantiate_comp_type_at_call;
 pub use crate::rewrite::instantiate_computation_traced;
 pub use crate::rewrite::instantiate_value;
 pub use crate::rewrite::instantiate_value_type;

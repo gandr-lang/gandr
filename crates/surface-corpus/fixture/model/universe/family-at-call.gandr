@@ -1,0 +1,36 @@
+// A family applied at a call's result converts with itself. A type that reads
+// a call's value runs the call first and binds it, so `tm(extend(g))` is
+// `c ← extend(g); tm(c)`; a dependent arrow instantiated at the call
+// `extend(g)` binds it ahead of each code that reads the binder, so the type
+// it yields is written the same way (#720). The shape is a category with
+// families: operations over context extension, laws that apply one operation
+// to another's result (Dybjer, _Internal Type Theory_, TYPES 1995, LNCS
+// 1158). The same law stated as a record's field joins once the record's
+// family field prints at its reads (#728).
+
+/// A family applied to an operation's result, met at one argument: `q(g)` is
+/// at `tm(extend(g))`, which is `use`'s second domain at `extend(g)` (#720).
+@[ checks ]
+def useAtExtension(
+  con : Type,
+  tm : +U (con -> -F Type),
+  extend : (g : con) => con,
+  q : (g : con) => tm(extend(g)),
+  use : (g : con, t : tm(g)) => Unit,
+  g : con
+) -> -F Unit {
+  become use(extend(g), q(g))
+}
+
+/// The same with the family applied to a variable, which needs no call bound
+/// ahead of it.
+@[ checks ]
+def useAtVariable(
+  con : Type,
+  tm : +U (con -> -F Type),
+  q : (g : con) => tm(g),
+  use : (g : con, t : tm(g)) => Unit,
+  g : con
+) -> -F Unit {
+  become use(g, q(g))
+}

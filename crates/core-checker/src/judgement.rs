@@ -453,6 +453,7 @@ use gandr_core_term::hole::matched_thunk;
 use gandr_core_term::hole::matched_with;
 use gandr_core_term::hole::matching;
 use gandr_core_term::instantiate_comp_type;
+use gandr_core_term::instantiate_comp_type_at_call;
 use gandr_core_term::instantiate_value_type;
 use gandr_core_term::instantiate_value_type_under;
 use gandr_core_term::session::SessionAction;
@@ -6254,6 +6255,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
 
     /// The type an application whose argument checked has.
     ///
+    /// The canonical type-position form of a call argument is the bind-ahead
+    /// form the lowering writes for `f(g(x))` in a type, `⟨c ← g(x); f(c)⟩`,
+    /// so a codomain read at the call and a type written with it are one
+    /// syntax, which conversion compares as such (#720). The argument itself
+    /// keeps #444's reading — a pure nested call a type reads stands as
+    /// [`Nesting::Returned`] — and stands as that value wherever no returned
+    /// code encloses the binder. Alternatives: reading `⟨c ← M; N⟩` as
+    /// `N[⟨M⟩]` in conversion, a kernel conversion extension with its own
+    /// soundness argument; and lowering a type-read call in place, which loses
+    /// the bound variable standing below the stage. Reversal: a memo cost from
+    /// repeated binds of one call, measured as sharing lost, would hold the
+    /// call once outside the codes that read it.
+    ///
     /// # Specification
     /// - requires: `argument` checked against the domain `codomain` belongs to,
     ///   and the application frames waiting on the stack are the arguments the
@@ -6263,7 +6277,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   the spine holds for a plain code
     ///   ([`crate::recursion::instantiation`]), and at the lifted code when the
     ///   argument crossed the value bridge with a lift, so the codomain reads
-    ///   the code at the universe the domain names.
+    ///   the code at the universe the domain names. An argument written as a
+    ///   call, nested or returned, is instantiated with the call bound ahead of
+    ///   each decode whose returned code reads it
+    ///   ([`gandr_core_term::instantiate_comp_type_at_call`]).
     /// - fails: the staged instantiation's refusal.
     /// - panics: none.
     ///
@@ -6277,6 +6294,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   type argument a later argument holds at a stage is substituted staged.
     /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::a_dependent_application_instantiates_its_codomain_at_the_argument`
+    /// - witness: `judgement::tests::a_family_at_a_call_argument_converts_with_the_type_written_with_it_720`
     /// - witness: `recursion::tests::a_type_parameter_instantiates_at_a_staged_code`
     #[spec(ensures: |ret| match codomain {
         | Codomain::Ambient(held) => ret == Ok(held),
@@ -6312,6 +6330,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 };
                 let lift = self.context.lifts().get(&argument).cloned();
                 let arena = self.context.arena_mut();
+                if lift.is_none()
+                    && instance == argument
+                    && let Some(&(Value::Nested(call) | Value::Returned(call))) =
+                        arena.value(argument)
+                {
+                    return Ok(instantiate_comp_type_at_call(
+                        arena, codomain, argument, call,
+                    ));
+                }
                 let code = lift.map_or(instance, |lift| lift.mint(arena, instance));
                 Ok(instantiate_comp_type(arena, codomain, code))
             },
