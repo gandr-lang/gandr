@@ -45,8 +45,10 @@ exec cargo mutants --test-tool nextest -j 4 --jobserver-tasks 8 --output "$outpu
 # names a source file, relative to the crate's `src/` or to the workspace,
 # and a function in it, bare or with its impl path (`converge`,
 # `Replay::settle`). The files narrow the run with `--file` and the
-# functions with one `--re` over the mutant names, which end in the
-# function. The trust path's crates are checked this way after each batch
+# functions with one `--re` over the mutant names: an operator mutant ends
+# in the function it sits in (`replace == with != in Edit<'_>::verdict`), a
+# replaced body starts with it (`replace Edit<'_>::verdict -> … with Ok(())`;
+# #745). The trust path's crates are checked this way after each batch
 # lands. Outcomes land in `mutants.out/<crate>/named`.
 ["mutants:named"]
 description = "Rerun only the named survivors of one crate under the measured settings"
@@ -91,6 +93,6 @@ for entry in "${named[@]}"; do
   functions+="${functions:+|}$function"
 done
 MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
-  "${files[@]}" --re " in (.*::)?($functions)\$"
+  "${files[@]}" --re "( in |: replace )(.*::)?($functions)( -> .*| with .*)?\$"
 {% endraw %}
 '''
