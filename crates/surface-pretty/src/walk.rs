@@ -1249,6 +1249,17 @@ struct Piece
     binding: Binding,
 }
 
+/// The argument a redex's binder stands for: its piece, and the binders its
+/// spelling named, which occur in the reduct only where the binder does.
+#[derive(Clone, Debug)]
+struct Substituted
+{
+    /// The argument's spelling.
+    piece: Piece,
+    /// The positions of the binders the spelling named.
+    occurring: BTreeSet<OpenBinders>,
+}
+
 /// One run of a session type's spelling: fixed text, or the payload type in a
 /// slot.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1682,8 +1693,9 @@ enum Join
     /// A tuple of this many components, two or more, `(a, b)`.
     Tuple(Arity),
     /// The value-function alias over this many domains and then its
-    /// codomain: `() => C`, `A => C`, `(A, B) => C`.
-    ValueFunction(Arity),
+    /// codomain: `() => C`, `A => C`, `(A, B) => C`; where an occurrence named
+    /// a dependent arrow's binder, the thunk over the arrows it stands for.
+    ValueFunction(Arity, Dependent),
     /// An arrow over its domain and codomain.
     Arrow,
     /// A dependent arrow over its domain and codomain, its binder named by the
@@ -1994,9 +2006,28 @@ enum Codomain<Node>
     Reduct(Node),
 }
 
-/// A value-function alias as [`Walk::alias`] found it: its domains, outermost
-/// first, and its codomain.
-type AliasChain<Node> = (Vec<Node>, Codomain<Node>);
+/// One arrow of a value-function alias's chain, as [`Walk::alias`] found it.
+#[derive(Clone, Copy, Debug)]
+struct Link<Node>
+{
+    /// The arrow's domain.
+    domain: Node,
+    /// The arrow itself where it is dependent, which opens a binder over the
+    /// arrows after it and may write that binder's name.
+    opener: Option<Node>,
+}
+
+/// The arrows of a value-function alias's chain that are dependent, one bit
+/// per arrow from the outermost: each opens a binder over the arrows after
+/// it, and the chain is written as the alias only where no occurrence names
+/// one (#736).
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Dependent(u64);
+
+/// A value-function alias as [`Walk::alias`] found it: its arrows, outermost
+/// first, which of them are dependent, and its codomain.
+type AliasChain<Node> = (Vec<Link<Node>>, Dependent, Codomain<Node>);
 
 /// How a static redex's reduct is spelled.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2037,6 +2068,10 @@ enum Task<Node>
     Bind(Zone, Option<Node>),
     /// Close the innermost binder.
     Unbind,
+    /// Set the occurrences named so far aside, so the argument visited next
+    /// collects its own: the binder a redex opens for it credits them only
+    /// where the reduct reads the binder.
+    Hold,
     /// Open one binder per finished piece of the top this many, the deepest
     /// outermost, each standing for its piece: the binders of a static redex's
     /// abstraction, bound to the arguments it is applied to.
@@ -2438,10 +2473,13 @@ struct Walk<'walk, 'names>
     /// a dependent arrow whose binder no occurrence names is spelled as the
     /// plain arrow.
     occurring: BTreeSet<OpenBinders>,
+    /// The occurrences set aside by each [`Task::Hold`] whose argument has not
+    /// yet been bound, the outermost first.
+    held: Vec<BTreeSet<OpenBinders>>,
     /// The arguments the binders of a static redex stand for, by the binder's
     /// position among the open ones: a redex is written as its reduct, each
     /// occurrence of such a binder as the argument's piece.
-    substituted: BTreeMap<OpenBinders, Piece>,
+    substituted: BTreeMap<OpenBinders, Substituted>,
     /// The names of the intuitionistic binders the root stands under,
     /// outermost first.
     context: &'names [Option<Name<'names>>],
@@ -2874,11 +2912,11 @@ impl Walk<'_, '_>
         index: DeBruijnIndex,
     ) -> Result<(), PresentationError>
     {
-        if let Some(&argument) = self
-            .opened_at(zone, index)
-            .and_then(|position| self.substituted.get(&position))
+        if let Some(position) = self.opened_at(zone, index)
+            && let Some(argument) = self.substituted.get(&position)
         {
-            self.pieces.push(argument);
+            self.pieces.push(argument.piece);
+            self.occurring.extend(argument.occurring.iter().copied());
             return Ok(());
         }
         let doc = self.variable_leaf(zone, index)?;
@@ -2914,23 +2952,34 @@ impl Walk<'_, '_>
     }
 
     /// Opens one binder for each of the top `arity` pieces, the deepest
-    /// outermost, each standing for its piece.
+    /// outermost, each standing for its piece and carrying the occurrences its
+    /// spelling named, which the [`Task::Hold`] before each argument set apart.
     ///
     /// # Specification
-    /// - requires: nothing; a stack holding fewer is reported as unbalanced.
+    /// - requires: nothing; a stack holding fewer pieces, or fewer held sets
+    ///   than the arguments and the occurrences around them, is reported as
+    ///   unbalanced.
     /// - ensures: the pieces removed, `arity` intuitionistic binders opened,
-    ///   and each opened binder's position mapped to its piece.
+    ///   and each opened binder's position mapped to its piece and to the
+    ///   occurrences its argument named; the occurrences around the arguments
+    ///   restored, so an argument's occurrences count only where the reduct
+    ///   reads its binder (#736).
     /// - provides: the binders a redex's reduct is walked under.
-    /// - fails: as [`Self::take`].
+    /// - fails: as [`Self::take`], and [`PresentationError::Unbalanced`] for a
+    ///   missing held set.
     /// - panics: none.
     ///
     /// # Errors
-    /// As [`Self::take`].
+    /// As `fails`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a redex of one and of two arguments, each argument
-    ///   occurring in the reduct, observe the order the binders open in.
+    ///   occurring in the reduct, observe the order the binders open in; a
+    ///   called literal that drops its argument and one that returns it
+    ///   separate a binder named by the dropped argument from one the reduct
+    ///   names.
     /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
+    /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
     #[spec(
         captures: [opened = self.opened.len()],
         ensures: |ref ret| ret.is_err() || self.opened.len() == opened.saturating_add(arity.0),
@@ -2940,11 +2989,21 @@ impl Walk<'_, '_>
         arity: Arity,
     ) -> Result<(), PresentationError>
     {
-        for argument in self.take(arity)? {
+        let arguments = self.take(arity)?;
+        // The last argument's occurrences are the current set; each earlier
+        // one's was set aside by the hold before the argument after it, and
+        // the occurrences around them all by the first hold.
+        let mut named = Vec::with_capacity(arguments.len());
+        named.push(core::mem::take(&mut self.occurring));
+        for _ in 1_usize .. arguments.len() {
+            named.push(self.held.pop().ok_or(PresentationError::Unbalanced)?);
+        }
+        self.occurring = self.held.pop().ok_or(PresentationError::Unbalanced)?;
+        for (piece, occurring) in arguments.into_iter().zip(named.into_iter().rev()) {
+            let position = self.opened.len();
             let _fresh = self
                 .substituted
-                .insert(OpenBinders(self.opened.len()), argument);
-            let position = self.opened.len();
+                .insert(OpenBinders(position), Substituted { piece, occurring });
             let _named = self.occurring.remove(&OpenBinders(position));
             if self.names.len() <= position {
                 self.names.resize(position.saturating_add(1_usize), None);
@@ -3027,21 +3086,25 @@ impl Walk<'_, '_>
         Ok(self.pieces.split_off(start))
     }
 
-    /// The domains and the codomain of the value-function alias the thunk
-    /// type over `body` is, when it is one: `body` a chain of non-dependent
-    /// arrows, none or more, ending in a pure returner.
+    /// The arrows and the codomain of the value-function alias the thunk type
+    /// over `body` may be: `body` a chain of arrows, none or more, ending in a
+    /// pure returner.
     ///
     /// # Specification
     /// - requires: nothing; `source` may be malformed.
-    /// - ensures: the domains of the arrows from `body` down, outermost first,
-    ///   and the codomain: the value type the returner they end in returns, or,
-    ///   when the chain reaches its returner through a static redex — an
-    ///   abstraction applied to as many arguments as it binds, which prints as
-    ///   its reduct — the redex, whose reduct holds no further arrow. A decode
-    ///   and a quote are read through, as they print. None when a link is
-    ///   anything else — a dependent arrow, an effectful returner, an arrow
-    ///   under a redex, a missing or misplaced node — or the walk's remaining
-    ///   visits run out first. Every link read is one visit spent.
+    /// - ensures: the arrows from `body` down, outermost first, each with its
+    ///   domain and, for a dependent arrow, the arrow itself, marked in the
+    ///   dependent set; and the codomain: the value type the returner they end
+    ///   in returns, or, when the chain reaches its returner through a static
+    ///   redex — an abstraction applied to as many arguments as it binds, which
+    ///   prints as its reduct — the redex, whose reduct holds no further arrow.
+    ///   A decode and a quote are read through, as they print. Whether a
+    ///   dependent arrow's binder occurs is known only once the walk spelled
+    ///   the arrows after it, so the join decides between the alias and the
+    ///   thunk (#736). None when a link is anything else — an effectful
+    ///   returner, an arrow under a redex, a dependent arrow past the
+    ///   sixty-fourth link, a missing or misplaced node — or the walk's
+    ///   remaining visits run out first. Every link read is one visit spent.
     /// - provides: the shape `+U (A1 -> … -> An -> -F C)` the alias `(A1, …,
     ///   An) => C` stands for, which the lowering reads back to the same type.
     /// - fails: never.
@@ -3055,10 +3118,13 @@ impl Walk<'_, '_>
     /// - hypothesis: L3 — the sugared goldens spell the alias at no, one and
     ///   two domains, over a domain and a codomain that are themselves aliases,
     ///   over a codomain a static redex returns, and keep the thunk over a
-    ///   dependent arrow; a source that becomes a cycle of thunks over
-    ///   returners after its scan stays within the walk's reads.
+    ///   dependent arrow whose binder occurs; a dependent arrow whose binder
+    ///   only a dropped argument names takes the alias; a source that becomes a
+    ///   cycle of thunks over returners after its scan stays within the walk's
+    ///   reads.
     /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
     /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
+    /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
     #[spec(
         captures: [entry = self.remaining],
@@ -3073,7 +3139,8 @@ impl Walk<'_, '_>
     where
         S: Source + ?Sized,
     {
-        let mut domains = Vec::new();
+        let mut links = Vec::new();
+        let mut dependent = Dependent(0_u64);
         let mut link = body;
         // The first redex the chain entered, whose reduct the codomain is.
         let mut entered = None;
@@ -3084,12 +3151,28 @@ impl Walk<'_, '_>
                     if entered.is_some() {
                         return None;
                     }
-                    domains.push(domain);
+                    links.push(Link {
+                        domain,
+                        opener: None,
+                    });
+                    link = codomain;
+                },
+                Former::Pi { domain, codomain } => {
+                    if entered.is_some() {
+                        return None;
+                    }
+                    let bit = 1_u64.checked_shl(u32::try_from(links.len()).ok()?)?;
+                    dependent = Dependent(dependent.0 | bit);
+                    links.push(Link {
+                        domain,
+                        opener: Some(link),
+                    });
                     link = codomain;
                 },
                 Former::Returner(result) => {
                     return Some((
-                        domains,
+                        links,
+                        dependent,
                         entered.map_or(Codomain::Result(result), Codomain::Reduct),
                     ));
                 },
@@ -3140,7 +3223,6 @@ impl Walk<'_, '_>
                 | Former::Capability { .. }
                 | Former::Session { .. }
                 | Former::EffectfulReturner { .. }
-                | Former::Pi { .. }
                 | Former::List(_)
                 | Former::Variable { .. }
                 | Former::Constant(_)
@@ -3218,6 +3300,88 @@ impl Walk<'_, '_>
             }
         }
         None
+    }
+
+    /// The thunk a value-function alias stands for, `+U ((a : A) -> B -> -F
+    /// C)`, over its spelled domains and codomain: the spelling of an alias
+    /// chain where an occurrence named a dependent arrow's binder.
+    ///
+    /// # Specification
+    /// - requires: `domains` are the chain's arrows' domains, outermost first,
+    ///   `dependent` marks the dependent ones, and their binders, closed, sat
+    ///   from the open count up, one per dependent arrow in order.
+    /// - ensures: each arrow is written as the walk writes it alone: a
+    ///   dependent arrow named by its binder where an occurrence named it or
+    ///   the walk approximated, as the plain arrow otherwise; the codomain
+    ///   after `-F`, and the chain in parentheses after `+U`.
+    /// - provides: the alias join's fallback, which decides only once every
+    ///   occurrence was met.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sugared golden keeps the thunk over a dependent
+    ///   arrow its codomain names, and the #736 golden names a binder the
+    ///   reduct reads.
+    /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
+    /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
+    #[spec(ensures: |ref ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(_, binding)| binding == Binding::Prefix))]
+    fn thunked(
+        &mut self,
+        domains: &[Piece],
+        dependent: Dependent,
+        codomain: Piece,
+    ) -> Result<(Doc, Binding), PresentationError>
+    {
+        let returns = self.leaf(Glyphs("-F "))?;
+        let result = self.bare_up_to(codomain, Binding::Atom)?;
+        let mut rest = self.builder.concat(returns, result)?;
+        let open = self.opened.len();
+        let mut binders = usize::try_from(dependent.0.count_ones())
+            .ok()
+            .ok_or(PresentationError::Unbalanced)?;
+        for (at, &domain) in domains.iter().enumerate().rev() {
+            let bit = u32::try_from(at)
+                .ok()
+                .and_then(|at| 1_u64.checked_shl(at))
+                .unwrap_or(0_u64);
+            let named = if dependent.0 & bit == 0_u64 {
+                None
+            }
+            else {
+                binders = binders.saturating_sub(1_usize);
+                let position = OpenBinders(open.saturating_add(binders));
+                (self.fidelity != Fidelity::Faithful || self.occurring.contains(&position))
+                    .then_some(OpenBinders(binders))
+            };
+            let head = if let Some(offset) = named {
+                let binder = self.binder(offset)?;
+                let opener = self.leaf(Glyphs("("))?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                let arrow = self.leaf(Glyphs(") ->"))?;
+                self.builder
+                    .concat_all(&[opener, binder, colon, domain.doc, arrow])?
+            }
+            else {
+                let domain = self.bare_up_to(domain, Binding::Lazy)?;
+                let arrow = self.leaf(Glyphs(" ->"))?;
+                self.builder.concat(domain, arrow)?
+            };
+            let head = self.space_or_break(head)?;
+            rest = self.builder.concat(head, rest)?;
+        }
+        let chain = self.bare_up_to(
+            Piece {
+                doc: rest,
+                binding: Binding::Arrow,
+            },
+            Binding::Atom,
+        )?;
+        let thunk = self.leaf(Glyphs("+U "))?;
+        Ok((self.builder.concat(thunk, chain)?, Binding::Prefix))
     }
 
     /// The computation and the value type of the typed bind whose bound
@@ -4028,15 +4192,18 @@ impl Walk<'_, '_>
             },
             | Former::ThunkType(body) => {
                 if self.form == Form::Sugared
-                    && let Some((domains, codomain)) = self.alias(source, body)
+                    && let Some((links, dependent, codomain)) = self.alias(source, body)
                 {
                     tasks.push(Task::Join(writes(
                         Production("value_function_type"),
                         writes(
                             Production("parenthesized_type"),
-                            Join::ValueFunction(Arity(domains.len())),
+                            Join::ValueFunction(Arity(links.len()), dependent),
                         ),
                     )));
+                    for _ in 0_u32 .. dependent.0.count_ones() {
+                        tasks.push(Task::Unbind);
+                    }
                     tasks.push(match codomain {
                         Codomain::Result(node) => Task::Visit {
                             node,
@@ -4045,9 +4212,12 @@ impl Walk<'_, '_>
                         },
                         Codomain::Reduct(node) => Task::Returned { node, depth },
                     });
-                    for node in domains.into_iter().rev() {
+                    for link in links.into_iter().rev() {
+                        if link.opener.is_some() {
+                            tasks.push(Task::Bind(Binds::ONE.zone, link.opener));
+                        }
                         tasks.push(Task::Visit {
-                            node,
+                            node: link.domain,
                             admits: Admits::ValueType,
                             depth,
                         });
@@ -4312,6 +4482,7 @@ impl Walk<'_, '_>
                 admits: Admits::Value,
                 depth: at,
             });
+            tasks.push(Task::Hold);
         }
     }
 
@@ -4411,7 +4582,8 @@ impl Walk<'_, '_>
             if let Some(count) = substituted {
                 return count > 0_usize
                     && scheduled.iter().filter(|task| matches!(**task, Task::Unbind)).count() == count
-                    && count.checked_mul(2_usize).and_then(|both| both.checked_add(2_usize)) == Some(scheduled.len());
+                    && scheduled.iter().filter(|task| matches!(**task, Task::Hold)).count() == count
+                    && count.checked_mul(3_usize).and_then(|all| all.checked_add(2_usize)) == Some(scheduled.len());
             }
             let Some((&Task::Join(Join::Apply(Arity(arity))), visits)) = scheduled.split_first()
             else { return false; };
@@ -4473,6 +4645,7 @@ impl Walk<'_, '_>
                         admits: Admits::Value,
                         depth,
                     });
+                    tasks.push(Task::Hold);
                 }
                 return;
             }
@@ -4530,7 +4703,8 @@ impl Walk<'_, '_>
             let substitutes = scheduled.iter().filter(|task| matches!(**task, Task::Substitute(Arity(1_usize)))).count();
             substitutes > 0_usize
                 && scheduled.iter().filter(|task| matches!(**task, Task::Unbind)).count() == substitutes
-                && substitutes.checked_mul(3_usize).and_then(|all| all.checked_add(1_usize)) == Some(scheduled.len())
+                && scheduled.iter().filter(|task| matches!(**task, Task::Hold)).count() == substitutes
+                && substitutes.checked_mul(4_usize).and_then(|all| all.checked_add(1_usize)) == Some(scheduled.len())
         }),
     )]
     fn inlined<S>(
@@ -4562,6 +4736,7 @@ impl Walk<'_, '_>
                 admits: Admits::Computation(Tail::Continues),
                 depth,
             });
+            tasks.push(Task::Hold);
         }
     }
 
@@ -5489,7 +5664,7 @@ impl Walk<'_, '_>
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Forward | Bracket::Run) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
-            Join::ValueFunction(Arity(domains)) => domains.checked_add(1_usize),
+            Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
             Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Arrow) => Some(2_usize),
             Join::TypedSequence => Some(3_usize),
@@ -5499,7 +5674,11 @@ impl Walk<'_, '_>
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
                     Join::Prefix(_) | Join::EffectReturner(_) | Join::Lambda | Join::Thunk => Binding::Prefix,
-                    Join::Arrow | Join::Pi | Join::StaticLambda | Join::ValueFunction(_) => Binding::Arrow,
+                    Join::Arrow | Join::Pi | Join::StaticLambda | Join::ValueFunction(_, Dependent(0_u64)) => Binding::Arrow,
+                    // An occurrence of a dependent arrow's binder keeps the
+                    // thunk the alias stands for.
+                    Join::ValueFunction(..) if piece.binding == Binding::Prefix => Binding::Prefix,
+                    Join::ValueFunction(..) => Binding::Arrow,
                     Join::Sequence | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Sigma | Join::Ua(_) | Join::Tuple(_) => Binding::Atom,
@@ -5619,18 +5798,29 @@ impl Walk<'_, '_>
                 let components = self.take(arity)?;
                 (self.listed(&components)?, Binding::Atom)
             },
-            Join::ValueFunction(arity) => {
+            Join::ValueFunction(arity, dependent) => {
                 let codomain = self.pop()?;
                 let domains = self.take(arity)?;
-                let domain = match *domains.as_slice() {
-                    [] => self.leaf(Glyphs("()"))?,
-                    [only] => self.bare_up_to(only, Binding::Lazy)?,
-                    _ => self.listed(&domains)?,
-                };
-                let arrow = self.leaf(Glyphs(" =>"))?;
-                let head = self.builder.concat(domain, arrow)?;
-                let head = self.space_or_break(head)?;
-                (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+                let open = self.opened.len();
+                let binders = usize::try_from(dependent.0.count_ones())
+                    .ok()
+                    .ok_or(PresentationError::Unbalanced)?;
+                let named = (open .. open.saturating_add(binders))
+                    .any(|position| self.occurring.contains(&OpenBinders(position)));
+                if binders > 0_usize && (named || self.fidelity != Fidelity::Faithful) {
+                    self.thunked(&domains, dependent, codomain)?
+                }
+                else {
+                    let domain = match *domains.as_slice() {
+                        [] => self.leaf(Glyphs("()"))?,
+                        [only] => self.bare_up_to(only, Binding::Lazy)?,
+                        _ => self.listed(&domains)?,
+                    };
+                    let arrow = self.leaf(Glyphs(" =>"))?;
+                    let head = self.builder.concat(domain, arrow)?;
+                    let head = self.space_or_break(head)?;
+                    (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+                }
             },
             Join::Arrow => {
                 let codomain = self.pop()?;
@@ -5928,6 +6118,7 @@ where
         names: Vec::new(),
         opened: Vec::new(),
         occurring: BTreeSet::new(),
+        held: Vec::new(),
         substituted: BTreeMap::new(),
         context,
         fidelity: Fidelity::Faithful,
@@ -5970,6 +6161,7 @@ where
                 let _closed = walk.opened.pop();
                 let _argument = walk.substituted.remove(&OpenBinders(walk.opened.len()));
             },
+            Task::Hold => walk.held.push(core::mem::take(&mut walk.occurring)),
             Task::Substitute(arity) => walk.substitute(arity)?,
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -6222,6 +6414,7 @@ mod tests
             names: super::Vec::new(),
             opened: super::Vec::new(),
             occurring: super::BTreeSet::new(),
+            held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
             fidelity: Fidelity::Faithful,
@@ -6300,6 +6493,7 @@ mod tests
             names: super::Vec::new(),
             opened: super::Vec::new(),
             occurring: super::BTreeSet::new(),
+            held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
             fidelity: Fidelity::Faithful,
