@@ -2537,6 +2537,11 @@ fn collect_reachable(
                         domain,
                         source: left,
                         target: right,
+                    }
+                    | &ValueType::Bridge {
+                        domain,
+                        left,
+                        right,
                     },
                 ) => {
                     pending.push(AnyNode::ValueType(domain));

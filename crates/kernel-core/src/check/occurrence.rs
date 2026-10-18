@@ -1063,8 +1063,8 @@ where
                     pending.push((AnyNode::Value(target), reach.term()));
                 },
                 // An identity over the declaration being formed is no strictly
-                // positive field: every part of a path or flow type is a term
-                // position.
+                // positive field: every part of a path, flow or bridge type is
+                // a term position.
                 Some(
                     &(ValueType::Path {
                         domain,
@@ -1075,6 +1075,11 @@ where
                         domain,
                         source: left,
                         target: right,
+                    }
+                    | ValueType::Bridge {
+                        domain,
+                        left,
+                        right,
                     }),
                 ) => {
                     pending.push((AnyNode::ValueType(domain), reach.term()));

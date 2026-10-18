@@ -411,6 +411,7 @@ fn placed<Each>(
                 | ValueType::FlowUniverse(..)
                 | ValueType::Path { .. }
                 | ValueType::Flow { .. }
+                | ValueType::Bridge { .. }
                 | ValueType::Base(_)
                 | ValueType::Universe { .. }
                 | ValueType::Lift { .. }
@@ -547,6 +548,7 @@ fn rebuild(
                 | ValueType::FlowUniverse(..)
                 | ValueType::Path { .. }
                 | ValueType::Flow { .. }
+                | ValueType::Bridge { .. }
                 | ValueType::Base(_)
                 | ValueType::Universe { .. }
                 | ValueType::Lift { .. }

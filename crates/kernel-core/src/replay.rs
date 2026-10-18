@@ -4345,6 +4345,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             domain,
                             source: left,
                             target: right,
+                        }
+                        | &ValueType::Bridge {
+                            domain,
+                            left,
+                            right,
                         },
                     ) => {
                         work.extend([

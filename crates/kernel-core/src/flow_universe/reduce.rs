@@ -269,6 +269,7 @@ where
         | ValueType::Session { .. }
         | ValueType::PathUniverse(..)
         | ValueType::Path { .. }
+        | ValueType::Bridge { .. }
         | ValueType::Base(_)
         | ValueType::Sigma { .. }
         | ValueType::Thunk(_)

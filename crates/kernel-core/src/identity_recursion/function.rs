@@ -217,6 +217,7 @@ impl Relation
             | Clause::Discrete
             | Clause::Universe
             | Clause::Certificate
+            | Clause::Relation
             | Clause::Product(..)
             | Clause::Sum(..)
             | Clause::List(_)
@@ -264,16 +265,20 @@ impl Relation
     /// - ensures: Unit has one pattern; Sum has matching injections only;
     ///   Product has all component combinations; discrete Base shares a fresh
     ///   rigid variable after eliminating its equality premise; a function
-    ///   coordinate at a thunk type `T` binds two functions and their identity,
-    ///   `f₀ f₁ : T` and `p : Path(T, f₀, f₁)`, and relates `f₀` to `f₁` by
-    ///   `p`. No Base inhabitants and no functions are sampled.
+    ///   coordinate at a thunk type `T` binds two functions and their relation,
+    ///   `f₀ f₁ : T` and `p : Path(T, f₀, f₁)`, or `p : Bridge(T, f₀, f₁)` in
+    ///   bridge mode, and relates `f₀` to `f₁` by `p`; in bridge mode a
+    ///   universe coordinate at `U` binds two codes and a relation between
+    ///   their elements, `X₀ X₁ : U` and `R : U(El X₀ → El X₁ → F U)`. No Base
+    ///   inhabitants, functions or codes are sampled.
     /// - provides: the coverage both the argument of a higher evaluation and
     ///   the result of a function a quantified evaluation applies are split by.
-    ///   The function coordinate's premise is the persisted identity in either
-    ///   mode, so its relation stays the inner fibre rather than a case split.
+    ///   A function or universe coordinate's premise is the fold's native fibre
+    ///   at the two bound variables, so its relation stays the inner fibre
+    ///   rather than a case split.
     /// - fails: Arena or Budget on invalid or excessive work; the named
-    ///   requirement of a list, universe or certificate coordinate.
-    /// - panics: none.
+    ///   requirement of a list coordinate, an identity universe coordinate or a
+    ///   certificate coordinate.
     /// - intension: sums are left-first; products are lexicographic.
     ///
     /// # Errors
@@ -293,7 +298,7 @@ impl Relation
         )
     )]
     #[spec(ensures: |ret| match ret {
-        Ok(ref patterns) => u64::from(budget) > 0 && !patterns.is_empty() && patterns.iter().all(|pattern| pattern.context.iter().all(|&ty| matches!(arena.value_type(ty), Some(&gandr_kernel_term::ValueType::Base(_) | &gandr_kernel_term::ValueType::Thunk(_) | &gandr_kernel_term::ValueType::Path { .. })))),
+        Ok(ref patterns) => u64::from(budget) > 0 && !patterns.is_empty() && patterns.iter().all(|pattern| pattern.context.iter().all(|&ty| matches!(arena.value_type(ty), Some(&gandr_kernel_term::ValueType::Base(_) | &gandr_kernel_term::ValueType::Thunk(_) | &gandr_kernel_term::ValueType::Path { .. } | &gandr_kernel_term::ValueType::Bridge { .. } | &gandr_kernel_term::ValueType::Universe { .. })))),
         Err(RelationError::RecursiveObservationRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::List(_))),
         Err(RelationError::CertificateOperationRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::Universe)),
         Err(RelationError::HigherFieldRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::Certificate)),
@@ -332,10 +337,15 @@ impl Relation
                         proof: arena.value_unit(),
                     }])
                 },
-                Clause::Function(..) => {
+                // A function or universe coordinate binds its two indices and
+                // the fold's own fibre between them, so the premise is the
+                // identity or bridge the fold lowers that fibre to.
+                Clause::Function(..) | Clause::Relation => {
                     let source = arena.value_variable(DeBruijnIndex::from(1_u32));
                     let target = arena.value_variable(DeBruijnIndex::from(0_u32));
-                    let premise = arena.value_type_path(node.source, source, target);
+                    let premise = self
+                        .evaluate_at(arena, relation, source, target)?
+                        .native(arena)?;
                     Vec::from([RelatedPattern {
                         context: Vec::from([node.source, node.source, premise]),
                         left: arena.value_variable(DeBruijnIndex::from(2_u32)),
@@ -376,6 +386,7 @@ impl Relation
                         | Clause::Discrete
                         | Clause::Universe
                         | Clause::Certificate
+                        | Clause::Relation
                         | Clause::Product(..)
                         | Clause::Function(..)
                         | Clause::List(_)
@@ -905,8 +916,13 @@ impl Relation
                                 return Err(RelationError::Evaluation(component, side, verdict));
                             }
                         }
-                        let classifier =
-                            premise_classifier(arena, &branch.context, fibre, component)?;
+                        let classifier = premise_classifier(
+                            arena,
+                            self.mode,
+                            &branch.context,
+                            fibre,
+                            component,
+                        )?;
                         let (inner_argument, inner_result) =
                             self.function_at(classifier, component)?;
                         if self.order(inner_argument)? == Order::Higher {
@@ -1025,6 +1041,7 @@ impl Relation
                 | Clause::Discrete
                 | Clause::Universe
                 | Clause::Certificate
+                | Clause::Relation
                 | Clause::Product(..)
                 | Clause::Sum(..)
                 | Clause::Function(..)
@@ -1039,10 +1056,13 @@ impl Relation
     ///
     /// # Specification
     /// - requires: `relation` addresses a node of this program.
-    /// - ensures: [`Order::Higher`] exactly when a function clause is reachable
-    ///   from `relation` through product, sum, list and case premises, itself
-    ///   included; [`Order::First`] otherwise.
-    /// - provides: the first-order test of a quantified step's argument type.
+    /// - ensures: [`Order::Higher`] exactly when a function clause or a
+    ///   universe's relation clause is reachable from `relation` through
+    ///   product, sum, list and case premises, itself included;
+    ///   [`Order::First`] otherwise.
+    /// - provides: the first-order test of a quantified step's argument type:
+    ///   one input relates to itself only where its fibre has a diagonal, which
+    ///   neither a function's identity nor a code's bridge supplies here.
     /// - fails: Arena on an address outside the program.
     /// - panics: none.
     ///
@@ -1058,7 +1078,7 @@ impl Relation
     ///   reads higher order beneath its argument.
     /// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
     #[spec(ensures: |ret| match ret {
-        Ok(Order::First) => self.node(relation).is_ok_and(|node| !matches!(node.clause, Clause::Function(..))),
+        Ok(Order::First) => self.node(relation).is_ok_and(|node| !matches!(node.clause, Clause::Function(..) | Clause::Relation)),
         Ok(Order::Higher) => true,
         Err(ref error) => matches!(*error, RelationError::Arena),
     })]
@@ -1074,7 +1094,7 @@ impl Relation
                 continue;
             }
             match self.node(id)?.clause {
-                Clause::Function(..) => return Ok(Order::Higher),
+                Clause::Function(..) | Clause::Relation => return Ok(Order::Higher),
                 Clause::Product(first, second)
                 | Clause::Sum(first, second)
                 | Clause::CaseLeft(first, second)
@@ -1420,8 +1440,9 @@ struct Stuck
 ///
 /// # Specification
 /// - ensures: `T` when the telescope entry `fibre` counts to is `Path(T, x₁,
-///   x₀)` over the two entries just before it — the premise a function
-///   coordinate's coverage binds.
+///   x₀)` in identity mode, or `Bridge(T, x₁, x₀)` in bridge mode, over the two
+///   entries just before it — the premise a function coordinate's coverage
+///   binds.
 /// - fails: `QuantifiedStep` naming `component` when the entry is past the
 ///   telescope or is not such a premise.
 /// - panics: none.
@@ -1431,14 +1452,17 @@ struct Stuck
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the premise of the quantified witness reads its thunk
-///   type; a fibre counting to a function binder refuses by name.
+///   type; a fibre counting to a function binder refuses by name, and so does a
+///   premise of the other mode.
 /// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+/// - witness: `identity_recursion::function::tests::a_premise_relates_the_two_entries_just_before_it_in_order`
 #[spec(ensures: |ret| match ret {
     Ok(domain) => arena.value_type(domain).is_some(),
     Err(ref error) => matches!(*error, RelationError::QuantifiedStep(found) if found == component),
 })]
 fn premise_classifier(
     arena: &TermArena,
+    mode: Mode,
     context: &[ValueTypeId],
     fibre: DeBruijnIndex,
     component: Component,
@@ -1451,11 +1475,22 @@ fn premise_classifier(
         .checked_sub(distance.checked_add(1).ok_or_else(refusal)?)
         .ok_or_else(refusal)?;
     let entry = *context.get(position).ok_or_else(refusal)?;
-    let Some(&ValueType::Path {
-        domain,
-        left,
-        right,
-    }) = arena.value_type(entry)
+    let ((
+        Mode::Identity,
+        Some(&ValueType::Path {
+            domain,
+            left,
+            right,
+        }),
+    )
+    | (
+        Mode::Bridge,
+        Some(&ValueType::Bridge {
+            domain,
+            left,
+            right,
+        }),
+    )) = (mode, arena.value_type(entry))
     else {
         return Err(refusal());
     };

@@ -8,6 +8,8 @@ mod acceptance;
 #[cfg(test)]
 mod adversarial_depth;
 #[cfg(test)]
+mod bridge_readmission;
+#[cfg(test)]
 mod flow_readmission;
 #[cfg(test)]
 mod native_formers;

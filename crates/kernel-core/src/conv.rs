@@ -988,8 +988,8 @@ fn converge(
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
                     },
-                    // Path and Flow never convert to each other: each pair
-                    // below names one family on both sides.
+                    // Path, Flow and Bridge never convert to one another: each
+                    // pair below names one family on both sides.
                     (
                         &ValueType::Path {
                             domain: one_domain,
@@ -1012,6 +1012,18 @@ fn converge(
                             domain: other_domain,
                             source: other_left,
                             target: other_right,
+                        },
+                    )
+                    | (
+                        &ValueType::Bridge {
+                            domain: one_domain,
+                            left: one_left,
+                            right: one_right,
+                        },
+                        &ValueType::Bridge {
+                            domain: other_domain,
+                            left: other_left,
+                            right: other_right,
                         },
                     ) => {
                         stack.push(ConversionGoal::ValueType(one_domain, other_domain));
@@ -1169,6 +1181,7 @@ fn converge(
                         | &ValueType::FlowUniverse(..)
                         | &ValueType::Path { .. }
                         | &ValueType::Flow { .. }
+                        | &ValueType::Bridge { .. }
                         | &ValueType::Base(_)
                         | &ValueType::Product(..)
                         | &ValueType::Sigma { .. }

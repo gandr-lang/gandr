@@ -137,7 +137,7 @@ fn erase(decision: ConversionDecision<ReplayNode>) -> ConversionDecision<()>
 ///
 /// # Specification
 /// trivial.
-fn persisted(
+pub(super) fn persisted(
     arena: &mut TermArena,
     evaluation: &HigherEvaluation,
 ) -> ValueId
@@ -1177,7 +1177,7 @@ fn a_higher_evaluation_covers_a_higher_order_argument()
 ///
 /// # Specification
 /// trivial.
-fn quantified(
+pub(super) fn quantified(
     arena: &mut TermArena,
     steps: &[Quantified],
 ) -> ValueId
@@ -1236,7 +1236,7 @@ fn generic(
 ///
 /// # Specification
 /// trivial.
-fn forced(
+pub(super) fn forced(
     arena: &mut TermArena,
     function: ValueId,
     argument: ValueId,
@@ -1250,7 +1250,7 @@ fn forced(
 ///
 /// # Specification
 /// trivial.
-fn closed(
+pub(super) fn closed(
     arena: &mut TermArena,
     context: &[ValueTypeId],
     body: ComputationId,
@@ -1268,7 +1268,7 @@ fn closed(
 ///
 /// # Specification
 /// trivial.
-fn bool_returns(
+pub(super) fn bool_returns(
     arena: &mut TermArena,
     context: &[ValueTypeId],
     boolean: &crate::identity_recursion::function_fixtures::Boolean,

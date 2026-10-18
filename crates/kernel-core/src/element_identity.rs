@@ -268,10 +268,29 @@
 //! pointwise evaluation; the fold's own reading of that case is
 //! [`crate::identity_recursion::Application::Suspended`].
 //!
-//! **The bridge reading stays in memory.**
-//! [`crate::identity_recursion::Mode::Bridge`] has no persisted node: a bridge
-//! relation is a reading of the fold for producers, not a kernel judgement, and
-//! nothing here forms one.
+//! **A bridge is the fold's relation, persisted, with no reflexivity.**
+//! `Bridge(A, a, b)` reads the fold in
+//! [`crate::identity_recursion::Mode::Bridge`] at the quoted `A`
+//! ([`bridge_fibre`]); the clause per code is the bridge
+//! column of [`crate::identity_recursion`]'s table. It forms as an identity
+//! does, at its domain's level with its endpoints owed, and an introduction
+//! form checked at it checks at its fibre; an open domain is a neutral fibre,
+//! and a function code's family is introduced only by a higher or quantified
+//! evaluation over the coverage the bridge fold generates. A domain reaching a
+//! sealed atom is refused at formation as
+//! [`IdentityError::BridgeAtSealedType`]: the relation between two elements of
+//! an abstract type is the abstraction's to choose, so no fold clause reads it.
+//! A bridge has no reflexivity, transport or eliminator: `here` checks only at
+//! an identity and is refused at a bridge by shape, and a bridge never converts
+//! with a path or a flow.
+//!
+//! - alternatives: bridges as an in-memory reading for producers only, which
+//!   left the relational reading unstatable in an admitted declaration. The
+//!   clauses' own alternatives, an interval and a name, are recorded with them
+//!   in [`crate::identity_recursion`] § Bridges.
+//! - reversal: a sealed atom whose interface declares its relation computes a
+//!   bridge where this refuses; a consumer needing a bridge's diagonal reverses
+//!   the clauses, not the node.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -350,6 +369,9 @@ use crate::rewrite::substitute_value;
 use crate::rewrite::substitute_value_type;
 use crate::support::LooseDepths;
 use crate::witness::value_type_witness;
+
+#[cfg(test)]
+mod bridge_tests;
 
 #[cfg(test)]
 mod tests;
@@ -464,6 +486,10 @@ pub enum IdentityError
         /// The identity the second component synthesizes.
         actual: ValueTypeWitness,
     },
+    /// A bridge's domain reaches a sealed atom: the relation between two
+    /// elements of an abstract type is the abstraction's to choose, so no fold
+    /// clause reads it.
+    BridgeAtSealedType(ValueTypeWitness),
 }
 
 impl fmt::Display for IdentityError
@@ -520,6 +546,7 @@ impl fmt::Display for IdentityError
             ),
             Self::ReturnedNonReturner(_) => f.write_str("a returned endpoint over a non-returner"),
             Self::NotOver { .. } => f.write_str("an identity that does not lie over its path"),
+            Self::BridgeAtSealedType(_) => f.write_str("a bridge at a sealed type"),
         }
     }
 }
@@ -566,6 +593,75 @@ fn require_folded(
         return Err(KernelError::Identity(IdentityError::NeutralFibre));
     }
     Ok(())
+}
+
+/// Require a bridge's domain to reach no sealed atom.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: success exactly when `domain` resolves and reaches no sealed
+///   atom.
+/// - provides: the bridge's formation guard, and the first guard of every
+///   bridge reading, so a sealed atom is refused by its own name before an open
+///   domain is read as a neutral fibre.
+/// - fails: [`IdentityError::BridgeAtSealedType`] naming the domain;
+///   `ArenaFault` for a domain the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a bridge at an atom, at a function into an atom and at a
+///   list of atoms refuses by name at formation, where a bridge at Bool forms.
+/// - witness: `element_identity::bridge_tests::a_bridge_at_a_sealed_type_is_refused`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(
+    |error| matches!(error, &(KernelError::Identity(IdentityError::BridgeAtSealedType(_)) | KernelError::ArenaFault)),
+    |&()| arena.value_type(domain).is_some()))]
+pub(crate) fn require_unsealed(
+    arena: &TermArena,
+    domain: ValueTypeId,
+) -> Result<(), KernelError>
+{
+    if arena.value_type(domain).is_none() {
+        return Err(KernelError::ArenaFault);
+    }
+    if !crate::env::projected_atoms(arena, domain).is_empty() {
+        return Err(KernelError::Identity(IdentityError::BridgeAtSealedType(
+            value_type_witness(arena, domain),
+        )));
+    }
+    Ok(())
+}
+
+/// Require a domain the fold reads in `mode`: [`require_folded`], after
+/// [`require_unsealed`] for a bridge.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: success exactly when both guards the mode owes succeed.
+/// - provides: the one guard every reading of an identity or a bridge runs.
+/// - fails: as the guards.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the two guards.
+/// - witness: `element_identity::bridge_tests::a_bridge_at_a_sealed_type_is_refused`
+/// - witness: `element_identity::tests::identity_at_an_open_type_is_a_neutral_fibre`
+#[spec(ensures: |ret| ret.is_err() || arena.value_type(domain).is_some())]
+fn require_read(
+    arena: &TermArena,
+    mode: Mode,
+    domain: ValueTypeId,
+) -> Result<(), KernelError>
+{
+    if mode == Mode::Bridge {
+        require_unsealed(arena, domain)?;
+    }
+    require_folded(arena, domain)
 }
 
 /// Relate a reflexivity's point to both endpoints of the identity it is
@@ -818,6 +914,59 @@ pub(crate) fn fibre(
         ));
     }
     Ok(fibre)
+}
+
+/// The native type a bridge's evidence inhabits.
+///
+/// # Specification
+/// - requires: both endpoints inhabit the domain; the checking machine
+///   discharges those goals itself.
+/// - ensures: the bridge fold's native fibre at the domain and endpoints: the
+///   identity's fibre where the two readings agree, the relation type `U(El A →
+///   El B → F U)` at a value universe, and one step of the relation lifting at
+///   a list, its tails' bridge delayed as the persisted node.
+/// - provides: the type the checking machine redirects an introduction form
+///   checked at a bridge to.
+/// - fails: [`IdentityError::BridgeAtSealedType`] at a domain reaching a sealed
+///   atom; a neutral fibre at an open domain or at endpoints that are not
+///   canonical; [`IdentityError::HigherEvaluationRequired`] at a function code,
+///   whose fibre is the bridge itself, introduced only by a higher or a
+///   quantified evaluation; [`IdentityError::OutsideFold`] at a domain the fold
+///   has no clause for.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`, and `ArenaFault` on an unreadable node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a pair of codes inhabits a bridge at the universe by a
+///   relation thunk, two conses by their heads' fibre and their tails' bridge,
+///   a function by no introduction form, and a sealed atom by none.
+/// - witness: `element_identity::bridge_tests::a_bridge_at_the_universe_is_a_relation`
+/// - witness: `element_identity::bridge_tests::a_bridge_at_a_recursive_code_is_the_relation_lifting`
+/// - witness: `element_identity::bridge_tests::a_bridge_at_a_function_code_is_the_family_over_argument_bridges`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&fibre| arena.value_type(fibre).is_some()))]
+pub(crate) fn bridge_fibre(
+    arena: &mut TermArena,
+    domain: ValueTypeId,
+    left: ValueId,
+    right: ValueId,
+) -> Result<ValueTypeId, KernelError>
+{
+    require_read(arena, Mode::Bridge, domain)?;
+    let code = arena.value_quote(domain);
+    let fibers = interpret(arena, Mode::Bridge, Domain::Elements(code))
+        .and_then(Interpretation::elements)
+        .and_then(|relation| relation.evaluate(arena, left, right))
+        .map_err(|error| read_refusal(arena, Mode::Bridge, error))?;
+    if let Ok(crate::identity_recursion::Fiber::Function { .. }) = fibers.get(fibers.root()) {
+        return Err(KernelError::Identity(
+            IdentityError::HigherEvaluationRequired,
+        ));
+    }
+    fibers
+        .native(arena)
+        .map_err(|error| read_refusal(arena, Mode::Bridge, error))
 }
 
 /// The fibre of the identity at the dependent pair `Σ (x : first). second`
@@ -1154,16 +1303,18 @@ fn higher_id(position: LayerPosition) -> Result<HigherId, KernelError>
 /// The goals a persisted higher evaluation owes, grouped by component.
 ///
 /// # Specification
-/// - requires: `expected` is the identity the evaluation is checked against;
-///   every body `unfoldings` holds is closed and admitted before it.
+/// - requires: `expected` is the identity or bridge the evaluation is checked
+///   against; every body `unfoldings` holds is closed and admitted before it.
 /// - ensures: one obligation per kernel-generated coverage pattern, after every
 ///   component's two dialogues replayed positively, unfolding only what
-///   `unfoldings` defines.
+///   `unfoldings` defines. At a bridge the fold is read in bridge mode, so the
+///   coverage binds argument bridges and the output evidence is owed at the
+///   result's bridge.
 /// - provides: the checking machine's reading of a higher evaluation, with no
 ///   nested check.
-/// - fails: a shape mismatch when `expected` is not an identity; a neutral
-///   fibre at an open domain; open functions, coverage and replay refusals by
-///   name.
+/// - fails: a shape mismatch when `expected` is neither an identity nor a
+///   bridge; a bridge at a sealed type; a neutral fibre at an open domain; open
+///   functions, coverage and replay refusals by name.
 /// - panics: none.
 ///
 /// # Errors
@@ -1175,6 +1326,7 @@ fn higher_id(position: LayerPosition) -> Result<HigherId, KernelError>
 ///   of admitted definitions replays by their bodies.
 /// - witness: `element_identity::tests::a_higher_evaluation_proves_function_extensionality`
 /// - witness: `element_identity::tests::a_higher_evaluation_unfolds_what_the_environment_admitted`
+/// - witness: `element_identity::bridge_tests::a_bridge_at_a_function_code_is_the_family_over_argument_bridges`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |owed| owed.len() == components.len()))]
 pub(crate) fn evaluation_obligations(
     arena: &mut TermArena,
@@ -1184,8 +1336,8 @@ pub(crate) fn evaluation_obligations(
     components: &[EvaluationComponent],
 ) -> Result<Vec<ComponentObligation>, KernelError>
 {
-    let (domain, left, right) = path_parts(arena, expected)?;
-    require_folded(arena, domain)?;
+    let (mode, domain, left, right) = related_parts(arena, expected)?;
+    require_read(arena, mode, domain)?;
     let mut reach = LooseDepths::new();
     if u32::from(reach.value_reach(arena, left)) != 0
         || u32::from(reach.value_reach(arena, right)) != 0
@@ -1210,7 +1362,7 @@ pub(crate) fn evaluation_obligations(
         });
     }
     let code = arena.value_quote(domain);
-    interpret(arena, Mode::Identity, Domain::Elements(code))
+    interpret(arena, mode, Domain::Elements(code))
         .and_then(Interpretation::elements)
         .and_then(|relation| {
             relation.evaluation_obligations(
@@ -1220,7 +1372,7 @@ pub(crate) fn evaluation_obligations(
                 (unfoldings, ReplayBudget::DEFAULT),
             )
         })
-        .map_err(|error| relation_refusal(arena, error))
+        .map_err(|error| read_refusal(arena, mode, error))
 }
 
 /// The goals a persisted quantified evaluation owes, grouped by telescope.
@@ -1247,6 +1399,7 @@ pub(crate) fn evaluation_obligations(
 ///   domain and a missing child each refuse by name.
 /// - witness: `element_identity::tests::a_quantified_evaluation_replays_under_the_quantifier`
 /// - witness: `element_identity::tests::a_quantified_evaluation_refuses_what_it_cannot_relate`
+/// - witness: `element_identity::bridge_tests::a_quantified_evaluation_relates_under_a_bridge_premise`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |owed| !owed.is_empty()))]
 pub(crate) fn quantified_obligations(
     arena: &mut TermArena,
@@ -1256,8 +1409,8 @@ pub(crate) fn quantified_obligations(
     children: &[ValueId],
 ) -> Result<Vec<ComponentObligation>, KernelError>
 {
-    let (domain, left, right) = path_parts(arena, expected)?;
-    require_folded(arena, domain)?;
+    let (mode, domain, left, right) = related_parts(arena, expected)?;
+    require_read(arena, mode, domain)?;
     let mut reach = LooseDepths::new();
     if u32::from(reach.value_reach(arena, left)) != 0
         || u32::from(reach.value_reach(arena, right)) != 0
@@ -1302,7 +1455,7 @@ pub(crate) fn quantified_obligations(
         return Err(coverage());
     }
     let code = arena.value_quote(domain);
-    interpret(arena, Mode::Identity, Domain::Elements(code))
+    interpret(arena, mode, Domain::Elements(code))
         .and_then(Interpretation::elements)
         .and_then(|relation| {
             relation.quantified_obligations(
@@ -1312,10 +1465,10 @@ pub(crate) fn quantified_obligations(
                 (unfoldings, ReplayBudget::DEFAULT),
             )
         })
-        .map_err(|error| relation_refusal(arena, error))
+        .map_err(|error| read_refusal(arena, mode, error))
 }
 
-/// How a checking goal against an identity reads its value.
+/// How a checking goal against an identity or a bridge reads its value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GoalReading
 {
@@ -1330,11 +1483,11 @@ pub enum GoalReading
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`GoalReading::Fibre`] exactly when `expected` is an identity
-///   type and `value` is an introduction form of the fold's fibres: neither an
-///   identity form (`here`, univalence, a higher field, a higher evaluation)
-///   nor a neutral that synthesizes its own type (a variable, a constant, a
-///   returned endpoint, a static application).
+/// - ensures: [`GoalReading::Fibre`] exactly when `expected` is an identity or
+///   a bridge type and `value` is an introduction form of the fold's fibres:
+///   neither an identity form (`here`, univalence, a higher field, a higher
+///   evaluation) nor a neutral that synthesizes its own type (a variable, a
+///   constant, a returned endpoint, a static application).
 /// - provides: the checking machine's redirect of fibre evidence. A neutral
 ///   inhabits an identity by its synthesized type, so conversion stays
 ///   structural and never computes a fibre.
@@ -1344,9 +1497,11 @@ pub enum GoalReading
 /// # Adequacy
 /// - hypothesis: L3 — the empty tuple inhabits identity at Bool between equal
 ///   endpoints, a variable of identity type checks by its own type, and a
-///   returned path checks at its identity type where a returned unit does not.
+///   returned path checks at its identity type where a returned unit does not;
+///   a relation thunk inhabits a bridge at the universe through its fibre.
 /// - witness: `element_identity::tests::native_evidence_checks_against_the_fold_fibre`
-#[spec(ensures: |ret| ret == GoalReading::Written || matches!(arena.value_type(expected), Some(&ValueType::Path { .. })))]
+/// - witness: `element_identity::bridge_tests::a_bridge_at_the_universe_is_a_relation`
+#[spec(ensures: |ret| ret == GoalReading::Written || matches!(arena.value_type(expected), Some(&(ValueType::Path { .. } | ValueType::Bridge { .. }))))]
 #[must_use]
 pub(crate) fn goal_reading(
     arena: &TermArena,
@@ -1354,21 +1509,23 @@ pub(crate) fn goal_reading(
     expected: ValueTypeId,
 ) -> GoalReading
 {
-    let fibre = matches!(arena.value_type(expected), Some(&ValueType::Path { .. }))
-        && !matches!(
-            arena.value(value),
-            None | Some(
-                &(Value::Here { .. }
-                    | Value::Univalence { .. }
-                    | Value::Higher { .. }
-                    | Value::HigherEvaluation { .. }
-                    | Value::QuantifiedEvaluation { .. }
-                    | Value::Variable(_)
-                    | Value::Constant(_)
-                    | Value::Returned(_)
-                    | Value::StaticApplication(..))
-            )
-        );
+    let fibre = matches!(
+        arena.value_type(expected),
+        Some(&(ValueType::Path { .. } | ValueType::Bridge { .. }))
+    ) && !matches!(
+        arena.value(value),
+        None | Some(
+            &(Value::Here { .. }
+                | Value::Univalence { .. }
+                | Value::Higher { .. }
+                | Value::HigherEvaluation { .. }
+                | Value::QuantifiedEvaluation { .. }
+                | Value::Variable(_)
+                | Value::Constant(_)
+                | Value::Returned(_)
+                | Value::StaticApplication(..))
+        )
+    );
     if fibre {
         GoalReading::Fibre
     }
@@ -1407,6 +1564,80 @@ pub(crate) fn path_parts(
             expected: ExpectedValueShape::Path,
             actual: value_type_witness(arena, ty),
         }),
+    }
+}
+
+/// The reading, domain and endpoints of an identity or a bridge type.
+///
+/// # Specification
+/// - ensures: [`Mode::Identity`] and the three parts of a `Path` type, or
+///   [`Mode::Bridge`] and the three parts of a `Bridge` type.
+/// - provides: the one dispatch the higher and quantified evaluations read, so
+///   both introduce a bridge by the bridge fold and an identity by the identity
+///   fold.
+/// - fails: a value-shape mismatch naming the type otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a higher evaluation at a bridge reads the bridge fold,
+///   and one at a base type refuses by shape.
+/// - witness: `element_identity::bridge_tests::a_bridge_at_a_function_code_is_the_family_over_argument_bridges`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(mode, domain, left, right)| match mode {
+    Mode::Identity => matches!(arena.value_type(ty), Some(&ValueType::Path { domain: d, left: l, right: r }) if d == domain && l == left && r == right),
+    Mode::Bridge => matches!(arena.value_type(ty), Some(&ValueType::Bridge { domain: d, left: l, right: r }) if d == domain && l == left && r == right),
+}))]
+pub(crate) fn related_parts(
+    arena: &TermArena,
+    ty: ValueTypeId,
+) -> Result<(Mode, ValueTypeId, ValueId, ValueId), KernelError>
+{
+    match arena.value_type(ty) {
+        Some(&ValueType::Path {
+            domain,
+            left,
+            right,
+        }) => Ok((Mode::Identity, domain, left, right)),
+        Some(&ValueType::Bridge {
+            domain,
+            left,
+            right,
+        }) => Ok((Mode::Bridge, domain, left, right)),
+        _ => Err(KernelError::ValueShapeMismatch {
+            expected: ExpectedValueShape::Path,
+            actual: value_type_witness(arena, ty),
+        }),
+    }
+}
+
+/// Translate a fold refusal read in `mode` into the kernel's refusal
+/// vocabulary.
+///
+/// # Specification
+/// - ensures: a bridge reading's sealed-atom refusal is
+///   [`IdentityError::BridgeAtSealedType`] naming the atom; every other refusal
+///   is [`relation_refusal`]'s.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function into a sealed atom read in bridge mode reaches
+///   the bridge's name.
+/// - witness: `element_identity::bridge_tests::a_bridge_at_a_sealed_type_is_refused`
+#[spec(captures: sealed = mode == Mode::Bridge && matches!(error, RelationError::AbstractInterface(_)),
+    ensures: |ret| !sealed || matches!(ret, KernelError::Identity(IdentityError::BridgeAtSealedType(_))))]
+fn read_refusal(
+    arena: &TermArena,
+    mode: Mode,
+    error: RelationError,
+) -> KernelError
+{
+    match (mode, error) {
+        (Mode::Bridge, RelationError::AbstractInterface(ty)) => KernelError::Identity(
+            IdentityError::BridgeAtSealedType(value_type_witness(arena, ty)),
+        ),
+        (Mode::Identity | Mode::Bridge, error) => relation_refusal(arena, error),
     }
 }
 
@@ -1659,6 +1890,7 @@ where
         | ValueType::PathUniverse(..)
         | ValueType::FlowUniverse(..)
         | ValueType::Flow { .. }
+        | ValueType::Bridge { .. }
         | ValueType::Base(_)
         | ValueType::Sigma { .. }
         | ValueType::Thunk(_)

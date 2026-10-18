@@ -216,6 +216,7 @@ pub(super) fn level(
         | &ValueType::FlowUniverse(..)
         | &ValueType::Path { .. }
         | &ValueType::Flow { .. }
+        | &ValueType::Bridge { .. }
         | &ValueType::Base(_)
         | &ValueType::Product(_)
         | &ValueType::Sigma { .. }
@@ -392,6 +393,7 @@ pub(super) fn constructor(
             | &ValueType::FlowUniverse(..)
             | &ValueType::Path { .. }
             | &ValueType::Flow { .. }
+            | &ValueType::Bridge { .. }
             | &ValueType::Base(_)
             | &ValueType::Product(_)
             | &ValueType::Sigma { .. }
@@ -634,6 +636,7 @@ pub(super) fn case(
             | &ValueType::FlowUniverse(..)
             | &ValueType::Path { .. }
             | &ValueType::Flow { .. }
+            | &ValueType::Bridge { .. }
             | &ValueType::Base(_)
             | &ValueType::Product(_)
             | &ValueType::Sigma { .. }

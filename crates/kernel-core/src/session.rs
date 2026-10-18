@@ -230,6 +230,7 @@ pub fn payload_codes(
         | ValueType::FlowUniverse(..)
         | ValueType::Path { .. }
         | ValueType::Flow { .. }
+        | ValueType::Bridge { .. }
         | ValueType::Base(_)
         | ValueType::Sigma { .. }
         | ValueType::Sum(_)
@@ -288,6 +289,7 @@ pub fn validate_graph(
         | ValueType::FlowUniverse(..)
         | ValueType::Path { .. }
         | ValueType::Flow { .. }
+        | ValueType::Bridge { .. }
         | ValueType::Base(_)
         | ValueType::Sigma { .. }
         | ValueType::Sum(_)

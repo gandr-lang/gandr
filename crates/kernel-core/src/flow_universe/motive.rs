@@ -202,6 +202,7 @@ fn walk(
                     | ValueType::Session { .. }
                     | ValueType::PathUniverse(..)
                     | ValueType::Path { .. }
+                    | ValueType::Bridge { .. }
                     | ValueType::Sigma { .. }
                     | ValueType::StaticPi { .. } => pending.push(Visit::Fixed(id, at)),
                 }

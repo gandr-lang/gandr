@@ -151,14 +151,14 @@
 //! compares its raw classifier and map syntax, never replay-equivalence or
 //! certificate evidence. Transport is computation whose claims the kernel
 //! replays. Identity on elements and the bridge mode share a code fold;
-//! element identity, its guarded higher field and higher evaluation are
-//! persisted syntax, as is the directed family: `Flow(A, x, y)`, `stay`,
-//! sequential `then` and `ride` under a covariant motive, with forward,
-//! function and session certificates at `Flow_U`. The bridge mode is a bounded
-//! in-memory rule language. List has a finite native code and guarded,
-//! borrowed inhabitants observed only to a supplied budget. Session codes and
-//! their identity evidence are native; their directional flows relate
-//! recorded runs, not kernel endpoint values, so a ride along one refuses.
+//! element identity, the bridge, its guarded higher field and higher
+//! evaluation are persisted syntax, as is the directed family: `Flow(A, x,
+//! y)`, `stay`, sequential `then` and `ride` under a covariant motive, with
+//! forward, function and session certificates at `Flow_U`. List has a finite
+//! native code and guarded, borrowed inhabitants observed only to a supplied
+//! budget. Session codes and their identity evidence are native; their
+//! directional flows relate recorded runs, not kernel endpoint values, so a
+//! ride along one refuses.
 //!
 //! **An identity between two codes of `Type` is admitted by one of two
 //! routes.** On the first-order stratum — closed quoted codes of bases,
@@ -196,7 +196,9 @@
 //! checking machine owes every nested check as a goal on its own stack, and
 //! the replay computes transport and related application by the fold's
 //! clauses. Each decision, with its alternatives and reversal, is stated in
-//! that module; the fold's bridge reading has no persisted node.
+//! that module. The fold's bridge reading is `Bridge(A, a, b)`, formed like
+//! `Path` and checked at the bridge fold's fibre, with no reflexivity,
+//! transport or J; its clauses' decision is [`identity_recursion`]'s.
 //!
 //! **A motive that depends on the path is a telescope, carried by its own
 //! node.** The motive is the computation type `Π (y : A). Π (z : B). F C`,
@@ -506,7 +508,7 @@
 //! | Admission, staging and audit | [Environment](crate::env): committed prefixes, rollback, registration ownership, provenance ordering, ordered dependency reasons and reachability boundaries. |
 //! | Guarded local admission | [Admission](crate::admission): schema inheritance, rule-discrimination transparency, guarded substitution and exact instance-side agreement by same-arena identity. |
 //! | Checking and conversion | [Checker](crate::check), [conversion](crate::conv) and `witness`: level precedence, refusal subjects, readable identities, mode transitions and witness projections. |
-//! | Element identity | [Element identity](crate::element_identity): the neutral fibre at an open type, fibre redirection, reflexivity by conversion, the returned endpoint read by its reduction, a definition's related endpoints replayed by matching, guarded higher fields, coverage-replayed higher and quantified evaluation and transport by substitution. |
+//! | Element identity | [Element identity](crate::element_identity): the neutral fibre at an open type, fibre redirection, reflexivity by conversion, the returned endpoint read by its reduction, a definition's related endpoints replayed by matching, guarded higher fields, coverage-replayed higher and quantified evaluation, transport by substitution, and bridges at function, universe and list codes with the sealed atom refused by name. |
 //! | Encoding and support | [Encoding](crate::encoding) and [support]: byte-exact frames and hashes, ordered children, content-id reuse, cache observations and binder reach. |
 //! | Replay and rewrite | [Replay](mod@crate::replay) and [rewrite]: arena restoration, trace consumption, ordered premises, freezing, rule priority and unchanged-subject reuse. |
 //! | Fixture observations | `acceptance`, `adversarial_depth`, `flow_universe::tests` and `path_universe::tests`: differential verdicts, closed-form counts, small-stack teardown and fixed syntax seams. |
