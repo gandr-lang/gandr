@@ -1753,11 +1753,7 @@ mod tests
                     // as `Incomplete` instead.
                     prop_assert_eq!(a_id, b_id, "only the diagonal is excepted");
                     let cell = require_present(store.get(a_id));
-                    prop_assert_ne!(
-                        joined.as_ref(),
-                        cell.lhs(),
-                        "the joined term is the contraction, not the peak"
-                    );
+                    contraction_joins(joined, cell)?;
                 },
                 | Factorization::Incomplete => {
                     prop_assert!(false, "enumeration incomplete: no overlap mediates a matched cospan");
@@ -1812,11 +1808,7 @@ mod tests
                     // as `Incomplete` instead.
                     prop_assert_eq!(a_id, b_id, "only the diagonal is excepted");
                     let cell = require_present(store.get(a_id));
-                    prop_assert_ne!(
-                        joined.as_ref(),
-                        cell.lhs(),
-                        "the joined term is the contraction, not the peak"
-                    );
+                    contraction_joins(joined, cell)?;
                 },
                 | Factorization::Incomplete => {
                     prop_assert!(false, "enumeration incomplete: no overlap mediates a matched cospan");
@@ -1830,6 +1822,42 @@ mod tests
                 },
             }
         }
+    }
+
+    /// Check that `joined` is the contraction of `cell`'s diagonal peak: an
+    /// instance of its right side, and apart from its left side unless the
+    /// two sides are one term, where the contraction is the peak (#730).
+    ///
+    /// # Specification
+    /// - ensures: `Ok` iff `cell.rhs()` matches `joined`, and `joined` differs
+    ///   from `cell.lhs()` or the cell's sides coincide.
+    /// - fails: a [`TestCaseError`] naming the clause that does not hold.
+    /// - executable: none — the check is the property under test; a predicate
+    ///   restating it would compare the check with itself.
+    ///
+    /// # Errors
+    /// A failure when `joined` is no instance of the right side, or is the
+    /// peak of a cell that rewrites it away.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reflexive cell's join and a rewriting cell's join
+    ///   separate the coincident sides from a peak returned as the join.
+    /// - witness: `tests::crdc::tests::a_reflexive_cells_diagonal_joins_at_its_own_side_730`
+    /// - witness: `tests::crdc::tests::the_diagonal_cospan_of_a_deduplicated_cell_is_the_stated_exception`
+    fn contraction_joins(
+        joined: &CmdPat,
+        cell: &Cell,
+    ) -> Result<(), TestCaseError>
+    {
+        prop_assert!(
+            bool::from(match_cmd(cell.rhs(), joined, &mut Subst::new())),
+            "the joined term is an instance of the cell's right side"
+        );
+        prop_assert!(
+            cell.lhs() == cell.rhs() || joined != cell.lhs(),
+            "the joined term is the contraction, not the peak"
+        );
+        Ok(())
     }
 
     /// The counterexample that started this, pinned as an ordinary test.
@@ -1864,6 +1892,54 @@ mod tests
             Orientation::PolarityDerived,
             CellProvenance::SurfaceRule,
         );
+        let joined = diagonal_join(cell.clone());
+        contraction_joins(&joined, &cell).unwrap_or_else(|failure| {
+            panic!("the exception carries the contraction, not the peak: {failure}")
+        });
+        assert_ne!(&joined, cell.lhs(), "and this cell rewrites its peak away");
+    }
+
+    /// A cell whose two sides are one term joins its diagonal peak at that
+    /// term: the contraction is the peak, and the property's exception holds
+    /// with it (#730, the random draw `⟨Succ(Succ(Nil)) | f⟩ ⟶ ⟨Succ(Succ(Nil))
+    /// | f⟩` that failed `confluence_cospans_are_explained_by_the_family`).
+    #[test]
+    fn a_reflexive_cells_diagonal_joins_at_its_own_side_730()
+    {
+        let side = CmdPat::cut(
+            Polarity::Positive,
+            nat_of(NatSuccCount(2)),
+            ConsPat::op("f", [], ConsPat::top()),
+        );
+        let cell = Cell::new(
+            side.clone(),
+            side.clone(),
+            Orientation::PolarityDerived,
+            CellProvenance::SurfaceRule,
+        );
+        let joined = diagonal_join(cell.clone());
+        assert_eq!(joined, side, "the join is the cell's one side");
+        contraction_joins(&joined, &cell)
+            .unwrap_or_else(|failure| panic!("and it is the contraction: {failure}"));
+    }
+
+    /// The term `cell`'s diagonal confluence cospan joins at, the cell inserted
+    /// twice into a fresh store and its ground left face matched against
+    /// itself.
+    ///
+    /// # Specification
+    /// - ensures: the joined term of the [`Factorization::TriviallyJoinable`]
+    ///   the diagonal factors as.
+    /// - panics: when the store keeps two ids for the cell, the left face does
+    ///   not match its own instance, or the cospan factors otherwise.
+    /// - executable: none — the factorization is the property under test.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`contraction_joins`].
+    /// - witness: `tests::crdc::tests::a_reflexive_cells_diagonal_joins_at_its_own_side_730`
+    /// - witness: `tests::crdc::tests::the_diagonal_cospan_of_a_deduplicated_cell_is_the_stated_exception`
+    fn diagonal_join(cell: Cell) -> CmdPat
+    {
         let tau = Subst::new();
         let mut store: CellStore = CellStore::new();
         let a_id = store.insert(cell.clone());
@@ -1873,7 +1949,6 @@ mod tests
             "the store dedupes structural equals onto one id"
         );
         let lhs = require_present(store.get(a_id)).lhs().clone();
-        let lhs_for_check = lhs.clone();
         let instance = tau.apply_cmd(&lhs);
         let mut right_match = Subst::new();
         assert!(
@@ -1895,13 +1970,7 @@ mod tests
             &family,
             &store,
         ) {
-            Factorization::TriviallyJoinable { joined } => {
-                assert_ne!(
-                    joined.as_ref(),
-                    &lhs_for_check,
-                    "the exception carries the contraction, not the peak"
-                );
-            },
+            Factorization::TriviallyJoinable { joined } => *joined,
             Factorization::Factored { .. } => {
                 panic!("the diagonal is excepted, never mediated");
             },
