@@ -1483,12 +1483,15 @@ fn assert_projects_back(cases: impl IntoIterator<Item = ProjectionCase>)
             "{name}: every index projects back to itself"
         );
         assert_eq!(
-            content.root().indices(Zone::Intuitionistic),
+            content
+                .root()
+                .indices(Zone::Intuitionistic)
+                .collect::<Vec<_>>(),
             intuitionistic.iter().copied().map(at).collect::<Vec<_>>(),
             "{name}: only the ambient intuitionistic variable is free"
         );
         assert_eq!(
-            content.root().indices(Zone::Linear),
+            content.root().indices(Zone::Linear).collect::<Vec<_>>(),
             linear.iter().copied().map(at).collect::<Vec<_>>(),
             "{name}: only the ambient linear variable is free"
         );
@@ -1626,7 +1629,7 @@ fn unused_binder_interleavings_share_one_node()
     assert_eq!(
         node.cover()
             .iter()
-            .map(|edge| edge.indices(Zone::Intuitionistic).to_vec())
+            .map(|edge| edge.indices(Zone::Intuitionistic).collect::<Vec<_>>())
             .collect::<Vec<_>>(),
         [vec![DeBruijnIndex::from(0_u32)], vec![DeBruijnIndex::from(
             1_u32
@@ -1734,7 +1737,7 @@ fn open_roots_project_under_their_own_supports()
     let selected = |content: &[gandr_core_term::support::Thinning]| {
         content
             .iter()
-            .map(|support| support.indices(Zone::Intuitionistic).to_vec())
+            .map(|support| support.indices(Zone::Intuitionistic).collect::<Vec<_>>())
             .collect::<Vec<_>>()
     };
     let expected = vec![

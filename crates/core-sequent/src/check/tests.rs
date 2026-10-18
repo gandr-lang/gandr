@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 
+use gandr_core_term::support::Thinning;
 use gandr_kernel_term::Side;
 
 use super::*;
@@ -852,7 +853,7 @@ fn child_refusals_follow_declared_precedence()
         let walk = Walk {
             arena: &arena,
             stack: alloc::vec![NodeAddress::Command(body)],
-            scratch: CoreArena::new(),
+            scoping: Scoping::new(),
         };
         assert_eq!(
             Err(expected),
@@ -863,7 +864,7 @@ fn child_refusals_follow_declared_precedence()
     let mut walk = Walk {
         arena: &arena,
         stack: Vec::new(),
-        scratch: CoreArena::new(),
+        scoping: Scoping::new(),
     };
     assert_eq!(
         Err(CheckRefusal::DanglingConsumer(missing_consumer)),
@@ -875,13 +876,13 @@ fn child_refusals_follow_declared_precedence()
     );
 }
 
-/// A cover a node carries is held to its node: the cut `⟨x0 |+ α0⟩` refuses
-/// a forged root cover by its space and its fault — a support selecting the
-/// wrong variable or covariable, a slot nothing selects, an edge too few or
-/// too wide — and a leaf forged consistently with its parent is refused at
-/// the leaf, which names a variable its forged support does not select.
+/// A scope a node carries is held to its node: the cut `⟨x0 |+ α0⟩` refuses
+/// a forged root scope by its space and its fault — a support missing the
+/// child's index or selecting one nothing names — and a leaf forged
+/// consistently with its parent is refused at the leaf, which names a
+/// variable its forged support does not select.
 #[test]
-fn a_forged_cover_is_refused_at_the_root()
+fn a_forged_scope_is_refused_by_name()
 {
     let mut arena = CommandArena::new();
     let variable = arena
@@ -896,7 +897,7 @@ fn a_forged_cover_is_refused_at_the_root()
     let root = arena
         .mint_cut(Polarity::Positive, variable, covariable)
         .expect("children resolve");
-    let free = check_command(&arena, root).expect("the minted covers are the node's own");
+    let free = check_command(&arena, root).expect("the minted scopes are the node's own");
     assert_eq!(
         (
             &BTreeSet::from([(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))]),
@@ -905,7 +906,6 @@ fn a_forged_cover_is_refused_at_the_root()
         (free.producers(), free.covariables())
     );
 
-    let at = Crossing::default();
     let none = Thinning::empty();
     let zero = Thinning::leaf(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let one = Thinning::leaf(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
@@ -914,90 +914,63 @@ fn a_forged_cover_is_refused_at_the_root()
         Vec::new(),
     )
     .expect("ascending");
-    let honest = NodeCover {
-        producers: Cover::of([], &[(&zero, at), (&none, at)].into_iter()),
-        covariables: Cover::of([], &[(&none, at), (&zero, at)].into_iter()),
-    };
-    let forged_root = |forged: NodeCover| {
+    let honest = NodeScope::new(zero.clone(), zero.clone());
+    let forged_root = |forged: NodeScope| {
         let mut arena = arena.clone();
-        arena.forge_cover(NodeAddress::Command(root), forged);
+        arena.forge_scope(NodeAddress::Command(root), forged);
         check_command(&arena, root)
     };
     let refusal = |space, fault| {
-        Err(CheckRefusal::ForgedCover {
+        Err(CheckRefusal::ForgedScope {
             node: NodeAddress::Command(root),
             space,
             fault,
         })
     };
-    assert_eq!(Ok(free), forged_root(honest.clone()));
-    assert_eq!(
-        refusal(BindingSpace::Producers, CoverFault::Misplaced),
-        forged_root(NodeCover {
-            producers: Cover::of([], &[(&one, at), (&none, at)].into_iter()),
-            ..honest.clone()
-        }),
-        "a support selecting x1 for the child's x0"
-    );
-    assert_eq!(
-        refusal(BindingSpace::Covariables, CoverFault::Misplaced),
-        forged_root(NodeCover {
-            covariables: Cover::of([], &[(&none, at), (&one, at)].into_iter()),
-            ..honest.clone()
-        }),
-        "a support selecting α1 for the child's α0"
-    );
-    assert_eq!(
-        refusal(
+    assert_eq!(Ok(free), forged_root(honest));
+    for (space, fault, forged, reading) in [
+        (
             BindingSpace::Producers,
-            CoverFault::Cover(CoverError::Unused(Zone::Intuitionistic))
+            ScopeFault::Unselected,
+            NodeScope::new(one.clone(), zero.clone()),
+            "a support selecting x1 for the child's x0",
         ),
-        forged_root(NodeCover {
-            producers: Cover::of(
-                [(Zone::Intuitionistic, DeBruijnIndex::from(1_u32))],
-                &[(&zero, at), (&none, at)].into_iter()
-            ),
-            ..honest.clone()
-        }),
-        "a slot neither the cut nor a child selects"
-    );
-    assert_eq!(
-        refusal(
+        (
             BindingSpace::Producers,
-            CoverFault::Cover(CoverError::Arity)
+            ScopeFault::Unselected,
+            NodeScope::new(none.clone(), zero.clone()),
+            "a support missing the child's x0",
         ),
-        forged_root(NodeCover {
-            producers: Cover::of(
-                [(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))],
-                &core::iter::empty::<(&Thinning, Crossing)>()
-            ),
-            ..honest.clone()
-        }),
-        "no edge for either side"
-    );
-    assert_eq!(
-        refusal(
+        (
+            BindingSpace::Producers,
+            ScopeFault::Unused,
+            NodeScope::new(wide.clone(), zero.clone()),
+            "a support selecting an x1 nothing names",
+        ),
+        (
             BindingSpace::Covariables,
-            CoverFault::Cover(CoverError::Domain(Zone::Intuitionistic))
+            ScopeFault::Unselected,
+            NodeScope::new(zero.clone(), one),
+            "a support selecting α1 for the child's α0",
         ),
-        forged_root(NodeCover {
-            covariables: Cover::of([], &[(&none, at), (&wide, at)].into_iter()),
-            ..honest.clone()
-        }),
-        "an edge wider than its child's support"
-    );
+        (
+            BindingSpace::Covariables,
+            ScopeFault::Unused,
+            NodeScope::new(zero.clone(), wide),
+            "a support selecting an α1 nothing names",
+        ),
+    ] {
+        assert_eq!(refusal(space, fault), forged_root(forged), "{reading}");
+    }
 
     let mut forged = arena.clone();
-    forged.forge_cover(NodeAddress::Producer(variable), NodeCover::default());
-    forged.forge_cover(NodeAddress::Command(root), NodeCover {
-        producers: Cover::of([], &[(&none, at), (&none, at)].into_iter()),
-        ..honest
-    });
+    forged.forge_scope(NodeAddress::Producer(variable), NodeScope::default());
+    forged.forge_scope(NodeAddress::Command(root), NodeScope::new(none, zero));
     assert_eq!(
-        Err(CheckRefusal::ForgedCover {
+        Err(CheckRefusal::ForgedScope {
             node: NodeAddress::Producer(variable),
             space: BindingSpace::Producers,
-            fault: CoverFault::Unnamed,
+            fault: ScopeFault::Unselected,
         }),
         check_command(&forged, root),
         "x0 names a variable its forged support does not select"

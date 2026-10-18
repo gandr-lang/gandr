@@ -33,11 +33,13 @@
 //! - [`world`] holds the located vocabulary: the handle type `A at w`, the
 //!   capability `cap_w` a migration spends, and the computations `hold`, `leta`
 //!   and `migrate [w]`, one former each beside the rest of the core.
-//! - [`support`] is the co-de Bruijn carrier: a two-zone [`support::Thinning`]
-//!   selects a node's support from its scope, a [`support::Cover`] embeds each
-//!   child's support in its parent's, and placing the edges from a root's
-//!   support recovers the de Bruijn term. The incremental content table keys
-//!   and footprints its nodes by it; the kernel term stays de Bruijn.
+//! - [`support`] is the co-de Bruijn carrier: a two-zone bitset
+//!   [`support::Thinning`] selects a node's support from its scope, every arena
+//!   node carries its support from the moment it is minted, a
+//!   [`support::Cover`] embeds each child's support in its parent's, and
+//!   placing the edges from a root's support recovers the de Bruijn term. The
+//!   incremental content table keys and footprints its nodes by it; the kernel
+//!   term stays de Bruijn.
 //! - [`FailureClass`] is the four-class vocabulary every refusal of the core
 //!   pipeline answers to, whichever crate produced it.
 //!
@@ -90,10 +92,12 @@
 //! - Reversal: a consumer whose zones are not `Γ; Σ` moves the carrier into a
 //!   crate of its own.
 //!
-//! Selections are sparse, and the bitset is the alternative: a measured
-//! workload of dense supports reverses that. The support is syntactic and
-//! over-approximates dependence; it keys, footprints and schedules, and never
-//! decides a strengthening.
+//! A thinning is a bitset with a spill past the inline widths ([`support`] §
+//! Bit selections), and every node of a [`CoreArena`] carries its support
+//! from the moment it is minted (the arena module's § Carried supports), so
+//! a support is read in constant time and nothing walks a term to find one.
+//! The support is syntactic and over-approximates dependence; it keys,
+//! footprints and schedules, and never decides a strengthening.
 //!
 //! # Specification attributes
 //!
@@ -253,7 +257,6 @@ pub use crate::rewrite::strengthen_value_type;
 pub use crate::rewrite::strengthening;
 pub use crate::rewrite::substitute_environment;
 pub use crate::rewrite::substitute_environment_traced;
-pub use crate::rewrite::value_type_support;
 pub use crate::rewrite::wrap_marks;
 pub use crate::syntax::CertificateEquality;
 pub use crate::syntax::CompType;

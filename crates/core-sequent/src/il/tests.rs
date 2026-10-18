@@ -1,6 +1,5 @@
 use alloc::string::String;
 
-use gandr_core_term::support::Thinning;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Side;
@@ -588,34 +587,25 @@ fn variable(
         .expect("a leaf mints")
 }
 
-/// The edge from `node` to its first child, in the producer zones and in
-/// the covariable zone.
+/// The scope `node` carries.
 ///
 /// # Specification
 /// trivial.
-fn first_edges(
+fn scope_of(
     arena: &CommandArena,
     node: NodeAddress,
-) -> (Thinning, Thinning)
+) -> NodeScope
 {
-    let cover = arena
-        .node_cover(node)
-        .expect("a minted node carries a cover");
-    (
-        cover.producers.edges().first().cloned().expect("one child"),
-        cover
-            .covariables
-            .edges()
-            .first()
-            .cloned()
-            .expect("one child"),
-    )
+    arena
+        .node_scope(node)
+        .cloned()
+        .expect("a minted node carries a scope")
 }
 
-/// A binder's edge to its body selects its bound name exactly when the body
-/// names it: a `μ̃` over `x1` and over `x0`, a hold over a body ignoring and
-/// a view's access naming its linear binder, and a `μ` over `★` and over
-/// `α0`, one per zone.
+/// A binder's body selects its bound name exactly when it names it, and the
+/// binder's own support never does: a `μ̃` over `x1` and over `x0`, a hold
+/// over a body ignoring and a body naming its linear binder, and a `μ` over
+/// `★` and over `α0`, one per zone.
 #[test]
 fn an_unused_binder_thins_to_zero()
 {
@@ -634,11 +624,27 @@ fn an_unused_binder_thins_to_zero()
         let binder = arena
             .mint_consumer(ConsumerNode::MuTilde { body })
             .expect("the body resolves");
-        let (edge, _) = first_edges(&arena, NodeAddress::Consumer(binder));
+        let inner = scope_of(&arena, NodeAddress::Command(body))
+            .producers()
+            .to_thinning();
+        let outer = scope_of(&arena, NodeAddress::Consumer(binder))
+            .producers()
+            .to_thinning();
         assert_eq!(
             selected,
-            edge.indices(Zone::Intuitionistic).contains(&zero),
+            inner
+                .indices(Zone::Intuitionistic)
+                .any(|index| index == zero),
             "μ̃ over x{named}"
+        );
+        assert_eq!(
+            outer.indices(Zone::Intuitionistic).collect::<Vec<_>>(),
+            named
+                .checked_sub(1)
+                .map(DeBruijnIndex::from)
+                .into_iter()
+                .collect::<Vec<_>>(),
+            "μ̃ over x{named} lowers past its binder"
         );
     }
 
@@ -657,17 +663,20 @@ fn an_unused_binder_thins_to_zero()
                 continuation: terminal,
             })
             .expect("children resolve");
-        let cover = arena
-            .node_cover(NodeAddress::Command(hold))
-            .expect("a minted node carries a cover");
-        let edge = cover.producers.edges().get(1).expect("the body's edge");
+        let inner = scope_of(&arena, NodeAddress::Command(body))
+            .producers()
+            .to_thinning();
         assert_eq!(
             selected,
-            edge.indices(Zone::Linear).contains(&zero),
+            inner.indices(Zone::Linear).any(|index| index == zero),
             "a hold whose body names its binder: {selected}"
         );
-        assert!(
-            cover.producers.support().indices(Zone::Linear).is_empty(),
+        assert_eq!(
+            0,
+            scope_of(&arena, NodeAddress::Command(hold))
+                .producers()
+                .indices(Zone::Linear)
+                .len(),
             "the hold binds its own linear variable"
         );
     }
@@ -679,20 +688,22 @@ fn an_unused_binder_thins_to_zero()
         let capture = arena
             .mint_producer(ProducerNode::Mu { body })
             .expect("the body resolves");
-        let (_, edge) = first_edges(&arena, NodeAddress::Producer(capture));
+        let inner = scope_of(&arena, NodeAddress::Command(body))
+            .covariables()
+            .to_thinning();
         assert_eq!(
             selected,
-            edge.indices(Zone::Intuitionistic).contains(&zero),
+            inner
+                .indices(Zone::Intuitionistic)
+                .any(|index| index == zero),
             "μ over a body naming α0: {selected}"
         );
-        assert!(
-            arena
-                .node_cover(NodeAddress::Producer(capture))
-                .expect("a minted node carries a cover")
-                .covariables
-                .support()
+        assert_eq!(
+            0,
+            scope_of(&arena, NodeAddress::Producer(capture))
+                .covariables()
                 .indices(Zone::Intuitionistic)
-                .is_empty(),
+                .len(),
             "the μ binds its own covariable"
         );
     }
@@ -771,15 +782,11 @@ fn captures_skip_each_suspensions_own_binders()
             "{suspension:?} reads from the outermost end"
         );
     }
-    let stack_cover = arena
-        .node_cover(NodeAddress::Producer(stack))
-        .expect("a minted node carries a cover");
-    assert_eq!(
-        indices(&[0, 2]).as_slice(),
-        stack_cover
-            .producers
-            .support()
-            .indices(Zone::Intuitionistic),
+    assert!(
+        scope_of(&arena, NodeAddress::Producer(stack))
+            .producers()
+            .indices(Zone::Intuitionistic)
+            .eq(indices(&[0, 2])),
         "a bind frame's stack has the frame body's support past its value"
     );
     assert!(

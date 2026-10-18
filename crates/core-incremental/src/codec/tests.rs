@@ -2526,7 +2526,7 @@ fn supported_tables_round_trip_and_reject_forged_support()
     assert!(
         data.placements()
             .iter()
-            .any(|support| !support.indices(Zone::Intuitionistic).is_empty()),
+            .any(|support| support.indices(Zone::Intuitionistic).len() != 0),
         "the field's support is not empty"
     );
     let mut bytes = CheckpointBytes::default();
@@ -2636,7 +2636,7 @@ fn supported_tables_round_trip_and_reject_forged_support()
         })
     };
     assert_eq!(
-        ty.root().indices(Zone::Intuitionistic),
+        ty.root().indices(Zone::Intuitionistic).collect::<Vec<_>>(),
         [DeBruijnIndex::from(1_u32), DeBruijnIndex::from(2_u32)],
         "the root support the forgeries reorder"
     );

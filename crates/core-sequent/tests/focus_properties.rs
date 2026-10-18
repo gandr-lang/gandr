@@ -33,13 +33,23 @@ use gandr_core_sequent::focus_top_value;
 use gandr_core_sequent::focus_value;
 use gandr_core_sequent::unfocus_command;
 use gandr_core_sequent::unfocus_value;
+use gandr_core_term::ArenaWatermark;
+use gandr_core_term::Binders;
+use gandr_core_term::CertificateEquality;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::ComponentCount;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::control::StackFrame;
+use gandr_core_term::equal_certificate_syntax;
+use gandr_core_term::equal_type_syntax;
 use gandr_core_term::memory::MemoryForm;
-use gandr_core_term::value_type_support;
+use gandr_core_term::shift_comp_type_under;
+use gandr_core_term::shift_computation_under_traced;
+use gandr_core_term::shift_value_type_under;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -250,14 +260,17 @@ enum Visit
 type Free = (BTreeSet<(Zone, DeBruijnIndex)>, BTreeSet<CovariableIndex>);
 
 /// The free variables and covariables of `command`, by a walk independent of
-/// the carried covers: every occurrence below it, and every index an
+/// the carried scopes: every occurrence below it, and every index an
 /// annotation below it names, counted past the binders above it.
 ///
 /// # Specification
 /// - requires: `command` and everything below it resolve.
 /// - ensures: each producer variable and covariable an occurrence names past
 ///   its binders, lowered by them; a linear variable is bound only by a memory
-///   form's hold or access body.
+///   form's hold or access body. An annotation's indices are read off its core
+///   root, whose support
+///   `core_supports_equal_the_shift_machine_on_every_generated_term` holds to
+///   the shift machine.
 /// - panics: on a node the arena does not hold.
 /// - executable: none — this is the reference the carried supports are held to;
 ///   it is the walk the check ran before scope was carried.
@@ -271,11 +284,14 @@ fn walked(
     command: CommandId,
 ) -> Free
 {
-    let mut scratch = arena.annotations().clone();
+    let annotations = arena.annotations();
     let mut free = Free::default();
     let mut stack = alloc::vec![Visit::Command(command, Depth::default())];
-    let named = |free: &mut Free, scratch: &mut CoreArena, ty, depth: Depth| {
-        for &index in value_type_support(scratch, ty).indices(Zone::Intuitionistic) {
+    let named = |free: &mut Free, ty, depth: Depth| {
+        let support = annotations
+            .value_type_support(ty)
+            .expect("the annotation resolves");
+        for index in support.indices(Zone::Intuitionistic) {
             if let Some(past) = u32::from(index).checked_sub(depth.producers) {
                 free.0
                     .insert((Zone::Intuitionistic, DeBruijnIndex::from(past)));
@@ -299,7 +315,7 @@ fn walked(
                     ..
                 } => {
                     for ty in signature.types() {
-                        named(&mut free, &mut scratch, ty, depth);
+                        named(&mut free, ty, depth);
                     }
                     if let Route::Capability(capability) = route {
                         stack.push(Visit::Producer(capability, depth));
@@ -316,7 +332,7 @@ fn walked(
                     continuation,
                 } => {
                     for ty in signature.types() {
-                        named(&mut free, &mut scratch, ty, depth);
+                        named(&mut free, ty, depth);
                     }
                     let introduced = match introduces {
                         Introduces::Nothing => ProducerArity::ZERO,
@@ -475,8 +491,8 @@ fn walked(
                         on_cons,
                         continuation,
                     } => {
-                        named(&mut free, &mut scratch, element, depth);
-                        named(&mut free, &mut scratch, result, depth);
+                        named(&mut free, element, depth);
+                        named(&mut free, result, depth);
                         stack.push(Visit::Command(
                             on_nil,
                             depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
@@ -632,6 +648,218 @@ proptest! {
             Agreement::Same,
             same_value(&generated.core, root, &decoded, back.expect("checked above")),
             "unfocusing changed the value"
+        );
+    }
+}
+
+/// A core node a support is read at, in its family.
+#[derive(Clone, Copy, Debug)]
+enum Subject
+{
+    /// A value.
+    Value(ValueId),
+    /// A computation.
+    Computation(ComputationId),
+    /// A value type.
+    ValueType(ValueTypeId),
+    /// A computation type.
+    CompType(CompTypeId),
+}
+
+/// A node in a family the syntactic comparisons read: a computation or a
+/// value as a thunk, a computation type as a thunk type.
+#[derive(Clone, Copy, Debug)]
+enum Compared
+{
+    /// A value.
+    Value(ValueId),
+    /// A value type.
+    Type(ValueTypeId),
+}
+
+/// `subject` as the syntactic comparisons read it.
+///
+/// # Specification
+/// trivial.
+fn compared(
+    arena: &mut CoreArena,
+    subject: Subject,
+) -> Compared
+{
+    match subject {
+        Subject::Value(value) => {
+            let returned = arena.computation_return(value);
+            Compared::Value(arena.value_thunk(returned))
+        },
+        Subject::Computation(computation) => Compared::Value(arena.value_thunk(computation)),
+        Subject::ValueType(ty) => Compared::Type(ty),
+        Subject::CompType(ty) => Compared::Type(arena.value_type_thunk(ty)),
+    }
+}
+
+/// `subject` with every free intuitionistic index at or past `scope` raised
+/// by one, as the syntactic comparisons read it.
+///
+/// # Specification
+/// trivial.
+fn raised(
+    arena: &mut CoreArena,
+    subject: Subject,
+    scope: Binders,
+) -> Compared
+{
+    let computation = match subject {
+        Subject::Value(value) => arena.computation_return(value),
+        Subject::Computation(computation) => computation,
+        Subject::ValueType(ty) => {
+            return Compared::Type(shift_value_type_under(arena, ty, scope, Binders::ONE));
+        },
+        Subject::CompType(ty) => {
+            let shifted = shift_comp_type_under(arena, ty, scope, Binders::ONE);
+            return Compared::Type(arena.value_type_thunk(shifted));
+        },
+    };
+    let mut carried = Vec::new();
+    let shifted =
+        shift_computation_under_traced(arena, computation, scope, Binders::ONE, &mut carried);
+    Compared::Value(arena.value_thunk(shifted))
+}
+
+/// Whether two compared nodes are syntactically equal.
+///
+/// # Specification
+/// trivial.
+fn same(
+    arena: &CoreArena,
+    left: Compared,
+    right: Compared,
+) -> CertificateEquality
+{
+    match (left, right) {
+        (Compared::Value(left), Compared::Value(right)) => {
+            equal_certificate_syntax(arena, left, right)
+        },
+        (Compared::Type(left), Compared::Type(right)) => equal_type_syntax(arena, left, right),
+        (Compared::Value(_), Compared::Type(_)) | (Compared::Type(_), Compared::Value(_)) => {
+            CertificateEquality::Different
+        },
+    }
+}
+
+/// Whether an index occurs free in a subject.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Occurrence
+{
+    /// Some occurrence names the index.
+    Free,
+    /// None does.
+    Absent,
+}
+
+/// Whether the intuitionistic index `index` occurs free in `subject`, by the
+/// shift machine alone: raising the indices at or past `index` and raising
+/// those past it differ exactly at an occurrence of it.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`.
+/// - ensures: [`Occurrence::Free`] exactly when an occurrence in `subject`
+///   names `index` past the binders between it and the subject; `arena` only
+///   grows.
+/// - panics: none.
+/// - executable: none — the reference the carried core supports are held to,
+///   sharing no code with them.
+///
+/// # Adequacy
+/// - hypothesis: L2 — agreement with the carried supports on every node of
+///   every generated term.
+/// - witness: `tests::focus_properties::core_supports_equal_the_shift_machine_on_every_generated_term`
+fn occurs(
+    arena: &mut CoreArena,
+    subject: Subject,
+    index: DeBruijnIndex,
+) -> Occurrence
+{
+    let scope = Binders::from(u32::from(index));
+    let at = raised(arena, subject, scope);
+    let past = raised(arena, subject, scope.deeper());
+    match same(arena, at, past) {
+        CertificateEquality::Equal => Occurrence::Absent,
+        CertificateEquality::Different => Occurrence::Free,
+    }
+}
+
+/// Whether every node of `core` carries, in its intuitionistic zone, exactly
+/// the indices the shift machine finds free in it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: Same exactly when, at every node of every family, an index up to
+///   one past the support's largest is selected exactly when [`occurs`] finds
+///   it free, and raising past that changes nothing.
+/// - panics: on a node the arena does not hold.
+/// - executable: none — the observation of the witness below.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated terms over every former the generator emits.
+/// - witness: `tests::focus_properties::core_supports_equal_the_shift_machine_on_every_generated_term`
+fn core_supports_are_walked(core: &CoreArena) -> Agreement
+{
+    let start = ArenaWatermark::default();
+    let subjects: Vec<(Subject, Vec<u32>)> = core
+        .values_since(start)
+        .map(|id| (Subject::Value(id), core.value_support(id)))
+        .chain(
+            core.computations_since(start)
+                .map(|id| (Subject::Computation(id), core.computation_support(id))),
+        )
+        .chain(
+            core.value_types_since(start)
+                .map(|id| (Subject::ValueType(id), core.value_type_support(id))),
+        )
+        .chain(
+            core.comp_types_since(start)
+                .map(|id| (Subject::CompType(id), core.comp_type_support(id))),
+        )
+        .map(|(subject, support)| {
+            let selected = support
+                .expect("a minted node carries a support")
+                .indices(Zone::Intuitionistic)
+                .map(u32::from)
+                .collect();
+            (subject, selected)
+        })
+        .collect();
+    let mut scratch = core.clone();
+    for (subject, selected) in subjects {
+        let bound = selected.last().map_or(0, |&last| last.saturating_add(2));
+        let walked: Vec<u32> = (0 .. bound)
+            .filter(|&index| {
+                occurs(&mut scratch, subject, DeBruijnIndex::from(index)) == Occurrence::Free
+            })
+            .collect();
+        let original = compared(&mut scratch, subject);
+        let beyond = raised(&mut scratch, subject, Binders::from(bound));
+        if walked != selected || same(&scratch, original, beyond) == CertificateEquality::Different
+        {
+            return Agreement::Differ;
+        }
+    }
+    Agreement::Same
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    /// Every node of a generated term carries the support the shift machine
+    /// finds: an index is selected exactly when raising the indices at or past
+    /// it and raising those past it differ.
+    #[test]
+    fn core_supports_equal_the_shift_machine_on_every_generated_term(generated in computations())
+    {
+        prop_assert_eq!(
+            Agreement::Same,
+            core_supports_are_walked(&generated.core),
+            "a carried core support differs from the shift machine"
         );
     }
 }
