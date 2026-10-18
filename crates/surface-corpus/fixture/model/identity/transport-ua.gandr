@@ -1,0 +1,60 @@
+// Transport along `ua` by the family's shape, the HoTT book's § 2.10 at the
+// families of Theorem 2.6.4 and § 2.12. A family that never reads its argument
+// keeps the value. A product, a sum and a list carry the value part by part.
+// Each holds by conversion and by a run, along the loops' path to the
+// integers, `ua(winding)`, where a loop is carried to its winding number.
+
+// The circle, the presented integers, the winding number and spinning.
+import "./circle-base.gandr" ;
+// The equivalence of the loops at the point with the integers, `winding`.
+import "./circle.gandr" ;
+
+/// A family that never reads its argument keeps the value, by conversion.
+@[ checks ]
+def constantBeta : Path(Int, transport(\X. Int, ua(winding), Z), Z) ;
+def constantBeta = here(Z) ;
+
+/// A family that never reads its argument keeps the value, by a run.
+@[ runs("Z") ]
+def constantRun : +U (-F Int) ;
+def constantRun = thunk { transport(\X. Int, ua(winding), Z) } ;
+
+/// A pair carried along the loops' path carries each component, by
+/// conversion: the book's Theorem 2.6.4.
+@[ checks ]
+def pairBeta : Path(Int * Int, transport(\X. X * X, ua(winding), #{loop, loop}), #{S(Z), S(Z)}) ;
+def pairBeta = here(#{S(Z), S(Z)}) ;
+
+/// A pair carried along the loops' path carries each component, by a run.
+@[ runs("(S(Z), S(Z))") ]
+def pairRun : +U (-F (Int * Int)) ;
+def pairRun = thunk { transport(\X. X * X, ua(winding), #{loop, loop}) } ;
+
+/// An injection carried along the loops' path carries its payload in its own
+/// summand, by conversion: the book's § 2.12.
+@[ checks ]
+def sumBeta : Path(
+  +{Unit, Int},
+  transport(\X. +{Unit, X}, ua(winding), +{.1 = loop}),
+  +{.1 = S(Z)}
+) ;
+def sumBeta = here(+{.1 = S(Z)}) ;
+
+/// An injection carried along the loops' path carries its payload, by a run.
+@[ runs("+{.1 = S(Z)}") ]
+def sumRun : +U (-F +{Unit, Int}) ;
+def sumRun = thunk { transport(\X. +{Unit, X}, ua(winding), +{.1 = loop}) } ;
+
+/// A list carried along the loops' path carries every cell, by conversion.
+@[ checks ]
+def listBeta : Path(
+  List(Int),
+  transport(\X. List(X), ua(winding), cons(loop, nil)),
+  cons(S(Z), nil)
+) ;
+def listBeta = here(cons(S(Z), nil)) ;
+
+/// A list carried along the loops' path carries every cell, by a run.
+@[ runs("cons(S(Z), nil)") ]
+def listRun : +U (-F List(Int)) ;
+def listRun = thunk { transport(\X. List(X), ua(winding), cons(loop, nil)) } ;

@@ -4,11 +4,11 @@
 // `Path(Type, A, B)`, admitted on the record's two laws as its evidence, at any
 // two codes: two variables, or a path type and a presented type, which no
 // finite round-trip coverage reaches. Transport along it applies the map, by
-// conversion (cubical's `uaβ`). Transport along a path between types,
-// packaged as the record, is `idtoequiv` (the book's `idtoeqv`, cubical's
-// `pathToEquiv`); `ua` and `idtoequiv` make a quasi-inverse and so an
-// equivalence, `univalence`, on two owed laws: `ua` after `idtoequiv`, which
-// no rule converts, and `idtoequiv` after `ua`, which needs the record's
+// conversion (cubical's `uaβ`) and by a run. Transport along a path between
+// types, packaged as the record, is `idtoequiv` (the book's `idtoeqv`,
+// cubical's `pathToEquiv`); `ua` and `idtoequiv` make a quasi-inverse and so
+// an equivalence, `univalence`, on two owed laws: `ua` after `idtoequiv`,
+// which no rule converts, and `idtoequiv` after `ua`, which needs the record's
 // inverses to be determined by its map.
 
 // The circle, the presented integers, the winding number and spinning.
@@ -152,6 +152,12 @@ def uaBeta(
   return here(t(x))
 }
 
+/// `uaβ` run at the loops' record: a loop carried along `ua(winding)` runs to
+/// the record's map at it. The record's laws are carried, never run.
+@[ runs("S(Z)") ]
+def uaBetaRun : +U (-F Int) ;
+def uaBetaRun = thunk { transport(\X. X, ua(winding), loop) } ;
+
 /// A loop carried along the loops' path to the integers is its winding
 /// number, by conversion.
 @[ checks ]
@@ -162,6 +168,11 @@ def windingBeta(x : Path(Circle, Base, Base)) -> -F Path(
 ) {
   return here(wind(x))
 }
+
+/// A loop carried to the integers runs to its winding number.
+@[ runs("S(Z)") ]
+def windingRun : +U (-F Int) ;
+def windingRun = thunk { transport(\X. X, loopsAreIntegers, loop) } ;
 
 /// `ua` after `idtoequiv` is the path, owed: no rule converts `ua` of the
 /// packaged transport with the path, even at reflexivity, where both sides

@@ -629,7 +629,7 @@ mod corpus
                             refusal,
                             FocusRefusal::Code(_)
                                 | FocusRefusal::ElementPath(_)
-                                | FocusRefusal::ElementTransport(_)
+                                | FocusRefusal::ElementTransport(..)
                                 | FocusRefusal::IncompleteValue(_)
                                 | FocusRefusal::IncompleteComputation(_)
                                 | FocusRefusal::Session(_)

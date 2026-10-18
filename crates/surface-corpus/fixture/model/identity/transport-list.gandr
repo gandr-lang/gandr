@@ -1,9 +1,10 @@
 // Transport along a path between types built from an equivalence, the HoTT
 // book's § 2.10 (`ua`) and Lemma 2.10.5 (transport along `ua(e)` is `e`),
 // in the family of lists: negation, its own inverse, makes a path from the
-// booleans to themselves, and transport along it negates every element. A
-// pair of maps whose round trips differ makes no path, and an equivalence
-// between types of lists is out of the stratum `equiv` certifies.
+// booleans to themselves, and transport along it negates every element, by
+// conversion and by a run. A pair of maps whose round trips differ makes no
+// path, and an equivalence between types of lists is out of the stratum
+// `equiv` certifies.
 
 // Negation and the identity on the booleans.
 import "./funext.gandr" ;
@@ -24,8 +25,18 @@ def moved_list(xs : List(Bool)) -> -F List(Bool) {
 def both : List(Bool) ;
 def both = cons(+{.0 = unit}, cons(+{.1 = unit}, nil)) ;
 
-/// `both` transported along negation by a run.
+/// Truth then falsity transported along negation is falsity then truth, by
+/// conversion.
 @[ checks ]
+def flipped_beta : Path(
+  List(Bool),
+  transport(\X. List(X), negation, cons(+{.0 = unit}, cons(+{.1 = unit}, nil))),
+  cons(+{.1 = unit}, cons(+{.0 = unit}, nil))
+) ;
+def flipped_beta = here(cons(+{.1 = unit}, cons(+{.0 = unit}, nil))) ;
+
+/// `both` transported along negation by a run, which negates every element.
+@[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
 def flipped_list : +U (-F List(Bool)) ;
 def flipped_list = thunk { become moved_list(both) } ;
 
