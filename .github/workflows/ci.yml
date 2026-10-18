@@ -73,7 +73,11 @@ jobs:
   template:
     if: false
     needs: &rust-needs [changes, ci-image-ref]
-    runs-on: &linux ubuntu-latest
+    # arm64, measured on the enforcing lane (#702): the suite 27% and a
+    # warm rebuild 9% faster than ubuntu-latest's x86-64, and Linux arm64
+    # runs native code through the emitter's arm64 patcher. The image is
+    # published for both; the coverage workflow keeps an x86-64 run.
+    runs-on: &linux ubuntu-24.04-arm
     # Private-GHCR consumers need package reads on the job; the workflow floor
     # stays `contents: read` for every job that pulls no image.
     permissions: &image-read-permissions
@@ -201,7 +205,7 @@ jobs:
         continue-on-error: true
         uses: &upload-artifact actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: junit-${{ github.job }}
+          name: junit-${{ github.job }}${{ env.CI_SHARD != '' && format('-{0}', env.CI_SHARD) || '' }}
           path: |
             target/nextest/ci/junit.xml
             target/nextest/ci-enforcing/junit.xml
@@ -273,10 +277,11 @@ jobs:
         run: gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/main --key "$CI_STATE_PREFIX" --limit 100 --json id,key --jq '.[] | select(.key != env.CI_STATE_KEY) | .id' | xargs -r -n1 gh cache delete --repo "$GITHUB_REPOSITORY"
       # Hand on only the units this run's builds used: Cargo never deletes
       # the ones a manifest change superseded (ci:prune-enforcing). A failed
-      # prune hands on the whole directory, which is correct, only larger.
+      # prune hands on the whole directory, which is correct, only larger. A
+      # shard's build is part of the state, which the join hands on.
       - &prune-build-state
         name: prune build state to this run's units
-        if: &hand-on-state ${{ !cancelled() && env.CI_PLAIN_BASELINE != 'true' && steps.build-workspace.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true')) }}
+        if: &hand-on-state ${{ !cancelled() && env.CI_PLAIN_BASELINE != 'true' && env.CI_SHARD == '' && steps.build-workspace.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true')) }}
         continue-on-error: true
         env:
           CI_PRUNE_TASK: ${{ env.CI_ENFORCING == 'true' && 'ci:prune-enforcing' || 'ci:prune-plain' }}
@@ -466,6 +471,23 @@ jobs:
       - *restore-test-state
       - *download-build-state
       - *unpack-build-state
+      # A shard names its packages; the rest shard takes every package no
+      # named shard does, so a new crate is tested before anyone places it.
+      # The mark dates the restored state: what the shard builds after it is
+      # what it hands the join.
+      - name: select the shard's packages
+        if: ${{ env.CI_SHARD != '' }}
+        shell: bash
+        run: |
+          args=()
+          for package in $CI_SHARD_PACKAGES; do args+=(--package "$package"); done
+          if [[ -n $CI_SHARD_EXCLUDES ]]; then
+            args=(--workspace)
+            for package in $CI_SHARD_EXCLUDES; do args+=(--exclude "$package"); done
+          fi
+          printf 'CI_SHARD_ARGS=%s\n' "${args[*]}" >> "$GITHUB_ENV"
+          mkdir -p target/enforcing/debug
+          touch target/shard-base
       - name: build workspace targets
         id: build-workspace
         env:
@@ -482,18 +504,29 @@ jobs:
       # that graph is already built: anywhere else it compiles the graph again.
       # The gate binary comes from the revision's cache when present.
       - *identify-policy
-      - name: restore the gate binary
+      - &restore-witness-gate
+        name: restore the gate binary
         if: ${{ env.CI_WITNESSES == 'true' }}
         uses: *cache-restore
         with:
           path: *gate-binary
           key: *gate-binary-key
-      - name: resolve adequacy witnesses
+      - &resolve-witnesses
+        name: resolve adequacy witnesses
         if: ${{ !cancelled() && env.CI_WITNESSES == 'true' && steps.build-workspace.outcome == 'success' }}
         run: mise run check:witnesses
       - name: run the corpus roots
         if: &plain-gate ${{ env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' }}
         run: mise run check:corpus
+      # The corpus roots built the driver the formatter check runs, and the
+      # plain state holds the comments suite: the format gate would build both
+      # from nothing.
+      - name: check the corpus layout
+        if: *plain-gate
+        run: mise run check:corpus-format
+      - name: corpus item comments
+        if: *plain-gate
+        run: mise run check:corpus-comments
       - name: check private-item rustdoc
         if: *plain-gate
         env:
@@ -504,6 +537,23 @@ jobs:
       - *archive-build-state
       - *upload-build-state
       - *save-test-state
+      # A shard hands the join what it built over the restored state; the
+      # join overlays every shard's on that state and hands the whole on.
+      - name: archive the shard's build
+        if: ${{ !cancelled() && env.CI_SHARD != '' && steps.build-workspace.outcome == 'success' }}
+        shell: bash
+        run: |
+          find target/enforcing/debug -newer target/shard-base \( -type f -o -type l \) -print > target/shard-files
+          tar -cf - -T target/shard-files | zstd -T0 -3 -f -o "build-shard-$CI_SHARD.tar.zst"
+      - name: upload the shard's build
+        if: ${{ !cancelled() && env.ACT != 'true' && hashFiles('build-shard-*.tar.zst') != '' }}
+        uses: *upload-artifact
+        with:
+          path: build-shard-${{ env.CI_SHARD }}.tar.zst
+          name: build-shard-${{ github.job }}-${{ env.CI_SHARD }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
       # Each test's specification cost: this run's enforcing report over the
       # newest plain baseline of main, as the job summary and an artifact. A
       # measurement, never a gate: no outcome here fails the lane.
@@ -537,14 +587,59 @@ jobs:
         continue-on-error: true
         uses: *upload-artifact
         with:
-          name: spec-cost-ratio
+          name: spec-cost-ratio${{ env.CI_SHARD != '' && format('-{0}', env.CI_SHARD) || '' }}
           path: target/spec-cost-ratio.md
           if-no-files-found: error
       - *lane-timing
 
-  cargo-test-enforcing:
-    name: test enforcing targets (linux)
+  # The enforcing lane in shards (#702). The library chain from core-term to
+  # the dispatcher bounds one job's build, so a shard takes the packages above
+  # that chain, one the chain's middle and the rest the leaves: measured on
+  # the arm64 runner over #699's core-term change, the whole graph rebuilt in
+  # 301 s and tested in 51 s, the shards in 146 + 35, 141 + 4 and 73 + 17.
+  # Every shard restores the lane's one state; its join overlays what each
+  # built on that state and hands the whole on.
+  cargo-test-enforcing-shard:
+    name: test enforcing targets (linux, ${{ matrix.shard }})
     needs: *cached-test-needs
+    if: *heavy-lane
+    runs-on: *linux
+    permissions: *build-state-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    strategy: &enforcing-shards
+      fail-fast: false
+      matrix:
+        include:
+          - shard: surface
+            packages: &surface-shard >-
+              gandr-lang gandr-runtime-stencils gandr-surface-corpus gandr-surface-diagnostics
+              gandr-surface-dispatcher gandr-surface-lsp gandr-surface-mcp gandr-surface-render-terminal
+              gandr-surface-repl gandr-surface-session gandr-surface-tui
+          - shard: checker
+            packages: &checker-shard >-
+              gandr-core-checker gandr-core-incremental gandr-core-sequent gandr-runtime-emitter
+              gandr-surface-lowering gandr-surface-pretty
+          - shard: rest
+            excludes: [*surface-shard, *checker-shard]
+    env:
+      CI_BUILD_STATE: cargo-test-enforcing
+      CI_ENFORCING: "true"
+      CI_SPEC_COST_RATIO: "true"
+      CI_FETCH_DEPTH: "2"
+      CI_SHARD: ${{ matrix.shard }}
+      CI_SHARD_PACKAGES: ${{ matrix.packages }}
+      CI_SHARD_EXCLUDES: ${{ join(matrix.excludes, ' ') }}
+    steps: *workspace-test-steps
+
+  # The join: the lane's state, every shard's build over it, one mtime for
+  # the whole (Cargo reads a unit whose dependency is newer than it as stale,
+  # and each shard built its shared units at its own time; sources are
+  # checked by checksum). Witness discovery lists the whole inventory here,
+  # fresh, and the joined state is what the next landing restores.
+  cargo-test-enforcing:
+    name: join the enforcing shards (linux)
+    needs: [changes, ci-image-ref, build-state, cargo-test-enforcing-shard]
     if: *heavy-lane
     runs-on: *linux
     permissions: *build-state-read-permissions
@@ -552,11 +647,47 @@ jobs:
     timeout-minutes: 30
     env:
       CI_BUILD_STATE: cargo-test-enforcing
+      CI_SHARDS: cargo-test-enforcing-shard
       CI_ENFORCING: "true"
       CI_WITNESSES: "true"
-      CI_SPEC_COST_RATIO: "true"
-      CI_FETCH_DEPTH: "2"
-    steps: *workspace-test-steps
+    steps: &join-steps
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *restore-test-state
+      - *download-build-state
+      - *unpack-build-state
+      # Under act no shard uploads, and the join builds what it lists.
+      - name: download the shards' builds
+        if: ${{ env.ACT != 'true' }}
+        uses: *download-artifact
+        with:
+          pattern: build-shard-${{ env.CI_SHARDS }}-*
+          merge-multiple: true
+      - name: overlay the shards' builds
+        id: build-workspace
+        shell: bash
+        run: |
+          mkdir -p target/enforcing/debug
+          for build in build-shard-*.tar.zst; do
+            [[ -e $build ]] || continue
+            zstd -dc "$build" | tar -xf -
+            rm "$build"
+          done
+          stamp=$(date +%Y%m%d%H%M.%S)
+          find target/enforcing/debug -exec touch -h -t "$stamp" {} +
+      - name: fetch locked dependencies
+        run: cargo fetch --locked
+      - *identify-policy
+      - *restore-witness-gate
+      - *resolve-witnesses
+      - *prune-build-state
+      - *archive-build-state
+      - *upload-build-state
+      - *save-test-state
+      - *lane-timing
 
   # The plain baseline: every workspace test without enforcement, timed daily
   # on main and when a dispatch asks, so the enforcing lane can report what
@@ -577,10 +708,11 @@ jobs:
     steps: *workspace-test-steps
 
   # Windows and big-endian lanes have no local surface under act; macOS arm64
-  # remains the other hosted platform. Its enforcing run is the full test pass;
-  # the plain delta is platform-neutral and runs on Linux.
-  cargo-test-macos-enforcing:
-    name: test enforcing targets (macos-arm64)
+  # remains the other hosted platform. Its enforcing run is the full test pass
+  # in the Linux lane's shards; the plain delta is platform-neutral and runs
+  # on Linux.
+  cargo-test-macos-enforcing-shard:
+    name: test enforcing targets (macos-arm64, ${{ matrix.shard }})
     needs: *cached-test-needs
     if: *heavy-lane
     runs-on: macos-latest
@@ -588,38 +720,59 @@ jobs:
       contents: read
       actions: read
     timeout-minutes: 45
+    strategy: *enforcing-shards
     env:
       CI_INSTALL_TOOLCHAIN: "true"
       CI_BUILD_STATE: cargo-test-macos-enforcing
       CI_ENFORCING: "true"
       CI_FETCH_DEPTH: "2"
+      CI_SHARD: ${{ matrix.shard }}
+      CI_SHARD_PACKAGES: ${{ matrix.packages }}
+      CI_SHARD_EXCLUDES: ${{ join(matrix.excludes, ' ') }}
     steps: *workspace-test-steps
+
+  # The macOS join only hands the state on; witnesses resolve on Linux, so
+  # no verdict waits for it.
+  cargo-test-macos-enforcing:
+    name: join the enforcing shards (macos-arm64)
+    needs: [changes, build-state, cargo-test-macos-enforcing-shard]
+    if: *heavy-lane
+    runs-on: macos-latest
+    permissions: *macos-read-permissions
+    timeout-minutes: 30
+    env:
+      CI_INSTALL_TOOLCHAIN: "true"
+      CI_BUILD_STATE: cargo-test-macos-enforcing
+      CI_SHARDS: cargo-test-macos-enforcing-shard
+      CI_ENFORCING: "true"
+    steps: *join-steps
 
   # Preserve the required gate identities. These must run after a failed,
   # skipped or cancelled lane: accepting a partial result would weaken CI.
   cargo-test:
     name: test the workspace (linux)
-    needs: [cargo-test-plain-only, cargo-test-enforcing]
+    needs: [cargo-test-plain-only, cargo-test-enforcing-shard, cargo-test-enforcing]
     if: &test-verdict ${{ always() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions: {}
     timeout-minutes: 5
     env:
       PLAIN_RESULT: ${{ needs.cargo-test-plain-only.result }}
-      ENFORCING_RESULT: ${{ needs.cargo-test-enforcing.result }}
+      SHARDS_RESULT: ${{ needs.cargo-test-enforcing-shard.result }}
+      JOIN_RESULT: ${{ needs.cargo-test-enforcing.result }}
     steps:
-      - name: require both test flavors
-        run: test "$PLAIN_RESULT:$ENFORCING_RESULT" = success:success
+      - name: require both test flavors and the witnesses
+        run: test "$PLAIN_RESULT:$SHARDS_RESULT:$JOIN_RESULT" = success:success:success
 
   cargo-test-macos:
     name: test the workspace (macos-arm64)
-    needs: [cargo-test-macos-enforcing]
+    needs: [cargo-test-macos-enforcing-shard]
     if: *test-verdict
     runs-on: macos-latest
     permissions: {}
     timeout-minutes: 5
     env:
-      ENFORCING_RESULT: ${{ needs.cargo-test-macos-enforcing.result }}
+      ENFORCING_RESULT: ${{ needs.cargo-test-macos-enforcing-shard.result }}
     steps:
       - name: require the enforcing test pass
         run: test "$ENFORCING_RESULT" = success
@@ -907,14 +1060,14 @@ jobs:
       # cache amortize at all.
       - *install-policy-tools
       - *setup-rust
+      # The corpus layout and comment checks run in the plain lane, whose
+      # state holds what they build.
       - name: treefmt --ci
-        run: mise run treefmt:check
+        run: mise run treefmt:check-ci
       - name: markdown allowlist and budgets
         run: mise run check:markdown
       - name: merge residue check
         run: mise run check:merge-residue
-      - name: corpus item comments
-        run: mise run check:corpus-comments
       - name: validate npm lock sidecars
         run: mise run check:lockfile
       - name: keep workflow tools outside the package graph
