@@ -597,6 +597,9 @@ struct Naming
     /// Each dependent arrow with where the name it binds is written,
     /// ascending by id.
     arrows: Vec<(CompTypeId, ByteSpan)>,
+    /// Each dependent pair a dependent record's field opens with where the
+    /// field's label is written, ascending by id.
+    pairs: Vec<(ValueTypeId, ByteSpan)>,
     /// Each type written as a relation between types, with the relation,
     /// ascending by id.
     relations: Vec<(ValueTypeId, Relation)>,
@@ -615,8 +618,8 @@ impl Naming
     /// - requires: `module` was lowered from `source`.
     /// - ensures: the source text, each value declaration's roots by its
     ///   constant, the origin table's binders, split components, dependent
-    ///   arrows and relations, and its bindings then its written values as
-    ///   uses.
+    ///   arrows, dependent record pairs and relations, and its bindings then
+    ///   its written values as uses.
     /// - provides: the input of [`scopes`], kept for an answer.
     /// - fails: never.
     /// - panics: none.
@@ -694,6 +697,11 @@ impl Naming
             .iter()
             .map(|&(arrow, origin)| (arrow, origin.span()))
             .collect();
+        let pairs = origins
+            .pairs()
+            .iter()
+            .map(|&(pair, origin)| (pair, origin.span()))
+            .collect();
         let mut relations = origins.relations().to_vec();
         relations.sort_by_key(|&(related, _)| related);
         Self {
@@ -702,6 +710,7 @@ impl Naming
             openers,
             components,
             arrows,
+            pairs,
             relations,
             uses,
         }
@@ -854,7 +863,8 @@ fn intuitionistic(
 /// - ensures: the scopes of every node reachable from `roots`, and for each
 ///   binder, at its position, the intuitionistic binder around it and its name:
 ///   the one written for the lambda or bind that opens it, or for the split
-///   component it is, counted from the split's outermost binder, else the one
+///   component it is, counted from the split's outermost binder, or the label
+///   of the dependent record field whose pair opens it (#728), else the one
 ///   written at a use's binder; a split component a label pattern leaves
 ///   unwritten is named by its field's label, primed (`′`) until no other
 ///   binder of the declaration holds the name.
@@ -927,7 +937,17 @@ fn scopes(
                             ),
                     )
                 },
-                CoreNode::Value(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => {
+                CoreNode::ValueType(opener) => {
+                    split = None;
+                    let labelled = naming
+                        .pairs
+                        .binary_search_by_key(&opener, |&(held, _)| held)
+                        .ok()
+                        .and_then(|at| naming.pairs.get(at))
+                        .and_then(|&(_, span)| naming.written(span));
+                    (labelled, false)
+                },
+                CoreNode::Value(_) | CoreNode::CompType(_) => {
                     split = None;
                     (None, false)
                 },

@@ -523,6 +523,11 @@ pub struct OriginTable
     /// telescope entry's. The core carries no name; the printer reads it
     /// here.
     arrows: Vec<(CompTypeId, Origin)>,
+    /// The name each dependent pair a dependent record's field opens binds,
+    /// by the pair, ascending by id: where the field's label is written. A
+    /// later field reads the earlier one through that binder, and the
+    /// context it is spelled in names it here (#728).
+    pairs: Vec<(ValueTypeId, Origin)>,
     /// Each variable written in the source, with its binder's span, ascending
     /// by id.
     bindings: Vec<(ValueId, ByteSpan)>,
@@ -716,6 +721,21 @@ impl OriginTable
         record(&mut self.arrows, id, binder);
     }
 
+    /// Record where the label a freshly minted dependent pair binds is
+    /// written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn record_pair(
+        &mut self,
+        id: ValueTypeId,
+        label: Origin,
+    )
+    {
+        record(&mut self.pairs, id, label);
+    }
+
     /// Record, for each node a rewrite of the lowered terms minted, the origin
     /// of the node it stands for: a rebuilt node takes the origin of the node
     /// it was rebuilt from, with that node's binder name and a variable's
@@ -807,6 +827,9 @@ impl OriginTable
         for (written, held) in value_types {
             if let Maybe::Present(origin) = self.value_type(held) {
                 self.record_value_type(written, origin);
+            }
+            if let Maybe::Present(label) = find(&self.pairs, held) {
+                self.record_pair(written, label);
             }
         }
         for (written, held) in comp_types {
@@ -1185,6 +1208,18 @@ impl OriginTable
     pub fn arrows(&self) -> &[(CompTypeId, Origin)]
     {
         &self.arrows
+    }
+
+    /// Each dependent pair a dependent record's field opens with where the
+    /// field's label is written, ascending by id.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pairs(&self) -> &[(ValueTypeId, Origin)]
+    {
+        &self.pairs
     }
 
     /// How many core nodes this table recorded an origin for.
