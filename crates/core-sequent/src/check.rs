@@ -16,24 +16,19 @@
 //!   nominal matches, selections and force frames are positive; copattern
 //!   objects and application frames are negative; variables, constants, `μ`,
 //!   covariables, `μ̃` and `★` take the cut's polarity;
-//! - **scope** — a cover the node carries that is not its own: a variable,
-//!   covariable or annotation index the node names that its support does not
-//!   select, edges that are not the exact, minimal cover of the node's children
-//!   past the binders it opens over each, or an edge that does not place its
-//!   child's carried support.
+//! - **scope** — a scope the node carries that is not its own: a support that
+//!   misses an index the node, its annotations or a child past the binders the
+//!   node opens over it names, or selects an index none of them names.
 //!
-//! Scope is carried, not walked (`il` § Scope is carried): each node's cover is
-//! held to its own node and its children's carried supports, so a cover that
-//! passes at every node of a command is, by induction from the leaves, the
-//! command's exact support. On success the check answers the command's free
-//! variables and covariables, read off the root's carried support and counted
-//! from the command, so a caller asks for a closed command by asking for an
-//! empty [`FreeSet`]. A linear variable is bound only by a memory form's hold
-//! or access body; every other binder leaves it free.
-//!
-//! An annotation's support is read by importing it into a scratch arena the
-//! check owns and scanning it there, since the check borrows the arena it
-//! reads; the scan goes with the annotation scan at minting (#340).
+//! Scope is carried, not walked (`il` § Scope is carried): each node's support
+//! is held to the union of what it names and its children's carried supports,
+//! so a scope that passes at every node of a command is, by induction from the
+//! leaves, the command's exact support. On success the check answers the
+//! command's free variables and covariables, read off the root's carried
+//! support and counted from the command, so a caller asks for a closed command
+//! by asking for an empty [`FreeSet`]. A linear variable is bound only by a
+//! memory form's hold or access body; every other binder leaves it free. An
+//! annotation's support is read off the core type's root, which carries it.
 //!
 //! The arena is acyclic by construction, so the visit is a loop over an
 //! explicit stack with no depth limit. The alternative was a full two-sided
@@ -46,19 +41,13 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
-use gandr_core_term::CoreArena;
-use gandr_core_term::ImportFault;
-use gandr_core_term::TypeImporter;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::support::Cover;
-use gandr_core_term::support::CoverError;
-use gandr_core_term::support::Crossing;
-use gandr_core_term::support::Thinning;
-use gandr_core_term::support::check_cover;
-use gandr_core_term::value_type_support;
+use gandr_core_term::support::Agreement;
+use gandr_core_term::support::ThinningRef;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_theory_cell_complexes::Polarity;
+use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ConsumerArity;
 use crate::boundary::ProducerArity;
@@ -71,10 +60,11 @@ use crate::il::ConsumerNode;
 use crate::il::CovariableIndex;
 use crate::il::DestructorTag;
 use crate::il::NodeAddress;
-use crate::il::NodeCover;
+use crate::il::NodeScope;
 use crate::il::Opens;
 use crate::il::ProducerId;
 use crate::il::ProducerNode;
+use crate::il::Scoping;
 use crate::il::command_annotations;
 use crate::il::command_children;
 use crate::il::command_named;
@@ -94,7 +84,7 @@ pub enum ArityHead
     Destructor(DestructorTag),
 }
 
-/// The binders a cover counts: producer variables or covariables.
+/// The binders a scope counts: producer variables or covariables.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum BindingSpace
 {
@@ -104,16 +94,15 @@ pub enum BindingSpace
     Covariables,
 }
 
-/// What is wrong with a cover a node carries.
+/// What is wrong with a support a node carries.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum CoverFault
+pub enum ScopeFault
 {
-    /// The node names an index its support does not select.
-    Unnamed,
-    /// The edges are not the exact, minimal cover of the node.
-    Cover(CoverError),
-    /// An edge does not place its child's carried support.
-    Misplaced,
+    /// The node, its annotations or a child past the binders the node opens
+    /// over it names an index the node's support does not select.
+    Unselected,
+    /// The node's support selects an index nothing the node holds names.
+    Unused,
 }
 
 /// Why a command is not well formed.
@@ -162,15 +151,15 @@ pub enum CheckRefusal
     },
     /// A match or copattern object answering one head twice.
     DuplicateArm(ArityHead),
-    /// A node carrying a cover that is not its own.
-    ForgedCover
+    /// A node carrying a scope that is not its own.
+    ForgedScope
     {
         /// The node.
         node: NodeAddress,
-        /// The binders the forged cover counts.
+        /// The binders the forged support counts.
         space: BindingSpace,
         /// What is wrong with it.
-        fault: CoverFault,
+        fault: ScopeFault,
     },
 }
 
@@ -216,12 +205,12 @@ impl fmt::Display for CheckRefusal
                 )
             },
             Self::DuplicateArm(_) => f.write_str("a head is answered by two arms"),
-            Self::ForgedCover { node, space, .. } => {
+            Self::ForgedScope { node, space, .. } => {
                 let counted = match space {
                     BindingSpace::Producers => "variable",
                     BindingSpace::Covariables => "covariable",
                 };
-                write!(f, "{node} carries a {counted} cover that is not its own")
+                write!(f, "{node} carries a {counted} support that is not its own")
             },
         }
     }
@@ -266,28 +255,25 @@ impl FreeSet
         &self.covariables
     }
 
-    /// The free set a carried cover's support selects.
+    /// The free set a carried scope selects.
     ///
     /// # Specification
     /// trivial.
-    fn of(cover: &NodeCover) -> Self
+    fn of(scope: &NodeScope) -> Self
     {
-        let support = cover.producers.support();
         let producers = [Zone::Intuitionistic, Zone::Linear]
             .into_iter()
             .flat_map(|zone| {
-                support
+                scope
+                    .producers()
                     .indices(zone)
-                    .iter()
-                    .map(move |&index| (zone, index))
+                    .map(move |index| (zone, index))
             })
             .collect();
-        let covariables = cover
-            .covariables
-            .support()
+        let covariables = scope
+            .covariables()
             .indices(Zone::Intuitionistic)
-            .iter()
-            .map(|&index| CovariableIndex::from(u32::from(index)))
+            .map(|index| CovariableIndex::from(u32::from(index)))
             .collect();
         Self {
             producers,
@@ -303,13 +289,13 @@ impl FreeSet
 /// - ensures: on success the command's free producer variables and covariables,
 ///   each index counted from the command, as its carried support selects them;
 ///   the command is then reference-intact, arity-correct, focused,
-///   polarity-consistent, and every node below it carries its own cover.
+///   polarity-consistent, and every node below it carries its own scope.
 /// - provides: the one well-formedness judgement over the IL.
 /// - fails: the first [`CheckRefusal`] a depth-first visit meets.
 /// - panics: none.
 /// - intension: one stack entry per node occurrence below the command; one
-///   cover check per occurrence, linear in the node's children and its support,
-///   and one import and scan per annotation.
+///   union per occurrence, linear in the node's children and its support, and
+///   one support read per annotation.
 ///
 /// # Errors
 /// As the failure clause states.
@@ -319,7 +305,7 @@ impl FreeSet
 ///   only its rule and asserted by exact variant and payload; the arity rule is
 ///   separated from a constant by one count admitted at one head and refused at
 ///   the other; scope by one variable free and the same variable bound, and a
-///   forged cover in each space and each fault refused by name. L2 — on every
+///   forged scope in each space and each fault refused by name. L2 — on every
 ///   command of every generated focused term the answer equals the free set an
 ///   independent walk computes.
 /// - witness: `check::tests::terminal_cut_is_wellformed`
@@ -332,7 +318,7 @@ impl FreeSet
 /// - witness: `check::tests::destructor_consumer_arity_is_checked`
 /// - witness: `check::tests::consumer_arity_follows_the_head_not_a_constant`
 /// - witness: `check::tests::a_head_answered_twice_is_rejected`
-/// - witness: `check::tests::a_forged_cover_is_refused_at_the_root`
+/// - witness: `check::tests::a_forged_scope_is_refused_by_name`
 /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
 /// - witness: `tests::focus_properties::root_support_equals_the_walk_on_every_focused_term`
 #[inline]
@@ -359,7 +345,7 @@ pub fn check_command(
     let mut walk = Walk {
         arena,
         stack: alloc::vec![NodeAddress::Command(command)],
-        scratch: CoreArena::new(),
+        scoping: Scoping::new(),
     };
     while let Some(node) = walk.stack.pop() {
         match node {
@@ -369,7 +355,7 @@ pub fn check_command(
         }
     }
     let root = arena
-        .node_cover(NodeAddress::Command(command))
+        .node_scope(NodeAddress::Command(command))
         .ok_or(CheckRefusal::DanglingCommand(command))?;
     Ok(FreeSet::of(root))
 }
@@ -381,9 +367,8 @@ struct Walk<'run>
     arena: &'run CommandArena,
     /// The pending nodes, the next one last.
     stack: Vec<NodeAddress>,
-    /// The arena each annotation is imported into to have its support read:
-    /// the check borrows the arena it reads and never writes it.
-    scratch: CoreArena,
+    /// The scope rebuilt for the node being checked, empty between nodes.
+    scoping: Scoping,
 }
 
 impl Walk<'_>
@@ -393,10 +378,11 @@ impl Walk<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success the command's children are scheduled in edge
-    ///   order, the first on top.
+    ///   order, the first on top, and its scope is the union of what it and its
+    ///   interface name and its children's scopes.
     /// - provides: the polarity rule, and the scope rule for commands.
     /// - fails: a dangling command, side or child; a cut side observing the
-    ///   other polarity; an annotation the arena does not hold; a forged cover.
+    ///   other polarity; an annotation the arena does not hold; a forged scope.
     /// - panics: none.
     ///
     /// # Errors
@@ -406,16 +392,22 @@ impl Walk<'_>
     /// - hypothesis: L3 — both polarities and inherited heads distinguish
     ///   polarity inversions; a missing root distinguishes skipped lookup;
     ///   exact free sets of control commands distinguish a child scheduled
-    ///   under the wrong binders, and a forged command cover is refused.
+    ///   under the wrong binders, and a forged command scope is refused.
     /// - witness: `check::tests::terminal_cut_is_wellformed`
     /// - witness: `check::tests::dangling_reference_is_rejected`
     /// - witness: `check::tests::polarity_mismatch_is_rejected`
     /// - witness: `check::tests::control_scopes_are_local_to_each_body`
-    /// - witness: `check::tests::a_forged_cover_is_refused_at_the_root`
+    /// - witness: `check::tests::a_forged_scope_is_refused_by_name`
     #[spec(
         captures: [work = self.stack.len()],
-        ensures: |ref ret| ret.is_err() || self.arena.command(id).is_some_and(|node|
-            work.checked_add(command_children(node).len()) == Some(self.stack.len())),
+        ensures: |ref ret| ret.is_err() || self.arena.command(id).is_some_and(|node| {
+            let mut listed = 0_usize;
+            let _listing = command_children(node, |_, _| {
+                listed = listed.saturating_add(1);
+                Ok::<(), CheckRefusal>(())
+            });
+            work.checked_add(listed) == Some(self.stack.len())
+        }),
     )]
     fn command(
         &mut self,
@@ -423,7 +415,9 @@ impl Walk<'_>
     ) -> Result<(), CheckRefusal>
     {
         let arena = self.arena;
-        let node = arena.command(id).ok_or(CheckRefusal::DanglingCommand(id))?;
+        let (node, carried) = arena
+            .command_scoped(id)
+            .ok_or_else(|| dangling(NodeAddress::Command(id)))?;
         if let CommandNode::Cut {
             polarity,
             producer,
@@ -432,10 +426,10 @@ impl Walk<'_>
         {
             let sent = arena
                 .producer(producer)
-                .ok_or(CheckRefusal::DanglingProducer(producer))?;
+                .ok_or_else(|| dangling(NodeAddress::Producer(producer)))?;
             let received = arena
                 .consumer(consumer)
-                .ok_or(CheckRefusal::DanglingConsumer(consumer))?;
+                .ok_or_else(|| dangling(NodeAddress::Consumer(consumer)))?;
             for observed in [producer_polarity(sent), consumer_polarity(received)]
                 .into_iter()
                 .flatten()
@@ -450,12 +444,14 @@ impl Walk<'_>
             }
         }
         let address = NodeAddress::Command(id);
-        let mut named = self.annotated(address, command_annotations(node))?;
-        named.extend(command_named(node));
-        let children = command_children(node);
-        self.cover(address, named, core::iter::empty(), &children)?;
-        self.schedule(&children);
-        Ok(())
+        self.scoping.name(command_named(node), core::iter::empty());
+        self.annotated(address, command_annotations(node))?;
+        let work = self.stack.len();
+        command_children(node, |child, opens| self.scope_child(child, opens))?;
+        if let Some(pushed) = self.stack.get_mut(work ..) {
+            pushed.reverse();
+        }
+        self.held(address, carried)
     }
 
     /// Check one producer and schedule its children.
@@ -463,10 +459,11 @@ impl Walk<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success the producer's children are scheduled in edge
-    ///   order, the first on top.
+    ///   order, the first on top, and its scope is the union of what it names
+    ///   and its children's scopes.
     /// - provides: the arity, focus and scope rules for producers.
     /// - fails: a dangling address, an arity or duplicate-arm violation, a `μ`
-    ///   field, or a forged cover.
+    ///   field, or a forged scope.
     /// - panics: none.
     ///
     /// # Errors
@@ -485,18 +482,24 @@ impl Walk<'_>
     /// - witness: `check::tests::scope_boundaries_keep_linear_variables_free`
     #[spec(
         captures: [work = self.stack.len()],
-        ensures: |ref ret| ret.is_err() || self.arena.producer(id).is_some_and(|node|
-            work.checked_add(producer_children(node).len()) == Some(self.stack.len())),
+        ensures: |ref ret| ret.is_err() || self.arena.producer(id).is_some_and(|node| {
+            let mut listed = 0_usize;
+            let _listing = producer_children(node, |_, _| {
+                listed = listed.saturating_add(1);
+                Ok::<(), CheckRefusal>(())
+            });
+            work.checked_add(listed) == Some(self.stack.len())
+        }),
     )]
     fn producer(
         &mut self,
         id: ProducerId,
     ) -> Result<(), CheckRefusal>
     {
-        let node = self
-            .arena
-            .producer(id)
-            .ok_or(CheckRefusal::DanglingProducer(id))?;
+        let arena = self.arena;
+        let (node, carried) = arena
+            .producer_scoped(id)
+            .ok_or_else(|| dangling(NodeAddress::Producer(id)))?;
         match *node {
             ProducerNode::Constructor {
                 ref tag,
@@ -531,15 +534,14 @@ impl Walk<'_>
             | ProducerNode::Fixpoint { .. }
             | ProducerNode::Mu { .. } => {},
         }
-        let children = producer_children(node);
-        self.cover(
-            NodeAddress::Producer(id),
-            producer_named(node),
-            core::iter::empty(),
-            &children,
-        )?;
-        self.schedule(&children);
-        Ok(())
+        let address = NodeAddress::Producer(id);
+        self.scoping.name(producer_named(node), core::iter::empty());
+        let work = self.stack.len();
+        producer_children(node, |child, opens| self.scope_child(child, opens))?;
+        if let Some(pushed) = self.stack.get_mut(work ..) {
+            pushed.reverse();
+        }
+        self.held(address, carried)
     }
 
     /// Check one consumer and schedule its children.
@@ -547,10 +549,11 @@ impl Walk<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success the consumer's children are scheduled in edge
-    ///   order, the first on top.
+    ///   order, the first on top, and its scope is the union of what it and its
+    ///   annotations name and its children's scopes.
     /// - provides: the arity, focus and scope rules for consumers.
     /// - fails: a dangling address, an arity or duplicate-arm violation, a `μ`
-    ///   argument, an annotation the arena does not hold, or a forged cover.
+    ///   argument, an annotation the arena does not hold, or a forged scope.
     /// - panics: none.
     ///
     /// # Errors
@@ -568,8 +571,14 @@ impl Walk<'_>
     /// - witness: `check::tests::scope_boundaries_keep_linear_variables_free`
     #[spec(
         captures: [work = self.stack.len()],
-        ensures: |ref ret| ret.is_err() || self.arena.consumer(id).is_some_and(|node|
-            work.checked_add(consumer_children(node).len()) == Some(self.stack.len())),
+        ensures: |ref ret| ret.is_err() || self.arena.consumer(id).is_some_and(|node| {
+            let mut listed = 0_usize;
+            let _listing = consumer_children(node, |_, _| {
+                listed = listed.saturating_add(1);
+                Ok::<(), CheckRefusal>(())
+            });
+            work.checked_add(listed) == Some(self.stack.len())
+        }),
     )]
     fn consumer(
         &mut self,
@@ -577,9 +586,9 @@ impl Walk<'_>
     ) -> Result<(), CheckRefusal>
     {
         let arena = self.arena;
-        let node = arena
-            .consumer(id)
-            .ok_or(CheckRefusal::DanglingConsumer(id))?;
+        let (node, carried) = arena
+            .consumer_scoped(id)
+            .ok_or_else(|| dangling(NodeAddress::Consumer(id)))?;
         match *node {
             ConsumerNode::Destructor {
                 tag,
@@ -610,7 +619,7 @@ impl Walk<'_>
                 for &branch in branches {
                     let node = arena
                         .producer(branch)
-                        .ok_or(CheckRefusal::DanglingProducer(branch))?;
+                        .ok_or_else(|| dangling(NodeAddress::Producer(branch)))?;
                     if let ProducerNode::Mu { .. } = *node {
                         return Err(CheckRefusal::NonValueArgument(branch));
                     }
@@ -623,11 +632,14 @@ impl Walk<'_>
             | ConsumerNode::Select { .. } => {},
         }
         let address = NodeAddress::Consumer(id);
-        let named = self.annotated(address, consumer_annotations(node))?;
-        let children = consumer_children(node);
-        self.cover(address, named, consumer_named(node), &children)?;
-        self.schedule(&children);
-        Ok(())
+        self.scoping.name(core::iter::empty(), consumer_named(node));
+        self.annotated(address, consumer_annotations(node))?;
+        let work = self.stack.len();
+        consumer_children(node, |child, opens| self.scope_child(child, opens))?;
+        if let Some(pushed) = self.stack.get_mut(work ..) {
+            pushed.reverse();
+        }
+        self.held(address, carried)
     }
 
     /// Hold a constructor's or destructor's children to its head's
@@ -694,7 +706,7 @@ impl Walk<'_>
             let node = self
                 .arena
                 .producer(producer)
-                .ok_or(CheckRefusal::DanglingProducer(producer))?;
+                .ok_or_else(|| dangling(NodeAddress::Producer(producer)))?;
             if let ProducerNode::Mu { .. } = *node {
                 return Err(CheckRefusal::NonValueArgument(producer));
             }
@@ -702,18 +714,22 @@ impl Walk<'_>
         Ok(())
     }
 
-    /// The intuitionistic indices `annotations` name, each read where `node`
-    /// stands.
+    /// Add the intuitionistic indices `annotations` name, each read where
+    /// `node` stands, to the walk's scope being rebuilt.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success the indices the scan of each annotation selects,
-    ///   in order — the same indices minting counted.
+    /// - ensures: on success the walk's scoping holds every intuitionistic
+    ///   index each annotation's carried support selects — the same indices
+    ///   minting counted.
     /// - provides: the reader's own derivation of what a node's annotations add
     ///   to its support.
     /// - fails: [`CheckRefusal::DanglingAnnotation`] for an annotation the
     ///   annotation arena does not hold.
     /// - panics: none.
+    /// - executable: none — `annotations` is consumed by the call, so a
+    ///   predicate has no second walk of it, and the scoping is read only by
+    ///   finishing it; the witness reads the support back through the check.
     ///
     /// # Errors
     /// As the failure clause states.
@@ -721,175 +737,196 @@ impl Walk<'_>
     /// # Adequacy
     /// - hypothesis: L3 — a fold whose element type names a variable no term
     ///   names is accepted with that variable free, which an ignored annotation
-    ///   would refuse as an unused slot.
+    ///   would refuse as an unused index.
     /// - witness: `il::tests::an_annotation_counts_in_its_nodes_support`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |named|
-        named.iter().all(|&(zone, _)| zone == Zone::Intuitionistic)))]
+    #[inline]
     fn annotated<Annotations>(
         &mut self,
         node: NodeAddress,
         annotations: Annotations,
-    ) -> Result<Vec<(Zone, DeBruijnIndex)>, CheckRefusal>
+    ) -> Result<(), CheckRefusal>
     where
         Annotations: IntoIterator<Item = ValueTypeId>,
     {
-        let mut named = Vec::new();
+        let types = self.arena.annotations();
         for annotation in annotations {
-            let imported = TypeImporter::new(self.arena.annotations(), &mut self.scratch)
-                .value_type(annotation)
-                .map_err(|ImportFault| CheckRefusal::DanglingAnnotation(node))?;
-            let support = value_type_support(&mut self.scratch, imported);
-            named.extend(
-                support
-                    .indices(Zone::Intuitionistic)
-                    .iter()
-                    .map(|&index| (Zone::Intuitionistic, index)),
-            );
+            let support = types
+                .value_type_support(annotation)
+                .ok_or(CheckRefusal::DanglingAnnotation(node))?;
+            self.scoping.annotation(support);
         }
-        Ok(named)
+        Ok(())
     }
 
-    /// Hold the cover `node` carries to what it names and to its children's
-    /// carried supports.
+    /// Add a child's carried scope, past the binders its node opens over it,
+    /// to the walk's scope being rebuilt, and schedule the child.
     ///
     /// # Specification
-    /// - requires: `producers` and `covariables` are the occurrences the node
-    ///   names itself, `children` its children in edge order.
-    /// - ensures: on success, in each space, every named index is selected by
-    ///   the node's support, the edges are the exact, minimal cover of the
-    ///   node's children past the binders it opens over each, and each edge
-    ///   placed from the support is its child's carried support.
-    /// - provides: the scope rule.
-    /// - fails: a dangling node or child, or [`CheckRefusal::ForgedCover`]
-    ///   naming the space and the fault, the producer space first.
+    /// - requires: nothing.
+    /// - ensures: on success the walk's scoping holds the child's supports past
+    ///   `opens` and the child is pushed.
+    /// - fails: a dangling child, nothing pushed.
     /// - panics: none.
+    /// - executable: none — a per-child step of the check; the visiting node's
+    ///   own specification counts what it pushed.
     ///
     /// # Errors
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one forged cover per fault and space, each refused by
-    ///   exactly its own name; every cover minting builds passes.
-    /// - witness: `check::tests::a_forged_cover_is_refused_at_the_root`
-    /// - witness: `tests::focus_properties::root_support_equals_the_walk_on_every_focused_term`
-    #[spec(captures: [work = self.stack.len()], ensures: self.stack.len() == work)]
-    fn cover<Producers, Covariables>(
-        &self,
-        node: NodeAddress,
-        producers: Producers,
-        covariables: Covariables,
-        children: &[(NodeAddress, Opens)],
+    /// - hypothesis: L3 — a dangling child of each family and a live one
+    ///   separate the refusal from the schedule.
+    /// - witness: `check::tests::dangling_reference_is_rejected`
+    #[inline]
+    fn scope_child(
+        &mut self,
+        child: NodeAddress,
+        opens: Opens,
     ) -> Result<(), CheckRefusal>
-    where
-        Producers: IntoIterator<Item = (Zone, DeBruijnIndex)>,
-        Covariables: IntoIterator<Item = (Zone, DeBruijnIndex)>,
     {
-        let carried = self.arena.node_cover(node).ok_or_else(|| dangling(node))?;
-        let mut held = Vec::with_capacity(children.len());
-        for &(child, opens) in children {
-            let cover = self
-                .arena
-                .node_cover(child)
-                .ok_or_else(|| dangling(child))?;
-            held.push((cover, opens));
-        }
-        space(
-            node,
-            BindingSpace::Producers,
-            &carried.producers,
-            producers,
-            held.iter()
-                .map(|&(cover, opens)| (cover.producers.support(), opens.producers)),
-        )?;
-        space(
-            node,
-            BindingSpace::Covariables,
-            &carried.covariables,
-            covariables,
-            held.iter()
-                .map(|&(cover, opens)| (cover.covariables.support(), opens.covariables)),
-        )
+        let scope = self
+            .arena
+            .node_scope(child)
+            .ok_or_else(|| dangling(child))?;
+        self.scoping.child(scope, opens);
+        self.stack.push(child);
+        Ok(())
     }
 
-    /// Schedule `children` so the first is visited next.
+    /// Hold `carried`, the scope `node` carries, to the one the walk rebuilt
+    /// from what it names and its children's carried scopes, and empty the
+    /// walk's scoping for the next node.
     ///
     /// # Specification
-    /// trivial.
-    fn schedule(
+    /// - requires: the walk's scoping holds the node's own occurrences, its
+    ///   annotations' and every child's scope past the binders it opens over
+    ///   the child.
+    /// - ensures: on success the node's carried support equals the rebuilt one
+    ///   in each space, and the walk's scoping is empty.
+    /// - provides: the scope rule.
+    /// - fails: [`CheckRefusal::ForgedScope`] naming the space and the fault,
+    ///   the producer space first.
+    /// - panics: none.
+    /// - executable: none — a per-node step of the check; the visiting node's
+    ///   own specification states the stack it leaves.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one forged scope per fault and space, each refused by
+    ///   exactly its own name; every scope minting builds passes.
+    /// - witness: `check::tests::a_forged_scope_is_refused_by_name`
+    /// - witness: `tests::focus_properties::root_support_equals_the_walk_on_every_focused_term`
+    #[inline]
+    fn held(
         &mut self,
-        children: &[(NodeAddress, Opens)],
-    )
+        node: NodeAddress,
+        carried: &NodeScope,
+    ) -> Result<(), CheckRefusal>
     {
-        self.stack
-            .extend(children.iter().rev().map(|&(child, _)| child));
+        match self.scoping.holds(carried) {
+            Agreement::Same => {
+                self.scoping.clear();
+                Ok(())
+            },
+            Agreement::Different => {
+                forged(node, carried, &core::mem::take(&mut self.scoping).finish())
+            },
+        }
     }
 }
 
-/// Hold one space's carried cover to what its node names and to its
-/// children's carried supports.
+/// The refusal for a node whose carried scope is not the one rebuilt for it,
+/// the producer space first.
 ///
 /// # Specification
-/// - requires: `children` are the children's carried supports in this space,
-///   each beside the binders the node opens over it, in edge order.
-/// - ensures: success exactly when every named index is selected by the
-///   support, [`check_cover`] admits the edges over the compact positions the
-///   node names and the children's scopes, and each edge placed from the
-///   support is its child's support.
-/// - fails: [`CheckRefusal::ForgedCover`] with [`CoverFault::Unnamed`], then
-///   [`CoverFault::Cover`], then [`CoverFault::Misplaced`].
+/// - requires: `rebuilt` is the scope rebuilt for `node`.
+/// - ensures: success exactly when `carried` and `rebuilt` agree in both
+///   spaces; otherwise the first space's refusal, as [`space`] names it.
 /// - panics: none.
+///
+/// # Errors
+/// As the ensures clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`space`], a forged scope in each space.
+/// - witness: `check::tests::a_forged_scope_is_refused_by_name`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(
+    |refusal| matches!(*refusal, CheckRefusal::ForgedScope { node: found, .. } if found == node),
+    |&()| carried == rebuilt))]
+#[cold]
+fn forged(
+    node: NodeAddress,
+    carried: &NodeScope,
+    rebuilt: &NodeScope,
+) -> Result<(), CheckRefusal>
+{
+    space(
+        node,
+        BindingSpace::Producers,
+        carried.producers(),
+        rebuilt.producers(),
+    )?;
+    space(
+        node,
+        BindingSpace::Covariables,
+        carried.covariables(),
+        rebuilt.covariables(),
+    )
+}
+
+/// Hold one space's carried support to the one rebuilt for its node.
+///
+/// # Specification
+/// - requires: `rebuilt` is the union of what the node names and its children's
+///   carried supports in this space.
+/// - ensures: success exactly when the two are equal.
+/// - fails: [`CheckRefusal::ForgedScope`] with [`ScopeFault::Unselected`] when
+///   `carried` misses an index `rebuilt` selects, otherwise
+///   [`ScopeFault::Unused`].
+/// - panics: none.
+/// - intension: one comparison of two words while both are inline.
 ///
 /// # Errors
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — one forged cover per fault, each refused by exactly its
-///   own name; every cover minting builds passes.
-/// - witness: `check::tests::a_forged_cover_is_refused_at_the_root`
-#[spec(captures: [count = children.clone().count()], ensures: |ret| ret.as_ref().map_or_else(
-    |refusal| matches!(*refusal, CheckRefusal::ForgedCover { node: found, space: counted, .. } if found == node && counted == space),
-    |&()| carried.edges().len() == count))]
-fn space<'child, Named, Children>(
+/// - hypothesis: L3 — a forged support missing an index and one selecting an
+///   extra one, in each space, are each refused by exactly their own name;
+///   every support minting builds passes.
+/// - witness: `check::tests::a_forged_scope_is_refused_by_name`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(
+    |refusal| matches!(*refusal, CheckRefusal::ForgedScope { node: found, space: counted, .. } if found == node && counted == space),
+    |&()| carried == rebuilt))]
+#[cold]
+fn space(
     node: NodeAddress,
     space: BindingSpace,
-    carried: &Cover,
-    named: Named,
-    children: Children,
+    carried: ThinningRef<'_>,
+    rebuilt: ThinningRef<'_>,
 ) -> Result<(), CheckRefusal>
-where
-    Named: IntoIterator<Item = (Zone, DeBruijnIndex)>,
-    Children: Iterator<Item = (&'child Thinning, Crossing)> + Clone,
 {
-    let forged = |fault| CheckRefusal::ForgedCover { node, space, fault };
-    let support = carried.support();
-    let mut own = Vec::new();
-    for (zone, index) in named {
-        let Ok(rank) = support.indices(zone).binary_search(&index)
-        else {
-            return Err(forged(CoverFault::Unnamed));
-        };
-        // reason: a rank counts distinct `u32` indices below another `u32`
-        // index, so it fits; the clamp keeps the conversion total.
-        own.push((
-            zone,
-            DeBruijnIndex::from(u32::try_from(rank).unwrap_or(u32::MAX)),
-        ));
+    if carried == rebuilt {
+        return Ok(());
     }
-    check_cover(
-        support.scope(),
-        own,
-        carried.edges(),
-        children
-            .clone()
-            .map(|(child, crossing)| (child.scope(), crossing)),
-    )
-    .map_err(|error| forged(CoverFault::Cover(error)))?;
-    for (edge, (child, crossing)) in carried.edges().iter().zip(children) {
-        if support.place(edge, crossing).as_ref() != Ok(child) {
-            return Err(forged(CoverFault::Misplaced));
+    let unselected = [Zone::Intuitionistic, Zone::Linear]
+        .into_iter()
+        .any(|zone| {
+            rebuilt
+                .indices(zone)
+                .any(|index| matches!(carried.rank(zone, index), Maybe::Absent(_)))
+        });
+    Err(CheckRefusal::ForgedScope {
+        node,
+        space,
+        fault: if unselected {
+            ScopeFault::Unselected
         }
-    }
-    Ok(())
+        else {
+            ScopeFault::Unused
+        },
+    })
 }
 
 /// The refusal naming a node the arena does not hold.

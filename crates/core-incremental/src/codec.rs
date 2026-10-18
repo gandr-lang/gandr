@@ -4110,7 +4110,7 @@ fn write_selection<Out>(
     Out: Sink,
 {
     for zone in [Zone::Intuitionistic, Zone::Linear] {
-        for &index in thinning.indices(zone) {
+        for index in thinning.indices(zone) {
             writer.word(Word(u64::from(u32::from(index))));
         }
     }

@@ -1,3 +1,4 @@
+use alloc::vec;
 use alloc::vec::Vec;
 
 use gandr_kernel_strata::Level;
@@ -10,7 +11,12 @@ use super::ArenaWatermark;
 use super::CoreArena;
 use super::ValueId;
 use crate::classifier::Sort;
+use crate::control::StackFrame;
+use crate::memory::MemoryForm;
+use crate::session::SessionAction;
+use crate::support::Thinning;
 use crate::syntax::CompType;
+use crate::syntax::ComponentCount;
 use crate::syntax::Value;
 use crate::syntax::ValueType;
 use crate::syntax::Zone;
@@ -611,5 +617,257 @@ fn a_mark_keeps_its_index_and_its_body()
             mark: crate::hole::MarkIndex::from(3_u32),
             body: right,
         })
+    );
+}
+
+/// One row of the carried-support witness: its reading, the intuitionistic
+/// and linear indices expected, and the support the node carries.
+type Expected<'reading> = (&'reading str, Vec<u32>, Vec<u32>, Option<Thinning>);
+
+#[test]
+fn every_binder_former_carries_its_bodys_support_past_its_binders()
+{
+    let mut arena = CoreArena::new();
+    let int = Zone::Intuitionistic;
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    // `return (x₀, …)` over the variables `indices` of `zone`.
+    let returning = |arena: &mut CoreArena, zone: Zone, indices: &[u32]| {
+        let components: Vec<ValueId> = indices
+            .iter()
+            .map(|&index| arena.value_variable(zone, DeBruijnIndex::from(index)))
+            .collect();
+        let tuple = arena.value_tuple(&components);
+        arena.computation_return(tuple)
+    };
+    // The indices a support selects in `zone`, raw; none for a dangling read.
+    let selected = |support: Option<&Thinning>, zone: Zone| -> Vec<u32> {
+        support.map_or_else(Vec::new, |support| {
+            support.indices(zone).map(u32::from).collect()
+        })
+    };
+    let mut cases: Vec<Expected<'_>> = Vec::new();
+
+    // λ. return (#0, #2): the binder drops and #2 lowers past it.
+    let body = returning(&mut arena, int, &[0, 2]);
+    let lambda = arena.computation_lambda(body);
+    cases.push((
+        "a lambda",
+        vec![1],
+        vec![],
+        arena.computation_support(lambda).cloned(),
+    ));
+    // λ. return #3: a body ignoring its binder still lowers past it.
+    let body = returning(&mut arena, int, &[3]);
+    let ignoring = arena.computation_lambda(body);
+    cases.push((
+        "an unused binder",
+        vec![2],
+        vec![],
+        arena.computation_support(ignoring).cloned(),
+    ));
+    // bind (return #1) (return (#0, #3)): the continuation alone crosses.
+    let bound = returning(&mut arena, int, &[1]);
+    let body = returning(&mut arena, int, &[0, 3]);
+    let bind = arena.computation_bind(bound, body);
+    cases.push((
+        "a bind",
+        vec![1, 2],
+        vec![],
+        arena.computation_support(bind).cloned(),
+    ));
+    // case #0 of [return #0, return #2]: each branch crosses one binder.
+    let scrutinee = variable(&mut arena, 0);
+    let left = returning(&mut arena, int, &[0]);
+    let right = returning(&mut arena, int, &[2]);
+    let case = arena.computation_case(scrutinee, &[left, right]);
+    cases.push((
+        "a case",
+        vec![0, 1],
+        vec![],
+        arena.computation_support(case).cloned(),
+    ));
+    // split #4 into two, then return (#0, #1, #3): the body crosses both.
+    let scrutinee = variable(&mut arena, 4);
+    let body = returning(&mut arena, int, &[0, 1, 3]);
+    let split = arena.computation_split(scrutinee, ComponentCount::from(2_usize), body);
+    cases.push((
+        "a split",
+        vec![1, 4],
+        vec![],
+        arena.computation_support(split).cloned(),
+    ));
+    // fold #5 with [] and (h t ↦ return (#1, #3)): the cell branch crosses two.
+    let integer = arena.value_type_base(BaseType::Integer);
+    let list = variable(&mut arena, 5);
+    let on_nil = returning(&mut arena, int, &[]);
+    let on_cons = returning(&mut arena, int, &[1, 3]);
+    let fold = arena.computation_list_fold(integer, integer, list, on_nil, on_cons);
+    cases.push((
+        "a fold",
+        vec![1, 5],
+        vec![],
+        arena.computation_support(fold).cloned(),
+    ));
+    // reify [apply #0, bind (return #2)]: the bind frame crosses one.
+    let argument = variable(&mut arena, 0);
+    let continuation = returning(&mut arena, int, &[2]);
+    let stack = arena.value_reify(alloc::sync::Arc::from([
+        StackFrame::Apply(argument),
+        StackFrame::Bind(continuation),
+    ]));
+    cases.push((
+        "a reified stack",
+        vec![0, 1],
+        vec![],
+        arena.value_support(stack).cloned(),
+    ));
+    // Λ. #1: a static lambda's body crosses one.
+    let one = variable(&mut arena, 1);
+    let static_lambda = arena.value_static_lambda(one);
+    cases.push((
+        "a static lambda",
+        vec![0],
+        vec![],
+        arena.value_support(static_lambda).cloned(),
+    ));
+    // Σ (El #0) (El #2): the second factor crosses one.
+    let code = variable(&mut arena, 0);
+    let first = arena.value_type_element(code, Level::zero());
+    let code = variable(&mut arena, 2);
+    let second = arena.value_type_element(code, Level::zero());
+    let sigma = arena.value_type_sigma(first, second);
+    cases.push((
+        "a sigma",
+        vec![0, 1],
+        vec![],
+        arena.value_type_support(sigma).cloned(),
+    ));
+    // U (Π (_ : El #3). El #0 → F (El #2)): the domain's #3 stays, the
+    // codomain's #0 is the Π's binder and its #2 is the subject's #1.
+    let code = variable(&mut arena, 3);
+    let domain = arena.value_type_element(code, Level::zero());
+    let code = variable(&mut arena, 0);
+    let argument = arena.value_type_element(code, Level::zero());
+    let code = variable(&mut arena, 2);
+    let result = arena.value_type_element(code, Level::zero());
+    let result = arena.comp_type_returner(result);
+    let codomain = arena.comp_type_arrow(argument, result);
+    let pi = arena.comp_type_pi(domain, codomain);
+    let dependent = arena.value_type_thunk(pi);
+    cases.push((
+        "a pi",
+        vec![1, 3],
+        vec![],
+        arena.value_type_support(dependent).cloned(),
+    ));
+    // El #1 × El #1 × El #0: a repeat is one member.
+    let factors: Vec<_> = [1_u32, 1, 0]
+        .into_iter()
+        .map(|index| {
+            let code = variable(&mut arena, index);
+            arena.value_type_element(code, Level::zero())
+        })
+        .collect();
+    let repeated = arena.value_type_product(&factors);
+    cases.push((
+        "a repeat",
+        vec![0, 1],
+        vec![],
+        arena.value_type_support(repeated).cloned(),
+    ));
+    cases.push((
+        "a closed type",
+        vec![],
+        vec![],
+        arena.value_type_support(integer).cloned(),
+    ));
+    // fork (c : 1) { close(c) } as d ; send(d, #2): each half crosses one
+    // linear binder and the intuitionistic #2 crosses none.
+    let protocol = arena.value_type_unit();
+    let child = arena.computation_session(SessionAction::Close {
+        endpoint: DeBruijnIndex::from(0_u32),
+    });
+    let payload = variable(&mut arena, 2);
+    let parent = arena.computation_session(SessionAction::Send {
+        endpoint: DeBruijnIndex::from(1_u32),
+        payload,
+    });
+    let fork = arena.computation_session(SessionAction::Fork {
+        protocol,
+        child,
+        parent,
+    });
+    cases.push((
+        "a fork",
+        vec![2],
+        vec![0],
+        arena.computation_support(fork).cloned(),
+    ));
+    // hold x = #0 ; access x as w { resume(w, #1) } unwind { abort(ℓ1) }: the
+    // access names its held slot, its body crosses the view's linear binder
+    // and its unwind crosses none; the hold's body crosses one linear binder.
+    let written = variable(&mut arena, 1);
+    let resumed = arena.computation_memory(MemoryForm::Resume {
+        view: DeBruijnIndex::from(0_u32),
+        value: written,
+    });
+    let aborted = arena.computation_memory(MemoryForm::Abort {
+        view: DeBruijnIndex::from(1_u32),
+    });
+    let access = arena.computation_memory(MemoryForm::Access {
+        held: DeBruijnIndex::from(0_u32),
+        body: resumed,
+        unwind: aborted,
+    });
+    cases.push((
+        "an access",
+        vec![1],
+        vec![0, 1],
+        arena.computation_support(access).cloned(),
+    ));
+    let held = variable(&mut arena, 0);
+    let hold = arena.computation_memory(MemoryForm::Hold {
+        value: held,
+        body: access,
+    });
+    cases.push((
+        "a hold",
+        vec![0, 1],
+        vec![0],
+        arena.computation_support(hold).cloned(),
+    ));
+
+    for (reading, intuitionistic, linear, support) in cases {
+        assert_eq!(
+            intuitionistic,
+            selected(support.as_ref(), Zone::Intuitionistic),
+            "{reading}: intuitionistic"
+        );
+        assert_eq!(
+            linear,
+            selected(support.as_ref(), Zone::Linear),
+            "{reading}: linear"
+        );
+    }
+    assert!(
+        arena.value_support(ValueId(u32::MAX)).is_none(),
+        "a dangling id carries nothing"
+    );
+    // Truncation drops a node's support with it: the re-minted node carries
+    // its own, not the one at its index before.
+    let mark = arena.watermark();
+    let wide = variable(&mut arena, 9);
+    arena.truncate_to(mark);
+    assert!(
+        arena.value_support(wide).is_none(),
+        "a truncated node carries nothing"
+    );
+    let closed = arena.value_unit();
+    assert_eq!(wide, closed, "the slot is reused");
+    assert_eq!(
+        Vec::<u32>::new(),
+        selected(arena.value_support(closed), Zone::Intuitionistic)
     );
 }

@@ -75,65 +75,74 @@
 //! Every node carries its support — the variables and covariables it
 //! mentions, as a selection from the binders in scope where it stands — in
 //! the co-de Bruijn carrier of [`gandr_core_term::support`]. A node carries a
-//! [`NodeCover`]: its support and one edge per child, each edge placing the
-//! child's support in the node's own past the binders the node opens over
-//! that child. Minting builds the cover from the covers its children already
-//! carry, so a node's scope is computed once, where it is built, and never by
-//! a walk. A binder's edge to its body is a thinning over the body's scope
-//! extended by the bound names: its bit at a bound name says whether the body
-//! uses it, so an unused binder thins to zero there.
+//! [`NodeScope`]: its support in each binding space. Minting builds it as the
+//! union of what the node names and the supports its children already carry,
+//! each lowered past the binders the node opens over that child, so a node's
+//! scope is computed once, where it is built, and never by a walk. A binder
+//! whose body ignores its bound name has a body support that does not select
+//! it, and the binder's own support is the body's lowered past the name.
+//!
+//! A node stores its support and no edges. The edge from a node to a child —
+//! the child's support as a selection from the node's support extended by the
+//! bound names — is a function of the two supports and the crossing, so it is
+//! derived where a reader needs it rather than stored: storing it cost a
+//! table of thinnings per node that the check alone read, and the check reads
+//! the same fact as the union equation every node satisfies. A support is a
+//! bit selection while every index fits the carrier's inline word, and a
+//! node's two supports are packed as one [`ThinningPair`]: both words beside
+//! each other and one pointer shared by their spills, so a scope is 24 bytes
+//! with no heap block on every term of ordinary depth, where two separate
+//! thinnings would be 32. The alternative was `McBride`'s relevant cover with
+//! stored edges, which the previous representation was; it returns if a
+//! reader comes to need an edge per child at a cost a derivation cannot meet.
 //!
 //! The IL counts three zones. Producer variables live in the core's two, the
 //! intuitionistic `Γ` and the linear `Σ`, under the core's crossings: a
 //! memory form's hold and access bodies open one linear binder, every other
 //! producer binder an intuitionistic one. Covariables live in a zone of the
-//! IL's own, `Δ`, carried as a second cover beside the first. `Δ` is
+//! IL's own, `Δ`, carried as a second support beside the first. `Δ` is
 //! cartesian, as `Γ` is — a continuation may be named by both sides of a cut
-//! and by every arm of a match — so its cover is carried in the carrier's
-//! intuitionistic zone. A cover's kind is read off its zone, never stored.
+//! and by every arm of a match — so its support is carried in the carrier's
+//! intuitionistic zone. A support's kind is read off its zone, never stored.
 //!
 //! What each datum is, read as deep inference over the IL:
 //!
-//! - a cover on a cut is the data half of the cut's dependence web: an event
+//! - a support on a cut is the data half of the cut's dependence web: an event
 //!   under `μ̃x. s` depends on the cut's producer exactly when its support holds
 //!   `x`;
-//! - a thinning bit at 0 on a binder is a weakening (`aw↓`): a value bound and
-//!   never read needs no store, and a covariable never named drops its
-//!   continuation;
-//! - a linear cover partitions its node's `Σ` among the children — the switch
-//!   instances splitting the context — while a `Γ` or `Δ` cover is cartesian,
+//! - a bound name a body's support does not select is a weakening (`aw↓`): a
+//!   value bound and never read needs no store, and a covariable never named
+//!   drops its continuation;
+//! - a linear support partitions its node's `Σ` among the children — the switch
+//!   instances splitting the context — while a `Γ` or `Δ` support is cartesian,
 //!   its overlap the contractions (`ac↓`);
-//! - a cover over the arms of a `case`, a `datacase` or a `cocase` is additive:
-//!   an index two arms share is no copy;
-//! - a closure's capture is its root thinning, the edges into the closure: a
-//!   thunk, a fixpoint, a copattern object, a capture or a stack's bind frame
-//!   captures exactly the intuitionistic bindings its support selects, which
+//! - a support over the arms of a `case`, a `datacase` or a `cocase` is
+//!   additive: an index two arms share is no copy;
+//! - a closure's capture is its root support: a thunk, a fixpoint, a copattern
+//!   object, a capture or a stack's bind frame captures exactly the
+//!   intuitionistic bindings its support selects, which
 //!   [`CommandArena::captures`] names.
 //!
 //! A fold's element and result types and an interface's types are core types
 //! in the arena's annotation arena, and they name variables too, so a node's
 //! support counts what its annotations name: a closure must capture what its
-//! annotations read for readback to close them. Core types do not carry
-//! supports yet, so minting scans each annotation with
-//! [`value_type_support`]; once the core's nodes carry their covers (#340)
-//! the scan goes and the support is read off the type.
+//! annotations read for readback to close them. Core nodes carry their
+//! supports, so an annotation's support is read off its root.
 //!
 //! A carried support is syntactic and over-approximates dependence: a
 //! β-removable use still occurs. It keys, schedules and bounds capture, where
 //! an over-approximation splits work and never merges two answers; it never
 //! decides a strengthening.
 //!
-//! The covers sit in tables parallel to the three node families, at each
-//! node's address, so every reader that matches on a node is unchanged and
-//! the printer, the inspector and readback read the de Bruijn nodes, the
-//! projection, as before; nothing outside this crate reads an edge. The
-//! alternatives were a cover field on every node variant, which changes every
-//! match on a node across the tree for data most readers never touch, and a
-//! pass factoring covers out of a built term, which walks every term a second
-//! time. The choice reverses if a reader outside the crate comes to need the
-//! edges, when they move onto the nodes.
-//!
-//! [`value_type_support`]: gandr_core_term::value_type_support
+//! A node's scope sits beside the node in its family's row, at the node's
+//! address, so one append and one bounds check serve both, and every reader
+//! that matches on a node is unchanged: the printer, the inspector and
+//! readback read the de Bruijn nodes, the projection, as before. The
+//! alternatives were tables parallel to the node families, which cost a
+//! second vector per family that grows and is bounds-checked apart from the
+//! first; a scope field on every node variant, which changes every match on a
+//! node across the tree for data most readers never touch; and a pass
+//! computing scopes over a built term, which walks every term a second time.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -142,8 +151,13 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::Zone;
-use gandr_core_term::support::Cover;
+use gandr_core_term::support::Agreement;
 use gandr_core_term::support::Crossing;
+use gandr_core_term::support::Indices;
+use gandr_core_term::support::Thinning;
+use gandr_core_term::support::ThinningPair;
+use gandr_core_term::support::ThinningRef;
+use gandr_core_term::support::Union;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -913,30 +927,211 @@ impl Opens
     }
 }
 
-/// A node's scope, carried beside it: its cover in the producer zones
-/// `Γ; Σ` and its cover in the covariable zone `Δ`, each with one edge per
-/// child in the order [`producer_children`], [`consumer_children`] and
-/// [`command_children`] list them.
+/// A node's scope, carried beside it: its support in the producer zones
+/// `Γ; Σ` and its support in the covariable zone `Δ`, packed as one
+/// [`ThinningPair`] — three words per node.
 ///
 /// # Specification
-/// - executable: none — a data declaration; minting builds both covers with
-///   [`Cover::of`] from the covers the children carry, which makes each the
-///   exact, minimal cover of its node.
+/// - executable: none — a data declaration; minting builds both supports as the
+///   union of what the node names and its children's carried supports past the
+///   binders it opens over each, in the order [`producer_children`],
+///   [`consumer_children`] and [`command_children`] list them, which makes each
+///   exactly the node's free indices.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a binder whose body ignores its bound name and one whose
-///   body reads it, in each zone, separate a dropped edge bit from a kept one;
-///   L2 — every command of every generated focused term carries the support an
-///   independent walk computes.
+///   body reads it, in each zone, separate a lowered support from a kept bound
+///   name; L2 — every command of every generated focused term carries the
+///   support an independent walk computes.
 /// - witness: `il::tests::an_unused_binder_thins_to_zero`
 /// - witness: `tests::focus_properties::root_support_equals_the_walk_on_every_focused_term`
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct NodeCover
+#[repr(transparent)]
+pub struct NodeScope(ThinningPair);
+
+impl NodeScope
 {
-    /// The producer variables' cover, in `Γ; Σ`.
-    pub producers: Cover,
-    /// The covariables' cover, in `Δ`.
-    pub covariables: Cover,
+    /// The scope selecting `producers` and `covariables`, for a test that
+    /// forges one; minting builds scopes through [`Scoping`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(test)]
+    #[must_use]
+    pub fn new(
+        producers: Thinning,
+        covariables: Thinning,
+    ) -> Self
+    {
+        Self(ThinningPair::new(producers, covariables))
+    }
+
+    /// The producer variables the node names, in `Γ; Σ`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn producers(&self) -> ThinningRef<'_>
+    {
+        self.0.first()
+    }
+
+    /// The covariables the node names, in `Δ`'s carrier zone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn covariables(&self) -> ThinningRef<'_>
+    {
+        self.0.second()
+    }
+}
+
+/// A node's scope under construction, shared by minting and the check: what
+/// the node names and its children's carried scopes past the binders it opens
+/// over each, fed in any order.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+pub struct Scoping
+{
+    /// The producer support under construction.
+    producers: Union,
+    /// The covariable support under construction.
+    covariables: Union,
+}
+
+impl Scoping
+{
+    /// The empty scope.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new() -> Self
+    {
+        Self {
+            producers: Union::new(),
+            covariables: Union::new(),
+        }
+    }
+
+    /// Add the producer and covariable occurrences the node names itself.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn name<Producers, Covariables>(
+        &mut self,
+        producers: Producers,
+        covariables: Covariables,
+    ) where
+        Producers: IntoIterator<Item = (Zone, DeBruijnIndex)>,
+        Covariables: IntoIterator<Item = (Zone, DeBruijnIndex)>,
+    {
+        for (zone, index) in producers {
+            self.producers.name(zone, index);
+        }
+        for (zone, index) in covariables {
+            self.covariables.name(zone, index);
+        }
+    }
+
+    /// Add the intuitionistic indices an annotation's carried support
+    /// selects, read where the node it annotates stands.
+    ///
+    /// # Specification
+    /// - ensures: the producer support holds every intuitionistic index
+    ///   `support` selects; a linear occurrence in a type is not counted, as no
+    ///   type binds into the linear zone.
+    /// - panics: none.
+    /// - executable: none — the scoping is read only by finishing it, which
+    ///   consumes it; the witness reads the support back off the minted node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fold whose element type names a variable no term of
+    ///   the fold names, beside one whose types are closed, separates a counted
+    ///   annotation from an ignored one.
+    /// - witness: `il::tests::an_annotation_counts_in_its_nodes_support`
+    #[inline]
+    pub fn annotation(
+        &mut self,
+        support: &Thinning,
+    )
+    {
+        for index in support.indices(Zone::Intuitionistic) {
+            self.producers.name(Zone::Intuitionistic, index);
+        }
+    }
+
+    /// Add a child's carried scope, past the binders the node opens over it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn child(
+        &mut self,
+        scope: &NodeScope,
+        opens: Opens,
+    )
+    {
+        self.producers.child(scope.producers(), opens.producers);
+        self.covariables
+            .child(scope.covariables(), opens.covariables);
+    }
+
+    /// The scope built.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn finish(self) -> NodeScope
+    {
+        NodeScope(ThinningPair::of(self.producers, self.covariables))
+    }
+
+    /// Whether the scope built, finished, is `scope`, without finishing it.
+    ///
+    /// # Specification
+    /// - ensures: [`Agreement::Same`] exactly when `self.finish() == *scope`,
+    ///   the scope built unchanged.
+    /// - panics: none.
+    /// - executable: none — this runs once per node on the check path; the
+    ///   instrumented body is a closure the test profile does not inline, and
+    ///   the witness refuses every forged scope.
+    /// - intension: two comparisons of two words while both unions are inline.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Union::equals`], once per space.
+    /// - witness: `check::tests::a_forged_scope_is_refused_by_name`
+    #[inline]
+    #[must_use]
+    pub fn holds(
+        &self,
+        scope: &NodeScope,
+    ) -> Agreement
+    {
+        match self.producers.equals(scope.producers()) {
+            Agreement::Same => self.covariables.equals(scope.covariables()),
+            Agreement::Different => Agreement::Different,
+        }
+    }
+
+    /// Empty the scope built for the next node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn clear(&mut self)
+    {
+        self.producers.clear();
+        self.covariables.clear();
+    }
 }
 
 /// A suspended command a run closes over the bindings it captures: what a
@@ -970,7 +1165,7 @@ pub struct Captures<'arena>
 {
     /// The suspended command's selected indices past its own binders,
     /// ascending.
-    selected: core::slice::Iter<'arena, DeBruijnIndex>,
+    selected: Indices<'arena>,
     /// The producer binders the suspension's own former opens.
     past: u32,
 }
@@ -1004,7 +1199,7 @@ impl Iterator for Captures<'_>
     #[inline]
     fn next(&mut self) -> Option<DeBruijnIndex>
     {
-        let &index = self.selected.next()?;
+        let index = self.selected.next()?;
         Some(self.outer(index))
     }
 
@@ -1028,7 +1223,7 @@ impl DoubleEndedIterator for Captures<'_>
     #[inline]
     fn next_back(&mut self) -> Option<DeBruijnIndex>
     {
-        let &index = self.selected.next_back()?;
+        let index = self.selected.next_back()?;
         Some(self.outer(index))
     }
 }
@@ -1054,27 +1249,34 @@ pub struct SequentWatermark
     annotations: gandr_core_term::ArenaWatermark,
 }
 
+/// A node beside the scope it carries: one row of its family's table.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Row<Node>
+{
+    /// The node.
+    node: Node,
+    /// The scope minting built for it.
+    scope: NodeScope,
+}
+
 /// The append-only arena owning every IL node of one translation or run.
 ///
-/// The three families are parallel append-only vectors and a node's children
-/// are addresses into the same arena, so cloning or dropping an arena is a
-/// flat vector operation on any term depth. Each family's covers sit in a
-/// table parallel to its nodes, at the node's address.
+/// The three families are append-only vectors and a node's children are
+/// addresses into the same arena, so cloning or dropping an arena is a flat
+/// vector operation on any term depth. Each node's scope sits beside it, in
+/// its family's row at the node's address.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CommandArena
 {
-    /// The producer nodes, in minting order.
-    producers: Vec<ProducerNode>,
-    /// The consumer nodes, in minting order.
-    consumers: Vec<ConsumerNode>,
-    /// The command nodes, in minting order.
-    commands: Vec<CommandNode>,
-    /// Each producer's cover, at its address.
-    producer_covers: Vec<NodeCover>,
-    /// Each consumer's cover, at its address.
-    consumer_covers: Vec<NodeCover>,
-    /// Each command's cover, at its address.
-    command_covers: Vec<NodeCover>,
+    /// The producer nodes and their scopes, in minting order.
+    producers: Vec<Row<ProducerNode>>,
+    /// The consumer nodes and their scopes, in minting order.
+    consumers: Vec<Row<ConsumerNode>>,
+    /// The command nodes and their scopes, in minting order.
+    commands: Vec<Row<CommandNode>>,
     /// Portable type annotations; runtime transitions do not inspect them.
     annotations: gandr_core_term::CoreArena,
 }
@@ -1138,9 +1340,9 @@ impl CommandArena
     ///   after it is retained by the caller.
     /// - ensures: each family holds exactly the lesser of its watermark length
     ///   and its length on entry, so a mark above the current length leaves
-    ///   that family as it was, and its cover table the same count. Every node
-    ///   kept was minted before the mark and so names only kept children:
-    ///   truncation never leaves a dangling child inside the arena.
+    ///   that family as it was, each kept node with its scope. Every node kept
+    ///   was minted before the mark and so names only kept children: truncation
+    ///   never leaves a dangling child inside the arena.
     /// - provides: the rollback every fallible multi-node build takes on
     ///   refusal.
     /// - fails: never.
@@ -1158,10 +1360,7 @@ impl CommandArena
         captures: [entry = self.watermark()],
         ensures: self.producers.len() == usize::from(watermark.producers).min(usize::from(entry.producers))
             && self.consumers.len() == usize::from(watermark.consumers).min(usize::from(entry.consumers))
-            && self.commands.len() == usize::from(watermark.commands).min(usize::from(entry.commands))
-            && self.producer_covers.len() == self.producers.len()
-            && self.consumer_covers.len() == self.consumers.len()
-            && self.command_covers.len() == self.commands.len(),
+            && self.commands.len() == usize::from(watermark.commands).min(usize::from(entry.commands)),
     )]
     pub fn truncate_to(
         &mut self,
@@ -1171,12 +1370,6 @@ impl CommandArena
         self.producers.truncate(usize::from(watermark.producers));
         self.consumers.truncate(usize::from(watermark.consumers));
         self.commands.truncate(usize::from(watermark.commands));
-        self.producer_covers
-            .truncate(usize::from(watermark.producers));
-        self.consumer_covers
-            .truncate(usize::from(watermark.consumers));
-        self.command_covers
-            .truncate(usize::from(watermark.commands));
         self.annotations.truncate_to(watermark.annotations);
     }
 
@@ -1200,7 +1393,7 @@ impl CommandArena
     #[spec(ensures: |ret| match ret {
         | Some(node) => usize::try_from(u32::from(id)).ok()
             .and_then(|offset| self.producers.get(offset))
-            .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(node))),
+            .is_some_and(|held| core::ptr::eq(&raw const held.node, core::ptr::from_ref(node))),
         | None => usize::try_from(u32::from(id))
             .map_or(true, |offset| offset >= self.producers.len()),
     })]
@@ -1209,7 +1402,7 @@ impl CommandArena
         id: ProducerId,
     ) -> Option<&ProducerNode>
     {
-        id.read_in(&self.producers)
+        id.read_in(&self.producers).map(|row| &row.node)
     }
 
     /// Resolve a consumer address, or `None` when it dangles.
@@ -1231,7 +1424,7 @@ impl CommandArena
     #[spec(ensures: |ret| match ret {
         | Some(node) => usize::try_from(u32::from(id)).ok()
             .and_then(|offset| self.consumers.get(offset))
-            .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(node))),
+            .is_some_and(|held| core::ptr::eq(&raw const held.node, core::ptr::from_ref(node))),
         | None => usize::try_from(u32::from(id))
             .map_or(true, |offset| offset >= self.consumers.len()),
     })]
@@ -1240,7 +1433,7 @@ impl CommandArena
         id: ConsumerId,
     ) -> Option<&ConsumerNode>
     {
-        id.read_in(&self.consumers)
+        id.read_in(&self.consumers).map(|row| &row.node)
     }
 
     /// Resolve a command address, or `None` when it dangles.
@@ -1262,7 +1455,7 @@ impl CommandArena
     #[spec(ensures: |ret| match ret {
         | Some(node) => usize::try_from(u32::from(id)).ok()
             .and_then(|offset| self.commands.get(offset))
-            .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(node))),
+            .is_some_and(|held| core::ptr::eq(&raw const held.node, core::ptr::from_ref(node))),
         | None => usize::try_from(u32::from(id))
             .map_or(true, |offset| offset >= self.commands.len()),
     })]
@@ -1271,7 +1464,7 @@ impl CommandArena
         id: CommandId,
     ) -> Option<&CommandNode>
     {
-        id.read_in(&self.commands)
+        id.read_in(&self.commands).map(|row| &row.node)
     }
 
     /// The number of producer nodes.
@@ -1312,8 +1505,8 @@ impl CommandArena
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success the node is appended and its fresh address
-    ///   returned; every child it names resolves; its cover, built from the
-    ///   covers its children carry and the variable it names, is appended at
+    ///   returned; every child it names resolves; its scope, the union of the
+    ///   supports its children carry and the variable it names, is appended at
     ///   the same address.
     /// - provides: the one append point of the producer family.
     /// - fails: [`MintRefusal::DanglingProducer`],
@@ -1344,7 +1537,6 @@ impl CommandArena
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.producers))
                 && usize::from(entry.producers).checked_add(1) == Some(self.producers.len())
-                && self.producer_covers.len() == self.producers.len()
                 && self.consumer_count() == entry.consumers
                 && self.command_count() == entry.commands,
             | Err(_) => self.watermark() == entry,
@@ -1358,13 +1550,13 @@ impl CommandArena
         self.producer_children_resolve(&node)?;
         let id = ProducerId::next_in(&self.producers)
             .ok_or(MintRefusal::FamilyFull(NodeFamily::Producer))?;
-        let cover = self.cover(
-            producer_named(&node),
-            core::iter::empty(),
-            &producer_children(&node),
-        )?;
-        self.producers.push(node);
-        self.producer_covers.push(cover);
+        let mut scoping = Scoping::new();
+        scoping.name(producer_named(&node), core::iter::empty());
+        producer_children(&node, |child, opens| {
+            self.scope_child(&mut scoping, child, opens)
+        })?;
+        let scope = scoping.finish();
+        self.producers.push(Row { node, scope });
         Ok(id)
     }
 
@@ -1373,8 +1565,8 @@ impl CommandArena
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success the node is appended and its fresh address
-    ///   returned; every child it names resolves; its cover, built from the
-    ///   covers its children carry, the covariable it names and the variables
+    ///   returned; every child it names resolves; its scope, the union of the
+    ///   supports its children carry, the covariable it names and the variables
     ///   its annotations name, is appended at the same address.
     /// - provides: the one append point of the consumer family.
     /// - fails: as [`Self::mint_producer`]; the arena is then unchanged.
@@ -1400,7 +1592,6 @@ impl CommandArena
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.consumers))
                 && usize::from(entry.consumers).checked_add(1) == Some(self.consumers.len())
-                && self.consumer_covers.len() == self.consumers.len()
                 && self.producer_count() == entry.producers
                 && self.command_count() == entry.commands,
             | Err(_) => self.watermark() == entry,
@@ -1414,10 +1605,20 @@ impl CommandArena
         self.consumer_children_resolve(&node)?;
         let id = ConsumerId::next_in(&self.consumers)
             .ok_or(MintRefusal::FamilyFull(NodeFamily::Consumer))?;
-        let annotated = self.annotation_support(consumer_annotations(&node));
-        let cover = self.cover(annotated, consumer_named(&node), &consumer_children(&node))?;
-        self.consumers.push(node);
-        self.consumer_covers.push(cover);
+        let mut scoping = Scoping::new();
+        scoping.name(core::iter::empty(), consumer_named(&node));
+        for annotation in consumer_annotations(&node) {
+            let support = self
+                .annotations
+                .value_type_support(annotation)
+                .ok_or(MintRefusal::DanglingAnnotation(annotation))?;
+            scoping.annotation(support);
+        }
+        consumer_children(&node, |child, opens| {
+            self.scope_child(&mut scoping, child, opens)
+        })?;
+        let scope = scoping.finish();
+        self.consumers.push(Row { node, scope });
         Ok(id)
     }
 
@@ -1426,8 +1627,8 @@ impl CommandArena
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success the node is appended and its fresh address
-    ///   returned; its children resolve; its cover, built from the covers its
-    ///   children carry, the linear slot it names and the variables its
+    ///   returned; its children resolve; its scope, the union of the supports
+    ///   its children carry, the linear slot it names and the variables its
     ///   interface names, is appended at the same address.
     /// - provides: the one append point of the command family.
     /// - fails: as [`Self::mint_producer`]; the arena is then unchanged.
@@ -1453,7 +1654,6 @@ impl CommandArena
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.commands))
                 && usize::from(entry.commands).checked_add(1) == Some(self.commands.len())
-                && self.command_covers.len() == self.commands.len()
                 && self.producer_count() == entry.producers
                 && self.consumer_count() == entry.consumers,
             | Err(_) => self.watermark() == entry,
@@ -1530,11 +1730,20 @@ impl CommandArena
         }
         let id = CommandId::next_in(&self.commands)
             .ok_or(MintRefusal::FamilyFull(NodeFamily::Command))?;
-        let mut named = self.annotation_support(command_annotations(&node));
-        named.extend(command_named(&node));
-        let cover = self.cover(named, core::iter::empty(), &command_children(&node))?;
-        self.commands.push(node);
-        self.command_covers.push(cover);
+        let mut scoping = Scoping::new();
+        scoping.name(command_named(&node), core::iter::empty());
+        for annotation in command_annotations(&node) {
+            let support = self
+                .annotations
+                .value_type_support(annotation)
+                .ok_or(MintRefusal::DanglingAnnotation(annotation))?;
+            scoping.annotation(support);
+        }
+        command_children(&node, |child, opens| {
+            self.scope_child(&mut scoping, child, opens)
+        })?;
+        let scope = scoping.finish();
+        self.commands.push(Row { node, scope });
         Ok(id)
     }
 
@@ -1578,63 +1787,127 @@ impl CommandArena
         })
     }
 
-    /// The cover a node carries, or `None` when its address dangles.
+    /// The scope a node carries, or `None` when its address dangles.
     ///
     /// # Specification
     /// - requires: nothing; a dangling address is admissible.
-    /// - ensures: `Some` exactly when the arena holds the node, the cover
+    /// - ensures: `Some` exactly when the arena holds the node, the scope
     ///   minted with it.
-    /// - provides: the read side of the cover tables, for the crate's own
-    ///   readers; nothing outside the crate reads an edge.
+    /// - provides: the read side of the scopes the rows carry, for the crate's
+    ///   own readers.
     /// - fails: `None` on a dangling address.
     /// - panics: none.
+    /// - executable: none — the per-child read of minting and the check; it
+    ///   projects the row [`Self::producer`], [`Self::consumer`] and
+    ///   [`Self::command`] read, whose own predicates state presence.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a cover read at a minted node of each family and a
-    ///   dangling address separate the three tables and the absent case.
+    /// - hypothesis: L3 — a scope read at a minted node of each family and a
+    ///   dangling address separate the three families and the absent case.
     /// - witness: `il::tests::an_unused_binder_thins_to_zero`
-    /// - witness: `check::tests::a_forged_cover_is_refused_at_the_root`
-    #[spec(ensures: |ret| ret.is_some() == match node {
-        | NodeAddress::Producer(id) => self.producer(id).is_some(),
-        | NodeAddress::Consumer(id) => self.consumer(id).is_some(),
-        | NodeAddress::Command(id) => self.command(id).is_some(),
-    })]
-    pub(crate) fn node_cover(
+    /// - witness: `check::tests::a_forged_scope_is_refused_by_name`
+    #[inline]
+    pub(crate) fn node_scope(
         &self,
         node: NodeAddress,
-    ) -> Option<&NodeCover>
+    ) -> Option<&NodeScope>
     {
         match node {
-            NodeAddress::Producer(id) => id.read_in(&self.producer_covers),
-            NodeAddress::Consumer(id) => id.read_in(&self.consumer_covers),
-            NodeAddress::Command(id) => id.read_in(&self.command_covers),
+            NodeAddress::Producer(id) => id.read_in(&self.producers).map(|row| &row.scope),
+            NodeAddress::Consumer(id) => id.read_in(&self.consumers).map(|row| &row.scope),
+            NodeAddress::Command(id) => id.read_in(&self.commands).map(|row| &row.scope),
         }
     }
 
-    /// Replace the cover a node carries, for a test that forges one; minting
+    /// A producer beside the scope it carries, or `None` when its address
+    /// dangles: one row read where a reader needs both.
+    ///
+    /// # Specification
+    /// - ensures: `Some` exactly when [`Self::producer`] is, holding the node
+    ///   it reads and the scope minted with it.
+    /// - panics: none.
+    /// - executable: none — a projection of the row both reads project.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::node_scope`].
+    /// - witness: `check::tests::a_forged_scope_is_refused_by_name`
+    #[inline]
+    pub(crate) fn producer_scoped(
+        &self,
+        id: ProducerId,
+    ) -> Option<(&ProducerNode, &NodeScope)>
+    {
+        id.read_in(&self.producers)
+            .map(|row| (&row.node, &row.scope))
+    }
+
+    /// A consumer beside the scope it carries, or `None` when its address
+    /// dangles.
+    ///
+    /// # Specification
+    /// - ensures: as [`Self::producer_scoped`], for [`Self::consumer`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::producer_scoped`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::node_scope`].
+    /// - witness: `check::tests::a_forged_scope_is_refused_by_name`
+    #[inline]
+    pub(crate) fn consumer_scoped(
+        &self,
+        id: ConsumerId,
+    ) -> Option<(&ConsumerNode, &NodeScope)>
+    {
+        id.read_in(&self.consumers)
+            .map(|row| (&row.node, &row.scope))
+    }
+
+    /// A command beside the scope it carries, or `None` when its address
+    /// dangles.
+    ///
+    /// # Specification
+    /// - ensures: as [`Self::producer_scoped`], for [`Self::command`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::producer_scoped`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::node_scope`].
+    /// - witness: `check::tests::a_forged_scope_is_refused_by_name`
+    #[inline]
+    pub(crate) fn command_scoped(
+        &self,
+        id: CommandId,
+    ) -> Option<(&CommandNode, &NodeScope)>
+    {
+        id.read_in(&self.commands)
+            .map(|row| (&row.node, &row.scope))
+    }
+
+    /// Replace the scope a node carries, for a test that forges one; minting
     /// is the only other writer.
     ///
     /// # Specification
     /// trivial.
     #[cfg(test)]
-    pub(crate) fn forge_cover(
+    pub(crate) fn forge_scope(
         &mut self,
         node: NodeAddress,
-        cover: NodeCover,
+        scope: NodeScope,
     )
     {
+        let at = |id: u32| usize::try_from(id).ok();
         let slot = match node {
-            NodeAddress::Producer(id) => usize::try_from(u32::from(id))
-                .ok()
-                .and_then(|at| self.producer_covers.get_mut(at)),
-            NodeAddress::Consumer(id) => usize::try_from(u32::from(id))
-                .ok()
-                .and_then(|at| self.consumer_covers.get_mut(at)),
-            NodeAddress::Command(id) => usize::try_from(u32::from(id))
-                .ok()
-                .and_then(|at| self.command_covers.get_mut(at)),
+            NodeAddress::Producer(id) => at(u32::from(id))
+                .and_then(|row| self.producers.get_mut(row))
+                .map(|row| &mut row.scope),
+            NodeAddress::Consumer(id) => at(u32::from(id))
+                .and_then(|row| self.consumers.get_mut(row))
+                .map(|row| &mut row.scope),
+            NodeAddress::Command(id) => at(u32::from(id))
+                .and_then(|row| self.commands.get_mut(row))
+                .map(|row| &mut row.scope),
         };
-        *slot.expect("a test forges the cover of a node it minted") = cover;
+        *slot.expect("a test forges the scope of a node it minted") = scope;
     }
 
     /// The intuitionistic bindings `suspension` captures where it is
@@ -1673,117 +1946,60 @@ impl CommandArena
         suspension: Suspension,
     ) -> Option<Captures<'_>>
     {
-        let (cover, past) = match suspension {
-            Suspension::Producer(id) => (id.read_in(&self.producer_covers)?, 0_u32),
-            Suspension::Thunk(body) => (body.read_in(&self.command_covers)?, 0_u32),
+        let (scope, past) = match suspension {
+            Suspension::Producer(id) => (&id.read_in(&self.producers)?.scope, 0_u32),
+            Suspension::Thunk(body) => (&body.read_in(&self.commands)?.scope, 0_u32),
             Suspension::Fixpoint(body) | Suspension::Bind(body) => {
-                (body.read_in(&self.command_covers)?, 1_u32)
+                (&body.read_in(&self.commands)?.scope, 1_u32)
             },
         };
-        let selected = cover.producers.support().indices(Zone::Intuitionistic);
-        let local = selected.partition_point(|&index| u32::from(index) < past);
+        let crossed = BinderDepth::from(usize::try_from(past).unwrap_or(usize::MAX));
         Some(Captures {
-            selected: selected.get(local ..).unwrap_or_default().iter(),
+            selected: scope.producers().outside(Zone::Intuitionistic, crossed),
             past,
         })
     }
 
-    /// The cover of a node about to be minted, from what it names itself and
-    /// the covers its children carry.
+    /// Add a child's carried scope, past the binders its node opens over it,
+    /// to the scope a node about to be minted is building.
     ///
     /// # Specification
-    /// - requires: `producers` are the producer occurrences the node names,
-    ///   `covariables` the covariables it names in the carrier's intuitionistic
-    ///   zone, each as an index where the node stands.
-    /// - ensures: each zone's cover is [`Cover::of`] the named occurrences and
-    ///   the children's supports in edge order, each past the binders the node
-    ///   opens over it: the support is exactly their union, and each edge
-    ///   places its child.
+    /// - requires: nothing; a dangling child is refused.
+    /// - ensures: on success `scoping` holds the child's supports past `opens`,
+    ///   read where the node stands.
     /// - fails: [`MintRefusal::DanglingProducer`],
     ///   [`MintRefusal::DanglingConsumer`] or [`MintRefusal::DanglingCommand`]
-    ///   for the first child whose cover the arena does not hold.
+    ///   for a child whose scope the arena does not hold.
     /// - panics: none.
+    /// - executable: none — this runs once per child on the mint path; the
+    ///   instrumented body is a closure the test profile does not inline, and
+    ///   the witnesses read every minted support back.
     ///
     /// # Errors
     /// As the failure clause states.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — binders in each zone whose bodies read and ignore the
-    ///   bound name separate a kept edge bit from a dropped one and the zones
-    ///   from each other; L2 — every command of every generated focused term
-    ///   carries the support an independent walk computes.
+    ///   bound name separate a kept index from a lowered one and the zones from
+    ///   each other; L2 — every command of every generated focused term carries
+    ///   the support an independent walk computes.
     /// - witness: `il::tests::an_unused_binder_thins_to_zero`
     /// - witness: `tests::focus_properties::root_support_equals_the_walk_on_every_focused_term`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |cover|
-        cover.producers.edges().len() == children.len()
-            && cover.covariables.edges().len() == children.len()))]
-    fn cover<Producers, Covariables>(
+    #[inline]
+    fn scope_child(
         &self,
-        producers: Producers,
-        covariables: Covariables,
-        children: &[(NodeAddress, Opens)],
-    ) -> Result<NodeCover, MintRefusal>
-    where
-        Producers: IntoIterator<Item = (Zone, DeBruijnIndex)>,
-        Covariables: IntoIterator<Item = (Zone, DeBruijnIndex)>,
+        scoping: &mut Scoping,
+        child: NodeAddress,
+        opens: Opens,
+    ) -> Result<(), MintRefusal>
     {
-        let mut held = Vec::with_capacity(children.len());
-        for &(child, opens) in children {
-            let cover = self.node_cover(child).ok_or(match child {
-                NodeAddress::Producer(id) => MintRefusal::DanglingProducer(id),
-                NodeAddress::Consumer(id) => MintRefusal::DanglingConsumer(id),
-                NodeAddress::Command(id) => MintRefusal::DanglingCommand(id),
-            })?;
-            held.push((cover, opens));
-        }
-        let producer_children = held
-            .iter()
-            .map(|&(cover, opens)| (cover.producers.support(), opens.producers));
-        let covariable_children = held
-            .iter()
-            .map(|&(cover, opens)| (cover.covariables.support(), opens.covariables));
-        Ok(NodeCover {
-            producers: Cover::of(producers, &producer_children),
-            covariables: Cover::of(covariables, &covariable_children),
-        })
-    }
-
-    /// The intuitionistic indices `annotations` name, each read where the
-    /// node it annotates stands.
-    ///
-    /// # Specification
-    /// - requires: every annotation resolves in the annotation arena.
-    /// - ensures: the indices [`value_type_support`] selects in each
-    ///   annotation, in order; the annotation arena unchanged.
-    /// - provides: the support a node's annotations add to its own.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a fold whose element type names a variable no term of
-    ///   the fold names, beside one whose types are closed, separates a counted
-    ///   annotation from an ignored one.
-    /// - witness: `il::tests::an_annotation_counts_in_its_nodes_support`
-    ///
-    /// [`value_type_support`]: gandr_core_term::value_type_support
-    #[spec(captures: [mark = self.annotations.watermark()], ensures: self.annotations.watermark() == mark)]
-    fn annotation_support<Annotations>(
-        &mut self,
-        annotations: Annotations,
-    ) -> Vec<(Zone, DeBruijnIndex)>
-    where
-        Annotations: IntoIterator<Item = gandr_core_term::ValueTypeId>,
-    {
-        let mut named = Vec::new();
-        for annotation in annotations {
-            let support = gandr_core_term::value_type_support(&mut self.annotations, annotation);
-            named.extend(
-                support
-                    .indices(Zone::Intuitionistic)
-                    .iter()
-                    .map(|&index| (Zone::Intuitionistic, index)),
-            );
-        }
-        named
+        let scope = self.node_scope(child).ok_or(match child {
+            NodeAddress::Producer(id) => MintRefusal::DanglingProducer(id),
+            NodeAddress::Consumer(id) => MintRefusal::DanglingConsumer(id),
+            NodeAddress::Command(id) => MintRefusal::DanglingCommand(id),
+        })?;
+        scoping.child(scope, opens);
+        Ok(())
     }
 
     /// Refuse a producer address the arena does not hold.
@@ -2090,8 +2306,9 @@ impl CommandArena
     }
 }
 
-/// The children of a producer, each beside the binders the producer opens
-/// over it, in edge order.
+/// Visit the children of a producer, each beside the binders the producer
+/// opens over it, in edge order, stopping at the first refusal `each`
+/// answers.
 ///
 /// # Specification
 /// - ensures: a stack's frames in order, an application frame's argument under
@@ -2100,71 +2317,90 @@ impl CommandArena
 ///   its consumer fields; a thunk's or a capture's body under one covariable; a
 ///   fixpoint's body under one producer binder and one covariable; a copattern
 ///   object's arms in order, each under its head's producer and consumer
-///   arities; nothing for a variable, a constant or a literal.
+///   arities; nothing for a variable, a constant or a literal. `each`'s first
+///   refusal is answered and no later child visited.
 /// - panics: none.
+/// - intension: allocates nothing, so a mint and a check visit a node's
+///   children at the cost of the visit.
 /// - executable: none — the listing is the statement; the witnesses observe it
-///   through the covers and the checks it shapes.
+///   through the supports and the checks it shapes.
+///
+/// # Errors
+/// The first refusal `each` answers.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every producer former the generated focused terms build
 ///   is listed, and the carried supports agree with an independent walk; L3 — a
-///   fixpoint's, a thunk's and an arm's edges are read at the bound names.
+///   fixpoint's, a thunk's and an arm's supports are read at the bound names.
 /// - witness: `tests::focus_properties::root_support_equals_the_walk_on_every_focused_term`
 /// - witness: `il::tests::an_unused_binder_thins_to_zero`
-pub fn producer_children(node: &ProducerNode) -> Vec<(NodeAddress, Opens)>
+#[inline]
+pub fn producer_children<Refusal, Each>(
+    node: &ProducerNode,
+    mut each: Each,
+) -> Result<(), Refusal>
+where
+    Each: FnMut(NodeAddress, Opens) -> Result<(), Refusal>,
 {
     let at = Opens::default();
     match *node {
-        ProducerNode::Reify(ref frames) => frames
-            .iter()
-            .filter_map(|frame| match *frame {
-                gandr_core_term::control::StackFrame::Apply(value) => {
-                    Some((NodeAddress::Producer(value), at))
-                },
-                gandr_core_term::control::StackFrame::Bind(body) => Some((
-                    NodeAddress::Command(body),
-                    Opens::binding(ProducerArity::ONE, ConsumerArity::ONE),
-                )),
-                gandr_core_term::control::StackFrame::Project(_) => None,
-            })
-            .collect(),
-        ProducerNode::Primitive { ref arguments, .. } => arguments
-            .iter()
-            .map(|&argument| (NodeAddress::Producer(argument), at))
-            .collect(),
-        ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => {
-            Vec::new()
+        ProducerNode::Reify(ref frames) => {
+            for frame in frames.iter() {
+                match *frame {
+                    gandr_core_term::control::StackFrame::Apply(value) => {
+                        each(NodeAddress::Producer(value), at)?;
+                    },
+                    gandr_core_term::control::StackFrame::Bind(body) => {
+                        each(
+                            NodeAddress::Command(body),
+                            Opens::binding(ProducerArity::ONE, ConsumerArity::ONE),
+                        )?;
+                    },
+                    gandr_core_term::control::StackFrame::Project(_) => {},
+                }
+            }
         },
+        ProducerNode::Primitive { ref arguments, .. } => {
+            for &argument in arguments.iter() {
+                each(NodeAddress::Producer(argument), at)?;
+            }
+        },
+        ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => {},
         ProducerNode::Constructor {
             ref producers,
             ref consumers,
             ..
-        } => fields(producers, consumers),
-        ProducerNode::Thunk { body } | ProducerNode::Mu { body } => alloc::vec![(
-            NodeAddress::Command(body),
-            Opens::binding(ProducerArity::ZERO, ConsumerArity::ONE),
-        )],
-        ProducerNode::Fixpoint { body, .. } => alloc::vec![(
-            NodeAddress::Command(body),
-            Opens::binding(ProducerArity::ONE, ConsumerArity::ONE),
-        )],
-        ProducerNode::Cocase { ref arms } => arms
-            .iter()
-            .map(|arm| {
-                (
+        } => fields(producers, consumers, &mut each)?,
+        ProducerNode::Thunk { body } | ProducerNode::Mu { body } => {
+            each(
+                NodeAddress::Command(body),
+                Opens::binding(ProducerArity::ZERO, ConsumerArity::ONE),
+            )?;
+        },
+        ProducerNode::Fixpoint { body, .. } => {
+            each(
+                NodeAddress::Command(body),
+                Opens::binding(ProducerArity::ONE, ConsumerArity::ONE),
+            )?;
+        },
+        ProducerNode::Cocase { ref arms } => {
+            for arm in arms {
+                each(
                     NodeAddress::Command(arm.body),
                     Opens::binding(
                         arm.destructor.producer_arity(),
                         arm.destructor.consumer_arity(),
                     ),
-                )
-            })
-            .collect(),
+                )?;
+            }
+        },
     }
+    Ok(())
 }
 
-/// The children of a consumer, each beside the binders the consumer opens
-/// over it, in edge order.
+/// Visit the children of a consumer, each beside the binders the consumer
+/// opens over it, in edge order, stopping at the first refusal `each`
+/// answers.
 ///
 /// # Specification
 /// - ensures: a `μ̃`'s body under one producer binder; a frame's producer
@@ -2173,67 +2409,81 @@ pub fn producer_children(node: &ProducerNode) -> Vec<(NodeAddress, Opens)>
 ///   its continuation; a selection's continuation; a fold's empty branch under
 ///   one covariable, its cell branch under two producer binders and one
 ///   covariable, then its continuation; nothing for a covariable or `★`.
+///   `each`'s first refusal is answered and no later child visited.
 /// - panics: none.
+/// - intension: allocates nothing.
 /// - executable: none — the listing is the statement; the witnesses observe it
-///   through the covers and the checks it shapes.
+///   through the supports and the checks it shapes.
+///
+/// # Errors
+/// The first refusal `each` answers.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every consumer former the generated focused terms build
 ///   is listed, and the carried supports agree with an independent walk; L3 — a
-///   `μ̃`'s and a match arm's edges are read at the bound names.
+///   `μ̃`'s and a match arm's supports are read at the bound names.
 /// - witness: `tests::focus_properties::root_support_equals_the_walk_on_every_focused_term`
 /// - witness: `il::tests::an_unused_binder_thins_to_zero`
-pub fn consumer_children(node: &ConsumerNode) -> Vec<(NodeAddress, Opens)>
+#[inline]
+pub fn consumer_children<Refusal, Each>(
+    node: &ConsumerNode,
+    mut each: Each,
+) -> Result<(), Refusal>
+where
+    Each: FnMut(NodeAddress, Opens) -> Result<(), Refusal>,
 {
     let at = Opens::default();
     match *node {
-        ConsumerNode::Covariable(_) | ConsumerNode::Top => Vec::new(),
-        ConsumerNode::MuTilde { body } => alloc::vec![(
-            NodeAddress::Command(body),
-            Opens::binding(ProducerArity::ONE, ConsumerArity::ZERO),
-        )],
+        ConsumerNode::Covariable(_) | ConsumerNode::Top => {},
+        ConsumerNode::MuTilde { body } => {
+            each(
+                NodeAddress::Command(body),
+                Opens::binding(ProducerArity::ONE, ConsumerArity::ZERO),
+            )?;
+        },
         ConsumerNode::Destructor {
             ref producers,
             ref consumers,
             ..
-        } => fields(producers, consumers),
-        ConsumerNode::Case { ref arms } => arms
-            .iter()
-            .map(|arm| {
-                (
+        } => fields(producers, consumers, &mut each)?,
+        ConsumerNode::Case { ref arms } => {
+            for arm in arms {
+                each(
                     NodeAddress::Command(arm.body),
                     Opens::binding(
                         arm.constructor.producer_arity(),
                         arm.constructor.consumer_arity(),
                     ),
-                )
-            })
-            .collect(),
-        ConsumerNode::DataCase { ref branches, then } => {
-            fields(branches, core::slice::from_ref(&then))
+                )?;
+            }
         },
-        ConsumerNode::Select { then, .. } => alloc::vec![(NodeAddress::Consumer(then), at)],
+        ConsumerNode::DataCase { ref branches, then } => {
+            fields(branches, core::slice::from_ref(&then), &mut each)?;
+        },
+        ConsumerNode::Select { then, .. } => each(NodeAddress::Consumer(then), at)?,
         ConsumerNode::ListFold {
             on_nil,
             on_cons,
             continuation,
             ..
-        } => alloc::vec![
-            (
+        } => {
+            each(
                 NodeAddress::Command(on_nil),
                 Opens::binding(ProducerArity::ZERO, ConsumerArity::ONE),
-            ),
-            (
+            )?;
+            each(
                 NodeAddress::Command(on_cons),
                 Opens::binding(ProducerArity::TWO, ConsumerArity::ONE),
-            ),
-            (NodeAddress::Consumer(continuation), at),
-        ],
+            )?;
+            each(NodeAddress::Consumer(continuation), at)?;
+        },
     }
+    Ok(())
 }
 
-/// The children of a command, each beside the binders the command opens
-/// over it, in edge order.
+/// Visit the children of a command, each beside the binders the command
+/// opens over it, in edge order, stopping at the first refusal `each`
+/// answers.
 ///
 /// # Specification
 /// - ensures: an operation's capability when it routes by one, its payload, its
@@ -2245,20 +2495,31 @@ pub fn consumer_children(node: &ConsumerNode) -> Vec<(NodeAddress, Opens)>
 ///   continuation; a shift's body under one producer binder and one covariable,
 ///   its continuation; a cut's producer and consumer; a memory form's values,
 ///   its bodies each under the linear binders the form opens over it and one
-///   covariable, its continuation.
+///   covariable, its continuation. `each`'s first refusal is answered and no
+///   later child visited.
 /// - panics: none.
+/// - intension: allocates nothing.
 /// - executable: none — the listing is the statement; the witnesses observe it
-///   through the covers and the checks it shapes.
+///   through the supports and the checks it shapes.
+///
+/// # Errors
+/// The first refusal `each` answers.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every command former the generated focused terms build is
 ///   listed, and the carried supports agree with an independent walk; L3 — the
-///   control formers' scopes are read off their roots, and a cut's two edges
+///   control formers' scopes are read off their roots, and a cut's two children
 ///   are read.
 /// - witness: `tests::focus_properties::root_support_equals_the_walk_on_every_focused_term`
 /// - witness: `check::tests::control_scopes_are_local_to_each_body`
 /// - witness: `check::tests::scope_boundaries_keep_linear_variables_free`
-pub fn command_children(node: &CommandNode) -> Vec<(NodeAddress, Opens)>
+#[inline]
+pub fn command_children<Refusal, Each>(
+    node: &CommandNode,
+    mut each: Each,
+) -> Result<(), Refusal>
+where
+    Each: FnMut(NodeAddress, Opens) -> Result<(), Refusal>,
 {
     let at = Opens::default();
     let returns = Opens::binding(ProducerArity::ZERO, ConsumerArity::ONE);
@@ -2269,13 +2530,11 @@ pub fn command_children(node: &CommandNode) -> Vec<(NodeAddress, Opens)>
             continuation,
             ..
         } => {
-            let mut children = Vec::with_capacity(3);
             if let Route::Capability(capability) = route {
-                children.push((NodeAddress::Producer(capability), at));
+                each(NodeAddress::Producer(capability), at)?;
             }
-            children.push((NodeAddress::Producer(payload), at));
-            children.push((NodeAddress::Consumer(continuation), at));
-            children
+            each(NodeAddress::Producer(payload), at)?;
+            each(NodeAddress::Consumer(continuation), at)?;
         },
         CommandNode::Handle {
             introduces,
@@ -2289,93 +2548,91 @@ pub fn command_children(node: &CommandNode) -> Vec<(NodeAddress, Opens)>
                 Introduces::Nothing => ProducerArity::ZERO,
                 Introduces::Capability => ProducerArity::ONE,
             };
-            let mut children = Vec::with_capacity(clauses.len().saturating_add(3));
-            children.push((
+            each(
                 NodeAddress::Command(subject),
                 Opens::binding(introduced, ConsumerArity::ONE),
-            ));
-            children.push((
+            )?;
+            each(
                 NodeAddress::Command(on_return),
                 Opens::binding(ProducerArity::ONE, ConsumerArity::ONE),
-            ));
-            children.extend(clauses.iter().map(|clause| {
-                (
+            )?;
+            for clause in clauses.iter() {
+                each(
                     NodeAddress::Command(clause.body),
                     Opens::binding(ProducerArity::TWO, ConsumerArity::ONE),
-                )
-            }));
-            children.push((NodeAddress::Consumer(continuation), at));
-            children
+                )?;
+            }
+            each(NodeAddress::Consumer(continuation), at)?;
         },
         CommandNode::Resume {
             stack,
             body,
             continuation,
-        } => alloc::vec![
-            (NodeAddress::Producer(stack), at),
-            (NodeAddress::Command(body), returns),
-            (NodeAddress::Consumer(continuation), at),
-        ],
-        CommandNode::Reset { body, continuation } => alloc::vec![
-            (NodeAddress::Command(body), returns),
-            (NodeAddress::Consumer(continuation), at),
-        ],
-        CommandNode::Shift { body, continuation } => alloc::vec![
-            (
+        } => {
+            each(NodeAddress::Producer(stack), at)?;
+            each(NodeAddress::Command(body), returns)?;
+            each(NodeAddress::Consumer(continuation), at)?;
+        },
+        CommandNode::Reset { body, continuation } => {
+            each(NodeAddress::Command(body), returns)?;
+            each(NodeAddress::Consumer(continuation), at)?;
+        },
+        CommandNode::Shift { body, continuation } => {
+            each(
                 NodeAddress::Command(body),
                 Opens::binding(ProducerArity::ONE, ConsumerArity::ONE),
-            ),
-            (NodeAddress::Consumer(continuation), at),
-        ],
+            )?;
+            each(NodeAddress::Consumer(continuation), at)?;
+        },
         CommandNode::Cut {
             producer, consumer, ..
-        } => alloc::vec![
-            (NodeAddress::Producer(producer), at),
-            (NodeAddress::Consumer(consumer), at),
-        ],
+        } => {
+            each(NodeAddress::Producer(producer), at)?;
+            each(NodeAddress::Consumer(consumer), at)?;
+        },
         CommandNode::Memory {
             ref form,
             continuation,
         } => {
-            let mut children: Vec<(NodeAddress, Opens)> = form
-                .values()
-                .map(|value| (NodeAddress::Producer(value), at))
-                .collect();
-            children.extend(
-                form.scoped()
-                    .map(|(body, linear)| (NodeAddress::Command(body), Opens::memory(linear))),
-            );
-            children.push((NodeAddress::Consumer(continuation), at));
-            children
+            for value in form.values() {
+                each(NodeAddress::Producer(value), at)?;
+            }
+            for (body, linear) in form.scoped() {
+                each(NodeAddress::Command(body), Opens::memory(linear))?;
+            }
+            each(NodeAddress::Consumer(continuation), at)?;
         },
     }
+    Ok(())
 }
 
-/// A constructor's or a frame's children: its producer fields then its
+/// Visit a constructor's or a frame's children: its producer fields then its
 /// consumer fields, each under nothing.
 ///
 /// # Specification
 /// trivial.
-fn fields(
+fn fields<Refusal, Each>(
     producers: &[ProducerId],
     consumers: &[ConsumerId],
-) -> Vec<(NodeAddress, Opens)>
+    each: &mut Each,
+) -> Result<(), Refusal>
+where
+    Each: FnMut(NodeAddress, Opens) -> Result<(), Refusal>,
 {
-    producers
-        .iter()
-        .map(|&producer| (NodeAddress::Producer(producer), Opens::default()))
-        .chain(
-            consumers
-                .iter()
-                .map(|&consumer| (NodeAddress::Consumer(consumer), Opens::default())),
-        )
-        .collect()
+    for &producer in producers {
+        each(NodeAddress::Producer(producer), Opens::default())?;
+    }
+    for &consumer in consumers {
+        each(NodeAddress::Consumer(consumer), Opens::default())?;
+    }
+    Ok(())
 }
 
 /// The producer occurrence a producer names itself: a variable's own.
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn producer_named(node: &ProducerNode) -> core::option::IntoIter<(Zone, DeBruijnIndex)>
 {
     match *node {
@@ -2398,6 +2655,7 @@ pub fn producer_named(node: &ProducerNode) -> core::option::IntoIter<(Zone, DeBr
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn consumer_named(node: &ConsumerNode) -> core::option::IntoIter<(Zone, DeBruijnIndex)>
 {
     match *node {
@@ -2420,6 +2678,7 @@ pub fn consumer_named(node: &ConsumerNode) -> core::option::IntoIter<(Zone, DeBr
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn command_named(node: &CommandNode) -> core::option::IntoIter<(Zone, DeBruijnIndex)>
 {
     match *node {
@@ -2445,6 +2704,7 @@ pub fn command_named(node: &CommandNode) -> core::option::IntoIter<(Zone, DeBrui
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn consumer_annotations(
     node: &ConsumerNode
 ) -> core::iter::Flatten<core::option::IntoIter<[gandr_core_term::ValueTypeId; 2]>>
@@ -2470,6 +2730,7 @@ pub fn consumer_annotations(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn command_annotations(
     node: &CommandNode
 ) -> impl Iterator<Item = gandr_core_term::ValueTypeId> + '_
