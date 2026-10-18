@@ -156,6 +156,7 @@ fn unit_entries(profile: &Path) -> Result<Vec<(PathBuf, UnitHash)>, BuildStateEr
 /// # Adequacy
 /// - hypothesis: L3 — as [`prune`].
 /// - witness: `prune::tests::a_prune_keeps_exactly_the_recorded_units`
+/// - witness: `prune::tests::an_uplifted_copy_keeps_the_units_its_name_stems`
 fn uplifted_units(
     units: &Units,
     entries: &[(PathBuf, UnitHash)],
@@ -429,6 +430,52 @@ mod tests
         }
         assert!(!profile.join("build/b-00000000000000f2").exists());
         assert!(!profile.join(".fingerprint/a-00000000000000f1").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn an_uplifted_copy_keeps_the_units_its_name_stems()
+    {
+        let root = std::env::temp_dir().join(format!("build-state-{}-stems", std::process::id()));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        let profile = root.join("debug");
+        let file = |path: &str| {
+            let path = profile.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, [0_u8; 3]).unwrap();
+        };
+        let underscored = "deps/my_tool-00000000000000d1";
+        let as_written = "deps/my-tool-00000000000000d2";
+        let other = "deps/other-00000000000000f4";
+        for path in [underscored, as_written, other, "my-tool"] {
+            file(path);
+        }
+        let messages = format!(
+            concat!(
+                r#"{{"reason":"compiler-artifact","filenames":["{p}/my-tool"]}}"#,
+                "\n",
+                r#"{{"reason":"build-finished","success":true}}"#,
+                "\n",
+            ),
+            p = profile.display()
+        );
+        let mut units = Units::default();
+        units
+            .read(Path::new("units.jsonl"), Messages::from(messages.as_str()))
+            .unwrap();
+        let pruned = prune(&profile, &units).unwrap();
+        assert!(
+            profile.join(underscored).exists(),
+            "the underscored stem is kept"
+        );
+        assert!(
+            profile.join(as_written).exists(),
+            "the stem as written is kept"
+        );
+        assert!(!profile.join(other).exists(), "another stem is removed");
+        assert_eq!(pruned.removed, 1);
         fs::remove_dir_all(&root).unwrap();
     }
 
