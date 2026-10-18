@@ -1577,6 +1577,48 @@ fn decoded_comp_type(
     ty
 }
 
+/// The computation type `ty` stands for once its decode is read.
+///
+/// The code is reduced as [`equal_type_reading`] reduces it, and a reduct
+/// that quotes a computation type decodes to that type
+/// ([`CoreArena::comp_type_element`]).
+///
+/// # Specification
+/// - requires: nothing; an unreadable id is returned as it is.
+/// - ensures: as `decoded_comp_type` within [`StaticSteps::ALLOWED`] steps: for
+///   a decode whose code reduces, the decode of the reduct — the quoted type
+///   itself when the reduct is a quote — taken again while it reduces; `ty`
+///   itself for every other type. Nodes a reduction makes are minted in
+///   `arena`.
+/// - provides: what a computation the run judged at a decode returns, which a
+///   `run` binder answers at (#298): `T(A)` at `T` a static abstraction reads
+///   as the returner its body is at `A`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode of a static abstraction applied to a type reads
+///   as the returner the abstraction's body is at that type; a returner reads
+///   as itself.
+/// - witness: `syntax::tests::a_decoded_redex_reads_as_the_type_it_quotes_298`
+///
+/// [`CoreArena::comp_type_element`]: crate::CoreArena::comp_type_element
+#[spec(ensures: |ret| ret == ty || arena.comp_type(ret).is_some())]
+#[inline]
+pub fn decoded_comp_reading(
+    arena: &mut crate::CoreArena,
+    ty: CompTypeId,
+) -> CompTypeId
+{
+    let mut steps = StaticSteps::ALLOWED;
+    // The arena is moved in and back rather than borrowed: a reduction writes
+    // it, and a borrowed reading would copy it whole on the first write.
+    let mut read = alloc::borrow::Cow::Owned(core::mem::take(arena));
+    let read_type = decoded_comp_type(&mut read, &mut steps, ty);
+    *arena = read.into_owned();
+    read_type
+}
+
 /// The value `value` reads as once a call of a function literal it stands
 /// for is reduced, while `steps` lasts.
 ///
@@ -3576,6 +3618,48 @@ mod tests
             ),
             (CertificateEquality::Equal, CertificateEquality::Different),
             "the first argument instantiates the outer binder"
+        );
+    }
+
+    /// #298: a decode of a static abstraction applied to a type reads as the
+    /// returner the abstraction's body is at that type, which a `run` binder
+    /// answers at; a returner reads as itself.
+    #[test]
+    fn a_decoded_redex_reads_as_the_type_it_quotes_298()
+    {
+        let mut arena = crate::CoreArena::new();
+        let level = Level::constant(gandr_kernel_strata::LevelConstant::ZERO);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let quoted_integer = arena.value_quote(integer);
+        // `(\a. -F (a * a))(Integer)`, a computation type's decode.
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let a = arena.value_type_element(variable, level.clone());
+        let square = arena.value_type_product(&[a, a]);
+        let body = arena.comp_type_returner(square);
+        let body = arena.value_quote_computation(body);
+        let operator = arena.value_static_lambda(body);
+        let redex = arena.value_static_application(operator, quoted_integer);
+        let redex = arena.comp_type_element(redex, level);
+        let squared = arena.value_type_product(&[integer, integer]);
+
+        let read = decoded_comp_reading(&mut arena, redex);
+        let Some(&CompType::Returner { result, .. }) = arena.comp_type(read)
+        else {
+            panic!(
+                "the decode reads as a returner: {:?}",
+                arena.comp_type(read)
+            );
+        };
+        assert_eq!(
+            equal_type_syntax(&arena, result, squared),
+            CertificateEquality::Equal,
+            "the returner returns the body's type at the argument"
+        );
+        let returner = arena.comp_type_returner(squared);
+        assert_eq!(
+            decoded_comp_reading(&mut arena, returner),
+            returner,
+            "a returner reads as itself"
         );
     }
 
