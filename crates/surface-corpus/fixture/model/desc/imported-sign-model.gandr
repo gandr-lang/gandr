@@ -1,0 +1,23 @@
+// A model of a `sign` block another source declares: `Model(S)` reads an
+// imported block as it reads a local one (#726).
+
+// The naturals' signature, `sign Nat`.
+import "./second-order-signatures.gandr" ;
+
+/// A counting model of the imported naturals: the carrier is the integers,
+/// zero is `0` and the successor adds one.
+module Counting : Model(Nat) {
+  type Nat = Integer;
+
+  def zero() -> -F Integer { return 0 }
+
+  def succ(n : Integer) -> -F Integer { return n + 1 }
+
+  /// Two successors of zero: the derived operations run.
+  @[ runs("2") ]
+  def two() -> -F Integer {
+    run z <- zero() ;
+    run one <- succ(z) ;
+    become succ(one)
+  }
+}

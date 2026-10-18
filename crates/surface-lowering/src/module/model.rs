@@ -329,8 +329,9 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `cursor` stands on the former's name, just past the
     ///   ascription's `:` or `:>` of the module form `form`.
     /// - ensures: the cursor past `)`; the signature derived from the value of
-    ///   the declaration `S` a `sign` block defined wholly before `form`, and
-    ///   one component per derived component in its order, each named by its
+    ///   the declaration `S` a `sign` block defined wholly before `form`, or
+    ///   one a source the module's source imports unqualified declares, and one
+    ///   component per derived component in its order, each named by its
     ///   member's name at the ascription's `S` tile: an unindexed sort an
     ///   abstract component of no kind, an indexed sort a derived family, and
     ///   every other component — one the derivation cannot state among them — a
@@ -338,20 +339,24 @@ impl<'source> Collector<'_, 'source>
     /// - provides: the model half of [`Self::header`].
     /// - fails: a misplaced tile for a former out of shape; an unresolved head
     ///   for a former other than `Model`, or for an `S` that names no
-    ///   declaration a `sign` block defined before the module; an unadmitted
+    ///   declaration a `sign` block defined before the module or in an imported
+    ///   source; a shadowed import for an `S` two imports bind; an unadmitted
     ///   form for a value that codes no presentation.
     /// - panics: none.
     ///
     /// # Errors
     /// [`LoweringRefusal::MalformedForm`],
-    /// [`LoweringRefusal::UnresolvedTypeHead`] and
+    /// [`LoweringRefusal::UnresolvedTypeHead`],
+    /// [`LoweringRefusal::ImportShadows`] and
     /// [`LoweringRefusal::OutOfFragment`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the `CatShape` model and a former naming an
-    ///   undeclared sign, each asserted as the exact components or refusal.
+    /// - hypothesis: L3 — the `CatShape` model, a model of an imported sign
+    ///   (#726) and a former naming an undeclared sign, each asserted as the
+    ///   exact components or refusal.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_model_of_an_undeclared_sign_is_refused_by_name`
+    /// - witness: `tests::namespace::a_model_of_an_imported_sign_derives_its_signature_726`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -407,20 +412,47 @@ impl<'source> Collector<'_, 'source>
             });
         }
         let name = self.name_of(sign);
-        let presented = self
+        let local = self
             .collected
             .by_name
             .get(&(self.collected.top(form.span.start()), name))
-            .and_then(|&position| self.collected.slots.get(position.0))
+            .copied()
+            .filter(|position| {
+                self.collected
+                    .slots
+                    .get(position.0)
+                    .is_some_and(|slot| slot.introduced_by.span.end() <= form.span.start())
+            });
+        let position = match local {
+            Some(position) => Some(position),
+            None => {
+                match self
+                    .collected
+                    .imported_slot(self.collected.unit.source_at(form.span.start()), name)
+                {
+                    Ok(Maybe::Present((position, _import))) => Some(position),
+                    Ok(Maybe::Absent(_)) => None,
+                    Err(ambiguity) => {
+                        return Err(LoweringRefusal::ImportShadows {
+                            span: sign.span,
+                            name,
+                            import: ambiguity.import,
+                            other: ambiguity.other,
+                        });
+                    },
+                }
+            },
+        };
+        let presented = position
+            .and_then(|position| self.collected.slots.get(position.0))
             .filter(|slot| {
-                slot.introduced_by.span.end() <= form.span.start()
-                    && matches!(
-                        slot.definition,
-                        Maybe::Present(Half {
-                            operand: Operand::Presented,
-                            ..
-                        })
-                    )
+                matches!(
+                    slot.definition,
+                    Maybe::Present(Half {
+                        operand: Operand::Presented,
+                        ..
+                    })
+                )
             })
             .and_then(|slot| self.collected.descriptions.get(&slot.introduced_by.node))
             .and_then(|entry| match entry.presentation {
