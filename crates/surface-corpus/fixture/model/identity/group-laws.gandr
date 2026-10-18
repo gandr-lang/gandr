@@ -10,7 +10,7 @@
 /// A group's unit, associativity and inverse laws, each a rule: `e()` is the
 /// unit and `a()`, `b()` two elements the rows read.
 @[ normalizes("mul(mul(e, inv(inv(a))), mul(b, e)) ~> mul(a, b)") ]
-sign Group {
+theory Group {
   sort G : Type;
 
   oper e : G;

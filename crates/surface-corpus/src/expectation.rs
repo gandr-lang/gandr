@@ -52,7 +52,7 @@
 //!
 //! # A normal form refines *checks* for a rule-bearing block
 //!
-//! `normalizes("call ~> normal form")` on a `data` family or a `sign` block
+//! `normalizes("call ~> normal form")` on a `data` family or a `theory` block
 //! states that the block checks, owing nothing, and that the engine reads
 //! `call` to `normal form` under the block's rules: the reading
 //! `LoweredModule::normal_form` certifies, spelled as `gandr run` spells a

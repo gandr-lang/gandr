@@ -1,4 +1,4 @@
-//! The circuit block form: `sign` blocks, kind-keyword members, the
+//! The circuit block form: `theory` blocks, kind-keyword members, the
 //! four-glyph arrow grid, two-sided named port lists, and the `node` / `feed`
 //! body statements.
 //!
@@ -34,8 +34,8 @@
 //! # Why these forms are keyword-led and where they are reserved
 //!
 //! Every form and member is first-token-discriminated by a keyword, so no new
-//! shared-prefix window opens. Only the two **item-position** leads (`sign` and
-//! `oper`) are globally reserved in the labeler's keyword table: at a fresh
+//! shared-prefix window opens. Only the two **item-position** leads (`theory`
+//! and `oper`) are globally reserved in the labeler's keyword table: at a fresh
 //! top-level slot a lowercase word is otherwise an expression statement. The
 //! member lead `sort` and the body leads `node` / `feed` stay contextual — they
 //! are `≐`-successors of an open block, inadmissible at every other
@@ -69,7 +69,7 @@ use crate::model::Sym;
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the `sign` block declaration, then the top-level `oper` and
+/// - ensures: the `theory` block declaration, then the top-level `oper` and
 ///   `rule` declaration, each keyword-led with its members, ports and body
 ///   statements inlined, over tiles and [`Sort::Type`] and [`Sort::Expression`]
 ///   holes.
@@ -91,19 +91,19 @@ use crate::model::Sym;
 /// - witness: `surface::circuit::tests::assembly_keeps_existing_rules_and_requires_the_item_band`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
 /// - witness: `tests::surface::named_kind_coverage_is_semantic`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::MissingPrec { name: "item.singleton" }) && precs.get(PrecName("item.singleton")).is_none(), |rules| rules.len() == 2 && rules.iter().zip(["sign_declaration", "circuit_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.provenance().0 == name && rule.sort() == Sort::Item && Some(rule.prec()) == precs.get(PrecName("item.singleton"))))) ]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::MissingPrec { name: "item.singleton" }) && precs.get(PrecName("item.singleton")).is_none(), |rules| rules.len() == 2 && rules.iter().zip(["theory_declaration", "circuit_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.provenance().0 == name && rule.sort() == Sort::Item && Some(rule.prec()) == precs.get(PrecName("item.singleton"))))) ]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
     let mut out = Vec::new();
-    sign_declaration(&mut out, item);
+    theory_declaration(&mut out, item);
     circuit_declarations(&mut out, item);
     Ok(out)
 }
 
-/// Append the `sign` block declaration.
+/// Append the `theory` block declaration.
 ///
-/// `sign Nat { sort … ; data … ; oper … ; rule … ; }`. Every member is
+/// `theory Nat { sort … ; data … ; oper … ; rule … ; }`. Every member is
 /// **terminated** by `;` (the surface's declaration terminator), and the
 /// terminator is load-bearing, not admitted:
 /// an unseparated member list is a clean parse of the WRONG tree — a member
@@ -134,42 +134,42 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 ///   are not exhausted.
 /// - witness: `surface::circuit::tests::assembly_keeps_existing_rules_and_requires_the_item_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-#[spec(captures: before = out.len(), ensures: |()| out.len() == before.saturating_add(1) && out.get(before).is_some_and(|rule| rule.name().0 == "sign_declaration" && rule.provenance().0 == "sign_declaration" && rule.sort() == Sort::Item && rule.prec() == p))]
-fn sign_declaration(
+#[spec(captures: before = out.len(), ensures: |()| out.len() == before.saturating_add(1) && out.get(before).is_some_and(|rule| rule.name().0 == "theory_declaration" && rule.provenance().0 == "theory_declaration" && rule.sort() == Sort::Item && rule.prec() == p))]
+fn theory_declaration(
     out: &mut Vec<Rule>,
     p: Prec,
 )
 {
-    let mut sign = r(
-        RuleName("sign_declaration"),
-        Provenance("sign_declaration"),
+    let mut theory = r(
+        RuleName("theory_declaration"),
+        Provenance("theory_declaration"),
         Sort::Item,
         p,
         seq([
-            t(TileLabel("sign")),
+            t(TileLabel("theory")),
             t(TileLabel("type_identifier")),
             t(TileLabel("{")),
-            repeat(seq([sign_member(), t(TileLabel(";"))])),
+            repeat(seq([theory_member(), t(TileLabel(";"))])),
             t(TileLabel("}")),
         ]),
     );
-    sign.adaptations.push(Adaptation::new(
-        RuleName("sign_declaration"),
+    theory.adaptations.push(Adaptation::new(
+        RuleName("theory_declaration"),
         SurfaceForm("circuit_member"),
-        AdaptationReason("inlined member family: the `sort` / `data` / `oper` / `rule` judgment members are a first-token-discriminated alternation inside the sign block, never standalone rules whose keyword would gain a form-first Item mold at a fresh top-level slot"),
+        AdaptationReason("inlined member family: the `sort` / `data` / `oper` / `rule` judgment members are a first-token-discriminated alternation inside the theory block, never standalone rules whose keyword would gain a form-first Item mold at a fresh top-level slot"),
     ));
-    sign.adaptations.push(Adaptation::new(
-        RuleName("sign_declaration"),
+    theory.adaptations.push(Adaptation::new(
+        RuleName("theory_declaration"),
         SurfaceForm("circuit_signature"),
         AdaptationReason("inlined signature: the arrow-separated two-sided port list is kept LOCAL to each member so a named port list `( name : Type, … )` never becomes a standalone `(`-opened form competing with the parenthesized type at every type slot (the `op_result` precedent)"),
     ));
-    out.push(sign);
+    out.push(theory);
 }
 
 /// Append the top-level circuit declaration.
 ///
 /// `oper accumulate : (…) --> (…) { … }` and its `rule` sibling stand outside a
-/// `sign` block as well as inside one, so `accumulate` can be declared at the
+/// `theory` block as well as inside one, so `accumulate` can be declared at the
 /// top level.
 ///
 /// The two keywords lead **one** rule rather than two, because the tail they
@@ -224,7 +224,7 @@ fn circuit_declarations(
     out.push(declaration);
 }
 
-/// Build a `sign` member led by `oper` or `rule`.
+/// Build a `theory` member led by `oper` or `rule`.
 ///
 /// Both genuine judgments use `name : signature { filler }?`. An `oper` also
 /// preserves the parenthesis-led data-block spelling as one member so
@@ -491,7 +491,7 @@ fn data_spelled_oper_tail() -> Regex
 /// every `def` / `module` / `import` / `data` tail ends in `;`, `}`, or `)`.
 ///
 /// Requiring parentheses restores that discipline: every branch here ends in
-/// `)` or `}`. Inside a `sign` block the bare-sort spellings stay available,
+/// `)` or `}`. Inside a `theory` block the bare-sort spellings stay available,
 /// because there the member's sort hole is form-**interior** — the block's own
 /// members and its closing brace follow it.
 ///
@@ -522,7 +522,7 @@ fn top_level_judgment() -> Regex
     ])
 }
 
-/// Build one inlined `sign` member.
+/// Build one inlined `theory` member.
 ///
 /// The four kind keywords carry the dimension, and each names what it declares:
 /// `sort` a colour, `data` a constructor, `oper` a circuit 1-cell, `rule` a
@@ -546,7 +546,7 @@ fn top_level_judgment() -> Regex
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "sort")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "data")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "shape"))))))]
-fn sign_member() -> Regex
+fn theory_member() -> Regex
 {
     alt([
         // `sort Nat : Type` — a colour declaration; its right-hand side is an
@@ -1138,7 +1138,7 @@ mod tests
 
     use super::circuit_declarations;
     use super::rules;
-    use super::sign_declaration;
+    use super::theory_declaration;
     use crate::PbgError;
     use crate::PrecName;
     use crate::PrecTable;
@@ -1162,12 +1162,12 @@ mod tests
             item,
             Regex::tile(TileLabel("sentinel")),
         )];
-        sign_declaration(&mut out, item);
+        theory_declaration(&mut out, item);
         circuit_declarations(&mut out, item);
         assert_eq!(
             [
                 RuleName("sentinel"),
-                RuleName("sign_declaration"),
+                RuleName("theory_declaration"),
                 RuleName("circuit_declaration")
             ],
             out.iter().map(Rule::name).collect::<Vec<_>>().as_slice()

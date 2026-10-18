@@ -1,4 +1,4 @@
-//! The model signature a sign's presentation derives, read back component by
+//! The model signature a theory's presentation derives, read back component by
 //! component.
 
 use alloc::format;
@@ -11,8 +11,8 @@ use gandr_surface_syntax::SourceText;
 use gandr_theory_levitation::ConstructorTag;
 use gandr_theory_levitation::DescValue;
 use gandr_theory_levitation::Payload;
-use gandr_theory_levitation::SigFault;
-use gandr_theory_levitation::SigValue;
+use gandr_theory_levitation::TheoryFault;
+use gandr_theory_levitation::TheoryValue;
 use quenchant_shape::shape::Maybe;
 
 use super::Binder;
@@ -26,8 +26,8 @@ use super::derive;
 use crate::description::elaborate_descriptions;
 use crate::fixture::grammar;
 
-/// The sign the flagship model signature is derived from.
-const CAT_SHAPE: &str = r"sign CatShape {
+/// The theory the flagship model signature is derived from.
+const CAT_SHAPE: &str = r"theory CatShape {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
 
@@ -39,7 +39,7 @@ const CAT_SHAPE: &str = r"sign CatShape {
   rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
 }";
 
-/// The presentation of the one sign `source` declares.
+/// The presentation of the one theory `source` declares.
 ///
 /// # Specification
 /// trivial.
@@ -50,18 +50,18 @@ where
     let grammar = grammar();
     let tree = parse(&grammar, source.into()).unwrap().into_tree();
     let report = elaborate_descriptions(&grammar, &tree).unwrap();
-    let [ref sign] = *report.declarations.as_slice()
+    let [ref theory] = *report.declarations.as_slice()
     else {
-        panic!("one sign declared");
+        panic!("one theory declared");
     };
-    let Maybe::Present(ref presentation) = sign.presentation
+    let Maybe::Present(ref presentation) = theory.presentation
     else {
-        panic!("a sign presents its members");
+        panic!("a theory presents its members");
     };
     presentation.clone()
 }
 
-/// The model signature of the one sign `source` declares.
+/// The model signature of the one theory `source` declares.
 ///
 /// # Specification
 /// trivial.
@@ -216,7 +216,7 @@ fn the_cat_shape_laws_relate_elaborated_terms()
 fn an_underivable_component_keeps_its_fault()
 {
     let model = derived(
-        r"sign Faulty {
+        r"theory Faulty {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
   sort Tm : Type+;
@@ -275,7 +275,7 @@ fn an_underivable_component_keeps_its_fault()
 fn a_term_at_another_sort_or_inside_its_own_index_is_ill_sorted()
 {
     let model = derived(
-        r"sign Mixed {
+        r"theory Mixed {
   sort Ob : Type;
   sort Pt : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
@@ -312,7 +312,7 @@ fn a_term_at_another_sort_or_inside_its_own_index_is_ill_sorted()
 fn a_result_sort_indexed_by_an_operation_instantiates_at_each_use()
 {
     let model = derived(
-        r"sign Stepped {
+        r"theory Stepped {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
   oper next : (a : Ob) --> Ob;
@@ -341,7 +341,7 @@ fn an_implicit_object_past_the_last_free_letter_is_numbered()
         right = format!("comp({morphism}, {right})");
     }
     let model = derived(format!(
-        "sign Long {{\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper comp : (f : \
+        "theory Long {{\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper comp : (f : \
          Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule chain : {left} ==> {right};\n}}"
     ).as_str());
     let law = spelled(&model, "chain");
@@ -418,20 +418,20 @@ fn a_presentation_reads_its_members_off_its_value()
     }
 
     let mut ended = presentation;
-    ended.value = SigValue::from_value(DescValue::new(
+    ended.value = TheoryValue::from_value(DescValue::new(
         ConstructorTag::from(1_usize),
         Payload::unit(),
     ));
     assert_eq!(
         ended.members(),
-        Err(PresentationFault::Value(SigFault::Misplaced(
+        Err(PresentationFault::Value(TheoryFault::Misplaced(
             ConstructorTag::from(1_usize)
         ))),
         "a value that codes no presentation"
     );
     assert_eq!(
         derive(&ended).map(|model| model.components.len()),
-        Err(PresentationFault::Value(SigFault::Misplaced(
+        Err(PresentationFault::Value(TheoryFault::Misplaced(
             ConstructorTag::from(1_usize)
         ))),
         "and derives no model"

@@ -1,5 +1,5 @@
 @[ refuses("OutOfFragment") ]
-sign Wheel {
+theory Wheel {
   sort Nat : Type;
   oper zip : (s : Nat, t : Nat) --> (u : Nat);
 

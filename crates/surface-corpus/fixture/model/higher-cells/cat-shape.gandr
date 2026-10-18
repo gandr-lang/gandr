@@ -7,7 +7,7 @@
 /// The category shape: a sort of morphisms dependent on the objects. Its
 /// rules over the dependent sort are outside the fragment (#522).
 @[ refuses("OutOfFragment") ]
-sign CatShape {
+theory CatShape {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
 

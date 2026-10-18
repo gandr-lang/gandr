@@ -52,7 +52,7 @@
 //!
 //! **`Model(S)` is derived, never written.** `module M : Model(S) { … }` is
 //! checked against the signature the lowering derives from the presentation
-//! of the `sign S` declared before it: a type component per sort, a type
+//! of the `theory S` declared before it: a type component per sort, a type
 //! family per indexed sort over its index telescope, a member per operation
 //! binding its free sorts first, and a `Path`-typed member per rule — node for
 //! node what the hand-written spelling lowers to. A type member with

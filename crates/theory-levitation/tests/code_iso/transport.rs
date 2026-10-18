@@ -15,7 +15,7 @@
 //!   genuine code difference it bridges.
 
 use gandr_theory_levitation::DescValue;
-use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::generic_eq;
 use gandr_theory_levitation::serialize_value;
 use proptest::prelude::*;
@@ -33,9 +33,9 @@ struct Transported
     /// The certificate.
     iso: CodeIso,
     /// Its source description.
-    source: SignDesc<Grade>,
+    source: TheoryDesc<Grade>,
     /// Its target description.
-    target: SignDesc<Grade>,
+    target: TheoryDesc<Grade>,
     /// The whole finite source value space.
     values: Vec<DescValue>,
 }
@@ -137,7 +137,7 @@ fn serialize_value_is_natural_up_to_re_encoding()
 /// trivial.
 fn ctor_slots(
     table: &mut CodeTable,
-    desc: &SignDesc<Grade>,
+    desc: &TheoryDesc<Grade>,
 ) -> Vec<CodeSlot>
 {
     desc.ctors

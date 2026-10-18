@@ -380,7 +380,7 @@ fn description_wrapper_boundaries_stay_observable_to_pipeline_consumers()
     assert_eq!(entry.description.id.name.as_ref(), "Maybe");
     assert_eq!(
         serialize_desc(&entry.description).as_ref(),
-        "sign Maybe(a) { sort Maybe : Type; }"
+        "theory Maybe(a) { sort Maybe : Type; }"
     );
     assert!(bool::from(generic_eq(&entry.description, &none, &none)));
 }
@@ -506,7 +506,7 @@ fn an_equation_states_no_direction()
     );
     assert_eq!(rule.print_data(), "rule id(Zero) <=> Zero");
     assert_eq!(
-        rule.print_sign(&gandr_theory_levitation::Name::from("id")),
+        rule.print_theory(&gandr_theory_levitation::Name::from("id")),
         "rule id : id(Zero) <=> Zero"
     );
 }

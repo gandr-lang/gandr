@@ -1,6 +1,6 @@
-//! The tagged description table: [`SignDesc`] is the declaration table.
+//! The tagged description table: [`TheoryDesc`] is the declaration table.
 //!
-//! A [`SignDesc`] bundles the minted [`NominalId`], the declared [`SortDesc`]
+//! A [`TheoryDesc`] bundles the minted [`NominalId`], the declared [`SortDesc`]
 //! sort set (the description universe's index), the graded and attributed
 //! [`ParamDesc`]s and [`CtorDesc`]s (the σ tag over constructors, each with a
 //! first-order [`Code`] and a result sort), the reserved [`OperDesc`]
@@ -353,7 +353,7 @@ quenchant_shape::reason_enum! {
 ///
 /// [`check_desc`]: crate::check_desc
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SignShape
+pub struct TheoryShape
 {
     /// The shape's name.
     pub name: Name,
@@ -363,7 +363,7 @@ pub struct SignShape
     pub faces: Box<[ShapeFace]>,
 }
 
-impl SignShape
+impl TheoryShape
 {
     /// The shape of the given name and size, with the given faces.
     ///
@@ -537,7 +537,7 @@ pub struct CtorDesc<G>
     /// The constructor's result sort, the declared sort it targets.
     ///
     /// In a degenerate single-sort block this is the block's own sort; a
-    /// sign-block `data` member writes it as its output port's sort; a
+    /// theory-block `data` member writes it as its output port's sort; a
     /// generalized constructor result names the annotation's head.
     /// Membership in the declared sort set is checked by [`check_desc`].
     ///
@@ -742,18 +742,18 @@ impl OperDesc
 /// description is the declaration table. `G` is the grade parameters and
 /// fields carry, the consumer's own.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SignDesc<G>
+pub struct TheoryDesc<G>
 {
     /// The minted 0-cell identity.
     pub id: NominalId,
     /// The declared sort set, the description universe's index. A degenerate
     /// `data` or `codata` block declares exactly one sort, named by the block;
-    /// a sign block declares its `sort` members.
+    /// a theory block declares its `sort` members.
     pub sorts: Box<[SortDesc]>,
     /// The shape parameter the sorts and operations are stated over, absent
     /// for a signature that states none. A `data` or `codata` block states
-    /// none; a sign block states one by its `shape` member.
-    pub shape: Maybe<SignShape, shape_parameter::Absent>,
+    /// none; a theory block states one by its `shape` member.
+    pub shape: Maybe<TheoryShape, shape_parameter::Absent>,
     /// The datatype parameters, each graded and attributed.
     pub params: Box<[ParamDesc<G>]>,
     /// The constructors: the σ tag over the code grammar, the 1-cells.
@@ -782,13 +782,13 @@ pub struct SignDesc<G>
     pub attrs: Attrs,
 }
 
-impl<G> SignDesc<G>
+impl<G> TheoryDesc<G>
 {
     /// A description from its minted id, parts and polarity.
     ///
     /// The sort set defaults to the degenerate single sort: one entry named by
     /// the declaration, at the declaration's polarity, the `data` and `codata`
-    /// blocks' reading. A multi-sorted sign block replaces it through
+    /// blocks' reading. A multi-sorted theory block replaces it through
     /// [`Self::with_sorts`]. The constructor checks nothing: an ill-formed
     /// description is representable so [`check_desc`](crate::check_desc) can
     /// decline it with a diagnostic, and a caller needing the guarantee runs
@@ -855,7 +855,7 @@ impl<G> SignDesc<G>
     #[must_use]
     pub fn with_shape(
         self,
-        shape: SignShape,
+        shape: TheoryShape,
     ) -> Self
     {
         Self {
@@ -990,7 +990,7 @@ mod tests
             points(&[0, 2]).as_slice(),
             "a face keeps its points ascending and once each"
         );
-        let square = SignShape::new("Square", ShapeSize::from(4_usize), []);
+        let square = TheoryShape::new("Square", ShapeSize::from(4_usize), []);
         let escape = |raw: &[usize]| square.escape(&ShapeFace::new("f", points(raw)));
         let inside = Maybe::Absent(face_escape::Absent::Inside);
         assert_eq!(escape(&[0, 2]), inside);

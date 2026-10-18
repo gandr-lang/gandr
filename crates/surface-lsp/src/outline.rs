@@ -21,10 +21,10 @@
 //!   under it, a nested module's under that. A defined function is a `Function`
 //!   symbol and a defined value a `Variable`; a declaration named by a type is
 //!   a `Module`, an `Interface`, a `Struct` or an `Enum` by its keyword:
-//!   `module`, `sign`, `codata`, and `data` or anything else. A symbol's range
-//!   is its form's, widened over the attribute blocks standing directly before
-//!   it, and its selection range is the name's tile. An attribute block is a
-//!   form with no such tile, so it is no symbol.
+//!   `module`, `theory`, `codata`, and `data` or anything else. A symbol's
+//!   range is its form's, widened over the attribute blocks standing directly
+//!   before it, and its selection range is the name's tile. An attribute block
+//!   is a form with no such tile, so it is no symbol.
 //! - **Folding.** Every form, documentation node and block comment that ends on
 //!   a later line than it starts folds from its first line to its last. Forms
 //!   often share a first line, a function and its block say, and the client
@@ -231,7 +231,7 @@ fn kind_of(
         (HlRole::FunctionDef, _) => SymbolKind::FUNCTION,
         (HlRole::VariableDef, _) => SymbolKind::VARIABLE,
         (_, Some("module")) => SymbolKind::MODULE,
-        (_, Some("sign")) => SymbolKind::INTERFACE,
+        (_, Some("theory")) => SymbolKind::INTERFACE,
         (_, Some("codata")) => SymbolKind::STRUCT,
         (_, Some(_) | None) => SymbolKind::ENUM,
     }

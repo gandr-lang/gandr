@@ -1,5 +1,5 @@
 @[ refuses("OutOfFragment") ]
-sign CatShape {
+theory CatShape {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
 

@@ -23,26 +23,27 @@
 //!   `:>`, which needs a family atom the core does not declare yet, so a sealed
 //!   family component stays [`AscriptionForm::Kinded`].
 //!
-//! # `Model(S)` is the signature the sign `S` derives
+//! # `Model(S)` is the signature the theory `S` derives
 //!
-//! A module ascribed `: Model(S)` is matched against the components the sign
+//! A module ascribed `: Model(S)` is matched against the components the theory
 //! `S`, declared before it, derives (`crate::model::derive`): each unindexed
 //! sort an abstract component, each indexed sort a family component, each
 //! operation and each law a value component whose type is minted from the
 //! derivation rather than read from a written form. A component the
 //! derivation cannot state is refused under its name with the derivation's
 //! reason; a component its module does not define is refused as a written
-//! one is. `S` is a reference to the declaration `S : Sig` the block defines,
-//! and the derivation reads that declaration's value: `Model` is a function
-//! from `Sig` the elaborator applies, not a second reading of the block.
+//! one is. `S` is a reference to the declaration `S : Theory` the block
+//! defines, and the derivation reads that declaration's value: `Model` is a
+//! function from `Theory` the elaborator applies, not a second reading of the
+//! block.
 //!
 //! - Choice: `S` resolves by name to the definition the block declared before
 //!   the module, and `Model` runs at elaboration. Alternatives: a core function
-//!   `Model : Sig -> Type`, which needs a record of types computed from a value
-//!   the kernel does not state; a module-level import of the sign's derived
-//!   components. Reversal: a `Sig` value the elaborator cannot read off a
-//!   definition — a parameter, or a computed presentation — whose model the
-//!   core would then compute from the normal form.
+//!   `Model : Theory -> Type`, which needs a record of types computed from a
+//!   value the kernel does not state; a module-level import of the theory's
+//!   derived components. Reversal: a `Theory` value the elaborator cannot read
+//!   off a definition — a parameter, or a computed presentation — whose model
+//!   the core would then compute from the normal form.
 //!
 //! A derived sort states no kind (`component_kind::Absent::Derived`): its
 //! size is the model's, so `type Ob = Type` is a model whatever universe the
@@ -329,7 +330,7 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `cursor` stands on the former's name, just past the
     ///   ascription's `:` or `:>` of the module form `form`.
     /// - ensures: the cursor past `)`; the signature derived from the value of
-    ///   the declaration `S` a `sign` block defined wholly before `form`, or
+    ///   the declaration `S` a `theory` block defined wholly before `form`, or
     ///   one a source the module's source imports unqualified declares, and one
     ///   component per derived component in its order, each named by its
     ///   member's name at the ascription's `S` tile: an unindexed sort an
@@ -339,9 +340,9 @@ impl<'source> Collector<'_, 'source>
     /// - provides: the model half of [`Self::header`].
     /// - fails: a misplaced tile for a former out of shape; an unresolved head
     ///   for a former other than `Model`, or for an `S` that names no
-    ///   declaration a `sign` block defined before the module or in an imported
-    ///   source; a shadowed import for an `S` two imports bind; an unadmitted
-    ///   form for a value that codes no presentation.
+    ///   declaration a `theory` block defined before the module or in an
+    ///   imported source; a shadowed import for an `S` two imports bind; an
+    ///   unadmitted form for a value that codes no presentation.
     /// - panics: none.
     ///
     /// # Errors
@@ -351,12 +352,12 @@ impl<'source> Collector<'_, 'source>
     /// [`LoweringRefusal::OutOfFragment`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the `CatShape` model, a model of an imported sign
-    ///   (#726) and a former naming an undeclared sign, each asserted as the
+    /// - hypothesis: L3 — the `CatShape` model, a model of an imported theory
+    ///   (#726) and a former naming an undeclared theory, each asserted as the
     ///   exact components or refusal.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `tests::modules::models::a_model_of_an_undeclared_sign_is_refused_by_name`
-    /// - witness: `tests::namespace::a_model_of_an_imported_sign_derives_its_signature_726`
+    /// - witness: `tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
+    /// - witness: `tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -396,7 +397,7 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
         }
-        let Maybe::Present(sign) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        let Maybe::Present(theory) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
         };
@@ -411,7 +412,7 @@ impl<'source> Collector<'_, 'source>
                 arity: HeadArity::Unary,
             });
         }
-        let name = self.name_of(sign);
+        let name = self.name_of(theory);
         let local = self
             .collected
             .by_name
@@ -434,7 +435,7 @@ impl<'source> Collector<'_, 'source>
                     Ok(Maybe::Absent(_)) => None,
                     Err(ambiguity) => {
                         return Err(LoweringRefusal::ImportShadows {
-                            span: sign.span,
+                            span: theory.span,
                             name,
                             import: ambiguity.import,
                             other: ambiguity.other,
@@ -462,7 +463,7 @@ impl<'source> Collector<'_, 'source>
         let Some(presentation) = presented
         else {
             return Err(LoweringRefusal::UnresolvedTypeHead {
-                span: sign.span,
+                span: theory.span,
                 name,
                 arity: HeadArity::Nullary,
             });
@@ -470,7 +471,7 @@ impl<'source> Collector<'_, 'source>
         let Ok(model) = crate::model::derive(presentation)
         else {
             return Err(LoweringRefusal::OutOfFragment {
-                span: sign.span,
+                span: theory.span,
                 form: FormName::MODULE,
                 sort: FragmentSort::Declaration,
                 boundary: FragmentBoundary::Unadmitted,
@@ -481,7 +482,7 @@ impl<'source> Collector<'_, 'source>
             .iter()
             .map(|derived| Component {
                 name: self.name_of(derived.named),
-                named: sign,
+                named: theory,
                 form: match derived.form {
                     Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
                         ComponentForm::Abstract(Maybe::Absent(component_kind::Absent::Derived))

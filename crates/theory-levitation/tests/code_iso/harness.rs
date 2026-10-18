@@ -20,7 +20,7 @@ use anodized::spec;
 use gandr_theory_levitation::Code;
 use gandr_theory_levitation::DescValue;
 use gandr_theory_levitation::Name;
-use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::generic_eq;
 use quenchant_shape::shape::Maybe;
 
@@ -46,9 +46,9 @@ pub struct CodeIso
     /// A provenance label for inspection (`negation`, `Boolean ⨟ BoolSum`).
     label: Name,
     /// The description the forward translator reads.
-    source: SignDesc<Grade>,
+    source: TheoryDesc<Grade>,
     /// The description the forward translator writes.
-    target: SignDesc<Grade>,
+    target: TheoryDesc<Grade>,
     /// The forward translator `source → target`.
     forward: Translate,
     /// The backward translator `target → source`.
@@ -75,8 +75,8 @@ impl CodeIso
     /// trivial.
     pub fn new<L>(
         label: L,
-        source: SignDesc<Grade>,
-        target: SignDesc<Grade>,
+        source: TheoryDesc<Grade>,
+        target: TheoryDesc<Grade>,
         forward: Translate,
         backward: Translate,
     ) -> Self
@@ -98,7 +98,7 @@ impl CodeIso
     /// trivial.
     pub fn identity<L>(
         label: L,
-        desc: SignDesc<Grade>,
+        desc: TheoryDesc<Grade>,
     ) -> Self
     where
         L: Into<Name>,
@@ -121,7 +121,7 @@ impl CodeIso
     ///
     /// # Specification
     /// trivial.
-    pub const fn source(&self) -> &SignDesc<Grade>
+    pub const fn source(&self) -> &TheoryDesc<Grade>
     {
         &self.source
     }
@@ -130,7 +130,7 @@ impl CodeIso
     ///
     /// # Specification
     /// trivial.
-    pub const fn target(&self) -> &SignDesc<Grade>
+    pub const fn target(&self) -> &TheoryDesc<Grade>
     {
         &self.target
     }

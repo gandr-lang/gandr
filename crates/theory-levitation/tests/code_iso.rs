@@ -11,11 +11,11 @@
 //! arXiv:2501.17869, § 3.2.3, instantiated at monomorphic codes.
 //!
 //! Every translator maps real `DescValue`s, every round trip is judged by the
-//! crate's `generic_eq`, every description is a real `SignDesc` (the `Boolean`
-//! side is the crate's `bool_desc` retrofit), and every consumer transported
-//! is the crate's own. The certificate type is the suite's; translators are
-//! opaque closures, since an inspectable code-edit vocabulary is not this
-//! crate's to define.
+//! crate's `generic_eq`, every description is a real `TheoryDesc` (the
+//! `Boolean` side is the crate's `bool_desc` retrofit), and every consumer
+//! transported is the crate's own. The certificate type is the suite's;
+//! translators are opaque closures, since an inspectable code-edit vocabulary
+//! is not this crate's to define.
 //!
 //! The areas:
 //!

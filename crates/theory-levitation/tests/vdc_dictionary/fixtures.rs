@@ -22,10 +22,10 @@ use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::NominalSerial;
 use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::RuleFace;
-use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::SortRef;
 use gandr_theory_levitation::SurfaceSpan;
 use gandr_theory_levitation::TermView;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::derive_cell_var_meta;
 
 use super::harness::BaseInstance;
@@ -204,9 +204,9 @@ pub fn nat_names(tag: NameRef<'_>) -> NatNames
 pub fn nat_from_names(
     names: &NatNames,
     cells: Vec<RuleFace>,
-) -> SignDesc<Grade>
+) -> TheoryDesc<Grade>
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "Nat"),
         Vec::new(),
         [
@@ -228,7 +228,7 @@ pub fn nat_from_names(
 ///
 /// # Specification
 /// trivial.
-pub fn nat_desc() -> SignDesc<Grade>
+pub fn nat_desc() -> TheoryDesc<Grade>
 {
     let rules = vec![
         // plus(Zero, n) ==> n

@@ -6,7 +6,7 @@
 //! `{1, var, ×, σ}` with two leaf decorations: a field over a symbolic value
 //! type ([`ValueTypeRef`]) carrying a grade and an attribute Σ, and an
 //! atom-abstraction. The fragment is first-order, so code equality is
-//! decidable and [`Code`] derives it. A [`SignDesc`] is the declaration table
+//! decidable and [`Code`] derives it. A [`TheoryDesc`] is the declaration table
 //! for one signature: its minted identity, its sort set, its graded
 //! parameters, its constructors (the σ tag over codes), its operations with
 //! multi-output [`BridgeArity`] shapes, its rule faces ([`RuleFace`]) over
@@ -19,12 +19,13 @@
 //! ([`bool_desc`], [`option_desc`], [`list_desc`], [`pair_desc`],
 //! [`sum_desc`]), uniformly. [`check_desc`] is the host-side well-formedness
 //! pass, and [`TypedRuleFace`] pairs a face with a signature context decoded
-//! by a caller-supplied decoder. [`sig_desc`] describes `Sig`, the datatype
-//! whose values are presentations: a [`SigValue`] is one, and its canonical
-//! bytes are the presentation's identity (the decisions are in `sig`).
+//! by a caller-supplied decoder. [`theory_desc`] describes `Theory`, the
+//! datatype whose values are presentations: a [`TheoryValue`] is one, and its
+//! canonical bytes are the presentation's identity (the decisions are in
+//! `theory`).
 //!
 //! The crate names no type of any other gandr crate. A field's grade is the
-//! type parameter `G` of [`Code`] and [`SignDesc`], and a decoded type is the
+//! type parameter `G` of [`Code`] and [`TheoryDesc`], and a decoded type is the
 //! type parameter of [`PatternContext`]; decoding a code into a core type
 //! universe belongs to the consumer that owns that universe. Every recursive
 //! datum — a code, a value type reference, a free term, a payload, a
@@ -54,13 +55,13 @@
 //!   ([`FirstOrderJudgement`]), and evaluates it into a value domain and reads
 //!   it back ([`Evaluation`]), from the declarations alone (`binding`).
 //! - **The face theory as a parameter.** A signature may state the finite shape
-//!   its cells are stated over ([`SignShape`]): a size and named faces, each
+//!   its cells are stated over ([`TheoryShape`]): a size and named faces, each
 //!   the subshape of the points it lists, after `FaceTT`'s shape parameter.
-//!   [`check_desc`] refuses a face past its shape or named twice, `Sig` codes
-//!   the shape, and [`serialize_desc`] renders it as the `sign` block's first
-//!   member. Reading a face as a subshape, and deciding inclusions between
-//!   faces, is `gandr-theory-shapes`'s, at the consumer: this crate is the
-//!   closed tier below.
+//!   [`check_desc`] refuses a face past its shape or named twice, `Theory`
+//!   codes the shape, and [`serialize_desc`] renders it as the `theory` block's
+//!   first member. Reading a face as a subshape, and deciding inclusions
+//!   between faces, is `gandr-theory-shapes`'s, at the consumer: this crate is
+//!   the closed tier below.
 //!
 //! The fragment is the framework's rule at one depth over closed finitary
 //! signatures: a binder's domain is a representable sort, and a signature is
@@ -165,14 +166,14 @@
 //!
 //! # Consumers
 //!
-//! The virtual-doctrine reflection retains real `SignDesc<G>` values and uses
+//! The virtual-doctrine reflection retains real `TheoryDesc<G>` values and uses
 //! the public flat-tree representation for signatures, protypes, proterms and
 //! derivations. It does not decode grades or introduce a second description
 //! format.
 //!
 //! The cell layer reads the declaration table, its operations' arities, its
 //! rule faces and its circuit rules: it elaborates a description into cells and
-//! instantiates circuit rules at an application, through `SignDesc`,
+//! instantiates circuit rules at an application, through `TheoryDesc`,
 //! `OperDesc`, `BridgeArity`, `DeclPolarity`, `RuleFace`, `FreeTerm`,
 //! `CircuitRule`, `CircuitBody`, `WhiskeredCell`, `RedexOccurrence`,
 //! `elaborate_body`, `redex_occurrences` and `derive_boundaries`. The surface's
@@ -217,7 +218,7 @@
 //! - Maximilian Schönlank, Andreas Nuyts and Dominique Devriese. "Towards
 //!   `FaceTT`: a generalization of intensional type systems with glue". TYPES
 //!   2026, abstract 42 — the shape parameter `ft` and its subshapes, which
-//!   [`SignShape`] states for a signature.
+//!   [`TheoryShape`] states for a signature.
 
 #![no_std]
 
@@ -234,8 +235,8 @@ mod elaborate;
 mod first_order;
 mod generic;
 mod rule;
-mod sig;
 mod termination;
+mod theory;
 pub mod tree;
 mod typed_rule;
 mod wellformed;
@@ -312,11 +313,11 @@ pub use crate::desc::OperDesc;
 pub use crate::desc::ParamDesc;
 pub use crate::desc::Representability;
 pub use crate::desc::ShapeFace;
-pub use crate::desc::SignDesc;
-pub use crate::desc::SignShape;
 pub use crate::desc::SortDesc;
 pub use crate::desc::SortIndex;
 pub use crate::desc::SurfaceSpan;
+pub use crate::desc::TheoryDesc;
+pub use crate::desc::TheoryShape;
 pub use crate::desc::face_escape;
 pub use crate::desc::shape_parameter;
 pub use crate::elaborate::ActiveCell;
@@ -350,20 +351,20 @@ pub use crate::rule::TermArgs;
 pub use crate::rule::TermNode;
 pub use crate::rule::TermView;
 pub use crate::rule::Variance;
-pub use crate::sig::SIG_CONSTRUCTORS;
-pub use crate::sig::SigBinder;
-pub use crate::sig::SigFault;
-pub use crate::sig::SigOperation;
-pub use crate::sig::SigParts;
-pub use crate::sig::SigPort;
-pub use crate::sig::SigRule;
-pub use crate::sig::SigSort;
-pub use crate::sig::SigValue;
-pub use crate::sig::sig_desc;
 pub use crate::termination::Precedence;
 pub use crate::termination::Termination;
 pub use crate::termination::orient_rules;
 pub use crate::termination::path_greater;
+pub use crate::theory::THEORY_CONSTRUCTORS;
+pub use crate::theory::TheoryBinder;
+pub use crate::theory::TheoryFault;
+pub use crate::theory::TheoryOperation;
+pub use crate::theory::TheoryParts;
+pub use crate::theory::TheoryPort;
+pub use crate::theory::TheoryRule;
+pub use crate::theory::TheorySort;
+pub use crate::theory::TheoryValue;
+pub use crate::theory::theory_desc;
 pub use crate::typed_rule::PatternContext;
 pub use crate::typed_rule::TypedRuleFace;
 pub use crate::typed_rule::pattern_variable;

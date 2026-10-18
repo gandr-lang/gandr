@@ -161,8 +161,8 @@ const KEYWORDS: &[&str] = &[
     "for", "forall", "force", "fork", "from", "glob", "handle", "hold", "if", "import", "in",
     "infix", "infixl", "infixr", "leta", "loop", "migrate", "mobile", "module", "mu", "node",
     "offer", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pure", "rec", "recv",
-    "release", "resume", "return", "rule", "run", "select", "send", "shape", "sign", "sort",
-    "tail", "then", "thunk", "type", "unit", "unpack", "unwind", "val", "while", "with", "world",
+    "release", "resume", "return", "rule", "run", "select", "send", "shape", "sort", "tail",
+    "then", "theory", "thunk", "type", "unit", "unpack", "unwind", "val", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -1222,7 +1222,7 @@ mod tests
             ("import_declaration", "as", None, HlRole::VariableDef),
             ("for_expression", "for", None, HlRole::VariableDef),
             ("module_declaration", "module", None, HlRole::VariableDef),
-            ("sign_declaration", "node", None, HlRole::VariableDef),
+            ("theory_declaration", "node", None, HlRole::VariableDef),
             ("circuit_declaration", ":", Some("("), HlRole::FunctionCall),
             ("def_value", ".", None, HlRole::Member),
             ("telescope_expression", ".", None, HlRole::Member),

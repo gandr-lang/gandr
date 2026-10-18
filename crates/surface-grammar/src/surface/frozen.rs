@@ -17,7 +17,7 @@ use crate::mold::StepSym;
 
 /// The built-in surface's tables and the digest of their rules.
 pub(super) static BUILT_IN: FrozenTable = FrozenTable {
-    rules: RulesDigest(0x3f48_a262_ee8a_fcad),
+    rules: RulesDigest(0xf932_0a0e_dcc9_e291),
     molds: &MOLDS,
     contexts: &CONTEXTS,
     steps: &STEPS,
@@ -2568,7 +2568,7 @@ static MOLDS: [FrozenMold; 2999] = [
     FrozenMold(">>", 2539, 171, None, 7, &[], 2536),
     FrozenMold("<", 2540, 171, None, 7, &[], 2536),
     FrozenMold(">", 2541, 171, None, 7, &[], 2536),
-    FrozenMold("sign", 2542, 172, Some(ClosingClass::Brace), 1, &[2543], 2542),
+    FrozenMold("theory", 2542, 172, Some(ClosingClass::Brace), 1, &[2543], 2542),
     FrozenMold("type_identifier", 2543, 172, Some(ClosingClass::Brace), 0, &[2544], 2543),
     FrozenMold("{", 2544, 172, Some(ClosingClass::Brace), 0, &[2545, 2590, 2649, 2768, 2872, 2887], 2544),
     FrozenMold("sort", 2545, 172, Some(ClosingClass::Brace), 0, &[2546], 2545),
@@ -6278,7 +6278,7 @@ static STEPS: [&[StepSym]; 279] = [
     &[StepSym::Tile("command_substitution_start"), StepSym::Tile("list_operator"), StepSym::Tile("shell_list")],
     &[StepSym::Sort(Sort::Expression), StepSym::Tile("subshell_close")],
     &[StepSym::Sort(Sort::Expression), StepSym::Tile("subshell_open")],
-    &[StepSym::Tile("sign")],
+    &[StepSym::Tile("theory")],
     &[StepSym::Tile("data"), StepSym::Tile("oper"), StepSym::Tile("rule"), StepSym::Tile("shape"), StepSym::Tile("sort"), StepSym::Tile("}")],
     &[StepSym::Tile("sort")],
     &[StepSym::Sort(Sort::Type), StepSym::Tile(")"), StepSym::Tile("_"), StepSym::Tile("data"), StepSym::Tile("identifier"), StepSym::Tile("rule")],

@@ -667,7 +667,7 @@ fn focusing_is_total_on_the_pathological_corpus()
 /// declaration's name and each top-level module's, as the source spells
 /// them. A constructor belongs to its type and an operation to its family,
 /// so neither is counted; a module member is reached through its module's
-/// name; a name the lowering mints for a form — the `Sig` code type a
+/// name; a name the lowering mints for a form — the `Theory` code type a
 /// signature block declares — is spelled by no source, so it is not
 /// counted.
 ///

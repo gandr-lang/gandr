@@ -127,7 +127,7 @@ impl SurfaceRule<'_>
         )
     }
 
-    /// The sign spelling, `rule name : lhs <=> rhs`.
+    /// The theory spelling, `rule name : lhs <=> rhs`.
     ///
     /// # Specification
     /// - ensures: `name`, then the written sides in written order, separated by
@@ -135,12 +135,12 @@ impl SurfaceRule<'_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an unpinned face prints `<=>` in the sign spelling.
+    /// - hypothesis: L3 — an unpinned face prints `<=>` in the theory spelling.
     /// - witness: `description::tests::an_equation_states_no_direction`
     #[spec(ensures: |ref text| text.contains(name.as_ref()) && (text.contains("<=>") || text.contains("==>")))]
     #[inline]
     #[must_use]
-    pub fn print_sign(
+    pub fn print_theory(
         &self,
         name: &Name,
     ) -> String
@@ -228,7 +228,7 @@ pub struct WrittenPort
     pub sort: WrittenSort,
 }
 
-/// Where a sign's sort is written: `sort Hom(dom : Ob, cod : Ob) : Type`.
+/// Where a theory's sort is written: `sort Hom(dom : Ob, cod : Ob) : Type`.
 ///
 /// # Specification
 /// trivial.
@@ -376,7 +376,7 @@ pub struct WrittenConstructor
 /// Where a described declaration's members are written.
 ///
 /// Each list is parallel to the one the description reads its members into:
-/// for a `sign`, the presentation's sorts, operations, laws and circuits; for
+/// for a `theory`, the presentation's sorts, operations, laws and circuits; for
 /// a `data` family, the description's constructors, operations and rules.
 ///
 /// # Specification

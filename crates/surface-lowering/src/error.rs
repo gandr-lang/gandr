@@ -926,7 +926,7 @@ pub enum LoweringRefusal<'source>
     /// signature.
     UnstatedComponent
     {
-        /// The bytes of the sign the signature is derived from, as the
+        /// The bytes of the theory the signature is derived from, as the
         /// ascription names it.
         span: ByteSpan,
         /// The component's name.
@@ -1057,9 +1057,9 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
     },
 
-    /// A rule of a `data` or `sign` block whose right-hand side the path order
-    /// does not put below its left-hand side, so the block's rules are not
-    /// known to terminate.
+    /// A rule of a `data` or `theory` block whose right-hand side the path
+    /// order does not put below its left-hand side, so the block's rules
+    /// are not known to terminate.
     RulesUnoriented
     {
         /// The bytes the rule covers.

@@ -46,9 +46,9 @@ fn context(
 ///
 /// # Specification
 /// trivial.
-fn description(codes: Vec<Code<()>>) -> SignDesc<()>
+fn description(codes: Vec<Code<()>>) -> TheoryDesc<()>
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "Self"),
         Vec::new(),
         codes
@@ -413,7 +413,7 @@ fn native_signatures_keep_nominality_and_empty_data()
     assert_eq!(empty.constructors().iter().next(), None);
     assert_eq!(empty.kind(), kind);
     // A parameter's classifier is retained in telescope order.
-    let parameterised = SignDesc::new(
+    let parameterised = TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "Self"),
         vec![gandr_theory_levitation::ParamDesc::new(
             "a",

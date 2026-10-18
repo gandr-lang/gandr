@@ -42,8 +42,8 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::NominalSerial;
 use gandr_theory_levitation::OperDesc;
-use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::SortRef;
+use gandr_theory_levitation::TheoryDesc;
 use quenchant_shape::shape::Maybe;
 
 use crate::fixture::Ungraded;
@@ -326,7 +326,7 @@ fn description_route_store() -> CellStore
             Attrs::empty(),
         )
     };
-    let desc: SignDesc<Ungraded> = SignDesc::new(
+    let desc: TheoryDesc<Ungraded> = TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "Nat"),
         Vec::new(),
         [

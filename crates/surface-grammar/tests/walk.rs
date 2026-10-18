@@ -47,9 +47,9 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// the shape member of a `sign` block, `shape S : 4 { f = {0, 2}; }`: fourteen
-/// molds at the one site the sign member alternation is inlined.
-const BUILT_IN_FINGERPRINT: u64 = 0xbf0f_cf85_f3f6_6aff;
+/// the block's keyword and rule renamed from `sign` to `theory` (#729): the
+/// same molds under a new tile label and rule name.
+const BUILT_IN_FINGERPRINT: u64 = 0x53f6_8bb0_0a99_9c4b;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
@@ -214,7 +214,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("shell_list", 1),
     ("shell_or", 2),
     ("shell_word", 1),
-    ("sign", 1),
     ("single_quoted_content", 1),
     ("sort", 1),
     ("string_fragment", 7),
@@ -222,6 +221,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("subshell_open", 1),
     ("tail", 1),
     ("then", 1),
+    ("theory", 1),
     ("thunk", 1),
     ("true", 3),
     ("type", 23),

@@ -1,6 +1,6 @@
 //! Described families the native data reading does not own, decoded from the
 //! same descriptions exposed to cell consumers, and the presentation code
-//! `Sig` with the values `sign` blocks define.
+//! `Theory` with the values `theory` blocks define.
 //!
 //! A data declaration form has one producer of its signature: the native
 //! reading, which also enters its constructors and compiles its matches. Its
@@ -9,9 +9,9 @@
 //! is reported at the family. Reversal: a description decode that agrees with
 //! the native reading on every data form can replace it as the producer.
 //!
-//! `Sig` reaches the same decoder from [`sig_desc`], and a `sign` block's
-//! definition is its presentation's value read node for node: each
-//! constructor of the value a constructor of `Sig`, each name a `String`
+//! `Theory` reaches the same decoder from [`theory_desc`], and a `theory`
+//! block's definition is its presentation's value read node for node: each
+//! constructor of the value a constructor of `Theory`, each name a `String`
 //! literal, so the core term and the identity bytes are one value in two
 //! encodings.
 
@@ -50,8 +50,8 @@ use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NameRef;
 use gandr_theory_levitation::PayloadNode;
 use gandr_theory_levitation::PayloadView;
-use gandr_theory_levitation::SigFault;
-use gandr_theory_levitation::sig_desc;
+use gandr_theory_levitation::TheoryFault;
+use gandr_theory_levitation::theory_desc;
 use quenchant_shape::shape::Maybe;
 
 use super::Lowerer;
@@ -174,9 +174,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the ordinary mint sweep has lowered the written classifiers.
     /// - ensures: a decoded family's signature is pushed onto the module's list
     ///   and its index recorded by its slot; decoding failures remain located
-    ///   diagnostics and refuse only their slot; a `sign` block or a top-level
-    ///   `oper`, which declares no family, is left alone. Newly allocated nodes
-    ///   receive provenance without replacing older origins.
+    ///   diagnostics and refuse only their slot; a `theory` block or a
+    ///   top-level `oper`, which declares no family, is left alone. Newly
+    ///   allocated nodes receive provenance without replacing older origins.
     /// - fails: the existing fuel or molded-grammar refusal remains an engine
     ///   error.
     /// - panics: none.
@@ -279,19 +279,19 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Mint `Sig` from its description, then each `sign` block's definition
-    /// from the value its presentation holds.
+    /// Mint `Theory` from its description, then each `theory` block's
+    /// definition from the value its presentation holds.
     ///
     /// # Specification
     /// - requires: the collection pass has run.
-    /// - ensures: when the module holds `Sig`, its signature decoded from
-    ///   [`sig_desc`] — no parameters, `Type` at the fuss-free level — is
+    /// - ensures: when the module holds `Theory`, its signature decoded from
+    ///   [`theory_desc`] — no parameters, `Type` at the fuss-free level — is
     ///   pushed onto the module's list with its constructors' names and
-    ///   recorded by its slot; then every unrefused slot a `sign` block defines
-    ///   takes the type `Sig` and the constructor tree [`presentation_term`]
-    ///   reads off its value. A value the walk refuses refuses its slot at the
-    ///   block. Every node minted takes the origin of the code's slot or the
-    ///   block.
+    ///   recorded by its slot; then every unrefused slot a `theory` block
+    ///   defines takes the type `Theory` and the constructor tree
+    ///   [`presentation_term`] reads off its value. A value the walk refuses
+    ///   refuses its slot at the block. Every node minted takes the origin of
+    ///   the code's slot or the block.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk over the
     ///   slots exhausts the allowance.
     /// - panics: none.
@@ -301,10 +301,10 @@ impl<'source> Lowerer<'_, 'source>
     /// [`LoweringRefusal::UnknownMold`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a clean sign's definition is read back out of the
+    /// - hypothesis: L3 — a clean theory's definition is read back out of the
     ///   arena as the constructor tree its value encodes, and a program
     ///   matching on it counts its operations.
-    /// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+    /// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
     #[spec(
         captures: before = (self.data.len(), self.presented.len()),
         ensures: |result| result.is_err() || (self.data.len() >= before.0 && self.presented.len() >= before.1),
@@ -314,18 +314,18 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let Maybe::Present(ref sig) = self.collected.sig
+        let Maybe::Present(ref theory) = self.collected.theory
         else {
             return Ok(());
         };
-        let code = sig.slot;
+        let code = theory.slot;
         let Some(slot) = self.collected.slots.get(usize::from(code))
         else {
             return Ok(());
         };
         let constant = slot.constant;
         let at = slot.introduced_by;
-        let description = sig_desc(());
+        let description = theory_desc(());
         let before = sink.arena.watermark();
         let kind = sink.arena.value_type_universe(
             Sort::Ground(GroundSort::Value),
@@ -423,7 +423,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_presentations`].
-    /// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+    /// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
     fn record_since(
         &self,
         sink: &mut Sink<'_>,
@@ -536,35 +536,35 @@ enum Step<'value>
     Build(ConstructorTag, usize),
 }
 
-/// The core term of `value`, a value of the description of `Sig`, each node
+/// The core term of `value`, a value of the description of `Theory`, each node
 /// of it a constructor of `datatype`.
 ///
 /// # Specification
-/// - requires: `datatype` is the nominal type `Sig`.
+/// - requires: `datatype` is the nominal type `Theory`.
 /// - ensures: one constructor per constructor of `value`, at its tag, over its
 ///   fields in payload order — each name field a `String` literal of the name's
 ///   text, each recursive field the term of its value.
-/// - fails: [`SigFault::Payload`] for a payload that is not a product of names
-///   and recursions; [`SigFault::Text`] for a name that is not UTF-8.
+/// - fails: [`TheoryFault::Payload`] for a payload that is not a product of
+///   names and recursions; [`TheoryFault::Text`] for a name that is not UTF-8.
 /// - panics: none.
 /// - intension: an explicit worklist; a visit pushes the constructor's build
 ///   step and then its fields, so each field's term is complete before the next
 ///   begins and a build pops exactly its own fields.
 ///
 /// # Errors
-/// [`SigFault::Payload`] and [`SigFault::Text`].
+/// [`TheoryFault::Payload`] and [`TheoryFault::Text`].
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a presentation of one sort, one operation and one rule
 ///   reads back as the constructor tree its value encodes, names and tags
 ///   included.
-/// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
-#[spec(ensures: |result| result.is_ok() || matches!(result, Err(SigFault::Payload | SigFault::Text)))]
+/// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
+#[spec(ensures: |result| result.is_ok() || matches!(result, Err(TheoryFault::Payload | TheoryFault::Text)))]
 fn presentation_term(
     arena: &mut CoreArena,
     value: &DescValue,
     datatype: ValueTypeId,
-) -> Result<ValueId, SigFault>
+) -> Result<ValueId, TheoryFault>
 {
     let mut steps = vec![Step::Visit(value.ctor, value.payload.to_node())];
     let mut built: Vec<ValueId> = Vec::new();
@@ -586,13 +586,13 @@ fn presentation_term(
                         PayloadView::Rec { ctor, mut payload } => {
                             let Some(inner) = payload.next()
                             else {
-                                return Err(SigFault::Payload);
+                                return Err(TheoryFault::Payload);
                             };
                             fields.push(Step::Visit(ctor, inner));
                         },
                         PayloadView::Leaf(bytes) => fields.push(Step::Text(bytes)),
                         PayloadView::Inj { .. } | PayloadView::Abs { .. } => {
-                            return Err(SigFault::Payload);
+                            return Err(TheoryFault::Payload);
                         },
                     }
                 }
@@ -602,7 +602,7 @@ fn presentation_term(
             Step::Text(bytes) => {
                 let Ok(text) = core::str::from_utf8(bytes.as_ref())
                 else {
-                    return Err(SigFault::Text);
+                    return Err(TheoryFault::Text);
                 };
                 built.push(
                     arena.value_literal(Literal::Text(StringLiteral::new(String::from(text)))),
@@ -618,5 +618,5 @@ fn presentation_term(
             },
         }
     }
-    built.pop().ok_or(SigFault::Payload)
+    built.pop().ok_or(TheoryFault::Payload)
 }

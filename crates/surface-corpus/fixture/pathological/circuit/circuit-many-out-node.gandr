@@ -1,5 +1,5 @@
 @[ refuses("MalformedForm") ]
-sign Wide {
+theory Wide {
   sort Nat : Type;
   oper tee : (a : Nat) --> (b : Nat, c : Nat);
 

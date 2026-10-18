@@ -85,22 +85,23 @@
 //! (`lower::native` § A recursive function is one fixpoint over its last
 //! parameter).
 //!
-//! # A `sign` block defines a value of `Sig`
+//! # A `theory` block defines a value of `Theory`
 //!
-//! `sign S { … }` takes the next admission position under `S` and files a
-//! definition half lowered at the block itself: `S : Sig`, whose body is the
-//! presentation's value the description route read (`crate::model`). `Sig`,
-//! the presentation code `gandr_theory_levitation::sig_desc` describes, is
+//! `theory S { … }` takes the next admission position under `S` and files a
+//! definition half lowered at the block itself: `S : Theory`, whose body is the
+//! presentation's value the description route read (`crate::model`). `Theory`,
+//! the presentation code `gandr_theory_levitation::theory_desc` describes, is
 //! minted once per module as a slot of its own, just before the first block
 //! that refuses nothing, and its constructors enter the constructor table
 //! beside the written families'; a module with no such block declares neither,
 //! so a module that presents nothing loses no name to them. A block some member
 //! of which the description route or the cell gate refused still takes its
 //! slot, refused by its first refusal, and each further refusal is held at its
-//! member's span. The alternatives were `Sig` in a prelude every module
-//! imports, which the fragment has none of, and `Sig` minted in every module,
-//! which takes eleven constructor names from modules that present nothing. The
-//! choice reverses with a prelude: `Sig` becomes one of its declarations.
+//! member's span. The alternatives were `Theory` in a prelude every module
+//! imports, which the fragment has none of, and `Theory` minted in every
+//! module, which takes eleven constructor names from modules that present
+//! nothing. The choice reverses with a prelude: `Theory` becomes one of its
+//! declarations.
 //!
 //! # A module is collected by name and resolved by position
 //!
@@ -266,8 +267,8 @@ use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
-use gandr_theory_levitation::SIG_CONSTRUCTORS;
-use gandr_theory_levitation::sig_desc;
+use gandr_theory_levitation::THEORY_CONSTRUCTORS;
+use gandr_theory_levitation::theory_desc;
 use quenchant_shape::shape::Maybe;
 
 use crate::attribute::AttributeTable;
@@ -998,13 +999,13 @@ pub enum Operand
     /// compiled from its rules by the plan the collection keeps for its slot.
     Operation,
     /// A top-level `oper`, which lowers to no core term, or a refusal held
-    /// beside a `sign` block: the half that carries a member refusal and the
+    /// beside a `theory` block: the half that carries a member refusal and the
     /// expectation stating it.
     Signature,
-    /// The `sign` block that defines its name as a value of `Sig`: the
+    /// The `theory` block that defines its name as a value of `Theory`: the
     /// presentation it reads, minted from its value.
     Presented,
-    /// `Sig`, the presentation code, decoded from its description rather
+    /// `Theory`, the presentation code, decoded from its description rather
     /// than read from a written form.
     Code,
     /// The type a model signature derives for one of its value components,
@@ -1333,9 +1334,9 @@ pub struct Collected<'source>
     pub functors: Vec<Functor<'source>>,
     /// The applications, in source order: each an instance of a functor.
     pub instances: Vec<Instance<'source>>,
-    /// `Sig`, the presentation code, when a `sign` block that refuses
+    /// `Theory`, the presentation code, when a `theory` block that refuses
     /// nothing has minted it.
-    pub sig: Maybe<SigSlot, sig_slot::Absent>,
+    pub theory: Maybe<TheorySlot, theory_slot::Absent>,
     /// The mutual blocks, in source order: each the run of slots its members
     /// took, admitted as one block.
     pub blocks: Vec<MutualBlock>,
@@ -1368,34 +1369,35 @@ pub struct Ambiguity
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a module holds no `Sig`.
-    pub mod sig_slot {
-        /// The reason the module minted no `Sig`.
+    /// Why a module holds no `Theory`.
+    pub mod theory_slot {
+        /// The reason the module minted no `Theory`.
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum Absent {
-            /// No `sign` block that refuses nothing stands in the module.
+            /// No `theory` block that refuses nothing stands in the module.
             Unminted,
         }
     }
 }
 
-/// `Sig`, the presentation code, as a module mints it: the slot it takes and
+/// `Theory`, the presentation code, as a module mints it: the slot it takes and
 /// the field count of each of its constructors, in tag order.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: the slot is a declared one named `Sig`; the arities follow the
+/// - ensures: the slot is a declared one named `Theory`; the arities follow the
 ///   description's constructor table.
 /// - executable: none — the slot index holds no table to check it against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a module with a sign that refuses nothing mints `Sig`
-///   once, before the sign's own slot, and a generic program matches on it.
-/// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+/// - hypothesis: L3 — a module with a theory that refuses nothing mints
+///   `Theory` once, before the theory's own slot, and a generic program matches
+///   on it.
+/// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SigSlot
+pub struct TheorySlot
 {
-    /// The slot `Sig` takes.
+    /// The slot `Theory` takes.
     pub slot: SlotIndex,
     /// Each constructor's field count, in tag order.
     pub arities: Vec<usize>,
@@ -2198,7 +2200,7 @@ pub fn collect<'source>(
             family_checks: BTreeMap::new(),
             functors: Vec::new(),
             instances: Vec::new(),
-            sig: Maybe::Absent(sig_slot::Absent::Unminted),
+            theory: Maybe::Absent(theory_slot::Absent::Unminted),
             blocks: Vec::new(),
             recursive: BTreeSet::new(),
         },
@@ -2265,7 +2267,7 @@ pub fn collect<'source>(
             .get(&child.node)
             .is_some_and(|entry| matches!(entry.presentation, Maybe::Present(_)))
         {
-            collector.sign(child, &decorations);
+            collector.theory(child, &decorations);
             decorations.clear();
             continue;
         }
@@ -2985,8 +2987,8 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::hold_described_refusals`] and
-    ///   [`Self::refuse_signature`]; an unended `sign` block whose last member
-    ///   the cell gate refuses is refused once, at its missing close.
+    ///   [`Self::refuse_signature`]; an unended `theory` block whose last
+    ///   member the cell gate refuses is refused once, at its missing close.
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
     /// - witness: `description::tests::an_unended_family_is_refused_once_at_its_close`
     #[spec(ensures: |ret| ret.iter().all(|&(span, _)| span.start() >= child.span.start() && span.end() <= child.span.end()))]
@@ -3059,7 +3061,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a refused operation keeps its span, a decoration
     ///   before it states it, and its name enters no namespace.
-    /// - witness: `description::sign::tests::a_refused_top_level_operation_states_its_refusal`
+    /// - witness: `description::theory::tests::a_refused_top_level_operation_states_its_refusal`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: self.collected.slots.len() >= before.0 && self.collected.by_name.len() == before.1,
@@ -3118,38 +3120,38 @@ impl<'source> Collector<'_, 'source>
         }
     }
 
-    /// Collect the `sign` block at `child` as the definition of its name, a
-    /// value of `Sig`, decorated by the attribute blocks `decorations` before
-    /// it.
+    /// Collect the `theory` block at `child` as the definition of its name, a
+    /// value of `Theory`, decorated by the attribute blocks `decorations`
+    /// before it.
     ///
     /// # Specification
     /// - requires: `child` is a root child the description route described as a
-    ///   `sign` block; `decorations` are attribute blocks standing on their own
-    ///   before it.
+    ///   `theory` block; `decorations` are attribute blocks standing on their
+    ///   own before it.
     /// - ensures: a block none of whose members the description route or the
-    ///   cell gate refused mints `Sig` when the module holds none, then takes a
-    ///   declared slot under its name whose definition half is the block
-    ///   itself; a refused block takes that slot too, refused by its first
-    ///   refusal, and each further refusal one held slot at its member's span
-    ///   with the block as its signature half, so the attributes the
+    ///   cell gate refused mints `Theory` when the module holds none, then
+    ///   takes a declared slot under its name whose definition half is the
+    ///   block itself; a refused block takes that slot too, refused by its
+    ///   first refusal, and each further refusal one held slot at its member's
+    ///   span with the block as its signature half, so the attributes the
     ///   decorations file under the block are read off every one of them. The
     ///   slot owns the block and its decorations; an unreadable decoration, or
-    ///   a `Sig` the module declared otherwise, refuses it; a name declared
+    ///   a `Theory` the module declared otherwise, refuses it; a name declared
     ///   before refuses the block as a duplicate.
-    /// - provides: `sign S { … }` as the declaration `S : Sig` whose body is
-    ///   the presentation's value.
+    /// - provides: `theory S { … }` as the declaration `S : Theory` whose body
+    ///   is the presentation's value.
     /// - panics: none.
     /// - executable: none — the slot it takes is chosen by the name table,
     ///   which the call reads and writes in one step.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a clean block defines its name as a value of `Sig`
-    ///   that a program matching on `Sig` reads, and a refused block's name is
-    ///   a declaration refused at its first member refusal that a decoration
+    /// - hypothesis: L3 — a clean block defines its name as a value of `Theory`
+    ///   that a program matching on `Theory` reads, and a refused block's name
+    ///   is a declaration refused at its first member refusal that a decoration
     ///   before the block states.
-    /// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
-    /// - witness: `description::sign::tests::a_refused_sign_block_states_its_refusal`
-    fn sign(
+    /// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
+    /// - witness: `description::theory::tests::a_refused_theory_block_states_its_refusal`
+    fn theory(
         &mut self,
         child: Placed,
         decorations: &[Placed],
@@ -3164,7 +3166,7 @@ impl<'source> Collector<'_, 'source>
         let mut refusals = self.described_refusals(child).into_iter().peekable();
         let minted = match refusals.peek() {
             Some(_) => Ok(()),
-            None => self.mint_sig(named),
+            None => self.mint_theory(named),
         };
         let position = self.admit(self.collected.top(child.span.start()), name, child, named);
         self.collected.own(child.node, position);
@@ -3221,45 +3223,45 @@ impl<'source> Collector<'_, 'source>
         }
     }
 
-    /// Admit `Sig`, the presentation code, and enter its constructors, at the
-    /// name tile `named` of the `sign` block that first needs it, unless the
-    /// module holds it already.
+    /// Admit `Theory`, the presentation code, and enter its constructors, at
+    /// the name tile `named` of the `theory` block that first needs it,
+    /// unless the module holds it already.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on the first call, a declared slot `Sig` introduced at
+    /// - ensures: on the first call, a declared slot `Theory` introduced at
     ///   `named`, whose definition half is the code, and each constructor of
-    ///   [`sig_desc`] entered by name with its tag and field count, recorded as
-    ///   the module's `Sig`; on a later call, nothing. When `Sig` or one of its
-    ///   constructors names something the module declared before, nothing is
-    ///   admitted.
+    ///   [`theory_desc`] entered by name with its tag and field count, recorded
+    ///   as the module's `Theory`; on a later call, nothing. When `Theory` or
+    ///   one of its constructors names something the module declared before,
+    ///   nothing is admitted.
     /// - fails: [`LoweringRefusal::DuplicateDefinition`] naming the first
-    ///   declaration of a name `Sig` would take.
+    ///   declaration of a name `Theory` would take.
     /// - panics: none.
     ///
     /// # Errors
     /// [`LoweringRefusal::DuplicateDefinition`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two clean blocks share one `Sig`, which a program
+    /// - hypothesis: L3 — two clean blocks share one `Theory`, which a program
     ///   matches on by its constructors' names.
-    /// - witness: `description::sign::tests::a_sign_block_defines_its_presentation`
+    /// - witness: `description::theory::tests::a_theory_block_defines_its_presentation`
     #[spec(
-        captures: before = self.collected.sig.clone(),
+        captures: before = self.collected.theory.clone(),
         ensures: |ret| match before {
-            | Maybe::Present(ref held) => ret.is_ok() && self.collected.sig == Maybe::Present(held.clone()),
-            | Maybe::Absent(_) => ret.is_err() || matches!(self.collected.sig, Maybe::Present(ref sig) if sig.arities.len() == SIG_CONSTRUCTORS.len()),
+            | Maybe::Present(ref held) => ret.is_ok() && self.collected.theory == Maybe::Present(held.clone()),
+            | Maybe::Absent(_) => ret.is_err() || matches!(self.collected.theory, Maybe::Present(ref theory) if theory.arities.len() == THEORY_CONSTRUCTORS.len()),
         },
     )]
-    fn mint_sig(
+    fn mint_theory(
         &mut self,
         named: Placed,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        if let Maybe::Present(_) = self.collected.sig {
+        if let Maybe::Present(_) = self.collected.theory {
             return Ok(());
         }
-        let code = SurfaceName::from("Sig");
+        let code = SurfaceName::from("Theory");
         let taken = |name: SurfaceName<'source>, first: ByteSpan| {
             Err(LoweringRefusal::DuplicateDefinition {
                 span: named.span,
@@ -3277,7 +3279,7 @@ impl<'source> Collector<'_, 'source>
             return taken(code, slot.introduced_by.span);
         }
         let source = self.collected.unit.source_at(named.span.start());
-        for constructor in SIG_CONSTRUCTORS {
+        for constructor in THEORY_CONSTRUCTORS {
             let name = SurfaceName::from(constructor);
             if let Some(entry) = self.collected.constructors.get(&(source, name)) {
                 return taken(name, entry.named.span);
@@ -3290,9 +3292,13 @@ impl<'source> Collector<'_, 'source>
                 operand: Operand::Code,
             });
         }
-        let description = sig_desc(());
+        let description = theory_desc(());
         let mut arities = Vec::with_capacity(description.ctors.len());
-        for (tag, (constructor, name)) in description.ctors.iter().zip(SIG_CONSTRUCTORS).enumerate()
+        for (tag, (constructor, name)) in description
+            .ctors
+            .iter()
+            .zip(THEORY_CONSTRUCTORS)
+            .enumerate()
         {
             let arity = constructor.arity().inputs.len();
             arities.push(arity);
@@ -3308,7 +3314,7 @@ impl<'source> Collector<'_, 'source>
                 },
             );
         }
-        self.collected.sig = Maybe::Present(SigSlot { slot, arities });
+        self.collected.theory = Maybe::Present(TheorySlot { slot, arities });
 
         Ok(())
     }
@@ -4408,7 +4414,7 @@ struct Field<'source>
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Carried(bool);
 
-/// Whether a `sign` block or a top-level `oper` holds a member refusal.
+/// Whether a `theory` block or a top-level `oper` holds a member refusal.
 ///
 /// # Specification
 /// trivial.
@@ -7714,7 +7720,7 @@ impl<'source> LoweredModule<'source>
         &self.descriptions
     }
 
-    /// Every `sign` block the module declares, in declaration order: its
+    /// Every `theory` block the module declares, in declaration order: its
     /// description and the presentation its models' signature derives from.
     ///
     /// # Specification
@@ -7725,16 +7731,16 @@ impl<'source> LoweredModule<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a module declaring `CatShape` beside a family hands
-    ///   back the sign alone.
-    /// - witness: `tests::modules::models::a_lowered_sign_exposes_its_description_and_its_model`
+    ///   back the theory alone.
+    /// - witness: `tests::modules::models::a_lowered_theory_exposes_its_description_and_its_model`
     #[inline]
-    pub fn signs(&self) -> impl Iterator<Item = crate::model::LoweredSign<'_>>
+    pub fn theories(&self) -> impl Iterator<Item = crate::model::LoweredTheory<'_>>
     {
         self.descriptions
             .declarations
             .iter()
             .filter_map(|declaration| match declaration.presentation {
-                Maybe::Present(ref presentation) => Some(crate::model::LoweredSign {
+                Maybe::Present(ref presentation) => Some(crate::model::LoweredTheory {
                     named: declaration.named,
                     description: &declaration.description,
                     presentation,
@@ -7756,7 +7762,7 @@ impl<'source> LoweredModule<'source>
 
     /// The normal form `call` reaches under the rules of the described
     /// declaration whose bytes hold `declaration`'s: the engine's reading of a
-    /// call into a family or a `sign` block, asked of the block or of one of
+    /// call into a family or a `theory` block, asked of the block or of one of
     /// its operations.
     ///
     /// # Specification
@@ -8653,7 +8659,7 @@ mod tests
              nothing"
         );
 
-        let tree = repaired(&pbg, SourceText::from("@[ checks ] sign Sta"));
+        let tree = repaired(&pbg, SourceText::from("@[ checks ] theory Sta"));
         assert_eq!(
             collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap_err(),
             LoweringRefusal::OutOfFragment {
@@ -8662,7 +8668,7 @@ mod tests
                 sort: FragmentSort::Declaration,
                 boundary: FragmentBoundary::WrongSort,
             },
-            "and so does one before a sign the parser repaired, which declares nothing"
+            "and so does one before a theory the parser repaired, which declares nothing"
         );
     }
 

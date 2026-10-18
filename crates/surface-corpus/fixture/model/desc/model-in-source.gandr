@@ -1,4 +1,4 @@
-// A first-order model of `sign Nat` written in gandr source (#640). For a
+// A first-order model of `theory Nat` written in gandr source (#640). For a
 // first-order signature, Kaposi and Xie's first-order models (_Second-Order
 // Generalised Algebraic Theories_, FSCD 2024,
 // doi:10.4230/LIPIcs.FSCD.2024.10) are its algebras: a carrier for the sort
@@ -8,7 +8,7 @@
 // them, and the syntax model, a counting model and a `Model(Nat)` module each
 // inhabit it.
 
-// The naturals' signature, `sign Nat`.
+// The naturals' signature, `theory Nat`.
 import "./second-order-signatures.gandr" ;
 
 /// The naturals as data: the syntax model's carrier, its constructors the

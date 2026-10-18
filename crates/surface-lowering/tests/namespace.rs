@@ -1474,13 +1474,13 @@ fn two_imports_binding_one_name_refuse_its_use()
 }
 
 #[test]
-fn a_model_of_an_imported_sign_derives_its_signature_726()
+fn a_model_of_an_imported_theory_derives_its_signature_726()
 {
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "sign Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
+                "theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
                  Nat) --> Nat;\n}",
             ),
             &[],

@@ -1090,7 +1090,7 @@ mod tests
         let data = "data NatDiv : Type {\n  Zero : NatDiv;\n  Succ : (n : NatDiv) --> NatDiv;\n  \
                     oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  \
                     rule divmod(m, Zero) ==> (Zero, m);\n}\n";
-        let sign = "sign Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  \
+        let theory = "theory Cat {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  \
                     oper id : (a : Ob) --> Hom(a, a);\n  \
                     oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
                     rule unitL : comp(id(a), f) ==> f;\n}\n";
@@ -1165,13 +1165,13 @@ mod tests
             ),
             (
                 "an indexed sort",
-                sign,
+                theory,
                 (2, 8),
                 Ok(fenced(SourceText::from("Hom : +U (Ob -> Ob -> -F Type)"))),
             ),
             (
                 "an operation over the sorts before it",
-                sign,
+                theory,
                 (3, 8),
                 Ok(fenced(SourceText::from(
                     "id : +U ((a : Ob) -> -F Hom(a, a))",
@@ -1179,13 +1179,13 @@ mod tests
             ),
             (
                 "a law's application",
-                sign,
+                theory,
                 (5, 22),
                 Ok(fenced(SourceText::from("Hom(a, a)"))),
             ),
             (
-                "a sign member's keyword",
-                sign,
+                "a theory member's keyword",
+                theory,
                 (5, 3),
                 Err(hovered::Absent::Untyped),
             ),

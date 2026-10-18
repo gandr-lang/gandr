@@ -244,7 +244,7 @@ impl Reader<'_, '_>
     ///   component.
     /// - witness: `description::tests::operations_and_rules_preserve_their_boundaries`
     /// - witness: `description::tests::a_parenthesized_result_list_reads_as_a_results_tuple`
-    /// - witness: `description::sign::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
+    /// - witness: `description::theory::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     pub(super) fn free_term(

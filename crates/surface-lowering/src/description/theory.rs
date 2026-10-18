@@ -2,9 +2,9 @@
 //!
 //! # Signature blocks
 //!
-//! A `sign` block is a description judgment, not an ordinary native value
+//! A `theory` block is a description judgment, not an ordinary native value
 //! family: it has no family classifier, and it defines its name as a value of
-//! `Sig`, the presentation code (§ A presentation is a value). It retains
+//! `Theory`, the presentation code (§ A presentation is a value). It retains
 //! declared sorts and their index telescopes, operation boundaries
 //! with every output port, written faces and circuit rules. An operation
 //! `f : (m : N, n : N) --> (q : N, r : N)` is one monomial per output, as a
@@ -23,12 +23,12 @@
 //! and the reversible map `<->` is reserved. `<=>` is the equation: a face
 //! arrow whose direction the order chooses. Each refusal is a fragment
 //! boundary rather than malformed source. Witnesses:
-//! `description::sign::tests::a_ruled_sign_block_lowers_its_members_into_a_description`,
-//! `description::sign::tests::a_many_out_frame_binds_every_port_and_roots_the_body`,
-//! `description::sign::tests::the_cat_shape_laws_are_written_faces`,
-//! `description::sign::tests::a_port_name_on_both_sides_is_two_ports`,
-//! `description::sign::tests::a_feed_statement_declines_naming_the_wheel_obligation`,
-//! `description::sign::tests::sign_declines_and_malformed_wiring_are_refused_apart`.
+//! `description::theory::tests::a_ruled_theory_block_lowers_its_members_into_a_description`,
+//! `description::theory::tests::a_many_out_frame_binds_every_port_and_roots_the_body`,
+//! `description::theory::tests::the_cat_shape_laws_are_written_faces`,
+//! `description::theory::tests::a_port_name_on_both_sides_is_two_ports`,
+//! `description::theory::tests::a_feed_statement_declines_naming_the_wheel_obligation`,
+//! `description::theory::tests::theory_declines_and_malformed_wiring_are_refused_apart`.
 //!
 //! # Second-order members
 //!
@@ -54,8 +54,8 @@
 //! every record no worse. The choice reverses when a binder is admitted as a
 //! type elsewhere, where a type rule is what reads it. `Type+` stays a type
 //! atom: one tile no other form shares. Witnesses:
-//! `description::sign::tests::a_rendered_signature_reparses_to_itself`,
-//! `description::sign::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`,
+//! `description::theory::tests::a_rendered_signature_reparses_to_itself`,
+//! `description::theory::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`,
 //! `model::tests::an_underivable_component_keeps_its_fault`.
 //!
 //! # The shape parameter
@@ -72,51 +72,51 @@
 //! subshape a cell is fixed on. The spelling is provisional: the keyword, the
 //! size after the colon and the braces around each face's points are the
 //! first that read, not a settled surface. Witnesses:
-//! `description::sign::tests::a_rendered_signature_reparses_to_itself`,
-//! `description::sign::tests::a_face_past_its_shape_is_refused_by_name`.
+//! `description::theory::tests::a_rendered_signature_reparses_to_itself`,
+//! `description::theory::tests::a_face_past_its_shape_is_refused_by_name`.
 //!
 //! # A presentation is a value
 //!
 //! The reader reads a block's members once, into the parts of a presentation
-//! (`SigParts`): each sort with its index ports, each operation with its input
-//! and output ports, each face as its two terms. Those parts are encoded once,
-//! as a `SigValue`, and everything after reads the value: the block's
+//! (`TheoryParts`): each sort with its index ports, each operation with its
+//! input and output ports, each face as its two terms. Those parts are encoded
+//! once, as a `TheoryValue`, and everything after reads the value: the block's
 //! description is decoded from it, `Model(S)` derives from it, and the core
-//! definition `S : Sig` is it, node for node. Beside the value the reader keeps
-//! only provenance — the name tile of each member and the span of each face —
-//! and the circuit rules `Sig` does not code yet. An unnamed port carries the
-//! empty name in the value, so where it was written leaves the presentation's
-//! identity unchanged; every reading names it by its position, `_1` for the
-//! second port of an operation. A port's sort is spelled from the value, so
-//! `Hom(a,a)` and `Hom(a, a)` are one sort.
+//! definition `S : Theory` is it, node for node. Beside the value the reader
+//! keeps only provenance — the name tile of each member and the span of each
+//! face — and the circuit rules `Theory` does not code yet. An unnamed port
+//! carries the empty name in the value, so where it was written leaves the
+//! presentation's identity unchanged; every reading names it by its position,
+//! `_1` for the second port of an operation. A port's sort is spelled from the
+//! value, so `Hom(a,a)` and `Hom(a, a)` are one sort.
 //!
 //! **Choice.** The description is a view of the value rather than replaced by
-//! it: the cell gate, the rules check and coincidence read a `SignDesc`, and a
-//! view decoded from the value keeps them one consumer of one table while the
+//! it: the cell gate, the rules check and coincidence read a `TheoryDesc`, and
+//! a view decoded from the value keeps them one consumer of one table while the
 //! block is read once. The alternative was the value replacing the table in
-//! every consumer, which moves the cell gate and coincidence onto `Sig` before
-//! `Sig` codes what they read — circuit rules among them. The choice reverses
-//! when `Sig` codes everything a description holds: the consumers then read
-//! the value and the view retires. Witness:
-//! `description::sign::tests::the_description_is_read_off_the_value`.
+//! every consumer, which moves the cell gate and coincidence onto `Theory`
+//! before `Theory` codes what they read — circuit rules among them. The choice
+//! reverses when `Theory` codes everything a description holds: the consumers
+//! then read the value and the view retires. Witness:
+//! `description::theory::tests::the_description_is_read_off_the_value`.
 //!
-//! **Choice.** A `sign` block takes a declared slot under its name whose
-//! definition is the block's value at `Sig`, whether or not a member refuses:
-//! a refused block's slot carries its first refusal, at that member's span,
-//! and each further refusal is a held declaration at its own member's span
-//! whose signature half is the block, so the attribute blocks written before
-//! the block state every one of them, `@[ refuses("OutOfFragment") ] sign …`.
-//! A top-level `oper` declares no core constant: each refusal raised inside it
-//! is such a held declaration and its name enters no namespace. The
+//! **Choice.** A `theory` block takes a declared slot under its name whose
+//! definition is the block's value at `Theory`, whether or not a member
+//! refuses: a refused block's slot carries its first refusal, at that member's
+//! span, and each further refusal is a held declaration at its own member's
+//! span whose signature half is the block, so the attribute blocks written
+//! before the block state every one of them, `@[ refuses("OutOfFragment") ]
+//! theory …`. A top-level `oper` declares no core constant: each refusal raised
+//! inside it is such a held declaration and its name enters no namespace. The
 //! alternatives were a refused block taking no slot, which leaves `S` naming
 //! nothing a module or a program can reach, and a block's refusals with no
 //! half, which no expectation can state. `Model(S)` derives from the value of
 //! a refused block too, as it never inherited the cell gate (the decision is
 //! in `module::model`). Witnesses:
-//! `description::sign::tests::a_sign_block_defines_its_presentation`,
-//! `description::sign::tests::a_refused_sign_block_states_its_refusal`,
-//! `description::sign::tests::a_refused_top_level_operation_states_its_refusal`,
-//! `description::sign::tests::a_top_level_operation_declines_its_filler_by_name`.
+//! `description::theory::tests::a_theory_block_defines_its_presentation`,
+//! `description::theory::tests::a_refused_theory_block_states_its_refusal`,
+//! `description::theory::tests::a_refused_top_level_operation_states_its_refusal`,
+//! `description::theory::tests::a_top_level_operation_declines_its_filler_by_name`.
 
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -143,19 +143,19 @@ use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::ShapeFace;
 use gandr_theory_levitation::ShapePoint;
 use gandr_theory_levitation::ShapeSize;
-use gandr_theory_levitation::SigBinder;
-use gandr_theory_levitation::SigOperation;
-use gandr_theory_levitation::SigParts;
-use gandr_theory_levitation::SigPort;
-use gandr_theory_levitation::SigRule;
-use gandr_theory_levitation::SigSort;
-use gandr_theory_levitation::SigValue;
-use gandr_theory_levitation::SignDesc;
-use gandr_theory_levitation::SignShape;
 use gandr_theory_levitation::SortDesc;
 use gandr_theory_levitation::SortIndex;
 use gandr_theory_levitation::SortRef;
 use gandr_theory_levitation::SurfaceSpan;
+use gandr_theory_levitation::TheoryBinder;
+use gandr_theory_levitation::TheoryDesc;
+use gandr_theory_levitation::TheoryOperation;
+use gandr_theory_levitation::TheoryParts;
+use gandr_theory_levitation::TheoryPort;
+use gandr_theory_levitation::TheoryRule;
+use gandr_theory_levitation::TheoryShape;
+use gandr_theory_levitation::TheorySort;
+use gandr_theory_levitation::TheoryValue;
 use gandr_theory_levitation::derive_boundaries;
 use gandr_theory_levitation::derive_cell_var_meta;
 use gandr_theory_levitation::shape_parameter;
@@ -276,21 +276,21 @@ impl HeadKind
     }
 }
 
-/// A sign block's rule member: a face it writes or a circuit it wires, each
+/// A theory block's rule member: a face it writes or a circuit it wires, each
 /// with what it presents and where it is written.
 enum RuleMember
 {
     /// A written face `rule name : lhs ==> rhs`, its name tile and its whole
     /// member.
-    Face(SigRule, Placed, ByteSpan, WrittenFace),
+    Face(TheoryRule, Placed, ByteSpan, WrittenFace),
     /// A circuit rule whose sphere its wiring derives.
     Circuit(CircuitRule, PresentedCircuit, WrittenCircuit),
 }
 
 impl Reader<'_, '_>
 {
-    /// Read each sign member independently, preserving its declared sort set,
-    /// into the block's `Sig` value and the description that value reads as.
+    /// Read each theory member independently, preserving its declared sort set,
+    /// into the block's `Theory` value and the description that value reads as.
     ///
     /// # Specification
     /// - ensures: an unreadable member does not consume a following member;
@@ -308,9 +308,9 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a declined rule member between readable ones leaves
     ///   both neighbours read, and an unreadable member keeps its own report.
-    /// - witness: `description::sign::tests::a_declined_rule_member_leaves_the_members_after_it_intact`
-    /// - witness: `description::sign::tests::an_unreadable_member_keeps_its_own_report`
-    /// - witness: `description::sign::tests::the_description_is_read_off_the_value`
+    /// - witness: `description::theory::tests::a_declined_rule_member_leaves_the_members_after_it_intact`
+    /// - witness: `description::theory::tests::an_unreadable_member_keeps_its_own_report`
+    /// - witness: `description::theory::tests::the_description_is_read_off_the_value`
     pub(super) fn signature(
         &self,
         at: Placed,
@@ -324,7 +324,7 @@ impl Reader<'_, '_>
             return Err(run.fault(DescriptionFault::Malformed));
         }
         let members = split_members(run.remaining());
-        let mut parts = SigParts::default();
+        let mut parts = TheoryParts::default();
         let mut placement = Placement::default();
         let mut scope = BTreeMap::new();
         let mut written = WrittenMembers::default();
@@ -417,7 +417,7 @@ impl Reader<'_, '_>
             }
         }
         let presentation = Presentation {
-            value: SigValue::encode(&parts),
+            value: TheoryValue::encode(&parts),
             placement,
             circuits: presented_circuits,
         };
@@ -439,8 +439,8 @@ impl Reader<'_, '_>
     }
 
     /// Read a top-level `oper` declaration as the one operation it declares,
-    /// in a description of its own: its boundary through the sign route, and
-    /// its filler declined as an operation filler is inside a sign block.
+    /// in a description of its own: its boundary through the theory route, and
+    /// its filler declined as an operation filler is inside a theory block.
     ///
     /// # Specification
     /// - ensures: the description holds the operation when its boundary reads
@@ -459,7 +459,7 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — a top-level operation with a filler keeps its name
     ///   and declines the filler at the declaration, where a stray form would
     ///   refuse the whole module.
-    /// - witness: `description::sign::tests::a_top_level_operation_declines_its_filler_by_name`
+    /// - witness: `description::theory::tests::a_top_level_operation_declines_its_filler_by_name`
     pub(super) fn circuit_declaration(
         &self,
         at: Placed,
@@ -485,7 +485,7 @@ impl Reader<'_, '_>
         Ok(DescribedDeclaration {
             at,
             named,
-            description: SignDesc::new(
+            description: TheoryDesc::new(
                 NominalId::new(serial, self.text(named).0),
                 [],
                 [],
@@ -505,7 +505,7 @@ impl Reader<'_, '_>
     /// Read an indexed or unindexed sort without erasing its telescope.
     ///
     /// # Specification
-    /// - ensures: the sort as `Sig` codes it — its index ports in written
+    /// - ensures: the sort as `Theory` codes it — its index ports in written
     ///   order, each port's sort read as a sort over index terms, and its
     ///   representability, `Type+` representable and `Type` ordinary — beside
     ///   its name tile and where its name, its classifier and each index are
@@ -523,15 +523,15 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — an indexed sort beside a plain one is read whole, two
     ///   unseparated sorts are declined rather than read as one, and a
     ///   representable sort is read apart from an ordinary one.
-    /// - witness: `description::sign::tests::a_terminated_block_is_not_told_it_lacks_terminators`
-    /// - witness: `description::sign::tests::unseparated_members_are_declined_rather_than_dropped`
+    /// - witness: `description::theory::tests::a_terminated_block_is_not_told_it_lacks_terminators`
+    /// - witness: `description::theory::tests::unseparated_members_are_declined_rather_than_dropped`
     /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
-    /// - witness: `described::tests::a_sign_answers_at_every_member`
-    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
+    /// - witness: `described::tests::a_theory_answers_at_every_member`
+    /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
     fn signature_sort(
         &self,
         run: &mut Run<'_>,
-    ) -> Result<(SigSort, Placed, WrittenSortMember), DescriptionDiagnostic>
+    ) -> Result<(TheorySort, Placed, WrittenSortMember), DescriptionDiagnostic>
     {
         let name = run.take()?;
         let mut indices = Vec::new();
@@ -544,7 +544,7 @@ impl Reader<'_, '_>
                 }
                 let sort = run.take()?;
                 let (term, at) = self.sort_term(sort)?;
-                indices.push(SigPort {
+                indices.push(TheoryPort {
                     name: self.text(index).0.into(),
                     sort: term.sort,
                     indices: term.indices,
@@ -571,7 +571,7 @@ impl Reader<'_, '_>
         };
         run.end()?;
         Ok((
-            SigSort {
+            TheorySort {
                 name: self.text(name).0.into(),
                 indices,
                 representability,
@@ -606,12 +606,12 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — a shape with two faces and an empty one reads back
     ///   from its rendering, and a face past its shape is refused by the
     ///   description check rather than by the reader.
-    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
-    /// - witness: `description::sign::tests::a_face_past_its_shape_is_refused_by_name`
+    /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
+    /// - witness: `description::theory::tests::a_face_past_its_shape_is_refused_by_name`
     fn signature_shape(
         &self,
         run: &mut Run<'_>,
-    ) -> Result<SignShape, DescriptionDiagnostic>
+    ) -> Result<TheoryShape, DescriptionDiagnostic>
     {
         let name = run.take()?;
         if !run.eat(Spelling(":")).0 {
@@ -642,7 +642,7 @@ impl Reader<'_, '_>
             faces.push(ShapeFace::new(self.text(face).0, points));
         }
         run.end()?;
-        Ok(SignShape::new(self.text(name).0, size, faces))
+        Ok(TheoryShape::new(self.text(name).0, size, faces))
     }
 
     /// The count a numeral tile writes, as the wrapper `Count` that holds it.
@@ -660,7 +660,7 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::signature_shape`].
-    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
+    /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
     fn numeral<Count>(
         &self,
         at: Placed,
@@ -683,7 +683,7 @@ impl Reader<'_, '_>
     ///
     /// # Specification
     /// - ensures: admitted operations retain every input and every output, in
-    ///   order, as `Sig` codes them — each port's sort read as a sort over
+    ///   order, as `Theory` codes them — each port's sort read as a sort over
     ///   index terms, an unnamed port at the empty name — beside the
     ///   operation's name tile and where its name and each port are written.
     /// - fails: a filler is an explicit decline; a port name written twice on
@@ -699,17 +699,17 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — a filler, a data-spelled operation, a shared port
     ///   name and a two-output operation separate the declines from admission,
     ///   and the admitted outputs keep their order.
-    /// - witness: `description::sign::tests::an_oper_filler_stays_declined_and_names_its_own_rung`
-    /// - witness: `description::sign::tests::a_data_spelled_sign_oper_declines_before_no_output_can_be_fabricated`
-    /// - witness: `description::sign::tests::a_two_output_operation_keeps_both_ports_in_order`
-    /// - witness: `description::sign::tests::a_port_name_on_both_sides_is_two_ports`
+    /// - witness: `description::theory::tests::an_oper_filler_stays_declined_and_names_its_own_rung`
+    /// - witness: `description::theory::tests::a_data_spelled_theory_oper_declines_before_no_output_can_be_fabricated`
+    /// - witness: `description::theory::tests::a_two_output_operation_keeps_both_ports_in_order`
+    /// - witness: `description::theory::tests::a_port_name_on_both_sides_is_two_ports`
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
-    /// - witness: `described::tests::a_sign_answers_at_every_member`
+    /// - witness: `described::tests::a_theory_answers_at_every_member`
     fn signature_operation(
         &self,
         run: &mut Run<'_>,
-        sorts: &[SigSort],
-    ) -> Result<(SigOperation, Placed, WrittenOperation), DescriptionDiagnostic>
+        sorts: &[TheorySort],
+    ) -> Result<(TheoryOperation, Placed, WrittenOperation), DescriptionDiagnostic>
     {
         let name = run.take()?;
         if !run.eat(Spelling(":")).0 {
@@ -747,7 +747,7 @@ impl Reader<'_, '_>
             &boundary.output_binders,
         )?;
         Ok((
-            SigOperation {
+            TheoryOperation {
                 name: self.text(name).0.into(),
                 inputs,
                 outputs,
@@ -761,7 +761,7 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// Each port of one side as `Sig` codes it, its written sort and each of
+    /// Each port of one side as `Theory` codes it, its written sort and each of
     /// its binders' domains read as a sort over index terms, and where it is
     /// written.
     ///
@@ -785,16 +785,16 @@ impl Reader<'_, '_>
     ///   `lam` port and the identity-return `lam` port, whose binder's domain
     ///   is an indexed sort, read back their binder and their sort.
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
-    /// - witness: `described::tests::a_sign_answers_at_every_member`
-    /// - witness: `description::sign::tests::the_description_is_read_off_the_value`
-    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
+    /// - witness: `described::tests::a_theory_answers_at_every_member`
+    /// - witness: `description::theory::tests::the_description_is_read_off_the_value`
+    /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
     fn presented_ports(
         &self,
         ports: &[SortRef],
         sorts: &[Placed],
         names: &[Maybe<ByteSpan, port_name::Absent>],
         binders: &[Vec<WrittenBinder>],
-    ) -> Result<(Vec<SigPort>, Vec<WrittenPort>), DescriptionDiagnostic>
+    ) -> Result<(Vec<TheoryPort>, Vec<WrittenPort>), DescriptionDiagnostic>
     {
         let mut presented = Vec::with_capacity(ports.len());
         let mut written = Vec::with_capacity(ports.len());
@@ -804,7 +804,7 @@ impl Reader<'_, '_>
             let mut binders_at = Vec::with_capacity(bound.len());
             for binder in bound {
                 let (domain, domain_at) = self.sort_term(binder.domain)?;
-                bindings.push(SigBinder {
+                bindings.push(TheoryBinder {
                     name: self.text(binder.name).0.into(),
                     sort: domain.sort,
                     indices: domain.indices,
@@ -814,7 +814,7 @@ impl Reader<'_, '_>
                     sort: domain_at,
                 });
             }
-            presented.push(SigPort {
+            presented.push(TheoryPort {
                 name: if port.name.as_ref().starts_with(FRESH_PORT) {
                     Name::from("")
                 }
@@ -924,16 +924,16 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — a readable body, a cycle, a body past the node
     ///   ceiling, a written face and a two-rooted body over a many-out frame
     ///   separate a derived sphere, a written one and the two refusals.
-    /// - witness: `description::sign::tests::a_ruled_sign_block_lowers_its_members_into_a_description`
-    /// - witness: `description::sign::tests::a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal`
-    /// - witness: `description::sign::tests::a_doubling_body_declines_on_the_derivation_node_budget`
-    /// - witness: `description::sign::tests::the_cat_shape_laws_are_written_faces`
-    /// - witness: `description::sign::tests::a_many_out_frame_binds_every_port_and_roots_the_body`
-    /// - witness: `description::sign::tests::a_coherence_between_composites_is_a_higher_cell`
+    /// - witness: `description::theory::tests::a_ruled_theory_block_lowers_its_members_into_a_description`
+    /// - witness: `description::theory::tests::a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal`
+    /// - witness: `description::theory::tests::a_doubling_body_declines_on_the_derivation_node_budget`
+    /// - witness: `description::theory::tests::the_cat_shape_laws_are_written_faces`
+    /// - witness: `description::theory::tests::a_many_out_frame_binds_every_port_and_roots_the_body`
+    /// - witness: `description::theory::tests::a_coherence_between_composites_is_a_higher_cell`
     fn signature_rule(
         &self,
         run: &mut Run<'_>,
-        sorts: &[SigSort],
+        sorts: &[TheorySort],
         scope: &BTreeMap<Written<'_>, HeadKind>,
     ) -> Result<RuleMember, DescriptionDiagnostic>
     {
@@ -968,7 +968,7 @@ impl Reader<'_, '_>
             let (lhs, left) = self.free_term(lhs)?;
             let (rhs, right) = self.free_term(rhs)?;
             return Ok(RuleMember::Face(
-                SigRule {
+                TheoryRule {
                     name: self.text(name).0.into(),
                     left: lhs,
                     right: rhs,
@@ -1141,12 +1141,12 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — an expression endpoint and a node whose arrow
     ///   disagrees with its head are refused apart.
-    /// - witness: `description::sign::tests::an_expression_kind_signature_endpoint_is_refused_by_the_description_route`
-    /// - witness: `description::sign::tests::node_arrow_resolution_distinguishes_declared_and_unknown_heads`
+    /// - witness: `description::theory::tests::an_expression_kind_signature_endpoint_is_refused_by_the_description_route`
+    /// - witness: `description::theory::tests::node_arrow_resolution_distinguishes_declared_and_unknown_heads`
     fn boundary(
         &self,
         run: &mut Run<'_>,
-        sorts: &[SigSort],
+        sorts: &[TheorySort],
         row: ArrowRow,
     ) -> Result<Boundary, DescriptionDiagnostic>
     {
@@ -1205,14 +1205,14 @@ impl Reader<'_, '_>
     ///   face, a parenthesized expression is refused as an endpoint, an
     ///   endpoint written twice is a variable unless a sort carries its name,
     ///   and a port under a binder keeps it.
-    /// - witness: `description::sign::tests::a_ruled_sign_block_lowers_its_members_into_a_description`
-    /// - witness: `description::sign::tests::an_expression_kind_signature_endpoint_is_refused_by_the_description_route`
-    /// - witness: `description::sign::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
-    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
+    /// - witness: `description::theory::tests::a_ruled_theory_block_lowers_its_members_into_a_description`
+    /// - witness: `description::theory::tests::an_expression_kind_signature_endpoint_is_refused_by_the_description_route`
+    /// - witness: `description::theory::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
+    /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
     fn port_side(
         &self,
         run: &mut Run<'_>,
-        sorts: &[SigSort],
+        sorts: &[TheorySort],
         rewrites: &mut Vec<RewritePort>,
         written_rewrites: &mut Vec<WrittenRewrite>,
     ) -> Result<Side, DescriptionDiagnostic>
@@ -1316,8 +1316,8 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a two-argument node keeps its arguments in order, and
     ///   a repeated argument reaches the cell layer's linearity refusal.
-    /// - witness: `description::sign::tests::a_ruled_sign_block_lowers_its_members_into_a_description`
-    /// - witness: `description::sign::tests::a_repeated_argument_name_reaches_the_linearity_refusal`
+    /// - witness: `description::theory::tests::a_ruled_theory_block_lowers_its_members_into_a_description`
+    /// - witness: `description::theory::tests::a_repeated_argument_name_reaches_the_linearity_refusal`
     fn wire_tuple(
         &self,
         run: &mut Run<'_>,
@@ -1379,7 +1379,7 @@ impl Run<'_>
     /// - hypothesis: L3 — the λ-calculus `lam` port and the identity-return
     ///   `lam` port read back their one binder, and a port with none reads
     ///   none.
-    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
+    /// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
     fn binders(&mut self) -> Result<Vec<WrittenBinder>, DescriptionDiagnostic>
     {
         let mut binders = Vec::new();
@@ -1442,8 +1442,8 @@ impl Run<'_>
     /// - hypothesis: L3 — a declared head under the wrong arrow, an unknown
     ///   head under any arrow and a reversible map are refused apart; an
     ///   equation is a face arrow.
-    /// - witness: `description::sign::tests::node_arrow_resolution_distinguishes_declared_and_unknown_heads`
-    /// - witness: `description::sign::tests::a_reversible_map_is_reserved_and_an_equation_is_a_face`
+    /// - witness: `description::theory::tests::node_arrow_resolution_distinguishes_declared_and_unknown_heads`
+    /// - witness: `description::theory::tests::a_reversible_map_is_reserved_and_an_equation_is_a_face`
     fn arrow(
         &mut self,
         expected: Option<ArrowRow>,
@@ -1549,13 +1549,13 @@ fn fresh_port(at: Placed) -> Name
 ///   member's span; a rule the placement does not place is refused; a rendered
 ///   second-order signature's representable sorts and binders read back, and a
 ///   rendered shaped signature's shape and faces.
-/// - witness: `description::sign::tests::the_description_is_read_off_the_value`
-/// - witness: `description::sign::tests::the_cat_shape_laws_are_written_faces`
-/// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
+/// - witness: `description::theory::tests::the_description_is_read_off_the_value`
+/// - witness: `description::theory::tests::the_cat_shape_laws_are_written_faces`
+/// - witness: `description::theory::tests::a_rendered_signature_reparses_to_itself`
 fn described(
     presentation: &Presentation,
     id: NominalId,
-) -> Result<SignDesc<DescriptionGrade>, PresentationFault>
+) -> Result<TheoryDesc<DescriptionGrade>, PresentationFault>
 {
     let parts = presentation
         .value
@@ -1592,7 +1592,7 @@ fn described(
             RuleFace::new(rule.left, rule.right, variables, surface_span(span))
         })
         .collect();
-    let description = SignDesc::new(
+    let description = TheoryDesc::new(
         id,
         [],
         [],
@@ -1618,7 +1618,7 @@ fn described(
 ///
 /// # Specification
 /// trivial.
-fn operation_desc(operation: &SigOperation) -> OperDesc
+fn operation_desc(operation: &TheoryOperation) -> OperDesc
 {
     let mut names = presented_names(&operation.inputs, &operation.outputs).into_iter();
     let inputs: Vec<SortRef> = operation
@@ -1644,7 +1644,7 @@ fn operation_desc(operation: &SigOperation) -> OperDesc
 /// # Specification
 /// trivial.
 fn port_ref(
-    port: &SigPort,
+    port: &TheoryPort,
     name: Name,
 ) -> SortRef
 {
@@ -1668,7 +1668,7 @@ fn port_ref(
 ///
 /// # Specification
 /// trivial.
-fn spelled(port: &SigPort) -> Name
+fn spelled(port: &TheoryPort) -> Name
 {
     Name::from(FreeTerm::op(port.sort.clone(), port.indices.iter().cloned()).to_string())
 }

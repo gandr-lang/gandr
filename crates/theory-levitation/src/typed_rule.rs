@@ -25,7 +25,7 @@
 //! to the carrier of the type being defined; a whole description decodes to the
 //! coproduct over its constructors. Its target is a core type, so it lives with
 //! the consumer that owns that universe — the core side of the surface's
-//! description route, which lowers `data`, `codata` and `sign` declarations
+//! description route, which lowers `data`, `codata` and `theory` declarations
 //! into this table, checks them with `check_desc`, and decodes them. This crate
 //! provides the seam: `PatternContext::from_field_codes` and `TypedRuleFace`
 //! take the decoded type as their parameter and the decoder as an argument.

@@ -5,14 +5,14 @@
 //! the statement is made at and the bound `k` its quantifier ranges up to,
 //! the largest shape the catalogue enumerates. Its [`Sides`] are the two
 //! descriptions as a stratum reads them, each a [`Description`]: the
-//! `sign` block's name and its generators, each generator by its label and
+//! `theory` block's name and its generators, each generator by its label and
 //! the profile of its corolla. The translator records `f` and `g` are values,
 //! the node's children, each keyed by the labels of the description it reads
 //! from; `gandr-core-checker`'s `ua` module decides them.
 //!
 //! # A description is its generators
 //!
-//! [`Description::read`] reads a `sign` description as a graphical species:
+//! [`Description::read`] reads a `theory` description as a graphical species:
 //! exactly one sort, no index, no parameter, no constructor, no rule, and every
 //! operation's legs at that sort. An operation is a generator; the profile of
 //! its corolla counts its input and output ports; the generators at one
@@ -24,7 +24,7 @@
 //! - **The core holds names and profiles, not the elaborated signature.** A
 //!   certified stratum reads a description's generators and their profiles and
 //!   nothing else, its shapes above the corollas being their colimits, and the
-//!   printer needs the names. The alternative was the elaborated `SignDesc`
+//!   printer needs the names. The alternative was the elaborated `TheoryDesc`
 //!   itself, typed legs and attributes included, which nothing at a stratum
 //!   reads and whose grade parameter belongs to the elaborator. Reversal: a
 //!   stratum whose shapes above the corollas carry data, whose translators move
@@ -53,7 +53,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::FieldLabel;
 use gandr_theory_levitation::Name;
-use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::GeneratorCount;
 use gandr_theory_sites::PortCount;
@@ -90,7 +90,7 @@ pub struct Generator
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Description
 {
-    /// The `sign` block's name.
+    /// The `theory` block's name.
     pub name: Name,
     /// The generators, in written order.
     pub generators: Box<[Generator]>,
@@ -116,7 +116,7 @@ pub enum Unread
     Indexed,
     /// It takes parameters.
     Parameters,
-    /// It declares constructors: a `data` description, not a `sign` one.
+    /// It declares constructors: a `data` description, not a `theory` one.
     Constructors,
     /// It declares rules or circuits, which equate composite shapes.
     Rules,
@@ -142,12 +142,12 @@ quenchant_shape::reason_enum! {
 
 impl Description
 {
-    /// Read `sign` as a graphical species, one generator per corolla.
+    /// Read `theory` as a graphical species, one generator per corolla.
     ///
     /// # Specification
     /// - ensures: one generator per operation, in written order, each labelled
     ///   by its name and at the profile counting its input and output ports;
-    ///   the description keeps `sign`'s name.
+    ///   the description keeps `theory`'s name.
     /// - fails: a description that is not one unindexed, unparameterised sort
     ///   with operations alone over it.
     /// - panics: none.
@@ -163,30 +163,30 @@ impl Description
     ///   written order, and a two-sorted description and one with a rule are
     ///   refused, distinguishing a dropped or reordered generator, swapped port
     ///   counts and an unchecked boundary.
-    /// - witness: `ua::tests::a_sign_reads_as_its_generators_in_written_order`
+    /// - witness: `ua::tests::a_theory_reads_as_its_generators_in_written_order`
     /// - witness: `ua::tests::a_description_outside_the_stratum_is_refused`
     #[inline]
-    #[spec(ensures: |result| result.as_ref().map_or(true, |description| description.generators.len() == sign.opers.len()))]
-    pub fn read<G>(sign: &SignDesc<G>) -> Result<Self, Unread>
+    #[spec(ensures: |result| result.as_ref().map_or(true, |description| description.generators.len() == theory.opers.len()))]
+    pub fn read<G>(theory: &TheoryDesc<G>) -> Result<Self, Unread>
     {
-        let (1_usize, Some(sort)) = (sign.sorts.len(), sign.sorts.first())
+        let (1_usize, Some(sort)) = (theory.sorts.len(), theory.sorts.first())
         else {
             return Err(Unread::Sorts);
         };
         if !sort.indices.is_empty() {
             return Err(Unread::Indexed);
         }
-        if !sign.params.is_empty() {
+        if !theory.params.is_empty() {
             return Err(Unread::Parameters);
         }
-        if !sign.ctors.is_empty() {
+        if !theory.ctors.is_empty() {
             return Err(Unread::Constructors);
         }
-        if !sign.rules.is_empty() || !sign.circuits.is_empty() {
+        if !theory.rules.is_empty() || !theory.circuits.is_empty() {
             return Err(Unread::Rules);
         }
-        let mut generators = Vec::with_capacity(sign.opers.len());
-        for oper in &sign.opers {
+        let mut generators = Vec::with_capacity(theory.opers.len());
+        for oper in &theory.opers {
             let legs = oper.arity.inputs.iter().chain(&oper.arity.outputs);
             if legs.clone().any(|leg| leg.sort != sort.name) {
                 return Err(Unread::Leg {
@@ -202,7 +202,7 @@ impl Description
             });
         }
         Ok(Self {
-            name: sign.id.name.clone(),
+            name: theory.id.name.clone(),
             generators: generators.into_boxed_slice(),
         })
     }
@@ -220,7 +220,7 @@ impl Description
     /// # Adequacy
     /// - hypothesis: L3 — two generators at one profile and one at another
     ///   distinguish a count per profile from a count per description.
-    /// - witness: `ua::tests::a_sign_reads_as_its_generators_in_written_order`
+    /// - witness: `ua::tests::a_theory_reads_as_its_generators_in_written_order`
     #[inline]
     #[must_use]
     #[cfg_attr(
@@ -257,7 +257,7 @@ impl Description
     /// # Adequacy
     /// - hypothesis: L3 — a listed and an unlisted label distinguish the lookup
     ///   from a constant answer.
-    /// - witness: `ua::tests::a_sign_reads_as_its_generators_in_written_order`
+    /// - witness: `ua::tests::a_theory_reads_as_its_generators_in_written_order`
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",

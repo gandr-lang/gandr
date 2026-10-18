@@ -1,4 +1,4 @@
-//! Host-side well-formedness: the checks a [`SignDesc`] owes before any typed
+//! Host-side well-formedness: the checks a [`TheoryDesc`] owes before any typed
 //! decoder reads it.
 //!
 //! No typed decoder runs here, so a description's invariants are checked by
@@ -48,9 +48,9 @@ use crate::circuit::derive_boundaries;
 use crate::code::Attrs;
 use crate::code::Name;
 use crate::desc::Representability;
-use crate::desc::SignDesc;
-use crate::desc::SignShape;
 use crate::desc::SurfaceSpan;
+use crate::desc::TheoryDesc;
+use crate::desc::TheoryShape;
 use crate::rule::FreeTerm;
 use crate::rule::RuleFace;
 use crate::rule::RuleVarMeta;
@@ -246,7 +246,7 @@ fn located(
         .filter(|binder| !desc.sorts.iter().any(|sort|
             sort.name == binder.sort && sort.representability == Representability::Representable))
         .count())]
-pub fn check_desc<G>(desc: &SignDesc<G>) -> Vec<WfDiagnostic>
+pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
 {
     let mut diagnostics = Vec::new();
 
@@ -349,7 +349,7 @@ pub fn check_desc<G>(desc: &SignDesc<G>) -> Vec<WfDiagnostic>
             .saturating_add(shape.faces.iter().filter(|face| matches!(shape.escape(face), Maybe::Present(_))).count())),
 )]
 fn check_shape(
-    shape: &SignShape,
+    shape: &TheoryShape,
     diagnostics: &mut Vec<WfDiagnostic>,
 )
 {
@@ -408,7 +408,7 @@ fn check_shape(
             && matches!(diagnostic.kind, WfKind::DuplicateSortName | WfKind::SortPolarityDisagreement | WfKind::UnknownResultSort | WfKind::UnknownVarSort))),
 )]
 fn check_sorts<G>(
-    desc: &SignDesc<G>,
+    desc: &TheoryDesc<G>,
     diagnostics: &mut Vec<WfDiagnostic>,
 )
 {
@@ -710,7 +710,7 @@ fn check_attrs(
 ///
 /// # Specification
 /// trivial.
-fn signature_names<G>(desc: &SignDesc<G>) -> Vec<Name>
+fn signature_names<G>(desc: &TheoryDesc<G>) -> Vec<Name>
 {
     desc.ctors
         .iter()
@@ -991,7 +991,7 @@ mod tests
     {
         // A clean two-sorted signature: `Even` and `Odd`, with a constructor
         // targeting `Odd` and recursing at `Even`.
-        let two_sorted: SignDesc<Grade> = SignDesc::new(
+        let two_sorted: TheoryDesc<Grade> = TheoryDesc::new(
             NominalId::new(NominalSerial::from(0_u64), "Parity"),
             Vec::new(),
             [CtorDesc::new(
@@ -1170,7 +1170,7 @@ mod tests
                 .collect::<Vec<_>>()
         };
         let shaped = |faces: Vec<ShapeFace>| {
-            nat_with(Vec::new(), Vec::new(), Attrs::empty()).with_shape(SignShape::new(
+            nat_with(Vec::new(), Vec::new(), Attrs::empty()).with_shape(TheoryShape::new(
                 "Square",
                 ShapeSize::from(4_usize),
                 faces,
@@ -1605,9 +1605,9 @@ mod tests
         cells: Vec<RuleFace>,
         ops: Vec<OperDesc>,
         attrs: Attrs,
-    ) -> SignDesc<Grade>
+    ) -> TheoryDesc<Grade>
     {
-        SignDesc::new(
+        TheoryDesc::new(
             NominalId::new(NominalSerial::from(0_u64), "Nat"),
             Vec::new(),
             [

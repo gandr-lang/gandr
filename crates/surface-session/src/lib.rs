@@ -58,7 +58,7 @@
 //! universe — so every face names a declaration's type in the same words. The
 //! type of a node inside a declaration is not the session's: a face reads it
 //! off the dispatcher's type table, whose entries come from the typed run, the
-//! description route's types for `sign` and `data` members, and the universes
+//! description route's types for `theory` and `data` members, and the universes
 //! of the written types the run formed.
 //!
 //! Each decision, with the alternative it was chosen over and what would

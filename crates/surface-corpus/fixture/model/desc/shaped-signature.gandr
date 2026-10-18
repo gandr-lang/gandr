@@ -9,7 +9,7 @@
 /// Cells over a square of four corners, numbered row by row: its left and
 /// right sides, its top and bottom, one corner and the empty face.
 @[ checks ]
-sign Cells {
+theory Cells {
   shape Square : 4 {
     left = {0, 2};
     right = {1, 3};
@@ -24,7 +24,7 @@ sign Cells {
 
 /// Structural recursion over a face chain: one per `Face`.
 @[ checks ]
-def rec faces(chain : Sig) -> -F Integer {
+def rec faces(chain : Theory) -> -F Integer {
   case chain {
     Face(name, points, rest) => { run r <- faces[<](rest); return r + 1 },
     _ => return 0

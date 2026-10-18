@@ -3,16 +3,16 @@ use alloc::vec::Vec;
 
 use quenchant_shape::shape::Maybe;
 
-use super::SigBinder;
-use super::SigFault;
-use super::SigOperation;
-use super::SigParts;
-use super::SigPort;
-use super::SigRule;
-use super::SigSort;
-use super::SigValue;
 use super::Tag;
-use super::sig_desc;
+use super::TheoryBinder;
+use super::TheoryFault;
+use super::TheoryOperation;
+use super::TheoryParts;
+use super::TheoryPort;
+use super::TheoryRule;
+use super::TheorySort;
+use super::TheoryValue;
+use super::theory_desc;
 use crate::boundary::ConstructorTag;
 use crate::boundary::ShapePoint;
 use crate::boundary::ShapeSize;
@@ -22,7 +22,7 @@ use crate::code::PrimTy;
 use crate::code::ValueTypeRef;
 use crate::desc::Representability;
 use crate::desc::ShapeFace;
-use crate::desc::SignShape;
+use crate::desc::TheoryShape;
 use crate::desc::shape_parameter;
 use crate::generic::DescValue;
 use crate::generic::Payload;
@@ -38,13 +38,13 @@ fn port<Named, Sorted, Indices>(
     name: Named,
     sort: Sorted,
     indices: Indices,
-) -> SigPort
+) -> TheoryPort
 where
     Named: Into<Name>,
     Sorted: Into<Name>,
     Indices: IntoIterator<Item = FreeTerm>,
 {
-    SigPort {
+    TheoryPort {
         name: name.into(),
         sort: sort.into(),
         indices: indices.into_iter().collect(),
@@ -59,12 +59,12 @@ where
 fn binder<Named, Sorted>(
     name: Named,
     sort: Sorted,
-) -> SigBinder
+) -> TheoryBinder
 where
     Named: Into<Name>,
     Sorted: Into<Name>,
 {
-    SigBinder {
+    TheoryBinder {
         name: name.into(),
         sort: sort.into(),
         indices: Vec::new(),
@@ -78,11 +78,11 @@ where
 fn sort<Named>(
     name: Named,
     representability: Representability,
-) -> SigSort
+) -> TheorySort
 where
     Named: Into<Name>,
 {
-    SigSort {
+    TheorySort {
         name: name.into(),
         indices: Vec::new(),
         representability,
@@ -94,26 +94,26 @@ where
 ///
 /// # Specification
 /// trivial.
-fn lambda() -> SigParts
+fn lambda() -> TheoryParts
 {
     let mut body = port("t", "Tm", []);
     body.bindings = vec![binder("x", "Tm")];
-    SigParts {
+    TheoryParts {
         sorts: vec![sort("Tm", Representability::Representable)],
         operations: vec![
-            SigOperation {
+            TheoryOperation {
                 name: Name::from("lam"),
                 inputs: vec![body],
                 outputs: vec![port("", "Tm", [])],
             },
-            SigOperation {
+            TheoryOperation {
                 name: Name::from("app"),
                 inputs: vec![port("t", "Tm", []), port("u", "Tm", [])],
                 outputs: vec![port("", "Tm", [])],
             },
         ],
         rules: Vec::new(),
-        ..SigParts::default()
+        ..TheoryParts::default()
     }
 }
 
@@ -123,29 +123,29 @@ fn lambda() -> SigParts
 ///
 /// # Specification
 /// trivial.
-fn cat_like() -> SigParts
+fn cat_like() -> TheoryParts
 {
     let x = || FreeTerm::var("x");
-    SigParts {
-        sorts: vec![sort("Ob", Representability::Ordinary), SigSort {
+    TheoryParts {
+        sorts: vec![sort("Ob", Representability::Ordinary), TheorySort {
             name: Name::from("Hom"),
             indices: vec![port("dom", "Ob", []), port("cod", "Ob", [])],
             representability: Representability::Ordinary,
         }],
         operations: vec![
-            SigOperation {
+            TheoryOperation {
                 name: Name::from("id"),
                 inputs: vec![port("a", "Ob", [])],
                 outputs: vec![port("", "Hom", [FreeTerm::var("a"), FreeTerm::var("a")])],
             },
-            SigOperation {
+            TheoryOperation {
                 name: Name::from("split"),
                 inputs: vec![port("m", "Ob", [])],
                 outputs: vec![port("q", "Ob", []), port("r", "Ob", [])],
             },
         ],
         rules: vec![
-            SigRule {
+            TheoryRule {
                 name: Name::from("unitL"),
                 left: FreeTerm::op("comp", [
                     FreeTerm::op("id", [FreeTerm::var("a")]),
@@ -153,20 +153,20 @@ fn cat_like() -> SigParts
                 ]),
                 right: FreeTerm::var("f"),
             },
-            SigRule {
+            TheoryRule {
                 name: Name::from("halves"),
                 left: FreeTerm::op("split", [FreeTerm::ctor("Pair", [x(), x()])]),
                 right: FreeTerm::results([x(), x()]),
             },
         ],
-        ..SigParts::default()
+        ..TheoryParts::default()
     }
 }
 
 #[test]
 fn the_code_is_one_data_sort_of_fifteen_constructors()
 {
-    let desc = sig_desc(Grade::One);
+    let desc = theory_desc(Grade::One);
     assert_eq!(
         check_desc(&desc),
         [],
@@ -191,8 +191,8 @@ fn the_code_is_one_data_sort_of_fifteen_constructors()
                         leaves.push("String");
                     },
                     CodeView::Var(sort) => {
-                        assert_eq!(sort.as_ref(), "Sig");
-                        leaves.push("Sig");
+                        assert_eq!(sort.as_ref(), "Theory");
+                        leaves.push("Theory");
                     },
                     CodeView::Unit => {},
                     CodeView::Sum(_) | CodeView::Bind { .. } => {
@@ -204,21 +204,23 @@ fn the_code_is_one_data_sort_of_fifteen_constructors()
         })
         .collect();
     assert_eq!(fields, [
-        ("Presents", vec!["Sig", "Sig", "Sig"]),
+        ("Presents", vec!["Theory", "Theory", "Theory"]),
         ("End", vec![]),
-        ("Sort", vec!["String", "Sig", "Sig"]),
-        ("Oper", vec!["String", "Sig", "Sig", "Sig"]),
-        ("Port", vec!["String", "String", "Sig", "Sig"]),
-        ("Rule", vec!["String", "Sig", "Sig", "Sig"]),
+        ("Sort", vec!["String", "Theory", "Theory"]),
+        ("Oper", vec!["String", "Theory", "Theory", "Theory"]),
+        ("Port", vec!["String", "String", "Theory", "Theory"]),
+        ("Rule", vec!["String", "Theory", "Theory", "Theory"]),
         ("Var", vec!["String"]),
-        ("App", vec!["String", "Sig"]),
-        ("Con", vec!["String", "Sig"]),
-        ("Tuple", vec!["Sig"]),
-        ("Arg", vec!["Sig", "Sig"]),
-        ("Representable", vec!["String", "Sig", "Sig"]),
-        ("Bound", vec!["String", "String", "Sig", "Sig", "Sig"]),
-        ("Shape", vec!["String", "String", "Sig", "Sig"]),
-        ("Face", vec!["String", "String", "Sig"]),
+        ("App", vec!["String", "Theory"]),
+        ("Con", vec!["String", "Theory"]),
+        ("Tuple", vec!["Theory"]),
+        ("Arg", vec!["Theory", "Theory"]),
+        ("Representable", vec!["String", "Theory", "Theory"]),
+        ("Bound", vec![
+            "String", "String", "Theory", "Theory", "Theory"
+        ]),
+        ("Shape", vec!["String", "String", "Theory", "Theory"]),
+        ("Face", vec!["String", "String", "Theory"]),
     ]);
 }
 
@@ -226,19 +228,19 @@ fn the_code_is_one_data_sort_of_fifteen_constructors()
 fn a_presentation_round_trips_through_its_value()
 {
     let parts = cat_like();
-    let value = SigValue::encode(&parts);
+    let value = TheoryValue::encode(&parts);
     assert_eq!(value.decode(), Ok(parts.clone()), "every member reads back");
     let mut dropped = parts.clone();
     dropped.operations.truncate(1);
     assert_ne!(
-        SigValue::encode(&dropped),
+        TheoryValue::encode(&dropped),
         value,
         "a dropped operation is another value"
     );
     let mut reordered = parts;
     reordered.sorts.reverse();
     assert_ne!(
-        SigValue::encode(&reordered),
+        TheoryValue::encode(&reordered),
         value,
         "the order of the sorts is part of the value"
     );
@@ -247,12 +249,12 @@ fn a_presentation_round_trips_through_its_value()
 #[test]
 fn a_presentation_encodes_to_its_exact_identity_bytes()
 {
-    let one_sort = SigParts {
+    let one_sort = TheoryParts {
         sorts: vec![sort("M", Representability::Ordinary)],
-        ..SigParts::default()
+        ..TheoryParts::default()
     };
     assert_eq!(
-        SigValue::encode(&one_sort).identity().as_ref(),
+        TheoryValue::encode(&one_sort).identity().as_ref(),
         [
             0, 0, 0, 0, // Presents
             2, 0, 0, 0, // Sort
@@ -266,8 +268,8 @@ fn a_presentation_encodes_to_its_exact_identity_bytes()
     );
     let parts = cat_like();
     assert_eq!(
-        SigValue::encode(&parts).identity(),
-        SigValue::encode(&cat_like()).identity(),
+        TheoryValue::encode(&parts).identity(),
+        TheoryValue::encode(&cat_like()).identity(),
         "one presentation has one identity"
     );
     let mut renamed = parts.clone();
@@ -277,8 +279,8 @@ fn a_presentation_encodes_to_its_exact_identity_bytes()
         input.name = Name::from("b");
     }
     assert_ne!(
-        SigValue::encode(&renamed).identity(),
-        SigValue::encode(&parts).identity(),
+        TheoryValue::encode(&renamed).identity(),
+        TheoryValue::encode(&parts).identity(),
         "a renamed port is another presentation"
     );
 }
@@ -287,7 +289,7 @@ fn a_presentation_encodes_to_its_exact_identity_bytes()
 fn a_second_order_presentation_encodes_its_binders()
 {
     let parts = lambda();
-    let value = SigValue::encode(&parts);
+    let value = TheoryValue::encode(&parts);
     assert_eq!(
         value.decode(),
         Ok(parts.clone()),
@@ -344,7 +346,7 @@ fn a_second_order_presentation_encodes_its_binders()
         only.representability = Representability::Ordinary;
     }
     assert_ne!(
-        SigValue::encode(&ordinary),
+        TheoryValue::encode(&ordinary),
         value,
         "representability is part of the value"
     );
@@ -355,7 +357,7 @@ fn a_second_order_presentation_encodes_its_binders()
         body.bindings.clear();
     }
     assert_ne!(
-        SigValue::encode(&unbound),
+        TheoryValue::encode(&unbound),
         value,
         "a binder is part of the value"
     );
@@ -366,7 +368,7 @@ fn a_second_order_presentation_encodes_its_binders()
         function.bindings = vec![binder("y", "Tm"), binder("z", "Tm")];
     }
     assert_eq!(
-        SigValue::encode(&twice).decode(),
+        TheoryValue::encode(&twice).decode(),
         Ok(twice.clone()),
         "a telescope of two binders reads back outermost first"
     );
@@ -398,9 +400,9 @@ fn end() -> Payload
 ///
 /// # Specification
 /// trivial.
-fn presenting(sorts: DescValue) -> SigValue
+fn presenting(sorts: DescValue) -> TheoryValue
 {
-    SigValue::from_value(node(
+    TheoryValue::from_value(node(
         Tag::Presents,
         Payload::pair(Payload::rec(sorts), Payload::pair(end(), end())),
     ))
@@ -419,13 +421,13 @@ fn var() -> Payload
 fn a_value_outside_the_grammar_is_refused_by_name()
 {
     assert_eq!(
-        SigValue::from_value(node(Tag::End, Payload::unit())).decode(),
-        Err(SigFault::Misplaced(ConstructorTag::from(1_usize))),
+        TheoryValue::from_value(node(Tag::End, Payload::unit())).decode(),
+        Err(TheoryFault::Misplaced(ConstructorTag::from(1_usize))),
         "an `End` root presents nothing"
     );
     assert_eq!(
-        SigValue::from_value(node(Tag::Presents, Payload::unit())).decode(),
-        Err(SigFault::Payload),
+        TheoryValue::from_value(node(Tag::Presents, Payload::unit())).decode(),
+        Err(TheoryFault::Payload),
         "a root without its three chains"
     );
     let rule = |left: Payload| {
@@ -439,7 +441,7 @@ fn a_value_outside_the_grammar_is_refused_by_name()
     };
     assert_eq!(
         presenting(rule(var())).decode(),
-        Err(SigFault::Misplaced(ConstructorTag::from(5_usize))),
+        Err(TheoryFault::Misplaced(ConstructorTag::from(5_usize))),
         "a rule in the sort chain"
     );
     let port_as_term = Payload::rec(node(
@@ -449,7 +451,7 @@ fn a_value_outside_the_grammar_is_refused_by_name()
             Payload::pair(Payload::leaf(&b"Ob"[..]), Payload::pair(end(), end())),
         ),
     ));
-    let rules_holding_a_port = SigValue::from_value(node(
+    let rules_holding_a_port = TheoryValue::from_value(node(
         Tag::Presents,
         Payload::pair(
             end(),
@@ -458,7 +460,7 @@ fn a_value_outside_the_grammar_is_refused_by_name()
     ));
     assert_eq!(
         rules_holding_a_port.decode(),
-        Err(SigFault::Misplaced(ConstructorTag::from(4_usize))),
+        Err(TheoryFault::Misplaced(ConstructorTag::from(4_usize))),
         "a port where a term stands"
     );
     let unreadable = node(
@@ -467,7 +469,7 @@ fn a_value_outside_the_grammar_is_refused_by_name()
     );
     assert_eq!(
         presenting(unreadable).decode(),
-        Err(SigFault::Text),
+        Err(TheoryFault::Text),
         "a name that is not UTF-8"
     );
 }
@@ -481,15 +483,15 @@ fn a_shaped_presentation_codes_its_faces()
             .map(ShapePoint::from)
             .collect::<Vec<_>>()
     };
-    let shaped = SigParts {
-        shape: Maybe::Present(SignShape::new("Square", ShapeSize::from(4_usize), [
+    let shaped = TheoryParts {
+        shape: Maybe::Present(TheoryShape::new("Square", ShapeSize::from(4_usize), [
             ShapeFace::new("left", points(&[2, 0])),
             ShapeFace::new("none", []),
         ])),
         sorts: vec![sort("M", Representability::Ordinary)],
-        ..SigParts::default()
+        ..TheoryParts::default()
     };
-    let value = SigValue::encode(&shaped);
+    let value = TheoryValue::encode(&shaped);
     assert_eq!(
         value.decode(),
         Ok(shaped.clone()),
@@ -518,12 +520,12 @@ fn a_shaped_presentation_codes_its_faces()
         ],
         "the shape heads the sort chain, each face its points' one spelling"
     );
-    let unshaped = SigParts {
+    let unshaped = TheoryParts {
         shape: Maybe::Absent(shape_parameter::Absent::Unshaped),
         ..shaped
     };
     assert_ne!(
-        SigValue::encode(&unshaped).identity(),
+        TheoryValue::encode(&unshaped).identity(),
         value.identity(),
         "a shape is part of the presentation"
     );
@@ -549,7 +551,7 @@ fn a_shaped_presentation_codes_its_faces()
         presenting(shape(b"2", face(b"0,1"), end()))
             .decode()
             .map(|parts| parts.shape),
-        Ok(Maybe::Present(SignShape::new(
+        Ok(Maybe::Present(TheoryShape::new(
             "S",
             ShapeSize::from(2_usize),
             [ShapeFace::new("f", points(&[0, 1]))]
@@ -558,20 +560,20 @@ fn a_shaped_presentation_codes_its_faces()
     );
     assert_eq!(
         presenting(shape(b"2", end(), Payload::rec(shape(b"2", end(), end())))).decode(),
-        Err(SigFault::Misplaced(ConstructorTag::from(13_usize))),
+        Err(TheoryFault::Misplaced(ConstructorTag::from(13_usize))),
         "a second shape is misplaced"
     );
     for size in [&b"2,3"[..], b"", b"02", b"+2", b"two"] {
         assert_eq!(
             presenting(shape(size, end(), end())).decode(),
-            Err(SigFault::Numeral),
+            Err(TheoryFault::Numeral),
             "a size is one numeral in its one spelling: {size:?}"
         );
     }
     for spelled in [&b"1,0"[..], b"0,0", b"0,", b",1", b"00"] {
         assert_eq!(
             presenting(shape(b"2", face(spelled), end())).decode(),
-            Err(SigFault::Numeral),
+            Err(TheoryFault::Numeral),
             "a face's points ascend once each in their one spelling: {spelled:?}"
         );
     }
@@ -619,7 +621,7 @@ fn plain(rest: Payload) -> Payload
 ///
 /// # Specification
 /// trivial.
-fn operating(inputs: DescValue) -> SigValue
+fn operating(inputs: DescValue) -> TheoryValue
 {
     let operation = node(
         Tag::Oper,
@@ -628,7 +630,7 @@ fn operating(inputs: DescValue) -> SigValue
             Payload::pair(Payload::rec(inputs), Payload::pair(end(), end())),
         ),
     );
-    SigValue::from_value(node(
+    TheoryValue::from_value(node(
         Tag::Presents,
         Payload::pair(end(), Payload::pair(Payload::rec(operation), end())),
     ))
@@ -659,17 +661,17 @@ fn a_binder_outside_an_operation_port_is_misplaced()
     );
     assert_eq!(
         presenting(binding_index).decode(),
-        Err(SigFault::Misplaced(bound_tag)),
+        Err(TheoryFault::Misplaced(bound_tag)),
         "a sort's index port binds nothing"
     );
     assert_eq!(
         operating(bound(Payload::rec(bound(plain(end()), end())), end())).decode(),
-        Err(SigFault::Misplaced(bound_tag)),
+        Err(TheoryFault::Misplaced(bound_tag)),
         "a binder binds nothing of its own"
     );
     assert_eq!(
         operating(bound(end(), end())).decode(),
-        Err(SigFault::Misplaced(ConstructorTag::from(1_usize))),
+        Err(TheoryFault::Misplaced(ConstructorTag::from(1_usize))),
         "a bound port binds at least one variable"
     );
 }

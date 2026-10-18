@@ -40,8 +40,8 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::NominalSerial;
 use gandr_theory_levitation::OperDesc;
-use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::SortRef;
+use gandr_theory_levitation::TheoryDesc;
 use quenchant_shape::shape::Maybe;
 
 use crate::fixture::Ungraded;
@@ -422,7 +422,7 @@ fn eta_id(store: &CellStore) -> CellId
 )]
 fn wrapper_store(polarity: DeclPolarity) -> (CellStore, Vec<CellId>)
 {
-    let desc: SignDesc<Ungraded> = SignDesc::new(
+    let desc: TheoryDesc<Ungraded> = TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "Wrap"),
         Vec::new(),
         [CtorDesc::new(

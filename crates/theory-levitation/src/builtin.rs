@@ -1,11 +1,11 @@
 //! Retrofitted descriptions for the primitive formers, so generic operations
 //! cover builtins and declared data uniformly.
 //!
-//! Each function returns a [`SignDesc`] for a builtin, so the generic programs
-//! of this crate — equality, serialization, inspection — apply to `Boolean`,
-//! `Option`, `Pair`, sums and `List` exactly as they apply to a declared
-//! datatype. The retrofits use the same first-order fragment: `Boolean` is
-//! `1 + 1` (two nullary constructors); `List` is recursive through
+//! Each function returns a [`TheoryDesc`] for a builtin, so the generic
+//! programs of this crate — equality, serialization, inspection — apply to
+//! `Boolean`, `Option`, `Pair`, sums and `List` exactly as they apply to a
+//! declared datatype. The retrofits use the same first-order fragment:
+//! `Boolean` is `1 + 1` (two nullary constructors); `List` is recursive through
 //! [`Code::var`]. Every parameter and field carries the grade the caller
 //! supplies, its own unit grade, since the grade vocabulary is the
 //! consumer's.
@@ -23,7 +23,7 @@ use crate::desc::CtorDesc;
 use crate::desc::DeclPolarity;
 use crate::desc::NominalId;
 use crate::desc::ParamDesc;
-use crate::desc::SignDesc;
+use crate::desc::TheoryDesc;
 
 /// The retrofit description of `Option(a)`: `None = 1`, `Some = a`.
 ///
@@ -45,11 +45,11 @@ use crate::desc::SignDesc;
     && desc.params.iter().map(|param| param.name.as_ref()).eq(["a"])
     && desc.ctors.iter().map(|ctor| ctor.name.as_ref()).eq(["None", "Some"])
     && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "Option"))]
-pub fn option_desc<G>(grade: G) -> SignDesc<G>
+pub fn option_desc<G>(grade: G) -> TheoryDesc<G>
 where
     G: Clone,
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "Option"),
         [param("a", grade.clone())],
         [
@@ -84,9 +84,9 @@ where
     && desc.ctors.iter().map(|ctor| ctor.name.as_ref()).eq(["False", "True"])
     && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "Boolean"
         && matches!(ctor.code.view(), crate::code::CodeView::Unit)))]
-pub fn bool_desc<G>() -> SignDesc<G>
+pub fn bool_desc<G>() -> TheoryDesc<G>
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "Boolean"),
         Vec::new(),
         [nullary("False", "Boolean"), nullary("True", "Boolean")],
@@ -119,11 +119,11 @@ pub fn bool_desc<G>() -> SignDesc<G>
     && desc.params.iter().map(|param| param.name.as_ref()).eq(["a"])
     && desc.ctors.iter().map(|ctor| ctor.name.as_ref()).eq(["Nil", "Cons"])
     && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "List"))]
-pub fn list_desc<G>(grade: G) -> SignDesc<G>
+pub fn list_desc<G>(grade: G) -> TheoryDesc<G>
 where
     G: Clone,
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "List"),
         [param("a", grade.clone())],
         [
@@ -162,11 +162,11 @@ where
     && desc.params.iter().map(|param| param.name.as_ref()).eq(["a", "b"])
     && desc.ctors.iter().map(|ctor| ctor.name.as_ref()).eq(["Pair"])
     && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "Pair"))]
-pub fn pair_desc<G>(grade: G) -> SignDesc<G>
+pub fn pair_desc<G>(grade: G) -> TheoryDesc<G>
 where
     G: Clone,
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "Pair"),
         [param("a", grade.clone()), param("b", grade.clone())],
         [CtorDesc::new(
@@ -202,11 +202,11 @@ where
     && desc.params.iter().map(|param| param.name.as_ref()).eq(["a", "b"])
     && desc.ctors.iter().map(|ctor| ctor.name.as_ref()).eq(["Inl", "Inr"])
     && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "Sum"))]
-pub fn sum_desc<G>(grade: G) -> SignDesc<G>
+pub fn sum_desc<G>(grade: G) -> TheoryDesc<G>
 where
     G: Clone,
 {
-    SignDesc::new(
+    TheoryDesc::new(
         NominalId::new(NominalSerial::from(0_u64), "Sum"),
         [param("a", grade.clone()), param("b", grade.clone())],
         [
@@ -304,9 +304,9 @@ mod tests
     fn generic_programs_cover_builtins_uniformly()
     {
         // The generic consumers apply to `Boolean` exactly as to declared data.
-        let boolean: SignDesc<Grade> = bool_desc();
+        let boolean: TheoryDesc<Grade> = bool_desc();
         assert_eq!(
-            "sign Boolean { sort Boolean : Type; }",
+            "theory Boolean { sort Boolean : Type; }",
             serialize_desc(&boolean).as_ref(),
             "the builtin renders through the same inspection notation — sorts, operations, \
              and rules; constructors carry no member spelling"

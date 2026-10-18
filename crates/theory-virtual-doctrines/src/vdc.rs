@@ -14,7 +14,7 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NameRef;
 use gandr_theory_levitation::NominalId;
-use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::tree::ArgumentCount;
 use gandr_theory_levitation::tree::Head;
 use gandr_theory_levitation::tree::Tree;
@@ -84,7 +84,7 @@ pub struct SigMorphism
 
 impl SigMorphism
 {
-    /// The identity morphism on `sig` — the empty renaming.
+    /// The identity morphism on `theory` — the empty renaming.
     ///
     /// # Specification
     /// - ensures: `src == tgt == sig` and an empty `map` (every generator maps
@@ -692,7 +692,7 @@ fn elaborations_replay_equivalent(
 
 /// A **description registry** — the signature namespace the reflection reads.
 ///
-/// A thin owned map from [`NominalId`] to [`SignDesc`]:
+/// A thin owned map from [`NominalId`] to [`TheoryDesc`]:
 /// `gandr-theory-levitation` mints descriptions but keeps no table, so the
 /// reflection layer organizes them into the object namespace the [`Vdc`]
 /// instance resolves signatures against.
@@ -701,7 +701,7 @@ fn elaborations_replay_equivalent(
 pub struct DescTable<G = ()>
 {
     /// The descriptions, in insertion order.
-    descs: Vec<SignDesc<G>>,
+    descs: Vec<TheoryDesc<G>>,
 }
 
 impl<G> Default for DescTable<G>
@@ -745,7 +745,7 @@ impl<G> DescTable<G>
     #[spec(captures: expected = desc.id.clone(), ensures: |ret| ret == SignatureRef::single(expected.clone()))]
     pub fn insert(
         &mut self,
-        desc: SignDesc<G>,
+        desc: TheoryDesc<G>,
     ) -> SignatureRef
     {
         let id = desc.id.clone();
@@ -775,7 +775,7 @@ impl<G> DescTable<G>
     pub fn get(
         &self,
         id: &NominalId,
-    ) -> Maybe<&SignDesc<G>, description_lookup::Absent>
+    ) -> Maybe<&TheoryDesc<G>, description_lookup::Absent>
     {
         self.descs.iter().find(|desc| desc.id == *id).map_or(
             Maybe::Absent(description_lookup::Absent::Unregistered),

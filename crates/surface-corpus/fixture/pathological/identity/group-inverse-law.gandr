@@ -8,7 +8,7 @@
 
 /// A group's laws with the left inverse.
 @[ refuses("RulesDiverge") ]
-sign GroupWithInverse {
+theory GroupWithInverse {
   sort G : Type;
 
   oper e : G;

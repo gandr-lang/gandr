@@ -1,7 +1,7 @@
-// A model of a `sign` block another source declares: `Model(S)` reads an
+// A model of a `theory` block another source declares: `Model(S)` reads an
 // imported block as it reads a local one (#726).
 
-// The naturals' signature, `sign Nat`.
+// The naturals' signature, `theory Nat`.
 import "./second-order-signatures.gandr" ;
 
 /// A counting model of the imported naturals: the carrier is the integers,

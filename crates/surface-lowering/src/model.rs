@@ -1,9 +1,9 @@
-//! `Model(S)`: the signature of a `sign` block's models, derived from what the
-//! block presents.
+//! `Model(S)`: the signature of a `theory` block's models, derived from what
+//! the block presents.
 //!
-//! # `sign` presents, `Model(S)` structures
+//! # `theory` presents, `Model(S)` structures
 //!
-//! A `sign` block presents a shape: sorts, some indexed by a telescope of
+//! A `theory` block presents a shape: sorts, some indexed by a telescope of
 //! earlier sorts, operations between them, and rules relating operation terms.
 //! Its models are ordinary modules, and the signature they are checked against
 //! is computed from the presentation rather than written by hand: one type
@@ -19,24 +19,24 @@
 //! typed fields, so two models with equal operations and different laws are
 //! different models (Ahrens, North, Shulman and Tsementzis).
 //!
-//! - Choice: derive the signature from the block's `Sig` value
-//!   (`gandr_theory_levitation::SigValue`), the presentation the block defines
-//!   — each port's sort a sort name over index terms, each rule with its name —
-//!   read beside the name tiles that place its members. Alternatives: deriving
-//!   from the elaborated cell store, which keeps no rule names and declines a
-//!   law over an indexed sort whose producer side applies an operation to a
-//!   composite, so `Model` would inherit a cell gate that says nothing about
-//!   the law; and reading the description's sort spellings back as text.
-//!   Reversal: a cell store that keeps names and composites would let `Model`
-//!   read the cells, one source for both.
-//! - Choice: `Model` is an elaboration-stage function of the value a sign block
-//!   defines, not a core function `Sig -> Type`. A model signature is a
-//!   telescope whose components are types, families and laws, large components
-//!   no first-order code computation states, so the derivation reads the
-//!   value's normal form where the block writes it. Alternatives: a core
-//!   `Model` by large elimination over `Sig`, which the code universe rules
-//!   out. Reversal: normal forms of computed `Sig` values at elaboration time,
-//!   which would let `Model` read a value no block writes.
+//! - Choice: derive the signature from the block's `Theory` value
+//!   (`gandr_theory_levitation::TheoryValue`), the presentation the block
+//!   defines — each port's sort a sort name over index terms, each rule with
+//!   its name — read beside the name tiles that place its members.
+//!   Alternatives: deriving from the elaborated cell store, which keeps no rule
+//!   names and declines a law over an indexed sort whose producer side applies
+//!   an operation to a composite, so `Model` would inherit a cell gate that
+//!   says nothing about the law; and reading the description's sort spellings
+//!   back as text. Reversal: a cell store that keeps names and composites would
+//!   let `Model` read the cells, one source for both.
+//! - Choice: `Model` is an elaboration-stage function of the value a theory
+//!   block defines, not a core function `Theory -> Type`. A model signature is
+//!   a telescope whose components are types, families and laws, large
+//!   components no first-order code computation states, so the derivation reads
+//!   the value's normal form where the block writes it. Alternatives: a core
+//!   `Model` by large elimination over `Theory`, which the code universe rules
+//!   out. Reversal: normal forms of computed `Theory` values at elaboration
+//!   time, which would let `Model` read a value no block writes.
 //! - Choice: every rule reads as a `Path` — the invertible overlay — whatever
 //!   its arrow. Alternatives: a directed reading of rules as rewrites, which
 //!   needs a directed identity the value universe does not have. Reversal:
@@ -62,7 +62,7 @@
 //! - Choice: first-order unification over index terms, run as one explicit
 //!   worklist. Alternatives: requiring every implicit argument written, which
 //!   makes the presentation restate what its ports already say. Reversal: a
-//!   sign that writes higher-order index terms.
+//!   theory that writes higher-order index terms.
 //!
 //! A component the derivation cannot state is kept with its fault, so the
 //! module ascribed to `Model(S)` refuses that component by name and keeps the
@@ -91,10 +91,10 @@ use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
-use gandr_theory_levitation::SigFault;
-use gandr_theory_levitation::SigPort;
-use gandr_theory_levitation::SigValue;
-use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::TheoryDesc;
+use gandr_theory_levitation::TheoryFault;
+use gandr_theory_levitation::TheoryPort;
+use gandr_theory_levitation::TheoryValue;
 use quenchant_shape::shape::Maybe;
 
 use crate::description::DescriptionGrade;
@@ -113,7 +113,7 @@ quenchant_shape::reason_enum! {
             /// A `data` or `codata` family, which is a type of its own rather
             /// than a shape with models.
             Family,
-            /// A top-level `oper`, one operation outside any sign.
+            /// A top-level `oper`, one operation outside any theory.
             Circuit,
         }
     }
@@ -172,7 +172,7 @@ pub struct Port
     pub binders: Vec<Binder>,
 }
 
-/// A sort a sign declares, with its index telescope.
+/// A sort a theory declares, with its index telescope.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -193,7 +193,7 @@ pub struct PresentedSort
     pub indices: Vec<Port>,
 }
 
-/// An operation a sign declares, with its boundary.
+/// An operation a theory declares, with its boundary.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -217,7 +217,7 @@ pub struct PresentedOperation
     pub outputs: Vec<Port>,
 }
 
-/// A rule a sign writes as a face between two terms.
+/// A rule a theory writes as a face between two terms.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -241,7 +241,7 @@ pub struct PresentedLaw
     pub right: FreeTerm,
 }
 
-/// A circuit rule a sign wires, kept by name.
+/// A circuit rule a theory wires, kept by name.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -260,8 +260,8 @@ pub struct PresentedCircuit
     pub named: Placed,
 }
 
-/// What a `sign` block presents: its `Sig` value, where each member the value
-/// codes is written, and the circuit rules `Sig` does not code yet.
+/// What a `theory` block presents: its `Theory` value, where each member the
+/// value codes is written, and the circuit rules `Theory` does not code yet.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -277,8 +277,8 @@ pub struct PresentedCircuit
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Presentation
 {
-    /// The presentation as a value of `Sig`.
-    pub value: SigValue,
+    /// The presentation as a value of `Theory`.
+    pub value: TheoryValue,
     /// Where each member the value codes is written.
     pub placement: Placement,
     /// The rules wired as circuits, kept beside the value.
@@ -345,7 +345,7 @@ pub struct Members
 pub enum PresentationFault
 {
     /// The value codes no presentation.
-    Value(SigFault),
+    Value(TheoryFault),
     /// The value codes a member its placement holds no tile for.
     Unplaced,
 }
@@ -425,7 +425,7 @@ impl Presentation
 /// # Specification
 /// trivial.
 fn ports<Names>(
-    coded: Vec<SigPort>,
+    coded: Vec<TheoryPort>,
     names: Names,
 ) -> Vec<Port>
 where
@@ -470,8 +470,8 @@ where
 /// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
 #[spec(ensures: |ref names| names.len() == inputs.len().saturating_add(outputs.len()))]
 pub(crate) fn presented_names(
-    inputs: &[SigPort],
-    outputs: &[SigPort],
+    inputs: &[TheoryPort],
+    outputs: &[TheoryPort],
 ) -> Vec<Name>
 {
     inputs
@@ -515,7 +515,7 @@ pub struct Binder
 /// - requires: nothing to construct this data.
 /// - ensures: a sort's index telescope, an operation's telescope and results,
 ///   or a law's telescope, carrier and endpoints; every term names only the
-///   telescope's binders and the sign's operations, each application carrying
+///   telescope's binders and the theory's operations, each application carrying
 ///   every argument its operation binds.
 /// - executable: none — a form is data the lowering mints from.
 ///
@@ -571,8 +571,8 @@ pub enum ModelForm
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ModelFault
 {
-    /// A sort or an operation the sign does not declare, or one used where the
-    /// other is read.
+    /// A sort or an operation the theory does not declare, or one used where
+    /// the other is read.
     UnknownHead,
     /// An application written with other than its head's explicit count.
     Arity,
@@ -584,7 +584,7 @@ pub enum ModelFault
     ManyOut,
     /// A circuit rule, whose sphere the model does not read yet.
     Circuit,
-    /// A constructor term, which a sign does not declare.
+    /// A constructor term, which a theory does not declare.
     Constructor,
     /// A component naming a sort or an operation whose own derivation
     /// failed.
@@ -608,13 +608,13 @@ impl core::fmt::Display for ModelFault
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
-            Self::UnknownHead => "names a sort or an operation the sign does not declare",
+            Self::UnknownHead => "names a sort or an operation the theory does not declare",
             Self::Arity => "applies a sort or an operation to the wrong number of arguments",
             Self::IllSorted => "relates a term at a sort its position does not read",
             Self::Unsorted => "binds a variable no occurrence gives a sort",
             Self::ManyOut => "relates the results of a many-out operation",
             Self::Circuit => "is a circuit rule, whose sphere a model does not read yet",
-            Self::Constructor => "applies a constructor, which a sign does not declare",
+            Self::Constructor => "applies a constructor, which a theory does not declare",
             Self::Inherited => "names a component the model cannot state",
             Self::Binding => {
                 "binds a variable over a port, whose models are its first-order translation's"
@@ -627,7 +627,7 @@ impl core::fmt::Display for ModelFault
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: the member's name and name tile in the sign, and what it states
+/// - ensures: the member's name and name tile in the theory, and what it states
 ///   or why it states nothing.
 /// - executable: none — a component is data the lowering reads.
 ///
@@ -640,13 +640,13 @@ pub struct ModelComponent
 {
     /// The member's name.
     pub name: Name,
-    /// Its name tile in the sign.
+    /// Its name tile in the theory.
     pub named: Placed,
     /// What it states.
     pub form: Result<ModelForm, ModelFault>,
 }
 
-/// The signature of a sign's models: its sorts, then its operations, then its
+/// The signature of a theory's models: its sorts, then its operations, then its
 /// laws, each in written order.
 ///
 /// # Specification
@@ -667,8 +667,8 @@ pub struct ModelSignature
     pub components: Vec<ModelComponent>,
 }
 
-/// Derive the model signature of what a sign presents, reading its members off
-/// its value.
+/// Derive the model signature of what a theory presents, reading its members
+/// off its value.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -875,7 +875,7 @@ fn sort_vars<'term>(
     }
 }
 
-/// A `sign` block a module declares, as the lowering read it: its checked
+/// A `theory` block a module declares, as the lowering read it: its checked
 /// description — the species whose sorts and operations generate its models —
 /// beside the presentation `Model(S)` derives from.
 ///
@@ -886,23 +886,23 @@ fn sort_vars<'term>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a module declaring `CatShape` beside a family hands back
-///   one sign, its two sorts and two operations, and the model its instance
+///   one theory, its two sorts and two operations, and the model its instance
 ///   checks against.
-/// - witness: `tests::modules::models::a_lowered_sign_exposes_its_description_and_its_model`
+/// - witness: `tests::modules::models::a_lowered_theory_exposes_its_description_and_its_model`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LoweredSign<'module>
+pub struct LoweredTheory<'module>
 {
-    /// The sign's name tile.
+    /// The theory's name tile.
     pub named: Placed,
     /// Its checked description: the sorts, and the operations as generators.
-    pub description: &'module SignDesc<DescriptionGrade>,
+    pub description: &'module TheoryDesc<DescriptionGrade>,
     /// What it presents to the signature of its models.
     pub presentation: &'module Presentation,
 }
 
-impl LoweredSign<'_>
+impl LoweredTheory<'_>
 {
-    /// The signature of the sign's models, derived from its presentation's
+    /// The signature of the theory's models, derived from its presentation's
     /// value.
     ///
     /// # Specification

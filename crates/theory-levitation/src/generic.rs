@@ -1,4 +1,4 @@
-//! Generic programs over descriptions: one program driven by a [`SignDesc`]
+//! Generic programs over descriptions: one program driven by a [`TheoryDesc`]
 //! and its [`Code`]s, covering declared data and retrofitted builtins
 //! uniformly.
 //!
@@ -7,13 +7,13 @@
 //! * [`serialize_value`]: a canonical, deterministic byte encoding of a
 //!   [`DescValue`], guided by the description;
 //! * [`serialize_desc`]: a canonical textual rendering of the description's
-//!   `sign` normal form.
+//!   `theory` normal form.
 //!
 //! A [`DescValue`] is a generic value of a described datatype: a constructor
 //! tag plus a [`Payload`] shaped by that constructor's [`Code`]. Recursive
 //! occurrences ([`Code::var`]) nest a whole value, tagged again, which is why
-//! the generic programs are driven by the [`SignDesc`] (the σ tag), not a bare
-//! [`Code`].
+//! the generic programs are driven by the [`TheoryDesc`] (the σ tag), not a
+//! bare [`Code`].
 //!
 //! [`Code`]: crate::Code
 //! [`Code::var`]: crate::Code::var
@@ -37,7 +37,7 @@ use crate::code::CodeNode;
 use crate::code::CodeView;
 use crate::code::Name;
 use crate::desc::OperDesc;
-use crate::desc::SignDesc;
+use crate::desc::TheoryDesc;
 use crate::elaborate::PortFace;
 use crate::elaborate::RewritePort;
 use crate::rule::RuleFace;
@@ -326,11 +326,11 @@ impl ExactSizeIterator for PayloadArgs<'_>
 }
 
 /// A generic value of a described datatype: a constructor tag (an index into
-/// [`SignDesc::ctors`]) plus its [`Payload`].
+/// [`TheoryDesc::ctors`]) plus its [`Payload`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DescValue
 {
-    /// The constructor index into [`SignDesc::ctors`].
+    /// The constructor index into [`TheoryDesc::ctors`].
     pub ctor: ConstructorTag,
     /// The constructor's payload, shaped by that constructor's code.
     pub payload: Payload,
@@ -381,7 +381,7 @@ quenchant_shape::reason_enum! {
 /// - witness: `generic::tests::malformed_values_and_out_of_range_tags_have_defined_observations`
 #[spec(ensures: |ref code| matches!(*code, Maybe::Present(_)) == (usize::from(ctor) < desc.ctors.len()))]
 fn ctor_code<G>(
-    desc: &SignDesc<G>,
+    desc: &TheoryDesc<G>,
     ctor: ConstructorTag,
 ) -> Maybe<CodeNode<'_, G>, constructor_tag::Absent>
 {
@@ -459,7 +459,7 @@ fn authored_name(port: &SortRef) -> Maybe<&Name, port_name::Absent>
 #[spec(ensures: |equal| !bool::from(equal)
     || (left == right && usize::from(left.ctor) < desc.ctors.len()))]
 pub fn generic_eq<G>(
-    desc: &SignDesc<G>,
+    desc: &TheoryDesc<G>,
     left: &DescValue,
     right: &DescValue,
 ) -> GenericEquality
@@ -604,7 +604,7 @@ pub fn generic_eq<G>(
     &u32::try_from(usize::from(value.ctor)).unwrap_or(u32::MAX).to_le_bytes()
 ))]
 pub fn serialize_value<G>(
-    desc: &SignDesc<G>,
+    desc: &TheoryDesc<G>,
     value: &DescValue,
 ) -> SerializedValueBytes
 {
@@ -695,23 +695,23 @@ pub fn serialize_value<G>(
     SerializedValueBytes::from(out)
 }
 
-/// Inspectable rendering of a description's `sign` normal form to canonical
+/// Inspectable rendering of a description's `theory` normal form to canonical
 /// text, in the ruled surface spelling.
 ///
-/// Every description renders as its `sign` normal form, with its shape
+/// Every description renders as its `theory` normal form, with its shape
 /// parameter first, then the declared sort set, and the arrow grid's `-->` /
 /// `==>` at every arrow position. The normal form's members are the shape,
 /// sorts, operations and rules only: a family is declared once, whole, as a
 /// nested generator block, so constructor and observation descriptors have no
 /// member spelling here and the render omits them; they remain inspectable
-/// through [`SignDesc::ctors`].
+/// through [`TheoryDesc::ctors`].
 ///
 /// The rendering is deterministic and structural — an inspection notation,
 /// not a surface pretty-printer. Every member is terminated by `;`, and the
 /// whole description stays one line.
 ///
 /// # Specification
-/// - ensures: deterministic output for a given description: `sign` and the
+/// - ensures: deterministic output for a given description: `theory` and the
 ///   datatype's name, its parameters in parentheses when it has any, then the
 ///   shape parameter, the sorts, operations, rule faces and circuit rules in
 ///   declaration order, each terminated by `;`, or `{}` when there are none. A
@@ -734,12 +734,12 @@ pub fn serialize_value<G>(
 /// - witness: `generic::tests::a_shape_renders_first_with_its_faces`
 #[inline]
 #[must_use]
-#[spec(ensures: |ref text| text.as_ref().strip_prefix("sign ")
+#[spec(ensures: |ref text| text.as_ref().strip_prefix("theory ")
     .and_then(|body| body.strip_prefix(desc.id.name.as_ref()))
     .is_some_and(|body| body.starts_with(if desc.params.is_empty() { " {" } else { "(" }))
     && text.as_ref().ends_with(if matches!(desc.shape, Maybe::Absent(_)) && desc.sorts.is_empty()
         && desc.opers.is_empty() && desc.rules.is_empty() && desc.circuits.is_empty() { "{}" } else { "; }" }))]
-pub fn serialize_desc<G>(desc: &SignDesc<G>) -> SerializedDescText
+pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText
 {
     let params: Vec<String> = desc
         .params
@@ -813,11 +813,11 @@ pub fn serialize_desc<G>(desc: &SignDesc<G>) -> SerializedDescText
         ));
     }
     let rendered = if members.is_empty() {
-        format!("sign {}{params} {{}}", desc.id.name)
+        format!("theory {}{params} {{}}", desc.id.name)
     }
     else {
         format!(
-            "sign {}{params} {{ {}; }}",
+            "theory {}{params} {{ {}; }}",
             desc.id.name,
             members.join("; ")
         )
@@ -1064,10 +1064,10 @@ mod tests
     fn desc_inspection_renders_the_structure()
     {
         assert_eq!(
-            "sign Maybe(a) { sort Maybe : Type; }",
+            "theory Maybe(a) { sort Maybe : Type; }",
             serialize_desc(&maybe_desc()).as_ref(),
             "the inspection notation names the parameters and the sort set; constructors have \
-             no item-level member spelling in the sign normal form"
+             no item-level member spelling in the theory normal form"
         );
     }
 
@@ -1075,9 +1075,9 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn maybe_desc() -> SignDesc<Grade>
+    fn maybe_desc() -> TheoryDesc<Grade>
     {
-        SignDesc::new(
+        TheoryDesc::new(
             NominalId::new(0_u64.into(), "Maybe"),
             [ParamDesc::new("a", Grade::One, Attrs::empty())],
             [
@@ -1122,9 +1122,9 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn nat_desc() -> SignDesc<Grade>
+    fn nat_desc() -> TheoryDesc<Grade>
     {
-        SignDesc::new(
+        TheoryDesc::new(
             NominalId::new(1_u64.into(), "Nat"),
             Vec::new(),
             [
@@ -1141,7 +1141,7 @@ mod tests
     #[test]
     fn desc_inspection_omits_constructor_members()
     {
-        let desc = SignDesc::new(
+        let desc = TheoryDesc::new(
             NominalId::new(0_u64.into(), "Vec"),
             [ParamDesc::new("a", Grade::One, Attrs::empty())],
             [
@@ -1162,10 +1162,10 @@ mod tests
             Attrs::empty(),
         );
         assert_eq!(
-            "sign Vec(a) { sort Vec : Type; }",
+            "theory Vec(a) { sort Vec : Type; }",
             serialize_desc(&desc).as_ref(),
             "constructors — graded, attributed, or right-nested — carry no member spelling: \
-             the item-level `data` member is retired from the sign normal form"
+             the item-level `data` member is retired from the theory normal form"
         );
     }
 
@@ -1200,7 +1200,7 @@ mod tests
             body,
         )
         .with_ports([RewritePort::sorted("p", "Nat")]);
-        let desc: SignDesc<Grade> = SignDesc::new(
+        let desc: TheoryDesc<Grade> = TheoryDesc::new(
             NominalId::new(0_u64.into(), "Nat"),
             Vec::new(),
             Vec::new(),
@@ -1211,7 +1211,7 @@ mod tests
         )
         .with_circuits([rule]);
         assert_eq!(
-            "sign Nat { sort Nat : Type; rule cong1 : (rule p : Nat ==> Nat) add(x, y) ==> \
+            "theory Nat { sort Nat : Type; rule cong1 : (rule p : Nat ==> Nat) add(x, y) ==> \
              add(x\u{2032}, y); }",
             serialize_desc(&desc).as_ref(),
             "a circuit member renders its telescope and its sphere"
@@ -1238,7 +1238,7 @@ mod tests
         });
         let circuits = ["c", "d"]
             .map(|name| CircuitRule::new(name, rules[0].clone(), CircuitBody::new([], "x")));
-        let desc: SignDesc<Grade> = SignDesc::new(
+        let desc: TheoryDesc<Grade> = TheoryDesc::new(
             NominalId::new(0_u64.into(), "Ordered"),
             [],
             [],
@@ -1254,7 +1254,7 @@ mod tests
         .with_circuits(circuits);
         assert_eq!(
             serialize_desc(&desc).as_ref(),
-            "sign Ordered { sort A : Type; sort B : Type; oper first : () --> A; oper second : () --> A; rule x ==> y; rule y ==> z; rule c : x ==> y; rule d : x ==> y; }"
+            "theory Ordered { sort A : Type; sort B : Type; oper first : () --> A; oper second : () --> A; rule x ==> y; rule y ==> z; rule c : x ==> y; rule d : x ==> y; }"
         );
     }
 
@@ -1274,7 +1274,7 @@ mod tests
             render_telescope(&ports),
             "(rule p : Nat ==> Nat, rule q : x ==> s(x))"
         );
-        let desc: SignDesc<Grade> = SignDesc::new(
+        let desc: TheoryDesc<Grade> = TheoryDesc::new(
             NominalId::new(0_u64.into(), "Empty"),
             [],
             [],
@@ -1284,7 +1284,7 @@ mod tests
             Attrs::empty(),
         )
         .with_sorts([]);
-        assert_eq!(serialize_desc(&desc).as_ref(), "sign Empty {}");
+        assert_eq!(serialize_desc(&desc).as_ref(), "theory Empty {}");
     }
 
     #[test]
@@ -1293,8 +1293,8 @@ mod tests
         use crate::boundary::ShapePoint;
         use crate::boundary::ShapeSize;
         use crate::desc::ShapeFace;
-        use crate::desc::SignShape;
         use crate::desc::SortDesc;
+        use crate::desc::TheoryShape;
 
         let points = |raw: &[usize]| {
             raw.iter()
@@ -1302,7 +1302,7 @@ mod tests
                 .map(ShapePoint::from)
                 .collect::<Vec<_>>()
         };
-        let empty: SignDesc<Grade> = SignDesc::new(
+        let empty: TheoryDesc<Grade> = TheoryDesc::new(
             NominalId::new(0_u64.into(), "Cells"),
             [],
             [],
@@ -1314,22 +1314,22 @@ mod tests
         .with_sorts([]);
         let bare = empty
             .clone()
-            .with_shape(SignShape::new("Point", ShapeSize::from(1_usize), []));
+            .with_shape(TheoryShape::new("Point", ShapeSize::from(1_usize), []));
         assert_eq!(
             serialize_desc(&bare).as_ref(),
-            "sign Cells { shape Point : 1 { }; }",
+            "theory Cells { shape Point : 1 { }; }",
             "a shape is a member: a description of nothing else is not empty"
         );
         let square = empty
             .with_sorts([SortDesc::new("A", DeclPolarity::Data)])
-            .with_shape(SignShape::new("Square", ShapeSize::from(4_usize), [
+            .with_shape(TheoryShape::new("Square", ShapeSize::from(4_usize), [
                 ShapeFace::new("left", points(&[2, 0])),
                 ShapeFace::new("right", points(&[1, 3])),
                 ShapeFace::new("none", []),
             ]));
         assert_eq!(
             serialize_desc(&square).as_ref(),
-            "sign Cells { shape Square : 4 { left = {0, 2}; right = {1, 3}; none = {}; }; sort A : Type; }",
+            "theory Cells { shape Square : 4 { left = {0, 2}; right = {1, 3}; none = {}; }; sort A : Type; }",
             "the shape comes first, each face its points ascending"
         );
     }
@@ -1337,7 +1337,7 @@ mod tests
     #[test]
     fn desc_inspection_omits_a_primitive_field_constructor()
     {
-        let desc = SignDesc::new(
+        let desc = TheoryDesc::new(
             NominalId::new(0_u64.into(), "Wrap"),
             Vec::new(),
             [CtorDesc::new(
@@ -1356,7 +1356,7 @@ mod tests
             Attrs::empty(),
         );
         assert_eq!(
-            "sign Wrap { sort Wrap : Type; }",
+            "theory Wrap { sort Wrap : Type; }",
             serialize_desc(&desc).as_ref(),
             "a primitive-field constructor renders no member spelling either"
         );

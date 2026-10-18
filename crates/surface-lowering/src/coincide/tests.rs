@@ -261,7 +261,7 @@ data Circle : Type {
 
 /// The circle's shape: the presentation the circle's constructors present,
 /// read as a signature whose models interpret it.
-const CIRCLE_SHAPE: &str = r#"sign CircleShape {
+const CIRCLE_SHAPE: &str = r#"theory CircleShape {
     sort Pt : Type;
     oper base : Pt;
     oper turn : (x : Pt) --> Pt;
@@ -568,7 +568,7 @@ fn an_equation_written_backwards_orients_forwards()
                 .rules()
                 .next()
                 .unwrap()
-                .print_sign(&gandr_theory_levitation::Name::from("cancel")),
+                .print_theory(&gandr_theory_levitation::Name::from("cancel")),
             "rule cancel : x <=> S(P(x))"
         );
         let cells = &module.cells().declarations[0];
@@ -597,7 +597,7 @@ fn an_equation_written_backwards_orients_forwards()
 fn a_congruence_is_no_rewrite_of_its_own()
 {
     let source = SourceText::from(
-        r#"sign Nat {
+        r#"theory Nat {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
 
@@ -635,7 +635,7 @@ fn a_congruence_is_no_rewrite_of_its_own()
         );
     });
     let with_a_rule = SourceText::from(
-        r#"sign Nat {
+        r#"theory Nat {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
   rule left : add(x, y) ==> x;

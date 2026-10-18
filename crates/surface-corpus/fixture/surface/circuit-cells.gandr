@@ -1,5 +1,5 @@
 @[ refuses("OutOfFragment") ]
-sign Nat {
+theory Nat {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
 
@@ -21,12 +21,12 @@ oper accumulate : (stream : Stream(Nat)) --> (out2 : Stream(Nat)) {
   feed : (next) --> (state);
 }
 
-sign NatDesugared {
+theory NatDesugared {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);
 }
 
-sign Labelled {
+theory Labelled {
   sort Nat : Type;
   oper zero : () --> (out : Nat);
   oper step : (i : Nat) --> (o : Nat);
@@ -38,14 +38,14 @@ sign Labelled {
 }
 
 @[ refuses("OutOfFragment") ]
-sign Invertible {
+theory Invertible {
   sort Bit : Type;
   oper flip : (b : Bit) --> (c : Bit);
   rule involutive : (b : Bit) <=> (c : Bit);
 }
 
 @[ refuses("OutOfFragment") ]
-sign Reserved {
+theory Reserved {
   sort Bit : Type;
   oper negate : (b : Bit) <-> (c : Bit);
 }

@@ -10,7 +10,7 @@
 //! rules matching one term — joins: the rewriting is then confluent, every
 //! strategy reaches the one normal form, and first match is one strategy
 //! (Newman's lemma with the critical-pair lemma). [`decide`] decides both
-//! halves for every `data` and `sign` block with rules, at `checks`:
+//! halves for every `data` and `theory` block with rules, at `checks`:
 //!
 //! 1. Termination, by the lexicographic path order over the block's faces
 //!    (`orient_rules`; the order and why it is not the cell layer's own are in
@@ -43,15 +43,15 @@
 //!
 //! **Choice: refuse.** A block whose two readings part is refused whole, as a
 //! family: the equational reading is what the rules mean — what a model of
-//! the family satisfies, and what a `sign` block's models state as paths — and
-//! the decision tree is how they run, so a tree computing what the equations
-//! do not is a miscompilation, not a dialect. **Alternatives.** Warning and
-//! running first match, the written order read as a disambiguation the author
-//! opted into: rule order then means something, reordering two rules changes
-//! what a program computes while every equation the family states stays the
-//! same, and a model checked against the equations disagrees with the program
-//! it models. Completing the rules — adding the derived cell that joins a
-//! divergent pair, as completion does — was declined too: a derived cell is
+//! the family satisfies, and what a `theory` block's models state as paths —
+//! and the decision tree is how they run, so a tree computing what the
+//! equations do not is a miscompilation, not a dialect. **Alternatives.**
+//! Warning and running first match, the written order read as a disambiguation
+//! the author opted into: rule order then means something, reordering two rules
+//! changes what a program computes while every equation the family states stays
+//! the same, and a model checked against the equations disagrees with the
+//! program it models. Completing the rules — adding the derived cell that joins
+//! a divergent pair, as completion does — was declined too: a derived cell is
 //! an equation the author did not write, and a divergence between two
 //! constructor terms would identify them. **Reversal.** A written opt-in to
 //! ordered rules — an attribute on the block — makes first match the declared
@@ -93,7 +93,7 @@
 //! `coincide::tests::the_circles_cancellations_join_below_the_root`,
 //! `coincide::tests::a_third_cancellation_parts_the_circles_readings`.
 //!
-//! A `sign` block's laws over unindexed sorts take the same road where one
+//! A `theory` block's laws over unindexed sorts take the same road where one
 //! applies an operation where an argument stands: the circle's shape,
 //! `turn(unturn(x)) ==> x` and `unturn(turn(x)) ==> x` over the operations
 //! `turn` and `unturn`, meets at the peaks the circle's constructor rules meet
@@ -170,9 +170,9 @@ use gandr_theory_levitation::Name;
 use gandr_theory_levitation::Precedence;
 use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::RuleIndex;
-use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::Termination;
+use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::derive_cell_var_meta;
 use gandr_theory_levitation::orient_rules;
 use gandr_theory_levitation::path_greater;
@@ -199,7 +199,7 @@ pub const NORMAL_FORM_STEPS: usize = 1 << 16;
 pub(crate) struct OrientedBlock<G>
 {
     /// The description the kernel-facing table is read from.
-    pub description: SignDesc<G>,
+    pub description: TheoryDesc<G>,
     /// The direction chosen for each written rule, in rule order.
     pub directions: Vec<RuleDirection>,
 }
@@ -235,7 +235,7 @@ pub(crate) struct OrientedBlock<G>
     Err(index) => usize::from(*index) < description.rules.len(),
 })]
 pub(crate) fn orient_block<G>(
-    description: &SignDesc<G>,
+    description: &TheoryDesc<G>,
     orientations: &[RuleOrientation],
 ) -> Result<OrientedBlock<G>, RuleIndex>
 where
@@ -523,7 +523,7 @@ impl fmt::Display for Spelled<'_>
     Err((_, CoherenceFault::Diverges { .. } | CoherenceFault::Undecided { .. })) => orient_rules(description) == Termination::Oriented,
 })]
 pub(crate) fn decide<G>(
-    description: &SignDesc<G>,
+    description: &TheoryDesc<G>,
     at: ByteSpan,
     store: &CellStore,
     faces: &[(AdmittedFaceIndex, CellId)],
@@ -662,7 +662,7 @@ where
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a `sign` block's congruence is left out while its faces
+/// - hypothesis: L3 — a `theory` block's congruence is left out while its faces
 ///   keep their identifiers, alone and beside a rule's face, and a family with
 ///   no circuit is read in place.
 /// - witness: `coincide::tests::a_congruence_is_no_rewrite_of_its_own`
@@ -784,7 +784,7 @@ impl NormalForm
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NormalFormFault
 {
-    /// The declaration is no family or `sign` block the description route
+    /// The declaration is no family or `theory` block the description route
     /// read, so it has no rules to read the call under.
     Undescribed,
     /// The block's rules were not admitted as one rewriting system, so no
@@ -886,7 +886,7 @@ impl fmt::Display for NormalFormFault
 })]
 #[inline]
 pub fn normal_form<G>(
-    description: &SignDesc<G>,
+    description: &TheoryDesc<G>,
     cells: &DeclarationCells,
     call: CallText<'_>,
 ) -> Result<NormalForm, NormalFormFault>
@@ -994,7 +994,7 @@ where
 #[spec(ensures: |ret| ret.as_ref().is_err() || text.0.split_whitespace().collect::<String>()
     == ret.as_ref().map(|term| term.to_string().split_whitespace().collect::<String>()).unwrap_or_default())]
 fn read_call<G>(
-    description: &SignDesc<G>,
+    description: &TheoryDesc<G>,
     text: CallText<'_>,
 ) -> Result<FreeTerm, NormalFormFault>
 {
@@ -1063,7 +1063,7 @@ impl<'desc> Symbol<'desc>
     /// # Specification
     /// trivial.
     fn of<G>(
-        description: &'desc SignDesc<G>,
+        description: &'desc TheoryDesc<G>,
         name: CallText<'_>,
     ) -> Result<Self, NormalFormFault>
     {

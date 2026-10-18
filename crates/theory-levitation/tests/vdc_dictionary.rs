@@ -8,7 +8,7 @@
 //!
 //! # What is the crate's, and what is a stand-in
 //!
-//! Objects (`harness::SigObj` over real `SignDesc`s), tight arrows (renamings
+//! Objects (`harness::SigObj` over real `TheoryDesc`s), tight arrows (renamings
 //! of real constructor and operation symbols, checked against their real
 //! `Code`s and `BridgeArity`s) and restriction (real `RuleFace`s recomputed
 //! through the real `derive_cell_var_meta`, judged by the real `check_desc`)
