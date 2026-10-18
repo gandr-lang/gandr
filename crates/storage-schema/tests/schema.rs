@@ -287,7 +287,12 @@ fn a_lookup_of_the_wrong_kind_is_refused()
             name: name.into(),
         })
     };
-    assert!(schema.object("V").is_ok(), "an object resolves");
+    let vertex = schema.object("V").expect("an object resolves");
+    assert_eq!(
+        schema.object_name(vertex).map(AsRef::as_ref),
+        Ok("V"),
+        "the resolved object's name reads back as its text"
+    );
     assert_eq!(
         schema.object("src").err(),
         unknown(ElementKind::Object, "src"),

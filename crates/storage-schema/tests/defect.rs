@@ -178,6 +178,16 @@ fn a_row_must_be_complete_and_its_own()
     );
     assert_eq!(store.target(src, added), Ok(one));
     assert_eq!(store.target(tgt, added), Ok(two));
+
+    let vertex = object(&store, &Name("V"));
+    let refusal = store
+        .add_part(vertex, &Row::new())
+        .expect_err("a vertex without its label is incomplete");
+    assert_eq!(refusal, Refusal::Unset {
+        field: "label".into(),
+        object: "V".into(),
+        part: PartKey::from(3_u64),
+    });
 }
 
 #[test]
