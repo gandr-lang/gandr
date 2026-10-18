@@ -1663,6 +1663,7 @@ fn the_kernel_replays_a_conversion_through_a_definition_by_eliminator()
             Outcome::Assumed { .. }
             | Outcome::Marked(_)
             | Outcome::Static
+            | Outcome::Suspended
             | Outcome::Refused(_)
             | Outcome::Rejected(_) => None,
         })

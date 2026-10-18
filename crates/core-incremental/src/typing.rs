@@ -888,6 +888,8 @@ pub enum Typing
     },
     /// The body is a hole under the signature, owed.
     Owed,
+    /// The body waits on owed holes: its type is supplied, nothing defined.
+    Suspended,
     /// The item was refused.
     Refused(Refusal),
 }
@@ -955,6 +957,7 @@ impl Projection<'_, '_, '_, '_>
             matches!(ret, Typing::Synthesised { conversions, .. } if conversions == synthesised.conversions())
         },
         | Verdict::Owed(_) => matches!(ret, Typing::Owed),
+        | Verdict::Suspended(_) => matches!(ret, Typing::Suspended),
         | Verdict::Refused(_) => matches!(ret, Typing::Refused(_)),
     })]
     pub(crate) fn typing(
@@ -972,6 +975,7 @@ impl Projection<'_, '_, '_, '_>
                 conversions: synthesised.conversions(),
             },
             Verdict::Owed(_) => Typing::Owed,
+            Verdict::Suspended(_) => Typing::Suspended,
             Verdict::Refused(refusal) => Typing::Refused(self.refusal(refusal)),
         }
     }
@@ -1812,6 +1816,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             matches!(ret, Typing::Synthesised { conversions, .. } if conversions == synthesised.conversions())
         },
         | Verdict::Owed(_) => matches!(ret, Typing::Owed),
+        | Verdict::Suspended(_) => matches!(ret, Typing::Suspended),
         | Verdict::Refused(_) => matches!(ret, Typing::Refused(_)),
     }
 )]

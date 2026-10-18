@@ -580,6 +580,7 @@ fn a_stale_cached_typing_is_caught()
             ref other @ (Typing::Data
             | Typing::Checked { .. }
             | Typing::Owed
+            | Typing::Suspended
             | Typing::Refused(_)) => panic!("a synthesises: {other:?}"),
         };
         checkpoint.with_typing(Typing::Synthesised {

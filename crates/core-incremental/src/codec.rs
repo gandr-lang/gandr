@@ -6778,15 +6778,16 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
 ///   verdicts refuse the first unresolved type node.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — checked, synthesised, owed and selected refused verdicts
-///   round-trip. Malformed synthesised and refused payloads distinguish their
-///   failure paths; the predicate classifies type-plane failures rather than
-///   reproducing the byte encoding.
+/// - hypothesis: L3 — checked, synthesised, owed, suspended and selected
+///   refused verdicts round-trip. Malformed synthesised and refused payloads
+///   distinguish their failure paths; the predicate classifies type-plane
+///   failures rather than reproducing the byte encoding.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::a_suspended_typing_round_trips`
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
 #[spec(
     ensures: |ret| match *typing {
-        | Typing::Data | Typing::Owed => ret == Ok(()),
+        | Typing::Data | Typing::Owed | Typing::Suspended => ret == Ok(()),
         | Typing::Checked { conversions } => {
             ret == u64::try_from(usize::from(conversions))
                 .map(|_| ())
@@ -6837,7 +6838,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                     | Refusal::Located { defect: Located::MarkUnfounded { ref former, .. } | Located::NotAHandle { found: ref former }, .. } => [former.nodes(), &[]],
                     | _ => [&[], &[]],
                 },
-                | Typing::Data | Typing::Checked { .. } | Typing::Owed => [&[], &[]],
+                | Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Suspended => [&[], &[]],
             };
             match ret {
                 | Ok(()) => tables
@@ -6878,6 +6879,7 @@ where
             writer.count(Count(usize::from(conversions)))?;
         },
         Typing::Owed => writer.tag(Tag(2)),
+        Typing::Suspended => writer.tag(Tag(5)),
         Typing::Refused(ref refusal) => {
             writer.tag(Tag(3));
             write_refusal(writer, refusal)?;
@@ -6893,11 +6895,12 @@ where
 ///   decoder error alphabet.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — checked, synthesised, owed and selected refused verdicts
-///   preserve their payloads. Tag classification is executable; this finite
-///   corpus does not witness every malformed field. An unknown outer tag stops
-///   before the available payload.
+/// - hypothesis: L3 — checked, synthesised, owed, suspended and selected
+///   refused verdicts preserve their payloads. Tag classification is
+///   executable; this finite corpus does not witness every malformed field. An
+///   unknown outer tag stops before the available payload.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::a_suspended_typing_round_trips`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
 #[spec(
@@ -6910,6 +6913,7 @@ where
                     | Typing::Checked { .. } => 0,
                     | Typing::Synthesised { .. } => 1,
                     | Typing::Owed => 2,
+                    | Typing::Suspended => 5,
                     | Typing::Refused(_) => 3,
                 })
         },
@@ -6940,6 +6944,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
             })
         },
         2 => Ok(Typing::Owed),
+        5 => Ok(Typing::Suspended),
         3 => {
             let refusal = read_refusal(reader)?;
             Ok(Typing::Refused(refusal))
@@ -7091,7 +7096,7 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
                 | Refusal::Located { defect: Located::MarkUnfounded { ref former, .. } | Located::NotAHandle { found: ref former }, .. } => [former.nodes(), &[]],
                 | _ => [&[], &[]],
             },
-            | Typing::Data | Typing::Checked { .. } | Typing::Owed => [&[], &[]],
+            | Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Suspended => [&[], &[]],
         };
         let support =
             checkpoint
@@ -7377,7 +7382,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::Access { .. }
             | Refusal::Located { .. } => [None, None],
         },
-        Typing::Data | Typing::Checked { .. } | Typing::Owed => [None, None],
+        Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Suspended => [None, None],
     };
     let support = checkpoint
         .support()

@@ -68,6 +68,7 @@ use crate::region::Reference;
             matches!(ret.1, Typing::Synthesised { conversions, .. } if conversions == synthesised.conversions())
         },
         | Verdict::Owed(_) => matches!(ret.1, Typing::Owed),
+        | Verdict::Suspended(_) => matches!(ret.1, Typing::Suspended),
         | Verdict::Refused(_) => matches!(ret.1, Typing::Refused(_)),
     })]
 fn judged(

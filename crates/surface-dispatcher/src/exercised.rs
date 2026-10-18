@@ -417,7 +417,7 @@ impl Exercised
 #[spec(ensures: |ref ret| {
     Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) <= 1_usize)
         && match declaration.produced() {
-            Produced::Judged(Verdict::Owed(_)) => Row::ALL.into_iter().all(|row|
+            Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_)) => Row::ALL.into_iter().all(|row|
                 usize::from(ret.count(row)) == usize::from(row == Row::AddressableObligation)),
             Produced::Guarded(_) => Row::ALL.into_iter().all(|row|
                 usize::from(ret.count(row)) == 0_usize),
@@ -441,7 +441,9 @@ fn carried(
             formers(arena, body, worklist, &mut rows);
             bridged(synthesised.conversions(), &mut rows);
         },
-        Produced::Judged(Verdict::Owed(_)) => rows.mark(Row::AddressableObligation),
+        Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_)) => {
+            rows.mark(Row::AddressableObligation);
+        },
         Produced::Judged(Verdict::Refused(refusal)) => checking_row(refusal, lowered, &mut rows),
         Produced::Unlowered(refusal) => lowering_row(refusal, &mut rows),
         Produced::Judged(Verdict::Data) | Produced::Guarded(_) => {},

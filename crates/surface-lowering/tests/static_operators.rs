@@ -297,6 +297,7 @@ fn elaborate(source: SourceText<'_>) -> Elaborated
         .map(|judged| match judged.verdict() {
             Verdict::Checked { .. } => "checked",
             Verdict::Owed(_) => "owed",
+            Verdict::Suspended(_) => "suspended",
             Verdict::Data | Verdict::Synthesised { .. } | Verdict::Refused(_) => "refused",
         })
         .collect();
@@ -385,6 +386,7 @@ fn a_negative_carrier_where_a_value_type_is_read_names_both_universes()
             | Verdict::Checked { .. }
             | Verdict::Synthesised { .. }
             | Verdict::Owed(_)
+            | Verdict::Suspended(_)
             | Verdict::Refused(_)) => {
                 panic!("each carrier is refused as a sort mismatch, not {other:?}")
             },

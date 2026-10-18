@@ -684,6 +684,7 @@ impl fmt::Display for ComposeFault<'_>
                     | bridge::Outcome::Defined { .. }
                     | bridge::Outcome::Assumed { .. }
                     | bridge::Outcome::Marked(_)
+                    | bridge::Outcome::Suspended
                     | bridge::Outcome::Static => f.write_str("it crossed"),
                 }
             },
@@ -1973,12 +1974,13 @@ fn abstract_type(sealing: Sealing) -> AbstractType
 /// - ensures: succeeds with the readmission when every accepted declaration
 ///   crossed as a definition or an axiom, or stays on the checker's side as a
 ///   static definition or as an effectful one the bridge refuses by its
-///   effectful former; a refused declaration crosses as its mark, a declaration
-///   withheld because it names a refused one carries that one's reason, a
-///   declaration holding a term hole or the unknown type stays behind as the
-///   user absence it is, and a declaration holding a session stays behind on
-///   the checker's side, the kernel having no session former, so none of these
-///   is a disagreement.
+///   effectful former; a refused declaration crosses as its mark, a suspended
+///   one crosses as nothing until a fill resumes it, a declaration withheld
+///   because it names a refused one carries that one's reason, a declaration
+///   holding a term hole or the unknown type stays behind as the user absence
+///   it is, and a declaration holding a session stays behind on the checker's
+///   side, the kernel having no session former, so none of these is a
+///   disagreement.
 /// - provides: the kernel's repetition of every acceptance a run reports, and
 ///   the environment the run's kernel artifact is exported from.
 /// - fails: the readmission of the first declaration the kernel rejected or the
@@ -2005,7 +2007,7 @@ fn abstract_type(sealing: Sealing) -> AbstractType
             crossed.constant() == judged.constant() && (matches!(*crossed.outcome(),
                 bridge::Outcome::Defined { .. } | bridge::Outcome::Assumed { .. }
                     | bridge::Outcome::Data { .. }
-                    | bridge::Outcome::Marked(_) | bridge::Outcome::Static
+                    | bridge::Outcome::Marked(_) | bridge::Outcome::Suspended | bridge::Outcome::Static
                     | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. } | bridge::Refusal::WithheldData { .. }
                         | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }
                         | bridge::Refusal::Session { .. } | bridge::Refusal::Located { .. }))
@@ -2030,6 +2032,7 @@ fn readmitted(
             | bridge::Outcome::Defined { .. }
             | bridge::Outcome::Assumed { .. }
             | bridge::Outcome::Marked(_)
+            | bridge::Outcome::Suspended
             | bridge::Outcome::Static
             | bridge::Outcome::Refused(
                 bridge::Refusal::Withheld { .. }

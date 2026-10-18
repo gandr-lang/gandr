@@ -139,6 +139,10 @@ use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
 use crate::declaration::body;
 use crate::declaration::signature;
+use crate::elaboration::Collecting;
+use crate::elaboration::Deferred;
+use crate::elaboration::Residue;
+use crate::elaboration::Suspension;
 use crate::equiv::Equivalence;
 use crate::failure::Failure;
 use crate::failure::Pursuit;
@@ -364,7 +368,8 @@ fn refuse_whole(
             | Verdict::Data
             | Verdict::Checked { .. }
             | Verdict::Synthesised { .. }
-            | Verdict::Owed(_) => None,
+            | Verdict::Owed(_)
+            | Verdict::Suspended(_) => None,
         });
         let Some((refusal, failure)) = refused
         else {
@@ -417,6 +422,11 @@ pub enum Verdict
     },
     /// The body is a hole under a declared type, owed.
     Owed(ObligationEntry),
+    /// The declaration waits on owed holes: its judgement left a bare
+    /// flex–rigid equation on an owed code constant, or read the type of a
+    /// declaration that waits. Nothing is defined for it; it supplies the type
+    /// it carries, and the report keeps its [`Suspension`] under its position.
+    Suspended(FormedValueType),
     /// The declaration was refused.
     Refused(CheckRefusal),
 }
@@ -516,6 +526,8 @@ pub struct ModuleReport
     seal_table: SealTable,
     /// The world declarations admitted, by position.
     worlds: alloc::collections::BTreeSet<ConstantIndex>,
+    /// What each suspended declaration waits on, by position.
+    suspensions: BTreeMap<ConstantIndex, Suspension>,
 }
 
 impl ModuleReport
@@ -738,6 +750,18 @@ impl ModuleReport
     {
         &self.nested_elaborations
     }
+
+    /// What each suspended declaration waits on, by position: one entry per
+    /// [`Verdict::Suspended`] verdict, and none for any other.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn suspensions(&self) -> &BTreeMap<ConstantIndex, Suspension>
+    {
+        &self.suspensions
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -806,10 +830,15 @@ enum Run
 ///   synthesises; neither is refused. An accepted verdict carries the body it
 ///   judged — the declaration's own, or its elaboration when the body held a
 ///   computation written where a value is read, minted after it — and defines
-///   the constant as that body. A formed signature enters the signature table
-///   after the body is judged, whatever the body's verdict; a synthesised type
-///   enters it after synthesis; a refused body alone enters nothing. An
-///   abstract type's retention is checked where the context retains it, by
+///   the constant as that body. A value declaration whose judgement, accepted
+///   otherwise, left a bare flex–rigid equation on a hole the context holds
+///   owed, or read the type of a declaration it holds suspended, is
+///   [`Verdict::Suspended`] at the type it supplies instead, defines nothing,
+///   and is held suspended; a refusal wins over any residual. An owed hole is
+///   held owed. A formed signature enters the signature table after the body is
+///   judged, whatever the body's verdict; a synthesised type enters it after
+///   synthesis; a refused body alone enters nothing. An abstract type's
+///   retention is checked where the context retains it, by
 ///   `CheckingContext::seal_abstract`.
 /// - provides: the one obligation a declaration can owe, carried in its
 ///   verdict, so a caller judging a single declaration needs no ledger.
@@ -828,6 +857,8 @@ enum Run
 /// - witness: `module::tests::a_refused_signed_body_still_supplies_its_type`
 /// - witness: `module::tests::a_body_that_synthesised_nothing_supplies_no_type`
 /// - witness: `module::tests::a_later_declaration_reads_an_earlier_type`
+/// - witness: `elaboration::tests::owed_conversion_suspends`
+/// - witness: `elaboration::tests::dependent_resumption_closes_its_prerequisites`
 #[spec(
     captures: depth = context.depth(gandr_core_term::Zone::Intuitionistic),
     ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth && match ret {
@@ -844,6 +875,9 @@ enum Run
             && entry.absence().constant() == declaration.constant()
             && entry.absence().origin() == declaration.origin()
             && context.signature(declaration.constant()) == Maybe::Present(entry.absence().declared()),
+        | Verdict::Suspended(supplied) => matches!(declaration.content(), crate::DeclarationContent::Value { .. })
+            && context.signature(declaration.constant()) == Maybe::Present(supplied)
+            && matches!(context.definitions().body(declaration.constant()), Maybe::Absent(_)),
         | Verdict::Refused(_) => true,
     },
 )]
@@ -870,6 +904,9 @@ struct Decision
     /// What elaborating the body did, when it held a computation written
     /// where a value is read and the first run accepted it.
     elaboration: Maybe<NestedElaboration, elaborated::Absent>,
+    /// What the judgement left undecided, when its verdict is
+    /// [`Verdict::Suspended`]; empty otherwise.
+    residue: Residue,
 }
 
 /// Judge one declaration in `context`, keeping a refused body's failure, what
@@ -887,7 +924,9 @@ struct Decision
 ///   [`type_value`] keeps for the body as written, read before the
 ///   declaration's own type entered the table. An accepted value keeps, under
 ///   its position, the path endpoint pairs the run its verdict is from related,
-///   and nothing an earlier declaration or another run related.
+///   and nothing an earlier declaration or another run related. A suspended
+///   verdict carries the residue its verdict's run left; every other verdict an
+///   empty one.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
 /// - panics: none.
 ///
@@ -903,11 +942,13 @@ struct Decision
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
 /// - witness: `module::tests::a_typed_module_keys_what_each_run_formed`
 /// - witness: `module::tests::a_refused_first_run_leaves_its_nesting_unaccepted`
+/// - witness: `elaboration::tests::owed_conversion_suspends`
 #[spec(ensures: |ret| (run == Run::Typed || matches!(ret.typings, Maybe::Absent(typed::Absent::Unasked)))
+    && (matches!(ret.verdict, Verdict::Suspended(_)) == (ret.residue.pending() == Deferred::Yes))
     && match (&ret.verdict, &ret.failure) {
     | (&Verdict::Refused(refusal), &Maybe::Present(ref failure)) => failure.refusal() == refusal,
     | (&Verdict::Refused(_), &Maybe::Absent(kept::Absent::Unrun))
-    | (&(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_)), &Maybe::Absent(kept::Absent::Accepted)) => true,
+    | (&(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_) | Verdict::Suspended(_)), &Maybe::Absent(kept::Absent::Accepted)) => true,
         | _ => false,
     })]
 fn decide(
@@ -925,8 +966,18 @@ fn decide(
         failure: Maybe::Absent(kept::Absent::Unrun),
         typings: Maybe::Absent(untyped),
         elaboration: Maybe::Absent(elaborated::Absent::Unnested),
+        residue: Residue::default(),
     };
     let constant = declaration.constant();
+    // A value declaration's judgement may wait on an owed hole; a nominal
+    // declaration forms rigidly.
+    let collecting = match *declaration.content() {
+        crate::DeclarationContent::Value { .. } => Collecting::On,
+        crate::DeclarationContent::Data(_)
+        | crate::DeclarationContent::Abstract(_)
+        | crate::DeclarationContent::World => Collecting::Off,
+    };
+    context.deferrals_mut().open(collecting);
     // The pairs a declaration's conversions relate, and the stages its
     // recursion typing mints, are its own: whatever an earlier declaration's
     // typing pass left is dropped.
@@ -952,6 +1003,7 @@ fn decide(
             failure: Maybe::Absent(kept::Absent::Accepted),
             typings,
             elaboration: Maybe::Absent(elaborated::Absent::Unnested),
+            residue: Residue::default(),
         },
         Err(refusal) => Decision {
             typings,
@@ -1036,6 +1088,7 @@ fn decide(
     let mut typings = Maybe::Absent(untyped);
     let mut elaboration = Maybe::Absent(elaborated::Absent::Unnested);
     let mut relating = Vec::new();
+    let residue: Residue;
     let (verdict, failure) = match body {
         Maybe::Present(body) => {
             let _stale = context.take_nesting();
@@ -1049,9 +1102,10 @@ fn decide(
                         Ok((elaborated, done)) => {
                             elaboration = Maybe::Present(done);
                             // The verdict is the second run's, and so are the
-                            // pairs it relates.
+                            // pairs it relates and what it leaves undecided.
                             let _first = context.take_relating();
                             context.forget_stages();
+                            context.deferrals_mut().open(Collecting::On);
                             context.own_body(elaborated);
                             judge(context, elaborated, direction)
                         },
@@ -1066,6 +1120,7 @@ fn decide(
                 },
             };
             relating = context.take_relating();
+            residue = context.deferrals_mut().take();
             if let Some(signed) = signed.take() {
                 context.own_body(body);
                 typings =
@@ -1083,6 +1138,7 @@ fn decide(
                 crate::capability::held(context, constant, absence.declared())?;
                 Ok(absence)
             });
+            residue = context.deferrals_mut().take();
             match owed {
                 Ok(absence) => (
                     Verdict::Owed(ObligationEntry::from(absence)),
@@ -1098,6 +1154,23 @@ fn decide(
     if signed.is_some() {
         typings = kept(signed);
     }
+    // A refusal wins over every residual; an accepted verdict that left one,
+    // or read a waiting declaration, waits itself.
+    let verdict = match (residue.pending(), verdict) {
+        (Deferred::Yes, Verdict::Checked { declared, .. }) => Verdict::Suspended(declared),
+        (Deferred::Yes, Verdict::Synthesised { synthesised, .. }) => {
+            Verdict::Suspended(synthesised.produced())
+        },
+        (Deferred::Yes, Verdict::Owed(entry)) => Verdict::Suspended(entry.absence().declared()),
+        (
+            Deferred::Yes | Deferred::No,
+            settled @ (Verdict::Data | Verdict::Refused(_) | Verdict::Suspended(_)),
+        )
+        | (
+            Deferred::No,
+            settled @ (Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_)),
+        ) => settled,
+    };
     match (direction, verdict) {
         (Direction::Check(declared), Verdict::Checked { body, .. }) => {
             // Native declarations return before the value judgment.
@@ -1105,14 +1178,26 @@ fn decide(
             context.define(constant, declared, body);
             context.keep_relations(constant, relating);
         },
+        (Direction::Check(declared), Verdict::Owed(_)) => {
+            context.record(constant, declared);
+            context.deferrals_mut().owed.insert(constant);
+        },
+        (Direction::Check(declared), Verdict::Suspended(_)) => {
+            context.record(constant, declared);
+            context.deferrals_mut().suspended.insert(constant);
+        },
         (
             Direction::Check(declared),
-            Verdict::Data | Verdict::Synthesised { .. } | Verdict::Owed(_) | Verdict::Refused(_),
+            Verdict::Data | Verdict::Synthesised { .. } | Verdict::Refused(_),
         ) => context.record(constant, declared),
         (Direction::Synthesise, Verdict::Synthesised { synthesised, body }) => {
             context.record(constant, synthesised.produced());
             context.define(constant, synthesised.produced(), body);
             context.keep_relations(constant, relating);
+        },
+        (Direction::Synthesise, Verdict::Suspended(supplied)) => {
+            context.record(constant, supplied);
+            context.deferrals_mut().suspended.insert(constant);
         },
         (
             Direction::Synthesise,
@@ -1126,6 +1211,14 @@ fn decide(
         failure,
         typings,
         elaboration,
+        residue: match verdict {
+            Verdict::Suspended(_) => residue,
+            Verdict::Data
+            | Verdict::Checked { .. }
+            | Verdict::Synthesised { .. }
+            | Verdict::Owed(_)
+            | Verdict::Refused(_) => Residue::default(),
+        },
     }
 }
 
@@ -1281,14 +1374,17 @@ pub fn check_declaration_supported(
 /// - requires: nothing.
 /// - ensures: one [`Judged`] per declaration, in the order given, each carrying
 ///   the verdict [`check_declaration`] gives at that point of the run; the
-///   ledger holds exactly the owed verdicts' entries, in order; the lifts are
-///   every lift the context's value bridges recorded by the run's end, the
-///   function extensionalities every one it decided, the endpoint relations
-///   every pair an accepted declaration's conversions related, and the
-///   definitions every body the context defines a constant as; each body run
-///   and refused keeps its failure under its position, and no other declaration
-///   has one; each body the first run accepted holding a computation written
-///   where a value is read keeps its elaboration under its position.
+///   ledger holds exactly the owed verdicts' entries, in order; each suspended
+///   verdict keeps its [`Suspension`] under its position, built over the holes
+///   owed and the suspensions kept when it was judged, and no other verdict has
+///   one; the lifts are every lift the context's value bridges recorded by the
+///   run's end, the function extensionalities every one it decided, the
+///   endpoint relations every pair an accepted declaration's conversions
+///   related, and the definitions every body the context defines a constant as;
+///   each body run and refused keeps its failure under its position, and no
+///   other declaration has one; each body the first run accepted holding a
+///   computation written where a value is read keeps its elaboration under its
+///   position.
 /// - provides: total marking — a refused declaration does not stop the run.
 /// - fails: never.
 /// - panics: none.
@@ -1297,11 +1393,13 @@ pub fn check_declaration_supported(
 /// - hypothesis: L3 — the surfaces are the run's totality and the ledger's
 ///   feed, separated by a module mixing every verdict, with a refusal before
 ///   later declarations, asserted entry by entry, and the ledger asserted to
-///   hold the owed entries and no refused one.
+///   hold the owed entries and no refused one; a hole a later declaration
+///   decodes separates a suspension from the refusal ordinary checking gave.
 /// - witness: `module::tests::a_refusal_does_not_stop_the_run`
 /// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
 /// - witness: `module::tests::a_refusal_never_enters_the_ledger`
 /// - witness: `module::tests::a_refused_body_keeps_the_rules_it_was_refused_inside`
+/// - witness: `elaboration::tests::owed_conversion_suspends`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -1314,8 +1412,9 @@ pub fn check_declaration_supported(
         judged.constant == declaration.constant() && judged.origin == declaration.origin())
     && ret.ledger.entries().iter().copied().eq(ret.judged.iter().filter_map(|judged| match judged.verdict {
         | Verdict::Owed(entry) => Some(entry),
-        | Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Refused(_) => None,
+        | Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Suspended(_) | Verdict::Refused(_) => None,
     }))
+    && ret.suspensions.keys().copied().eq(ret.judged.iter().filter(|judged| matches!(judged.verdict, Verdict::Suspended(_))).map(|judged| judged.constant))
     && &ret.lifts == context.lifts()
     && &ret.funexts == context.funexts()
     && &ret.equivalences == context.equivalences()
@@ -1336,10 +1435,43 @@ pub fn check_module(
     declarations: &[Declaration],
 ) -> ModuleReport
 {
+    run(context, declarations, |_, _, _| {})
+}
+
+/// Judge `declarations` in order, as [`check_module`] states, handing each
+/// declaration's verdict to `settle` the moment it is judged, before the next
+/// declaration is.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the report [`check_module`] states; `settle` is called once per
+///   declaration, in order, with the context as the judgement left it and the
+///   verdict judged then, before a mutual block's refusal is spread over it.
+/// - provides: the seat a term-producing run reads each verdict's recorded
+///   transports from before the next judgement restarts them.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`check_module`]; a term-producing run emitting a lift
+///   recorded by one declaration and none by the next separates a settlement
+///   called per declaration from one called once.
+/// - witness: `module::tests::a_refusal_does_not_stop_the_run`
+/// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+#[spec(ensures: |ret| ret.judged.len() == declarations.len())]
+pub fn run<Settle>(
+    context: &mut CheckingContext<'_>,
+    declarations: &[Declaration],
+    mut settle: Settle,
+) -> ModuleReport
+where
+    Settle: FnMut(&mut CheckingContext<'_>, &Declaration, Verdict),
+{
     let mut judged = Vec::with_capacity(declarations.len());
     let mut ledger = ObligationLedger::new();
     let mut failures = BTreeMap::new();
     let mut nested_elaborations = BTreeMap::new();
+    let mut suspensions = BTreeMap::new();
     let mut open = Maybe::Absent(open::Absent::Lone);
     let mut blocks = Vec::new();
     for (index, declaration) in declarations.iter().enumerate() {
@@ -1361,9 +1493,23 @@ pub fn check_module(
         if let Maybe::Present(elaboration) = decision.elaboration {
             nested_elaborations.insert(declaration.constant(), elaboration);
         }
-        if let Verdict::Owed(entry) = decision.verdict {
-            ledger.record(entry);
+        match decision.verdict {
+            Verdict::Owed(entry) => ledger.record(entry),
+            Verdict::Suspended(declared) => {
+                let suspension = Suspension::new(
+                    declared,
+                    decision.residue,
+                    &context.deferrals().owed,
+                    &suspensions,
+                );
+                suspensions.insert(declaration.constant(), suspension);
+            },
+            Verdict::Data
+            | Verdict::Checked { .. }
+            | Verdict::Synthesised { .. }
+            | Verdict::Refused(_) => {},
         }
+        settle(context, declaration, decision.verdict);
         judged.push(Judged {
             constant: declaration.constant(),
             origin: declaration.origin(),
@@ -1393,7 +1539,204 @@ pub fn check_module(
         failures,
         nested_elaborations,
         worlds: context.worlds().declared().clone(),
+        suspensions,
     }
+}
+
+/// Judge the declaration at `target` of `declarations` once more, after
+/// admitting every declaration before it as an earlier run answered it: each
+/// value declaration through `adopt`, never judged again, and each nominal
+/// declaration formed again.
+///
+/// # Specification
+/// - requires: `declarations` is the module an earlier run judged, with at most
+///   the declaration at `target` changed; `adopt` admits a value declaration
+///   from that run's answer.
+/// - ensures: every declaration before `target` is admitted in order, mutual
+///   blocks scheduled as [`check_module`] schedules them; the answer is the
+///   verdict [`check_declaration`] then gives the declaration at `target`, with
+///   the residue it left when it is suspended.
+/// - fails: the refusal `adopt` gives; [`CheckRefusal::MachineInvariant`] when
+///   no declaration is at `target`.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — a resumption agreeing with a batch run of the filled
+///   module, and judgement counts unchanged on the adopted prefix, separate
+///   adoption from judging again.
+/// - witness: `elaboration::tests::incremental_equals_from_scratch`
+/// - witness: `elaboration::tests::checked_success_is_stable_without_rejudgement`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(verdict, ref residue)|
+    matches!(verdict, Verdict::Suspended(_)) == (residue.pending() == Deferred::Yes)))]
+pub fn rejudge<Adopt>(
+    context: &mut CheckingContext<'_>,
+    declarations: &[Declaration],
+    target: ConstantIndex,
+    mut adopt: Adopt,
+) -> Result<(Verdict, Residue), CheckRefusal>
+where
+    Adopt: FnMut(&mut CheckingContext<'_>, &Declaration) -> Result<(), CheckRefusal>,
+{
+    let position = declarations
+        .iter()
+        .position(|declaration| declaration.constant() == target)
+        .ok_or(CheckRefusal::MachineInvariant)?;
+    let mut open = Maybe::Absent(open::Absent::Lone);
+    for (index, declaration) in declarations.iter().enumerate().take(position) {
+        schedule(
+            context,
+            declarations.get(index ..).unwrap_or_default(),
+            &mut open,
+        );
+        match *declaration.content() {
+            crate::DeclarationContent::Value { .. } => adopt(context, declaration)?,
+            crate::DeclarationContent::Data(_)
+            | crate::DeclarationContent::Abstract(_)
+            | crate::DeclarationContent::World => {
+                let _formed = decide(context, declaration, Run::Judged);
+            },
+        }
+    }
+    let judged = declarations
+        .get(position)
+        .ok_or(CheckRefusal::MachineInvariant)?;
+    schedule(
+        context,
+        declarations.get(position ..).unwrap_or_default(),
+        &mut open,
+    );
+    let decision = decide(context, judged, Run::Judged);
+    Ok((decision.verdict, decision.residue))
+}
+
+/// Add to `report` what a later judgement in `context` decided: the node-keyed
+/// tables its rules filled and the position-keyed relations and laws.
+///
+/// # Specification
+/// - requires: `context` judged declarations of `report`'s module, over the
+///   same arena.
+/// - ensures: every table named holds its earlier entries and `context`'s,
+///   `context`'s winning where both hold a key; the verdicts, ledger, lifts and
+///   definitions are unchanged.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — a fill using a rule the batch run never decided is
+///   readmitted only when its decision reaches the bridge.
+/// - witness: `elaboration::tests::incremental_equals_from_scratch`
+#[spec(ensures: context.funexts().keys().all(|at| report.funexts.contains_key(at))
+    && context.relations().keys().all(|at| report.relations.contains_key(at)))]
+pub fn absorb(
+    report: &mut ModuleReport,
+    context: &CheckingContext<'_>,
+)
+{
+    report.funexts.extend(
+        context
+            .funexts()
+            .iter()
+            .map(|(&at, funext)| (at, funext.clone())),
+    );
+    report.equivalences.extend(
+        context
+            .equivalences()
+            .iter()
+            .map(|(&at, equivalence)| (at, equivalence.clone())),
+    );
+    report
+        .flows
+        .extend(context.flows().iter().map(|(&at, flow)| (at, flow.clone())));
+    report.directed.extend(
+        context
+            .directed()
+            .iter()
+            .map(|(&at, directed)| (at, directed.clone())),
+    );
+    report.reflexivities.extend(
+        context
+            .reflexivities()
+            .iter()
+            .map(|(&at, reflexivity)| (at, reflexivity.clone())),
+    );
+    report.relations.extend(
+        context
+            .relations()
+            .iter()
+            .map(|(&at, relations)| (at, relations.clone())),
+    );
+    report
+        .laws
+        .extend(context.laws().iter().map(|(&at, laws)| (at, laws.clone())));
+    report
+        .natives
+        .extend(context.natives().iter().map(|(&at, &native)| (at, native)));
+}
+
+/// The report a term-producing run's `entries` stand for, over the batch
+/// report `base`.
+///
+/// The checker's report with each verdict the entry's, every lift an output
+/// wrote explicit, and no conditional body.
+///
+/// # Specification
+/// - requires: `entries` come from one elaboration session over the bridge
+///   arena, in `base`'s order, and `base` is that session's batch report.
+/// - ensures: one [`Judged`] per entry, carrying its verdict — an accepted one
+///   over the emitted body; accepted bodies define their constants as emitted,
+///   owed entries form the ledger, suspended entries keep their suspensions and
+///   define nothing, and the lift side table holds only the lifts an output
+///   left beneath a former it reads as a leaf. Every other table is `base`'s.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — kernel readmission checks emitted terms without trusting
+///   residual premises or an implicit-lift side table.
+/// - witness: `elaboration::tests::every_fixture_the_checker_accepts_is_readmitted`
+/// - witness: `elaboration::tests::outputs_materialize_nested_lifts`
+#[spec(ensures: |ret| ret.judged.len() == entries.len()
+    && ret.suspensions.len() == entries.iter().filter(|entry| matches!(entry.outcome(), crate::elaboration::Outcome::Suspended(_))).count())]
+#[must_use]
+#[inline]
+pub fn elaborated_report(
+    base: &ModuleReport,
+    entries: &[crate::elaboration::Entry],
+) -> ModuleReport
+{
+    let mut report = base.clone();
+    report.judged = Vec::with_capacity(entries.len());
+    report.ledger = ObligationLedger::new();
+    report.lifts = BTreeMap::new();
+    report.suspensions = BTreeMap::new();
+    for entry in entries {
+        let verdict = entry.verdict();
+        match verdict {
+            Verdict::Owed(owed) => report.ledger.record(owed),
+            Verdict::Checked { body, .. } | Verdict::Synthesised { body, .. } => {
+                report.definitions.insert(entry.constant(), body);
+                report
+                    .lifts
+                    .extend(entry.lifts().iter().map(|(&at, lift)| (at, lift.clone())));
+            },
+            Verdict::Suspended(_) => {
+                report.definitions.remove(&entry.constant());
+                if let crate::elaboration::Outcome::Suspended(ref suspension) = *entry.outcome() {
+                    report
+                        .suspensions
+                        .insert(entry.constant(), suspension.clone());
+                }
+            },
+            Verdict::Data | Verdict::Refused(_) => {},
+        }
+        report.judged.push(Judged {
+            constant: entry.constant(),
+            origin: entry.origin(),
+            verdict,
+        });
+    }
+    report
 }
 
 /// Judge `declarations` in order, as [`check_module`] does, keeping the type

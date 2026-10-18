@@ -759,6 +759,9 @@ pub enum Outcome
     /// The judgement refused the declaration: the refusal is its mark, and the
     /// kernel was offered nothing.
     Marked(CheckRefusal),
+    /// The judgement suspended the declaration on owed holes: nothing is
+    /// offered until a fill resumes it, and a reader of it is withheld.
+    Suspended,
     /// The declaration is static: a type operator, classified by a static
     /// Pi, whose body normalizes away at every use, or a world, whose
     /// identity no kernel term carries. The kernel was offered nothing; each
@@ -1284,7 +1287,7 @@ where
         let definition = match judged.verdict() {
             Verdict::Checked { declared, body, .. } => Some((declared.id(), body)),
             Verdict::Synthesised { body, synthesised } => Some((synthesised.produced().id(), body)),
-            Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_) => None,
+            Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_) => None,
         };
         // A type operator — a definition whose type views as a static Pi — stays
         // on the checker's side; a type the view refuses is not one, and its
@@ -1362,6 +1365,7 @@ where
                 &vouch,
             ),
             (None, Verdict::Refused(refusal)) => (Outcome::Marked(refusal), Vec::new()),
+            (None, Verdict::Suspended(_)) => (Outcome::Suspended, Vec::new()),
             (None, Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
                 (Outcome::Refused(Refusal::MachineInvariant), Vec::new())
             },
@@ -1484,6 +1488,7 @@ fn block_offers<'report>(
                 | Verdict::Checked { .. }
                 | Verdict::Synthesised { .. }
                 | Verdict::Owed(_)
+                | Verdict::Suspended(_)
                 | Verdict::Refused(_),
                 _,
             ) => return Vec::new(),
@@ -1713,7 +1718,7 @@ enum Erased
         | Outcome::Refused(_) | Outcome::Rejected(_) =>
             environment.entries().len() == entries
             && positions.exports.len() == exports && positions.admitted.len() == crossed,
-        | Outcome::Marked(_) | Outcome::Static => false,
+        | Outcome::Marked(_) | Outcome::Suspended | Outcome::Static => false,
     },
 )]
 fn cross<Vouch>(

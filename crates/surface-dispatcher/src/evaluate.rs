@@ -301,7 +301,8 @@ enum Opacity
 {
     /// A native datatype declares constructors, not an executable value.
     Data,
-    /// It is owed its body: running into it is blame.
+    /// It is owed its body, or waits on holes that are: running into it is
+    /// blame.
     Owed,
     /// It was refused, by the lowering or the checker, or the checker accepted
     /// it and recorded no body: there is nothing to run.
@@ -649,7 +650,9 @@ impl<'source> Program<'source>
                         ),
                     }
                 },
-                (Some(Verdict::Owed(_)), _) => (Definition::Opaque, Slot::Opaque(Opacity::Owed)),
+                (Some(Verdict::Owed(_) | Verdict::Suspended(_)), _) => {
+                    (Definition::Opaque, Slot::Opaque(Opacity::Owed))
+                },
                 (
                     Some(
                         Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Refused(_),
@@ -685,7 +688,9 @@ impl<'source> Program<'source>
                 .filter(|judged| reaching.contains(&judged.constant()))
                 .filter_map(|judged| {
                     let declared = match judged.verdict() {
-                        Verdict::Checked { declared, .. } => declared.id(),
+                        Verdict::Checked { declared, .. } | Verdict::Suspended(declared) => {
+                            declared.id()
+                        },
                         Verdict::Synthesised { synthesised, .. } => synthesised.produced().id(),
                         Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_) => return None,
                     };

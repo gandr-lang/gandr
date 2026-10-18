@@ -1,0 +1,42 @@
+// What a suspension refuses. A decode of a filled code is rigid, so a value
+// of another type is refused there; a comparison between the decodes of two
+// owed codes has no rigid side, so it is the unifier's question and refused
+// here, not deferred; and a declaration with one comparison waiting and
+// another refused is refused, the refusal winning over the wait (Slattery and
+// Sterling, _Bidirectional Elaborators à la Carte_, arXiv:2607.09564,
+// Corollary 5.2).
+
+/// A code the module owes.
+@[ owes(1) ]
+def code : Type ;
+
+/// A second code the module owes.
+@[ owes(1) ]
+def other : Type ;
+
+/// A value the module owes at the second code's decode.
+@[ owes(1) ]
+def held : other ;
+
+/// A code filled with the string type.
+@[ checks ]
+def stringy : Type ;
+def stringy = String ;
+
+/// Three at the decode of the code filled with `String`: the comparison is
+/// rigid, and `Integer` is not `String`.
+@[ refuses("TypeMismatch") ]
+def threeAtString : stringy ;
+def threeAtString = 3 ;
+
+/// A value at one owed code's decode where another's is wanted: two holes and
+/// no rigid side.
+@[ refuses("TypeMismatch") ]
+def acrossHoles : code ;
+def acrossHoles = held ;
+
+/// A pair whose first component waits on `code` and whose second is a string
+/// where an integer stands: the refusal wins over the wait.
+@[ refuses("TypeMismatch") ]
+def halfWaiting : code * Integer ;
+def halfWaiting = (3, "three") ;

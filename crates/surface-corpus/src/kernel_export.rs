@@ -230,6 +230,9 @@ enum Class
     /// The checker accepted it with a hole or the unknown type, which the
     /// kernel has no image of: an unfinished program crosses nothing.
     Unfinished,
+    /// The checker suspended it on a hole its module owes, which nothing
+    /// crosses for until a fill resumes it.
+    Suspended,
     /// The checker accepted it holding a session, which the kernel has no
     /// former for: it stays on the checker's side.
     Session,
@@ -388,20 +391,21 @@ fn sources(root: Root) -> Vec<PathBuf>
 /// # Specification
 /// - requires: the checker verdict and kernel readmission agree: accepted
 ///   definitions or static operators, owed assumptions, matching refusal marks,
-///   accepted/owed declarations withheld by a dependency, accepted/owed
-///   declarations holding a hole or the unknown type, accepted declarations
-///   holding a session, or accepted/owed declarations holding a former the pure
-///   kernel has no rule for.
+///   suspended declarations crossing as nothing, accepted/owed declarations
+///   withheld by a dependency, accepted/owed declarations holding a hole or the
+///   unknown type, accepted declarations holding a session, or accepted/owed
+///   declarations holding a former the pure kernel has no rule for.
 /// - ensures: returns exactly the corresponding boundary class, retaining the
 ///   checker refusal’s canonical name for a mark.
 /// - panics: when the fixture’s verdict and readmission disagree.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the current corpus supplies readmitted definitions,
-///   assumptions, refusal marks, static declarations, withheld dependencies and
-///   holed declarations. Exact partition-to-artifact membership distinguishes
-///   admitting excluded declarations or losing admitted names; the predicate
-///   additionally states pair compatibility and exact class selection.
+///   assumptions, refusal marks, static declarations, withheld dependencies,
+///   holed declarations and suspended ones. Exact partition-to-artifact
+///   membership distinguishes admitting excluded declarations or losing
+///   admitted names; the predicate additionally states pair compatibility and
+///   exact class selection.
 /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
 /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
 #[spec(
@@ -430,7 +434,8 @@ fn sources(root: Root) -> Vec<PathBuf>
             | bridge::Refusal::OutOfFragment { .. }
         )),
     )
-    | (Verdict::Data, &(bridge::Outcome::Data { .. } | bridge::Outcome::Static)) => true,
+    | (Verdict::Data, &(bridge::Outcome::Data { .. } | bridge::Outcome::Static))
+    | (Verdict::Suspended(_), &bridge::Outcome::Suspended) => true,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) => refusal == mark,
     _ => false,
 },
@@ -451,7 +456,8 @@ fn sources(root: Root) -> Vec<PathBuf>
     )
     | (_, &bridge::Outcome::Refused(bridge::Refusal::Session { .. }), Class::Session)
     | (_, &bridge::Outcome::Refused(bridge::Refusal::Located { .. }), Class::Located)
-    | (Verdict::Data, &bridge::Outcome::Static, Class::World) => true,
+    | (Verdict::Data, &bridge::Outcome::Static, Class::World)
+    | (Verdict::Suspended(_), &bridge::Outcome::Suspended, Class::Suspended) => true,
     (
         _,
         &bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }),
@@ -480,6 +486,7 @@ fn class_of(
         (Verdict::Owed(_), &bridge::Outcome::Assumed { .. }) => Class::Assumed,
         (Verdict::Data, &bridge::Outcome::Data { .. }) => Class::Data,
         (Verdict::Data, &bridge::Outcome::Static) => Class::World,
+        (Verdict::Suspended(_), &bridge::Outcome::Suspended) => Class::Suspended,
         (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) if refusal == mark => {
             Class::Marked(Refusal::Checking(refusal).name())
         },

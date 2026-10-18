@@ -1253,6 +1253,35 @@ fn a_report_exposes_the_context_it_marks()
 }
 
 #[test]
+fn a_suspended_goal_names_the_hole_it_waits_on()
+{
+    let goals = printed(
+        Path::new("suspended.gandr"),
+        SourceRoot::Strict,
+        SourceText::from("def code : Type ;\ndef three : code ;\ndef three = 3 ;\n"),
+        Verb::Check(Goals::Reported),
+    );
+    let [ref hole, ref waiting] = *goals.as_slice()
+    else {
+        panic!("the hole and the declaration waiting on it are goals: {goals:?}");
+    };
+    assert_eq!(
+        (hole.severity, waiting.severity),
+        (Severity::Goal, Severity::Goal),
+        "a suspension is an obligation, not a refusal"
+    );
+    assert_eq!(
+        waiting.message.text,
+        "`three` states checks owing 0; produced checks owing 1; it waits on `code`"
+    );
+    assert!(
+        !hole.message.text.contains("waits on"),
+        "the hole itself waits on nothing: {}",
+        hole.message.text
+    );
+}
+
+#[test]
 fn a_labeled_context_retains_its_locus_and_cause()
 {
     let duplicate = "def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n";

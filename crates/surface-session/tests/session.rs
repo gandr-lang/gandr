@@ -121,14 +121,18 @@ fn checks() -> Outcome
 #[spec(
     ensures: |ret| match *typing {
     Typing::Synthesised { ref produced, .. } => produced.debruijn().map_or(ret.is_empty(), |table| *ret == table),
-    Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => ret.is_empty(),
+    Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Suspended | Typing::Refused(_) => ret.is_empty(),
 },
 )]
 fn produced(typing: &Typing) -> Vec<ContentNode>
 {
     match *typing {
         Typing::Synthesised { ref produced, .. } => produced.debruijn().unwrap_or_default(),
-        Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => Vec::new(),
+        Typing::Data
+        | Typing::Checked { .. }
+        | Typing::Owed
+        | Typing::Suspended
+        | Typing::Refused(_) => Vec::new(),
     }
 }
 

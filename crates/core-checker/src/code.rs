@@ -153,10 +153,17 @@ quenchant_shape::reason_enum! {
         /// The reason no body is held.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// No accepted definition at that position supplied a body: an
-            /// axiom, an owed hole, a refused declaration, or a position never
-            /// admitted.
+            /// No accepted definition at that position supplied a body, and
+            /// nothing waits on it: an axiom, a refused declaration, a
+            /// position never admitted, or a hole as the definitions table
+            /// reads it.
             Rigid,
+            /// The position is a hole the module owes: a judgement comparing
+            /// its decode with a constructor-headed type waits on it.
+            Owed,
+            /// The position is a declaration suspended on owed holes: a
+            /// judgement reading its type waits with it.
+            Waiting,
         }
     }
 }
