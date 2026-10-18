@@ -1128,6 +1128,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-shapes"
+version = "0.0.0"
+dependencies = [
+ "quenchant-anodized",
+]
+
+[[package]]
 name = "gandr-theory-sites"
 version = "0.0.0"
 dependencies = [
