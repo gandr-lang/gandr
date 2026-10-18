@@ -23,7 +23,7 @@ def fwdAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> -F b {
 }
 
 /// Transport back along a path between types: the map the round trips are
-/// stated over, and `idtoequiv`'s second inverse.
+/// stated over.
 @[ checks ]
 def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> -F a {
   transport(\X. X, back(p), y)
@@ -95,11 +95,10 @@ def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> -F Path(
 }
 
 /// Transport along a path between types as the bi-invertible map: the book's
-/// `idtoeqv`, cubical's `pathToEquiv`. The first inverse is the transport
+/// `idtoeqv`, cubical's `pathToEquiv`. Both inverses are the transport
 /// written out, which converts under its field's binder with the named map
-/// its law is stated over (#650), and `univalence`'s laws replay over it
-/// (#695); the second stays the named map, as the transport written out there
-/// does not yet replay (#698).
+/// its law is stated over (#650), and `univalence`'s laws replay over them
+/// (#695, #698).
 @[ checks ]
 def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> -F (a ≃ b) {
   return #{
@@ -109,7 +108,10 @@ def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> -F (a ≃ b) {
         thunk { fn (y) { transport(\X. X, back(p), y) } },
         thunk { fn (x) { sectAlong(a, b, p, x) } }
       },
-      #{thunk { fn (y) { bwdAlong(a, b, p, y) } }, thunk { fn (y) { retrAlong(a, b, p, y) } }}
+      #{
+        thunk { fn (y) { transport(\X. X, back(p), y) } },
+        thunk { fn (y) { retrAlong(a, b, p, y) } }
+      }
     }
   }
 }
