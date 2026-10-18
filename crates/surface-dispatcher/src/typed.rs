@@ -4391,6 +4391,31 @@ mod tests
         }
     }
 
+    /// #298: the patterns of a match a `run` binds answer at the scrutinee's
+    /// type, though the block's rewrite copies the match and its scrutinee.
+    #[test]
+    fn a_run_bound_match_s_patterns_answer_298()
+    {
+        let source = SourceText::from(
+            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\ndef rec skim(n : \
+             Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) => {\n      run _ <- \
+             case p {\n        Zero => return p,\n        Succ(r) => pure r,\n      } ;\n      \
+             become skim[<](p)\n    },\n  }\n}\n",
+        );
+        let table = table(source);
+        for (needle, ty) in [
+            ("Zero => return p", "Nat"),
+            ("(r) =>", "Nat"),
+            ("r) =>", "Nat"),
+        ] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(Subject::Binder, SourceText::from(ty)),
+                "`{needle}` answers at its place in the scrutinee"
+            );
+        }
+    }
+
     /// A split of a relation whose arm uses only `k` still names `t`, which
     /// the record's later fields mention: the remainder after `t` answers as
     /// two round trips through `k` and `t` (#665).

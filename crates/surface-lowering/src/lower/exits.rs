@@ -1659,13 +1659,19 @@ impl Sources
     ///
     /// # Specification
     /// - requires: `id` has no match record yet.
-    /// - ensures: a copy of a match's root carries that match's record.
+    /// - ensures: a copy of a match's root carries that match's record; where
+    ///   the source eliminates the value its record names and the copy
+    ///   eliminates a value of its own, the copy's record names the copy's, so
+    ///   the patterns answer where the run judged the copy (#298).
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a match carried under a binder keeps its patterns.
+    /// - hypothesis: L3 — a match carried under a binder keeps its patterns,
+    ///   and a match bound by a `run` whose block continues its local ends
+    ///   answers its patterns at the copy's scrutinee.
     /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
+    /// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
     #[spec(ensures: self.computations.get(&id).is_none_or(|&held| matches!(sink.origins.case(held), Maybe::Absent(_)) || matches!(sink.origins.case(id), Maybe::Present(_))))]
     pub(super) fn keep_case(
         &self,
@@ -1676,9 +1682,30 @@ impl Sources
         if let Some(&held) = self.computations.get(&id)
             && let Maybe::Present(case) = sink.origins.case(held)
         {
-            let kept = case.clone();
+            let mut kept = case.clone();
+            if let (Some(source), Some(copy)) = (
+                eliminated(sink.arena.computation(held)),
+                eliminated(sink.arena.computation(id)),
+            ) && kept.scrutinised == Maybe::Present(source)
+            {
+                kept.scrutinised = Maybe::Present(copy);
+            }
             sink.origins.record_case(id, kept);
         }
+    }
+}
+
+/// The value a case or a data case eliminates; nothing for any other node.
+///
+/// # Specification
+/// trivial.
+fn eliminated(node: Option<&Computation>) -> Option<ValueId>
+{
+    match node {
+        Some(&(Computation::Case { scrutinee, .. } | Computation::DataCase { scrutinee, .. })) => {
+            Some(scrutinee)
+        },
+        Some(_) | None => None,
     }
 }
 
