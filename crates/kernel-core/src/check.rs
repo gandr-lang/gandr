@@ -308,6 +308,7 @@ use crate::replay::EndpointReading;
 use crate::replay::ReplayBudget;
 use crate::replay::Unfoldable;
 use crate::replay::Unfoldings;
+use crate::replay::read_decode;
 use crate::replay::read_endpoints;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_comp_type;
@@ -520,7 +521,37 @@ fn read_returned(
     if structural == Convertibility::Distinct && judgement.related.is_empty() {
         return Ok(EndpointReading::Apart);
     }
-    let unfoldings = Unfoldings::new(
+    let unfoldings = entry_unfoldings(judgement);
+    if structural == Convertibility::Convertible
+        && read_endpoints(arena, &unfoldings, &pending, ReplayBudget::DEFAULT)
+            == EndpointReading::Converts
+    {
+        return Ok(EndpointReading::Converts);
+    }
+    if judgement.related.is_empty() {
+        return Ok(EndpointReading::Apart);
+    }
+    crate::element_identity::related_endpoints(arena, &unfoldings, judgement.related, goal)
+}
+
+/// The unfoldings a judgement's readings run at: the body of every admitted
+/// definition, every other entry opaque, and the judgement's presentations.
+///
+/// # Specification
+/// - ensures: one unfolding per entry of `judgement`, in order — the body of a
+///   definition, [`Unfoldable::Opaque`] for a datatype, an axiom or an abstract
+///   type — presenting the judgement's presentations.
+/// - executable: none — the unfoldings expose no per-constant listing to
+///   compare with the entries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a returned endpoint read through a definition, and a
+///   decode read through a call into a thunk, each read at these unfoldings.
+/// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
+/// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
+fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
+{
+    Unfoldings::new(
         judgement
             .entries
             .iter()
@@ -532,17 +563,61 @@ fn read_returned(
             })
             .collect(),
     )
-    .presenting(judgement.presentations.clone());
-    if structural == Convertibility::Convertible
-        && read_endpoints(arena, &unfoldings, &pending, ReplayBudget::DEFAULT)
-            == EndpointReading::Converts
-    {
-        return Ok(EndpointReading::Converts);
+    .presenting(judgement.presentations.clone())
+}
+
+/// The shape an introduction form needs of the type it checks at, for the
+/// forms whose check reads that type's head: a record, a list, an injection,
+/// a tuple and a thunk. Every other value checks by synthesis or by a rule of
+/// its own.
+///
+/// # Specification
+/// - ensures: `Some` of the shape the form's arm of the check refuses with, for
+///   exactly the six forms named; `None` for every other value and for an
+///   absent one.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tuple at a decode of a returned code reads the decode
+///   first and checks at the type it quotes.
+/// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
+#[spec(ensures: |ret| ret.is_some() == matches!(value, Some(Value::Record(_) | Value::ListNil | Value::ListCons(..) | Value::Injection(..) | Value::Tuple(_) | Value::Thunk(_))))]
+const fn introduced_shape(value: Option<&Value>) -> Option<ExpectedValueShape>
+{
+    let Some(value) = value
+    else {
+        return None;
+    };
+    match *value {
+        Value::Record(_) => Some(ExpectedValueShape::Record),
+        Value::ListNil | Value::ListCons(..) => Some(ExpectedValueShape::List),
+        Value::Injection(..) => Some(ExpectedValueShape::Sum),
+        Value::Tuple(_) => Some(ExpectedValueShape::Product),
+        Value::Thunk(_) => Some(ExpectedValueShape::Thunk),
+        Value::Here { .. }
+        | Value::Stay { .. }
+        | Value::Higher { .. }
+        | Value::HigherEvaluation { .. }
+        | Value::QuantifiedEvaluation { .. }
+        | Value::Constructor { .. }
+        | Value::Returned(_)
+        | Value::PathRefl(_)
+        | Value::PathProduct(..)
+        | Value::SessionPath { .. }
+        | Value::SessionFlow { .. }
+        | Value::ForwardFlow { .. }
+        | Value::FunctionFlow { .. }
+        | Value::Then { .. }
+        | Value::FlowProduct(..)
+        | Value::PathEquiv { .. }
+        | Value::Univalence { .. }
+        | Value::Variable(_)
+        | Value::Constant(_)
+        | Value::Literal(_)
+        | Value::Lift { .. }
+        | Value::Quote(_)
+        | Value::QuoteComputation(_)
+        | Value::StaticApplication(..) => None,
     }
-    if judgement.related.is_empty() {
-        return Ok(EndpointReading::Apart);
-    }
-    crate::element_identity::related_endpoints(arena, &unfoldings, judgement.related, goal)
 }
 
 /// The read-only inputs every judgement of one declaration stands on.
@@ -3079,6 +3154,33 @@ where
                         continue 'expand;
                     }
                     Produced::ValueType(datatype)
+                },
+                // An introduction form reads the head of the type it checks
+                // at, so a decode of a returned code is first read to the type
+                // the code quotes: the fibre a pair's second component checks
+                // at, instantiated at a first component its code calls into,
+                // is one (#721). A code that reads to no quote leaves the
+                // decode, which no introduction form checks at.
+                Goal::CheckValue(id, expected)
+                    if introduced_shape(arena.value(id)).is_some()
+                        && matches!(arena.value_type(expected), Some(&ValueType::Element { code, .. })
+                            if matches!(arena.value(code), Some(Value::Returned(_)))) =>
+                {
+                    let (Some(shape), Some(&ValueType::Element { code, .. })) = (
+                        introduced_shape(arena.value(id)),
+                        arena.value_type(expected),
+                    )
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let unfoldings = entry_unfoldings(judgement);
+                    let Some(decoded) =
+                        read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT)
+                    else {
+                        return Err(value_shape_mismatch(arena, shape, expected));
+                    };
+                    goal = Goal::CheckValue(id, decoded);
+                    continue 'expand;
                 },
                 Goal::CheckValue(id, expected) => match *read_value(arena, id)? {
                     Value::Record(ref values) => {
@@ -7278,6 +7380,77 @@ mod tests
             Ok(()),
             environment.add_decl(definition).map(|_admitted| ()),
             "the dependent identity admits through the checked choke point"
+        );
+    }
+
+    /// Admit `Σ (t : U (Unit → F Type)). U (Unit → F El(⟨force t ()⟩))` at
+    /// the pair `(thunk λ_. return ⌜quoted⌝, thunk λ_. return ())`, with
+    /// `quoted` minted by `quote`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_family_pair(
+        quote: impl FnOnce(&mut TermArena) -> ValueTypeId
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let definition = {
+            let mut staging = environment.stage();
+            let zero = level(LevelConstant::from(0));
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let returns_code = mint.comp_type_returner(universe);
+            let code_arrow = mint.comp_type_arrow(unit, returns_code);
+            let first = mint.value_type_thunk(code_arrow);
+            let family = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let forced = mint.computation_force(family);
+            let argument = mint.value_unit();
+            let call = mint.computation_application(forced, argument);
+            let code = mint.value_returned(call);
+            let decoded = mint.value_type_element(code, zero);
+            let returns_element = mint.comp_type_returner(decoded);
+            let element_arrow = mint.comp_type_arrow(unit, returns_element);
+            let second = mint.value_type_thunk(element_arrow);
+            let declared = mint.value_type_sigma(first, second);
+
+            let quoted = quote(mint);
+            let quoted = mint.value_quote(quoted);
+            let returns_quote = mint.computation_return(quoted);
+            let code_arm = mint.computation_lambda(returns_quote);
+            let code_thunk = mint.value_thunk(code_arm);
+            let unit_value = mint.value_unit();
+            let returns_unit = mint.computation_return(unit_value);
+            let element_arm = mint.computation_lambda(returns_unit);
+            let element_thunk = mint.value_thunk(element_arm);
+            let pair = mint.value_tuple(&[code_thunk, element_thunk]);
+            staging.def(LevelSignature::monomorphic(), declared, pair)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// A pair's second component checks at the fibre instantiated at its
+    /// first, whose decode reads a call into that first component: the check
+    /// reads the code to the quote it returns before it reads the shape the
+    /// component needs (#721). A first component returning `⌜Integer⌝` keeps
+    /// `()` apart, so the reading is the one that separates the two.
+    #[test]
+    fn a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721()
+    {
+        assert_eq!(
+            Ok(()),
+            admit_family_pair(TermArena::value_type_unit),
+            "the fibre decodes to the unit type its first component returns"
+        );
+        assert!(
+            matches!(
+                admit_family_pair(|mint| mint.value_type_base(BaseType::Integer)),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
+            ),
+            "a fibre decoding to the integers refuses the empty tuple"
         );
     }
 
