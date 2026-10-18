@@ -1304,9 +1304,10 @@ pub fn equal_type_syntax(
 ///   arguments, at most [`StaticSteps::ALLOWED`] times along one comparison; a
 ///   call of a function literal on no more arguments than the literal has
 ///   abstractions, whose body returns, is read as the value it returns, on the
-///   same steps; a call kept unelaborated is read as the value it returns; and
-///   a dependent arrow whose codomain names no binder is read as the plain
-///   arrow over its domain and its codomain strengthened.
+///   same steps, and a decode of such a call as the decode of what it returns
+///   (#736); a call kept unelaborated is read as the value it returns; and a
+///   dependent arrow is read as the plain arrow where its codomain reads as the
+///   arrow's codomain under the binder, which then names no binder.
 /// - provides: the comparison a printed type's reading back is held to: a type
 ///   of words has no name the surface writes, and is spelled as the path type
 ///   it reads as; a session type at a state is spelled as the protocol from
@@ -1333,7 +1334,8 @@ pub fn equal_type_syntax(
 ///   another type. A path between a call returned reads as one between the call
 ///   kept, and not as one between another call. A dependent arrow ignoring its
 ///   binder reads as the arrow, in either order; one naming its binder stays
-///   different.
+///   different. A decoded literal call reads as what it returns, and a
+///   dependent arrow whose binder only that call names as the arrow.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
@@ -1341,6 +1343,7 @@ pub fn equal_type_syntax(
 /// - witness: `syntax::tests::a_called_function_literal_reads_as_what_it_returns_675`
 /// - witness: `syntax::tests::a_kept_call_reads_as_the_value_it_returns`
 /// - witness: `syntax::tests::a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow`
+/// - witness: `syntax::tests::a_decoded_literal_call_reads_as_what_it_returns_736`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
 #[inline]
 #[must_use]
@@ -1482,7 +1485,8 @@ fn static_reduct(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: for a decode of a code [`static_reduct`] reduces, the decode of
+/// - ensures: for a decode of a code [`static_reduct`] reduces, or else of a
+///   call of a function literal [`called_reduct`] reduces (#736), the decode of
 ///   the reduct — the quoted type itself when the reduct is a quote — taken
 ///   again while it reduces and `steps` lasts, one step spent per reduction;
 ///   `ty` itself for every other type.
@@ -1498,6 +1502,7 @@ fn static_reduct(
 /// # Adequacy
 /// - hypothesis: L3 — as [`equal_type_reading`].
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
+/// - witness: `syntax::tests::a_decoded_literal_call_reads_as_what_it_returns_736`
 #[spec(ensures: |ret| ret == ty || arena.value_type(ret).is_some())]
 fn decoded_value_type(
     arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
@@ -1509,6 +1514,12 @@ fn decoded_value_type(
     while let Some(&ValueType::Element { code, ref target }) = arena.value_type(ty) {
         let target = target.clone();
         let reduct = static_reduct(arena, code);
+        let reduct = if reduct == code {
+            called_reduct(arena, steps, code)
+        }
+        else {
+            reduct
+        };
         if reduct == code {
             break;
         }
@@ -1549,6 +1560,12 @@ fn decoded_comp_type(
     while let Some(&CompType::Element { code, ref target }) = arena.comp_type(ty) {
         let target = target.clone();
         let reduct = static_reduct(arena, code);
+        let reduct = if reduct == code {
+            called_reduct(arena, steps, code)
+        }
+        else {
+            reduct
+        };
         if reduct == code {
             break;
         }
@@ -2134,9 +2151,9 @@ fn session_children(
 ///   a call of a function literal read as the value its body returns
 ///   ([`called_reduct`]), a call kept unelaborated read as the value it
 ///   returns, as the lowering keeps it where a type after it reads it, and a
-///   dependent arrow whose codomain names no binder read as the plain arrow
-///   over its domain and its codomain strengthened; under [`Reading::Syntax`]
-///   no reduction is performed.
+///   dependent arrow read as the plain arrow where its codomain reads as the
+///   arrow's codomain weakened past its binder; under [`Reading::Syntax`] no
+///   reduction is performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
 ///   second traversal pretending to be an independent postcondition.
 ///
@@ -3110,8 +3127,11 @@ fn equal_syntax(
                     ) => pending.extend([VT(a, c), CT(b, d)]),
                     // The surface reads `(x : A) -> C` as the plain arrow
                     // where `C` does not name `x`, and the printer spells a
-                    // dependent arrow whose codomain names no binder as that
-                    // arrow: read back, it is the arrow.
+                    // dependent arrow whose codomain, as printed, names no
+                    // binder as that arrow: read back, it is the arrow. The
+                    // codomain is compared with the arrow's weakened past the
+                    // binder, so a binder only a reduced call names (#736)
+                    // reads as the arrow too.
                     (
                         &CompType::Pi {
                             domain: a,
@@ -3132,10 +3152,12 @@ fn equal_syntax(
                             codomain: b,
                         },
                     ) if matches!(reading, Reading::Printed(_)) => {
-                        match crate::rewrite::strengthen_comp_type(arena.to_mut(), b) {
-                            Maybe::Present(b) => pending.extend([VT(a, c), CT(b, d)]),
-                            Maybe::Absent(_) => return CertificateEquality::Different,
-                        }
+                        let d = crate::rewrite::shift_comp_type(
+                            arena.to_mut(),
+                            d,
+                            crate::rewrite::Binders::ONE,
+                        );
+                        pending.extend([VT(a, c), CT(b, d)]);
                     },
                     (
                         &CompType::Element {
@@ -3595,6 +3617,71 @@ mod tests
             equal_type_reading(&arena, &signatures, staged, other),
             CertificateEquality::Different,
             "a staged type does not read as another type"
+        );
+    }
+
+    /// #736: a decode of a called function literal reads as the decode of
+    /// what the call returns, and a dependent arrow whose binder only that
+    /// call names reads as the plain arrow; one whose codomain still names
+    /// its binder once read stays different.
+    #[test]
+    fn a_decoded_literal_call_reads_as_what_it_returns_736()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let unit = arena.value_type_product(&[]);
+        let unit_code = arena.value_quote(unit);
+        let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        // `(thunk { fn (g) { return Unit } })(x)`, decoded.
+        let returns = arena.computation_return(unit_code);
+        let constant = arena.computation_lambda(returns);
+        let constant = arena.value_thunk(constant);
+        let forced = arena.computation_force(constant);
+        let called = arena.computation_application(forced, x);
+        let called = arena.value_returned(called);
+        let decoded = arena.value_type_element(called, Level::zero());
+        let held = arena.comp_type_returner(decoded);
+        let read = arena.comp_type_returner(unit);
+        let dependent = arena.comp_type_pi(unit, held);
+        let plain = arena.comp_type_arrow(unit, read);
+        // `(x : Unit) -> -F (x = x)`, whose codomain names its binder.
+        let path = arena.value_type_path(unit, x, x);
+        let path = arena.comp_type_returner(path);
+        let naming = arena.comp_type_pi(unit, path);
+        let (held, read, dependent, plain, naming) = (
+            arena.value_type_thunk(held),
+            arena.value_type_thunk(read),
+            arena.value_type_thunk(dependent),
+            arena.value_type_thunk(plain),
+            arena.value_type_thunk(naming),
+        );
+        for (left, right, what) in [
+            (
+                decoded,
+                unit,
+                "a decoded literal call against what it returns",
+            ),
+            (held, read, "the same under a returner"),
+            (
+                dependent,
+                plain,
+                "a dependent arrow whose binder only the call names against the arrow",
+            ),
+            (plain, dependent, "in either order"),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} read as one type and differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, naming, plain),
+            CertificateEquality::Different,
+            "a dependent arrow naming its binder does not read as the arrow"
         );
     }
 

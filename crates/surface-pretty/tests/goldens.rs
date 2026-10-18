@@ -1845,6 +1845,59 @@ fn a_run_bound_call_in_a_type_prints_nested_676()
     }
 }
 
+/// #736: a dependent arrow whose codomain decodes a called function literal
+/// prints its binder only where the literal's result names it. The binder
+/// handed to a literal returning `⌜Unit⌝` is spelled as the call's argument
+/// and dropped with it, so the arrow is the plain `Unit -> -F Unit` and the
+/// thunk over it the alias `Unit => Unit`; a literal returning its argument
+/// keeps it, `(a : Type) -> -F a`, and the thunk over that stays a thunk.
+#[test]
+fn a_binder_only_a_dropped_argument_names_is_unnamed_736()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let unit_code = core.value_quote(unit);
+    let binder = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+
+    let returns_unit = core.computation_return(unit_code);
+    let constant = core.computation_lambda(returns_unit);
+    let constant = core.value_thunk(constant);
+    let constant = core.computation_force(constant);
+    let dropped = core.computation_application(constant, binder);
+    let dropped = core.value_returned(dropped);
+    let dropped = core.value_type_element(dropped, Level::zero());
+    let dropped = core.comp_type_returner(dropped);
+    let dropped = core.comp_type_pi(unit, dropped);
+
+    let universe = small_universe(&mut core);
+    let returns_bound = core.computation_return(binder);
+    let identity = core.computation_lambda(returns_bound);
+    let identity = core.value_thunk(identity);
+    let identity = core.computation_force(identity);
+    let kept = core.computation_application(identity, binder);
+    let kept = core.value_returned(kept);
+    let kept = core.value_type_element(kept, Level::zero());
+    let kept = core.comp_type_returner(kept);
+    let kept = core.comp_type_pi(universe, kept);
+    let dropped_thunk = core.value_type_thunk(dropped);
+    let kept_thunk = core.value_type_thunk(kept);
+
+    let source = CoreSource::new(&core, &[]);
+    for (root, spelling) in [
+        (CoreNode::CompType(dropped), "Unit -> -F Unit"),
+        (CoreNode::CompType(kept), "(a : Type) -> -F a"),
+        (CoreNode::ValueType(dropped_thunk), "Unit => Unit"),
+        (CoreNode::ValueType(kept_thunk), "+U ((a : Type) -> -F a)"),
+    ] {
+        let presented = presented_in(&source, Root::Type(root), wide(), Form::Sugared);
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            (spelling, Fidelity::Faithful),
+            "the binder is named exactly where the printed codomain names it"
+        );
+    }
+}
+
 /// Every value leaf spells as the surface writes it — a signed integer,
 /// a numeric literal with and without a fraction, a string's escapes, the
 /// unit and a constant by its name — and a thunk, whose body a reader
