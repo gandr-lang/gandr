@@ -759,6 +759,7 @@ dependencies = [
  "quenchant-anodized",
  "quenchant-shape",
  "rayon",
+ "serde_json",
  "sysctl",
  "tracing",
 ]
