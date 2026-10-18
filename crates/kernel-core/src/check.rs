@@ -1250,6 +1250,27 @@ where
                             goal = TypeLevelGoal::Value(domain);
                             continue 'expand;
                         },
+                        // A bridge forms as an identity does, at its domain's
+                        // level with its endpoints owed, unless its domain
+                        // reaches a sealed atom: the relation there is the
+                        // abstraction's to choose, and is refused by name.
+                        ValueType::Bridge {
+                            domain,
+                            left,
+                            right,
+                        } => {
+                            crate::element_identity::require_unsealed(arena, domain)?;
+                            owed.push(CodeObligation::Endpoints {
+                                domain,
+                                left,
+                                right,
+                                context: context.clone(),
+                                stages: StageOrder::default(),
+                                scope: Owing::of(judgement),
+                            });
+                            goal = TypeLevelGoal::Value(domain);
+                            continue 'expand;
+                        },
                         ValueType::Base(_) => Level::zero(),
                         // A universe of either sort forms one level above the
                         // level it carries, in the universe of value types:
@@ -1480,7 +1501,7 @@ where
 /// - witness: `check::tests::an_abstract_type_forms_at_its_declared_universe`
 /// - witness: `check::tests::an_atom_naming_a_definition_is_not_an_abstract_type`
 /// - witness: `check::tests::a_forward_atom_reference_is_not_an_abstract_type`
-#[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind, .. }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe { sort: GroundSort::Value, ref level } => ret.as_ref().is_ok_and(|actual| actual == level), ValueType::Data { .. } | ValueType::Record(_) | ValueType::Session { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Staged { .. } => ret.is_err() }), _ => ret.is_err() })]
+#[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind, .. }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe { sort: GroundSort::Value, ref level } => ret.as_ref().is_ok_and(|actual| actual == level), ValueType::Data { .. } | ValueType::Record(_) | ValueType::Session { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Bridge { .. } | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Staged { .. } => ret.is_err() }), _ => ret.is_err() })]
 fn abstract_atom_level(
     arena: &TermArena,
     entries: &[AdmittedDeclaration],
@@ -1520,6 +1541,7 @@ fn abstract_atom_level(
         | ValueType::Abstract(_)
         | ValueType::Path { .. }
         | ValueType::Flow { .. }
+        | ValueType::Bridge { .. }
         | ValueType::StaticPi { .. }
         | ValueType::Staged { .. } => Err(KernelError::AbstractTypeKindNotUniverse {
             actual: value_type_witness(arena, kind),
@@ -1575,6 +1597,7 @@ fn static_classifier(
         | ValueType::Abstract(_)
         | ValueType::Path { .. }
         | ValueType::Flow { .. }
+        | ValueType::Bridge { .. }
         | ValueType::Staged { .. } => Err(KernelError::StaticClassifierExpected {
             actual: value_type_witness(arena, classifier),
         }),
@@ -2935,14 +2958,22 @@ where
                 // An introduction form checked at an identity checks at the
                 // fibre the identity fold computes for its domain and
                 // endpoints, or at a dependent pair's at a Σ domain, or at the
-                // words a looped point's free cells mint; `here`, the higher
+                // words a looped point's free cells mint; one checked at a
+                // bridge checks at the bridge fold's fibre. `here`, the higher
                 // forms and the neutrals take their own arms.
                 Goal::CheckValue(id, expected)
                     if crate::element_identity::goal_reading(arena, id, expected)
                         == crate::element_identity::GoalReading::Fibre =>
                 {
-                    let (domain, left, right) =
-                        crate::element_identity::path_parts(arena, expected)?;
+                    let (mode, domain, left, right) =
+                        crate::element_identity::related_parts(arena, expected)?;
+                    if mode == crate::identity_recursion::Mode::Bridge {
+                        goal = Goal::CheckValue(
+                            id,
+                            crate::element_identity::bridge_fibre(arena, domain, left, right)?,
+                        );
+                        continue 'expand;
+                    }
                     // A path whose one endpoint spells a looped point and whose
                     // other converts with it is those words: the value checks at
                     // the words, and the path then converts with them. A path
@@ -3128,6 +3159,7 @@ where
                             | ValueType::FlowUniverse(..)
                             | ValueType::Path { .. }
                             | ValueType::Flow { .. }
+                            | ValueType::Bridge { .. }
                             | ValueType::Base(_)
                             | ValueType::Product(_)
                             | ValueType::Sigma { .. }
@@ -5648,6 +5680,7 @@ where
                 | ValueType::Abstract(_)
                 | ValueType::Path { .. }
                 | ValueType::Flow { .. }
+                | ValueType::Bridge { .. }
                 | ValueType::StaticPi { .. }
                 | ValueType::Staged { .. } => {
                     return Err(KernelError::AbstractTypeKindNotUniverse {

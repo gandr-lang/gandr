@@ -979,7 +979,7 @@ impl TermArena
             ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|part| self.value_type(*part).is_some()),
             ValueType::StaticPi { domain: first, codomain: second } | ValueType::Sigma { first, second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
             ValueType::PathUniverse(first, second) | ValueType::FlowUniverse(first, second) => self.value(first).is_some() && self.value(second).is_some(),
-            ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => self.value_type(domain).is_some() && self.value(left).is_some() && self.value(right).is_some(),
+            ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } | ValueType::Bridge { domain, left, right } => self.value_type(domain).is_some() && self.value(left).is_some() && self.value(right).is_some(),
             ValueType::Thunk(body) => self.comp_type(body).is_some(),
             ValueType::Session { payloads, .. } => self.value_type(payloads).is_some(),
             ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => self.value_type(inner).is_some(),
@@ -2619,6 +2619,25 @@ impl TermArena
         })
     }
 
+    /// Mint the bridge `Br(A, a, b)` without claiming that it forms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_bridge(
+        &mut self,
+        domain: ValueTypeId,
+        left: ValueId,
+        right: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Bridge {
+            domain,
+            left,
+            right,
+        })
+    }
+
     /// Mint the diagonal `here(a)` with no endpoint dialogue, without claiming
     /// that it checks.
     ///
@@ -3066,7 +3085,7 @@ ValueType::StaticPi { domain: first, codomain: second } | ValueType::Sigma { fir
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
 ValueType::Session { payloads, .. } => ret.as_slice() == [AnyNode::ValueType(payloads)],
 ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
-ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)],
+ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } | ValueType::Bridge { domain, left, right } => ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)],
 ValueType::Thunk(body) => ret.as_slice() == [AnyNode::CompType(body)],
 ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => ret.as_slice() == [AnyNode::ValueType(inner)],
 ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
@@ -3376,6 +3395,11 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                         domain,
                         source: left,
                         target: right,
+                    }
+                    | &ValueType::Bridge {
+                        domain,
+                        left,
+                        right,
                     },
                 ) => {
                     children.extend([

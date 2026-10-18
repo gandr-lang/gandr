@@ -4,6 +4,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
@@ -12,6 +13,7 @@ use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueTypeId;
 
 use super::Clause;
+use super::Mode;
 use super::Relation;
 use super::RelationError;
 use super::RelationId;
@@ -59,14 +61,14 @@ pub enum Fiber
     Discrete(IndexId, IndexId),
     /// A case-indexed relation awaiting an injection at an index.
     Suspended(IndexId, IndexId),
-    /// The suspended product over two arguments and their relation premise,
-    /// in either mode: the bridge fold reaches only codes whose bridge fibres
-    /// coincide with their identity fibres, so both lower to the persisted
-    /// path at the classifier.
+    /// The suspended product over two arguments and their relation premise.
+    /// It lowers to the persisted identity at the classifier, or to the
+    /// persisted bridge in bridge mode: the family over argument bridges, not
+    /// over argument paths.
     Function
     {
         /// The thunk type both functions inhabit, and the domain of the
-        /// persisted path the fibre lowers to.
+        /// persisted identity or bridge the fibre lowers to.
         classifier: ValueTypeId,
         /// Both argument indices range over this type.
         argument: ValueTypeId,
@@ -77,12 +79,38 @@ pub enum Fiber
         /// The second function, including neutral projections.
         right: IndexId,
     },
+    /// A bridge between two codes of one value universe: the relations between
+    /// their elements, `U(El A → El B → F U)`, valued in that universe.
+    Relation
+    {
+        /// The value universe both codes inhabit.
+        universe: ValueTypeId,
+        /// The first code.
+        left: IndexId,
+        /// The second code.
+        right: IndexId,
+    },
+    /// A bridge between the tails of two lists, delayed: it lowers to the
+    /// persisted bridge at the list type, whose evidence reads one more step of
+    /// the relation lifting when it is checked.
+    Recursive
+    {
+        /// The list type both tails inhabit.
+        classifier: ValueTypeId,
+        /// The first tail.
+        left: IndexId,
+        /// The second tail.
+        right: IndexId,
+    },
 }
 
 /// One evaluated fibre, retaining symbolic indices rather than deciding them.
 #[derive(Clone, Debug)]
 pub struct Fibers
 {
+    /// The reading the fibres were computed in: it decides whether a function
+    /// fibre lowers to an identity or to a bridge.
+    mode: Mode,
     /// Index expressions in constructor order.
     indices: Vec<Index>,
     /// Fibre expressions in constructor order.
@@ -111,6 +139,19 @@ enum Task
     Pair,
     /// Retain a completed fibre for this call only.
     Remember(RelationId, IndexId, IndexId),
+    /// Delay a list tail's bridge at the list type.
+    Guard(ValueTypeId, IndexId, IndexId),
+}
+
+/// A list observation; a neutral is not a malformed value.
+enum ListShape
+{
+    /// The empty list.
+    Nil,
+    /// A visible cons cell, its head and its tail.
+    Cons(ValueId, ValueId),
+    /// Neither constructor is visible.
+    Neutral,
 }
 
 impl Relation
@@ -170,11 +211,11 @@ impl Relation
     )]
     #[spec(ensures: |ret| match ret {
         Ok(ref fibers) => fibers.root.0 < fibers.nodes.len()
-            && fibers.nodes.iter().enumerate().all(|(id, node)| match *node { Fiber::Product(a, b) => a.0 < id && b.0 < id, Fiber::Unit | Fiber::Empty | Fiber::Universe(..) | Fiber::Certificate(..) | Fiber::Discrete(..) | Fiber::Suspended(..) | Fiber::Function { .. } => true })
+            && fibers.nodes.iter().enumerate().all(|(id, node)| match *node { Fiber::Product(a, b) => a.0 < id && b.0 < id, Fiber::Unit | Fiber::Empty | Fiber::Universe(..) | Fiber::Certificate(..) | Fiber::Discrete(..) | Fiber::Suspended(..) | Fiber::Function { .. } | Fiber::Relation { .. } | Fiber::Recursive { .. } => true })
             && self.node(relation).is_ok_and(|node| matches!((node.clause, fibers.get(fibers.root)),
-                (Clause::Unit, Ok(Fiber::Unit)) | (Clause::Empty, Ok(Fiber::Empty)) | (Clause::Universe, Ok(Fiber::Universe(..))) | (Clause::Certificate, Ok(Fiber::Certificate(..))) | (Clause::Product(..), Ok(Fiber::Product(..))) | (Clause::Function(..), Ok(Fiber::Function { .. }))
-                | (Clause::Discrete | Clause::Sum(..) | Clause::CaseLeft(..) | Clause::CaseRight(..), Ok(_)))),
-        Err(RelationError::RecursiveObservationRequired) => self.nodes.iter().any(|node| matches!(node.clause, Clause::List(_))),
+                (Clause::Unit, Ok(Fiber::Unit)) | (Clause::Empty, Ok(Fiber::Empty)) | (Clause::Universe, Ok(Fiber::Universe(..))) | (Clause::Certificate, Ok(Fiber::Certificate(..))) | (Clause::Relation, Ok(Fiber::Relation { .. })) | (Clause::Product(..), Ok(Fiber::Product(..))) | (Clause::Function(..), Ok(Fiber::Function { .. }))
+                | (Clause::Discrete | Clause::Sum(..) | Clause::List(_) | Clause::CaseLeft(..) | Clause::CaseRight(..), Ok(_)))),
+        Err(RelationError::RecursiveObservationRequired) => self.mode == Mode::Identity && self.nodes.iter().any(|node| matches!(node.clause, Clause::List(_))),
         Err(_) => true,
     })]
     pub(super) fn fiber_at(
@@ -200,8 +241,8 @@ impl Relation
     ///   obligation itself rather than re-entering a nested check.
     /// - ensures: the same fibre graph [`Self::fiber`] computes at those
     ///   indices, with no typing side condition of its own.
-    /// - fails: unreadable program addresses, or a list fibre that needs its
-    ///   guarded observation.
+    /// - fails: unreadable program addresses, or an identity list fibre that
+    ///   needs its guarded observation.
     /// - panics: none.
     ///
     /// # Errors
@@ -228,8 +269,13 @@ impl Relation
     ///
     /// # Specification
     /// - requires: both indices inhabit the child's source and target types.
-    /// - ensures: the interpreted fibre graph, retaining residual fibres.
-    /// - fails: unreadable program addresses, or a list fibre.
+    /// - ensures: the interpreted fibre graph, retaining residual fibres. A
+    ///   bridge between lists is the relation lifting, one step at a time: two
+    ///   nils are related by Unit, a nil and a cons by Empty, two conses by the
+    ///   heads' bridge paired with the tails' delayed bridge; a neutral list
+    ///   suspends. A bridge between two codes of a universe is the relation
+    ///   fibre over their elements.
+    /// - fails: unreadable program addresses, or an identity list fibre.
     /// - panics: none.
     ///
     /// # Errors
@@ -248,6 +294,7 @@ impl Relation
     ) -> Result<Fibers, RelationError>
     {
         let mut result = Fibers {
+            mode: self.mode,
             indices: Vec::new(),
             nodes: Vec::new(),
             root: FiberId(0),
@@ -270,6 +317,11 @@ impl Relation
                     let left = values.pop().ok_or(RelationError::Arena)?;
                     Fiber::Product(left, right)
                 },
+                Task::Guard(classifier, left, right) => Fiber::Recursive {
+                    classifier,
+                    left,
+                    right,
+                },
                 Task::Visit(relation, left, right) => {
                     if let Some(&value) = completed.get(&(relation, left, right)) {
                         values.push(value);
@@ -282,9 +334,34 @@ impl Relation
                         Clause::Empty => Fiber::Empty,
                         Clause::Universe => Fiber::Universe(left, right),
                         Clause::Certificate => Fiber::Certificate(left, right),
+                        Clause::Relation => Fiber::Relation {
+                            universe: node.source,
+                            left,
+                            right,
+                        },
                         Clause::Discrete => result.discrete(arena, left, right)?,
-                        Clause::List(_) => {
-                            return Err(RelationError::RecursiveObservationRequired);
+                        Clause::List(element) => {
+                            if self.mode == Mode::Identity {
+                                return Err(RelationError::RecursiveObservationRequired);
+                            }
+                            match (result.list(arena, left)?, result.list(arena, right)?) {
+                                (ListShape::Nil, ListShape::Nil) => Fiber::Unit,
+                                (ListShape::Nil, ListShape::Cons(..))
+                                | (ListShape::Cons(..), ListShape::Nil) => Fiber::Empty,
+                                (ListShape::Cons(head, tail), ListShape::Cons(other, rest)) => {
+                                    let head = result.index(Index::Value(head), &mut shared);
+                                    let other = result.index(Index::Value(other), &mut shared);
+                                    let tail = result.index(Index::Value(tail), &mut shared);
+                                    let rest = result.index(Index::Value(rest), &mut shared);
+                                    tasks.push(Task::Pair);
+                                    tasks.push(Task::Guard(node.source, tail, rest));
+                                    tasks.push(Task::Visit(element, head, other));
+                                    continue;
+                                },
+                                (ListShape::Neutral, _) | (_, ListShape::Neutral) => {
+                                    Fiber::Suspended(left, right)
+                                },
+                            }
                         },
                         Clause::Function(argument, result) => {
                             let argument = self.node(argument)?;
@@ -340,6 +417,7 @@ impl Relation
                                 | Clause::Discrete
                                 | Clause::Universe
                                 | Clause::Certificate
+                                | Clause::Relation
                                 | Clause::Product(..)
                                 | Clause::Sum(..)
                                 | Clause::Function(..)
@@ -361,6 +439,7 @@ impl Relation
                                         | Clause::Discrete
                                         | Clause::Universe
                                         | Clause::Certificate
+                                        | Clause::Relation
                                         | Clause::Product(..)
                                         | Clause::Sum(..)
                                         | Clause::Function(..)
@@ -405,6 +484,17 @@ impl Fibers
     pub const fn root(&self) -> FiberId
     {
         self.root
+    }
+
+    /// The reading the fibres were computed in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn mode(&self) -> Mode
+    {
+        self.mode
     }
 
     /// Resolve a fibre expression.
@@ -459,12 +549,13 @@ impl Fibers
     /// - ensures: Unit, Empty, Product and universe fibres become native types.
     ///   Universe endpoints pass the existing path decoder; residuals are not
     ///   interpreted as either truth or falsity. A function fibre between two
-    ///   value indices is the persisted `Path` at its thunk type, in either
-    ///   mode: function identity has no first-order reduct, its inhabitants are
-    ///   the forms the persisted identity admits there — a higher or quantified
-    ///   evaluation, `here` and a neutral — and a bridge's function fibre is
-    ///   the same related-inputs product, because the bridge fold refuses the
-    ///   universe, the one clause whose bridge differs from its identity.
+    ///   value indices is the persisted `Path` at its thunk type, or in bridge
+    ///   mode the persisted `Bridge` there: a function has no first-order
+    ///   reduct, its inhabitants are the forms the persisted node admits — a
+    ///   higher or quantified evaluation and a neutral, and `here` at an
+    ///   identity alone. A relation fibre between two codes of `U` is the thunk
+    ///   type `U(El A → El B → F U)`, and a delayed list tail is the persisted
+    ///   `Bridge` at its list type.
     /// - fails: `NeutralFiber` on a residual or a function fibre at a neutral
     ///   projection; `HigherFieldRequired` on a certificate identity, `Path`
     ///   outside native endpoint formation, or `Arena` on invalid edges.
@@ -476,11 +567,13 @@ impl Fibers
     /// # Adequacy
     /// - hypothesis: L3 — cross injections lower to native Empty, while neutral
     ///   base equality never does; a function fibre lowers to its path type in
-    ///   both modes.
+    ///   identity mode and to its bridge type in bridge mode; a universe bridge
+    ///   lowers to its relation type.
     /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
     /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
     /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
     /// - witness: `identity_recursion::function::tests::function_clause_retains_related_inputs_and_neutrals`
+    /// - witness: `element_identity::bridge_tests::a_bridge_at_the_universe_is_a_relation`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -495,7 +588,9 @@ impl Fibers
                 || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Empty), Some(gandr_kernel_term::ValueType::Sum(parts))) if parts.is_empty())
                 || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Product(..)), Some(gandr_kernel_term::ValueType::Product(parts))) if parts.len() == 2_usize)
                 || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Universe(..)), Some(&gandr_kernel_term::ValueType::PathUniverse(..))))
-                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Function { classifier, .. }), Some(&gandr_kernel_term::ValueType::Path { domain, .. })) if domain == classifier)),
+                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Function { classifier, .. }), Some(&gandr_kernel_term::ValueType::Path { domain, .. })) if domain == classifier && self.mode == Mode::Identity)
+                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Function { classifier, .. }), Some(&gandr_kernel_term::ValueType::Bridge { domain, .. })) if domain == classifier && self.mode == Mode::Bridge)
+                || matches!((self.get(self.root), arena.value_type(ty)), (Ok(Fiber::Relation { .. }), Some(&gandr_kernel_term::ValueType::Thunk(_))))),
         Err(RelationError::HigherFieldRequired) => self.nodes.iter().any(|node| matches!(node, &Fiber::Certificate(..))),
         Err(_) => true,
     })]
@@ -541,7 +636,39 @@ impl Fibers
                     ..
                 } => {
                     let (left, right) = self.native_indices(left, right)?;
-                    arena.value_type_path(classifier, left, right)
+                    match self.mode {
+                        Mode::Identity => arena.value_type_path(classifier, left, right),
+                        Mode::Bridge => arena.value_type_bridge(classifier, left, right),
+                    }
+                },
+                Fiber::Relation {
+                    universe,
+                    left,
+                    right,
+                } => {
+                    let (left, right) = self.native_indices(left, right)?;
+                    let Some(&gandr_kernel_term::ValueType::Universe {
+                        sort: GroundSort::Value,
+                        ref level,
+                    }) = arena.value_type(universe)
+                    else {
+                        return Err(RelationError::Arena);
+                    };
+                    let level = level.clone();
+                    let left = arena.value_type_element(left, level.clone());
+                    let right = arena.value_type_element(right, level);
+                    let valued = arena.comp_type_returner(universe);
+                    let inner = arena.comp_type_arrow(right, valued);
+                    let relation = arena.comp_type_arrow(left, inner);
+                    arena.value_type_thunk(relation)
+                },
+                Fiber::Recursive {
+                    classifier,
+                    left,
+                    right,
+                } => {
+                    let (left, right) = self.native_indices(left, right)?;
+                    arena.value_type_bridge(classifier, left, right)
                 },
                 Fiber::Discrete(..) | Fiber::Suspended(..) => {
                     return Err(RelationError::NeutralFiber);
@@ -668,6 +795,46 @@ impl Fibers
                 _ => Ok(Injection::Neutral),
             },
             Index::First(_) | Index::Second(_) => Ok(Injection::Neutral),
+        }
+    }
+
+    /// Observe a list constructor without deciding equality of neutral
+    /// indices.
+    ///
+    /// # Specification
+    /// - ensures: a visible nil or cons cell, or a neutral observation for
+    ///   anything else, a projection of a neutral product among them.
+    /// - fails: `Arena` on an unreadable index.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// `RelationError::Arena`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list variable never selects nil or cons, so the
+    ///   bridge between it and a literal list stays suspended.
+    /// - witness: `element_identity::bridge_tests::a_bridge_at_a_recursive_code_is_the_relation_lifting`
+    #[spec(ensures: |ret| match ret {
+        Ok(ListShape::Nil) => self.get_index(index).is_ok_and(|term| matches!(term, Index::Value(value) if matches!(arena.value(value), Some(&Value::ListNil)))),
+        Ok(ListShape::Cons(head, tail)) => self.get_index(index).is_ok_and(|term| matches!(term, Index::Value(value) if matches!(arena.value(value), Some(&Value::ListCons(found, rest)) if found == head && rest == tail))),
+        Ok(ListShape::Neutral) => self.get_index(index).is_ok_and(|term| !matches!(term, Index::Value(value) if matches!(arena.value(value), Some(&(Value::ListNil | Value::ListCons(..)))))),
+        Err(RelationError::Arena) => self.get_index(index).is_err(),
+        Err(_) => false,
+    })]
+    fn list(
+        &self,
+        arena: &TermArena,
+        index: IndexId,
+    ) -> Result<ListShape, RelationError>
+    {
+        let index = self.get_index(index)?;
+        match index {
+            Index::Value(value) => match arena.value(value) {
+                Some(&Value::ListNil) => Ok(ListShape::Nil),
+                Some(&Value::ListCons(head, tail)) => Ok(ListShape::Cons(head, tail)),
+                _ => Ok(ListShape::Neutral),
+            },
+            Index::First(_) | Index::Second(_) => Ok(ListShape::Neutral),
         }
     }
 

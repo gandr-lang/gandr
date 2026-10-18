@@ -403,6 +403,7 @@ impl Relation
             | Clause::Discrete
             | Clause::Universe
             | Clause::Certificate
+            | Clause::Relation
             | Clause::Product(..)
             | Clause::Sum(..)
             | Clause::Function(..)

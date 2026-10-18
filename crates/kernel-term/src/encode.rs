@@ -878,6 +878,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&ValueType::FlowUniverse(..)) => tags::NODE_VT_FLOW_UNIVERSE,
             Some(&ValueType::Path { .. }) => tags::NODE_VT_PATH,
             Some(&ValueType::Flow { .. }) => tags::NODE_VT_FLOW,
+            Some(&ValueType::Bridge { .. }) => tags::NODE_VT_BRIDGE,
             Some(&ValueType::Base(_)) => tags::NODE_VT_BASE,
             Some(&ValueType::Universe { sort: GroundSort::Value, .. }) => tags::NODE_VT_UNIVERSE,
             Some(&ValueType::Universe { sort: GroundSort::Computation, .. }) => {
@@ -993,6 +994,7 @@ fn encode_entry(
                 ValueType::FlowUniverse(..) => out.put_tag(tags::NODE_VT_FLOW_UNIVERSE),
                 ValueType::Path { .. } => out.put_tag(tags::NODE_VT_PATH),
                 ValueType::Flow { .. } => out.put_tag(tags::NODE_VT_FLOW),
+                ValueType::Bridge { .. } => out.put_tag(tags::NODE_VT_BRIDGE),
                 ValueType::Universe {
                     sort: GroundSort::Value,
                     ref level,

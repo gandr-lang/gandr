@@ -55,6 +55,8 @@ pub enum ValueTypeHead
     Path,
     /// A directed identity type between two elements.
     Flow,
+    /// A bridge between two elements: a relation with no reflexivity.
+    Bridge,
     /// A rigid base-type atom.
     Base,
     /// A product, the unit type among them.
@@ -100,6 +102,7 @@ impl ValueTypeHead
             ValueType::FlowUniverse(..) => Self::FlowUniverse,
             ValueType::Path { .. } => Self::Path,
             ValueType::Flow { .. } => Self::Flow,
+            ValueType::Bridge { .. } => Self::Bridge,
             ValueType::Base(_) => Self::Base,
             ValueType::Element { .. } => Self::Element,
             ValueType::Product(..) => Self::Product,
@@ -1126,6 +1129,7 @@ mod tests
                 expected: unit,
                 actual: unit,
             }),
+            KernelError::Identity(IdentityError::BridgeAtSealedType(unit)),
         ];
         let descriptions = cases.each_ref().map(ToString::to_string);
         for (position, description) in descriptions.iter().enumerate() {

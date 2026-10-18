@@ -125,6 +125,7 @@ fn first_order(
             | &ValueType::FlowUniverse(..)
             | &ValueType::Path { .. }
             | &ValueType::Flow { .. }
+            | &ValueType::Bridge { .. }
             | &ValueType::Sigma { .. }
             | &ValueType::List(_)
             | &ValueType::Thunk(_)
@@ -365,6 +366,7 @@ fn patterns(
                 | &ValueType::FlowUniverse(..)
                 | &ValueType::Path { .. }
                 | &ValueType::Flow { .. }
+                | &ValueType::Bridge { .. }
                 | &ValueType::Sigma { .. }
                 | &ValueType::List(_)
                 | &ValueType::Thunk(_)

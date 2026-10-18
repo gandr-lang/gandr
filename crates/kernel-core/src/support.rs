@@ -1075,6 +1075,11 @@ impl LooseDepths
                             domain,
                             source: left,
                             target: right,
+                        }
+                        | ValueType::Bridge {
+                            domain,
+                            left,
+                            right,
                         } => {
                             tasks.push(ReachTask::OpenValueType(domain));
                             tasks.push(ReachTask::OpenValue(left));
@@ -1277,7 +1282,7 @@ ValueType::Data { ref arguments, .. } => arguments.iter().fold(LooseDepth(0), |d
 ValueType::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => LooseDepth(0),
 ValueType::PathUniverse(a, b) | ValueType::FlowUniverse(a, b) => self.cached_value(a).join(self.cached_value(b)),
-ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => self.cached_value_type(domain).join(self.cached_value(left)).join(self.cached_value(right)),
+ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } | ValueType::Bridge { domain, left, right } => self.cached_value_type(domain).join(self.cached_value(left)).join(self.cached_value(right)),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
 ValueType::StaticPi { domain: a, codomain: b } => self.cached_value_type(a).join(self.cached_value_type(b)),
 ValueType::Sigma { first, second } => self.cached_value_type(first).join(self.cached_value_type(second).under_binder()),
@@ -1316,6 +1321,11 @@ ValueType::Element { code, .. } => self.cached_value(code),
                 domain,
                 source: left,
                 target: right,
+            }
+            | ValueType::Bridge {
+                domain,
+                left,
+                right,
             } => self
                 .cached_value_type(domain)
                 .join(self.cached_value(left))

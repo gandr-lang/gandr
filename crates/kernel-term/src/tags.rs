@@ -31,13 +31,13 @@
 //!
 //! The tag space is one disjoint enumeration over four families, and this
 //! table is authoritative; [`NODE_TAG_TABLE`] supplies the assigned formers
-//! and their arities. Native paths have distinct bytes. Element identity holds
-//! `0x30–0x37` and function identity `0x38–0x47`; [Element and function
-//! identity](#element-and-function-identity) states each assigned node's
-//! children and inline payload, [The lazy product](#the-lazy-product) does
-//! the same for `0x65–0x67` and [The dependent pair](#the-dependent-pair) for
-//! `0x6A–0x6B`. The original `0x00–0x1F` meanings are frozen, including the
-//! static operators at `0x1E–0x1F`.
+//! and their arities. Native paths have distinct bytes. Element identity and
+//! the bridge hold `0x30–0x37` and function identity `0x38–0x47`; [Element and
+//! function identity](#element-and-function-identity) states each assigned
+//! node's children and inline payload, [The lazy product](#the-lazy-product)
+//! does the same for `0x65–0x67` and [The dependent pair](#the-dependent-pair)
+//! for `0x6A–0x6B`. The original `0x00–0x1F` meanings are frozen, including
+//! the static operators at `0x1E–0x1F`.
 //!
 //! | Byte or range | Meaning | Artifact reader |
 //! | ------------- | ------- | --------------- |
@@ -61,7 +61,8 @@
 //! | `0x33` | Guarded higher field, inline depth and layers, one evidence child per guard | Admitted |
 //! | `0x34` | Returned endpoint, one computation child | Admitted |
 //! | `0x35` | Telescope transport, motive (the dependent arrow over a two-entry telescope), path, source point, path over it and input children | Admitted |
-//! | `0x36–0x37` | Unassigned element-identity growth | Refused |
+//! | `0x36` | Bridge `Br`, value-type child and two endpoint value children | Admitted |
+//! | `0x37` | Unassigned element-identity growth | Refused |
 //! | `0x38` | Higher evaluation, inline dialogues and three value children per component | Admitted |
 //! | `0x39` | Related-inputs application, path, two arguments, evidence and a body under three binders | Admitted |
 //! | `0x3A` | Quantified evaluation: steps over returned values, evidence and stuck normal forms | Admitted |
@@ -156,9 +157,11 @@
 //! Element identity takes the higher-field reservation because the higher
 //! field is identity between identities: a higher cell inhabits an element
 //! path whose value type is itself an element path, so the former and its
-//! guarded inhabitant share one range. Function identity takes the funext
-//! reservation for the same reason the range was held: identity at a thunk
-//! code is the related-inputs product, introduced by higher evaluation.
+//! guarded inhabitant share one range. The bridge takes the range's next byte
+//! because the same fold computes its fibre, read in its non-fibrant mode.
+//! Function identity takes the funext reservation for the same reason the
+//! range was held: identity at a thunk code is the related-inputs product,
+//! introduced by higher evaluation.
 //!
 //! | byte | node | family | children, in order | inline payload |
 //! | ---- | ---- | ------ | ------------------ | -------------- |
@@ -168,15 +171,17 @@
 //! | `0x33` | [`NODE_V_HIGHER`] | value | one evidence value per guard layer, in layer order | depth, root, layer count, layers |
 //! | `0x34` | [`NODE_V_RETURNED`] | value | the pure computation whose returned value the node stands for | none |
 //! | `0x35` | [`NODE_C_TELESCOPE_TRANSPORT`] | computation | the motive, a computation type `Π (y : A). Π (z : B). F C`; the path; the second entry's source point; the path over the first; the input value | none |
+//! | `0x36` | [`NODE_VT_BRIDGE`] | value type | the value type `A`; endpoint values `a`, `b` | none |
 //! | `0x38` | [`NODE_V_HIGHER_EVALUATION`] | value | per component: left returned value, right returned value, output evidence | component count, then per component the left and the right dialogue |
 //! | `0x39` | [`NODE_C_RELATED_APPLICATION`] | computation | the function path; left and right arguments; argument evidence; the body under three value binders | none |
 //! | `0x3A` | [`NODE_V_QUANTIFIED_EVALUATION`] | value | per step, in pre-order: for a return, left returned value, right returned value, output evidence; for an application, the left and the right closed normal form | step count, then per step its step word and the left and the right dialogue |
 //!
-//! The two structural invariants the reader names rather than reporting as
-//! a bare polarity fault are an endpoint child of [`NODE_VT_PATH`] that is
-//! not a value, and a motive child of either transport that is not of its
-//! family: the motive of [`NODE_C_PATH_TRANSPORT`] is a type-level function,
-//! a value type scoped under the endpoint binder, and the motive of
+//! The two structural invariants the reader names rather than reporting as a
+//! bare polarity fault are an endpoint child of [`NODE_VT_PATH`] or
+//! [`NODE_VT_BRIDGE`] that is not a value, and a motive child of either
+//! transport that is not of its family: the motive of
+//! [`NODE_C_PATH_TRANSPORT`] is a type-level function, a value type scoped
+//! under the endpoint binder, and the motive of
 //! [`NODE_C_TELESCOPE_TRANSPORT`] is a computation type, the dependent arrow
 //! whose binders are the telescope. A higher-field layer is
 //! [`HIGHER_GUARD`] followed by its tail position, or [`HIGHER_REDIRECT`]
@@ -665,6 +670,13 @@ pub const NODE_V_RETURNED: WireTag = WireTag(0x34);
 /// refuses it whole instead of misreading a shorter node.
 pub const NODE_C_TELESCOPE_TRANSPORT: WireTag = WireTag(0x35);
 
+/// Node tag: the bridge `Br(A, a, b)`, over the value type `A` and the
+/// endpoint values `a` and `b`, framed as [`NODE_VT_PATH`].
+///
+/// The identity range's non-fibrant twin: the same fold computes its fibre,
+/// so it shares the range, and it has no reflexivity or transport node.
+pub const NODE_VT_BRIDGE: WireTag = WireTag(0x36);
+
 /// Node tag: higher evaluation, the introduction of identity at a thunk code,
 /// with inline replay dialogues over three values per coverage component.
 ///
@@ -1025,7 +1037,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1077,7 +1089,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1177,7 +1189,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 74] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 75] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1225,6 +1237,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 74] = [
     unbounded(NODE_V_HIGHER, ChildArity::Counted(0)),
     unbounded(NODE_V_RETURNED, ChildArity::Fixed(1)),
     unbounded(NODE_C_TELESCOPE_TRANSPORT, ChildArity::Fixed(5)),
+    unbounded(NODE_VT_BRIDGE, ChildArity::Fixed(3)),
     unbounded(NODE_V_HIGHER_EVALUATION, ChildArity::Counted(0)),
     unbounded(NODE_C_RELATED_APPLICATION, ChildArity::Fixed(5)),
     unbounded(NODE_V_QUANTIFIED_EVALUATION, ChildArity::Counted(0)),
@@ -1380,6 +1393,7 @@ mod tests
                         Some(&crate::ValueType::FlowUniverse(_, _)) => row.tag == super::NODE_VT_FLOW_UNIVERSE,
                         Some(&crate::ValueType::Path { .. }) => row.tag == super::NODE_VT_PATH,
                         Some(&crate::ValueType::Flow { .. }) => row.tag == super::NODE_VT_FLOW,
+                        Some(&crate::ValueType::Bridge { .. }) => row.tag == super::NODE_VT_BRIDGE,
                         Some(&crate::ValueType::List(_)) => row.tag == super::NODE_VT_LIST,
                         Some(&crate::ValueType::Session { .. }) => row.tag == super::NODE_VT_SESSION,
                         Some(&crate::ValueType::Staged { .. }) | None => false,
@@ -1460,6 +1474,7 @@ mod tests
         let telescope = arena.comp_type_pi(unit_type, pi);
         let telescope_transport =
             arena.computation_telescope_transport(telescope, here, unit, returned, literal);
+        let element_bridge = arena.value_type_bridge(unit_type, unit, literal);
         let evaluation = arena.value_higher_evaluation(
             alloc::sync::Arc::from([crate::EvaluationDialogues::default()]),
             alloc::boxed::Box::from([crate::EvaluationComponent {
@@ -1569,6 +1584,7 @@ mod tests
             AnyNode::Value(higher),
             AnyNode::Value(returned),
             AnyNode::Computation(telescope_transport),
+            AnyNode::ValueType(element_bridge),
             AnyNode::Value(evaluation),
             AnyNode::Computation(related),
             AnyNode::Value(quantified),
@@ -1671,6 +1687,7 @@ mod tests
                             | crate::ValueType::FlowUniverse(..)
                             | crate::ValueType::Path { .. }
                             | crate::ValueType::Flow { .. }
+                            | crate::ValueType::Bridge { .. }
                             | crate::ValueType::Base(_)
                             | crate::ValueType::Sigma { .. }
                             | crate::ValueType::List(_)
@@ -1732,13 +1749,13 @@ mod tests
                 !reserved.contains(&tag),
                 "an assigned former cannot consume a reserved sharing byte"
             );
-            let identity = matches!(tag, 0x30 ..= 0x35 | 0x38 ..= 0x3A | 0x48 ..= 0x4F);
+            let identity = matches!(tag, 0x30 ..= 0x36 | 0x38 ..= 0x3A | 0x48 ..= 0x4F);
             assert!(
                 identity || !(0x30_u8 .. 0x50).contains(&tag),
                 "only the assigned identity and flow bytes leave the identity, funext and flow ranges"
             );
         }
-        for unassigned in (0x36_u8 ..= 0x37).chain(0x3B ..= 0x47) {
+        for unassigned in core::iter::once(0x37_u8).chain(0x3B ..= 0x47) {
             assert!(
                 !assigned[usize::from(unassigned)],
                 "the unassigned identity growth names no former: {unassigned:#04x}"
@@ -1793,7 +1810,7 @@ mod tests
         let expected: Vec<_> = (0_u8 ..= 0x1f)
             .filter(|tag| !matches!(tag, 0x01 | 0x0B))
             .chain(0x2a ..= 0x2e)
-            .chain([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x38, 0x39, 0x3A])
+            .chain([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x38, 0x39, 0x3A])
             .chain(0x48 ..= 0x4F)
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x6b)

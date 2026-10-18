@@ -102,7 +102,7 @@ ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(),
 ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::List(_) | ValueType::Staged { .. } => 1,
-ValueType::Session { .. } | ValueType::FlowUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Base(_) | ValueType::Sigma { .. } | ValueType::Universe { .. } | ValueType::Abstract(_) => 0,
+ValueType::Session { .. } | ValueType::FlowUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Bridge { .. } | ValueType::Base(_) | ValueType::Sigma { .. } | ValueType::Universe { .. } | ValueType::Abstract(_) => 0,
 }),
         AnyNode::CompType(id) => match arena.comp_type(id) {
             Some(&CompType::Arrow { .. } | &CompType::Pi { .. } | &CompType::With(..)) => 2,
@@ -214,6 +214,7 @@ fn children(
             | ValueType::Session { .. }
             | ValueType::Path { .. }
             | ValueType::Flow { .. }
+            | ValueType::Bridge { .. }
             | ValueType::FlowUniverse(..) => {
                 panic!("recursive inhabitants stay outside the first-order path producer")
             },
@@ -598,6 +599,7 @@ fn translate(
                     | ValueType::Session { .. }
                     | ValueType::Path { .. }
                     | ValueType::Flow { .. }
+                    | ValueType::Bridge { .. }
                     | ValueType::FlowUniverse(..) => {
                         panic!("recursive inhabitants stay outside the first-order path producer")
                     },

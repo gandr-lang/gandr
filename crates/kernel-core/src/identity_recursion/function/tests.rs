@@ -612,13 +612,23 @@ fn function_clause_retains_related_inputs_and_neutrals()
         assert!(
             matches!(fiber.get(fiber.root()), Ok(Fiber::Function { argument, result, .. }) if argument == boolean.ty && result == boolean.ty)
         );
-        // The function fibre is the persisted path type in either mode: a
-        // bridge's fibre carries its type across as identity's does.
+        // The function fibre is the persisted identity in identity mode and
+        // the persisted bridge in bridge mode, at the thunk type either way.
         let lowered = fiber.native(&mut arena);
-        assert!(matches!(
-            lowered.ok().and_then(|ty| arena.value_type(ty)),
-            Some(&ValueType::Path { domain, left, right }) if domain == boolean.function && left == x && right == y
-        ));
+        let parts = match lowered.ok().and_then(|ty| arena.value_type(ty)) {
+            Some(&ValueType::Path {
+                domain,
+                left,
+                right,
+            }) if mode == Mode::Identity => Some((domain, left, right)),
+            Some(&ValueType::Bridge {
+                domain,
+                left,
+                right,
+            }) if mode == Mode::Bridge => Some((domain, left, right)),
+            _ => None,
+        };
+        assert_eq!(parts, Some((boolean.function, x, y)));
         let arguments = RelatedArguments {
             left: boolean.truth,
             right: boolean.truth,
@@ -1099,8 +1109,8 @@ fn a_higher_order_argument_binds_its_inner_fibre()
         [pattern.left, pattern.right, pattern.proof].map(|value| arena.value(value).cloned()),
         [variable(2), variable(1), variable(0)]
     );
-    // A bridge binds the same generic input: its premise is the persisted
-    // identity at the inner fibre, so its coverage needs no neutral fibre.
+    // A bridge binds the same generic input, two functions and the bridge
+    // between them: the family is over argument bridges, not argument paths.
     let bridge = relation(&arena, Mode::Bridge, code);
     let bridged = bridge
         .related_patterns(&mut arena, ReplayBudget::DEFAULT)
@@ -1116,7 +1126,7 @@ fn a_higher_order_argument_binds_its_inner_fibre()
     assert_eq!((bridged_first, bridged_second), (inner, inner));
     assert!(matches!(
         arena.value_type(bridged_premise),
-        Some(&ValueType::Path { domain, left, right })
+        Some(&ValueType::Bridge { domain, left, right })
             if domain == inner
                 && arena.value(left).cloned() == variable(1)
                 && arena.value(right).cloned() == variable(0)
@@ -1288,20 +1298,31 @@ fn a_premise_relates_the_two_entries_just_before_it_in_order()
     let inner = boolean(&mut arena).function;
     let [zero, one] = [0_u32, 1_u32].map(|index| arena.value_variable(DeBruijnIndex::from(index)));
     let premise = arena.value_type_path(inner, one, zero);
-    let classify = |arena: &TermArena, premise| {
+    let bridge = arena.value_type_bridge(inner, one, zero);
+    let classify = |arena: &TermArena, mode, premise| {
         super::premise_classifier(
             arena,
+            mode,
             &[inner, inner, premise],
             DeBruijnIndex::from(0_u32),
             Component(0),
         )
     };
-    assert!(matches!(classify(&arena, premise), Ok(domain) if domain == inner));
+    assert!(matches!(classify(&arena, Mode::Identity, premise), Ok(domain) if domain == inner));
+    assert!(matches!(classify(&arena, Mode::Bridge, bridge), Ok(domain) if domain == inner));
+    // Each reading's premise is its own former: a bridge relates no inputs of
+    // an identity's step, nor a path those of a bridge's.
+    for (mode, premise) in [(Mode::Identity, bridge), (Mode::Bridge, premise)] {
+        assert!(matches!(
+            classify(&arena, mode, premise),
+            Err(RelationError::QuantifiedStep(Component(0)))
+        ));
+    }
     for (left, right) in [(one, one), (zero, zero), (zero, one)] {
         let premise = arena.value_type_path(inner, left, right);
         assert!(
             matches!(
-                classify(&arena, premise),
+                classify(&arena, Mode::Identity, premise),
                 Err(RelationError::QuantifiedStep(Component(0)))
             ),
             "a premise binding its sides elsewhere is no premise"

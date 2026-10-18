@@ -3,7 +3,8 @@
 //! The fold builds an indexed relation program, not an equality decision.
 //! Its interpreter retains neutral fibres. Identity adds derived reflexivity
 //! and transport; bridge families carry neither obligation. Universe identity
-//! consumes `path_universe`; universe bridges classify these relation programs.
+//! consumes `path_universe`; a universe bridge is a relation between the two
+//! codes' elements.
 //!
 //! Handles refer to the original arena contents: callers must retain their
 //! code and value nodes, without truncating and reusing their addresses.
@@ -13,12 +14,13 @@
 //!
 //! The fold reads a closed code vocabulary with `Mode::Identity` or
 //! `Mode::Bridge`. Identity also reaches the level-zero value universe,
-//! including occurrences beneath the admitted formers. It is the rule set
-//! behind the persisted element-identity nodes: [`crate::element_identity`]
-//! reads its fibres to check `Path`, `here`, the higher forms and transport,
-//! and its clauses become their replay reductions. `Mode::Bridge` has no
-//! persisted node. Endpoints are ordinary typed values in an open context;
-//! unsupported codes are refused before interpretation.
+//! including occurrences beneath the admitted formers; a bridge reaches the
+//! value universe at every level. It is the rule set behind the persisted
+//! element-identity nodes: [`crate::element_identity`] reads its fibres to
+//! check `Path`, `here`, the higher forms and transport in identity mode and
+//! `Bridge` in bridge mode, and its clauses become their replay reductions.
+//! Endpoints are ordinary typed values in an open context; unsupported codes
+//! are refused before interpretation.
 //!
 //! `Interpretation::path` consumes an ordinary native `ValueId`, synthesizes
 //! it through the declaration checker's closed-value boundary and decodes the
@@ -26,18 +28,18 @@
 //! `KernelError` inside `RelationError::Typing`; endpoint failures retain
 //! `PathError`. No auxiliary path arena or formation cache participates.
 //!
-//! | Code | Relation clause | Identity structure |
-//! | ---- | --------------- | ------------------ |
-//! | Unit | Unit fibre at every pair of indices. | Unit witness; reflexive transport returns its input. |
-//! | Base | Discrete relation: identical indices give Unit; distinct canonical literals give Empty; unresolved neutral equality remains a relation. | Reflexivity is constructive; distinct variables are not assumed unequal. |
-//! | Sum | Matching injections recurse on their payloads; different injections give Empty. An unknown injection remains suspended. | Payload reflexivity and transport use the matching branch. |
-//! | Product | Component relations paired, including projections of neutral indices. | Componentwise reflexivity and composition; neither coordinate is dropped. |
-//! | Thunk `U (A → F B)` | Suspended product `Π a₀ a₁. Rel(A,a₀,a₁) → Rel(B,force f a₀,force g a₁)`, with the same mode on both premises; in either mode it lowers to the persisted `Path` at the thunk type. | `here` reflexivity, higher-evaluation (ap), quantified-evaluation and pointwise introduction; application transport replays both returners. |
-//! | List A | Lazy constructor relation; each Cons applies the already-folded element clause and delays its tail. | A complete finite observation records Unit or a distinguishing Empty fibre, depth and instruction count. |
-//! | Value universe at level zero | Identity only: native `PathUniverse` of the two indexed codes. | Native path reflexivity and certified translator replay. |
-//! | `PathUniverse` | Identity only: the higher record of two native certificates. | Pointwise forward/backward fields and both round-trip coherence obligations, observed separately. |
-//! | Abstract | Named interface obstruction, even for the same nominal atom. | Its declaration supplies a kind, not relation, reflexivity, transport and coherence fields. |
-//! | Codes | Identity consumes existing `Path_U` formation; bridges are checked indexed families over two element types. | Existing certified-equivalence and transport semantics are reused, not redefined. |
+//! | Code | Relation clause | Identity structure | Bridge structure |
+//! | ---- | --------------- | ------------------ | ---------------- |
+//! | Unit | Unit fibre at every pair of indices. | Unit witness; reflexive transport returns its input. | `()`, by the clause alone. |
+//! | Base | Discrete relation: identical indices give Unit; distinct canonical literals give Empty; unresolved neutral equality remains a relation. | Reflexivity is constructive; distinct variables are not assumed unequal. | The same discrete clause. |
+//! | Sum | Matching injections recurse on their payloads; different injections give Empty. An unknown injection remains suspended. | Payload reflexivity and transport use the matching branch. | The matching branch's bridge. |
+//! | Product | Component relations paired, including projections of neutral indices. | Componentwise reflexivity and composition; neither coordinate is dropped. | A tuple of the component bridges. |
+//! | Thunk `U (A → F B)` | Suspended product `Π a₀ a₁. Rel(A,a₀,a₁) → Rel(B,force f a₀,force g a₁)`, with the same mode on both premises; it lowers to the persisted `Path` at the thunk type in identity mode and to the persisted `Bridge` in bridge mode. | `here` reflexivity, higher-evaluation (ap), quantified-evaluation and pointwise introduction; application transport replays both returners. | The family over argument bridges, introduced only by a higher or a quantified evaluation; no `here`, no related application. |
+//! | List A | Lazy constructor relation; each Cons applies the already-folded element clause and delays its tail. | A complete finite observation records Unit or a distinguishing Empty fibre, depth and instruction count. | The relation lifting: Unit at two nils, Empty at a nil and a cons, and at two conses the heads' bridge beside the tails' persisted `Bridge`; a neutral list suspends. |
+//! | Value universe | Identity at level zero: native `PathUniverse` of the two indexed codes. Bridge at every level: the relation `El A → El B → F U`. | Native path reflexivity and certified translator replay. | A relation thunk, supplied, never derived from the codes. |
+//! | `PathUniverse` | Identity only: the higher record of two native certificates. | Pointwise forward/backward fields and both round-trip coherence obligations, observed separately. | Refused as an unsupported type. |
+//! | Abstract | Named interface obstruction, even for the same nominal atom. | Its declaration supplies a kind, not relation, reflexivity, transport and coherence fields. | `BridgeAtSealedType` at formation and at every reading, wherever the atom occurs in the domain. |
+//! | Codes | Identity consumes existing `Path_U` formation; bridges are checked indexed families over two element types. | Existing certified-equivalence and transport semantics are reused, not redefined. | `Relation::constant` and `Relation::cases`, in memory. |
 //!
 //! **Base choice.** These built-in scalar codes are discrete; their canonical
 //! data has decidable equality. This is not a nominal-identifier test for
@@ -56,8 +58,8 @@
 //! the full model laws of internal parametricity without an interval (Thorsten
 //! Altenkirch, Yorgo Chamoun, Ambrus Kaposi and Michael Shulman, "Internal
 //! Parametricity, without an Interval", POPL 2024, `doi:10.1145/3632920`).
-//! Bridge mode shares the code clauses but grants no automatic reflexivity or
-//! identity transport.
+//! Bridge mode shares the code clauses but grants no automatic reflexivity,
+//! no transport along a bridge and no J.
 //!
 //! Identity evidence checks against its computed fibre. `reflexivity`
 //! constructs the diagonal; `compose` transports in the first-order identity
@@ -84,8 +86,9 @@
 //! `Fibers::certificate` reuses `higher_field::unfold`, exposing the four
 //! obligations without deciding them. Lowering this record to a native
 //! first-order type returns `HigherFieldRequired`. This is the stopping point,
-//! not a claim of infinite coherence. Nested universe bridges, higher universe
-//! levels and an extensional conversion rule are outside the fold.
+//! not a claim of infinite coherence. Universe identity above level zero and
+//! an extensional conversion rule are outside the fold; a universe bridge is
+//! read at every level (§ Bridges).
 //!
 //! **Universe choice.** Reusing the native former keeps path checking and
 //! replay authoritative; a second equivalence arena or discrete comparison
@@ -122,13 +125,17 @@
 //! f₁ : T` and `p : Path(T, f₀, f₁)`, with `f₀` the source argument and `f₁`
 //! the target. Nothing is sampled and nothing is split, so a higher-order
 //! argument is one generic pattern. A function fibre lowers to the persisted
-//! `Path` at its thunk type in either mode, which is what makes both ends
-//! checkable: the premise is the bound `p`, and a function-valued output is
-//! related by `p`, by `here` or by a nested higher evaluation. A bridge binds
-//! the same generic input; its fold refuses only the universe, so the persisted
-//! identity at the inner fibre is its premise too. The admitted function code
-//! is the non-dependent arrow `U (A → F B)`; dependent arrows, universe and
-//! recursive codes are outside this clause.
+//! `Path` at its thunk type in identity mode and to the persisted `Bridge` in
+//! bridge mode, which is what makes both ends checkable: the premise is the
+//! bound `p`, and a function-valued output is related by `p`, by a nested
+//! higher evaluation or, in identity mode, by `here`. A bridge binds the same
+//! generic input with the bridge between the two functions as its premise. A
+//! universe coordinate is bridge mode's alone: two codes and a relation
+//! between their elements, `X₀ X₁ : U` and `R : U (El X₀ → El X₁ → F U)`, one
+//! generic pattern again, whose relation no quantified step applies. The
+//! admitted function code is the non-dependent arrow `U (A → F B)`; dependent
+//! arrows and arguments of a recursive code are outside this clause, and so is
+//! a universe coordinate of an identity.
 //!
 //! A body that applies its higher-order argument, `λh. force h v`, is stuck at
 //! the generic pattern: it returns no value there, so a higher evaluation's
@@ -185,6 +192,43 @@
 //! complete dependent funext additionally requires its substitution and
 //! fibrancy laws.
 //!
+//! # Bridges
+//!
+//! A bridge is the non-fibrant reading of the same fold. `Bridge(A, a₀, a₁)`
+//! is a persisted node formed like `Path`, and its evidence checks against
+//! the fibre this fold computes in bridge mode, the bridge column of the table
+//! above. At a function code `U (A → F B)` it is the family over argument
+//! bridges, `(a₀ a₁ : A) (ā : Br A a₀ a₁) → Br B (f a₀) (g a₁)`, introduced by
+//! the higher and quantified evaluations that introduce funext, every premise
+//! a bridge. At the value universe of any level it is the relation `El A → El
+//! B → F U` between the codes' elements, the span the universe clause of
+//! internal parametricity names, read as its fibration. At a list it is the
+//! relation lifting, one constructor at a time, with the tails' bridge left as
+//! the persisted node so that each step is finite.
+//!
+//! The clauses grant nothing else: `here`, related application and transport
+//! at a bridge are refused by shape, and a bridge has no diagonal. A domain
+//! that reaches a sealed atom — itself, a function's result, a list's
+//! elements — is refused as `BridgeAtSealedType`; the relation an atom bears
+//! is its interface's to supply. Dependent arrows, functions over a list
+//! argument, the path universe and a bridge at a bridge are refused by name
+//! (`element_identity::bridge_tests::the_codes_outside_the_bridge_clauses_are_refused_by_name`).
+//!
+//! **Choice.** The clauses are those of internal parametricity without an
+//! interval (Altenkirch, Chamoun, Kaposi and Shulman, POPL 2024, cited above),
+//! in the identity recursion's vocabulary: one fold, with identity its fibrant
+//! case and the bridge its non-fibrant one, so each code's bridge is the
+//! clause its identity already has, read without reflexivity. **Alternatives.**
+//! An affine bridge interval (Evan Cavallo and Robert Harper, "Internal
+//! Parametricity for Cubical Type Theory", LMCS 17(4:5), 2021), or the nominal
+//! name abstraction `И` of nullary internal parametricity (Antoine Van Muylder,
+//! Andreas Nuyts and Dominique Devriese, "Nominal Type Theory by Nullary
+//! Internal Parametricity", arXiv:2512.09464): each adds a variable sort and a
+//! substructural context discipline the kernel does not have, for a diagonal
+//! these clauses do not need. **Reversal.** A consumer that needs a bridge's
+//! diagonal, such as the graph of a function as a bridge in the universe, or
+//! transport along a bridge, needs the interval or the name.
+//!
 //! # Native fibres and admission
 //!
 //! Computed fibres lower to the native unit (the empty product), the empty
@@ -203,16 +247,17 @@
 //! with call-local tables. Those tables grant no admission capability or
 //! conversion authority. Declaration admission includes the native empty sum,
 //! finite Lists with nil, cons and pure fold, universe paths, and the persisted
-//! element-identity nodes: `Path`, `here`, transport, higher fields, higher
-//! evaluation and related application. No receipt admits an in-memory relation
-//! program, a bridge relation or a guarded list inhabitant.
+//! element-identity nodes: `Path`, `Bridge`, `here`, transport, higher fields,
+//! higher evaluation and related application. No receipt admits an in-memory
+//! relation program or a guarded list inhabitant.
 //!
 //! **Choice.** One code fold produces relation combinators; a shared evaluator
 //! computes both modes, while only identity carries reflexivity and transport.
 //! Separate per-mode recursions would duplicate the former clauses. The
 //! persisted syntax over this fold, with its dependent motives and
 //! substitution law, is [`crate::element_identity`]'s. **Reversal.** Accepting
-//! Abstract requires its missing interface, not a default relation.
+//! Abstract requires its missing interface, not a default relation; in bridge
+//! mode that interface is its relation.
 //!
 //! # Witnesses
 //!
@@ -222,7 +267,10 @@
 //! and a malformed elimination of the empty sum. Function-specific boundaries
 //! include omitted or extra coverage, reused component dialogues, forged
 //! returned values, unchecked argument relations, bridge transport and
-//! application-motive action. No mutation score is claimed.
+//! application-motive action. The bridge witnesses in
+//! `element_identity::bridge_tests` compute each bridge clause beside the
+//! identity reading of the same code, and the readmission witness replays the
+//! persisted node. No mutation score is claimed.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -360,6 +408,10 @@ enum Clause
     Universe,
     /// Identity of certificates is observed through its higher record fields.
     Certificate,
+    /// Bridges between two codes of one value universe: the relations between
+    /// their elements, valued in that universe. Bridge mode only, at every
+    /// level.
+    Relation,
     /// Related product coordinates, independently.
     Product(RelationId, RelationId),
     /// Matching injections recurse; different injections have empty fibre.
@@ -562,8 +614,9 @@ impl core::error::Error for RelationError
 /// - ensures: Unit, Base, Sum, Product, List and pure function thunks each
 ///   contribute one clause in either mode. Identity additionally reaches the
 ///   level-zero value universe as native paths and path certificates as higher
-///   fields. Abstract refuses before nominal comparison. Codes selects
-///   certified paths or indexed relation families.
+///   fields; a bridge reaches every value universe as its relations. Abstract
+///   refuses before nominal comparison. Codes selects certified paths or
+///   indexed relation families.
 /// - provides: a flat iterative fold; it never compares endpoint elements.
 /// - fails: `UnsupportedCode`, `UnsupportedType`, `AbstractInterface`, `Arena`.
 /// - panics: none.
@@ -587,6 +640,7 @@ impl core::error::Error for RelationError
             Clause::Product(a, b) | Clause::Sum(a, b) | Clause::Function(a, b) => a.0 < index && b.0 < index,
             Clause::List(element) => element.0 < index,
             Clause::Universe | Clause::Certificate => mode == Mode::Identity,
+            Clause::Relation => mode == Mode::Bridge,
             Clause::Unit | Clause::Discrete => true,
             Clause::Empty | Clause::CaseLeft(..) | Clause::CaseRight(..) => false,
         }),
@@ -625,6 +679,10 @@ pub fn interpret(
                 sort: GroundSort::Value,
                 ref level,
             } if mode == Mode::Identity && *level == Level::zero() => Clause::Universe,
+            ValueType::Universe {
+                sort: GroundSort::Value,
+                ..
+            } if mode == Mode::Bridge => Clause::Relation,
             ValueType::PathUniverse(..) if mode == Mode::Identity => Clause::Certificate,
 
             ValueType::Base(_) => Clause::Discrete,
@@ -652,6 +710,7 @@ pub fn interpret(
                     | ValueType::FlowUniverse(..)
                     | ValueType::Path { .. }
                     | ValueType::Flow { .. }
+                    | ValueType::Bridge { .. }
                     | ValueType::Base(_)
                     | ValueType::Product(_)
                     | ValueType::Sigma { .. }
@@ -704,6 +763,7 @@ pub fn interpret(
             | ValueType::FlowUniverse(..)
             | ValueType::Path { .. }
             | ValueType::Flow { .. }
+            | ValueType::Bridge { .. }
             | ValueType::Sigma { .. }
             | ValueType::Universe { .. }
             | ValueType::Lift { .. }
@@ -1022,7 +1082,8 @@ impl Relation
                 | Clause::Empty
                 | Clause::Discrete
                 | Clause::Universe
-                | Clause::Certificate) => clause,
+                | Clause::Certificate
+                | Clause::Relation) => clause,
             };
             left.nodes.push(node);
         }

@@ -340,6 +340,21 @@ pub enum ValueType
         /// The target endpoint, produced covariantly.
         target: ValueId,
     },
+    /// The bridge `Br(A, a, b)` between two values of one value type: the
+    /// relation the identity fold computes in its non-fibrant reading.
+    /// Formation checks both endpoints at the domain and requires the domain
+    /// closed, free of sealed atoms and inside the bridge fold; an introduction
+    /// form checks against the bridge fibre the kernel computes there. No
+    /// reflexivity, transport or eliminator belongs to it.
+    Bridge
+    {
+        /// The value type the endpoints inhabit.
+        domain: ValueTypeId,
+        /// The source endpoint.
+        left: ValueId,
+        /// The target endpoint.
+        right: ValueId,
+    },
     /// A rigid base-type atom.
     Base(BaseType),
     /// The product of its components, in order: `Product([])` is the unit
@@ -505,7 +520,7 @@ impl ValueType
     /// - hypothesis: L3 — a product of two parts, the unit and the empty type
     ///   separate the product reading from the sum reading.
     /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
-    #[spec(ensures: |ret| match *self { Self::Product(ref parts) => ret == Some(&**parts), Self::Data { .. } | Self::Record(_) | Self::Session { .. } | Self::PathUniverse(..) | Self::FlowUniverse(..) | Self::Path { .. } | Self::Flow { .. } | Self::Base(_) | Self::Sigma { .. } | Self::Sum(_) | Self::List(_) | Self::Thunk(_) | Self::Universe { .. } | Self::Lift { .. } | Self::Element { .. } | Self::Abstract(_) | Self::Staged { .. } | Self::StaticPi { .. } => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Product(ref parts) => ret == Some(&**parts), Self::Data { .. } | Self::Record(_) | Self::Session { .. } | Self::PathUniverse(..) | Self::FlowUniverse(..) | Self::Path { .. } | Self::Flow { .. } | Self::Bridge { .. } | Self::Base(_) | Self::Sigma { .. } | Self::Sum(_) | Self::List(_) | Self::Thunk(_) | Self::Universe { .. } | Self::Lift { .. } | Self::Element { .. } | Self::Abstract(_) | Self::Staged { .. } | Self::StaticPi { .. } => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn product_parts(&self) -> Option<&[ValueTypeId]>
@@ -519,6 +534,7 @@ impl ValueType
             | Self::FlowUniverse(..)
             | Self::Path { .. }
             | Self::Flow { .. }
+            | Self::Bridge { .. }
             | Self::Base(_)
             | Self::Sigma { .. }
             | Self::Sum(_)
@@ -544,7 +560,7 @@ impl ValueType
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::product_parts`].
     /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
-    #[spec(ensures: |ret| match *self { Self::Sum(ref summands) => ret == Some(&**summands), Self::Data { .. } | Self::Record(_) | Self::Session { .. } | Self::PathUniverse(..) | Self::FlowUniverse(..) | Self::Path { .. } | Self::Flow { .. } | Self::Base(_) | Self::Product(_) | Self::Sigma { .. } | Self::List(_) | Self::Thunk(_) | Self::Universe { .. } | Self::Lift { .. } | Self::Element { .. } | Self::Abstract(_) | Self::Staged { .. } | Self::StaticPi { .. } => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Sum(ref summands) => ret == Some(&**summands), Self::Data { .. } | Self::Record(_) | Self::Session { .. } | Self::PathUniverse(..) | Self::FlowUniverse(..) | Self::Path { .. } | Self::Flow { .. } | Self::Bridge { .. } | Self::Base(_) | Self::Product(_) | Self::Sigma { .. } | Self::List(_) | Self::Thunk(_) | Self::Universe { .. } | Self::Lift { .. } | Self::Element { .. } | Self::Abstract(_) | Self::Staged { .. } | Self::StaticPi { .. } => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn summands(&self) -> Option<&[ValueTypeId]>
@@ -558,6 +574,7 @@ impl ValueType
             | Self::FlowUniverse(..)
             | Self::Path { .. }
             | Self::Flow { .. }
+            | Self::Bridge { .. }
             | Self::Base(_)
             | Self::Product(_)
             | Self::Sigma { .. }

@@ -1478,7 +1478,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Record(ref fields) => fields.values().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
             ValueType::Session { payloads, .. } => self.placed.contains_key(&AnyNode::ValueType(payloads)),
             ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => self.placed.contains_key(&AnyNode::Value(source)) && self.placed.contains_key(&AnyNode::Value(target)),
-            ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => self.placed.contains_key(&AnyNode::ValueType(domain)) && self.placed.contains_key(&AnyNode::Value(left)) && self.placed.contains_key(&AnyNode::Value(right)),
+            ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } | ValueType::Bridge { domain, left, right } => self.placed.contains_key(&AnyNode::ValueType(domain)) && self.placed.contains_key(&AnyNode::Value(left)) && self.placed.contains_key(&AnyNode::Value(right)),
             ValueType::Base(_) | ValueType::Universe { sort: GroundSort::Value, .. } | ValueType::Universe { sort: GroundSort::Computation, .. } | ValueType::Abstract(_) => true,
             ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
             ValueType::StaticPi { domain: first, codomain: second } | ValueType::Sigma { first, second } => self.placed.contains_key(&AnyNode::ValueType(first))
@@ -1496,6 +1496,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::FlowUniverse(..) => gandr_kernel_term::NODE_VT_FLOW_UNIVERSE,
             ValueType::Path { .. } => gandr_kernel_term::NODE_VT_PATH,
             ValueType::Flow { .. } => gandr_kernel_term::NODE_VT_FLOW,
+            ValueType::Bridge { .. } => gandr_kernel_term::NODE_VT_BRIDGE,
             ValueType::List(_) => gandr_kernel_term::NODE_VT_LIST,
             ValueType::Base(..) => gandr_kernel_term::NODE_VT_BASE,
             ValueType::Universe { sort: GroundSort::Value, .. } => gandr_kernel_term::NODE_VT_UNIVERSE,
@@ -1567,6 +1568,16 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::Value(source)));
                 record.put_content(self.content_of(AnyNode::Value(target)));
             },
+            ValueType::Bridge {
+                domain,
+                left,
+                right,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_VT_BRIDGE);
+                record.put_content(self.content_of(AnyNode::ValueType(domain)));
+                record.put_content(self.content_of(AnyNode::Value(left)));
+                record.put_content(self.content_of(AnyNode::Value(right)));
+            },
             ValueType::Base(base) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_BASE);
                 record.put_tag(base_tag(base));
@@ -1595,6 +1606,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     | ValueType::FlowUniverse(..)
                     | ValueType::Path { .. }
                     | ValueType::Flow { .. }
+                    | ValueType::Bridge { .. }
                     | ValueType::Base(_)
                     | ValueType::Sigma { .. }
                     | ValueType::Sum(_)
@@ -1817,7 +1829,7 @@ ValueType::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode
 ValueType::Base(_) | ValueType::Universe {..} | ValueType::Abstract(_) => opened.eq((core::iter::empty()).map(Some)),
 ValueType::Session {payloads: inner,..} | ValueType::List(inner) | ValueType::Lift {inner,..} | ValueType::Staged {base: inner,..} => opened.eq((core::iter::once(AnyNode::ValueType(inner))).map(Some)),
 ValueType::PathUniverse(a,b) | ValueType::FlowUniverse(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
-ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } => opened.eq(([AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)].into_iter()).map(Some)),
+ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } | ValueType::Bridge { domain, left, right } => opened.eq(([AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)].into_iter()).map(Some)),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => opened.eq((parts.iter().copied().map(AnyNode::ValueType)).map(Some)),
 ValueType::StaticPi {domain:a,codomain:b} | ValueType::Sigma {first:a,second:b} => opened.eq(([AnyNode::ValueType(a),AnyNode::ValueType(b)].into_iter()).map(Some)),
 ValueType::Thunk(body) => opened.eq((core::iter::once(AnyNode::CompType(body))).map(Some)),
@@ -2158,6 +2170,11 @@ fn push_children(
                     domain,
                     source: left,
                     target: right,
+                }
+                | &ValueType::Bridge {
+                    domain,
+                    left,
+                    right,
                 },
             ) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(domain)));

@@ -105,6 +105,7 @@ pub(super) fn code(
             | &ValueType::FlowUniverse(..)
             | &ValueType::Path { .. }
             | &ValueType::Flow { .. }
+            | &ValueType::Bridge { .. }
             | &ValueType::Sigma { .. }
             | &ValueType::Thunk(_)
             | &ValueType::Universe { .. }
@@ -213,6 +214,7 @@ fn patterns(
                     | &ValueType::FlowUniverse(..)
                     | &ValueType::Path { .. }
                     | &ValueType::Flow { .. }
+                    | &ValueType::Bridge { .. }
                     | &ValueType::Sigma { .. }
                     | &ValueType::List(_)
                     | &ValueType::Thunk(_)

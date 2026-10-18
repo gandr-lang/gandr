@@ -320,6 +320,7 @@ pub use crate::tags::NODE_V_UNIVALENCE;
 pub use crate::tags::NODE_V_VARIABLE;
 pub use crate::tags::NODE_VT_ABSTRACT;
 pub use crate::tags::NODE_VT_BASE;
+pub use crate::tags::NODE_VT_BRIDGE;
 pub use crate::tags::NODE_VT_COMPUTATION_UNIVERSE;
 pub use crate::tags::NODE_VT_DATA;
 pub use crate::tags::NODE_VT_ELEMENT;

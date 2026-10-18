@@ -229,10 +229,6 @@ fn universe_clause_is_native()
         fiber.certificate(&mut arena, budget),
         Err(HigherError::Relation(RelationError::Classifier))
     ));
-    assert!(matches!(
-        interpret(&arena, Mode::Bridge, Domain::Elements(universe_code)),
-        Err(RelationError::UnsupportedType(_))
-    ));
     // A path universe is a certificate clause of the identity reading, and
     // outside the bridge's vocabulary.
     let unit_type = arena.value_type_unit();

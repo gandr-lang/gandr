@@ -2147,6 +2147,15 @@ fn decode_entry(
             let id = table.arena.value_type_path(domain, left, right);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
+        tags::NODE_VT_BRIDGE => {
+            let domain = read_value_type(reader, table, this, &mut children)?;
+            let left = read_value(reader, table, this, &mut children)
+                .map_err(|error| named_polarity(error, MalformedSite::BridgeEndpoint))?;
+            let right = read_value(reader, table, this, &mut children)
+                .map_err(|error| named_polarity(error, MalformedSite::BridgeEndpoint))?;
+            let id = table.arena.value_type_bridge(domain, left, right);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
         tags::NODE_V_HERE => {
             let left = decode_dialogue(reader)?;
             let right = decode_dialogue(reader)?;
@@ -5725,6 +5734,9 @@ mod tests
                 super::DecodedNode::Computation(c1),
                 &[6, 5, 1, 5, 1],
             ),
+            (&[0x36, 4, 5, 1], super::DecodedNode::ValueType(vt1), &[
+                4, 5, 1,
+            ]),
             (
                 &[0x38, 1, 1, 11, 0, 5, 1, 5],
                 super::DecodedNode::Value(v1),
@@ -5741,11 +5753,18 @@ mod tests
                 &[5, 5, 5, 1, 5],
             ),
         ];
-        let expected_value_types = [ValueType::Path {
-            domain: vt1,
-            left: v1,
-            right: v0,
-        }];
+        let expected_value_types = [
+            ValueType::Path {
+                domain: vt1,
+                left: v1,
+                right: v0,
+            },
+            ValueType::Bridge {
+                domain: vt1,
+                left: v1,
+                right: v0,
+            },
+        ];
         let expected_values = [
             Value::Here {
                 point: v1,
@@ -5861,6 +5880,12 @@ mod tests
             }),
             (&[0x30, 4, 5, 2], DecodeError::Malformed {
                 site: MalformedSite::PathEndpoint,
+            }),
+            (&[0x36, 4, 3, 1], DecodeError::Malformed {
+                site: MalformedSite::BridgeEndpoint,
+            }),
+            (&[0x36, 4, 5, 2], DecodeError::Malformed {
+                site: MalformedSite::BridgeEndpoint,
             }),
             (&[0x32, 5, 5, 1], DecodeError::Malformed {
                 site: MalformedSite::TransportMotive,

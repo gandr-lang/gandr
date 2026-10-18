@@ -330,6 +330,7 @@ fn enter(
                 | ValueType::Staged { base: inner, .. }
                 | ValueType::Path { domain: inner, .. }
                 | ValueType::Flow { domain: inner, .. }
+                | ValueType::Bridge { domain: inner, .. }
                 | ValueType::Session {
                     payloads: inner, ..
                 } => steps.push(Step::Enter(Node::ValueType(inner))),
@@ -493,6 +494,19 @@ fn exit_value_type(
             }
             else {
                 arena.value_type_flow(rebuilt, source, target)
+            }
+        },
+        ValueType::Bridge {
+            domain,
+            left,
+            right,
+        } => {
+            let rebuilt = done.value_type(domain)?;
+            if rebuilt == domain {
+                id
+            }
+            else {
+                arena.value_type_bridge(rebuilt, left, right)
             }
         },
         ValueType::Session { graph, payloads } => {

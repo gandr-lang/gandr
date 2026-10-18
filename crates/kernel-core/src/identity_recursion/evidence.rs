@@ -435,11 +435,14 @@ impl Fibers
     /// - ensures: Unit, pairs and checked native path reflexivity are
     ///   constructive; code syntax inequality never establishes Empty. A
     ///   function fibre at one function is `here` of it, the persisted
-    ///   reflexivity its path type admits by conversion, in either mode.
+    ///   reflexivity its path type admits by conversion; a bridge has no
+    ///   reflexivity, so a bridge-mode function fibre, a relation fibre and a
+    ///   delayed list tail have no diagonal.
     /// - fails: `Evidence` on Empty, `NeutralFiber` on a residual, `Arena` on
     ///   invalid addresses; `HigherEvaluationRequired` at two distinct
-    ///   functions; named higher or explicit-certificate requirements and
-    ///   native path formation errors retain their causes.
+    ///   functions; `NonFibrant` at a bridge's function, relation or list-tail
+    ///   fibre; named higher or explicit-certificate requirements and native
+    ///   path formation errors retain their causes.
     /// - panics: none.
     ///
     /// # Errors
@@ -453,7 +456,8 @@ impl Fibers
     /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
     /// - witness: `identity_recursion::function::tests::lambda_reflexivity_replays_higher_evaluation`
     #[spec(ensures: |ret| match (self.get(self.root()), &ret) {
-        (Ok(Fiber::Empty), &Err(RelationError::Evidence)) | (Ok(Fiber::Function { .. }), &Err(RelationError::HigherEvaluationRequired | RelationError::NeutralFiber)) | (Ok(Fiber::Certificate(..)), &Err(RelationError::HigherFieldRequired))
+        (Ok(Fiber::Empty), &Err(RelationError::Evidence)) | (Ok(Fiber::Function { .. }), &Err(RelationError::HigherEvaluationRequired | RelationError::NeutralFiber | RelationError::NonFibrant)) | (Ok(Fiber::Certificate(..)), &Err(RelationError::HigherFieldRequired))
+        | (Ok(Fiber::Relation { .. } | Fiber::Recursive { .. }), &Err(RelationError::NonFibrant))
         | (Ok(Fiber::Discrete(..) | Fiber::Suspended(..)), &Err(RelationError::NeutralFiber))
         | (Ok(Fiber::Universe(..) | Fiber::Product(..)), &Err(_)) | (Err(_), &Err(RelationError::Arena)) => true,
         (Ok(Fiber::Unit), &Ok(value)) => matches!(arena.value(value).and_then(gandr_kernel_term::Value::components), Some(&[])),
@@ -499,7 +503,8 @@ impl Fibers
     ///   universe pairs the unit diagonal with native path reflexivity.
     /// - witness: `element_identity::tests::a_higher_field_checks_and_computes_square_symmetry`
     #[spec(ensures: |ret| match (self.get(self.root()), ret.as_ref()) {
-        (Ok(Fiber::Empty), Err(&RelationError::Evidence)) | (Ok(Fiber::Function { .. }), Err(&(RelationError::HigherEvaluationRequired | RelationError::NeutralFiber))) | (Ok(Fiber::Certificate(..)), Err(&RelationError::HigherFieldRequired))
+        (Ok(Fiber::Empty), Err(&RelationError::Evidence)) | (Ok(Fiber::Function { .. }), Err(&(RelationError::HigherEvaluationRequired | RelationError::NeutralFiber | RelationError::NonFibrant))) | (Ok(Fiber::Certificate(..)), Err(&RelationError::HigherFieldRequired))
+        | (Ok(Fiber::Relation { .. } | Fiber::Recursive { .. }), Err(&RelationError::NonFibrant))
         | (Ok(Fiber::Discrete(..) | Fiber::Suspended(..)), Err(&RelationError::NeutralFiber))
         | (Ok(Fiber::Universe(..) | Fiber::Product(..)), Err(_)) | (Err(_), Err(&RelationError::Arena)) => true,
         (Ok(Fiber::Unit), Ok(diagonal)) => diagonal.universe.is_empty() && matches!(arena.value(diagonal.value).and_then(gandr_kernel_term::Value::components), Some(&[])),
@@ -565,12 +570,18 @@ impl Fibers
                             continue;
                         },
                         Fiber::Empty => return Err(RelationError::Evidence),
+                        Fiber::Function { .. } if self.mode() == super::Mode::Bridge => {
+                            return Err(RelationError::NonFibrant);
+                        },
                         Fiber::Function { left, right, .. } if left == right => {
                             let (point, _) = self.native_indices(left, right)?;
                             arena.value_here(point)
                         },
                         Fiber::Function { .. } => {
                             return Err(RelationError::HigherEvaluationRequired);
+                        },
+                        Fiber::Relation { .. } | Fiber::Recursive { .. } => {
+                            return Err(RelationError::NonFibrant);
                         },
                         Fiber::Discrete(..) | Fiber::Suspended(..) => {
                             return Err(RelationError::NeutralFiber);

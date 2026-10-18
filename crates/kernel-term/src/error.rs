@@ -298,6 +298,8 @@ pub enum MalformedSite
     /// A motive child of a telescope ride was not a computation type, so it
     /// was not the dependent arrow over the telescope.
     TelescopeRideMotive,
+    /// An endpoint child of a `Bridge` was not a value.
+    BridgeEndpoint,
     /// A higher-field program named a layer position it does not hold.
     HigherLayer,
     /// The magic did not match a gandr kernel export.
@@ -383,6 +385,7 @@ impl fmt::Display for MalformedSite
             Self::FlowEndpoint => "a flow endpoint was not a value",
             Self::RideMotive => "a ride motive was not a value type",
             Self::TelescopeRideMotive => "a telescope ride motive was not a computation type",
+            Self::BridgeEndpoint => "a bridge endpoint was not a value",
             Self::HigherLayer => "a higher-field layer position was out of range",
             Self::Header => "the artifact magic did not match",
             Self::Varint => "a varint was overlong or out of range",
@@ -632,6 +635,7 @@ mod tests
             MalformedSite::FlowEndpoint,
             MalformedSite::RideMotive,
             MalformedSite::TelescopeRideMotive,
+            MalformedSite::BridgeEndpoint,
         ] {
             names.push(format!("{site}"));
             check_sink(&site);
