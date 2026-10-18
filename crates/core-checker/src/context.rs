@@ -22,8 +22,11 @@
 //! A dependent type is rewritten as it is read — a binder's type shifted to
 //! the depth it is read at, a codomain instantiated at its argument, a quote's
 //! universe minted at its type's level — so the context holds the arena
-//! mutably and the judgement mints into it. Every node minted is a type the
-//! judgement reads; no term the producer built is changed.
+//! mutably and the judgement mints into it. A shift mints nothing until it is
+//! settled: a variable's slot type reaches the value bridge as a relocated id
+//! the conversion reads through, and every other rule settles it where it
+//! reads it. Every node minted is a type the judgement reads; no term the
+//! producer built is changed.
 //!
 //! # Resolution by admission position
 //!

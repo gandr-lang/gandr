@@ -182,8 +182,8 @@ fn round_trip(
         Trip::Retraction => (OTHER_PAST_ONE, FORWARD_PAST_TWO),
     };
     let past_maps = Binders::ONE.deeper();
-    let domain = shift_value_type(arena, carrier, past_maps);
-    let over = shift_value_type(arena, carrier, past_maps.deeper());
+    let domain = shift_value_type(arena, carrier, past_maps).settle(arena);
+    let over = shift_value_type(arena, carrier, past_maps.deeper()).settle(arena);
     let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(inner));
     let forced = arena.computation_force(first);
@@ -226,8 +226,8 @@ pub fn quasi_inverse(
 ) -> ValueTypeId
 {
     let forward = map_type(arena, from, to);
-    let from_past = shift_value_type(arena, from, Binders::ONE);
-    let to_past = shift_value_type(arena, to, Binders::ONE);
+    let from_past = shift_value_type(arena, from, Binders::ONE).settle(arena);
+    let to_past = shift_value_type(arena, to, Binders::ONE).settle(arena);
     let backward = map_type(arena, to_past, from_past);
     let section = round_trip(arena, from, Trip::Section);
     let retraction = round_trip(arena, to, Trip::Retraction);
@@ -262,8 +262,8 @@ pub fn bi_invertible(
 ) -> ValueTypeId
 {
     let forward = map_type(arena, from, to);
-    let from_past = shift_value_type(arena, from, Binders::ONE);
-    let to_past = shift_value_type(arena, to, Binders::ONE);
+    let from_past = shift_value_type(arena, from, Binders::ONE).settle(arena);
+    let to_past = shift_value_type(arena, to, Binders::ONE).settle(arena);
     let left_map = map_type(arena, to_past, from_past);
     let section = round_trip(arena, from, Trip::Section);
     let left = arena.value_type_sigma(left_map, section);
@@ -304,7 +304,7 @@ pub fn univalence_forward(
     record: ValueId,
 ) -> ValueId
 {
-    let lifted = shift_value(arena, record, Binders::ONE);
+    let lifted = shift_value(arena, record, Binders::ONE).settle(arena);
     let projected = arena.computation_tuple_projection(lifted, crate::Component::from(0_usize));
     let map = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let forced = arena.computation_force(map);
@@ -358,8 +358,8 @@ pub fn back(
     path: ValueId,
 ) -> ComputationId
 {
-    let lifted_carrier = shift_value_type(arena, carrier, Binders::ONE);
-    let lifted_fixed = shift_value(arena, fixed, Binders::ONE);
+    let lifted_carrier = shift_value_type(arena, carrier, Binders::ONE).settle(arena);
+    let lifted_fixed = shift_value(arena, fixed, Binders::ONE).settle(arena);
     let endpoint = moving(arena);
     let motive = arena.value_type_path(lifted_carrier, endpoint, lifted_fixed);
     let base = arena.value_here(fixed);
@@ -397,8 +397,8 @@ pub fn then(
     second: ValueId,
 ) -> ComputationId
 {
-    let lifted_carrier = shift_value_type(arena, carrier, Binders::ONE);
-    let lifted_start = shift_value(arena, start, Binders::ONE);
+    let lifted_carrier = shift_value_type(arena, carrier, Binders::ONE).settle(arena);
+    let lifted_start = shift_value(arena, start, Binders::ONE).settle(arena);
     let endpoint = moving(arena);
     let motive = arena.value_type_path(lifted_carrier, lifted_start, endpoint);
     arena.computation_path_transport(motive, second, first)
@@ -436,8 +436,8 @@ pub fn back_flow(
     flow: ValueId,
 ) -> ComputationId
 {
-    let lifted_carrier = shift_value_type(arena, carrier, Binders::ONE);
-    let lifted_fixed = shift_value(arena, fixed, Binders::ONE);
+    let lifted_carrier = shift_value_type(arena, carrier, Binders::ONE).settle(arena);
+    let lifted_fixed = shift_value(arena, fixed, Binders::ONE).settle(arena);
     let endpoint = moving(arena);
     let motive = arena.value_type_flow(lifted_carrier, endpoint, lifted_fixed);
     let base = arena.value_stay(fixed);
@@ -480,7 +480,7 @@ pub fn cong(
     path: ValueId,
 ) -> ComputationId
 {
-    let lifted_function = shift_value(arena, function, Binders::ONE);
+    let lifted_function = shift_value(arena, function, Binders::ONE).settle(arena);
     cong_lifted(arena, codomain, lifted_function, start, path)
 }
 
@@ -519,8 +519,8 @@ pub fn cong_lifted(
     path: ValueId,
 ) -> ComputationId
 {
-    let lifted_codomain = shift_value_type(arena, codomain, Binders::ONE);
-    let lifted_start = shift_value(arena, start, Binders::ONE);
+    let lifted_codomain = shift_value_type(arena, codomain, Binders::ONE).settle(arena);
+    let lifted_start = shift_value(arena, start, Binders::ONE).settle(arena);
     let forced = arena.computation_force(lifted);
     let endpoint = moving(arena);
     let applied = arena.computation_application(forced, endpoint);

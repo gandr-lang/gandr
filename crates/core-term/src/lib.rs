@@ -10,10 +10,13 @@
 //! - The static calculus is three formers over codes: the static Pi classifies
 //!   a type operator, and the static lambda and the static application are
 //!   values, so a type operator is a value like any code.
-//! - [`shift_value_type`], [`shift_comp_type`], [`instantiate_comp_type`],
-//!   [`strengthen_comp_type`] and [`strengthen_value_type`] are the rewrites a
-//!   type that mentions a bound variable needs, and [`instantiate_value`] the
-//!   substitution static beta takes, as iterative machines memoized per node;
+//! - [`shift_value_type`], [`shift_comp_type`], [`strengthen_comp_type`] and
+//!   [`strengthen_value_type`] are root updates: each answers a [`Relocated`]
+//!   id — the subject's node under a [`Relocation`] — minting nothing, and
+//!   [`Relocated::settle`] reads one into a plain id by the one eager walk;
+//!   [`instantiate_comp_type`] and [`instantiate_value`], the substitution
+//!   static beta takes, are iterative machines memoized per node, and every
+//!   walk enters only the nodes whose support reaches what it moves;
 //!   [`constructor_classifier`] reads a constructor's field telescope as the
 //!   function its name answers at; [`rename_value_traced`] and
 //!   [`rename_value_type_traced`] rename constants and atoms by a [`Renaming`],
@@ -97,7 +100,8 @@
 //! from the moment it is minted (the arena module's § Carried supports), so
 //! a support is read in constant time and nothing walks a term to find one.
 //! The support is syntactic and over-approximates dependence; it keys,
-//! footprints and schedules, and never decides a strengthening.
+//! footprints, schedules and decides the syntactic strengthening, never a
+//! semantic one.
 //!
 //! # Specification attributes
 //!
@@ -185,6 +189,7 @@ mod import;
 pub mod memory;
 pub mod pattern;
 pub mod primitive;
+mod relocation;
 mod rewrite;
 pub mod session;
 pub mod support;
@@ -228,6 +233,8 @@ pub use crate::definition::Transparency;
 pub use crate::failure::FailureClass;
 pub use crate::import::ImportFault;
 pub use crate::import::TypeImporter;
+pub use crate::relocation::Relocated;
+pub use crate::relocation::Relocation;
 pub use crate::rewrite::Binders;
 pub use crate::rewrite::Carried;
 pub use crate::rewrite::Nesting;
@@ -247,12 +254,10 @@ pub use crate::rewrite::rename_value_traced;
 pub use crate::rewrite::rename_value_type_traced;
 pub use crate::rewrite::shift_comp_type;
 pub use crate::rewrite::shift_comp_type_under;
-pub use crate::rewrite::shift_comp_type_under_traced;
-pub use crate::rewrite::shift_computation_under_traced;
+pub use crate::rewrite::shift_computation_under;
 pub use crate::rewrite::shift_value;
 pub use crate::rewrite::shift_value_type;
 pub use crate::rewrite::shift_value_type_under;
-pub use crate::rewrite::shift_value_type_under_traced;
 pub use crate::rewrite::strengthen_comp_type;
 pub use crate::rewrite::strengthen_value_type;
 pub use crate::rewrite::strengthening;

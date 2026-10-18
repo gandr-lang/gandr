@@ -127,7 +127,7 @@ use gandr_core_term::pattern::Pattern;
 use gandr_core_term::pattern::PatternId;
 use gandr_core_term::session::Step;
 use gandr_core_term::shift_value;
-use gandr_core_term::shift_value_type_under_traced;
+use gandr_core_term::shift_value_type_under;
 use gandr_core_term::strengthen_value_type;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GroundSort;
@@ -2616,7 +2616,8 @@ impl TypeTable
                             .skip(1)
                             .filter(|&&present| present)
                             .fold(Binders::NONE, |scope, _| scope.deeper());
-                        ty = shift_value_type_under_traced(arena, ty, scope, Binders::ONE, carried);
+                        ty = shift_value_type_under(arena, ty, scope, Binders::ONE)
+                            .settle_traced(arena, carried);
                         if let Some(slot) = kept.get_mut(dropped) {
                             *slot = true;
                         }
@@ -3263,7 +3264,9 @@ fn parts(
                     let mut earlier = Binders::NONE;
                     for (count, (&part, &field)) in fields.iter().zip(&declared).enumerate() {
                         parts.push(match strengthen_value_type(arena, field, earlier) {
-                            Maybe::Present(outside) => (part, outside, Before(0_usize)),
+                            Maybe::Present(outside) => {
+                                (part, outside.settle(arena), Before(0_usize))
+                            },
                             Maybe::Absent(_) => (part, field, Before(count)),
                         });
                         earlier = earlier.deeper();
@@ -3281,7 +3284,7 @@ fn parts(
             }) => {
                 // The second is typed outside the first where it can be.
                 let rest = match strengthen_value_type(arena, later, Binders::NONE.deeper()) {
-                    Maybe::Present(outside) => (second, outside, Before(0_usize)),
+                    Maybe::Present(outside) => (second, outside.settle(arena), Before(0_usize)),
                     Maybe::Absent(_) => (second, later, Before(1_usize)),
                 };
                 Vec::from([(first, component, Before(0_usize)), rest])
@@ -3366,7 +3369,7 @@ fn declared(
         let mut subject = field;
         for (index, &argument) in arguments.iter().enumerate().rev() {
             let depth = Binders::from(u32::try_from(index).unwrap_or(u32::MAX));
-            let argument = shift_value(arena, argument, depth);
+            let argument = shift_value(arena, argument, depth).settle(arena);
             subject = instantiate_value_type_under(arena, subject, argument, earlier);
         }
         declared.push(subject);

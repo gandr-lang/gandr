@@ -10943,13 +10943,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 continue;
             }
             let wrapped = sink.arena.computation_return(value);
-            let shifted = gandr_core_term::shift_computation_under_traced(
-                sink.arena,
-                wrapped,
-                Binders::NONE,
-                past,
-                &mut carried,
-            );
+            let shifted =
+                gandr_core_term::shift_computation_under(sink.arena, wrapped, Binders::NONE, past)
+                    .settle_traced(sink.arena, &mut carried);
             raised.push(match sink.arena.computation(shifted) {
                 Some(&gandr_core_term::Computation::Return(inner)) => inner,
                 _ => value,
@@ -10958,13 +10954,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut firsts = Vec::with_capacity(runs.len());
         for (order, &(_, run, _)) in runs.iter().enumerate() {
             let before = Binders::from(u32::try_from(order).unwrap_or(u32::MAX));
-            firsts.push(gandr_core_term::shift_computation_under_traced(
-                sink.arena,
-                run,
-                Binders::NONE,
-                before,
-                &mut carried,
-            ));
+            firsts.push(
+                gandr_core_term::shift_computation_under(sink.arena, run, Binders::NONE, before)
+                    .settle_traced(sink.arena, &mut carried),
+            );
         }
         exits::record_copies(sink, mark, &carried, origin);
         let head = match function {

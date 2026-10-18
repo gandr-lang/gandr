@@ -5756,13 +5756,14 @@ impl<'source> Lowerer<'_, 'source>
         mut copies: Option<&mut Vec<Carried>>,
     ) -> CompTypeId
     {
-        let mut shift = |arena: &mut CoreArena, subject, scope, amount| match copies.as_deref_mut()
-        {
-            Some(copies) => {
-                gandr_core_term::shift_comp_type_under_traced(arena, subject, scope, amount, copies)
-            },
-            None => gandr_core_term::shift_comp_type_under(arena, subject, scope, amount),
-        };
+        let mut shift =
+            |arena: &mut CoreArena, subject: CompTypeId, scope: Binders, amount: Binders| {
+                let shifted = gandr_core_term::shift_comp_type_under(arena, subject, scope, amount);
+                match copies.as_deref_mut() {
+                    Some(copies) => shifted.settle_traced(arena, copies),
+                    None => shifted.settle(arena),
+                }
+            };
         let mut carried = ty;
         for (position, binds) in self.scope.binders_in(from, telescope).enumerate() {
             if !binds {
@@ -6303,11 +6304,7 @@ fn tracked_motives(
     let mut expected: Vec<Option<CompTypeId>> = alloc::vec![None; tests.len()];
     let mut motives = alloc::vec![Maybe::Absent(lowered::Absent::Unminted); tests.len()];
     if let Some(root) = expected.first_mut() {
-        *root = Some(gandr_core_term::shift_comp_type(
-            arena,
-            base,
-            binders(gap.0),
-        ));
+        *root = Some(gandr_core_term::shift_comp_type(arena, base, binders(gap.0)).settle(arena));
     }
     for (position, test) in tests.iter().enumerate() {
         let Some(here) = expected.get(position).copied().flatten()
@@ -6318,7 +6315,7 @@ fn tracked_motives(
         let mut under = |arena: &mut CoreArena, at: TestAt, count: usize| {
             answers.push((
                 at,
-                gandr_core_term::shift_comp_type(arena, here, binders(count)),
+                gandr_core_term::shift_comp_type(arena, here, binders(count)).settle(arena),
             ));
         };
         match *test {
@@ -6335,7 +6332,9 @@ fn tracked_motives(
                         let context = Depth(scrutinised.outer.0.saturating_add(depth.0));
                         abstracted(arena, here, scrutinee, context)
                     },
-                    Maybe::Absent(_) => gandr_core_term::shift_comp_type(arena, here, Binders::ONE),
+                    Maybe::Absent(_) => {
+                        gandr_core_term::shift_comp_type(arena, here, Binders::ONE).settle(arena)
+                    },
                 };
                 if let Some(slot) = motives.get_mut(position) {
                     *slot = Maybe::Present(motive);
@@ -6352,7 +6351,8 @@ fn tracked_motives(
                                 motive,
                                 Binders::ONE,
                                 binders(arity),
-                            );
+                            )
+                            .settle(arena);
                             let fields = (0 .. arity)
                                 .rev()
                                 .map(|field| variable(arena, Depth(field)))
@@ -6363,6 +6363,7 @@ fn tracked_motives(
                         },
                         Maybe::Present(_) | Maybe::Absent(_) => {
                             gandr_core_term::shift_comp_type(arena, here, binders(arity))
+                                .settle(arena)
                         },
                     };
                     answers.push((at, answer));
@@ -6400,7 +6401,8 @@ fn tracked_motives(
                     motive,
                     Binders::ONE,
                     binders(2_usize),
-                );
+                )
+                .settle(arena);
                 let first = variable(arena, Depth(1_usize));
                 let second = variable(arena, Depth::default());
                 let pair = arena.value_tuple(&[first, second]);
@@ -6634,7 +6636,7 @@ fn abstracted(
         _ => usize::MAX,
     };
     if held >= context.0 {
-        return gandr_core_term::shift_comp_type(arena, ty, Binders::ONE);
+        return gandr_core_term::shift_comp_type(arena, ty, Binders::ONE).settle(arena);
     }
     let environment: Vec<ValueId> = (0 .. context.0)
         .map(|position| {
@@ -6650,9 +6652,11 @@ fn abstracted(
     match gandr_core_term::substitute_environment(arena, TermId::Value(quoted), &environment) {
         TermId::Value(substituted) => match arena.value(substituted) {
             Some(&Value::QuoteComputation(motive)) => motive,
-            _ => gandr_core_term::shift_comp_type(arena, ty, Binders::ONE),
+            _ => gandr_core_term::shift_comp_type(arena, ty, Binders::ONE).settle(arena),
         },
-        TermId::Computation(_) => gandr_core_term::shift_comp_type(arena, ty, Binders::ONE),
+        TermId::Computation(_) => {
+            gandr_core_term::shift_comp_type(arena, ty, Binders::ONE).settle(arena)
+        },
     }
 }
 
@@ -6914,7 +6918,8 @@ fn level_value(
             return scrutinised.scrutinee;
         }
         let lift = u32::try_from(depth.0).unwrap_or(u32::MAX);
-        return gandr_core_term::shift_value(arena, scrutinised.scrutinee, Binders::from(lift));
+        return gandr_core_term::shift_value(arena, scrutinised.scrutinee, Binders::from(lift))
+            .settle(arena);
     }
 
     variable(arena, Depth(depth.0.saturating_sub(level.0)))
@@ -8287,13 +8292,15 @@ impl<'source> Lowerer<'_, 'source>
         // case's scrutinee and the summand the case binds.
         let mut branches = Vec::with_capacity(joined.len());
         for member in joined {
-            branches.push(gandr_core_term::shift_computation_under_traced(
-                sink.arena,
-                member.branch,
-                Binders::ONE,
-                Binders::ONE,
-                &mut carried,
-            ));
+            branches.push(
+                gandr_core_term::shift_computation_under(
+                    sink.arena,
+                    member.branch,
+                    Binders::ONE,
+                    Binders::ONE,
+                )
+                .settle_traced(sink.arena, &mut carried),
+            );
         }
         let evidence = if joined
             .iter()

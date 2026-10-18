@@ -933,7 +933,8 @@ where
         }) = context.arena().value(argument)
         {
             let declared = context.hypothesis(index)?;
-            let found = shift_value_type(context.arena_mut(), declared, Binders::past(index));
+            let found = shift_value_type(context.arena_mut(), declared, Binders::past(index))
+                .settle(context.arena_mut());
             if let Maybe::Present((base, held)) = held_at(
                 context.arena(),
                 (domain, DeBruijnIndex::from(binder)),

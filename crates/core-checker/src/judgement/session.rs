@@ -458,11 +458,8 @@ impl Machine<'_, '_>
             return Ok(ty);
         }
         let opened = u32::try_from(opened).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
-        Ok(shift_value_type(
-            self.context.arena_mut(),
-            ty,
-            Binders::from(opened),
-        ))
+        let arena = self.context.arena_mut();
+        Ok(shift_value_type(arena, ty, Binders::from(opened)).settle(arena))
     }
 
     /// The pure returner of the unit, an action's type.

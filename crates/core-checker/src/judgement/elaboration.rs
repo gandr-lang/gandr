@@ -460,7 +460,9 @@ pub fn elaborate_value(
     )
     .map_err(|failure: Failure| failure.refusal())?;
     let produced = match (direction, produced) {
-        (Direction::Synthesise, Produced::ValueType(found)) => FormedValueType::derived(found),
+        (Direction::Synthesise, Produced::ValueType(found)) => {
+            FormedValueType::derived(found.settle(context.arena_mut()))
+        },
         (Direction::Check(expected), Produced::Checked) => expected,
         (Direction::Synthesise, Produced::CompType(_) | Produced::Checked)
         | (Direction::Check(_), Produced::ValueType(_) | Produced::CompType(_)) => {
@@ -820,7 +822,7 @@ impl Machine<'_, '_>
                 Produced::ValueType(found),
             ) => Typing {
                 term: TermNode::Value(term),
-                ty: TypeNode::Value(found),
+                ty: TypeNode::Value(found.settle(self.context.arena_mut())),
                 depth,
             },
             (
@@ -967,7 +969,7 @@ impl Machine<'_, '_>
                     }))
                 }
                 else {
-                    Ok(Step::Ascend(Produced::ValueType(unknown)))
+                    Ok(Step::Ascend(Produced::ValueType(unknown.into())))
                 }
             },
             Goal::Computation {

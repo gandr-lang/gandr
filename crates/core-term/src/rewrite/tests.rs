@@ -57,6 +57,7 @@ use crate::arena::ValueTypeId;
 use crate::hole::HoleId;
 use crate::hole::MarkIndex;
 use crate::hole::TermId;
+use crate::relocation::Relocated;
 use crate::syntax::CompType;
 use crate::syntax::Computation;
 use crate::syntax::Value;
@@ -153,7 +154,8 @@ fn native_motives_preserve_binder_and_field_order()
     let nominal = ConstantIndex::from(7);
     let datatype = arena.value_type_data(nominal, vec![zero, one]);
     let motive = arena.comp_type_returner(datatype);
-    let shifted = super::shift_comp_type_under(&mut arena, motive, Binders::ONE, Binders::from(2));
+    let shifted = super::shift_comp_type_under(&mut arena, motive, Binders::ONE, Binders::from(2))
+        .settle(&mut arena);
     let Some(&CompType::Returner {
         result: shifted, ..
     }) = arena.comp_type(shifted)
@@ -220,7 +222,7 @@ fn native_motives_preserve_binder_and_field_order()
         label.clone(),
         constructor,
     )]));
-    let shifted = super::shift_value(&mut arena, record, Binders::from(2));
+    let shifted = super::shift_value(&mut arena, record, Binders::from(2)).settle(&mut arena);
     let Some(matched_native_node) = arena.value(shifted)
     else {
         panic!("record shift");
@@ -271,9 +273,10 @@ fn a_value_type_under_its_binder_lifts_only_the_ambient_index()
     let family = arena.value_type_data(nominal, vec![own, ambient]);
     assert_eq!(
         super::shift_value_type_under(&mut arena, family, Binders::ONE, Binders::NONE),
-        family
+        Relocated::from(family)
     );
-    let lifted = super::shift_value_type_under(&mut arena, family, Binders::ONE, Binders::ONE);
+    let lifted = super::shift_value_type_under(&mut arena, family, Binders::ONE, Binders::ONE)
+        .settle(&mut arena);
     let Some(lifted) = arena.value_type(lifted)
     else {
         panic!("the family is in the arena");
@@ -742,6 +745,13 @@ enum Reading<'tree>
         binder: u32,
         arguments: &'tree [ValueId],
     },
+    /// The context levels from `from` on stand `amount` levels deeper:
+    /// `amount` binders are inserted before them, where a shift past the
+    /// innermost `placement - amount - from` binders puts them.
+    Inserted
+    {
+        from: u32, amount: u32
+    },
 }
 
 /// Mint `tree` into `arena` with its root at absolute depth `placement`,
@@ -749,19 +759,23 @@ enum Reading<'tree>
 ///
 /// # Specification
 /// - requires: a nonempty well-formed generated tree; `placement` contains its
-///   unspliced free levels and every needed replacement depth exists.
+///   unspliced free levels, read where `reading` moves them, and every needed
+///   replacement depth exists.
 /// - ensures: a live arena root interpreting each level at its placement, with
-///   the designated spliced level replaced without variable capture.
+///   the designated spliced level replaced without variable capture and the
+///   inserted levels read past the binders inserted before them.
 /// - provides: the level-based reference, independent of the rewrite engine.
 /// - panics: none for an admitted tree and placement.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — the level-based builder is the independent reading used
-///   by 600 bounded substitution comparisons. L3 — ground roots of all three
-///   output families and a dependent asymmetric tree pin the oracle against
-///   dropped children, reversed order and a misplaced binder.
+///   by 600 bounded substitution comparisons and the shift and strengthening
+///   comparisons. L3 — ground roots of all three output families and a
+///   dependent asymmetric tree pin the oracle against dropped children,
+///   reversed order and a misplaced binder.
 /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
 /// - witness: `rewrite::tests::reference_helpers_have_ground_and_asymmetric_goldens`
+/// - witness: `rewrite::tests::a_settled_shift_agrees_with_the_level_reference`
 #[spec(requires: !tree.nodes.is_empty(), ensures: |ret| match ret {
         | Built::Value(id) => arena.value(id).is_some(),
         | Built::ValueType(id) => arena.value_type(id).is_some(),
@@ -822,7 +836,12 @@ fn build(
                     let index = depth.checked_sub(1).unwrap().checked_sub(lowered).unwrap();
                     Built::Value(variable(arena, DeBruijnIndex::from(index)))
                 },
-                Reading::Plain | Reading::Spliced { .. } => {
+                Reading::Inserted { from, amount } if level >= from => {
+                    let moved = level.checked_add(amount).unwrap();
+                    let index = depth.checked_sub(1).unwrap().checked_sub(moved).unwrap();
+                    Built::Value(variable(arena, DeBruijnIndex::from(index)))
+                },
+                Reading::Plain | Reading::Spliced { .. } | Reading::Inserted { .. } => {
                     let index = depth.checked_sub(1).unwrap().checked_sub(level).unwrap();
                     Built::Value(variable(arena, DeBruijnIndex::from(index)))
                 },
@@ -907,7 +926,7 @@ fn shifting_raises_free_indices_and_spares_bound_ones()
     let result = arena.comp_type_returner(free);
     let codomain = arena.comp_type_arrow(bound, result);
     let subject = arena.comp_type_pi(domain, codomain);
-    let shifted = shift_comp_type(&mut arena, subject, Binders::from(2_u32));
+    let shifted = shift_comp_type(&mut arena, subject, Binders::from(2_u32)).settle(&mut arena);
 
     let expected_domain = decoded(&mut arena, DeBruijnIndex::from(2));
     let expected_bound = decoded(&mut arena, DeBruijnIndex::from(0));
@@ -923,10 +942,386 @@ fn shifting_raises_free_indices_and_spares_bound_ones()
 
     let integer = arena.value_type_base(BaseType::Integer);
     assert_eq!(
-        integer,
+        Relocated::from(integer),
         shift_value_type(&mut arena, integer, Binders::from(2_u32)),
         "a closed type shifts to itself"
     );
+}
+
+/// A shift answers its subject's own node under a relocation and mints
+/// nothing; a second raise that folds into the first mints nothing either,
+/// and one that does not fold settles the first before it. Settled, each
+/// reads as the type the eager rewrite builds.
+#[test]
+fn a_shift_is_a_root_update()
+{
+    let mut arena = CoreArena::new();
+    // El #0 → F (El #2).
+    let near = decoded(&mut arena, DeBruijnIndex::from(0_u32));
+    let far = decoded(&mut arena, DeBruijnIndex::from(2_u32));
+    let result = arena.comp_type_returner(far);
+    let subject = arena.comp_type_arrow(near, result);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let closed = arena.comp_type_returner(integer);
+    let mark = arena.watermark();
+    let shifted = shift_comp_type(&mut arena, subject, Binders::from(2_u32));
+    assert_eq!(
+        shifted.node(),
+        subject,
+        "the shift answers the subject's own node"
+    );
+    assert_ne!(shifted, Relocated::from(subject), "under a relocation");
+    assert_eq!(
+        Relocated::from(closed),
+        shift_comp_type(&mut arena, closed, Binders::ONE),
+        "a closed type moves nothing and carries no relocation"
+    );
+    let again = shift_comp_type(&mut arena, shifted, Binders::ONE);
+    assert_eq!(
+        again.node(),
+        subject,
+        "a second raise past the same cutoff folds"
+    );
+    assert_eq!(mark, arena.watermark(), "no shift minted a node");
+    let settled = again.settle(&mut arena);
+    let near = decoded(&mut arena, DeBruijnIndex::from(3_u32));
+    let far = decoded(&mut arena, DeBruijnIndex::from(5_u32));
+    let result = arena.comp_type_returner(far);
+    let expected = arena.comp_type_arrow(near, result);
+    assert_eq!(
+        spelling(&arena, expected),
+        spelling(&arena, settled),
+        "settled, both raises have moved every free index"
+    );
+
+    // F (El #0 × El #3) raised by one, then by one past two: the
+    // displacements become +1 and +2, which no single relocation reads.
+    let low = decoded(&mut arena, DeBruijnIndex::from(0_u32));
+    let high = decoded(&mut arena, DeBruijnIndex::from(3_u32));
+    let apart = arena.value_type_product(&[low, high]);
+    let apart = arena.comp_type_returner(apart);
+    let first = shift_comp_type(&mut arena, apart, Binders::ONE);
+    let mark = arena.watermark();
+    let second =
+        super::shift_comp_type_under(&mut arena, first, Binders::from(2_u32), Binders::ONE);
+    assert_ne!(
+        mark,
+        arena.watermark(),
+        "a raise that does not fold settles the first"
+    );
+    let settled = second.settle(&mut arena);
+    let low = decoded(&mut arena, DeBruijnIndex::from(1_u32));
+    let high = decoded(&mut arena, DeBruijnIndex::from(5_u32));
+    let expected = arena.value_type_product(&[low, high]);
+    let expected = arena.comp_type_returner(expected);
+    assert_eq!(
+        spelling(&arena, expected),
+        spelling(&arena, settled),
+        "and reads as the two raises in turn"
+    );
+}
+
+/// A strengthening refuses a type whose carried support selects one of its
+/// binders, wherever the mention stands, lowers any other as a root update,
+/// and reads a type naming only binders of its own as closed.
+#[test]
+fn a_strengthening_reads_the_carried_support()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    // U (Integer → F (Integer × El #0)): the binder named three formers down.
+    let binder = decoded(&mut arena, DeBruijnIndex::from(0_u32));
+    let pair = arena.value_type_product(&[integer, binder]);
+    let returner = arena.comp_type_returner(pair);
+    let arrow = arena.comp_type_arrow(integer, returner);
+    let deep = arena.value_type_thunk(arrow);
+    // U (Π (_ : Integer). F (El #0)): the zero is the Pi's own binder.
+    let returner = arena.comp_type_returner(binder);
+    let pi = arena.comp_type_pi(integer, returner);
+    let own = arena.value_type_thunk(pi);
+    // U (Integer → F (El #3)): only past both binders.
+    let outer = decoded(&mut arena, DeBruijnIndex::from(3_u32));
+    let returner = arena.comp_type_returner(outer);
+    let arrow = arena.comp_type_arrow(integer, returner);
+    let past_both = arena.value_type_thunk(arrow);
+    let mark = arena.watermark();
+    assert_eq!(
+        Maybe::Absent(strengthening::Absent::MentionsBinder),
+        strengthen_value_type(&mut arena, deep, Binders::ONE),
+        "a mention under three formers is read off the root"
+    );
+    assert_eq!(
+        Maybe::Present(Relocated::from(own)),
+        strengthen_value_type(&mut arena, own, Binders::ONE),
+        "a type naming only its own binder is closed"
+    );
+    let Maybe::Present(lowered) =
+        strengthen_value_type(&mut arena, past_both, Binders::from(2_u32))
+    else {
+        panic!("a type reading only past both binders leaves them");
+    };
+    assert_eq!(
+        lowered.node(),
+        past_both,
+        "the lowering answers the subject's own node"
+    );
+    assert_eq!(
+        Maybe::Absent(strengthening::Absent::MentionsBinder),
+        strengthen_value_type(&mut arena, past_both, Binders::from(4_u32)),
+        "past four binders its index is one of them"
+    );
+    assert_eq!(mark, arena.watermark(), "no strengthening minted a node");
+    let settled = lowered.settle(&mut arena);
+    let outer = decoded(&mut arena, DeBruijnIndex::from(1_u32));
+    let returner = arena.comp_type_returner(outer);
+    let arrow = arena.comp_type_arrow(integer, returner);
+    let expected = arena.value_type_thunk(arrow);
+    assert_eq!(
+        spelling_of(&arena, Visit::ValueType(expected)),
+        spelling_of(&arena, Visit::ValueType(settled)),
+        "settled, its index lowers by two"
+    );
+}
+
+/// The index the code of the decode `child` names, read through its
+/// relocation.
+///
+/// # Specification
+/// trivial.
+fn read_code(
+    arena: &CoreArena,
+    child: Relocated<ValueTypeId>,
+) -> DeBruijnIndex
+{
+    let Some(&ValueType::Element { code, .. }) = arena.value_type(child.node())
+    else {
+        panic!("a decode");
+    };
+    let Some(&Value::Variable { zone, index }) = arena.value(code)
+    else {
+        panic!("a variable code");
+    };
+    child.relocation().variable(zone, index)
+}
+
+/// A child read under a relocated node composes the relocation with the
+/// binders the child's position crosses, and a variable reads through it at
+/// its occurrence; nothing is minted, and the reads agree with the settled
+/// node.
+#[test]
+fn a_renaming_composes_on_a_child_read_and_applies_at_a_variable()
+{
+    let mut arena = CoreArena::new();
+    // Σ (_ : El #0). El #1: the second factor reads the outer #0 past the
+    // first factor's binder.
+    let first = decoded(&mut arena, DeBruijnIndex::from(0_u32));
+    let second = decoded(&mut arena, DeBruijnIndex::from(1_u32));
+    let sigma = arena.value_type_sigma(first, second);
+    let at = shift_value_type(&mut arena, sigma, Binders::from(2_u32)).relocation();
+    let mark = arena.watermark();
+    let first_read = arena.place_value_type(first, at);
+    let second_read = arena.place_value_type(second, at.under(Binders::ONE));
+    assert_eq!(
+        DeBruijnIndex::from(2_u32),
+        read_code(&arena, first_read),
+        "the first factor reads its index raised"
+    );
+    assert_eq!(
+        DeBruijnIndex::from(3_u32),
+        read_code(&arena, second_read),
+        "the second factor reads its outer index raised past the binder"
+    );
+    assert_eq!(
+        DeBruijnIndex::from(0_u32),
+        at.under(Binders::ONE)
+            .variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
+        "under the binder the binder itself stands"
+    );
+    assert_eq!(
+        DeBruijnIndex::from(0_u32),
+        at.variable(Zone::Linear, DeBruijnIndex::from(0_u32)),
+        "a linear index stands"
+    );
+    assert_eq!(
+        mark,
+        arena.watermark(),
+        "reading through the relocation minted nothing"
+    );
+    let settled = shift_value_type(&mut arena, sigma, Binders::from(2_u32)).settle(&mut arena);
+    let Some(&ValueType::Sigma { first, second }) = arena.value_type(settled)
+    else {
+        panic!("a settled sigma");
+    };
+    assert_eq!(
+        [first_read, second_read].map(|read| read_code(&arena, read)),
+        [first, second].map(|child| read_code(&arena, Relocated::from(child))),
+        "the reads agree with the settled node"
+    );
+}
+
+/// A walk answers a node whose support stops below its depth with the node
+/// itself, without entering it: a closed child and a codomain that reads
+/// only its own binder never reach the memo, while the path to the free
+/// index does.
+#[test]
+fn a_walk_enters_only_nodes_whose_support_reaches_its_depth()
+{
+    use super::Engine;
+    use super::Rewrite;
+    use crate::relocation::Offset;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let closed = arena.value_type_product(&[integer, integer]);
+    // (Integer × Integer) × U (Π (_ : El #0). F (El #0)): the domain reads
+    // the free #0, the codomain only the Pi's own binder.
+    let domain = decoded(&mut arena, DeBruijnIndex::from(0_u32));
+    let own = arena.comp_type_returner(domain);
+    let pi = arena.comp_type_pi(domain, own);
+    let thunk = arena.value_type_thunk(pi);
+    let subject = arena.value_type_product(&[closed, thunk]);
+    let unit = arena.value_unit();
+    for rewrite in [
+        Rewrite::Relocate(Offset::raise(Binders::ONE)),
+        Rewrite::Substitute(unit),
+    ] {
+        let mut engine = Engine::new(&mut arena);
+        let rewritten = engine.run(Node::ValueType(subject), Binders::NONE, rewrite);
+        assert_ne!(
+            Node::ValueType(subject),
+            rewritten,
+            "the free decode is rewritten"
+        );
+        for entered in [Node::ValueType(thunk), Node::CompType(pi)] {
+            assert!(
+                engine.memo.contains_key(&(entered, Binders::NONE, rewrite)),
+                "{entered:?} leads to the free index and is entered"
+            );
+        }
+        for skipped in [Node::ValueType(closed), Node::CompType(own)] {
+            assert!(
+                engine.memo.keys().all(|&(node, ..)| node != skipped),
+                "{skipped:?} is answered without being entered"
+            );
+        }
+    }
+}
+
+/// Whether `tree` names a free level at or past `from`.
+///
+/// # Specification
+/// trivial.
+fn reads_from(
+    tree: &Tree,
+    from: Count,
+) -> Maybe<(), strengthening::Absent>
+{
+    if tree
+        .nodes
+        .iter()
+        .any(|node| matches!(node.shape, Shape::Free(level) if level >= from.0))
+    {
+        Maybe::Absent(strengthening::Absent::MentionsBinder)
+    }
+    else {
+        Maybe::Present(())
+    }
+}
+
+/// `subject` lowered out of its innermost `past` binders and settled, read
+/// through a thunk so the value-type strengthening serves a computation
+/// type.
+///
+/// # Specification
+/// trivial.
+fn strengthened_past(
+    arena: &mut CoreArena,
+    subject: CompTypeId,
+    past: Binders,
+) -> CompTypeId
+{
+    let wrapped = arena.value_type_thunk(subject);
+    let Maybe::Present(lowered) = strengthen_value_type(arena, wrapped, past)
+    else {
+        panic!("a subject reading none of the binders lowers");
+    };
+    let lowered = lowered.settle(arena);
+    let Some(&ValueType::Thunk(body)) = arena.value_type(lowered)
+    else {
+        panic!("a thunk");
+    };
+    body
+}
+
+/// Settled, a shift, a shift of a relocated subject past any scope, and a
+/// strengthening agree with the level-based reference over generated trees,
+/// and a strengthening refuses exactly the trees naming a level it removes.
+#[test]
+fn a_settled_shift_agrees_with_the_level_reference()
+{
+    let mut stream = Stream(0xD1B5_4A32_D192_ED03);
+    for round in 0 .. 600_u32 {
+        let frees = round.checked_rem(4).unwrap();
+        let tree = generate(&mut stream, Kind::Comp, Count(frees), Count(4));
+        let first = stream.below(Count(3)).0;
+        let amount = stream.below(Count(3)).0.checked_add(1).unwrap();
+        let placed = frees.checked_add(first).unwrap();
+        let scope = stream.below(Count(placed.checked_add(1).unwrap())).0;
+        let cut = stream.below(Count(frees.checked_add(1).unwrap())).0;
+        let mut arena = CoreArena::new();
+        let built = |arena: &mut CoreArena, placement: u32, reading: Reading<'_>| match build(
+            arena,
+            &tree,
+            Count(placement),
+            reading,
+        ) {
+            Built::CompType(id) => id,
+            Built::Value(_) | Built::ValueType(_) => panic!("a computation type"),
+        };
+        let subject = built(&mut arena, frees, Reading::Plain);
+        let raised = shift_comp_type(&mut arena, subject, Binders::from(first));
+        let twice = super::shift_comp_type_under(
+            &mut arena,
+            raised,
+            Binders::from(scope),
+            Binders::from(amount),
+        );
+        let [raised, twice] = [raised, twice].map(|relocated| relocated.settle(&mut arena));
+        let raised_reference = built(&mut arena, placed, Reading::Plain);
+        let twice_reference = built(
+            &mut arena,
+            placed.checked_add(amount).unwrap(),
+            Reading::Inserted {
+                from: placed.checked_sub(scope).unwrap(),
+                amount,
+            },
+        );
+        assert_eq!(
+            spelling(&arena, raised_reference),
+            spelling(&arena, raised),
+            "round {round}: a raise by {first} reads {tree:?} placed {first} deeper"
+        );
+        assert_eq!(
+            spelling(&arena, twice_reference),
+            spelling(&arena, twice),
+            "round {round}: a further raise by {amount} past {scope} inserts its binders there"
+        );
+        let lowered = strengthened_past(&mut arena, raised_reference, Binders::from(first));
+        assert_eq!(
+            spelling(&arena, subject),
+            spelling(&arena, lowered),
+            "round {round}: {tree:?} placed under {first} binders it never reads lowers out of them"
+        );
+        let wrapped = arena.value_type_thunk(subject);
+        let removed = Binders::from(frees.checked_sub(cut).unwrap());
+        assert_eq!(
+            reads_from(&tree, Count(cut)),
+            match strengthen_value_type(&mut arena, wrapped, removed) {
+                Maybe::Present(_) => Maybe::Present(()),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
+            },
+            "round {round}: {tree:?} refuses exactly when it names a level past {cut}"
+        );
+    }
 }
 
 #[test]
@@ -968,6 +1363,7 @@ fn strengthening_refuses_a_mention_and_lowers_the_rest()
     };
     let expected = decoded(&mut arena, DeBruijnIndex::from(0));
     let expected = arena.comp_type_returner(expected);
+    let lowered = lowered.settle(&mut arena);
     assert_eq!(
         spelling(&arena, expected),
         spelling(&arena, lowered),
@@ -982,7 +1378,7 @@ fn a_value_type_strengthens_unless_it_names_a_binder()
     let integer = arena.value_type_base(BaseType::Integer);
     let inner = decoded(&mut arena, DeBruijnIndex::from(1));
     assert_eq!(
-        Maybe::Present(inner),
+        Maybe::Present(Relocated::from(inner)),
         strengthen_value_type(&mut arena, inner, Binders::NONE),
         "past no binder the type is itself"
     );
@@ -996,6 +1392,7 @@ fn a_value_type_strengthens_unless_it_names_a_binder()
         panic!("a type reading only past the innermost binder leaves it");
     };
     let expected = decoded(&mut arena, DeBruijnIndex::from(0));
+    let lowered = lowered.settle(&mut arena);
     let [expected, lowered] = [expected, lowered].map(|ty| arena.comp_type_returner(ty));
     assert_eq!(
         spelling(&arena, expected),
@@ -1008,6 +1405,7 @@ fn a_value_type_strengthens_unless_it_names_a_binder()
         panic!("a type reading only past both binders leaves them");
     };
     let expected = decoded(&mut arena, DeBruijnIndex::from(1));
+    let lowered = lowered.settle(&mut arena);
     let [expected, lowered] = [expected, lowered].map(|ty| arena.comp_type_returner(ty));
     assert_eq!(
         spelling(&arena, expected),
@@ -1015,7 +1413,7 @@ fn a_value_type_strengthens_unless_it_names_a_binder()
         "and its index lowers by two"
     );
     assert_eq!(
-        Maybe::Present(integer),
+        Maybe::Present(Relocated::from(integer)),
         strengthen_value_type(&mut arena, integer, Binders::from(2_u32)),
         "a closed type strengthens to itself"
     );
@@ -1101,7 +1499,7 @@ fn a_shared_type_is_rewritten_once_per_node()
 
     let mut arena = CoreArena::new();
     let subject = chain(&mut arena, DeBruijnIndex::from(0));
-    let shifted = shift_value_type(&mut arena, subject, Binders::ONE);
+    let shifted = shift_value_type(&mut arena, subject, Binders::ONE).settle(&mut arena);
     assert_ne!(subject, shifted, "the free index was raised");
 
     let mut reference = CoreArena::new();
@@ -1227,12 +1625,13 @@ fn binder_counts_clamp_at_the_ceiling()
 fn occurrence_rules_separate_depth_boundaries()
 {
     use super::Engine;
-    use super::Mention;
     use super::Occurrence;
     use super::Rewrite;
+    use crate::relocation::Offset;
     let mut arena = CoreArena::new();
     let replacement = arena.value_constant(ConstantIndex::from(7_usize));
-    // depth, index, shift by one, lowering (None marks the removed binder).
+    // depth, index, shift by one, lowering by one (None marks the binder
+    // itself, which a strengthening refuses off the support before any walk).
     for (depth, index, raised, lowered) in [
         (0_u32, 0_u32, 1_u32, None),
         (0, 1, 2, Some(0)),
@@ -1247,14 +1646,14 @@ fn occurrence_rules_separate_depth_boundaries()
             id,
             DeBruijnIndex::from(index),
             Binders::from(depth),
-            Rewrite::Shift(Binders::NONE),
+            Rewrite::Relocate(Offset::ZERO),
         );
         assert_eq!(Occurrence::Answered(id), zero_shift);
         let Occurrence::Answered(shifted) = engine.occurrence(
             id,
             DeBruijnIndex::from(index),
             Binders::from(depth),
-            Rewrite::Shift(Binders::ONE),
+            Rewrite::Relocate(Offset::raise(Binders::ONE)),
         )
         else {
             panic!("a shift answers directly");
@@ -1298,31 +1697,23 @@ fn occurrence_rules_separate_depth_boundaries()
                 }
             },
         }
-        for prior in [Mention::Absent, Mention::Present] {
-            engine.mention = prior;
-            let Occurrence::Answered(answer) = engine.occurrence(
-                id,
-                DeBruijnIndex::from(index),
-                Binders::from(depth),
-                Rewrite::Lower,
-            )
-            else {
-                panic!("lowering never carries a replacement");
-            };
-            if let Some(expected) = lowered {
-                assert_eq!(prior, engine.mention);
-                assert_eq!(
-                    Some(&Value::Variable {
-                        zone: Zone::Intuitionistic,
-                        index: DeBruijnIndex::from(expected)
-                    }),
-                    engine.arena.value(answer)
-                );
-            }
-            else {
-                assert_eq!(id, answer);
-                assert_eq!(Mention::Present, engine.mention);
-            }
+        let Occurrence::Answered(answer) = engine.occurrence(
+            id,
+            DeBruijnIndex::from(index),
+            Binders::from(depth),
+            Rewrite::Relocate(Offset::lower(Binders::ONE)),
+        )
+        else {
+            panic!("a relocation never carries a replacement");
+        };
+        if let Some(expected) = lowered {
+            assert_eq!(
+                Some(&Value::Variable {
+                    zone: Zone::Intuitionistic,
+                    index: DeBruijnIndex::from(expected)
+                }),
+                engine.arena.value(answer)
+            );
         }
     }
     // An environment entry is answered at the root and carried beneath a
@@ -1745,7 +2136,7 @@ fn binding_sites_distinguish_free_bound_and_linear_indices()
         let Node::Computation(rewritten) = Engine::new(&mut arena).run(
             Node::Computation(root),
             Binders::NONE,
-            Rewrite::Shift(Binders::ONE),
+            Rewrite::Relocate(crate::relocation::Offset::raise(Binders::ONE)),
         )
         else {
             panic!("computation");
@@ -1879,12 +2270,15 @@ fn binding_sites_distinguish_free_bound_and_linear_indices()
     let result = arena.comp_type_returner(domain);
     let mark = arena.watermark();
     assert_eq!(
-        static_pi,
+        Relocated::from(static_pi),
         shift_value_type(&mut arena, static_pi, Binders::NONE)
     );
-    assert_eq!(result, shift_comp_type(&mut arena, result, Binders::NONE));
+    assert_eq!(
+        Relocated::from(result),
+        shift_comp_type(&mut arena, result, Binders::NONE)
+    );
     assert_eq!(mark, arena.watermark());
-    let shifted = shift_value_type(&mut arena, static_pi, Binders::ONE);
+    let shifted = shift_value_type(&mut arena, static_pi, Binders::ONE).settle(&mut arena);
     let Some(&ValueType::StaticPi { domain, codomain }) = arena.value_type(shifted)
     else {
         panic!("static Pi");
@@ -1905,7 +2299,7 @@ fn binding_sites_distinguish_free_bound_and_linear_indices()
     let linear_type = arena.comp_type_element(linear, Level::zero());
     let mark = arena.watermark();
     assert_eq!(
-        Maybe::Present(linear_type),
+        Maybe::Present(Relocated::from(linear_type)),
         strengthen_comp_type(&mut arena, linear_type)
     );
     assert_eq!(mark, arena.watermark());
@@ -2616,13 +3010,9 @@ fn a_traced_shift_raises_only_past_its_scope()
     let returned = arena.computation_return(triple);
     let lambda = arena.computation_lambda(returned);
     let mut carried = Vec::new();
-    let shifted = super::shift_computation_under_traced(
-        &mut arena,
-        lambda,
-        Binders::ONE,
-        Binders::from(2_u32),
-        &mut carried,
-    );
+    let shifted =
+        super::shift_computation_under(&mut arena, lambda, Binders::ONE, Binders::from(2_u32))
+            .settle_traced(&mut arena, &mut carried);
     let Some(&Computation::Lambda(body)) = arena.computation(shifted)
     else {
         panic!("a shifted lambda");
@@ -2663,13 +3053,8 @@ fn a_traced_shift_raises_only_past_its_scope()
     let mark = arena.watermark();
     let mut none = Vec::new();
     assert_eq!(
-        super::shift_computation_under_traced(
-            &mut arena,
-            lambda,
-            Binders::ONE,
-            Binders::NONE,
-            &mut none
-        ),
+        super::shift_computation_under(&mut arena, lambda, Binders::ONE, Binders::NONE)
+            .settle_traced(&mut arena, &mut none),
         lambda
     );
     assert!(
@@ -2687,13 +3072,8 @@ fn a_traced_type_shift_reports_each_copy()
     let path = arena.value_type_path(carrier, kept, past);
     let returner = arena.comp_type_returner(path);
     let mut carried = Vec::new();
-    let shifted = super::shift_comp_type_under_traced(
-        &mut arena,
-        returner,
-        Binders::ONE,
-        Binders::ONE,
-        &mut carried,
-    );
+    let shifted = super::shift_comp_type_under(&mut arena, returner, Binders::ONE, Binders::ONE)
+        .settle_traced(&mut arena, &mut carried);
     let Some(&CompType::Returner { result, .. }) = arena.comp_type(shifted)
     else {
         panic!("a shifted returner");
@@ -2725,13 +3105,8 @@ fn a_traced_type_shift_reports_each_copy()
     let mark = arena.watermark();
     let mut none = Vec::new();
     assert_eq!(
-        super::shift_comp_type_under_traced(
-            &mut arena,
-            returner,
-            Binders::ONE,
-            Binders::NONE,
-            &mut none
-        ),
+        super::shift_comp_type_under(&mut arena, returner, Binders::ONE, Binders::NONE)
+            .settle_traced(&mut arena, &mut none),
         returner
     );
     assert!(
@@ -2748,13 +3123,8 @@ fn a_traced_value_type_shift_reports_each_copy()
     let carrier = arena.value_type_unit();
     let path = arena.value_type_path(carrier, kept, past);
     let mut carried = Vec::new();
-    let shifted = super::shift_value_type_under_traced(
-        &mut arena,
-        path,
-        Binders::ONE,
-        Binders::ONE,
-        &mut carried,
-    );
+    let shifted = super::shift_value_type_under(&mut arena, path, Binders::ONE, Binders::ONE)
+        .settle_traced(&mut arena, &mut carried);
     let Some(&ValueType::Path { left, right, .. }) = arena.value_type(shifted)
     else {
         panic!("a shifted path type");
@@ -2781,13 +3151,8 @@ fn a_traced_value_type_shift_reports_each_copy()
     let mark = arena.watermark();
     let mut none = Vec::new();
     assert_eq!(
-        super::shift_value_type_under_traced(
-            &mut arena,
-            path,
-            Binders::ONE,
-            Binders::NONE,
-            &mut none
-        ),
+        super::shift_value_type_under(&mut arena, path, Binders::ONE, Binders::NONE)
+            .settle_traced(&mut arena, &mut none),
         path
     );
     assert!(
@@ -3070,7 +3435,7 @@ fn formers() -> Vec<Witnessed>
         ("scope", |a, c| {
             let signature = probe(a);
             // The subject stands under the capability's binder.
-            let under_capability = super::shift_value(a, c, Binders::ONE);
+            let under_capability = super::shift_value(a, c, Binders::ONE).settle(a);
             let subject = a.computation_return(under_capability);
             let (on_return, clauses) = (done(a), clauses(a));
             let body = a.computation_scope(signature, subject, on_return, clauses);
@@ -3135,7 +3500,7 @@ fn formers() -> Vec<Witnessed>
             a.value_thunk(body)
         }),
         ("fixpoint", |a, c| {
-            let under_self = super::shift_value(a, c, Binders::ONE);
+            let under_self = super::shift_value(a, c, Binders::ONE).settle(a);
             let returned = a.computation_return(under_self);
             let body =
                 a.computation_fixpoint(returned, gandr_kernel_term::FixpointEvidence::Partial);

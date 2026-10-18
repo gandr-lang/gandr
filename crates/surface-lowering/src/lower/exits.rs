@@ -961,13 +961,13 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mark = sink.arena.watermark();
         let mut carried = Vec::new();
-        let raised = gandr_core_term::shift_computation_under_traced(
+        let raised = gandr_core_term::shift_computation_under(
             sink.arena,
             returned,
             Binders::NONE,
             Binders::from(1_u32),
-            &mut carried,
-        );
+        )
+        .settle_traced(sink.arena, &mut carried);
         record_copies(sink, mark, &carried, origin);
         let id = sink.arena.computation_shift(raised);
         sink.origins
@@ -1459,13 +1459,8 @@ fn carry(
 {
     let mark = sink.arena.watermark();
     carried.clear();
-    let copy = gandr_core_term::shift_computation_under_traced(
-        sink.arena,
-        rest,
-        Binders::ONE,
-        amount,
-        carried,
-    );
+    let copy = gandr_core_term::shift_computation_under(sink.arena, rest, Binders::ONE, amount)
+        .settle_traced(sink.arena, carried);
     record_copies(sink, mark, carried, fallback);
 
     copy

@@ -551,11 +551,14 @@ pub fn coverage(
                             let arena = context.arena_mut();
                             let mut values = Vec::with_capacity(prefix.len().saturating_add(1));
                             for &earlier in prefix {
-                                values.push(gandr_core_term::shift_value(
-                                    arena,
-                                    earlier,
-                                    Binders::from(next.binders),
-                                ));
+                                values.push(
+                                    gandr_core_term::shift_value(
+                                        arena,
+                                        earlier,
+                                        Binders::from(next.binders),
+                                    )
+                                    .settle(arena),
+                                );
                             }
                             values.push(next.value);
                             crossed.push((values, binders));

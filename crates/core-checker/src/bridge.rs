@@ -6326,7 +6326,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     self.arena,
                     scrutinee,
                     gandr_core_term::Binders::from(shift),
-                );
+                )
+                .settle(self.arena);
                 let projected = self.arena.computation_tuple_projection(
                     read,
                     gandr_core_term::Component::from(component),

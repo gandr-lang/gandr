@@ -307,11 +307,12 @@ impl Machine<'_, '_>
         crate::session::unrestricted(self.context, inner)?;
         let direction = match direction {
             Direction::Synthesise => Direction::Synthesise,
-            Direction::Check(expected) => Direction::Check(shift_comp_type(
-                self.context.arena_mut(),
-                expected,
-                Binders::from(1_u32),
-            )),
+            Direction::Check(expected) => {
+                let arena = self.context.arena_mut();
+                Direction::Check(
+                    shift_comp_type(arena, expected, Binders::from(1_u32)).settle(arena),
+                )
+            },
         };
         self.context
             .binders()
@@ -358,6 +359,7 @@ impl Machine<'_, '_>
                 else {
                     return Err(CheckRefusal::DependentBind { at, synthesised });
                 };
+                let lowered = lowered.settle(self.context.arena_mut());
                 self.close()?;
                 Ok(Step::Ascend(Produced::CompType(lowered)))
             },

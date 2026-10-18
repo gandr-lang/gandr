@@ -3198,7 +3198,8 @@ fn equal_syntax(
                             arena.to_mut(),
                             d,
                             crate::rewrite::Binders::ONE,
-                        );
+                        )
+                        .settle(arena.to_mut());
                         pending.extend([VT(a, c), CT(b, d)]);
                     },
                     (

@@ -464,7 +464,7 @@ impl Machine<'_, '_>
             Resident::View { .. } if read.use_state == LinearUse::Consumed => AccessDefect::Spent,
             Resident::Held { .. } | Resident::View { .. } => {
                 let ty = self.here(read.state, read.depth)?;
-                return Ok(Step::Ascend(Produced::ValueType(ty)));
+                return Ok(Step::Ascend(Produced::ValueType(ty.into())));
             },
         };
         Err(CheckRefusal::Access { at: node, defect })
