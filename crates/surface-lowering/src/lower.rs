@@ -1639,7 +1639,13 @@ enum StatementBinding
     Discarded,
     /// `run (x, y, …) <- c ;` splits the tuple it returns, under a binder no
     /// name reaches, into one named binder per component.
-    Split(gandr_core_term::ComponentCount),
+    Split
+    {
+        /// The tuple's arity.
+        arity: gandr_core_term::ComponentCount,
+        /// The tuple pattern's own node.
+        pattern: NodeIndex,
+    },
     /// `run x : A <- c ;` ascribes `c` the returner `-F A`, pure as the
     /// annotation writes no row, and names the value it returns for the rest
     /// of the block, so a computation that returns no `A` refuses.
@@ -6544,7 +6550,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.statements.len() == before.saturating_add(1_usize)
                     && self.statements.last().is_some_and(|last| {
                         last.origin == run.node
-                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Split(_) | StatementBinding::Typed { .. })
+                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Split { .. } | StatementBinding::Typed { .. })
                             && self.reading(last.bound) == Reading::Computation(frame)
                     })
             },
@@ -6593,9 +6599,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.statements.push(Statement {
                 origin: run.node,
                 bound: bound.node,
-                binding: StatementBinding::Split(gandr_core_term::ComponentCount::from(
-                    names.len(),
-                )),
+                binding: StatementBinding::Split {
+                    arity: gandr_core_term::ComponentCount::from(names.len()),
+                    pattern: binder.node,
+                },
                 rest: exits::Rest::Bound,
             });
             let mut inner = self.scope.extend(
@@ -11693,7 +11700,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | StatementBinding::Held { .. }
                 | StatementBinding::Opened { .. } => None,
                 StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
-                StatementBinding::Split(arity) => Some(arity),
+                StatementBinding::Split { arity, .. } => Some(arity),
             };
             if let Some(arity) = split {
                 let tuple = sink
@@ -11729,7 +11736,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 },
                 StatementBinding::Named(_)
                 | StatementBinding::Discarded
-                | StatementBinding::Split(_)
+                | StatementBinding::Split { .. }
                 | StatementBinding::Forked { .. }
                 | StatementBinding::Held { .. }
                 | StatementBinding::Opened { .. } => bound,
@@ -11741,6 +11748,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && let Maybe::Present(name) = self.origin_at(name)
             {
                 sink.origins.record_binder(id, name);
+            }
+            // A binder, or a tuple pattern, answers at what its bound
+            // computation returns, read where the run judged that
+            // computation: a rewrite of the block may leave no bind and no
+            // use naming it (#298).
+            if let StatementBinding::Named(written)
+            | StatementBinding::Typed { name: written, .. }
+            | StatementBinding::Split {
+                pattern: written, ..
+            } = statement.binding
+                && let Maybe::Present(written) = self.origin_at(written)
+            {
+                sink.origins.record_label(Label {
+                    span: written.span(),
+                    labelled: Labelled::Bound(statement.bound),
+                });
             }
             if statement.rest == exits::Rest::Distributed {
                 let _first = sink.distributed.insert(id, origin);
@@ -11791,7 +11814,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .map(|_annotation| ()),
             StatementBinding::Named(_)
             | StatementBinding::Discarded
-            | StatementBinding::Split(_) => self.computation_at(statement.bound).map(|_bound| ()),
+            | StatementBinding::Split { .. } => {
+                self.computation_at(statement.bound).map(|_bound| ())
+            },
         }
     }
 

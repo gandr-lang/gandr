@@ -2958,7 +2958,8 @@ fn a_word_conses_its_letters_and_matches_them()
                 crate::origin::Labelled::CompType { .. }
                 | crate::origin::Labelled::Value(_)
                 | crate::origin::Labelled::Endpoint(_)
-                | crate::origin::Labelled::Branch { .. } => None,
+                | crate::origin::Labelled::Branch { .. }
+                | crate::origin::Labelled::Bound(_) => None,
             })
     };
     let after_word = source.find("def word =").expect("the word is written");
