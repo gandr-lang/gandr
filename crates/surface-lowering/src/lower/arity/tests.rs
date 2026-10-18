@@ -1173,7 +1173,8 @@ fn each_label_names_what_it_labels()
             Labelled::CompType { .. }
             | Labelled::Value(_)
             | Labelled::Endpoint(_)
-            | Labelled::Branch { .. } => None,
+            | Labelled::Branch { .. }
+            | Labelled::Bound(_) => None,
         })
         .collect();
     let terms: Vec<(&str, Option<Value>)> = module
@@ -1185,7 +1186,8 @@ fn each_label_names_what_it_labels()
             Labelled::ValueType { .. }
             | Labelled::CompType { .. }
             | Labelled::Endpoint(_)
-            | Labelled::Branch { .. } => None,
+            | Labelled::Branch { .. }
+            | Labelled::Bound(_) => None,
         })
         .collect();
     let integer = Some(ValueType::Base(gandr_kernel_term::BaseType::Integer));

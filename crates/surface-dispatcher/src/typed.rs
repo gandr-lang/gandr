@@ -1124,6 +1124,8 @@ impl TypeTable
     ///   bytes, so the table answers offsets into the last source's own text;
     ///   the last source's declarations are keyed by their forms' keys in that
     ///   source's own tree, which no offset moves, and a sibling's — even one
+    // refused_by: container_member · collision: none (1 contested hunk(s), neither side deleted the
+    // other's lines)
     ///   writing the same form byte for byte (#596) — are not kept. A
     ///   declaration refused for binding again a name an unqualified import
     ///   binds answers at none of its sites (#677). The table keeps the unit,
@@ -1477,6 +1479,40 @@ impl TypeTable
                 standing,
             });
         }
+        // What each written computation returns, read at the first judgement
+        // the run finished of a computation written there: a `run` binder
+        // answers at what its bound computation returns, wherever a rewrite
+        // of its block moved that computation (#298).
+        let mut returned: BTreeMap<NodeIndex, (usize, ValueTypeId, Within)> = BTreeMap::new();
+        for &(term, first, _, at, constant) in &kept {
+            let (TermNode::Computation(id), TypeNode::Computation(ty)) = (term, first)
+            else {
+                continue;
+            };
+            let Some(&CompType::Returner { result, .. }) = arena.comp_type(ty)
+            else {
+                continue;
+            };
+            let Maybe::Present(origin) = origins.computation(id)
+            else {
+                continue;
+            };
+            if origin.provenance() != Provenance::Written {
+                continue;
+            }
+            let judged = (at, result, Within {
+                constant,
+                node: CoreNode::Computation(id),
+            });
+            let _held = returned
+                .entry(origin.node())
+                .and_modify(|held| {
+                    if at < held.0 {
+                        *held = judged;
+                    }
+                })
+                .or_insert(judged);
+        }
         // A label answers at what it names: a field's or a binder's type,
         // read under the binders its entry is, or a record field's term at
         // its type. A binder some use already answers is not answered twice.
@@ -1554,6 +1590,13 @@ impl TypeTable
                             node: CoreNode::Computation(action),
                         }),
                     )
+                },
+                Labelled::Bound(node) => {
+                    let Some(&(_, result, within)) = returned.get(&node)
+                    else {
+                        continue;
+                    };
+                    (TypeNode::Value(result), Standing::Judged(within))
                 },
             };
             let _first = binders.insert(label.span);
@@ -4317,6 +4360,35 @@ mod tests
             !trips.is_empty() && trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
             "the importer's other declarations still read back: {trips:?}"
         );
+    }
+
+    /// #298: a `run` binder answers at what its bound computation returns,
+    /// whether a use answers it or not: bound to a match with an exit, which
+    /// the block's rewrite leaves no bind of, to a loop, unused, or `_`.
+    #[test]
+    fn a_run_binder_answers_at_what_its_computation_returns_298()
+    {
+        let source = SourceText::from(
+            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\ndef \
+             predecessor(n : Nat) -> -F Nat {\n  run m <- case n {\n    Zero => return n,\n    \
+             Succ(p) => pure p,\n  } ;\n  return m\n}\n\ndef first(n : Nat) -> -F Nat {\n  run k \
+             <- loop { break(Succ(n)) } ;\n  return Succ(k)\n}\n\ndef same(n : Nat) -> -F Nat {\n  \
+             return n\n}\n\ndef unused(n : Nat) -> -F Nat {\n  run u <- same(n) ;\n  run _ <- \
+             same(n) ;\n  return n\n}\n",
+        );
+        let table = table(source);
+        for (needle, reason) in [
+            ("m <-", "bound to a match with an exit"),
+            ("k <-", "bound to a loop"),
+            ("u <-", "used nowhere"),
+            ("_ <-", "discarded"),
+        ] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(Subject::Binder, SourceText::from("Nat")),
+                "a binder {reason}"
+            );
+        }
     }
 
     /// A split of a relation whose arm uses only `k` still names `t`, which

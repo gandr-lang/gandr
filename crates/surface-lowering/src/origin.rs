@@ -1648,6 +1648,7 @@ impl OriginTable
                 | Labelled::CompType { .. }
                 | Labelled::Value(_)
                 | Labelled::Endpoint(_)
+                | Labelled::Bound(_)
                 | Labelled::Branch { .. } => {},
             }
         }
@@ -1786,6 +1787,11 @@ pub enum Labelled
     /// The endpoint a session action names, at the session type the typed
     /// run found it standing at there.
     Endpoint(ComputationId),
+    /// A `run` binder, at the value type the computation written at the
+    /// node returns, where the typed run judged that computation: the binder
+    /// answers even where the block's rewrite leaves no bind or use naming
+    /// it (#298).
+    Bound(NodeIndex),
     /// An offer arm's label, at the session its endpoint continues as in that
     /// arm: the branch `label` names of the session type the typed run found
     /// the endpoint standing at the offer `action`.

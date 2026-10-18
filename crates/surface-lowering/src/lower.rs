@@ -11741,6 +11741,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && let Maybe::Present(name) = self.origin_at(name)
             {
                 sink.origins.record_binder(id, name);
+                // The binder answers at what its bound computation returns,
+                // read where the run judged that computation: a rewrite of
+                // the block may leave no bind and no use naming it (#298).
+                sink.origins.record_label(Label {
+                    span: name.span(),
+                    labelled: Labelled::Bound(statement.bound),
+                });
             }
             if statement.rest == exits::Rest::Distributed {
                 let _first = sink.distributed.insert(id, origin);
