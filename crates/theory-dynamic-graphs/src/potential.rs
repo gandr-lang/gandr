@@ -148,6 +148,10 @@ impl RaiseCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each raise raises the telemetry's count by one.
+    /// - witness: `potential::tests::the_telemetry_and_node_count_track_each_offer`
     #[inline]
     fn saturating_increment(self) -> Self
     {
@@ -179,6 +183,10 @@ impl RelaxationCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each relaxation raises the telemetry's count by one.
+    /// - witness: `potential::tests::the_telemetry_and_node_count_track_each_offer`
     #[inline]
     fn saturating_increment(self) -> Self
     {
@@ -210,6 +218,10 @@ impl RefutationCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each refutation raises the telemetry's count by one.
+    /// - witness: `potential::tests::the_telemetry_and_node_count_track_each_offer`
     #[inline]
     fn saturating_increment(self) -> Self
     {
@@ -256,6 +268,10 @@ impl core::ops::Not for FeasibilityStatus
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a negated feasible status reads false.
+    /// - witness: `potential::tests::the_telemetry_and_node_count_track_each_offer`
     #[inline]
     fn not(self) -> Self::Output
     {
@@ -416,6 +432,11 @@ impl PotentialMaintenance
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the count is exactly one past the largest node
+    ///   offered.
+    /// - witness: `potential::tests::the_telemetry_and_node_count_track_each_offer`
     #[inline]
     #[must_use]
     pub fn nodes(&self) -> NodeCount
@@ -438,6 +459,10 @@ impl PotentialMaintenance
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the telemetry reads each count the offers raised.
+    /// - witness: `potential::tests::the_telemetry_and_node_count_track_each_offer`
     #[inline]
     #[must_use]
     pub fn telemetry(&self) -> PotentialTelemetry
@@ -755,6 +780,7 @@ impl PotentialMaintenance
     ///   wrong verdicts, lost edges and invalid maintained state on finite
     ///   graphs.
     /// - witness: `potential::tests::the_valuation_stays_feasible`
+    /// - witness: `potential::tests::the_telemetry_and_node_count_track_each_offer`
     #[inline]
     #[spec(ensures: |ret| ret.is_err() || u32::from(self.nodes()) > u32::from(node))]
     fn ensure_node(
@@ -844,6 +870,7 @@ impl PotentialMaintenance
     ///   graphs. Only the journalled nodes rise, so the predicate checks the
     ///   constraints leaving them.
     /// - witness: `potential::tests::the_valuation_stays_feasible`
+    /// - witness: `potential::tests::a_saturated_epoch_restarts_the_marks_before_propagating`
     #[inline]
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|outcome| match *outcome {
         Propagation::Satisfied => bool::from(self.valuation_is_feasible_around(&scratch.journal)),
@@ -1106,6 +1133,7 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::ConstraintVerdict;
+    use super::Epoch;
     use super::Offset;
     use super::Potential;
     use super::PotentialMaintenance;
@@ -1263,6 +1291,54 @@ mod tests
         assert!(
             bool::from(structure.valuation_is_feasible()),
             "and the system is still feasible"
+        );
+    }
+
+    #[test]
+    fn the_telemetry_and_node_count_track_each_offer()
+    {
+        let mut structure = admit(&[constraint(0, 1, 1), constraint(1, 2, 1)]);
+        let refused = structure
+            .insert_constraint(edge(2u32, 0u32), Offset::from(1))
+            .expect("insertion succeeds");
+        assert!(matches!(refused, ConstraintVerdict::Refuted(_)));
+        let telemetry = structure.telemetry();
+        assert_eq!(3, u64::from(telemetry.insertions));
+        assert_eq!(4, u64::from(telemetry.raises));
+        assert_eq!(2, u64::from(telemetry.relaxations));
+        assert_eq!(1, u64::from(telemetry.refutations));
+        assert_eq!(3, u32::from(structure.nodes()), "nodes 0, 1 and 2 exist");
+        assert!(
+            !bool::from(!structure.valuation_is_feasible()),
+            "negating a feasible status reads infeasible"
+        );
+    }
+
+    #[test]
+    fn a_saturated_epoch_restarts_the_marks_before_propagating()
+    {
+        let mut structure = admit(&[constraint(0, 1, 1), constraint(1, 2, 1)]);
+        structure.scratch.epoch = Epoch(u64::MAX);
+        // Raises 1 and 2 at the saturated epoch.
+        let raised = structure
+            .insert_constraint(edge(3u32, 1u32), Offset::from(5))
+            .expect("insertion succeeds");
+        assert_eq!(ConstraintVerdict::SatisfiedAfterRaise, raised);
+        let before: Vec<Maybe<Potential, super::PotentialAbsence>> =
+            (0 .. 4).map(|index| structure.value(node(index))).collect();
+        // Raises 3, then 1 again, before reaching its own source 2.
+        let refused = structure
+            .insert_constraint(edge(2u32, 3u32), Offset::from(1))
+            .expect("insertion succeeds");
+        assert!(
+            matches!(refused, ConstraintVerdict::Refuted(_)),
+            "the offer closes a positive cycle"
+        );
+        let after: Vec<Maybe<Potential, super::PotentialAbsence>> =
+            (0 .. 4).map(|index| structure.value(node(index))).collect();
+        assert_eq!(
+            before, after,
+            "the propagation after a saturated epoch journals every node it raises"
         );
     }
 
