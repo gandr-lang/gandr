@@ -59,7 +59,7 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — distinct heads, arities, tags and field types
     ///   separate the nominal introduction rule.
-    /// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
     pub(super) fn native_constructor(
         &mut self,
@@ -221,7 +221,7 @@ impl Machine<'_, '_>
     /// - witness: `recursion::tests::a_nullary_argument_needs_a_value_below_the_stage`
     /// - witness: `recursion::tests::a_constructor_of_plain_fields_needs_a_value_below_the_stage`
     /// - witness: `recursion::tests::a_thunked_field_shows_no_value_below_the_stage_598`
-    /// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
+    /// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
     pub(super) fn staged_constructor(
         &mut self,
@@ -318,7 +318,7 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — dependent arguments separate first-order indices from
     ///   type atoms and expose capture in simultaneous substitution.
-    /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
     pub(super) fn native_data(
         &mut self,
@@ -365,7 +365,7 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — nested records with unequal fields separate ordering
     ///   and result-stack ownership.
-    /// - witness: `native_formers::native_formers::record_width_depth_and_projection`
+    /// - witness: `tests::native_formers::record_width_depth_and_projection`
     #[spec(ensures: |ret| matches!(ret,
         Ok(Step::Descend(Goal::Value { direction: Direction::Synthesise, .. })
             | Step::Ascend(Produced::ValueType(_))) | Err(_)))]
@@ -424,7 +424,7 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — width in both directions, nested depth and a field of
     ///   the wrong type separate record checking from mere label inclusion.
-    /// - witness: `native_formers::native_formers::record_width_depth_and_projection`
+    /// - witness: `tests::native_formers::record_width_depth_and_projection`
     #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
     pub(super) fn check_native_record(
         &mut self,
@@ -505,9 +505,9 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — empty, missing and surplus branches distinguish exact
     ///   coverage; a dependent motive distinguishes its binder's scope; over
     ///   the circle a fixpoint's root case and a bare case are read apart.
-    /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
-    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
-    /// - witness: `native_formers::native_formers::a_case_over_the_circle_takes_its_constructors_and_loops_only`
+    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+    /// - witness: `tests::native_formers::a_case_over_the_circle_takes_its_constructors_and_loops_only`
     #[spec(ensures: |ret| matches!(self.root, Maybe::Absent(root::Absent::Unmarked)) && (ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Computation(_)))))))]
     pub(super) fn native_case(
         &mut self,
@@ -648,8 +648,8 @@ impl Machine<'_, '_>
     ///   capture, branch order and an incorrectly ambient result type; an
     ///   ill-typed branch of a case over the circle is refused by its own
     ///   mismatch before any rule is decided.
-    /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
-    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
     pub(super) fn native_branches(
         &mut self,
@@ -862,8 +862,8 @@ impl Machine<'_, '_>
     ///   admits a fixpoint over the circle that a bare reading of its case
     ///   would refuse, and a fold over a path at a looped point respects its
     ///   words' cancellations.
-    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
-    /// - witness: `native_formers::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
+    /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+    /// - witness: `tests::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |root| match *root { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, .. } if marked == fixpoint), Maybe::Absent(reason) => reason == root::Absent::NotOverCase }))]
     pub(super) fn fold_root(
         &mut self,
@@ -926,8 +926,8 @@ impl Machine<'_, '_>
     ///   lookup; each component of a three-component product and the component
     ///   past its last expose positional lookup; both components of a dependent
     ///   pair and the component past them expose the fibre.
-    /// - witness: `native_formers::native_formers::record_width_depth_and_projection`
-    /// - witness: `native_formers::native_formers::tuple_projection_reads_each_component`
+    /// - witness: `tests::native_formers::record_width_depth_and_projection`
+    /// - witness: `tests::native_formers::tuple_projection_reads_each_component`
     /// - witness: `judgement::tests::a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
     pub(super) fn native_projection(

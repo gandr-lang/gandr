@@ -50,7 +50,7 @@ const SPACES: &str = "                                                          
 ///   exhaustion is not injected.
 /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
 /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
-/// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
+/// - witness: `tests::algebra::render_vm_stack_limit_is_checked_before_output`
 #[derive(Debug)]
 pub(crate) struct OutputBuffer
 {
@@ -87,7 +87,7 @@ impl OutputBuffer
     ///   overflow is deterministic; allocator exhaustion is not injected.
     /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
     /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
-    /// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
+    /// - witness: `tests::algebra::render_vm_stack_limit_is_checked_before_output`
     #[spec(
         ensures: |ret| match usize::try_from(u64::from(capacity)) { Err(_error) => matches!(ret, Err(RenderError::ArithmeticOverflow { operation: RenderArithmetic::OutputBytes })), Ok(requested) => ret.as_ref().map_or_else(|error| *error == RenderError::AllocationFailed { site: RenderAllocationSite::Output },
             |buffer| buffer.text.is_empty()
@@ -130,7 +130,7 @@ impl OutputBuffer
     ///   overflow is deterministic; allocator exhaustion is not injected.
     /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
     /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
-    /// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
+    /// - witness: `tests::algebra::render_vm_stack_limit_is_checked_before_output`
     #[spec(
         captures: before = (self.text.as_ptr(), self.text.len()),
         ensures: |ret| ret.as_ptr() == before.0
@@ -166,7 +166,7 @@ impl OutputBuffer
     ///   overflow is deterministic; allocator exhaustion is not injected.
     /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
     /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
-    /// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
+    /// - witness: `tests::algebra::render_vm_stack_limit_is_checked_before_output`
     #[spec(
         captures: before = (self.text.len(), self.text.as_ptr(), self.text.capacity(), self.bytes, meter.usage()),
         ensures: |ret| ret.as_ref().map_or_else(|_error| self.text.len() == before.0
@@ -237,7 +237,7 @@ struct Fragment<'bytes>(&'bytes str);
 ///   exhaustion is not injected.
 /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
 /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
-/// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
+/// - witness: `tests::algebra::render_vm_stack_limit_is_checked_before_output`
 #[spec(
     captures: before = meter.usage(),
     ensures: |ret| ret.as_ref().map_or(true,

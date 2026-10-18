@@ -9,11 +9,11 @@ use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 
-use crate::error::CommentError;
-use crate::shape::Line;
-use crate::shape::Span;
-use crate::shape::Text;
-use crate::shape::Yes;
+use crate::comments::error::CommentError;
+use crate::comments::shape::Line;
+use crate::comments::shape::Span;
+use crate::comments::shape::Text;
+use crate::comments::shape::Yes;
 
 /// The ledger item of a source that does not open with a comment.
 const FILE_ITEM: &str = "<file>";
@@ -33,7 +33,7 @@ const DIGEST_DIGITS: usize = 16;
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the comment verdicts name the item the ledger holds.
-/// - witness: `comments::judge::tests::an_uncommented_item_is_refused_by_name`
+/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_refused_by_name`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Finding
 {
@@ -98,7 +98,7 @@ impl Finding
 /// # Adequacy
 /// - hypothesis: L3 — a built grammar resolves a `def`; a swapped error variant
 ///   would name something other than the grammar.
-/// - witness: `comments::judge::tests::an_uncommented_item_is_refused_by_name`
+/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_refused_by_name`
 #[spec(ensures: |ret| ret.is_ok())]
 #[inline]
 pub fn grammar() -> Result<Pbg, CommentError>
@@ -120,7 +120,7 @@ pub fn grammar() -> Result<Pbg, CommentError>
 /// - hypothesis: L3 — the same text keys the same line and a changed text a
 ///   different one; a truncation other than sixteen digits would change every
 ///   line the witnesses compare.
-/// - witness: `comments::judge::tests::the_key_is_the_items_content`
+/// - witness: `tests::comments::judge::tests::the_key_is_the_items_content`
 #[spec(ensures: |ret| ret.len() == DIGEST_DIGITS && ret.chars().all(|digit| digit.is_ascii_hexdigit()))]
 #[inline]
 #[must_use]
@@ -165,13 +165,13 @@ pub fn digest(text: Text<'_>) -> String
 ///   attribute block is not a comment before it. A body inherits only from the
 ///   line before it and only under the same name. The key moves with the item's
 ///   text and with nothing else.
-/// - witness: `comments::judge::tests::an_uncommented_item_is_refused_by_name`
-/// - witness: `comments::judge::tests::a_ledgered_item_passes`
-/// - witness: `comments::judge::tests::a_stale_ledger_line_is_refused`
-/// - witness: `comments::judge::tests::a_file_without_a_leading_comment_is_refused`
-/// - witness: `comments::judge::tests::a_comment_after_the_attribute_block_does_not_count`
-/// - witness: `comments::judge::tests::a_body_inherits_its_signatures_comment`
-/// - witness: `comments::judge::tests::the_key_is_the_items_content`
+/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_refused_by_name`
+/// - witness: `tests::comments::judge::tests::a_ledgered_item_passes`
+/// - witness: `tests::comments::judge::tests::a_stale_ledger_line_is_refused`
+/// - witness: `tests::comments::judge::tests::a_file_without_a_leading_comment_is_refused`
+/// - witness: `tests::comments::judge::tests::a_comment_after_the_attribute_block_does_not_count`
+/// - witness: `tests::comments::judge::tests::a_body_inherits_its_signatures_comment`
+/// - witness: `tests::comments::judge::tests::the_key_is_the_items_content`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|finding| finding.line.starts_with(file.0) && finding.line.contains(':'))))]
 #[inline]
 pub fn findings_of(
@@ -375,8 +375,8 @@ pub fn findings_of(
 /// # Adequacy
 /// - hypothesis: L3 — an uncommented `def` is named by its identifier, and a
 ///   body is matched to its signature by that name.
-/// - witness: `comments::judge::tests::an_uncommented_item_is_refused_by_name`
-/// - witness: `comments::judge::tests::a_body_inherits_its_signatures_comment`
+/// - witness: `tests::comments::judge::tests::an_uncommented_item_is_refused_by_name`
+/// - witness: `tests::comments::judge::tests::a_body_inherits_its_signatures_comment`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |name| name.as_ref().is_none_or(|text| !text.is_empty())))]
 fn item_name(
     pbg: &Pbg,
@@ -433,7 +433,7 @@ fn item_name(
 /// # Adequacy
 /// - hypothesis: L3 — re-spacing an item and putting a comment inside it leave
 ///   its key alone, and changing a token moves it.
-/// - witness: `comments::judge::tests::the_key_is_the_items_content`
+/// - witness: `tests::comments::judge::tests::the_key_is_the_items_content`
 #[spec(ensures: |ret| ret.trim() == ret.as_str() && !ret.contains("  ") && !ret.contains('\n'))]
 fn item_text(
     source: Text<'_>,
@@ -482,7 +482,7 @@ fn item_text(
 /// # Adequacy
 /// - hypothesis: L3 — a body on the next line inherits and a body after a blank
 ///   line does not.
-/// - witness: `comments::judge::tests::a_body_inherits_its_signatures_comment`
+/// - witness: `tests::comments::judge::tests::a_body_inherits_its_signatures_comment`
 #[spec(ensures: |ret| !ret.0 || source.0.get(.. gap.start).is_some() && source.0.get(gap.end ..).is_some())]
 fn on_next_line(
     source: Text<'_>,
@@ -506,8 +506,8 @@ mod tests
     use super::digest;
     use super::findings_of;
     use super::grammar;
-    use crate::ledger::discrepancies;
-    use crate::shape::Text;
+    use crate::comments::ledger::discrepancies;
+    use crate::comments::shape::Text;
 
     /// # Specification
     /// trivial.

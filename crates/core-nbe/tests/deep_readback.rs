@@ -46,130 +46,118 @@
 //! Each overlay is evaluated once more under the spinal stance, installed
 //! bound to a recording sink, and read back; the rebuilt term is compared, as
 //! a tree, with the reference's.
+//!
+//! The deep-readback cases, in a `cfg(test)` module so the crate's lint wall
+//! reads them as test code rather than as shipping code.
 
-/// The expansion oracle, shared with the measure's suite.
-#[cfg(test)]
-#[path = "support/unfolding.rs"]
-mod unfolding;
+use anodized::spec;
+use gandr_core_nbe::Bound;
+use gandr_core_nbe::CompGraft;
+use gandr_core_nbe::CompNode;
+use gandr_core_nbe::Definitions;
+use gandr_core_nbe::DomainArena;
+use gandr_core_nbe::DuplicationStance;
+use gandr_core_nbe::Fuel;
+use gandr_core_nbe::LoweredChain;
+use gandr_core_nbe::Overlay;
+use gandr_core_nbe::OverlayCompId;
+use gandr_core_nbe::OverlayId;
+use gandr_core_nbe::OverlayValueId;
+use gandr_core_nbe::ReadbackMode;
+use gandr_core_nbe::ShareArity;
+use gandr_core_nbe::ShareDistance;
+use gandr_core_nbe::SharePosition;
+use gandr_core_nbe::Sharing;
+use gandr_core_nbe::SharingMeasure;
+use gandr_core_nbe::TracedDuplication;
+use gandr_core_nbe::ValueGraft;
+use gandr_core_nbe::ValueNode;
+use gandr_core_nbe::erase_computation;
+use gandr_core_nbe::erase_value;
+use gandr_core_nbe::eval_computation;
+use gandr_core_nbe::eval_overlay_computation;
+use gandr_core_nbe::eval_overlay_value;
+use gandr_core_nbe::eval_value;
+use gandr_core_nbe::readback_computation;
+use gandr_core_nbe::readback_value;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::DefinitionalEnvironment;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_kernel_conversion_trace::TraceLog;
 
-/// The tree oracle, shared with the duplication suite.
-#[cfg(test)]
-#[path = "support/trees.rs"]
-mod trees;
+use crate::trees::Term;
+use crate::trees::Trees;
+use crate::trees::same_tree;
+use crate::unfolding::CoreNode;
+use crate::unfolding::Quantities;
+use crate::unfolding::Unfolded;
+use crate::unfolding::unfolded;
 
-/// The deep-readback cases, in a `cfg(test)` module so the crate's lint wall
-/// reads them as test code rather than as shipping code.
-#[cfg(test)]
-mod deep_readback
-{
-    use anodized::spec;
-    use gandr_core_nbe::Bound;
-    use gandr_core_nbe::CompGraft;
-    use gandr_core_nbe::CompNode;
-    use gandr_core_nbe::Definitions;
-    use gandr_core_nbe::DomainArena;
-    use gandr_core_nbe::DuplicationStance;
-    use gandr_core_nbe::Fuel;
-    use gandr_core_nbe::LoweredChain;
-    use gandr_core_nbe::Overlay;
-    use gandr_core_nbe::OverlayCompId;
-    use gandr_core_nbe::OverlayId;
-    use gandr_core_nbe::OverlayValueId;
-    use gandr_core_nbe::ReadbackMode;
-    use gandr_core_nbe::ShareArity;
-    use gandr_core_nbe::ShareDistance;
-    use gandr_core_nbe::SharePosition;
-    use gandr_core_nbe::Sharing;
-    use gandr_core_nbe::SharingMeasure;
-    use gandr_core_nbe::TracedDuplication;
-    use gandr_core_nbe::ValueGraft;
-    use gandr_core_nbe::ValueNode;
-    use gandr_core_nbe::erase_computation;
-    use gandr_core_nbe::erase_value;
-    use gandr_core_nbe::eval_computation;
-    use gandr_core_nbe::eval_overlay_computation;
-    use gandr_core_nbe::eval_overlay_value;
-    use gandr_core_nbe::eval_value;
-    use gandr_core_nbe::readback_computation;
-    use gandr_core_nbe::readback_value;
-    use gandr_core_term::Computation;
-    use gandr_core_term::ComputationId;
-    use gandr_core_term::CoreArena;
-    use gandr_core_term::DefinitionalEnvironment;
-    use gandr_core_term::Value;
-    use gandr_core_term::ValueId;
-    use gandr_kernel_conversion_trace::TraceLog;
+/// The number of links in each chain. Each contributes one node to the
+/// readback's task stack and one frame to the recursive presentation it
+/// replaces.
+const CHAIN_LINKS: usize = 50_000;
 
-    use crate::trees::Term;
-    use crate::trees::Trees;
-    use crate::trees::same_tree;
-    use crate::unfolding::CoreNode;
-    use crate::unfolding::Quantities;
-    use crate::unfolding::Unfolded;
-    use crate::unfolding::unfolded;
+/// A stack far too small for a per-node recursive readback over the chain,
+/// and ample for a machine whose task stack is on the heap.
+const SMALL_STACK_BYTES: usize = 256 * 1024;
 
-    /// The number of links in each chain. Each contributes one node to the
-    /// readback's task stack and one frame to the recursive presentation it
-    /// replaces.
-    const CHAIN_LINKS: usize = 50_000;
-
-    /// A stack far too small for a per-node recursive readback over the chain,
-    /// and ample for a machine whose task stack is on the heap.
-    const SMALL_STACK_BYTES: usize = 256 * 1024;
-
-    /// Fuel well above the step count either chain needs, so the witness fails
-    /// on depth rather than on the budget. The budget is shared with the
-    /// evaluations the readback drives, which is why it is generous rather than
-    /// tight.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: a budget above the step count either chain below needs,
-    ///   counting the evaluations the readback drives from the same budget.
-    /// - provides: the budget that keeps a refusal in these witnesses a depth
-    ///   result rather than an exhaustion one.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 — the fixed budget is observed directly, while both
-    ///   50,000-link fixtures completing inside a 256 KiB stack establish its
-    ///   adequacy. The budget guard alone does not establish normalization or
-    ///   depth; the rebuilt chains and byte-for-byte comparisons do.
-    /// - witness: `deep_readback::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
-    /// - witness: `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
-    /// - witness: `deep_readback::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
-    /// - witness: `deep_readback::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
-    #[spec(
+/// Fuel well above the step count either chain needs, so the witness fails
+/// on depth rather than on the budget. The budget is shared with the
+/// evaluations the readback drives, which is why it is generous rather than
+/// tight.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a budget above the step count either chain below needs, counting
+///   the evaluations the readback drives from the same budget.
+/// - provides: the budget that keeps a refusal in these witnesses a depth
+///   result rather than an exhaustion one.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the fixed budget is observed directly, while both
+///   50,000-link fixtures completing inside a 256 KiB stack establish its
+///   adequacy. The budget guard alone does not establish normalization or
+///   depth; the rebuilt chains and byte-for-byte comparisons do.
+/// - witness: `tests::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
+/// - witness: `tests::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
+/// - witness: `tests::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
+/// - witness: `tests::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
+#[spec(
         ensures: |ret| ret == Fuel::from(4_000_000_u32)
     )]
-    fn ample() -> Fuel
-    {
-        Fuel::from(4_000_000_u32)
-    }
+fn ample() -> Fuel
+{
+    Fuel::from(4_000_000_u32)
+}
 
-    /// `pair(… pair(pair(⟨⟩, ⟨⟩), ⟨⟩) …, ⟨⟩)`: the deep value, built by hand.
-    ///
-    /// The chain is linear rather than self-shared: each link's second
-    /// component is one leaf. A link naming the level below it twice would be
-    /// a shared DAG, and this readback expands sharing rather than preserving
-    /// it, so the case would measure the exponent instead of the depth.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: an arena holding the leaf and [`CHAIN_LINKS`] pairs, with the
-    ///   outermost pair's id.
-    /// - provides: the deep value and the reference its overlay erases to.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the fixed depth fits core ids. A bounded descent
-    ///   requires every pair to reuse one unit leaf and ends at that leaf at
-    ///   exactly the requested depth. Exact erased-arena equality and the
-    ///   independently walked readback distinguish a shorter chain, a non-unit
-    ///   second child and exponential self-sharing.
-    /// - witness: `deep_readback::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
-    /// - witness: `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
-    #[spec(
+/// `pair(… pair(pair(⟨⟩, ⟨⟩), ⟨⟩) …, ⟨⟩)`: the deep value, built by hand.
+///
+/// The chain is linear rather than self-shared: each link's second
+/// component is one leaf. A link naming the level below it twice would be
+/// a shared DAG, and this readback expands sharing rather than preserving
+/// it, so the case would measure the exponent instead of the depth.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an arena holding the leaf and [`CHAIN_LINKS`] pairs, with the
+///   outermost pair's id.
+/// - provides: the deep value and the reference its overlay erases to.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the fixed depth fits core ids. A bounded descent requires
+///   every pair to reuse one unit leaf and ends at that leaf at exactly the
+///   requested depth. Exact erased-arena equality and the independently walked
+///   readback distinguish a shorter chain, a non-unit second child and
+///   exponential self-sharing.
+/// - witness: `tests::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
+/// - witness: `tests::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
+#[spec(
         ensures: |ret| {
             let mut top = ret.1;
             let mut leaf = None;
@@ -182,38 +170,38 @@ mod deep_readback
             ret.0.value(top) == Some(&Value::unit()) && leaf.is_none_or(|held| held == top)
         }
     )]
-    fn unshared_value_chain() -> (CoreArena, ValueId)
-    {
-        let mut core = CoreArena::new();
-        let leaf = core.value_unit();
-        let mut nested = leaf;
-        let mut remaining = CHAIN_LINKS;
-        while remaining > 0 {
-            nested = core.value_tuple(&[nested, leaf]);
-            remaining = remaining.saturating_sub(1);
-        }
-        (core, nested)
+fn unshared_value_chain() -> (CoreArena, ValueId)
+{
+    let mut core = CoreArena::new();
+    let leaf = core.value_unit();
+    let mut nested = leaf;
+    let mut remaining = CHAIN_LINKS;
+    while remaining > 0 {
+        nested = core.value_tuple(&[nested, leaf]);
+        remaining = remaining.saturating_sub(1);
     }
+    (core, nested)
+}
 
-    /// The deep value as an overlay: the leaf one share among all of its
-    /// occurrences.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: an overlay whose root shares one unit among one more
-    ///   occurrence than [`CHAIN_LINKS`], placed in preorder down the chain.
-    /// - provides: the overlay that erases to [`unshared_value_chain`].
-    /// - panics: when a mint is refused, which only the id ceiling causes.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the fixed depth and arity fit their counters. The
-    ///   root shares one unit, the right occurrence at each pair has its
-    ///   descending preorder position, and the terminal occurrence has position
-    ///   zero. Exact erased-arena equality and measured quantities distinguish
-    ///   reversed numbering, a wrong arity and a missing link.
-    /// - witness: `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
-    /// - witness: `deep_readback::deep_readback::the_deep_readback_cases_measure_as_their_erasure_inside_a_small_stack`
-    #[spec(
+/// The deep value as an overlay: the leaf one share among all of its
+/// occurrences.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an overlay whose root shares one unit among one more occurrence
+///   than [`CHAIN_LINKS`], placed in preorder down the chain.
+/// - provides: the overlay that erases to [`unshared_value_chain`].
+/// - panics: when a mint is refused, which only the id ceiling causes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the fixed depth and arity fit their counters. The root
+///   shares one unit, the right occurrence at each pair has its descending
+///   preorder position, and the terminal occurrence has position zero. Exact
+///   erased-arena equality and measured quantities distinguish reversed
+///   numbering, a wrong arity and a missing link.
+/// - witness: `tests::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
+/// - witness: `tests::deep_readback::the_deep_readback_cases_measure_as_their_erasure_inside_a_small_stack`
+#[spec(
         ensures: |ret| {
             let Some(&ValueNode::Shared(sharing)) = ret.0.value(ret.1) else { return false; };
             let OverlayId::Value(leg) = sharing.leg else { return false; };
@@ -228,61 +216,58 @@ mod deep_readback
             ret.0.value(top) == Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position: SharePosition::from(0_u32) }))
         }
     )]
-    fn shared_value_chain() -> (Overlay, OverlayValueId)
-    {
-        let mut overlay = Overlay::new();
-        let leaf = overlay
-            .mint_value(ValueNode::Grafted(ValueGraft::Unit))
-            .expect("a leaf names no child");
-        let mut taken = 0_u32;
-        let mut nested = value_occurrence(&mut overlay, SharePosition::from(taken));
+fn shared_value_chain() -> (Overlay, OverlayValueId)
+{
+    let mut overlay = Overlay::new();
+    let leaf = overlay
+        .mint_value(ValueNode::Grafted(ValueGraft::Unit))
+        .expect("a leaf names no child");
+    let mut taken = 0_u32;
+    let mut nested = value_occurrence(&mut overlay, SharePosition::from(taken));
+    taken = taken.saturating_add(1);
+    let mut remaining = CHAIN_LINKS;
+    while remaining > 0 {
+        let second = value_occurrence(&mut overlay, SharePosition::from(taken));
         taken = taken.saturating_add(1);
-        let mut remaining = CHAIN_LINKS;
-        while remaining > 0 {
-            let second = value_occurrence(&mut overlay, SharePosition::from(taken));
-            taken = taken.saturating_add(1);
-            nested = overlay
-                .mint_value(ValueNode::Grafted(ValueGraft::Pair(nested, second)))
-                .expect("both components resolve");
-            remaining = remaining.saturating_sub(1);
-        }
-        let root = overlay
-            .mint_value(ValueNode::Shared(Sharing {
-                arity: ShareArity::from(taken),
-                leg: OverlayId::Value(leaf),
-                body: nested,
-            }))
-            .expect("the leaf and the chain resolve");
-        (overlay, root)
+        nested = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Pair(nested, second)))
+            .expect("both components resolve");
+        remaining = remaining.saturating_sub(1);
     }
+    let root = overlay
+        .mint_value(ValueNode::Shared(Sharing {
+            arity: ShareArity::from(taken),
+            leg: OverlayId::Value(leaf),
+            body: nested,
+        }))
+        .expect("the leaf and the chain resolve");
+    (overlay, root)
+}
 
-    /// `return ⟨thunk (return ⟨thunk (… return ⟨⟩ …)⟩)⟩`: the chain of
-    /// suspensions, built by hand.
-    ///
-    /// The depth is in the *suspensions*, so evaluation stops at the first weak
-    /// head and readback is what drives the whole chain — one evaluation per
-    /// link, each entering the closure the link below it suspended. No binder
-    /// is opened, so the environment stays empty and the case measures depth
-    /// rather than the quadratic copying a nest of binders would pay.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: an arena holding the unit, the innermost returner and
-    ///   [`CHAIN_LINKS`] thunk-returner links, with the outermost returner's
-    ///   id.
-    /// - provides: the deep computation and the reference its overlay erases
-    ///   to.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the fixed depth fits core ids. A bounded descent
-    ///   crosses return/thunk at every link and ends at return/unit, excluding
-    ///   an early weak-head stop and a wrong-polarity child. Exact arena
-    ///   equality and a 256 KiB readback witness independently observe the
-    ///   complete chain.
-    /// - witness: `deep_readback::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
-    /// - witness: `deep_readback::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
-    #[spec(
+/// `return ⟨thunk (return ⟨thunk (… return ⟨⟩ …)⟩)⟩`: the chain of
+/// suspensions, built by hand.
+///
+/// The depth is in the *suspensions*, so evaluation stops at the first weak
+/// head and readback is what drives the whole chain — one evaluation per
+/// link, each entering the closure the link below it suspended. No binder
+/// is opened, so the environment stays empty and the case measures depth
+/// rather than the quadratic copying a nest of binders would pay.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an arena holding the unit, the innermost returner and
+///   [`CHAIN_LINKS`] thunk-returner links, with the outermost returner's id.
+/// - provides: the deep computation and the reference its overlay erases to.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the fixed depth fits core ids. A bounded descent crosses
+///   return/thunk at every link and ends at return/unit, excluding an early
+///   weak-head stop and a wrong-polarity child. Exact arena equality and a 256
+///   KiB readback witness independently observe the complete chain.
+/// - witness: `tests::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
+/// - witness: `tests::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
+#[spec(
         ensures: |ret| {
             let mut top = ret.1;
             for _ in 0..CHAIN_LINKS {
@@ -293,38 +278,37 @@ mod deep_readback
             matches!(ret.0.computation(top), Some(&Computation::Return(value)) if ret.0.value(value) == Some(&Value::unit()))
         }
     )]
-    fn unshared_suspension_chain() -> (CoreArena, ComputationId)
-    {
-        let mut core = CoreArena::new();
-        let produced = core.value_unit();
-        let mut nested = core.computation_return(produced);
-        let mut remaining = CHAIN_LINKS;
-        while remaining > 0 {
-            let suspended = core.value_thunk(nested);
-            nested = core.computation_return(suspended);
-            remaining = remaining.saturating_sub(1);
-        }
-        (core, nested)
+fn unshared_suspension_chain() -> (CoreArena, ComputationId)
+{
+    let mut core = CoreArena::new();
+    let produced = core.value_unit();
+    let mut nested = core.computation_return(produced);
+    let mut remaining = CHAIN_LINKS;
+    while remaining > 0 {
+        let suspended = core.value_thunk(nested);
+        nested = core.computation_return(suspended);
+        remaining = remaining.saturating_sub(1);
     }
+    (core, nested)
+}
 
-    /// The chain of suspensions as an overlay of grafts alone.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: an overlay whose root is the outermost of [`CHAIN_LINKS`]
-    ///   thunk-returner links over `return ⟨⟩`, with no share.
-    /// - provides: the overlay that erases to [`unshared_suspension_chain`].
-    /// - panics: when a mint is refused, which only the id ceiling causes.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the fixed depth fits overlay ids. Every link is a
-    ///   grafted return/thunk pair and the terminal grafts are return/unit,
-    ///   excluding accidental shares and a short suspension chain. The
-    ///   independently built core arena and full readback must agree byte for
-    ///   byte.
-    /// - witness: `deep_readback::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
-    /// - witness: `deep_readback::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
-    #[spec(
+/// The chain of suspensions as an overlay of grafts alone.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an overlay whose root is the outermost of [`CHAIN_LINKS`]
+///   thunk-returner links over `return ⟨⟩`, with no share.
+/// - provides: the overlay that erases to [`unshared_suspension_chain`].
+/// - panics: when a mint is refused, which only the id ceiling causes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the fixed depth fits overlay ids. Every link is a grafted
+///   return/thunk pair and the terminal grafts are return/unit, excluding
+///   accidental shares and a short suspension chain. The independently built
+///   core arena and full readback must agree byte for byte.
+/// - witness: `tests::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
+/// - witness: `tests::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
+#[spec(
         ensures: |ret| {
             let mut top = ret.1;
             for _ in 0..CHAIN_LINKS {
@@ -336,173 +320,172 @@ mod deep_readback
                 if ret.0.value(value) == Some(&ValueNode::Grafted(ValueGraft::Unit)))
         }
     )]
-    fn grafted_suspension_chain() -> (Overlay, OverlayCompId)
-    {
-        let mut overlay = Overlay::new();
-        let produced = overlay
-            .mint_value(ValueNode::Grafted(ValueGraft::Unit))
-            .expect("a leaf names no child");
-        let mut nested = overlay
-            .mint_computation(CompNode::Grafted(CompGraft::Return(produced)))
-            .expect("the returned value resolves");
-        let mut remaining = CHAIN_LINKS;
-        while remaining > 0 {
-            let suspended = overlay
-                .mint_value(ValueNode::Grafted(ValueGraft::Thunk(nested)))
-                .expect("the suspended computation resolves");
-            nested = overlay
-                .mint_computation(CompNode::Grafted(CompGraft::Return(suspended)))
-                .expect("the returned thunk resolves");
-            remaining = remaining.saturating_sub(1);
-        }
-        (overlay, nested)
+fn grafted_suspension_chain() -> (Overlay, OverlayCompId)
+{
+    let mut overlay = Overlay::new();
+    let produced = overlay
+        .mint_value(ValueNode::Grafted(ValueGraft::Unit))
+        .expect("a leaf names no child");
+    let mut nested = overlay
+        .mint_computation(CompNode::Grafted(CompGraft::Return(produced)))
+        .expect("the returned value resolves");
+    let mut remaining = CHAIN_LINKS;
+    while remaining > 0 {
+        let suspended = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Thunk(nested)))
+            .expect("the suspended computation resolves");
+        nested = overlay
+            .mint_computation(CompNode::Grafted(CompGraft::Return(suspended)))
+            .expect("the returned thunk resolves");
+        remaining = remaining.saturating_sub(1);
     }
+    (overlay, nested)
+}
 
-    /// One value occurrence of the innermost share, at `position`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: a fresh occurrence at distance zero.
-    /// - provides: the occurrences the shared builder places in preorder.
-    /// - panics: when the mint is refused, which only the id ceiling causes.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — any occurrence position fits its own counter and the
-    ///   mint fits overlay ids. Exact distance and position preserve the
-    ///   preorder numbering; the shared chain erasing byte for byte and its
-    ///   measured arity distinguish a shifted or repeated occurrence.
-    /// - witness: `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
-    #[spec(
+/// One value occurrence of the innermost share, at `position`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a fresh occurrence at distance zero.
+/// - provides: the occurrences the shared builder places in preorder.
+/// - panics: when the mint is refused, which only the id ceiling causes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — any occurrence position fits its own counter and the mint
+///   fits overlay ids. Exact distance and position preserve the preorder
+///   numbering; the shared chain erasing byte for byte and its measured arity
+///   distinguish a shifted or repeated occurrence.
+/// - witness: `tests::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
+#[spec(
         ensures: |ret| overlay.value(ret) == Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position }))
     )]
-    fn value_occurrence(
-        overlay: &mut Overlay,
-        position: SharePosition,
-    ) -> OverlayValueId
-    {
-        overlay
-            .mint_value(ValueNode::Bound(Bound {
-                distance: ShareDistance::from(0_u32),
-                position,
-            }))
-            .expect("an occurrence names no child")
-    }
+fn value_occurrence(
+    overlay: &mut Overlay,
+    position: SharePosition,
+) -> OverlayValueId
+{
+    overlay
+        .mint_value(ValueNode::Bound(Bound {
+            distance: ShareDistance::from(0_u32),
+            position,
+        }))
+        .expect("an occurrence names no child")
+}
 
-    /// Evaluate a closed value and read it back in the rebuilding mode.
-    ///
-    /// # Specification
-    /// - requires: `term` is a closed value whose evaluation and readback fit
-    ///   the supplied budget.
-    /// - ensures: the domain arena the run filled and the rebuilt core value,
-    ///   minted into `core`.
-    /// - provides: the one run of the unshared pipeline both sides of a
-    ///   comparison go through.
-    /// - panics: when evaluation or readback refuses.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a closed value normalizes within the supplied budget.
-    ///   Input and rebuilt ids must resolve in the same arena. Independent
-    ///   depth, leaf and whole-arena comparisons distinguish source reuse from
-    ///   rebuilding, a shorter result and wrong readback structure; the small
-    ///   stack witnesses traversal depth.
-    /// - witness: `deep_readback::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
-    /// - witness: `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
-    #[spec(
+/// Evaluate a closed value and read it back in the rebuilding mode.
+///
+/// # Specification
+/// - requires: `term` is a closed value whose evaluation and readback fit the
+///   supplied budget.
+/// - ensures: the domain arena the run filled and the rebuilt core value,
+///   minted into `core`.
+/// - provides: the one run of the unshared pipeline both sides of a comparison
+///   go through.
+/// - panics: when evaluation or readback refuses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closed value normalizes within the supplied budget.
+///   Input and rebuilt ids must resolve in the same arena. Independent depth,
+///   leaf and whole-arena comparisons distinguish source reuse from rebuilding,
+///   a shorter result and wrong readback structure; the small stack witnesses
+///   traversal depth.
+/// - witness: `tests::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
+/// - witness: `tests::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
+#[spec(
         requires: core.value(term).is_some(),
         ensures: |ret| core.value(term).is_some() && core.value(ret.1).is_some()
     )]
-    fn read_back_value(
-        core: &mut CoreArena,
-        term: ValueId,
-    ) -> (DomainArena, ValueId)
-    {
-        let chain = LoweredChain::new();
-        let environment = DefinitionalEnvironment::new();
-        let scope = environment.root();
-        let definitions = Definitions::new(&chain, &environment, scope);
-        let mut domain = DomainArena::new();
-        let evaluated = eval_value(core, &mut domain, definitions, ample(), term)
-            .expect("a closed value evaluates");
-        let rebuilt = readback_value(
-            core,
-            &mut domain,
-            definitions,
-            ReadbackMode::Unfolding,
-            ample(),
-            evaluated,
-        )
-        .expect("and reads back");
-        (domain, rebuilt)
-    }
+fn read_back_value(
+    core: &mut CoreArena,
+    term: ValueId,
+) -> (DomainArena, ValueId)
+{
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let scope = environment.root();
+    let definitions = Definitions::new(&chain, &environment, scope);
+    let mut domain = DomainArena::new();
+    let evaluated = eval_value(core, &mut domain, definitions, ample(), term)
+        .expect("a closed value evaluates");
+    let rebuilt = readback_value(
+        core,
+        &mut domain,
+        definitions,
+        ReadbackMode::Unfolding,
+        ample(),
+        evaluated,
+    )
+    .expect("and reads back");
+    (domain, rebuilt)
+}
 
-    /// Evaluate a closed computation and read it back in the rebuilding mode.
-    ///
-    /// # Specification
-    /// - requires: `term` is a closed computation whose evaluation and readback
-    ///   fit the supplied budget.
-    /// - ensures: the domain arena the run filled and the rebuilt core
-    ///   computation, minted into `core`.
-    /// - provides: the one run of the unshared pipeline both sides of a
-    ///   comparison go through.
-    /// - panics: when evaluation or readback refuses.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a closed computation and its driven evaluations fit
-    ///   the supplied budget. Both input and rebuilt ids remain live. The
-    ///   suspension-chain depth and exact arena comparisons distinguish
-    ///   stopping at the outer returner, losing a thunk and reading a wrong
-    ///   family.
-    /// - witness: `deep_readback::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
-    /// - witness: `deep_readback::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
-    #[spec(
+/// Evaluate a closed computation and read it back in the rebuilding mode.
+///
+/// # Specification
+/// - requires: `term` is a closed computation whose evaluation and readback fit
+///   the supplied budget.
+/// - ensures: the domain arena the run filled and the rebuilt core computation,
+///   minted into `core`.
+/// - provides: the one run of the unshared pipeline both sides of a comparison
+///   go through.
+/// - panics: when evaluation or readback refuses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closed computation and its driven evaluations fit the
+///   supplied budget. Both input and rebuilt ids remain live. The
+///   suspension-chain depth and exact arena comparisons distinguish stopping at
+///   the outer returner, losing a thunk and reading a wrong family.
+/// - witness: `tests::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
+/// - witness: `tests::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
+#[spec(
         requires: core.computation(term).is_some(),
         ensures: |ret| core.computation(term).is_some() && core.computation(ret.1).is_some()
     )]
-    fn read_back_computation(
-        core: &mut CoreArena,
-        term: ComputationId,
-    ) -> (DomainArena, ComputationId)
-    {
-        let chain = LoweredChain::new();
-        let environment = DefinitionalEnvironment::new();
-        let scope = environment.root();
-        let definitions = Definitions::new(&chain, &environment, scope);
-        let mut domain = DomainArena::new();
-        let evaluated = eval_computation(core, &mut domain, definitions, ample(), term)
-            .expect("the outermost returner has a weak head");
-        let rebuilt = readback_computation(
-            core,
-            &mut domain,
-            definitions,
-            ReadbackMode::Unfolding,
-            ample(),
-            evaluated,
-        )
-        .expect("and the chain of suspensions reads back");
-        (domain, rebuilt)
-    }
+fn read_back_computation(
+    core: &mut CoreArena,
+    term: ComputationId,
+) -> (DomainArena, ComputationId)
+{
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let scope = environment.root();
+    let definitions = Definitions::new(&chain, &environment, scope);
+    let mut domain = DomainArena::new();
+    let evaluated = eval_computation(core, &mut domain, definitions, ample(), term)
+        .expect("the outermost returner has a weak head");
+    let rebuilt = readback_computation(
+        core,
+        &mut domain,
+        definitions,
+        ReadbackMode::Unfolding,
+        ample(),
+        evaluated,
+    )
+    .expect("and the chain of suspensions reads back");
+    (domain, rebuilt)
+}
 
-    /// Evaluate the overlay root `root` under the spinal stance, erasing into a
-    /// fresh arena, and read the result back there.
-    ///
-    /// # Specification
-    /// - requires: a closed evaluation root with no opaque node, whose run fits
-    ///   the supplied budget.
-    /// - ensures: the arena the run erased and read back into, and the result
-    ///   read back; the overlay is as it was.
-    /// - provides: the spinal side of each readback differential.
-    /// - panics: when installation, evaluation or readback refuses, which no
-    ///   deep case under an ample budget provokes.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a closed evaluation overlay contains no opaque node
-    ///   and fits the run budget. The entry watermark is preserved and the
-    ///   returned id has the input family in its returned arena. Independent
-    ///   erased-pipeline tree comparisons distinguish wrong sharing, a changed
-    ///   overlay prefix and a readback into the wrong arena.
-    /// - witness: `deep_readback::deep_readback::a_spinal_value_chain_reads_back_as_the_erased_one`
-    /// - witness: `deep_readback::deep_readback::a_spinal_suspension_chain_reads_back_as_the_erased_one`
-    #[spec(
+/// Evaluate the overlay root `root` under the spinal stance, erasing into a
+/// fresh arena, and read the result back there.
+///
+/// # Specification
+/// - requires: a closed evaluation root with no opaque node, whose run fits the
+///   supplied budget.
+/// - ensures: the arena the run erased and read back into, and the result read
+///   back; the overlay is as it was.
+/// - provides: the spinal side of each readback differential.
+/// - panics: when installation, evaluation or readback refuses, which no deep
+///   case under an ample budget provokes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closed evaluation overlay contains no opaque node and
+///   fits the run budget. The entry watermark is preserved and the returned id
+///   has the input family in its returned arena. Independent erased-pipeline
+///   tree comparisons distinguish wrong sharing, a changed overlay prefix and a
+///   readback into the wrong arena.
+/// - witness: `tests::deep_readback::a_spinal_value_chain_reads_back_as_the_erased_one`
+/// - witness: `tests::deep_readback::a_spinal_suspension_chain_reads_back_as_the_erased_one`
+#[spec(
         requires: matches!(root, OverlayId::Value(_) | OverlayId::Computation(_)) && overlay.validate(root).is_ok(),
         captures: [mark = overlay.watermark()],
         ensures: |ret| overlay.watermark() == mark && match (root, ret.1) {
@@ -511,250 +494,26 @@ mod deep_readback
             _ => false,
         }
     )]
-    fn spinal_read_back(
-        overlay: &mut Overlay,
-        root: OverlayId,
-    ) -> (CoreArena, Term)
-    {
-        let chain = LoweredChain::new();
-        let environment = DefinitionalEnvironment::new();
-        let definitions = Definitions::new(&chain, &environment, environment.root());
-        let mut core = CoreArena::new();
-        let mut domain = DomainArena::new();
-        let mut log = TraceLog::new();
-        let spinal = TracedDuplication::install(DuplicationStance::Spinal, &mut log)
-            .expect("a recording sink carries the spinal stance");
-        let read = match root {
-            OverlayId::Value(id) => {
-                let (value, _remaining) = spinal
-                    .eval_overlay_value(overlay, &mut core, &mut domain, definitions, ample(), id)
-                    .expect("the spinal run evaluates the root");
-                Term::Value(
-                    readback_value(
-                        &mut core,
-                        &mut domain,
-                        definitions,
-                        ReadbackMode::Unfolding,
-                        ample(),
-                        value,
-                    )
-                    .expect("a closed value reads back"),
-                )
-            },
-            OverlayId::Computation(id) => {
-                let (head, _remaining) = spinal
-                    .eval_overlay_computation(
-                        overlay,
-                        &mut core,
-                        &mut domain,
-                        definitions,
-                        ample(),
-                        id,
-                    )
-                    .expect("the spinal run evaluates the root");
-                Term::Computation(
-                    readback_computation(
-                        &mut core,
-                        &mut domain,
-                        definitions,
-                        ReadbackMode::Unfolding,
-                        ample(),
-                        head,
-                    )
-                    .expect("a closed weak head reads back"),
-                )
-            },
-            OverlayId::ValueType(_) | OverlayId::CompType(_) => {
-                panic!("the deep cases are evaluation roots")
-            },
-        };
-        (core, read)
-    }
-
-    #[test]
-    fn a_deep_value_reads_back_inside_a_small_stack()
-    {
-        let read = std::thread::Builder::new()
-            .stack_size(SMALL_STACK_BYTES)
-            .spawn(|| {
-                let (mut core, nested) = unshared_value_chain();
-                let (_domain, rebuilt) = read_back_value(&mut core, nested);
-
-                assert_ne!(
-                    nested, rebuilt,
-                    "the rebuilding mode ignored the source face, so every link was walked"
-                );
-
-                // Walk back down the result so the depth cannot degenerate into
-                // a shallow graph and keep passing.
-                let mut depth = 0_usize;
-                let mut here = rebuilt;
-                while let Some(&[first, _]) = core.value(here).and_then(Value::components) {
-                    depth = depth.saturating_add(1_usize);
-                    here = first;
-                }
-                assert_eq!(
-                    CHAIN_LINKS, depth,
-                    "every link of the chain is present in the term that was read back"
-                );
-                assert!(
-                    core.value(here) == Some(&Value::unit()),
-                    "and the leaf under all of them came back too"
-                );
-            })
-            .expect("the small-stack thread starts")
-            .join();
-        assert!(read.is_ok(), "the value machine's depth lives on the heap");
-    }
-
-    #[test]
-    fn a_deep_computation_reads_back_inside_a_small_stack()
-    {
-        let read = std::thread::Builder::new()
-            .stack_size(SMALL_STACK_BYTES)
-            .spawn(|| {
-                let (mut core, nested) = unshared_suspension_chain();
-                let (_domain, rebuilt) = read_back_computation(&mut core, nested);
-
-                assert_ne!(
-                    nested, rebuilt,
-                    "the rebuilding mode entered every suspension rather than answering \
-                     with the source"
-                );
-
-                let mut depth = 0_usize;
-                let mut here = rebuilt;
-                while let Some(&Computation::Return(carried)) = core.computation(here) {
-                    let Some(&Value::Thunk(body)) = core.value(carried)
-                    else {
-                        break;
-                    };
-                    depth = depth.saturating_add(1_usize);
-                    here = body;
-                }
-                assert_eq!(
-                    CHAIN_LINKS, depth,
-                    "every suspension of the chain was entered and rebuilt"
-                );
-                assert!(
-                    matches!(core.computation(here), Some(&Computation::Return(_))),
-                    "and the innermost returner is what the last one suspended"
-                );
-            })
-            .expect("the small-stack thread starts")
-            .join();
-        assert!(
-            read.is_ok(),
-            "the computation machine's depth lives on the heap too, and so does the depth \
-             of the evaluations it drives"
-        );
-    }
-
-    #[test]
-    fn an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one()
-    {
-        let compared = std::thread::Builder::new()
-            .stack_size(SMALL_STACK_BYTES)
-            .spawn(|| {
-                let (mut reference, reference_root) = unshared_value_chain();
-                let (overlay, root) = shared_value_chain();
-                let mut erased = CoreArena::new();
-                let erased_root = erase_value(&overlay, root, &mut erased)
-                    .expect("the shared leaf validates and erases");
-                assert!(
-                    reference == erased,
-                    "the erased arena is the hand-built one, node for node"
-                );
-                assert_eq!(reference_root, erased_root);
-
-                let (reference_domain, reference_rebuilt) =
-                    read_back_value(&mut reference, reference_root);
-                let (erased_domain, erased_rebuilt) = read_back_value(&mut erased, erased_root);
-                assert!(
-                    reference_domain == erased_domain,
-                    "the unshared pipeline fills one domain arena from both"
-                );
-                assert!(
-                    reference == erased,
-                    "and its readback mints the same core nodes into both arenas"
-                );
-                assert_eq!(reference_rebuilt, erased_rebuilt);
-            })
-            .expect("the small-stack thread starts")
-            .join();
-        assert!(
-            compared.is_ok(),
-            "validation, erasure, evaluation and readback all keep their depth on the heap"
-        );
-    }
-
-    #[test]
-    fn an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one()
-    {
-        let compared = std::thread::Builder::new()
-            .stack_size(SMALL_STACK_BYTES)
-            .spawn(|| {
-                let (mut reference, reference_root) = unshared_suspension_chain();
-                let (overlay, root) = grafted_suspension_chain();
-                let mut erased = CoreArena::new();
-                let erased_root = erase_computation(&overlay, root, &mut erased)
-                    .expect("the grafted chain validates and erases");
-                assert!(
-                    reference == erased,
-                    "the erased arena is the hand-built one, node for node"
-                );
-                assert_eq!(reference_root, erased_root);
-
-                let (reference_domain, reference_rebuilt) =
-                    read_back_computation(&mut reference, reference_root);
-                let (erased_domain, erased_rebuilt) =
-                    read_back_computation(&mut erased, erased_root);
-                assert!(
-                    reference_domain == erased_domain,
-                    "the unshared pipeline fills one domain arena from both"
-                );
-                assert!(
-                    reference == erased,
-                    "and its readback mints the same core nodes into both arenas"
-                );
-                assert_eq!(reference_rebuilt, erased_rebuilt);
-            })
-            .expect("the small-stack thread starts")
-            .join();
-        assert!(
-            compared.is_ok(),
-            "validation, erasure, evaluation and readback all keep their depth on the heap"
-        );
-    }
-
-    #[test]
-    fn erase_and_clone_overlay_evaluation_is_the_erased_pipeline()
-    {
-        let compared = std::thread::Builder::new()
-            .stack_size(SMALL_STACK_BYTES)
-            .spawn(|| {
-                let chain = LoweredChain::new();
-                let environment = DefinitionalEnvironment::new();
-                let definitions = Definitions::new(&chain, &environment, environment.root());
-
-                let (overlay, root) = shared_value_chain();
-                let mut erased = CoreArena::new();
-                let erased_root = erase_value(&overlay, root, &mut erased)
-                    .expect("the shared leaf validates and erases");
-                let (reference_domain, reference_rebuilt) =
-                    read_back_value(&mut erased, erased_root);
-                let mut core = CoreArena::new();
-                let mut domain = DomainArena::new();
-                let (value, _remaining) = eval_overlay_value(
-                    &overlay,
-                    &mut core,
-                    &mut domain,
-                    definitions,
-                    ample(),
-                    root,
-                )
-                .expect("the shared leaf evaluates through the overlay");
-                let rebuilt = readback_value(
+fn spinal_read_back(
+    overlay: &mut Overlay,
+    root: OverlayId,
+) -> (CoreArena, Term)
+{
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut core = CoreArena::new();
+    let mut domain = DomainArena::new();
+    let mut log = TraceLog::new();
+    let spinal = TracedDuplication::install(DuplicationStance::Spinal, &mut log)
+        .expect("a recording sink carries the spinal stance");
+    let read = match root {
+        OverlayId::Value(id) => {
+            let (value, _remaining) = spinal
+                .eval_overlay_value(overlay, &mut core, &mut domain, definitions, ample(), id)
+                .expect("the spinal run evaluates the root");
+            Term::Value(
+                readback_value(
                     &mut core,
                     &mut domain,
                     definitions,
@@ -762,35 +521,15 @@ mod deep_readback
                     ample(),
                     value,
                 )
-                .expect("and reads back");
-                assert!(
-                    erased == core,
-                    "the value chain's core arena is erasure's and its readback's"
-                );
-                assert!(
-                    reference_domain == domain,
-                    "and its domain arena the unshared pipeline's"
-                );
-                assert_eq!(reference_rebuilt, rebuilt);
-
-                let (overlay, root) = grafted_suspension_chain();
-                let mut erased = CoreArena::new();
-                let erased_root = erase_computation(&overlay, root, &mut erased)
-                    .expect("the grafted chain validates and erases");
-                let (reference_domain, reference_rebuilt) =
-                    read_back_computation(&mut erased, erased_root);
-                let mut core = CoreArena::new();
-                let mut domain = DomainArena::new();
-                let (head, _remaining) = eval_overlay_computation(
-                    &overlay,
-                    &mut core,
-                    &mut domain,
-                    definitions,
-                    ample(),
-                    root,
-                )
-                .expect("the outermost returner has a weak head through the overlay");
-                let rebuilt = readback_computation(
+                .expect("a closed value reads back"),
+            )
+        },
+        OverlayId::Computation(id) => {
+            let (head, _remaining) = spinal
+                .eval_overlay_computation(overlay, &mut core, &mut domain, definitions, ample(), id)
+                .expect("the spinal run evaluates the root");
+            Term::Computation(
+                readback_computation(
                     &mut core,
                     &mut domain,
                     definitions,
@@ -798,141 +537,369 @@ mod deep_readback
                     ample(),
                     head,
                 )
-                .expect("and the chain of suspensions reads back");
-                assert!(
-                    erased == core,
-                    "the suspension chain's core arena is erasure's and its readback's"
-                );
-                assert!(
-                    reference_domain == domain,
-                    "and its domain arena the unshared pipeline's"
-                );
-                assert_eq!(reference_rebuilt, rebuilt);
-            })
-            .expect("the small-stack thread starts")
-            .join();
-        assert!(
-            compared.is_ok(),
-            "erasure, evaluation through the overlay and readback keep their depth on the heap"
-        );
-    }
+                .expect("a closed weak head reads back"),
+            )
+        },
+        OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+            panic!("the deep cases are evaluation roots")
+        },
+    };
+    (core, read)
+}
 
-    #[test]
-    fn a_spinal_value_chain_reads_back_as_the_erased_one()
-    {
-        let compared = std::thread::Builder::new()
-            .stack_size(SMALL_STACK_BYTES)
-            .spawn(|| {
-                let (mut overlay, root) = shared_value_chain();
-                let mut erased = CoreArena::new();
-                let erased_root = erase_value(&overlay, root, &mut erased)
-                    .expect("the shared leaf validates and erases");
-                let (_domain, expected) = read_back_value(&mut erased, erased_root);
-                let (spinal, read) = spinal_read_back(&mut overlay, OverlayId::Value(root));
-                assert_eq!(
-                    Trees::Same,
-                    same_tree(&spinal, read, &erased, Term::Value(expected)),
-                    "the spinal run reads the value chain back as the reference does"
-                );
-            })
-            .expect("the small-stack thread starts")
-            .join();
-        assert!(
-            compared.is_ok(),
-            "duplication, erasure, shared evaluation and readback keep their depth on the heap"
-        );
-    }
+#[test]
+fn a_deep_value_reads_back_inside_a_small_stack()
+{
+    let read = std::thread::Builder::new()
+        .stack_size(SMALL_STACK_BYTES)
+        .spawn(|| {
+            let (mut core, nested) = unshared_value_chain();
+            let (_domain, rebuilt) = read_back_value(&mut core, nested);
 
-    #[test]
-    fn a_spinal_suspension_chain_reads_back_as_the_erased_one()
-    {
-        let compared = std::thread::Builder::new()
-            .stack_size(SMALL_STACK_BYTES)
-            .spawn(|| {
-                let (mut overlay, root) = grafted_suspension_chain();
-                let mut erased = CoreArena::new();
-                let erased_root = erase_computation(&overlay, root, &mut erased)
-                    .expect("the grafted chain validates and erases");
-                let (_domain, expected) = read_back_computation(&mut erased, erased_root);
-                let (spinal, read) = spinal_read_back(&mut overlay, OverlayId::Computation(root));
-                assert_eq!(
-                    Trees::Same,
-                    same_tree(&spinal, read, &erased, Term::Computation(expected)),
-                    "the spinal run reads the suspension chain back as the reference does"
-                );
-            })
-            .expect("the small-stack thread starts")
-            .join();
-        assert!(
-            compared.is_ok(),
-            "duplication, erasure, shared evaluation and readback keep their depth on the heap"
-        );
-    }
+            assert_ne!(
+                nested, rebuilt,
+                "the rebuilding mode ignored the source face, so every link was walked"
+            );
 
-    #[test]
-    fn the_deep_readback_cases_measure_as_their_erasure_inside_a_small_stack()
-    {
-        let measured = std::thread::Builder::new()
-            .stack_size(SMALL_STACK_BYTES)
-            .spawn(|| {
-                let links = u64::try_from(CHAIN_LINKS).expect("the chain's length fits a counter");
+            // Walk back down the result so the depth cannot degenerate into
+            // a shallow graph and keep passing.
+            let mut depth = 0_usize;
+            let mut here = rebuilt;
+            while let Some(&[first, _]) = core.value(here).and_then(Value::components) {
+                depth = depth.saturating_add(1_usize);
+                here = first;
+            }
+            assert_eq!(
+                CHAIN_LINKS, depth,
+                "every link of the chain is present in the term that was read back"
+            );
+            assert!(
+                core.value(here) == Some(&Value::unit()),
+                "and the leaf under all of them came back too"
+            );
+        })
+        .expect("the small-stack thread starts")
+        .join();
+    assert!(read.is_ok(), "the value machine's depth lives on the heap");
+}
 
-                let (overlay, root) = shared_value_chain();
-                let measured = SharingMeasure::of(&overlay, OverlayId::Value(root))
-                    .expect("the shared leaf validates and fits the counter");
-                assert_eq!(
-                    Quantities {
-                        shares: 1,
-                        occurrences: links.saturating_add(1),
-                        depth: 1,
-                        nodes: links.saturating_mul(2).saturating_add(3),
-                        expansion: links.saturating_mul(2).saturating_add(1),
-                    },
-                    Quantities::from(measured),
-                    "one leaf shared among one occurrence per link and one more stands for a \
+#[test]
+fn a_deep_computation_reads_back_inside_a_small_stack()
+{
+    let read = std::thread::Builder::new()
+        .stack_size(SMALL_STACK_BYTES)
+        .spawn(|| {
+            let (mut core, nested) = unshared_suspension_chain();
+            let (_domain, rebuilt) = read_back_computation(&mut core, nested);
+
+            assert_ne!(
+                nested, rebuilt,
+                "the rebuilding mode entered every suspension rather than answering \
+                     with the source"
+            );
+
+            let mut depth = 0_usize;
+            let mut here = rebuilt;
+            while let Some(&Computation::Return(carried)) = core.computation(here) {
+                let Some(&Value::Thunk(body)) = core.value(carried)
+                else {
+                    break;
+                };
+                depth = depth.saturating_add(1_usize);
+                here = body;
+            }
+            assert_eq!(
+                CHAIN_LINKS, depth,
+                "every suspension of the chain was entered and rebuilt"
+            );
+            assert!(
+                matches!(core.computation(here), Some(&Computation::Return(_))),
+                "and the innermost returner is what the last one suspended"
+            );
+        })
+        .expect("the small-stack thread starts")
+        .join();
+    assert!(
+        read.is_ok(),
+        "the computation machine's depth lives on the heap too, and so does the depth \
+             of the evaluations it drives"
+    );
+}
+
+#[test]
+fn an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one()
+{
+    let compared = std::thread::Builder::new()
+        .stack_size(SMALL_STACK_BYTES)
+        .spawn(|| {
+            let (mut reference, reference_root) = unshared_value_chain();
+            let (overlay, root) = shared_value_chain();
+            let mut erased = CoreArena::new();
+            let erased_root = erase_value(&overlay, root, &mut erased)
+                .expect("the shared leaf validates and erases");
+            assert!(
+                reference == erased,
+                "the erased arena is the hand-built one, node for node"
+            );
+            assert_eq!(reference_root, erased_root);
+
+            let (reference_domain, reference_rebuilt) =
+                read_back_value(&mut reference, reference_root);
+            let (erased_domain, erased_rebuilt) = read_back_value(&mut erased, erased_root);
+            assert!(
+                reference_domain == erased_domain,
+                "the unshared pipeline fills one domain arena from both"
+            );
+            assert!(
+                reference == erased,
+                "and its readback mints the same core nodes into both arenas"
+            );
+            assert_eq!(reference_rebuilt, erased_rebuilt);
+        })
+        .expect("the small-stack thread starts")
+        .join();
+    assert!(
+        compared.is_ok(),
+        "validation, erasure, evaluation and readback all keep their depth on the heap"
+    );
+}
+
+#[test]
+fn an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one()
+{
+    let compared = std::thread::Builder::new()
+        .stack_size(SMALL_STACK_BYTES)
+        .spawn(|| {
+            let (mut reference, reference_root) = unshared_suspension_chain();
+            let (overlay, root) = grafted_suspension_chain();
+            let mut erased = CoreArena::new();
+            let erased_root = erase_computation(&overlay, root, &mut erased)
+                .expect("the grafted chain validates and erases");
+            assert!(
+                reference == erased,
+                "the erased arena is the hand-built one, node for node"
+            );
+            assert_eq!(reference_root, erased_root);
+
+            let (reference_domain, reference_rebuilt) =
+                read_back_computation(&mut reference, reference_root);
+            let (erased_domain, erased_rebuilt) = read_back_computation(&mut erased, erased_root);
+            assert!(
+                reference_domain == erased_domain,
+                "the unshared pipeline fills one domain arena from both"
+            );
+            assert!(
+                reference == erased,
+                "and its readback mints the same core nodes into both arenas"
+            );
+            assert_eq!(reference_rebuilt, erased_rebuilt);
+        })
+        .expect("the small-stack thread starts")
+        .join();
+    assert!(
+        compared.is_ok(),
+        "validation, erasure, evaluation and readback all keep their depth on the heap"
+    );
+}
+
+#[test]
+fn erase_and_clone_overlay_evaluation_is_the_erased_pipeline()
+{
+    let compared = std::thread::Builder::new()
+        .stack_size(SMALL_STACK_BYTES)
+        .spawn(|| {
+            let chain = LoweredChain::new();
+            let environment = DefinitionalEnvironment::new();
+            let definitions = Definitions::new(&chain, &environment, environment.root());
+
+            let (overlay, root) = shared_value_chain();
+            let mut erased = CoreArena::new();
+            let erased_root = erase_value(&overlay, root, &mut erased)
+                .expect("the shared leaf validates and erases");
+            let (reference_domain, reference_rebuilt) = read_back_value(&mut erased, erased_root);
+            let mut core = CoreArena::new();
+            let mut domain = DomainArena::new();
+            let (value, _remaining) =
+                eval_overlay_value(&overlay, &mut core, &mut domain, definitions, ample(), root)
+                    .expect("the shared leaf evaluates through the overlay");
+            let rebuilt = readback_value(
+                &mut core,
+                &mut domain,
+                definitions,
+                ReadbackMode::Unfolding,
+                ample(),
+                value,
+            )
+            .expect("and reads back");
+            assert!(
+                erased == core,
+                "the value chain's core arena is erasure's and its readback's"
+            );
+            assert!(
+                reference_domain == domain,
+                "and its domain arena the unshared pipeline's"
+            );
+            assert_eq!(reference_rebuilt, rebuilt);
+
+            let (overlay, root) = grafted_suspension_chain();
+            let mut erased = CoreArena::new();
+            let erased_root = erase_computation(&overlay, root, &mut erased)
+                .expect("the grafted chain validates and erases");
+            let (reference_domain, reference_rebuilt) =
+                read_back_computation(&mut erased, erased_root);
+            let mut core = CoreArena::new();
+            let mut domain = DomainArena::new();
+            let (head, _remaining) = eval_overlay_computation(
+                &overlay,
+                &mut core,
+                &mut domain,
+                definitions,
+                ample(),
+                root,
+            )
+            .expect("the outermost returner has a weak head through the overlay");
+            let rebuilt = readback_computation(
+                &mut core,
+                &mut domain,
+                definitions,
+                ReadbackMode::Unfolding,
+                ample(),
+                head,
+            )
+            .expect("and the chain of suspensions reads back");
+            assert!(
+                erased == core,
+                "the suspension chain's core arena is erasure's and its readback's"
+            );
+            assert!(
+                reference_domain == domain,
+                "and its domain arena the unshared pipeline's"
+            );
+            assert_eq!(reference_rebuilt, rebuilt);
+        })
+        .expect("the small-stack thread starts")
+        .join();
+    assert!(
+        compared.is_ok(),
+        "erasure, evaluation through the overlay and readback keep their depth on the heap"
+    );
+}
+
+#[test]
+fn a_spinal_value_chain_reads_back_as_the_erased_one()
+{
+    let compared = std::thread::Builder::new()
+        .stack_size(SMALL_STACK_BYTES)
+        .spawn(|| {
+            let (mut overlay, root) = shared_value_chain();
+            let mut erased = CoreArena::new();
+            let erased_root = erase_value(&overlay, root, &mut erased)
+                .expect("the shared leaf validates and erases");
+            let (_domain, expected) = read_back_value(&mut erased, erased_root);
+            let (spinal, read) = spinal_read_back(&mut overlay, OverlayId::Value(root));
+            assert_eq!(
+                Trees::Same,
+                same_tree(&spinal, read, &erased, Term::Value(expected)),
+                "the spinal run reads the value chain back as the reference does"
+            );
+        })
+        .expect("the small-stack thread starts")
+        .join();
+    assert!(
+        compared.is_ok(),
+        "duplication, erasure, shared evaluation and readback keep their depth on the heap"
+    );
+}
+
+#[test]
+fn a_spinal_suspension_chain_reads_back_as_the_erased_one()
+{
+    let compared = std::thread::Builder::new()
+        .stack_size(SMALL_STACK_BYTES)
+        .spawn(|| {
+            let (mut overlay, root) = grafted_suspension_chain();
+            let mut erased = CoreArena::new();
+            let erased_root = erase_computation(&overlay, root, &mut erased)
+                .expect("the grafted chain validates and erases");
+            let (_domain, expected) = read_back_computation(&mut erased, erased_root);
+            let (spinal, read) = spinal_read_back(&mut overlay, OverlayId::Computation(root));
+            assert_eq!(
+                Trees::Same,
+                same_tree(&spinal, read, &erased, Term::Computation(expected)),
+                "the spinal run reads the suspension chain back as the reference does"
+            );
+        })
+        .expect("the small-stack thread starts")
+        .join();
+    assert!(
+        compared.is_ok(),
+        "duplication, erasure, shared evaluation and readback keep their depth on the heap"
+    );
+}
+
+#[test]
+fn the_deep_readback_cases_measure_as_their_erasure_inside_a_small_stack()
+{
+    let measured = std::thread::Builder::new()
+        .stack_size(SMALL_STACK_BYTES)
+        .spawn(|| {
+            let links = u64::try_from(CHAIN_LINKS).expect("the chain's length fits a counter");
+
+            let (overlay, root) = shared_value_chain();
+            let measured = SharingMeasure::of(&overlay, OverlayId::Value(root))
+                .expect("the shared leaf validates and fits the counter");
+            assert_eq!(
+                Quantities {
+                    shares: 1,
+                    occurrences: links.saturating_add(1),
+                    depth: 1,
+                    nodes: links.saturating_mul(2).saturating_add(3),
+                    expansion: links.saturating_mul(2).saturating_add(1),
+                },
+                Quantities::from(measured),
+                "one leaf shared among one occurrence per link and one more stands for a \
                      pair and a leaf per link and one more leaf"
-                );
-                let mut erased = CoreArena::new();
-                let before = erased.clone();
-                let erased_root = erase_value(&overlay, root, &mut erased)
-                    .expect("the shared leaf validates and erases");
-                assert_eq!(
-                    Unfolded(u64::from(measured.expansion())),
-                    unfolded(&erased, CoreNode::Value(erased_root), &before),
-                    "the value chain's expansion is its erasure walked as a tree"
-                );
+            );
+            let mut erased = CoreArena::new();
+            let before = erased.clone();
+            let erased_root = erase_value(&overlay, root, &mut erased)
+                .expect("the shared leaf validates and erases");
+            assert_eq!(
+                Unfolded(u64::from(measured.expansion())),
+                unfolded(&erased, CoreNode::Value(erased_root), &before),
+                "the value chain's expansion is its erasure walked as a tree"
+            );
 
-                let (overlay, root) = grafted_suspension_chain();
-                let measured = SharingMeasure::of(&overlay, OverlayId::Computation(root))
-                    .expect("the chain of grafts validates and fits the counter");
-                let size = links.saturating_mul(2).saturating_add(2);
-                assert_eq!(
-                    Quantities {
-                        shares: 0,
-                        occurrences: 0,
-                        depth: 0,
-                        nodes: size,
-                        expansion: size,
-                    },
-                    Quantities::from(measured),
-                    "a chain with no share stands for itself: a thunk and a returner per link \
+            let (overlay, root) = grafted_suspension_chain();
+            let measured = SharingMeasure::of(&overlay, OverlayId::Computation(root))
+                .expect("the chain of grafts validates and fits the counter");
+            let size = links.saturating_mul(2).saturating_add(2);
+            assert_eq!(
+                Quantities {
+                    shares: 0,
+                    occurrences: 0,
+                    depth: 0,
+                    nodes: size,
+                    expansion: size,
+                },
+                Quantities::from(measured),
+                "a chain with no share stands for itself: a thunk and a returner per link \
                      over a returned unit"
-                );
-                let mut erased = CoreArena::new();
-                let before = erased.clone();
-                let erased_root = erase_computation(&overlay, root, &mut erased)
-                    .expect("the chain of grafts validates and erases");
-                assert_eq!(
-                    Unfolded(u64::from(measured.expansion())),
-                    unfolded(&erased, CoreNode::Computation(erased_root), &before),
-                    "the suspension chain's expansion is its erasure walked as a tree"
-                );
-            })
-            .expect("the small-stack thread starts")
-            .join();
-        assert!(
-            measured.is_ok(),
-            "validation, the measure and erasure all keep their depth on the heap"
-        );
-    }
+            );
+            let mut erased = CoreArena::new();
+            let before = erased.clone();
+            let erased_root = erase_computation(&overlay, root, &mut erased)
+                .expect("the chain of grafts validates and erases");
+            assert_eq!(
+                Unfolded(u64::from(measured.expansion())),
+                unfolded(&erased, CoreNode::Computation(erased_root), &before),
+                "the suspension chain's expansion is its erasure walked as a tree"
+            );
+        })
+        .expect("the small-stack thread starts")
+        .join();
+    assert!(
+        measured.is_ok(),
+        "validation, the measure and erasure all keep their depth on the heap"
+    );
 }

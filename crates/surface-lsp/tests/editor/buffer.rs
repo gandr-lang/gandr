@@ -135,8 +135,8 @@ impl Position
     ///   scripts with non-ASCII text sends positions the server applies to the
     ///   same text the buffer holds; a miscounted line or column desynchronises
     ///   the two, which the differential answers reveal.
-    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
-    /// - witness: `editor::editor::scenarios::positions_count_utf16_code_units`
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::positions_count_utf16_code_units`
     #[spec(requires: text.0.is_char_boundary(at.0),
         ensures: |ret| text.0.get(.. at.0).is_some_and(|before|
             u32::try_from(before.matches('\n').count()) == Ok(ret.line)
@@ -317,7 +317,7 @@ impl Buffer
     ///   the corpus replay steps over closers on lines below; a cursor left off
     ///   a boundary or a stale closer misplaces the next edit, which the
     ///   differential answers reveal.
-    /// - witness: `editor::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
     #[spec(requires: self.text.is_char_boundary(at.0), ensures: self.cursor == at)]
     pub fn move_to(
         &mut self,
@@ -408,8 +408,8 @@ impl Buffer
     ///   text equals the source, so a rule that inserts too much or too little
     ///   shows as a divergent buffer; each edit is also held to the server's
     ///   text through the differential answers.
-    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
-    /// - witness: `editor::editor::scenarios::assisted_typing_closes_and_steps_over_pairs`
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::assisted_typing_closes_and_steps_over_pairs`
     #[spec(captures: [length = self.text.len()],
         ensures: |ret| ret.len() <= 1
             && self.text.len() <= length.saturating_add(typed.0.len_utf8().saturating_mul(2))
@@ -480,8 +480,8 @@ impl Buffer
     ///   every source and re-indents to the source's indentation, so a wrong
     ///   indentation or a lost closer shows as extra keystrokes or a divergent
     ///   final text.
-    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
-    /// - witness: `editor::editor::scenarios::assisted_typing_closes_and_steps_over_pairs`
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::assisted_typing_closes_and_steps_over_pairs`
     #[spec(ensures: |ret| ret.text.starts_with('\n') && ret.start == ret.end
         && self.text.is_char_boundary(self.cursor.0))]
     pub fn enter(&mut self) -> Change
@@ -525,8 +525,8 @@ impl Buffer
     ///   the random scripts backspace anywhere, pairs included; a wrong
     ///   deletion width desynchronises the buffer from the server, which the
     ///   differential answers reveal.
-    /// - witness: `editor::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
-    /// - witness: `editor::editor::scenarios::assisted_typing_closes_and_steps_over_pairs`
+    /// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::assisted_typing_closes_and_steps_over_pairs`
     #[spec(captures: [length = self.text.len(), cursor = self.cursor],
         ensures: |ret| ret.len() <= 1 && ret.iter().all(|change| change.text.is_empty())
             && self.text.len() <= length && self.cursor <= cursor)]
@@ -573,7 +573,7 @@ impl Buffer
     /// - hypothesis: L3 — the random scripts delete forward anywhere, and the
     ///   corpus replay deletes the closers it leaves unused; a wrong width
     ///   desynchronises the buffer, which the differential answers reveal.
-    /// - witness: `editor::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
     #[spec(captures: [length = self.text.len(), cursor = self.cursor],
         ensures: |ret| ret.len() <= 1 && ret.iter().all(|change| change.text.is_empty())
             && self.cursor == cursor
@@ -601,8 +601,8 @@ impl Buffer
     /// - hypothesis: L3 — the random scripts paste and delete whole lines, the
     ///   erasure deletes a line per step; a misplaced range desynchronises the
     ///   buffer, which the differential answers reveal.
-    /// - witness: `editor::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
-    /// - witness: `editor::editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
     #[spec(requires: start <= end && self.text.is_char_boundary(start.0) && self.text.is_char_boundary(end.0),
         ensures: |ret| ret.text == text.0
             && self.text.get(start.0 .. self.cursor.0) == Some(text.0))]
@@ -632,7 +632,7 @@ impl Buffer
     ///   final publication must equal the opening one; a wrong range leaves a
     ///   different text, which that comparison and the differential answers
     ///   reveal.
-    /// - witness: `editor::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
     #[spec(captures: [restored = self.history.last().map(|snapshot| snapshot.text.clone())],
         ensures: |ret| ret.len() <= 1
             && restored.as_ref().is_none_or(|text| *text == self.text))]
@@ -690,7 +690,7 @@ impl Buffer
     /// - hypothesis: L2 — every edit of every scenario goes through here and
     ///   the server applies the change it returns; a miscounted range or a lost
     ///   closer desynchronises the two, which the differential answers reveal.
-    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
     #[spec(requires: start <= end && self.text.is_char_boundary(start.0) && self.text.is_char_boundary(end.0),
         captures: [edits = self.history.len()],
         ensures: |ret| ret.text == text.0 && self.cursor == cursor
@@ -846,7 +846,7 @@ fn deepening(line: Text<'_>) -> Text<'static>
 ///   range too wide still applies, but one too narrow or misplaced leaves the
 ///   server's text different from the buffer's, which the differential answers
 ///   reveal.
-/// - witness: `editor::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
+/// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
 #[spec(ensures: |ret| {
     let agreed_before = old.0.get(.. ret.start.0) == new.0.get(.. ret.start.0);
     let old_after = old.0.get(ret.old_end.0 ..);

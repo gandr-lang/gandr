@@ -10,6 +10,7 @@ license.workspace = true
 keywords = ["corpus", "gandr", "no-std", "testing", "type-checking"]
 categories = ["compilers", "no-std"]
 publish.workspace = true
+autotests = false
 
 # The suite builds its synthetic modules from source text, through the same
 # parse, lower and check a driver runs; the library never names the parser.
@@ -18,11 +19,13 @@ publish.workspace = true
 # artifact through the kernel to name its refusal. A source that imports a
 # sibling is exported over its import closure as the dispatcher lays it out,
 # a dev-dependency cycle as `gandr-surface-diagnostics`'s.
-# The comment gate is a test target, not a library dependency: the library
-# never names the parser. `CORPUS_COMMENTS_WRITE_LEDGER=1` rewrites the ledger.
+# The comment gate is the `comments` area of the one integration target, not
+# a library dependency: the library never names the parser.
+# `CORPUS_COMMENTS_WRITE_LEDGER=1` rewrites the ledger. Each area file is its
+# own `cfg(test)` module, so a witness path reads `tests::<area>::<name>`.
 [[test]]
-name = "comments"
-path = "tests/comments/lib.rs"
+name = "tests"
+path = "tests/lib.rs"
 
 # The settle comparison reads a lowered module — its declarations and its
 # attribute side table — beside the checker's verdicts for the same module,

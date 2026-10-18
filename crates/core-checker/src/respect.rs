@@ -65,9 +65,9 @@
 //! A case that respects every rule, by conversion or by its law, is admitted;
 //! one that does not is refused `RuleNotRespected`, naming the case, the
 //! rule's position and its two sides as built. Witnesses:
-//! `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+//! `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 //! and
-//! `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`.
+//! `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`.
 //!
 //! **Choice.** The fold form, `F(l) ≡ F(r)` under the arms, is the
 //! obligation the rule's quotient puts on any map out of the type, and over a
@@ -206,8 +206,8 @@ pub enum Reading
 ///   sides; a fold computing the integers is admitted on its two cancellation
 ///   laws and refused without them or with a law stating another path; the
 ///   kernel re-derives every verdict.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
-/// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+/// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+/// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::RuleNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn respected(
     context: &mut CheckingContext<'_>,
@@ -334,7 +334,7 @@ pub fn respected(
 /// - hypothesis: L3 — a fold over the integers into a path between two sums,
 ///   whose arms compose the recursive call with a lemma, is admitted; a fold
 ///   into the circle's paths is refused at the rule its words tell apart.
-/// - witness: `native_formers::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
+/// - witness: `tests::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
 #[spec(
     captures: arrowed = matches!(context.arena().comp_type(arrow), Some(&(CompType::Arrow { .. } | CompType::Pi { .. }))),
     ensures: |ret| ret == Related::Apart || arrowed,
@@ -441,7 +441,7 @@ enum Sethood
 /// # Adequacy
 /// - hypothesis: L3 — the integers are a set and the circle is not, so a fold
 ///   into the integers' paths is admitted and one into the circle's refused.
-/// - witness: `native_formers::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
+/// - witness: `tests::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
 #[spec(ensures: |ret| ret == Sethood::Unread || matches!(context.arena().value_type(carrier), Some(&ValueType::Data { ref arguments, .. }) if arguments.is_empty()))]
 fn sethood(
     context: &mut CheckingContext<'_>,
@@ -514,7 +514,7 @@ enum Related
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`]: a rule over one variable reads it at
 ///   the innermost binder.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+/// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 #[spec(ensures: |ret| u32::from(ret) == u32::from(bound).checked_sub(u32::from(variable)).and_then(|past| past.checked_sub(1_u32)).unwrap_or_default())]
 fn pattern_binder(
     bound: VariableCount,
@@ -573,8 +573,8 @@ fn pattern_binder(
 /// # Adequacy
 /// - hypothesis: L3 — the circle's fold into the integers is related by the two
 ///   cancellation laws and refused when a law states another path.
-/// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
-/// - witness: `native_formers::native_formers::a_law_is_stated_bare_only_over_no_variable`
+/// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+/// - witness: `tests::native_formers::a_law_is_stated_bare_only_over_no_variable`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 fn lawful(
     context: &mut CheckingContext<'_>,
@@ -732,7 +732,7 @@ enum Argument
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`sequenced`].
-/// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+/// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
 #[spec(ensures: |ref ret| ret.read.is_empty()
     && !matches!(arena.computation(ret.head), Some(&Computation::Application(..))))]
 fn spine_of(
@@ -784,7 +784,7 @@ fn spine_of(
 /// - hypothesis: L3 — the circle's cancellation law, whose endpoint calls
 ///   `turn` on the run of `unturn` on the fold's run, meets the fold's side,
 ///   and a crossed law does not.
-/// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+/// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
 #[spec(ensures: |ret| arena.computation(ret).is_some())]
 fn sequenced(
     arena: &mut CoreArena,

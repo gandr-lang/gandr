@@ -16,14 +16,14 @@
 //!
 //! A layout's cost is the sum of squared overflow past the page width, then the
 //! number of line breaks, compared lexicographically
-//! (`algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`).
+//! (`tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`).
 //! A measure pairs a cost with the column the layout ends at and the plan that
 //! produces it. A state answers a frontier: measures sorted by cost, none
 //! dominated in both cost and ending column. A choice merges its branches'
 //! frontiers; a concatenation resolves its right operand at each of the left
 //! frontier's ending columns. Each in-bound state is resolved once and memoized
 //! for the rest of the resolution
-//! (`algebra::tests::shared_contexts_reuse_memo_states`).
+//! (`tests::algebra::shared_contexts_reuse_memo_states`).
 //!
 //! **Squared overflow, then line count.** Overflow dominates, so no layout
 //! trades a column past the page for fewer lines; squaring spreads overflow
@@ -97,10 +97,10 @@ use crate::units::SquaredOverflow;
 ///   the wrong context or charging output in both phases changes these
 ///   observations. The bounded choice fixtures do not enumerate arbitrary
 ///   document graphs; allocation exhaustion is not injected.
-/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+/// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Debug)]
@@ -139,10 +139,10 @@ impl Resolved
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[inline]
@@ -171,10 +171,10 @@ impl Resolved
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[inline]
@@ -201,10 +201,10 @@ impl Resolved
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[inline]
@@ -229,10 +229,10 @@ impl Resolved
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
@@ -263,10 +263,10 @@ impl Resolved
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[inline]
@@ -327,10 +327,10 @@ enum Dominance
 ///   the wrong context or charging output in both phases changes these
 ///   observations. The bounded choice fixtures do not enumerate arbitrary
 ///   document graphs; allocation exhaustion is not injected.
-/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+/// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Debug)]
@@ -360,10 +360,10 @@ enum Step
 ///   the wrong context or charging output in both phases changes these
 ///   observations. The bounded choice fixtures do not enumerate arbitrary
 ///   document graphs; allocation exhaustion is not injected.
-/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+/// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -395,10 +395,10 @@ struct MemoKey
 ///   the wrong context or charging output in both phases changes these
 ///   observations. The bounded choice fixtures do not enumerate arbitrary
 ///   document graphs; allocation exhaustion is not injected.
-/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+/// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Debug)]
@@ -438,10 +438,10 @@ struct ConcatState
 ///   the wrong context or charging output in both phases changes these
 ///   observations. The bounded choice fixtures do not enumerate arbitrary
 ///   document graphs; allocation exhaustion is not injected.
-/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+/// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Debug)]
@@ -540,10 +540,10 @@ enum WorkItem
 ///   the wrong context or charging output in both phases changes these
 ///   observations. The bounded choice fixtures do not enumerate arbitrary
 ///   document graphs; allocation exhaustion is not injected.
-/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+/// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 struct Resolver<'arena, 'meter>
@@ -590,10 +590,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
@@ -643,10 +643,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
@@ -698,10 +698,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     /// - witness: `resolve::tests::retained_aliases_release_without_consuming_pending_continuations`
@@ -751,10 +751,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     /// - witness: `resolve::tests::retained_aliases_release_without_consuming_pending_continuations`
@@ -815,10 +815,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     /// - witness: `resolve::tests::retained_aliases_release_without_consuming_pending_continuations`
@@ -878,10 +878,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[cfg_attr(
@@ -930,10 +930,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
@@ -970,10 +970,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
@@ -1028,10 +1028,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
@@ -1127,10 +1127,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
@@ -1181,10 +1181,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
@@ -1304,10 +1304,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
@@ -1514,11 +1514,11 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   boundaries. Wrong first-fragment origins, byte/scalar confusion or
     ///   omitted ending and indentation bytes change these observations.
     ///   Allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::empty_emits_nothing_and_moves_no_column`
-    /// - witness: `algebra::tests::text_emits_at_the_current_column`
-    /// - witness: `algebra::tests::verbatim_with_several_middle_lines_stores_absolute_widths`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+    /// - witness: `tests::algebra::empty_emits_nothing_and_moves_no_column`
+    /// - witness: `tests::algebra::text_emits_at_the_current_column`
+    /// - witness: `tests::algebra::verbatim_with_several_middle_lines_stores_absolute_widths`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::render_preserves_verbatim_bytes_and_physical_endings`
     /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
     #[spec(
         captures: before = self.meter.usage().frontier_entries,
@@ -1565,11 +1565,11 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   boundaries. Wrong first-fragment origins, byte/scalar confusion or
     ///   omitted ending and indentation bytes change these observations.
     ///   Allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::empty_emits_nothing_and_moves_no_column`
-    /// - witness: `algebra::tests::text_emits_at_the_current_column`
-    /// - witness: `algebra::tests::verbatim_with_several_middle_lines_stores_absolute_widths`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+    /// - witness: `tests::algebra::empty_emits_nothing_and_moves_no_column`
+    /// - witness: `tests::algebra::text_emits_at_the_current_column`
+    /// - witness: `tests::algebra::verbatim_with_several_middle_lines_stores_absolute_widths`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::render_preserves_verbatim_bytes_and_physical_endings`
     /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
     #[spec(
         ensures: |ret| ret.as_ref().map_or(true,
@@ -1616,11 +1616,11 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   boundaries. Wrong first-fragment origins, byte/scalar confusion or
     ///   omitted ending and indentation bytes change these observations.
     ///   Allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::empty_emits_nothing_and_moves_no_column`
-    /// - witness: `algebra::tests::text_emits_at_the_current_column`
-    /// - witness: `algebra::tests::verbatim_with_several_middle_lines_stores_absolute_widths`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+    /// - witness: `tests::algebra::empty_emits_nothing_and_moves_no_column`
+    /// - witness: `tests::algebra::text_emits_at_the_current_column`
+    /// - witness: `tests::algebra::verbatim_with_several_middle_lines_stores_absolute_widths`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::render_preserves_verbatim_bytes_and_physical_endings`
     /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
     #[spec(
         ensures: |ret| { let Maybe::Present(identity) = self.arena.text_identity(text) else { return matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::DocumentIdentity })) };
@@ -1707,13 +1707,13 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   boundaries. Wrong first-fragment origins, byte/scalar confusion or
     ///   omitted ending and indentation bytes change these observations.
     ///   Allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::empty_emits_nothing_and_moves_no_column`
-    /// - witness: `algebra::tests::text_emits_at_the_current_column`
-    /// - witness: `algebra::tests::verbatim_with_several_middle_lines_stores_absolute_widths`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+    /// - witness: `tests::algebra::empty_emits_nothing_and_moves_no_column`
+    /// - witness: `tests::algebra::text_emits_at_the_current_column`
+    /// - witness: `tests::algebra::verbatim_with_several_middle_lines_stores_absolute_widths`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::render_preserves_verbatim_bytes_and_physical_endings`
     /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
-    /// - witness: `algebra::tests::a_verbatim_line_taints_only_past_the_computation_width`
+    /// - witness: `tests::algebra::a_verbatim_line_taints_only_past_the_computation_width`
     #[spec(
         ensures: |ret| { let Maybe::Present(identity) = self.arena.verbatim_identity(verbatim) else { return matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::DocumentIdentity })) };
             ret.as_ref().map_or(true,
@@ -1843,11 +1843,11 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   boundaries. Wrong first-fragment origins, byte/scalar confusion or
     ///   omitted ending and indentation bytes change these observations.
     ///   Allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::empty_emits_nothing_and_moves_no_column`
-    /// - witness: `algebra::tests::text_emits_at_the_current_column`
-    /// - witness: `algebra::tests::verbatim_with_several_middle_lines_stores_absolute_widths`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+    /// - witness: `tests::algebra::empty_emits_nothing_and_moves_no_column`
+    /// - witness: `tests::algebra::text_emits_at_the_current_column`
+    /// - witness: `tests::algebra::verbatim_with_several_middle_lines_stores_absolute_widths`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::render_preserves_verbatim_bytes_and_physical_endings`
     /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
     #[spec(
         ensures: |ret| ret.as_ref().map_or(true,
@@ -1919,10 +1919,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
@@ -2010,10 +2010,10 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(
@@ -2361,10 +2361,10 @@ fn dominates(
 ///   the wrong context or charging output in both phases changes these
 ///   observations. The bounded choice fixtures do not enumerate arbitrary
 ///   document graphs; allocation exhaustion is not injected.
-/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+/// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[spec(
@@ -2410,10 +2410,10 @@ pub fn resolve(
 ///   the wrong context or charging output in both phases changes these
 ///   observations. The bounded choice fixtures do not enumerate arbitrary
 ///   document graphs; allocation exhaustion is not injected.
-/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+/// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[spec(
@@ -2462,10 +2462,10 @@ pub(crate) fn resolve_for_render(
 ///   the wrong context or charging output in both phases changes these
 ///   observations. The bounded choice fixtures do not enumerate arbitrary
 ///   document graphs; allocation exhaustion is not injected.
-/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+/// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[spec(
@@ -2536,10 +2536,10 @@ mod tests
     ///   using the wrong context or charging output in both phases changes
     ///   these observations. The bounded choice fixtures do not enumerate
     ///   arbitrary document graphs; allocation exhaustion is not injected.
-    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
-    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
-    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `tests::algebra::resolver_returns_the_text_winner_summary`
+    /// - witness: `tests::algebra::resolver_charges_line_break_and_indentation`
+    /// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `tests::algebra::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[spec(

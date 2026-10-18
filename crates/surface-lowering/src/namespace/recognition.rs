@@ -60,7 +60,7 @@
 //! Native seeding and prefix shadowing are witnessed by
 //! `native_prelude_seeds_names_and_shadowing`; the public dispatcher
 //! integration
-//! `builtins::tests::native_names_operators_and_partial_application_execute`
+//! `tests::builtins::native_names_operators_and_partial_application_execute`
 //! covers parsing through execution. No prelude-floor test is deferred.
 //!
 //! # The outermost scope
@@ -144,8 +144,8 @@ pub struct SeedPosition
 /// # Adequacy
 /// - hypothesis: L3 — every kind has a governance result, and site tags govern
 ///   shadow policy independently of the recognized kind.
-/// - witness: `recognition::recognition::only_governed_namespaces_decline_an_unknown_member`
-/// - witness: `recognition::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
+/// - witness: `tests::recognition::only_governed_namespaces_decline_an_unknown_member`
+/// - witness: `tests::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Recognized
 {
@@ -198,7 +198,7 @@ impl Recognized
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the answer asserted for every variant.
-    /// - witness: `recognition::recognition::only_governed_namespaces_decline_an_unknown_member`
+    /// - witness: `tests::recognition::only_governed_namespaces_decline_an_unknown_member`
     #[spec(
         ensures: |ret| ret.0 == matches!(*self, Self::BuiltinNamespace(_) | Self::ModuleNamespace | Self::Functor),
     )]
@@ -230,8 +230,8 @@ impl Recognized
 /// # Adequacy
 /// - hypothesis: L3 — paths stop at each tested depth and kind; a seeded root
 ///   does not bridge an unbound first segment.
-/// - witness: `recognition::recognition::a_path_is_governed_by_its_deepest_resolved_prefix`
-/// - witness: `recognition::recognition::root_seeds_do_not_bridge_an_unbound_namespace_prefix`
+/// - witness: `tests::recognition::a_path_is_governed_by_its_deepest_resolved_prefix`
+/// - witness: `tests::recognition::root_seeds_do_not_bridge_an_unbound_namespace_prefix`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PathResolution
 {
@@ -268,8 +268,8 @@ pub enum PathResolution
 /// # Adequacy
 /// - hypothesis: L3 — policy distinguishes builtin and source tags even when
 ///   their recognition kinds suggest a different origin.
-/// - witness: `recognition::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
-/// - witness: `recognition::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
+/// - witness: `tests::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
+/// - witness: `tests::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RecognitionSite
 {
@@ -303,7 +303,7 @@ pub enum ShadowPolicy
 /// # Adequacy
 /// - hypothesis: L3 — one source shadow records its exact path and span; a
 ///   builtin arrival supplies no source event to record.
-/// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
+/// - witness: `tests::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
 /// - witness: `namespace::recognition::tests::a_builtin_arrival_does_not_invent_a_source_shadow_record`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ShadowedBuiltin
@@ -445,7 +445,7 @@ impl SeedTable
 /// # Adequacy
 /// - hypothesis: L3 — both policies, source rebinding and builtin arrivals
 ///   produce their exact decisions and bounded record changes.
-/// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
+/// - witness: `tests::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
 /// - witness: `namespace::recognition::tests::a_builtin_arrival_does_not_invent_a_source_shadow_record`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct RecognitionHandler
@@ -497,11 +497,11 @@ impl NamespaceEventHandler<Recognized, RecognitionSite> for RecognitionHandler
     /// - hypothesis: L3 — the same builtin shadow under each policy, a source
     ///   redeclaration under the reject policy and a binder over a builtin
     ///   under each, asserted as the exact records and refusals.
-    /// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
-    /// - witness: `recognition::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
-    /// - witness: `recognition::recognition::a_binder_over_a_builtin_reports_without_shadowing`
+    /// - witness: `tests::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
+    /// - witness: `tests::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
+    /// - witness: `tests::recognition::a_binder_over_a_builtin_reports_without_shadowing`
     /// - witness: `namespace::recognition::tests::a_builtin_arrival_does_not_invent_a_source_shadow_record`
-    /// - witness: `recognition::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
+    /// - witness: `tests::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
     #[spec(
         captures: before = (
             self.policy,
@@ -591,9 +591,9 @@ impl NamespaceEventHandler<Recognized, RecognitionSite> for RecognitionHandler
 /// - hypothesis: L3 — ordered seeding, rejected and accepted declarations,
 ///   nonbinding binder reports and resumed names cover the state transitions.
 /// - witness: `namespace::recognition::tests::ordered_bindings_shadow_from_the_right`
-/// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
-/// - witness: `recognition::recognition::a_binder_over_a_builtin_reports_without_shadowing`
-/// - witness: `recognition::recognition::resuming_carries_the_names_and_drops_the_events`
+/// - witness: `tests::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
+/// - witness: `tests::recognition::a_binder_over_a_builtin_reports_without_shadowing`
+/// - witness: `tests::recognition::resuming_carries_the_names_and_drops_the_events`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Recognition
 {
@@ -634,7 +634,7 @@ impl Recognition
     /// - hypothesis: L3 — duplicate paths within and across tables resolve to
     ///   the exact winning kind and position; root seeds do not fill gaps.
     /// - witness: `namespace::recognition::tests::ordered_bindings_shadow_from_the_right`
-    /// - witness: `recognition::recognition::root_seeds_do_not_bridge_an_unbound_namespace_prefix`
+    /// - witness: `tests::recognition::root_seeds_do_not_bridge_an_unbound_namespace_prefix`
     #[spec(
         ensures: |ret| {
             let mut distinct = 0_usize;
@@ -722,7 +722,7 @@ impl Recognition
     /// - hypothesis: L3 — a scope holding a shadowing declaration and its
     ///   record, resumed, asserted as the exact resolutions and the empty
     ///   record.
-    /// - witness: `recognition::recognition::resuming_carries_the_names_and_drops_the_events`
+    /// - witness: `tests::recognition::resuming_carries_the_names_and_drops_the_events`
     #[spec(
         ensures: |ret| {
             ret.handler.policy == policy
@@ -777,8 +777,8 @@ impl Recognition
     /// # Adequacy
     /// - hypothesis: L3 — paths stopping at each depth under each kind of
     ///   deepest binding, asserted as the exact resolution.
-    /// - witness: `recognition::recognition::a_path_is_governed_by_its_deepest_resolved_prefix`
-    /// - witness: `recognition::recognition::root_seeds_do_not_bridge_an_unbound_namespace_prefix`
+    /// - witness: `tests::recognition::a_path_is_governed_by_its_deepest_resolved_prefix`
+    /// - witness: `tests::recognition::root_seeds_do_not_bridge_an_unbound_namespace_prefix`
     #[spec(
         ensures: |ret| {
             ret == match self.scope.visible().resolved_prefix(path) {
@@ -853,9 +853,9 @@ impl Recognition
     ///   members; the site test, over a fresh name and over a source
     ///   declaration; the policy, the same builtin shadow under each, the
     ///   refusal leaving the scope as it was.
-    /// - witness: `recognition::recognition::a_declaration_displaces_the_whole_builtin_subtree`
-    /// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
-    /// - witness: `recognition::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
+    /// - witness: `tests::recognition::a_declaration_displaces_the_whole_builtin_subtree`
+    /// - witness: `tests::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
+    /// - witness: `tests::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
     #[spec(
         captures: before = (
             self.handler.policy,
@@ -934,8 +934,8 @@ impl Recognition
     /// - hypothesis: L3 — a binder over a builtin root, over nothing and over a
     ///   builtin under the reject policy, resolution asserted exactly after
     ///   each.
-    /// - witness: `recognition::recognition::a_binder_over_a_builtin_reports_without_shadowing`
-    /// - witness: `recognition::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
+    /// - witness: `tests::recognition::a_binder_over_a_builtin_reports_without_shadowing`
+    /// - witness: `tests::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
     #[spec(
         captures: before = (
             self.handler.policy,
@@ -1000,7 +1000,7 @@ impl Recognition
     /// # Adequacy
     /// - hypothesis: L3 — a carried declaration over a builtin under the reject
     ///   policy, asserted as the exact resolution and the empty record.
-    /// - witness: `recognition::recognition::a_resumed_declaration_binds_without_reporting`
+    /// - witness: `tests::recognition::a_resumed_declaration_binds_without_reporting`
     #[spec(
         captures: before = (
             self.handler.policy,

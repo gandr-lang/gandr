@@ -151,8 +151,8 @@ pub enum Feed<'report>
 /// - hypothesis: L3 — a fake `gh` that succeeds, one that fails with a message,
 ///   and one that records the body it was fed; a swallowed exit status, a lost
 ///   message or an unfed body changes the observed result.
-/// - witness: `cli::cli::an_over_budget_lane_opens_the_issue`
-/// - witness: `cli::cli::a_failing_gh_is_reported_with_its_message`
+/// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
+/// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
 pub(crate) fn run(
     command: &mut Command,
     feed: Feed<'_>,
@@ -204,8 +204,8 @@ pub(crate) fn run(
 /// # Adequacy
 /// - hypothesis: L3 — a fake `gh` listing three runs read with a count of two
 ///   yields the first two; one printing garbage is refused.
-/// - witness: `cli::cli::an_over_budget_lane_opens_the_issue`
-/// - witness: `cli::cli::a_failing_gh_is_reported_with_its_message`
+/// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
+/// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
 #[inline]
 pub fn recent_runs(count: RunCount) -> Result<Vec<RunId>, BudgetError>
 {
@@ -251,7 +251,7 @@ pub fn recent_runs(count: RunCount) -> Result<Vec<RunId>, BudgetError>
 /// # Adequacy
 /// - hypothesis: L3 — a fake `gh` printing two jobs per run feeds each lane's
 ///   median; a run's jobs dropped or misattributed changes the report.
-/// - witness: `cli::cli::an_over_budget_lane_opens_the_issue`
+/// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
 #[inline]
 pub fn samples(run_id: RunId) -> Result<Vec<Sample>, BudgetError>
 {
@@ -301,8 +301,8 @@ pub fn samples(run_id: RunId) -> Result<Vec<Sample>, BudgetError>
 ///   one, run over and within budget; filing a second issue, editing a closed
 ///   one while within, or leaving an open one open changes the recorded
 ///   invocations.
-/// - witness: `cli::cli::an_over_budget_lane_opens_the_issue`
-/// - witness: `cli::cli::an_issue_follows_the_budget_both_ways`
+/// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
+/// - witness: `tests::cli::an_issue_follows_the_budget_both_ways`
 #[inline]
 pub fn file(
     report: &Report,

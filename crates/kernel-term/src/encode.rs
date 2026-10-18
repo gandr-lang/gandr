@@ -124,8 +124,8 @@ struct EncodedEntry(EncodedArtifact);
 ///   transitions; a shared encode/decode round trip is not an independent
 ///   format oracle.
 /// - witness: `encode::tests::interning_reuses_content_across_segments_without_losing_order`
-/// - witness: `sharing_format::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
-/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+/// - witness: `tests::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
+/// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 struct Interner
 {
     /// Arena node to its assigned global index: the sharing-aware memo, so an
@@ -159,8 +159,8 @@ impl Interner
     ///   supplement these bounded transitions; a shared encode/decode round
     ///   trip is not an independent format oracle.
     /// - witness: `encode::tests::interning_reuses_content_across_segments_without_losing_order`
-    /// - witness: `sharing_format::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
-    /// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+    /// - witness: `tests::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
+    /// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
     #[spec(
         ensures: |ret| ret.by_node.is_empty()
                 && ret.by_content.is_empty()
@@ -211,8 +211,8 @@ impl Interner
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
 /// - witness: `encode::tests::atom_positions_and_provenance_preserve_sequence_identity`
 /// - witness: `encode::tests::stale_roots_violate_the_encoding_domain`
-/// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
-/// - witness: `sharing_format::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
+/// - witness: `tests::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+/// - witness: `tests::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
 #[inline]
 #[must_use]
 #[spec(requires: declarations.iter().all(|marked| { let declaration = marked.declaration(); arena.value_type(declaration.declared_id()).is_some() && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), DeclarationContent::Data { ref parameters, ref constructors, .. } => parameters.iter().chain(constructors.iter().flatten()).all(|id| arena.value_type(*id).is_some()), DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true } }),
@@ -644,7 +644,7 @@ fn encode_rule_side(
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
 /// - witness: `encode::tests::atom_positions_and_provenance_preserve_sequence_identity`
 /// - witness: `decl::tests::names_classify_the_separator_without_normalizing_unicode`
-/// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
+/// - witness: `tests::sharing_format::a_structured_name_round_trips_as_segments`
 #[spec(
     captures: start = out.as_image().as_ref().len(),
     ensures: |ret| { let image = out.as_image();
@@ -752,8 +752,8 @@ fn encode_sealing_provenance(
 ///   format oracle.
 /// - witness: `encode::tests::interning_reuses_content_across_segments_without_losing_order`
 /// - witness: `encode::tests::a_staged_type_is_written_as_its_base`
-/// - witness: `sharing_format::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
-/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+/// - witness: `tests::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
+/// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 #[spec(requires: match root { AnyNode::ValueType(id) => arena.value_type(id).is_some(), AnyNode::CompType(id) => arena.comp_type(id).is_some(), AnyNode::Value(id) => arena.value(id).is_some(), AnyNode::Computation(id) => arena.computation(id).is_some() },
 
     captures: entry = (interner.by_node.get(&root).copied(), interner.by_node.len(), interner.by_content.len(), segment.len(), interner.next),

@@ -1669,7 +1669,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   no family declares does not, and an imported family's constructor
     ///   resolves in its importer.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
-    /// - witness: `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
     /// - witness: `lower::native::tests::a_constructor_is_no_value_inside_its_own_family`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(found) => matches!(
@@ -2280,7 +2280,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::cons`].
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
-    /// - witness: `modules::modules::a_forward_member_reference_is_refused_by_position`
+    /// - witness: `tests::modules::a_forward_member_reference_is_refused_by_position`
     #[spec(ensures: |ret| match ret {
         Ok(Maybe::Present(constructor)) => constructor.arity == 1 && constructor.named == cell,
         _ => true,

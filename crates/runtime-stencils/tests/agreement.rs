@@ -58,13 +58,17 @@ use crate::support::focus;
 use crate::support::integer;
 use crate::support::named;
 
-/// macOS arm64 and Linux x86-64 have a patcher: the build script emitted
-/// its table, and a named program runs native there rather than declining
-/// for want of one. The suites below then compare native code on these
-/// hosts, so this line in a lane's log is the witness that it ran native.
+/// arm64 on macOS and Linux, and Linux x86-64, have a patcher: the build
+/// script emitted its table, and a named program runs native there rather
+/// than declining for want of one. The suites below then compare native code
+/// on these hosts, so this line in a lane's log is the witness that it ran
+/// native.
 #[cfg(any(
     all(target_os = "macos", target_arch = "aarch64"),
-    all(target_os = "linux", target_arch = "x86_64")
+    all(
+        target_os = "linux",
+        any(target_arch = "aarch64", target_arch = "x86_64")
+    )
 ))]
 #[test]
 fn a_patcher_host_runs_native()

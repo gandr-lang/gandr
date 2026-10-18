@@ -10,6 +10,13 @@ license.workspace = true
 keywords = ["content-addressing", "gandr", "kernel", "memoization", "type-checker"]
 categories = ["compilers"]
 publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 # The certified trusted base uses kernel crates and core/alloc. Pinned
 # arithmetic and absence types add no runtime allocation or std dependency.

@@ -10,10 +10,17 @@ license.workspace = true
 keywords = ["cache", "cargo", "ci", "gandr"]
 categories = ["development-tools::build-utils"]
 publish.workspace = true
+autotests = false
 
 [[bin]]
 name = "build-state"
 path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the specification attribute; serde
 # reads Cargo's JSON messages.

@@ -115,7 +115,7 @@ fn file_cone(path: Path<'_>) -> Cone
 ///   whose compare names only surface files, a pull-request run, and a run
 ///   whose base is unreadable; classifying a failed compare surface changes the
 ///   budget a deep landing is held to.
-/// - witness: `cli::cli::a_run_is_classified_by_the_cone_it_touched`
+/// - witness: `tests::cli::a_run_is_classified_by_the_cone_it_touched`
 #[inline]
 pub fn classify(run_id: RunId) -> Result<Cone, BudgetError>
 {

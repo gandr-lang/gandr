@@ -7,8 +7,6 @@
 //! current findings. That is how the ledger is rewritten; the check does not
 //! write.
 
-extern crate alloc;
-
 mod error;
 mod judge;
 mod ledger;
@@ -17,11 +15,11 @@ mod shape;
 
 use std::path::PathBuf;
 
-use crate::judge::grammar;
-use crate::ledger::discrepancies;
-use crate::ledger::ledger_text;
-use crate::scan::collect;
-use crate::scan::replace;
+use crate::comments::judge::grammar;
+use crate::comments::ledger::discrepancies;
+use crate::comments::ledger::ledger_text;
+use crate::comments::scan::collect;
+use crate::comments::scan::replace;
 
 /// The fixture root beside this package.
 ///
@@ -61,14 +59,14 @@ mod gate
         if std::env::var_os("CORPUS_COMMENTS_WRITE_LEDGER").is_some() {
             let text = ledger_text(&found);
             let lines = text.lines().count();
-            replace(&path, crate::shape::Text(&text)).expect("the ledger writes");
+            replace(&path, crate::comments::shape::Text(&text)).expect("the ledger writes");
             eprintln!("corpus comments wrote {} ({lines} lines)", path.display());
             return;
         }
         let held = std::fs::read_to_string(&path).unwrap_or_else(|error| {
             panic!("{}: the ledger did not read: {error}", path.display());
         });
-        let rows = discrepancies(&found, crate::shape::Text(&held));
+        let rows = discrepancies(&found, crate::comments::shape::Text(&held));
         let rendered = rows
             .iter()
             .map(ToString::to_string)

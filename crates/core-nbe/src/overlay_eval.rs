@@ -116,9 +116,9 @@ pub enum OverlayEvalFault
 ///   arenas, while exhausted evaluation keeps its completed erasure; dropping
 ///   rollback or erasing after evaluation changes those boundaries.
 /// - witness:
-///   `deep_evaluation::deep_evaluation::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
+///   `tests::deep_evaluation::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
 /// - witness:
-///   `deep_readback::deep_readback::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
+///   `tests::deep_readback::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
 /// - witness: `overlay_eval::tests::refusals_preserve_the_erasure_and_evaluation_boundaries`
 #[inline]
 #[spec(
@@ -167,9 +167,9 @@ pub fn eval_overlay_value(
 ///   suspensions run through readback. The refusal witness separates erasure
 ///   rollback from evaluation failure after the erased computation is retained.
 /// - witness:
-///   `deep_evaluation::deep_evaluation::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
+///   `tests::deep_evaluation::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
 /// - witness:
-///   `deep_readback::deep_readback::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
+///   `tests::deep_readback::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
 /// - witness: `overlay_eval::tests::refusals_preserve_the_erasure_and_evaluation_boundaries`
 #[inline]
 #[spec(
@@ -234,11 +234,11 @@ pub fn eval_overlay_computation(
 ///   count against the reference run with the results read back equal. Removing
 ///   scratch restoration changes the overlay after either a refused duplication
 ///   or an exhausted evaluation.
-/// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+/// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
 /// - witness:
-///   `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
+///   `tests::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
 /// - witness:
-///   `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+///   `tests::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
 /// - witness: `overlay_eval::tests::refusals_preserve_the_erasure_and_evaluation_boundaries`
 /// - witness: `overlay_eval::tests::type_roots_are_refused_before_evaluation`
 #[spec(
@@ -284,9 +284,9 @@ pub fn eval_overlay_shared(
 ///   another leg’s free indices changes sharing across binders. The predicate
 ///   checks each retained leg against the free-index analysis, while the
 ///   end-to-end witnesses separate their environments.
-/// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
-/// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
-/// - witness: `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+/// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
+/// - witness: `tests::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
+/// - witness: `tests::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
 ///
 /// # Errors
 /// - [`OverlayEvalFault::Duplication`] — the root does not duplicate.
@@ -350,7 +350,7 @@ fn duplicate_and_erase(
 ///   the refusal, while exchanging the two evaluation families changes the
 ///   independently evaluated result.
 /// - witness: `overlay_eval::tests::type_roots_are_refused_before_evaluation`
-/// - witness: `deep_evaluation::deep_evaluation::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
+/// - witness: `tests::deep_evaluation::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
 ///
 /// # Errors
 /// - [`OverlayEvalFault::Evaluation`] — `erased` is a type.

@@ -140,7 +140,7 @@ impl Scoped
 /// # Adequacy
 /// - hypothesis: L3 — a refused body keeps its failure under its position and a
 ///   module that refuses nothing keeps none.
-/// - witness: `diagnostics::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+/// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Failures(BTreeMap<ConstantIndex, Failure>);
@@ -158,7 +158,7 @@ impl Failures
     /// # Adequacy
     /// - hypothesis: L3 — a refused body's failure is read back under its
     ///   position.
-    /// - witness: `diagnostics::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+    /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
     #[spec(ensures: |ret| &ret.0 == report.failures())]
     #[inline]
     #[must_use]
@@ -199,7 +199,7 @@ impl Failures
 /// - hypothesis: L3 — a mismatch spells both of its types, a failure the type
 ///   its outer rule was checked against, and a module that refuses nothing
 ///   spells none.
-/// - witness: `diagnostics::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+/// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Spellings(BTreeMap<TypeNode, Presentation>);
@@ -240,9 +240,9 @@ impl Spellings
     ///   type is spelled by its module's path; a mismatch between types over
     ///   two parameters spells each by its name, and a hypothesis's type the
     ///   parameters before it.
-    /// - witness: `diagnostics::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
-    /// - witness: `diagnostics::diagnostics::a_sealed_type_is_spelled_by_its_path`
-    /// - witness: `diagnostics::diagnostics::a_refusal_spells_its_binders_by_name_418`
+    /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+    /// - witness: `tests::diagnostics::a_sealed_type_is_spelled_by_its_path`
+    /// - witness: `tests::diagnostics::a_refusal_spells_its_binders_by_name_418`
     #[spec(ensures: |ret| ret.0.iter().all(|(node, presentation)| !presentation.as_ref().contains('\n')
         && (report.declarations().iter().any(|declaration|
             matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Checking(refusal))
@@ -438,9 +438,9 @@ impl Spellings
 ///   of the declarations it mentions, and a sealed abstract type is spelled by
 ///   its module's path rather than its bare name; a word spells by its letters,
 ///   which only a words family named apart from its sort finds.
-/// - witness: `diagnostics::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
-/// - witness: `diagnostics::diagnostics::a_sealed_type_is_spelled_by_its_path`
-/// - witness: `diagnostics::diagnostics::a_word_spells_by_its_letters`
+/// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+/// - witness: `tests::diagnostics::a_sealed_type_is_spelled_by_its_path`
+/// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
 #[spec(ensures: |ret| module.declarations().iter().all(|declaration|
     ret.get(usize::from(declaration.constant())).is_some()))]
 #[inline]
@@ -505,7 +505,7 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`constant_names`].
-/// - witness: `diagnostics::diagnostics::a_word_spells_by_its_letters`
+/// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
 #[spec(ensures: |ret| match ret {
     Maybe::Present((_, ref point)) => !point.is_empty(),
     Maybe::Absent(_) => true,
@@ -630,8 +630,8 @@ impl Families
     /// - hypothesis: L3 — a refusal whose type mentions a constructor value
     ///   spells it by its declared name; a family left out spells `?`, which
     ///   the test fails on.
-    /// - witness: `diagnostics::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
-    /// - witness: `diagnostics::diagnostics::a_word_spells_by_its_letters`
+    /// - witness: `tests::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
+    /// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
     #[spec(ensures: |ret| ret.0.len() <= module.declarations().len())]
     #[inline]
     #[must_use]
@@ -694,7 +694,7 @@ impl Families
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::of`].
-    /// - witness: `diagnostics::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
+    /// - witness: `tests::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
     #[inline]
     #[must_use]
     pub fn naming<'names>(

@@ -10,6 +10,13 @@ license.workspace = true
 keywords = ["call-by-push-value", "gandr", "layout", "pretty-printing"]
 categories = ["text-processing"]
 publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 # The printer reads core types and values and the incremental checker's
 # content tables, the leaf vocabularies and levels they carry, and lays its

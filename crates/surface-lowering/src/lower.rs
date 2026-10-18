@@ -2015,7 +2015,7 @@ impl Resolved
     /// - hypothesis: L3 — binder uses become de Bruijn variables, while earlier
     ///   declarations become constants with their admission position.
     /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
-    /// - witness: `modules::modules::a_backward_member_reference_resolves`
+    /// - witness: `tests::modules::a_backward_member_reference_resolves`
     #[spec(
         ensures: |ret| {
             matches!(
@@ -2676,7 +2676,7 @@ impl Site
 ///   attribute retention are observed through parsed multi-declaration modules,
 ///   not inferred from table lengths alone.
 /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
-/// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
 /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
 struct Lowerer<'run, 'source>
@@ -3118,7 +3118,7 @@ pub fn lower_module<'source>(
 /// - witness: `lower::tests::a_computation_codomain_of_a_static_pi_is_refused`
 /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
 /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
-/// - witness: `static_operators::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
+/// - witness: `tests::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
 /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
 /// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
@@ -3143,14 +3143,14 @@ pub fn lower_module<'source>(
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
 /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
 /// - witness: `lower::tests::a_module_past_the_allowance_is_refused`
-/// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
-/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
-/// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
-/// - witness: `recognition::recognition::a_shadowed_builtin_is_reported_as_a_warning`
-/// - witness: `recognition::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
-/// - witness: `recognition::recognition::user_shadowing_is_the_only_observable_delta`
-/// - witness: `recognition::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
+/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `tests::namespace::an_import_binds_its_alias_and_resolves_no_address`
+/// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
+/// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
+/// - witness: `tests::recognition::a_shadowed_builtin_is_reported_as_a_warning`
+/// - witness: `tests::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
+/// - witness: `tests::recognition::user_shadowing_is_the_only_observable_delta`
+/// - witness: `tests::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
 #[spec(
     ensures: |ret| {
         let agrees = tree.grammar() == pbg.fingerprint();
@@ -3322,7 +3322,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   prior node state.
     /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
-    /// - witness: `modules::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+    /// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
     #[spec(
         ensures: |ret| {
             let count = usize::from(tree.node_count());
@@ -3506,8 +3506,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — an unresolved import, a cycle and a shadowing
     ///   declaration each refuse the importer's declarations by name, in the
     ///   corpus's pathological twins.
-    /// - witness: `namespace::namespace::an_unresolved_import_refuses_its_source`
-    /// - witness: `namespace::namespace::a_declaration_an_import_binds_again_is_refused`
+    /// - witness: `tests::namespace::an_unresolved_import_refuses_its_source`
+    /// - witness: `tests::namespace::a_declaration_an_import_binds_again_is_refused`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() == before,
@@ -3627,12 +3627,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   member is checked here once, after the last module, rather than by
     ///   each module's declaration. A module's member, whatever its name,
     ///   shadows no builtin.
-    /// - witness: `recognition::recognition::a_shadowed_builtin_is_reported_as_a_warning`
-    /// - witness: `recognition::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
-    /// - witness: `recognition::recognition::user_shadowing_is_the_only_observable_delta`
-    /// - witness: `modules::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
-    /// - witness: `modules::modules::a_hidden_member_is_admitted_and_absent_from_the_namespace`
-    /// - witness: `modules::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    /// - witness: `tests::recognition::a_shadowed_builtin_is_reported_as_a_warning`
+    /// - witness: `tests::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
+    /// - witness: `tests::recognition::user_shadowing_is_the_only_observable_delta`
+    /// - witness: `tests::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
+    /// - witness: `tests::modules::a_hidden_member_is_admitted_and_absent_from_the_namespace`
+    /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -3739,10 +3739,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   govern their own paths. The predicate reads only the slot this call
     ///   may append; [`Self::declare`] checks every exported member once, after
     ///   the last module.
-    /// - witness: `modules::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
-    /// - witness: `modules::modules::a_hidden_member_is_admitted_and_absent_from_the_namespace`
-    /// - witness: `modules::modules::a_qualified_type_reference_resolves_through_the_namespace`
-    /// - witness: `modules::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
+    /// - witness: `tests::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
+    /// - witness: `tests::modules::a_hidden_member_is_admitted_and_absent_from_the_namespace`
+    /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    /// - witness: `tests::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
     #[spec(
         captures: before = (self.exported.len(), self.exported_types.len(), self.collected.slots.len()),
         ensures: |_| {
@@ -3861,7 +3861,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a module and a functor named as a builtin under the
     ///   reject policy are each refused at their name.
-    /// - witness: `recognition::recognition::a_module_or_functor_shadowing_a_builtin_is_rejected_under_policy`
+    /// - witness: `tests::recognition::a_module_or_functor_shadowing_a_builtin_is_rejected_under_policy`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() <= before.saturating_add(1)
@@ -3916,7 +3916,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a lambda binder over a builtin under each policy,
     ///   asserted as the exact record and outcome.
-    /// - witness: `recognition::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
+    /// - witness: `tests::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
     #[spec(
         ensures: |ret| {
             ret == Ok(())
@@ -3977,7 +3977,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   including attributes of refused declarations.
     /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -4338,7 +4338,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — manifest names in later component types resolve
     ///   through the enclosing signature prefix rather than ambient source
     ///   declarations.
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     #[spec(
         captures: before = (
             self.scopes.len(),
@@ -4967,8 +4967,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a member named by an earlier sibling, by a later one,
     ///   by itself, from a nested module and from the top level, each asserted
     ///   as the exact constant or refusal.
-    /// - witness: `modules::modules::a_forward_member_reference_is_refused_by_position`
-    /// - witness: `modules::modules::a_backward_member_reference_resolves`
+    /// - witness: `tests::modules::a_forward_member_reference_is_refused_by_position`
+    /// - witness: `tests::modules::a_backward_member_reference_resolves`
     /// - witness: `lower::tests::a_self_reference_is_unresolved`
     /// - witness: `lower::native::tests::a_recursive_family_names_itself_in_its_fields`
     /// - witness: `lower::tests::an_earlier_declaration_resolves_as_a_constant`
@@ -5111,9 +5111,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a name one import answers, a name two answer and a
     ///   pending declaration, each asserted exactly.
-    /// - witness: `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`
-    /// - witness: `namespace::namespace::two_imports_binding_one_name_refuse_its_use`
-    /// - witness: `namespace::namespace::a_pending_declaration_is_not_exported`
+    /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
+    /// - witness: `tests::namespace::a_pending_declaration_is_not_exported`
     #[spec(ensures: |ref ret| match *ret {
         Ok(_) => true,
         Err(LoweringRefusal::ImportShadows { name: found, .. } | LoweringRefusal::UnexportedName { name: found, .. }) => {
@@ -5160,7 +5160,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the witnesses of [`Self::imported`].
-    /// - witness: `namespace::namespace::a_pending_declaration_is_not_exported`
+    /// - witness: `tests::namespace::a_pending_declaration_is_not_exported`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present(Resolved::Declaration { constant, .. })) => self
             .collected
@@ -5228,8 +5228,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — an aliased family and value each read from the
     ///   imported source, an undeclared member refused by name, and a pending
     ///   member refused at the member.
-    /// - witness: `namespace::namespace::an_aliased_import_qualifies_its_source_s_names`
-    /// - witness: `namespace::namespace::a_pending_member_read_through_an_alias_is_refused_at_the_member`
+    /// - witness: `tests::namespace::an_aliased_import_qualifies_its_source_s_names`
+    /// - witness: `tests::namespace::a_pending_member_read_through_an_alias_is_refused_at_the_member`
     #[spec(ensures: |ref ret| matches!(
         *ret,
         Ok(_) | Err(LoweringRefusal::UnknownMember { .. } | LoweringRefusal::UnexportedName { .. })
@@ -5297,7 +5297,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   source span.
     /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
     /// - witness: `lower::tests::an_undefined_term_name_is_refused`
-    /// - witness: `modules::modules::a_backward_member_reference_resolves`
+    /// - witness: `tests::modules::a_backward_member_reference_resolves`
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
     #[spec(
         ensures: |ret| {
@@ -7301,14 +7301,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a module, to a member declared later, and a selection off a free name,
     ///   each asserted as the exact constant or refusal; a path past a
     ///   parameter's value, refused at that link.
-    /// - witness: `modules::modules::a_user_module_selection_is_governed_and_a_free_target_still_projects`
-    /// - witness: `modules::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
-    /// - witness: `modules::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
-    /// - witness: `modules::modules::a_module_namespace_is_not_a_projectable_record`
-    /// - witness: `modules::modules::a_hidden_or_absent_user_module_component_is_declined_as_a_hole`
+    /// - witness: `tests::modules::a_user_module_selection_is_governed_and_a_free_target_still_projects`
+    /// - witness: `tests::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
+    /// - witness: `tests::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
+    /// - witness: `tests::modules::a_module_namespace_is_not_a_projectable_record`
+    /// - witness: `tests::modules::a_hidden_or_absent_user_module_component_is_declined_as_a_hole`
     /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
-    /// - witness: `modules::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -7462,8 +7462,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — single and deeply nested selections preserve their
     ///   target and own member positions, which locate an unknown member at its
     ///   depth.
-    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
-    /// - witness: `modules::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
+    /// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
+    /// - witness: `tests::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or(true, |&(target, selected)| {
@@ -7522,8 +7522,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a backward member becomes its declared constant while
     ///   a forward member is refused at the use, with the declaration retained.
-    /// - witness: `modules::modules::a_backward_member_reference_resolves`
-    /// - witness: `modules::modules::a_forward_member_reference_is_refused_by_position`
+    /// - witness: `tests::modules::a_backward_member_reference_resolves`
+    /// - witness: `tests::modules::a_forward_member_reference_is_refused_by_position`
     #[spec(
         ensures: |ret| match self.collected.slots.get(usize::from(target)) {
             | None => ret == Err(site.out(FragmentBoundary::Unadmitted)),
@@ -7610,9 +7610,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::every_type_atom_lowers_to_its_core_type`
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::a_type_member_is_named_only_after_it_is_written`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::a_type_member_is_named_only_after_it_is_written`
     #[spec(
         captures: before = self.manifests.len(),
         ensures: |ret| {
@@ -7700,9 +7700,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a manifest component, a type member and a sealed
     ///   component each plan their exact reading, and a sealed one named by a
     ///   declaration before its module is refused by position.
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     #[spec(
         captures: before = self.manifests.len(),
         ensures: |ret| {
@@ -7781,9 +7781,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a component named in a signature, a member named in a
     ///   body and a binder shadowing a member each resolve as stated.
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-    /// - witness: `modules::modules::a_type_member_is_named_only_after_it_is_written`
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::a_type_member_is_named_only_after_it_is_written`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     #[spec(
         ensures: |ret| match ret {
             | Ok(Maybe::Present(stated)) => stated.name == name,
@@ -7838,7 +7838,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a member's signature naming an earlier type member of
     ///   its own module, and one naming a member it precedes, separate the
     ///   scope from the module's whole body.
-    /// - witness: `modules::modules::a_type_member_is_named_only_after_it_is_written`
+    /// - witness: `tests::modules::a_type_member_is_named_only_after_it_is_written`
     #[spec(
         ensures: |ret| match ret {
             | Ok(Maybe::Present(member)) => member.name == name
@@ -7918,10 +7918,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   body type member, to a nested module's type, to an absent member, to a
     ///   value component and from an unbound head, each asserted as the exact
     ///   type or refusal; a path past a parameter's type, refused at that link.
-    /// - witness: `modules::modules::a_qualified_type_reference_resolves_through_the_namespace`
-    /// - witness: `modules::modules::an_unbound_type_path_is_refused_by_name`
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    /// - witness: `tests::modules::an_unbound_type_path_is_refused_by_name`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -8061,7 +8061,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a one-link and a two-link path preserve their targets
     ///   and selected names.
-    /// - witness: `modules::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or(true, |&(target, selected)| {
@@ -9779,8 +9779,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a manifest component named before and after its own
     ///   position in the tree, and a witness agreeing and disagreeing with its
     ///   member, each asserted through the checker's verdict.
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -10001,7 +10001,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   of no arguments answers at the call, its head at the head.
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `lower::tests::a_call_of_no_arguments_is_the_call_the_source_wrote_364`
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
@@ -12977,7 +12977,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   its own expectation.
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
-    /// - witness: `namespace::namespace::one_form_in_two_sources_files_its_attributes_apart_596`
+    /// - witness: `tests::namespace::one_form_in_two_sources_files_its_attributes_apart_596`
     #[spec(
         ensures: |ret| {
             ret == match (self.tree.key(position), self.tree.node(position)) {
@@ -13108,7 +13108,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_uncompleted_signature_is_the_obligation_producer`
     /// - witness: `lower::tests::a_bodiless_definition_lowers_its_body_alone`
     /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
-    /// - witness: `modules::modules::module_members_admit_in_source_order`
+    /// - witness: `tests::modules::module_members_admit_in_source_order`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -13220,8 +13220,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   two applications yields its own; a function whose two halves the mint
     ///   left unminted, with no refusal filed, is refused by name where it used
     ///   to vanish.
-    /// - witness: `modules::modules::functors::a_functor_body_never_reaches_the_kernel`
-    /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
+    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name_455`
     #[spec(
         ensures: |ret| match self.collected.stratum_of(slot.container) {
@@ -13367,11 +13367,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
     /// - witness: `lower::tests::an_uncompleted_signature_is_the_obligation_producer`
     /// - witness: `lower::tests::a_bodiless_definition_lowers_its_body_alone`
-    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
-    /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
+    /// - witness: `tests::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    /// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
     #[spec(
         ensures: |ret| {
             if let Maybe::Present((_at, refusal)) = slot.refusal {
@@ -13646,8 +13646,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a chain of manifest aliases carries the original
     ///   located refusal into a member even when its body has independently
     ///   failed; the unrelated following declaration still lowers.
-    /// - witness: `modules::modules::manifest_refusals_propagate_transitively_before_minting`
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::manifest_refusals_propagate_transitively_before_minting`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -13705,11 +13705,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   exports only its selected values and modules, manifest components keep
     ///   their lowered type or their explicit Unlowered status, and a sealed
     ///   module exports its atoms and its witnesses.
-    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
-    /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
+    /// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
+    /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
     #[spec(
         ensures: |ret| {
             ret.len() == self.collected.structures.len()

@@ -75,10 +75,10 @@ struct Cli
 /// - hypothesis: L3 — a profile through fake tools, an unknown test, an empty
 ///   store, a failing profile and a zero count; a swapped stream or exit code
 ///   changes the observed process result.
-/// - witness: `cli::cli::a_profile_is_charged_to_its_outermost_specification`
-/// - witness: `cli::cli::an_unknown_test_is_refused_by_name`
-/// - witness: `cli::cli::an_empty_store_names_nothing_to_profile`
-/// - witness: `cli::cli::a_malformed_invocation_exits_two`
+/// - witness: `tests::cli::a_profile_is_charged_to_its_outermost_specification`
+/// - witness: `tests::cli::an_unknown_test_is_refused_by_name`
+/// - witness: `tests::cli::an_empty_store_names_nothing_to_profile`
+/// - witness: `tests::cli::a_malformed_invocation_exits_two`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(REFUSED))]
 fn main() -> ExitCode
 {
@@ -123,9 +123,9 @@ fn main() -> ExitCode
 /// # Adequacy
 /// - hypothesis: L3 — a profile through a fake `cargo` and `perf` prints the
 ///   asserted ranking; an unknown test and an empty store are refused.
-/// - witness: `cli::cli::a_profile_is_charged_to_its_outermost_specification`
-/// - witness: `cli::cli::an_unknown_test_is_refused_by_name`
-/// - witness: `cli::cli::an_empty_store_names_nothing_to_profile`
+/// - witness: `tests::cli::a_profile_is_charged_to_its_outermost_specification`
+/// - witness: `tests::cli::an_unknown_test_is_refused_by_name`
+/// - witness: `tests::cli::an_empty_store_names_nothing_to_profile`
 fn rank(cli: Cli) -> Result<(), CostError>
 {
     let root = std::env::current_dir().map_err(|error| CostError::Io {

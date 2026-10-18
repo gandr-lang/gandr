@@ -328,7 +328,7 @@
 //! per rule, which the checker's decision makes redundant. **Reversal.** A
 //! respect that holds only up to a path is the next paragraph's. The
 //! witnesses are
-//! `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+//! `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
 //! and, on readmission,
 //! `kernel_export::kernel_presented_readmission::a_fold_whose_arm_breaks_a_rule_is_refused_by_name`
 //! in the surface corpus.
@@ -356,7 +356,7 @@
 //! the environment, which makes admission depend on what else is declared.
 //! **Reversal.** Arms generated from a model's signature, which would carry
 //! the laws with the model rather than with each fold. The witnesses are
-//! `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+//! `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
 //! and, on readmission,
 //! `kernel_export::kernel_presented_readmission::a_fold_resting_on_a_forged_law_is_refused_by_name`
 //! in the surface corpus.
@@ -377,7 +377,7 @@
 //! same name. A data type with no constructor is eliminated by the same case
 //! of no branch, with no decision to make. The witnesses are
 //! `presented::tests::endpoints_are_apart_by_their_normal_forms`,
-//! `native_formers::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
+//! `tests::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
 //! and, on readmission,
 //! `kernel_export::kernel_presented_readmission::an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name`
 //! in the surface corpus.
@@ -399,10 +399,10 @@
 //! fresh root its own scrutinee does not fit. The checker runs the same walk
 //! and stores the same [`Accessibility`](check::Accessibility); the kernel
 //! recomputes it on admission, never reads the checker's. Witnesses:
-//! `recursive_data::recursive_data::accessibility_is_decided_on_every_former`,
-//! `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`,
-//! `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call` and
-//! `recursive_data::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`.
+//! `tests::recursive_data::accessibility_is_decided_on_every_former`,
+//! `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`,
+//! `tests::recursive_data::currys_consumer_is_refused_at_its_call` and
+//! `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`.
 //!
 //! **Choice.** Accessibility under the stage order: the accessible argument
 //! positions of computability with accessibility — positive at or below the
@@ -427,8 +427,8 @@
 //! through `map(⌜Rose⌝, ⌜Nat⌝, size, kids)`, with `kids` bound by a case below
 //! the node, takes `size` at `Rose^{s'} → F Nat`; a list of the node itself
 //! stands at no stage and the call is refused `StageNotBelow`. Witnesses:
-//! `recursive_data::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
-//! and `recursive_data::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`.
+//! `tests::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+//! and `tests::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`.
 //!
 //! **Choice.** A staged type is a classifier the judgement instantiates a type
 //! parameter at, erased to its plain code on the wire and re-derived here from
@@ -480,7 +480,7 @@
 //! whole block in scope, as its family's fields were, so a field naming a
 //! later definition of the block meets the stage order, not an unbound
 //! constant. Witness:
-//! `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`.
+//! `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`.
 //!
 //! **Choice.** Induction-recursion read as a mutual block of nominal
 //! declarations over the stage order: a universe with Π over decoded
@@ -492,8 +492,8 @@
 //! **Reversal.** A staged decode that is not induction-recursion — the
 //! decoder a function the codes compute — would retire the identification.
 //! The witnesses are
-//! `recursive_data::recursive_data::a_mutual_block_is_admitted`
-//! and `recursive_data::recursive_data::a_mutual_block_is_refused_whole`.
+//! `tests::recursive_data::a_mutual_block_is_admitted`
+//! and `tests::recursive_data::a_mutual_block_is_refused_whole`.
 //!
 //! # Contract boundaries
 //!

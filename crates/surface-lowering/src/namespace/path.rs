@@ -282,7 +282,7 @@ impl NamePath
     ///   accumulated path and still selects the correct binding. This observes
     ///   composition through the namespace consumer rather than another path
     ///   helper's implementation.
-    /// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+    /// - witness: `tests::namespace::a_nested_shadow_reports_the_accumulated_prefix`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

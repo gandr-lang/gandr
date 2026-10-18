@@ -173,7 +173,7 @@ impl FromStr for Frequency
     /// # Adequacy
     /// - hypothesis: L3 — the rate reaches `perf record` and scales the
     ///   reported seconds; a dropped or ignored rate changes both.
-    /// - witness: `cli::cli::a_profile_is_charged_to_its_outermost_specification`
+    /// - witness: `tests::cli::a_profile_is_charged_to_its_outermost_specification`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {

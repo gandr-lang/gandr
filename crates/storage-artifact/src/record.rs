@@ -269,8 +269,8 @@ impl ArtifactRecord
     ///   generated environments with at most 47 declarations of four kinds. It
     ///   distinguishes lost segment bytes and miskeyed declarations; it does
     ///   not exhaust arbitrary malformed segment contents.
-    /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
-    /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
+    /// - witness: `tests::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
+    /// - witness: `tests::artifact_contract::round_trip_over_generated_environments`
     #[spec(ensures: |ret| ret.index == index
         && ret.key == AdmissionKey::from(index)
         && ret.segment.as_ref() == segment.0)]
@@ -409,8 +409,8 @@ impl ArtifactRecordSet
     ///   kinds, observes exact image reconstruction and declaration count. It
     ///   distinguishes dropped bytes, changed ordering and missing records.
     ///   Those valid-image witnesses do not establish every decoder refusal.
-    /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
-    /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
+    /// - witness: `tests::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
+    /// - witness: `tests::artifact_contract::round_trip_over_generated_environments`
     #[spec(ensures: |ret| match ret {
         Ok(ref set) => {
             let mut offset = set.header.len();
@@ -486,7 +486,7 @@ impl ArtifactRecordSet
     ///   predicate retains only the moved collection's count.
     /// - witness: `record::tests::from_records_sorts_any_permutation_canonically`
     /// - witness: `record::tests::a_duplicate_admission_key_is_rejected`
-    /// - witness: `artifact_contract::artifact_contract::a_permuted_build_order_yields_the_same_identity`
+    /// - witness: `tests::artifact_contract::a_permuted_build_order_yields_the_same_identity`
     #[spec(
         captures: count = records.len(),
         ensures: |ret| match ret {
@@ -551,8 +551,8 @@ impl ArtifactRecordSet
     ///   and a skipped initial index, observing the exact refused position. It
     ///   distinguishes shifted keys and omitted values without exhausting
     ///   malformed key lengths or all later failure positions.
-    /// - witness: `artifact_contract::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
-    /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
+    /// - witness: `tests::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
+    /// - witness: `tests::artifact_contract::tree_nodes_store_and_reopen`
     #[spec(
         requires: stored.iter().zip(stored.iter().skip(1))
             .all(|(previous, next)| previous.key() < next.key()),
@@ -658,8 +658,8 @@ impl ArtifactRecordSet
     ///   Perturbing the header or a segment changes the stored identity. These
     ///   witnesses distinguish omitted, reordered and misassociated records;
     ///   they do not exhaust record-tree shapes or allocation behaviour.
-    /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
-    /// - witness: `artifact_contract::artifact_contract::any_perturbation_changes_the_identity`
+    /// - witness: `tests::artifact_contract::tree_nodes_store_and_reopen`
+    /// - witness: `tests::artifact_contract::any_perturbation_changes_the_identity`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -703,8 +703,8 @@ impl ArtifactRecordSet
     ///   reassembled byte against the kernel encoder, distinguishing misplaced
     ///   headers, segment loss and reordered bytes. These witnesses do not
     ///   validate arbitrary bytes admitted by the unchecked record constructor.
-    /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
-    /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
+    /// - witness: `tests::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
+    /// - witness: `tests::artifact_contract::round_trip_over_generated_environments`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -769,7 +769,7 @@ impl ArtifactRecordSet
     ///   observing positions zero and one. The unshifted artifact is admitted.
     ///   It distinguishes conflating valid bytes with valid cuts; later cuts
     ///   and differing record/layout counts are not sampled by this witness.
-    /// - witness: `artifact_contract::artifact_contract::records_cut_off_a_segment_boundary_are_refused`
+    /// - witness: `tests::artifact_contract::records_cut_off_a_segment_boundary_are_refused`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

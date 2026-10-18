@@ -53,7 +53,7 @@ impl fmt::Display for RunId
     /// # Adequacy
     /// - hypothesis: L3 — a fetched run is stored under its decimal identifier,
     ///   and a second report finds it there.
-    /// - witness: `cli::cli::fetched_runs_are_stored_and_read_back`
+    /// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
     #[inline]
     fn fmt(
         &self,
@@ -107,8 +107,8 @@ impl core::str::FromStr for RunLimit
     /// # Adequacy
     /// - hypothesis: L3 — `--runs 0` exits 2 and `--runs 2` reads two runs; a
     ///   limit that admitted zero or ignored the number changes either.
-    /// - witness: `cli::cli::a_malformed_invocation_exits_two`
-    /// - witness: `cli::cli::a_report_reads_the_newest_stored_runs`
+    /// - witness: `tests::cli::a_malformed_invocation_exits_two`
+    /// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -150,8 +150,8 @@ impl From<RunLimit> for usize
 /// - hypothesis: L3 — a fake `gh` that succeeds and one that fails with a
 ///   message; a swallowed exit status or a lost message changes the report or
 ///   the printed refusal.
-/// - witness: `cli::cli::fetched_runs_are_stored_and_read_back`
-/// - witness: `cli::cli::a_failing_gh_is_reported_with_its_message`
+/// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
+/// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
 fn output(command: &mut Command) -> Result<String, TimingError>
 {
     let invocation = core::iter::once(command.get_program())
@@ -189,8 +189,8 @@ fn output(command: &mut Command) -> Result<String, TimingError>
 /// # Adequacy
 /// - hypothesis: L3 — a fake `gh` listing two runs yields both, fetched in
 ///   turn; a fake that prints a non-number is refused.
-/// - witness: `cli::cli::fetched_runs_are_stored_and_read_back`
-/// - witness: `cli::cli::a_failing_gh_is_reported_with_its_message`
+/// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
+/// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |runs| runs.len() <= usize::from(limit)))]
 #[inline]
 pub fn recent_runs(
@@ -261,7 +261,7 @@ pub enum Stored
 /// - hypothesis: L3 — a fake `gh` that writes reports, run twice: the second
 ///   report fetches nothing; a download left under a scratch name or repeated
 ///   for a stored run changes what the fake records.
-/// - witness: `cli::cli::fetched_runs_are_stored_and_read_back`
+/// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
 #[spec(ensures: |ref ret| ret.is_err() || store.join(run.to_string()).is_dir())]
 #[inline]
 pub fn download(
@@ -313,8 +313,8 @@ pub fn download(
 /// - hypothesis: L3 — a store with three runs, a scratch directory and a stray
 ///   file reports the three runs newest first; listing the scratch directory or
 ///   ascending order changes the report.
-/// - witness: `cli::cli::a_report_reads_the_newest_stored_runs`
-/// - witness: `cli::cli::an_empty_store_is_refused`
+/// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
+/// - witness: `tests::cli::an_empty_store_is_refused`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |runs| runs.is_sorted_by(|newer, older| newer > older)))]
 #[inline]
 pub fn stored_runs(store: &Path) -> Result<Vec<RunId>, TimingError>
@@ -366,7 +366,7 @@ pub fn stored_runs(store: &Path) -> Result<Vec<RunId>, TimingError>
 ///   depths is read whole, each report under its artifact's lane; a lane taken
 ///   from the wrong directory level or a report skipped changes the printed
 ///   table.
-/// - witness: `cli::cli::a_report_reads_the_newest_stored_runs`
+/// - witness: `tests::cli::a_report_reads_the_newest_stored_runs`
 #[inline]
 pub fn read_run(
     store: &Path,

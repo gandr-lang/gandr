@@ -698,11 +698,11 @@ impl ArtifactManifest
     ///   lost records, bypassed gates and changed error attribution. An empty
     ///   store exposes propagated lookup failures, not silent reads; this set
     ///   does not exhaust malicious node shapes, work budgets or gate pairs.
-    /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
-    /// - witness: `artifact_contract::artifact_contract::a_foreign_profile_or_format_is_refused_before_any_load`
-    /// - witness: `artifact_contract::artifact_contract::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`
-    /// - witness: `artifact_contract::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
-    /// - witness: `artifact_contract::artifact_contract::records_cut_off_a_segment_boundary_are_refused`
+    /// - witness: `tests::artifact_contract::tree_nodes_store_and_reopen`
+    /// - witness: `tests::artifact_contract::a_foreign_profile_or_format_is_refused_before_any_load`
+    /// - witness: `tests::artifact_contract::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`
+    /// - witness: `tests::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
+    /// - witness: `tests::artifact_contract::records_cut_off_a_segment_boundary_are_refused`
     #[spec(ensures: |ret| match ret {
         Ok(ref decoded) => self.kernel_format == FORMAT_VERSION
             && u64::try_from(decoded.declarations().len()).ok()
@@ -773,7 +773,7 @@ impl ArtifactManifest
 ///   distinguishes dropped, duplicated or reordered records and lost store
 ///   errors; malicious internal children and work limits are not sampled. The
 ///   predicate restricts refusal provenance without replaying store I/O.
-/// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
+/// - witness: `tests::artifact_contract::tree_nodes_store_and_reopen`
 #[spec(ensures: |ret| ret.as_ref().err()
     .is_none_or(|error| matches!(error, ArtifactError::Records { .. })))]
 fn load_records<S>(

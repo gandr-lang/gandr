@@ -162,8 +162,8 @@ const UNRESTORED: &Restoration = &Restoration(BTreeMap::new());
 /// - hypothesis: L3 — a family of a nullary and a unary constructor names a
 ///   constructor value and both branches of a case over it; a shifted tag
 ///   changes the golden.
-/// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
-/// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Constructors<'text>
 {
@@ -189,7 +189,7 @@ impl<'text> Constructors<'text>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Constructors`].
-    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
     #[spec(ensures: self.families.contains_key(&family))]
     #[inline]
     pub fn family<I>(
@@ -218,7 +218,7 @@ impl<'text> Constructors<'text>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Placement`](crate::Placement).
-    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
     #[spec(ensures: self.families.contains_key(&family) && self.consed.contains(&family))]
     #[inline]
     pub fn words<I>(
@@ -243,7 +243,7 @@ impl<'text> Constructors<'text>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Constructors`].
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     #[spec(ensures: self.cases.contains_key(&case))]
     #[inline]
     pub fn case(
@@ -590,7 +590,7 @@ impl<'arena> CoreSource<'arena>
     /// # Adequacy
     /// - hypothesis: L3 — each relation over its record or its flow spells as
     ///   written; the same record unrecorded spells as the record.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
     #[spec(ensures: |ret| ret.is_none() || self.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok())]
     fn related(
         &self,
@@ -646,13 +646,13 @@ impl<'arena> CoreSource<'arena>
     ///   with distinct children and a truncated value handle distinguish
     ///   swapped child addresses and stale reads. Unrendered thunk bodies and
     ///   lift targets are deliberately not exposed by the adapter.
-    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
-    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     /// - witness: `core_source::tests::only_a_parameterised_constructor_carries_its_classifier`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
-    /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
+    /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value(id), ret) {
         | (Some(&Value::ListCons(head, tail)), Former::ListCons(h, t)) => h == CoreNode::Value(head) && t == CoreNode::Value(tail),
         | (Some(&Value::Primitive { primitive, .. }), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
@@ -891,14 +891,14 @@ impl<'arena> CoreSource<'arena>
     ///   names and truncated handles observe absence. Lift targets remain
     ///   outside the former exposed here, and arbitrary type trees are not
     ///   enumerated by these fixtures.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::universes_spell_their_sort_and_level`
-    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::universes_spell_their_sort_and_level`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
-    /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
-    /// - witness: `goldens::tests::session_types_spell_their_protocol_and_payloads`
+    /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
+    /// - witness: `tests::goldens::session_types_spell_their_protocol_and_payloads`
     #[spec(ensures: |ret| match (self.arena.value_type(self.unstaged(id)), ret) {
         | (Some(&ValueType::Stack { input, output }), Former::Stack(a, b)) => a == CoreNode::CompType(input) && b == CoreNode::CompType(output),
         | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
@@ -1096,9 +1096,9 @@ impl<'arena> CoreSource<'arena>
     ///   child positions. A direct returner read and truncation distinguish the
     ///   child family and stale handles; arbitrary dependent trees are outside
     ///   these fixtures.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
-    /// - witness: `goldens::tests::dependent_function_type_breaks_before_codomain`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::dependent_function_type_breaks_before_codomain`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     #[spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
@@ -1184,7 +1184,7 @@ impl<'arena> CoreSource<'arena>
     /// # Adequacy
     /// - hypothesis: L3 — the computation golden reads every computation former
     ///   and its children in order; a truncated arena reads dangling.
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     #[spec(ensures: |ret| match (self.arena.computation(id), ret) {
@@ -1521,13 +1521,13 @@ impl Source for CoreSource<'_>
     ///   four families, distinct pair children and a truncated arena
     ///   distinguish namespace confusion, reversed children and stale handles.
     ///   An arbitrary arena or naming table is outside this finite evidence.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
-    /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
     #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
         | CoreNode::Value(id) if self.arena.value(id).is_none() => matches!(ret, Former::Unreadable(Unreadable::Dangling)),
@@ -1576,10 +1576,10 @@ impl Source for CoreSource<'_>
     ///   records of two fields, in order, and the computation golden a case's
     ///   branches and a handler's clauses; a direct read past the arity and of
     ///   a non-product observes the absence.
-    /// - witness: `goldens::tests::n_ary_products_and_sums_spell_between_their_braces`
-    /// - witness: `goldens::tests::n_ary_tuples_and_injections_spell_between_their_braces`
-    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::n_ary_products_and_sums_spell_between_their_braces`
+    /// - witness: `tests::goldens::n_ary_tuples_and_injections_spell_between_their_braces`
+    /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
     #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
         | CoreNode::ValueType(id) => ret == match self.arena.value_type(self.unstaged(id)) {
@@ -1770,8 +1770,8 @@ impl Source for CoreSource<'_>
     ///   label order spell each field under its own label, and a handler's
     ///   clause its operation; a direct read past the fields and of a tuple
     ///   observes the absence.
-    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
     #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
         | CoreNode::ValueType(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value_type(self.unstaged(id)) {
@@ -1921,7 +1921,7 @@ impl Source for CoreSource<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Source::constructor`].
-    /// - witness: `goldens::tests::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     #[spec(ensures: |ret| ret.is_none() || matches!(self.restoration.restored(node), CoreNode::Computation(_)))]
     #[inline]
     fn constructor(

@@ -785,7 +785,7 @@ impl CodeDefinitions
     /// # Adequacy
     /// - hypothesis: L3 — a circle word checks at its reduced word's path type
     ///   once the circle is presented, and is refused over a free circle.
-    /// - witness: `native_formers::native_formers::a_presented_word_meets_its_reduced_word_in_both_checkers`
+    /// - witness: `tests::native_formers::a_presented_word_meets_its_reduced_word_in_both_checkers`
     #[inline]
     pub fn present(
         &mut self,
@@ -1456,7 +1456,7 @@ impl CodeDefinitions
     /// - hypothesis: L3 — a fixpoint over the circle that recurses through both
     ///   inverse letters meets itself at the cancelled word, and a case reading
     ///   the letter as written does not.
-    /// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+    /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     #[inline]
     pub fn convert_rigidly(
         &self,
@@ -1496,7 +1496,7 @@ impl CodeDefinitions
     /// - hypothesis: L3 — a case whose point branch runs a definition meets its
     ///   obligation once the definition unfolds, at a family conjugation fixes,
     ///   and is still refused at a fixed left endpoint.
-    /// - witness: `native_formers::native_formers::a_loop_obligation_unfolds_the_arm_s_definitions`
+    /// - witness: `tests::native_formers::a_loop_obligation_unfolds_the_arm_s_definitions`
     #[inline]
     pub fn convert_unfolding(
         &self,
@@ -1913,8 +1913,8 @@ fn rigid_problem(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as the two callers.
-/// - witness: `native_formers::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
-/// - witness: `native_formers::native_formers::a_loop_obligation_unfolds_the_arm_s_definitions`
+/// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+/// - witness: `tests::native_formers::a_loop_obligation_unfolds_the_arm_s_definitions`
 fn convert_computations(
     core: &CoreArena,
     definitions: Definitions<'_>,

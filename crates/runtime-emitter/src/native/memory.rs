@@ -10,13 +10,16 @@
 //! `mprotect` per emission, is two system calls per function and stops every
 //! other thread's code in the region while it writes.
 //!
-//! On Linux x86-64 a region is one `memfd` mapped twice: writable at any
-//! address, and readable and executable with `MAP_32BIT`, below 2 GiB. Writes
-//! go through the first view and code runs from the second, so no page is
-//! ever both writable and executable and no thread waits on another's
-//! write. The executable view's placement is what the static relocation
-//! model needs: an address operand is a 32-bit absolute field. The
-//! instruction cache is coherent with data writes on x86-64.
+//! On Linux a region is one `memfd` mapped twice: writable at any address,
+//! and readable and executable. Writes go through the first view and code
+//! runs from the second, so no page is ever both writable and executable and
+//! no thread waits on another's write. On x86-64 the executable view is mapped
+//! with `MAP_32BIT`, below 2 GiB, which the static relocation model needs: an
+//! address operand is a 32-bit absolute field. The instruction cache is
+//! coherent with data writes on x86-64. On arm64 the patcher materialises an
+//! address page-relative or by `movz`/`movk`, so the view goes anywhere; the
+//! instruction cache is not coherent, so a written range is cleaned and
+//! invalidated through its executable view before it runs.
 
 use crate::native::Address;
 use crate::native::CodeBytes;
@@ -251,13 +254,65 @@ const fn open_writes()
 ///
 /// # Specification
 /// trivial.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 const fn close_writes(
     region: &Region,
     reservation: Reservation,
 )
 {
     let _ = (region, reservation);
+}
+
+/// The cache maintenance the GCC runtime exports.
+///
+/// # Safety
+/// - unsafe invariants: the signature matches the runtime's — two `void *`
+///   bounds of one range — and the range lies inside a live mapping.
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+#[expect(
+    unused_doc_comments,
+    reason = "the policy lint reads this block's safety section; rustdoc renders none on an extern block"
+)]
+unsafe extern "C" {
+    /// Clean the data cache and invalidate the instruction cache over a
+    /// range, to the point of unification.
+    ///
+    /// # Specification
+    /// - requires: the range lies inside a live, readable mapping.
+    /// - ensures: an instruction fetched from the range afterwards reads the
+    ///   bytes last written to the memory it maps, through any view.
+    /// - executable: none — a foreign declaration has no body to check.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every named program runs native from bytes written
+    ///   just before; a stale cache line would run other bytes.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    fn __clear_cache(
+        start: *mut core::ffi::c_void,
+        end: *mut core::ffi::c_void,
+    );
+}
+
+/// Clean and invalidate the caches over `reservation`'s bytes through the
+/// executable view: the data cache is physically tagged, so cleaning the
+/// executable alias writes back what the writable view wrote, and the
+/// instruction cache is invalidated at the addresses code runs from.
+///
+/// # Specification
+/// trivial.
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+fn close_writes(
+    region: &Region,
+    reservation: Reservation,
+)
+{
+    let start = region.code.wrapping_add(reservation.start.0);
+    let end = start.wrapping_add(reservation.length.0);
+    // SAFETY: the reservation lies inside the region's live, readable
+    // executable view.
+    unsafe {
+        __clear_cache(start.cast(), end.cast());
+    }
 }
 
 /// The host's error number of the last failed call.
@@ -313,14 +368,23 @@ impl Region
     }
 }
 
+/// The executable view's placement flag: below 2 GiB for the x86-64 static
+/// relocation model, anywhere for arm64.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+const EXECUTABLE_PLACEMENT: libc::c_int = libc::MAP_32BIT;
+/// The executable view's placement flag: below 2 GiB for the x86-64 static
+/// relocation model, anywhere for arm64.
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+const EXECUTABLE_PLACEMENT: libc::c_int = 0;
+
 #[cfg(target_os = "linux")]
 impl Region
 {
     /// Map a region of `capacity` bytes.
     ///
     /// # Specification
-    /// - ensures: a writable view and a readable, executable view below 2 GiB
-    ///   of one anonymous file.
+    /// - ensures: a writable view and a readable, executable view of one
+    ///   anonymous file, the executable one below 2 GiB on x86-64.
     /// - executable: none — the mappings' protection and placement are the
     ///   host's state, which no predicate reads.
     ///
@@ -361,13 +425,14 @@ impl Region
             if write == libc::MAP_FAILED {
                 return Err(last_error());
             }
-            // SAFETY: a second shared mapping of the same file, below 2 GiB.
+            // SAFETY: a second shared mapping of the same file, below 2 GiB
+            // on x86-64.
             let code = unsafe {
                 libc::mmap(
                     core::ptr::null_mut(),
                     capacity.0,
                     libc::PROT_READ | libc::PROT_EXEC,
-                    libc::MAP_SHARED | libc::MAP_32BIT,
+                    libc::MAP_SHARED | EXECUTABLE_PLACEMENT,
                     file,
                     0,
                 )

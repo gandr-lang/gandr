@@ -915,7 +915,7 @@ impl<'arena> CheckingContext<'arena>
     /// - hypothesis: L3 — reusing a nominal signature must retain its full
     ///   field table so constructor checks remain identical to a fresh
     ///   judgment.
-    /// - witness: `native_formers::native_formers::native_signature_support_and_adoption`
+    /// - witness: `tests::native_formers::native_signature_support_and_adoption`
     #[spec(ensures: |ret| ret.is_err() || self.data_signatures.contains_key(&constant))]
     #[inline]
     pub fn adopt_data(
@@ -945,7 +945,7 @@ impl<'arena> CheckingContext<'arena>
     /// - hypothesis: L3 — a field naming its own family forms inside the block
     ///   and a later reference to the same family, outside it, needs the
     ///   admitted signature.
-    /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
+    /// - witness: `tests::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
     #[spec(ensures: matches!(self.data_in_scope(position), Maybe::Present(_)))]
     pub(crate) fn open_block(
         &mut self,
@@ -988,8 +988,8 @@ impl<'arena> CheckingContext<'arena>
     /// # Adequacy
     /// - hypothesis: L3 — a universe and its decoder admitted as one block, and
     ///   a family naming itself through a definition of its block refused.
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
-    /// - witness: `recursive_data::recursive_data::a_definition_of_the_block_is_read_through_602`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    /// - witness: `tests::recursive_data::a_definition_of_the_block_is_read_through_602`
     #[spec(ensures: self.mutual == Maybe::Present(block))]
     pub(crate) fn open_mutual(
         &mut self,
@@ -1128,8 +1128,8 @@ impl<'arena> CheckingContext<'arena>
     ///   formerly missing declaration, changes a dependent judgment's answer; a
     ///   declaration's own fields read its forming signature, which no later
     ///   run can disagree with.
-    /// - witness: `native_formers::native_formers::native_signature_support_and_adoption`
-    /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
+    /// - witness: `tests::native_formers::native_signature_support_and_adoption`
+    /// - witness: `tests::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
     #[spec(ensures: |ret| match self.forming_at(constant) {
 Some(signature) => ret.as_ref() == Some(signature),
 None => ret.as_ref() == self.data_signatures.get(&constant) && match self.support {
@@ -2071,7 +2071,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::respect::respected`]: the fold over the
     ///   circle reads the laws its declaration names.
-    /// - witness: `native_formers::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
+    /// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
     #[spec(captures: entry = laws.len(), ensures: entry == 0 || self.laws.get(&constant).map(Vec::len) == Some(entry))]
     pub(crate) fn keep_laws(
         &mut self,
@@ -2351,7 +2351,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — the circle's loop checks at its path, a fold over a
     ///   path splits its words, and both checkers admit the same declarations.
-    /// - witness: `native_formers::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
+    /// - witness: `tests::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |words| words.is_none_or(|words| self.data_signatures.get(&words).is_some_and(|signature| signature.presentation().cells().is_some()))))]
     pub(crate) fn words(
         &mut self,
@@ -2394,7 +2394,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::words`].
-    /// - witness: `native_formers::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
+    /// - witness: `tests::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
     #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|read| read == value_type || matches!(value_type_view(self.arena, read), Ok(ValueTypeView::Data { arguments: [], .. }))))]
     pub(crate) fn identified(
         &mut self,
@@ -2785,7 +2785,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a decoder's arm reads its family's field through its
     ///   self binder.
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
     #[spec(ensures: |ret| match ret {
         Maybe::Present((constant, index)) => {
             self.admitted == Maybe::Present(constant) && self.hypothesis(index).is_ok()
@@ -2914,7 +2914,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   mutual block's decoder records over the type it foresaw.
     /// - witness: `module::tests::a_later_declaration_reads_an_earlier_type`
     /// - witness: `module::tests::a_refused_signed_body_still_supplies_its_type`
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
     #[spec(
         requires: self.admitted == Maybe::Present(constant),
         ensures: self.signature(constant) == Maybe::Present(declared),
@@ -2943,7 +2943,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a universe's constructor naming its decoder forms at
     ///   the decoder's declared type before the decoder is admitted.
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
     #[spec(ensures: self.signature(constant) == Maybe::Present(declared))]
     pub(crate) fn foresee(
         &mut self,
@@ -2981,7 +2981,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a decoder whose body names a later definition of its
     ///   block is refused as a forward reference.
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
     #[spec(ensures: self.signatures.last().is_none_or(|&(last, _)| last < from)
         && self.hindsight.first().is_none_or(|&(held, _)| held >= from))]
     pub(crate) fn unforesee(
@@ -3014,7 +3014,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - hypothesis: L3 — a universe whose field decodes a later definition of
     ///   its block reaches the decoder's stage check rather than an unknown
     ///   constant.
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
     #[spec(
         captures: before = self.foreseen.len(),
         ensures: |ret| ret == Foresight(before) && self.foreseen.len() >= before,
@@ -3057,7 +3057,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Adequacy
     /// - hypothesis: L3 — a decoder's arm formed in foresight, and its body
     ///   after it naming a later definition refused as a forward reference.
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
     #[spec(
         captures: before = self.signatures.len(),
         ensures: self.foreseen.len() <= mark.0 && self.signatures.len() <= before,

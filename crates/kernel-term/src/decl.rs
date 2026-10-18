@@ -127,10 +127,10 @@ impl From<LevelParamCount> for u32
 ///   omission or the definition’s position. Exact slot refusal and retained
 ///   declaration kind separate unchecked claims and position confusion;
 ///   host-width ceilings and longer tables are not covered by these fixtures.
-/// - witness: `sharing_format::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
-/// - witness: `sharing_format::sharing_format::a_minted_atom_table_with_a_repeat_is_refused`
-/// - witness: `sharing_format::sharing_format::a_minted_atom_table_omitting_an_atom_is_refused`
-/// - witness: `sharing_format::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
+/// - witness: `tests::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
+/// - witness: `tests::sharing_format::a_minted_atom_table_with_a_repeat_is_refused`
+/// - witness: `tests::sharing_format::a_minted_atom_table_omitting_an_atom_is_refused`
+/// - witness: `tests::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MintedAtom(usize);
@@ -179,8 +179,8 @@ impl From<MintedAtom> for usize
 /// - hypothesis: L0 separates an extent from a position. L3 round-trips a
 ///   sealed artifact whose atom holds its member and refuses an extent reaching
 ///   past the artifact's last declaration.
-/// - witness: `sharing_format::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
-/// - witness: `sharing_format::sharing_format::a_seal_reaching_past_the_artifact_is_refused`
+/// - witness: `tests::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
+/// - witness: `tests::sharing_format::a_seal_reaching_past_the_artifact_is_refused`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SealExtent(usize);
@@ -233,7 +233,7 @@ impl From<SealExtent> for usize
 ///   representation, a value of the representation offered after the scope
 ///   closed is refused, and a decoded artifact's closed scope replays to the
 ///   same boundary.
-/// - witness: `sharing_format::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
+/// - witness: `tests::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SealScope
 {
@@ -468,7 +468,7 @@ pub enum DeclarationContent
 ///   and accidental empty-segment rejection. This is a finite UTF-8 boundary
 ///   domain, not an exhaustive Unicode proof.
 /// - witness: `decl::tests::names_classify_the_separator_without_normalizing_unicode`
-/// - witness: `sharing_format::sharing_format::a_segment_holding_a_separator_is_refused`
+/// - witness: `tests::sharing_format::a_segment_holding_a_separator_is_refused`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NameSegment(String);
@@ -498,7 +498,7 @@ impl NameSegment
     ///   normalization and accidental empty-segment rejection. This is a finite
     ///   UTF-8 boundary domain, not an exhaustive Unicode proof.
     /// - witness: `decl::tests::names_classify_the_separator_without_normalizing_unicode`
-    /// - witness: `sharing_format::sharing_format::a_segment_holding_a_separator_is_refused`
+    /// - witness: `tests::sharing_format::a_segment_holding_a_separator_is_refused`
     #[spec(
         captures: entry = (!text.contains(Self::SEPARATOR), text.len(), text.as_bytes().first().copied(), text.as_bytes().last().copied()),
         ensures: |ret| ret.as_ref().map_or(!entry.0,
@@ -555,7 +555,7 @@ impl AsRef<str> for NameSegment
 ///   and accidental empty-segment rejection. This is a finite UTF-8 boundary
 ///   domain, not an exhaustive Unicode proof.
 /// - witness: `decl::tests::names_classify_the_separator_without_normalizing_unicode`
-/// - witness: `sharing_format::sharing_format::a_segment_holding_a_separator_is_refused`
+/// - witness: `tests::sharing_format::a_segment_holding_a_separator_is_refused`
 /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -794,7 +794,7 @@ impl Declaration
     ///   tests nor this data layer prove admission, typing or the truth of
     ///   provenance.
     /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
-    /// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
+    /// - witness: `tests::sharing_format::a_structured_name_round_trips_as_segments`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

@@ -162,9 +162,9 @@ pub struct Sealed(pub bool);
 /// # Adequacy
 /// - hypothesis: L3 — a manifest component and a transparently ascribed
 ///   abstract one read their types, a sealed one its atom.
-/// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-/// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
-/// - witness: `modules::modules::opaque_ascription_seals`
+/// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
+/// - witness: `tests::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TypeMeaning
 {
@@ -233,8 +233,8 @@ pub enum Mark
 /// # Adequacy
 /// - hypothesis: L3 — an opaque ascription's abstract slot and a transparent
 ///   ascription's kind witness each lower from their record.
-/// - witness: `modules::modules::opaque_ascription_seals`
-/// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
+/// - witness: `tests::modules::opaque_ascription_seals`
+/// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AbstractSlot
 {
@@ -270,7 +270,7 @@ impl<'source> super::Structure<'source>
     /// # Adequacy
     /// - hypothesis: L3 — an unascribed module's member and an ascribed
     ///   module's component are each named through the namespace.
-    /// - witness: `modules::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     #[spec(
         ensures: |ret| ret == match self.ascription {
             | Maybe::Present(_) => self.types.as_slice(),
@@ -306,7 +306,7 @@ impl<'source> super::Structure<'source>
 /// - hypothesis: L3 — a sealed counter's one abstract type carries its kind,
 ///   its representation, the extent through the module's last position and its
 ///   site.
-/// - witness: `modules::modules::opaque_ascription_seals`
+/// - witness: `tests::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Sealing
 {
@@ -404,10 +404,10 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a telescope kind, an arrow kind and a universe kind
     ///   separate a family, an operator's kind and an abstract type, and an
     ///   arrow kind in parentheses is an operator's kind (#611).
-    /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
-    /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
-    /// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
-    /// - witness: `modules::modules::a_kind_reads_through_its_grouping_parentheses`
+    /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
+    /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::a_kind_reads_through_its_grouping_parentheses`
     pub(super) fn kind_form(
         &self,
         kind: Placed,
@@ -452,7 +452,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a sealed module with one abstract component among
     ///   value components takes exactly one abstract slot, ahead of its
     ///   members.
-    /// - witness: `modules::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::opaque_ascription_seals`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.abstracts.len()),
         ensures: |_| {
@@ -554,10 +554,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a read member, a repeated one and a repaired one take
     ///   their distinct outcomes, and an attributed one keeps its attributes.
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::a_repeated_type_member_is_refused_naming_the_first`
-    /// - witness: `modules::modules::an_unread_member_keeps_its_own_report`
-    /// - witness: `modules::modules::a_component_check_carries_its_members_expectation`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::a_repeated_type_member_is_refused_naming_the_first`
+    /// - witness: `tests::modules::an_unread_member_keeps_its_own_report`
+    /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -721,10 +721,10 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a sealed component, a strengthened one, a component
     ///   no member supplies and a sealed operator, each asserted as the exact
     ///   slot and reading.
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
-    /// - witness: `modules::modules::an_abstract_component_with_no_type_member_is_refused_by_name`
-    /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
+    /// - witness: `tests::modules::an_abstract_component_with_no_type_member_is_refused_by_name`
+    /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
     #[spec(
         captures: before = types.len(),
         ensures: |_| types.len() <= before.saturating_add(1),
@@ -891,8 +891,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a sealed counter's seal reaches its members and the
     ///   witnesses its signature filed, and a declaration after the module
     ///   reads the atom outside.
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::a_later_seal_leaves_an_earlier_extent`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::a_later_seal_leaves_an_earlier_extent`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -939,8 +939,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a type member and a definition member are told apart
     ///   by their first tile, an attribute block before either kept apart.
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::a_component_check_carries_its_members_expectation`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
     #[spec(
         ensures: |ret| !ret.0 || pieces.pieces.iter().any(|piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::TYPE)),
     )]
@@ -986,7 +986,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a transparent component's witness and a family
     ///   component's witness each read the expectation on their member.
-    /// - witness: `modules::modules::a_component_check_carries_its_members_expectation`
+    /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
     #[spec(
         captures: before = self.collected.slots.get(held.0).map(|member| (member.introduced_by, member.attributes.clone())),
         ensures: |ret| match before {
@@ -1034,7 +1034,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an attributed member with no component reading it
     ///   refuses its module, and one a component reads does not.
-    /// - witness: `modules::modules::a_component_check_carries_its_members_expectation`
+    /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

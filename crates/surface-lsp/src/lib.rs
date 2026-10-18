@@ -401,8 +401,8 @@ impl fmt::Display for Capabilities
     /// - hypothesis: L2 — a pinned decoded capability object distinguishes
     ///   wrong protocol fields. L3 — a refusing formatter distinguishes a
     ///   swallowed write failure by the returned `fmt::Error`.
-    /// - witness: `capabilities::capabilities::advertised_capabilities_name_the_token_legend`
-    /// - witness: `capabilities::capabilities::a_refused_capabilities_write_is_propagated`
+    /// - witness: `tests::capabilities::advertised_capabilities_name_the_token_legend`
+    /// - witness: `tests::capabilities::a_refused_capabilities_write_is_propagated`
     #[inline]
     fn fmt(
         &self,

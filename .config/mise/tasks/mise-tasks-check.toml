@@ -18,10 +18,15 @@ depends = ["check:*"]
 # sources keep their spelling.
 ["check:fmt"]
 description = "rustfmt and the gandr formatter, unchanged"
-run = [
-  "cargo fmt --all --check",
-  "cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check crates/surface-corpus",
-]
+depends = ["check:corpus-format"]
+run = "cargo fmt --all --check"
+
+# The gandr formatter's check over the corpus. CI runs it in the plain lane,
+# whose state holds the driver, rather than in the format gate's treefmt pass,
+# which would build the driver from nothing on every run.
+["check:corpus-format"]
+description = "Every corpus source in the gandr formatter's layout"
+run = "cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check crates/surface-corpus"
 
 ["check:clippy"]
 description = "The clippy half of the lint wall"
@@ -257,12 +262,20 @@ run = "cargo nextest run --locked --package gandr-surface-parser --test tests --
 description = "The tests that exist only without specification enforcement"
 run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile {{ env.NEXTEST_PROFILE | default(value='default') }} -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'"
 
-# Flags and target directory match the enforcing test gate.
+# Flags and target directory match the enforcing test gate. A merge-group
+# shard names its packages in `CI_SHARD_ARGS`; workspace feature unification
+# resolves every shard's features as the whole workspace's, so each shard
+# builds exactly the workspace build's units and the shards' target
+# directories overlay into one state. Without it a shard rebuilds shared
+# dependencies under its own features (#702). The resolver setting is
+# command-line config, not the environment: a test that runs `cargo tree`
+# inherits the environment and would answer for the whole workspace.
 ["build:tests-enforcing"]
 description = "Compile enforcing test targets without running them"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-run = "cargo nextest run --workspace --locked --no-run"
+env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
+run = "cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --no-run"
 
 # The test twin under enforcement; the suite's runtime sentinels refuse a
 # target-only or stale macro build.
@@ -270,7 +283,8 @@ run = "cargo nextest run --workspace --locked --no-run"
 description = "Unit and integration tests over every target, specifications enforced"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-run = "cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
+env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
+run = "cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The enforcing configuration admits the cfg-gated runtime sentinels, so their
 # witnesses enter the inventory.
@@ -458,7 +472,7 @@ echo 'merge residue check OK: no conflict markers or merge-driver trailers in tr
 # rewrites the ledger and is not this gate.
 ["check:corpus-comments"]
 description = "A comment on every fixture item, ratcheted against the ledger"
-run = "cargo test --locked --package gandr-surface-corpus --test comments -- --nocapture"
+run = "cargo test --locked --package gandr-surface-corpus --test tests comments:: -- --nocapture"
 
 # Workflow tools are build-time policy, never package dependencies. Check
 # Cargo's resolved metadata, including renamed and transitive dependencies,

@@ -109,8 +109,8 @@ pub trait InputSource
     ///   input. Exact final cells, fault kind and queue residue detect
     ///   reordered reads or reading past an ending. OS event timing is outside
     ///   the domain.
-    /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
-    /// - witness: `launch::tests::a_failed_input_preserves_its_cause_and_stops_reading`
+    /// - witness: `tests::launch::the_face_drives_the_loop_from_its_keys`
+    /// - witness: `tests::launch::a_failed_input_preserves_its_cause_and_stops_reading`
     fn next(&mut self) -> Input;
 }
 
@@ -138,8 +138,8 @@ impl InputSource for Keyboard
     ///   completion and restored settings. OS read failures and non-key events
     ///   are outside this domain.
     /// - witness: `run::tests::key_bindings_respect_modifier_precedence`
-    /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
-    /// - witness: `launch::tests::the_terminal_face_completes_and_restores_its_settings`
+    /// - witness: `tests::launch::the_face_drives_the_loop_from_its_keys`
+    /// - witness: `tests::launch::the_terminal_face_completes_and_restores_its_settings`
     #[spec(ensures: |ref ret| matches!(*ret,
         Input::Key(_) | Input::Redraw | Input::Failed(Fault::Input(_))))]
     fn next(&mut self) -> Input
@@ -244,8 +244,8 @@ impl InputSource for Leave
 ///   queued successor. Exact backend rows, fault kind and remaining input
 ///   distinguish reordering, lost events and reads after termination. Backend
 ///   draw errors and grammar-construction failure are outside these witnesses.
-/// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
-/// - witness: `launch::tests::a_failed_input_preserves_its_cause_and_stops_reading`
+/// - witness: `tests::launch::the_face_drives_the_loop_from_its_keys`
+/// - witness: `tests::launch::a_failed_input_preserves_its_cause_and_stops_reading`
 #[inline]
 pub fn drive<Screen, Source>(
     terminal: &mut Terminal<Screen>,
@@ -296,9 +296,9 @@ where
 ///   and after a real quit. Reordered events, a wrong ending or missing
 ///   restoration changes those observations. Real backend failure injection and
 ///   arbitrary terminal configurations remain outside this domain.
-/// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
-/// - witness: `launch::tests::a_failed_input_preserves_its_cause_and_stops_reading`
-/// - witness: `launch::tests::the_terminal_face_completes_and_restores_its_settings`
+/// - witness: `tests::launch::the_face_drives_the_loop_from_its_keys`
+/// - witness: `tests::launch::a_failed_input_preserves_its_cause_and_stops_reading`
+/// - witness: `tests::launch::the_terminal_face_completes_and_restores_its_settings`
 #[spec(ensures: |ref ret| !matches!(*ret, Ok(Ended::Faulted(Fault::Editor(_)))))]
 #[inline]
 pub fn run() -> io::Result<Ended>
@@ -336,7 +336,7 @@ pub fn run() -> io::Result<Ended>
 ///   ignored partial writes and swallowed failures. Successful terminal-free
 ///   execution is exercised by the smoke command; grammar and flush failure are
 ///   outside this witness.
-/// - witness: `launch::tests::the_smoke_face_propagates_a_partial_write_failure`
+/// - witness: `tests::launch::the_smoke_face_propagates_a_partial_write_failure`
 #[spec(ensures: |ref ret| matches!(
     *ret, Err(_) | Ok(Ended::Completed | Ended::Faulted(Fault::Grammar(_)))
 ))]

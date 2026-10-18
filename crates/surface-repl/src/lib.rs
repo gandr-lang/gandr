@@ -76,14 +76,14 @@
 //!
 //! | Boundary | Witness |
 //! | -------- | ------- |
-//! | Empty, incomplete and complete input | `loop::tests::an_empty_buffer_is_complete`, `loop::tests::a_declaration_waits_for_its_terminator` |
-//! | Pasted lines, ignored blank input, interruption and retained declarations | `loop::tests::multiline_and_interrupted_buffers_preserve_accepted_declarations` |
+//! | Empty, incomplete and complete input | `tests::repl_loop::an_empty_buffer_is_complete`, `tests::repl_loop::a_declaration_waits_for_its_terminator` |
+//! | Pasted lines, ignored blank input, interruption and retained declarations | `tests::repl_loop::multiline_and_interrupted_buffers_preserve_accepted_declarations` |
 //! | Unicode literal coverage and scalar boundaries | `highlight::tests::unicode_literals_keep_their_byte_boundaries` |
 //! | Old, crossing and zero-width repairs; distinguishable repair classes | `remote::tests::repair_boundaries_preserve_locations_and_distinct_classes` |
-//! | Every output kind, UTF-8 byte offsets, empty rows, CRLF and lone carriage returns | `loop::tests::row_kinds_and_unicode_boundaries_keep_their_meaning` |
-//! | Empty transcript performs no write or flush | `loop::tests::empty_transcripts_do_not_touch_the_writer` |
-//! | Partial-write refusal, skipped flush and flush-error precedence | `loop::tests::write_and_flush_failures_keep_their_kind` |
-//! | End and failed reads leave later events unread and flush once | `loop::tests::terminal_endings_stop_reads_and_flush_once` |
+//! | Every output kind, UTF-8 byte offsets, empty rows, CRLF and lone carriage returns | `tests::repl_loop::row_kinds_and_unicode_boundaries_keep_their_meaning` |
+//! | Empty transcript performs no write or flush | `tests::repl_loop::empty_transcripts_do_not_touch_the_writer` |
+//! | Partial-write refusal, skipped flush and flush-error precedence | `tests::repl_loop::write_and_flush_failures_keep_their_kind` |
+//! | End and failed reads leave later events unread and flush once | `tests::repl_loop::terminal_endings_stop_reads_and_flush_once` |
 //!
 //! The terminal adapter additionally needs a pseudo-terminal smoke: fresh and
 //! continuing prompts, a completed definition, an interrupted buffer, a

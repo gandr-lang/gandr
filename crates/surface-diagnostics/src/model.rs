@@ -449,7 +449,7 @@ impl DiagnosticContext
     /// # Adequacy
     /// - hypothesis: L3 — a context under a binder names it after its sentence;
     ///   one opening none does not.
-    /// - witness: `diagnostics::diagnostics::a_mismatch_under_a_binder_names_it`
+    /// - witness: `tests::diagnostics::a_mismatch_under_a_binder_names_it`
     #[spec(ensures: |ref ret| ret.contains(self.sentence.as_ref()) && !ret.contains('\n'))]
     #[inline]
     #[must_use]
@@ -474,7 +474,7 @@ impl DiagnosticContext
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an unlocated rule reads as its sentence.
-    /// - witness: `diagnostics::diagnostics::an_unlocated_rule_becomes_a_note`
+    /// - witness: `tests::diagnostics::an_unlocated_rule_becomes_a_note`
     #[spec(ensures: |ref ret| ret.starts_with("while ") && !ret.contains('\n'))]
     #[inline]
     #[must_use]
@@ -536,7 +536,7 @@ pub struct Detail
 /// # Adequacy
 /// - hypothesis: L3 — a lint finding's fix applied to its source and checked
 ///   again leaves no finding.
-/// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
+/// - witness: `tests::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Fix
 {
@@ -621,7 +621,7 @@ impl fmt::Display for Detail
 /// # Adequacy
 /// - hypothesis: L3 — an importer laid after its sibling reports its refusal at
 ///   its own line, column and bytes.
-/// - witness: `diagnostics::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
+/// - witness: `tests::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SourceStart
 {
@@ -645,7 +645,7 @@ impl SourceStart
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the witness of [`SourceStart`].
-    /// - witness: `diagnostics::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
+    /// - witness: `tests::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.base == base
@@ -675,7 +675,7 @@ impl SourceStart
     /// # Adequacy
     /// - hypothesis: L3 — an importer laid after its sibling reports its
     ///   refusal at bytes of its own file.
-    /// - witness: `diagnostics::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
+    /// - witness: `tests::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
     #[inline]
     #[spec(ensures: |ret| match ret {
         Maybe::Present(own) => usize::from(own.start()).checked_add(usize::from(self.base))
@@ -758,7 +758,7 @@ impl Diagnostic
     /// - hypothesis: L3 — a located refusal's primary annotation is its span;
     ///   an unlocated one has none; a located one whose primary mark was
     ///   removed offers its context mark as none.
-    /// - witness: `diagnostics::diagnostics::an_unlocated_report_claims_no_span`
+    /// - witness: `tests::diagnostics::an_unlocated_report_claims_no_span`
     /// - witness: `report::tests::a_located_diagnostic_without_its_primary_mark_has_no_primary`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(annotation) => self.span == Maybe::Present(annotation.locus.span),
@@ -800,7 +800,7 @@ impl Diagnostic
     /// # Adequacy
     /// - hypothesis: L3 — an importer's refusal is reported at its own line and
     ///   column.
-    /// - witness: `diagnostics::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
+    /// - witness: `tests::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
     #[inline]
     #[must_use]
     #[spec(
@@ -900,7 +900,7 @@ impl Diagnostic
     /// # Adequacy
     /// - hypothesis: L3 — one refusal shows the lines of its level and none of
     ///   the next.
-    /// - witness: `diagnostics::diagnostics::one_refusal_details_each_verbosity`
+    /// - witness: `tests::diagnostics::one_refusal_details_each_verbosity`
     /// - witness: `report::tests::a_title_the_message_repeats_is_not_detailed`
     #[spec(ensures: |ref ret| (matches!(verbosity, Verbosity::User | Verbosity::Json) == ret.is_empty()
         || self.severity == Severity::Ledger)
@@ -1010,9 +1010,9 @@ impl Diagnostic
     /// - hypothesis: L3 — one refusal's image parses back with its name,
     ///   message, primary locus and contexts; a ledger line's with its line; a
     ///   lint finding's with its fix.
-    /// - witness: `diagnostics::diagnostics::one_refusal_details_each_verbosity`
-    /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
-    /// - witness: `diagnostics::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
+    /// - witness: `tests::diagnostics::one_refusal_details_each_verbosity`
+    /// - witness: `tests::diagnostics::each_verb_prints_its_entries`
+    /// - witness: `tests::diagnostics::an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword`
     /// - witness: `report::tests::the_annotations_of_the_image_are_the_contexts_alone`
     #[spec(ensures: |ref ret| ret.starts_with('{') && !ret.contains('\n'))]
     #[inline]

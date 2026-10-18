@@ -267,7 +267,7 @@ impl AtomBound
 ///   genuine or forged bounds at the missing, stray and insufficient bound
 ///   boundaries; the exact validator refusal distinguishes incomplete or
 ///   unsound certificates from valid ones.
-/// - witness: `level_oracle::level_oracle::prop_evidence_validates`
+/// - witness: `tests::level_oracle::prop_evidence_validates`
 /// - witness: `order::tests::perturbed_witness_missing_bound_is_rejected`
 /// - witness: `order::tests::perturbed_witness_stray_bound_is_rejected`
 /// - witness: `order::tests::false_witness_insufficient_constant_is_rejected`
@@ -337,7 +337,7 @@ impl LeqWitness
 ///   evidence branches. L3 checks incomparable variables, non-refuting equality
 ///   and arithmetic overflow, distinguishing a false counterexample from a
 ///   valid one by exact validator outcomes.
-/// - witness: `level_oracle::level_oracle::prop_evidence_validates`
+/// - witness: `tests::level_oracle::prop_evidence_validates`
 /// - witness: `order::tests::distinct_variables_are_incomparable`
 /// - witness: `order::tests::non_refuting_valuation_is_rejected`
 /// - witness: `order::tests::overflowing_valuation_is_rejected`
@@ -505,8 +505,8 @@ impl Level
     ///   also forge coherent evidence; the L3 residue is the boundary set `x ≤
     ///   x+1` against `x+1 ≰ x`, constant-versus-atom domination, and
     ///   distinct-variable incomparability.
-    /// - witness: `level_oracle::level_oracle::prop_leq_agrees_with_semantic_reference`
-    /// - witness: `level_oracle::level_oracle::prop_evidence_validates`
+    /// - witness: `tests::level_oracle::prop_leq_agrees_with_semantic_reference`
+    /// - witness: `tests::level_oracle::prop_evidence_validates`
     /// - witness: `order::tests::var_is_strictly_below_its_successor`
     /// - witness: `order::tests::distinct_variables_are_incomparable`
     /// - witness: `order::tests::constant_dominated_by_atom_offset`
@@ -555,8 +555,8 @@ impl Level
     ///   `succ` internal consistency law on generated pairs; the L3 residue is
     ///   irreflexivity on composite levels, the soundness boundary, together
     ///   with the `x < x+1` and `x ≮ x` pair.
-    /// - witness: `level_oracle::level_oracle::prop_lt_agrees_with_semantic_reference`
-    /// - witness: `level_oracle::level_oracle::prop_lt_equals_succ_leq`
+    /// - witness: `tests::level_oracle::prop_lt_agrees_with_semantic_reference`
+    /// - witness: `tests::level_oracle::prop_lt_equals_succ_leq`
     /// - witness: `order::tests::lt_is_irreflexive`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -598,7 +598,7 @@ impl Level
     ///   independent zero-and-spike valuation decisions; equality, zero,
     ///   incomparable variables and one-offset separation distinguish reversed
     ///   or constant verdicts.
-    /// - witness: `level_oracle::level_oracle::prop_leq_agrees_with_semantic_reference`
+    /// - witness: `tests::level_oracle::prop_leq_agrees_with_semantic_reference`
     /// - witness: `order::tests::zero_is_leq_everything`
     /// - witness: `order::tests::distinct_variables_are_incomparable`
     #[cfg_attr(
@@ -632,7 +632,7 @@ impl Level
     /// - hypothesis: L2 — generated canonical levels are compared with
     ///   independent strict valuation decisions. L3 separates equality from a
     ///   one-offset gap to expose an inclusive or missing strictness shift.
-    /// - witness: `level_oracle::level_oracle::prop_lt_agrees_with_semantic_reference`
+    /// - witness: `tests::level_oracle::prop_lt_agrees_with_semantic_reference`
     /// - witness: `order::tests::leq_is_reflexive_and_lt_is_irreflexive_on_atoms`
     /// - witness: `order::tests::var_is_strictly_below_its_successor`
     #[cfg_attr(
@@ -819,7 +819,7 @@ fn spike_value(right: &Level) -> Option<LevelValue>
 /// - witness: `order::tests::false_witness_insufficient_bound_is_rejected`
 /// - witness: `order::tests::perturbed_witness_absent_constant_atom_is_rejected`
 /// - witness: `order::tests::false_witness_insufficient_constant_is_rejected`
-/// - witness: `level_oracle::level_oracle::prop_evidence_validates`
+/// - witness: `tests::level_oracle::prop_evidence_validates`
 #[spec(ensures: |ret| ret.is_ok() == (
     witness.atoms.len() == left.atoms_map().len()
         && left.atoms().zip(&witness.atoms).all(|((variable, offset), bound)| {
@@ -926,7 +926,7 @@ pub fn validate_witness(
 ///   pinned by the property that every oracle-produced refutation validates.
 /// - witness: `order::tests::non_refuting_valuation_is_rejected`
 /// - witness: `order::tests::overflowing_valuation_is_rejected`
-/// - witness: `level_oracle::level_oracle::prop_evidence_validates`
+/// - witness: `tests::level_oracle::prop_evidence_validates`
 #[spec(ensures: |ret| ret.is_ok() == match (
     left.eval(&refutation.valuation), right.eval(&refutation.valuation)
 ) {

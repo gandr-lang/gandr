@@ -1824,11 +1824,11 @@ impl<'run> Machine<'run>
     ///   inner binder applied to one value at both copies, and a leg whose free
     ///   index names a different binder at its two occurrences, each read off
     ///   the evaluator's step count.
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     /// - witness:
-    ///   `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
+    ///   `tests::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
     /// - witness:
-    ///   `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+    ///   `tests::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
     /// - witness: `eval::tests::shared_configurations_distinguish_zones_but_ignore_unused_bindings`
     #[spec(
         captures: [entry_tasks = self.tasks.len(), entry_pending = self.sharing.pending.len(), entry_remembered = self.sharing.remembered.len()],
@@ -1921,7 +1921,7 @@ impl<'run> Machine<'run>
     ///   Remembering the wrong head, consuming its operand or conflating keys
     ///   changes those observations.
     /// - witness: `eval::tests::shared_configurations_distinguish_zones_but_ignore_unused_bindings`
-    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
     #[spec(
         captures: [entry_pending = self.sharing.pending.len(), entry_remembered = self.sharing.remembered.len(),
             entry_values = self.values.len(), entry_comps = self.comps.len(),
@@ -2616,11 +2616,11 @@ pub fn apply_static_within(
 ///   one closure, a subterm under an inner binder read under one binding at
 ///   both copies, and a leg whose free index names a different binder at its
 ///   two occurrences, each read off the step count against the unshared run.
-/// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+/// - witness: `tests::full_laziness::a_spinal_duplicate_shares_every_rib`
 /// - witness:
-///   `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
+///   `tests::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
 /// - witness:
-///   `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+///   `tests::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
 #[spec(ensures: |ret| ret.is_err()
     || ret.as_ref().is_ok_and(|pair| {
         u32::from(pair.1) <= u32::from(fuel)
@@ -4847,9 +4847,9 @@ fn unfold(
 /// - witness: `eval::tests::normalizes_beta_redex`
 /// - witness: `eval::tests::normalization_preserves_a_stuck_application`
 /// - witness: `eval::tests::an_ill_shaped_elimination_is_refused`
-/// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
-/// - witness: `static_normalization::static_normalization::a_static_redex_normalizes_to_its_ground_type`
-/// - witness: `static_normalization::static_normalization::a_deep_static_term_normalizes_inside_a_small_stack`
+/// - witness: `tests::static_normalization::static_normalization_is_confluent`
+/// - witness: `tests::static_normalization::a_static_redex_normalizes_to_its_ground_type`
+/// - witness: `tests::static_normalization::a_deep_static_term_normalizes_inside_a_small_stack`
 /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
 #[spec(
     captures: [

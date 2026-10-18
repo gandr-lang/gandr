@@ -85,10 +85,10 @@
 //! plan identities on a heap stack. A deep document is ordinary input: the
 //! witnesses seal spines of two hundred thousand nodes and release a chain of a
 //! hundred thousand plan sequences on a 64 KiB native stack
-//! (`algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`,
+//! (`tests::algebra::deep_left_spine_construction_uses_a_heap_work_stack`,
 //! `plan::tests::plan_release_recycles_a_deep_sequence_iteratively`). The
 //! resolver's and the machine's stacks have their own ceilings
-//! (`algebra::tests::render_vm_stack_limit_is_checked_before_output`).
+//! (`tests::algebra::render_vm_stack_limit_is_checked_before_output`).
 //!
 //! # References
 //!

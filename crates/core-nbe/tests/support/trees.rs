@@ -61,10 +61,10 @@ pub enum Trees
 ///   comparison and root-family guards exclude permissive comparisons;
 ///   independently built positive and negative terms distinguish wrong
 ///   payloads, swapped children, omitted static formers and id-based equality.
-/// - witness: `readback_terms::readback_terms::the_comparator_separates_terms_it_is_asked_to_pin`
-/// - witness: `readback_terms::readback_terms::the_comparator_reads_static_formers`
-/// - witness: `readback_terms::readback_terms::the_comparator_descends_into_quoted_type_families`
-/// - witness: `readback_terms::readback_terms::native_tree_comparison_preserves_endpoints_maps_and_evidence`
+/// - witness: `tests::readback_terms::the_comparator_separates_terms_it_is_asked_to_pin`
+/// - witness: `tests::readback_terms::the_comparator_reads_static_formers`
+/// - witness: `tests::readback_terms::the_comparator_descends_into_quoted_type_families`
+/// - witness: `tests::readback_terms::native_tree_comparison_preserves_endpoints_maps_and_evidence`
 #[spec(
     ensures: |ret| match (left, right) {
         (Term::Value(left), Term::Value(right)) => match (left_arena.value(left), right_arena.value(right)) {

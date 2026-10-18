@@ -65,16 +65,16 @@ All 26 named rows are present. The five public standing-state witnesses are addi
 | `a_self_constraint_is_refuted_only_when_positive` | `potential::tests` |
 | `the_valuation_stays_feasible` | `potential::tests` |
 | `a_corrupted_valuation_is_caught_by_the_invariant` | `potential::tests` |
-| `incremental_verdicts_equal_the_batch_answer` | `dynamic_graphs::differential::tests` |
-| `every_stream_family_is_drift_free` | `dynamic_graphs::differential::tests` |
-| `the_differential_catches_a_seeded_wrong_verdict` | `dynamic_graphs::differential::tests` |
-| `a_single_shot_graph_costs_more_than_one_batch_check` | `dynamic_graphs::differential::tests` |
-| `amortized_cost_is_below_batch_recheck` | `dynamic_graphs::differential::tests` |
-| `strictly_positive_offsets_leave_the_order_structure_exact` | `dynamic_graphs::probe::tests` |
-| `a_zero_offset_breaks_the_agreement` | `dynamic_graphs::probe::tests` |
-| `acyclicity_refuses_a_superset_of_what_offsets_refute` | `dynamic_graphs::probe::tests` |
-| `the_probe_catches_a_seeded_converse_divergence` | `dynamic_graphs::probe::tests` |
-| `the_dichotomy_boundary_is_measured` | `dynamic_graphs::probe::tests` |
+| `incremental_verdicts_equal_the_batch_answer` | `tests::differential::tests` |
+| `every_stream_family_is_drift_free` | `tests::differential::tests` |
+| `the_differential_catches_a_seeded_wrong_verdict` | `tests::differential::tests` |
+| `a_single_shot_graph_costs_more_than_one_batch_check` | `tests::differential::tests` |
+| `amortized_cost_is_below_batch_recheck` | `tests::differential::tests` |
+| `strictly_positive_offsets_leave_the_order_structure_exact` | `tests::probe::tests` |
+| `a_zero_offset_breaks_the_agreement` | `tests::probe::tests` |
+| `acyclicity_refuses_a_superset_of_what_offsets_refute` | `tests::probe::tests` |
+| `the_probe_catches_a_seeded_converse_divergence` | `tests::probe::tests` |
+| `the_dichotomy_boundary_is_measured` | `tests::probe::tests` |
 
 ## Mutation backlog
 

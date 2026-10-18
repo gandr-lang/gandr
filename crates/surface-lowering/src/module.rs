@@ -140,7 +140,7 @@
 //! refusal and its span are retained, but it competes at each referencing
 //! head’s position. This can outrank an independently refused member body
 //! without preventing a following declaration from lowering.
-//! `modules::modules::manifest_refusals_propagate_transitively_before_minting`
+//! `tests::modules::manifest_refusals_propagate_transitively_before_minting`
 //! exercises that chain and precedence together.
 //!
 //! The alternative was to collect every refusal of a declaration. It was
@@ -522,8 +522,8 @@ impl From<SlotIndex> for usize
 /// # Adequacy
 /// - hypothesis: L3 — signature witnesses occupy their own admitted positions
 ///   without exporting names.
-/// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `modules::modules::signatures_attach_to_their_defs`
+/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `tests::modules::signatures_attach_to_their_defs`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DeclarationCount(usize);
@@ -570,7 +570,7 @@ impl From<DeclarationCount> for usize
 ///
 /// # Adequacy
 /// - hypothesis: L3 — nested modules are recorded before their descendants.
-/// - witness: `modules::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+/// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StructureIndex(usize);
@@ -617,9 +617,9 @@ impl From<StructureIndex> for usize
 /// # Adequacy
 /// - hypothesis: L3 — nested and top-level definitions resolve under their own
 ///   containers.
-/// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-/// - witness: `modules::modules::module_members_admit_in_source_order`
-/// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `tests::modules::module_members_admit_in_source_order`
+/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Container
 {
@@ -648,10 +648,10 @@ pub enum Container
 /// - hypothesis: L3 — declared names export while signature witnesses and held
 ///   refusals do not; an opaque ascription's abstract component is declared
 ///   before the members.
-/// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `modules::modules::signatures_attach_to_their_defs`
+/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `tests::modules::signatures_attach_to_their_defs`
 /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
-/// - witness: `modules::modules::opaque_ascription_seals`
+/// - witness: `tests::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Role
 {
@@ -701,7 +701,7 @@ pub enum Role
 /// # Adequacy
 /// - hypothesis: L3 — value and nested-module components project through
 ///   distinct member paths.
-/// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+/// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Member
 {
@@ -730,11 +730,11 @@ pub enum Member
 /// # Adequacy
 /// - hypothesis: L3 — manifest, abstract, universe-kinded, family-kinded and
 ///   derived components have distinct outcomes.
-/// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
-/// - witness: `modules::modules::a_manifest_family_component_binds_two_parameters`
-/// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
-/// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
-/// - witness: `modules::modules::models::a_derived_signature_states_what_the_written_one_does`
+/// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
+/// - witness: `tests::modules::a_manifest_family_component_binds_two_parameters`
+/// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
+/// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
+/// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ComponentForm
 {
@@ -784,7 +784,7 @@ pub enum ComponentForm
 /// # Adequacy
 /// - hypothesis: L3 — a reordered signature retains component names while
 ///   selecting its export order.
-/// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
+/// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Component<'source>
 {
@@ -819,8 +819,8 @@ pub struct Component<'source>
 /// # Adequacy
 /// - hypothesis: L3 — earlier manifest components expand in later component
 ///   types, and a sealed component reads as its atom.
-/// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-/// - witness: `modules::modules::opaque_ascription_seals`
+/// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `tests::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TypeComponent<'source>
 {
@@ -851,7 +851,7 @@ pub struct TypeComponent<'source>
 /// # Adequacy
 /// - hypothesis: L3 — type component order controls which definitions later
 ///   types can name.
-/// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ComponentScope
 {
@@ -878,8 +878,8 @@ pub struct ComponentScope
 /// # Adequacy
 /// - hypothesis: L3 — a transparent ascription hides or reorders existing
 ///   exports.
-/// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
-/// - witness: `modules::modules::module_signature_matching_hides_extra_members`
+/// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
+/// - witness: `tests::modules::module_signature_matching_hides_extra_members`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Coerced(pub bool);
@@ -902,12 +902,12 @@ pub struct Coerced(pub bool);
 /// # Adequacy
 /// - hypothesis: L3 — nested admission order, hidden members and reordered
 ///   signatures distinguish these sequences.
-/// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-/// - witness: `modules::modules::module_members_admit_in_source_order`
-/// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
-/// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
-/// - witness: `modules::modules::module_signature_matching_hides_extra_members`
-/// - witness: `modules::modules::opaque_ascription_seals`
+/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `tests::modules::module_members_admit_in_source_order`
+/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
+/// - witness: `tests::modules::module_signature_matching_hides_extra_members`
+/// - witness: `tests::modules::opaque_ascription_seals`
 #[derive(Clone, Debug)]
 pub struct Structure<'source>
 {
@@ -966,8 +966,8 @@ pub struct Structure<'source>
 ///   through their respective operands.
 /// - witness: `module::tests::a_signature_pairs_with_its_definition`
 /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
-/// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `modules::modules::signatures_attach_to_their_defs`
+/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `tests::modules::signatures_attach_to_their_defs`
 /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Operand
@@ -1262,9 +1262,9 @@ pub struct SlotRefused(pub bool);
 /// # Adequacy
 /// - hypothesis: L3 — nested collection and independent refusal routing
 ///   preserve the table relationships.
-/// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-/// - witness: `modules::modules::module_members_admit_in_source_order`
-/// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `tests::modules::module_members_admit_in_source_order`
+/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
 /// - witness: `module::tests::ownership_routes_refusals_without_touching_other_slots`
 #[derive(Clone, Debug)]
 pub struct Collected<'source>
@@ -1557,8 +1557,8 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a name one import binds, a name two bind, and a name
     ///   only an import of the imported source binds, each answered exactly.
-    /// - witness: `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`
-    /// - witness: `namespace::namespace::two_imports_binding_one_name_refuse_its_use`
+    /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present((slot, _))) => self.slots.get(usize::from(slot)).is_some(),
         Ok(Maybe::Absent(_)) => true,
@@ -1594,7 +1594,7 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — an imported family's constructor in a case arm and a
     ///   value, answered exactly.
-    /// - witness: `namespace::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
     #[spec(ensures: |ref ret| match *ret {
         Ok(_) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
@@ -1624,7 +1624,7 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the two entries above.
-    /// - witness: `namespace::namespace::two_imports_binding_one_name_refuse_its_use`
+    /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
     #[spec(ensures: |ref ret| match *ret {
         Ok(_) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
@@ -1822,8 +1822,8 @@ impl<'source> Collected<'source>
     /// # Adequacy
     /// - hypothesis: L3 — top-level and deeply nested declarations have exact
     ///   outermost-first names, independent of witness and held slots.
-    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `modules::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
     #[spec(
         ensures: |ret| {
             let mut current = container;
@@ -1881,8 +1881,8 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — a member of a functor's body, of a module nested in
     ///   it, of its parameter, and of an application's instance each read their
     ///   own stratum, and a top-level declaration reads a module.
-    /// - witness: `modules::modules::functors::a_functor_body_never_reaches_the_kernel`
-    /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
+    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     #[spec(
         ensures: |ret| {
             let mut current = container;
@@ -1967,8 +1967,8 @@ enum HalfKind
 /// # Adequacy
 /// - hypothesis: L3 — a signed function supplies a derived signature checked
 ///   against either ordering of a written one.
-/// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `modules::modules::signatures_attach_to_their_defs`
+/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `tests::modules::signatures_attach_to_their_defs`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Signing
 {
@@ -1998,8 +1998,8 @@ enum Signing
 ///   distinct outcomes.
 /// - witness: `module::tests::a_signature_pairs_with_its_definition`
 /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
-/// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `modules::modules::signatures_attach_to_their_defs`
+/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `tests::modules::signatures_attach_to_their_defs`
 /// - witness: `module::tests::a_declaration_missing_its_body_is_refused`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Tail<'source>
@@ -2034,12 +2034,12 @@ enum Tail<'source>
 /// # Adequacy
 /// - hypothesis: L3 — nested modules, malformed members and imports retain
 ///   their respective declarations or refusals.
-/// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-/// - witness: `modules::modules::module_members_admit_in_source_order`
-/// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
-/// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
-/// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
+/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `tests::modules::module_members_admit_in_source_order`
+/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
+/// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
 struct Collector<'run, 'source>
 {
     /// The grammar the tree was molded under.
@@ -2110,9 +2110,9 @@ struct Collector<'run, 'source>
 /// - witness: `module::tests::a_declaration_whose_name_is_not_a_name_refuses_the_module`
 /// - witness: `module::tests::a_trailing_attribute_block_refuses_the_module`
 /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
-/// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
-/// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
+/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
+/// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
 #[spec(
     ensures: |ret| {
         ret.as_ref().map_or(true, |collected| {
@@ -2394,8 +2394,8 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — exact address decoding with and without an alias, and a
 ///   tile out of place, distinguish reading from binding refusal.
-/// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
+/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref entry) => entry.span == import.span,
@@ -2484,7 +2484,7 @@ fn read_import<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — a source with an unqualified and an aliased import
 ///   between two declarations lists exactly the two imports.
-/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
+/// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.windows(2).all(|pair| match *pair {
     [ref first, ref second] => first.span.start() < second.span.start(),
     _ => false,
@@ -2543,8 +2543,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — declaration, nested-module and import children are
     ///   collected; a value at the root is refused as the wrong sort.
-    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
     /// - witness: `module::tests::a_stray_module_child_refuses_the_module`
     #[spec(
         captures: before = (
@@ -3398,10 +3398,10 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — two imports, an escaped address, an unqualified
     ///   import and two imports of one alias, each asserted as the exact import
     ///   list or refusal over the parsed source.
-    /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-    /// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
-    /// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
-    /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
+    /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+    /// - witness: `tests::namespace::an_import_binds_its_alias_and_resolves_no_address`
+    /// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
+    /// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
     #[spec(
         captures: before = (
             self.collected.imports.declarations().len(),
@@ -3817,8 +3817,8 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
     /// - witness: `module::tests::a_second_signature_is_refused`
     /// - witness: `module::tests::a_second_definition_is_refused`
-    /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
-    /// - witness: `modules::modules::signatures_attach_to_their_defs`
+    /// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+    /// - witness: `tests::modules::signatures_attach_to_their_defs`
     /// - witness: `module::tests::a_declaration_missing_its_body_is_refused`
     /// - witness: `lower::tests::a_signature_written_after_its_signed_function_is_no_duplicate`
     #[spec(
@@ -4002,8 +4002,8 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
     /// - witness: `module::tests::a_second_signature_is_refused`
     /// - witness: `module::tests::a_second_definition_is_refused`
-    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `modules::modules::module_members_admit_in_source_order`
+    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::modules::module_members_admit_in_source_order`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -4075,8 +4075,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a written signature before or after a signed tail
     ///   keeps the written type and checks the derived type through a separate
     ///   witness.
-    /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
-    /// - witness: `modules::modules::signatures_attach_to_their_defs`
+    /// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+    /// - witness: `tests::modules::signatures_attach_to_their_defs`
     #[spec(
         requires: target.0 < self.collected.slots.len(),
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
@@ -4141,7 +4141,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — paired declarations and differently named nested
     ///   members retain their source spellings through collection.
     /// - witness: `module::tests::a_signature_pairs_with_its_definition`
-    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
     #[spec(
         ensures: |ret| {
             self.tree.fragment(tile.node).map_or_else(
@@ -4233,11 +4233,11 @@ const TELESCOPE_TYPE: &str = "telescope_type";
 /// # Adequacy
 /// - hypothesis: L3 — readable and empty bodies stay distinct from unread
 ///   bodies, and a sealed body from a transparently ascribed one.
-/// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-/// - witness: `modules::modules::module_members_admit_in_source_order`
-/// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
-/// - witness: `modules::modules::an_empty_module_is_not_an_unread_one`
-/// - witness: `modules::modules::opaque_ascription_seals`
+/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `tests::modules::module_members_admit_in_source_order`
+/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `tests::modules::an_empty_module_is_not_an_unread_one`
+/// - witness: `tests::modules::opaque_ascription_seals`
 #[derive(Clone, Debug)]
 struct Opened<'source>
 {
@@ -4273,12 +4273,12 @@ struct Opened<'source>
 /// # Adequacy
 /// - hypothesis: L3 — readable, lowercase and unread bodies take separate
 ///   header outcomes.
-/// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-/// - witness: `modules::modules::module_members_admit_in_source_order`
-/// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
-/// - witness: `modules::modules::opaque_ascription_seals`
-/// - witness: `modules::modules::module_name_case_boundary_covers_single_and_multi_names`
-/// - witness: `modules::modules::an_unread_module_body_is_refused_not_emptied`
+/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `tests::modules::module_members_admit_in_source_order`
+/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `tests::modules::opaque_ascription_seals`
+/// - witness: `tests::modules::module_name_case_boundary_covers_single_and_multi_names`
+/// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
 #[derive(Clone, Debug)]
 enum Header<'source>
 {
@@ -4316,7 +4316,7 @@ enum Header<'source>
 /// # Adequacy
 /// - hypothesis: L3 — depth-eight traversal preserves pre-order admission and
 ///   resolves each nested level.
-/// - witness: `modules::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+/// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
 #[derive(Clone, Debug)]
 struct Open
 {
@@ -4346,7 +4346,7 @@ struct Open
 /// # Adequacy
 /// - hypothesis: L3 — a nested member signature constrains the parent binding
 ///   and hides omitted fields.
-/// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+/// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Layer
 {
@@ -4374,7 +4374,7 @@ struct Layer
 /// # Adequacy
 /// - hypothesis: L3 — nested record matching retains the named field and
 ///   applies its type.
-/// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+/// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Field<'source>
 {
@@ -4403,7 +4403,7 @@ struct Field<'source>
 /// # Adequacy
 /// - hypothesis: L3 — a repaired container retains its readable member rather
 ///   than refusing the whole body.
-/// - witness: `modules::modules::a_repaired_container_keeps_its_member`
+/// - witness: `tests::modules::a_repaired_container_keeps_its_member`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Carried(bool);
@@ -4479,20 +4479,20 @@ impl<'source> Collector<'_, 'source>
     ///   of the module as a whole by an unread body, an empty body, a lowercase
     ///   name and a malformed member, each asserted as the exact declaration
     ///   list. The predicate reads only the structures this call appended.
-    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `modules::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
-    /// - witness: `modules::modules::an_unread_module_body_is_refused_not_emptied`
-    /// - witness: `modules::modules::an_empty_module_is_not_an_unread_one`
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::module_name_case_boundary_covers_single_and_multi_names`
-    /// - witness: `modules::modules::an_unread_member_keeps_its_own_report`
-    /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
-    /// - witness: `modules::modules::a_nested_module_declares_under_either_case_spelling`
-    /// - witness: `modules::modules::a_repaired_container_keeps_its_member`
-    /// - witness: `modules::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
-    /// - witness: `modules::modules::duplicate_module_member_definition_is_rejected`
-    /// - witness: `modules::modules::module_members_admit_in_source_order`
-    /// - witness: `modules::modules::computation_signed_module_member_origin_mirrors_ascription_encoding`
+    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+    /// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
+    /// - witness: `tests::modules::an_empty_module_is_not_an_unread_one`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::module_name_case_boundary_covers_single_and_multi_names`
+    /// - witness: `tests::modules::an_unread_member_keeps_its_own_report`
+    /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+    /// - witness: `tests::modules::a_nested_module_declares_under_either_case_spelling`
+    /// - witness: `tests::modules::a_repaired_container_keeps_its_member`
+    /// - witness: `tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
+    /// - witness: `tests::modules::duplicate_module_member_definition_is_rejected`
+    /// - witness: `tests::modules::module_members_admit_in_source_order`
+    /// - witness: `tests::modules::computation_signed_module_member_origin_mirrors_ascription_encoding`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -4586,11 +4586,11 @@ impl<'source> Collector<'_, 'source>
     ///   modules separate a readable header from a named refusal or an unnamed
     ///   form, and a sealed header from a transparent one. The predicate asks
     ///   for the name tile's own bytes, by address and length.
-    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `modules::modules::an_empty_module_is_not_an_unread_one`
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::module_name_case_boundary_covers_single_and_multi_names`
-    /// - witness: `modules::modules::a_repaired_container_keeps_its_member`
+    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::modules::an_empty_module_is_not_an_unread_one`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::module_name_case_boundary_covers_single_and_multi_names`
+    /// - witness: `tests::modules::a_repaired_container_keeps_its_member`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or_else(
@@ -4762,8 +4762,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a one-segment and a dotted argument are read, and a
     ///   tail out of shape is refused under the binding's name.
-    /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
-    /// - witness: `modules::modules::functors::an_application_is_bound_before_anything_projects_from_it`
+    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `tests::modules::functors::an_application_is_bound_before_anything_projects_from_it`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present((_, ref argument)) => !argument.is_empty(),
         | Maybe::Absent(_) => true,
@@ -4820,9 +4820,9 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an unread module and a repaired member separate
     ///   container refusal from retaining readable siblings.
-    /// - witness: `modules::modules::an_unread_module_body_is_refused_not_emptied`
-    /// - witness: `modules::modules::a_repaired_container_keeps_its_member`
-    /// - witness: `modules::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
+    /// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
+    /// - witness: `tests::modules::a_repaired_container_keeps_its_member`
+    /// - witness: `tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
     #[spec(
         ensures: |ret| {
             ret.0
@@ -4885,12 +4885,12 @@ impl<'source> Collector<'_, 'source>
     ///   abstract type components retain their names and select distinct forms.
     ///   The predicate asks for each name tile's own bytes, by address and
     ///   length.
-    /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-    /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
-    /// - witness: `modules::modules::a_manifest_family_component_binds_two_parameters`
-    /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
-    /// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
+    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `tests::modules::a_manifest_family_component_binds_two_parameters`
+    /// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
+    /// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
     #[spec(
         captures: starts_record = matches!(cursor.at(TileName::RECORD), Maybe::Present(_)),
         ensures: |ret| {
@@ -5009,12 +5009,12 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — nested module headers are admitted before their
     ///   bodies, duplicate names refuse without replacing the first module, and
     ///   a functor's body is admitted before its parameter.
-    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `modules::modules::module_members_admit_in_source_order`
-    /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
-    /// - witness: `modules::modules::duplicate_module_member_definition_is_rejected`
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::modules::module_members_admit_in_source_order`
+    /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+    /// - witness: `tests::modules::duplicate_module_member_definition_is_rejected`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     #[spec(
         captures: before = (
             self.collected.structures.len(),
@@ -5148,11 +5148,11 @@ impl<'source> Collector<'_, 'source>
     ///   container; malformed members leave siblings readable and report at the
     ///   module. The predicate reads only the slots and structures this call
     ///   appended.
-    /// - witness: `modules::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
-    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `modules::modules::module_members_admit_in_source_order`
-    /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
-    /// - witness: `modules::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
+    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::modules::module_members_admit_in_source_order`
+    /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+    /// - witness: `tests::modules::opaque_ascription_seals`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -5258,10 +5258,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — unread modules, type members, missing components and
     ///   manifest types use held slots without introducing referenceable names.
-    /// - witness: `modules::modules::an_unread_module_body_is_refused_not_emptied`
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: |ret| {
@@ -5320,10 +5320,10 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — unread and lowercase-named modules, missing
     ///   components and manifest types use held slots without introducing
     ///   referenceable names.
-    /// - witness: `modules::modules::an_unread_module_body_is_refused_not_emptied`
-    /// - witness: `modules::modules::module_name_case_boundary_covers_single_and_multi_names`
-    /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
+    /// - witness: `tests::modules::module_name_case_boundary_covers_single_and_multi_names`
+    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: |ret| {
@@ -5368,7 +5368,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a malformed member is refused under its module while
     ///   its well-formed sibling remains admitted.
-    /// - witness: `modules::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
+    /// - witness: `tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -5428,14 +5428,14 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — closing a module retains declared members without an
     ///   ascription, and applies explicit and enclosing signatures to its
     ///   exports.
-    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `modules::modules::module_members_admit_in_source_order`
-    /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
-    /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
-    /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
-    /// - witness: `modules::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::modules::module_members_admit_in_source_order`
+    /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `tests::modules::opaque_ascription_seals`
     #[spec(
         captures: structures = self.collected.structures.len(),
         ensures: |ret| {
@@ -5496,8 +5496,8 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a nested module signature is absorbed as a constraint
     ///   rather than exported as a value, while a conflicting definition is
     ///   refused. The predicate reads only the layers this call appended.
-    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
-    /// - witness: `modules::modules::duplicate_module_member_definition_is_rejected`
+    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `tests::modules::duplicate_module_member_definition_is_rejected`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -5624,16 +5624,16 @@ impl<'source> Collector<'_, 'source>
     ///   component; hiding by a member the signature omits; order by a
     ///   reordered signature, each asserted as the exact exports, declared
     ///   types or refusal.
-    /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
-    /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-    /// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
-    /// - witness: `modules::modules::a_manifest_family_component_binds_two_parameters`
-    /// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
-    /// - witness: `modules::modules::opaque_ascription_seals`
-    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
-    /// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
+    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `tests::modules::a_manifest_family_component_binds_two_parameters`
+    /// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
+    /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    /// - witness: `tests::modules::a_dangling_member_signature_is_an_obligation`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -5846,10 +5846,10 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a named value is constrained directly, a nested
     ///   module queues a record layer, and an absent component receives its own
     ///   refusal.
-    /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
-    /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
     #[spec(
         captures: before = (self.member_named(container, component.name), layers.len()),
         ensures: |ret| {
@@ -5953,7 +5953,7 @@ impl<'source> Collector<'_, 'source>
     ///   close alone, its parent's signature component naming it raising
     ///   nothing, while a sibling component the body never declares is still
     ///   reported.
-    /// - witness: `modules::modules::a_malformed_member_named_by_the_signature_is_reported_once`
+    /// - witness: `tests::modules::a_malformed_member_named_by_the_signature_is_reported_once`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -5993,10 +5993,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — signatures resolve definition members and nested
     ///   modules within the named container, and reject a missing component.
-    /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
-    /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
-    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
     #[spec(
         ensures: |ret| {
             ret == match self.collected.by_name.get(&(container, name)) {
@@ -6041,10 +6041,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a written member signature wins over a derived one
     ///   and an additional signature becomes a separate checking witness.
-    /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
-    /// - witness: `modules::modules::signatures_attach_to_their_defs`
-    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
-    /// - witness: `modules::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
+    /// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+    /// - witness: `tests::modules::signatures_attach_to_their_defs`
+    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `tests::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -6199,9 +6199,9 @@ impl<'source> Collector<'_, 'source>
     ///   from a member signature, the latter disagreeing with the module's own,
     ///   each asserted as the exact exports and the checker's verdict; a nested
     ///   module stated at a non-record type, the wrong sort.
-    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
-    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
-    /// - witness: `modules::modules::a_nested_module_stated_at_a_non_record_type_is_the_wrong_sort`
+    /// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
+    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `tests::modules::a_nested_module_stated_at_a_non_record_type_is_the_wrong_sort`
     #[spec(
         captures: before = (
             self.collected.structures.len(),
@@ -6340,7 +6340,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a nested record signature names the retained field
     ///   and constrains its binding rather than exposing an omitted member. The
     ///   predicate asks for each name tile's own bytes, by address and length.
-    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or(true, |fields| {
@@ -6411,9 +6411,9 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — nested signature matching distinguishes definition
     ///   and module names while retaining only the stated exports.
-    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
-    /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
-    /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `tests::modules::module_signature_matching_hides_extra_members`
     #[spec(
         ensures: |ret| match member {
             | Member::Slot(slot) => self
@@ -6459,7 +6459,7 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — nested record signatures report their own malformed
     ///   form while valid records constrain the parent binding.
-    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
     #[spec(
         ensures: |ret| {
             ret == self
@@ -6531,11 +6531,11 @@ enum WrittenType
 /// # Adequacy
 /// - hypothesis: L3 — manifest, manifest family, kinded and bare components are
 ///   distinct, and a bare one keeps its later siblings.
-/// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
-/// - witness: `modules::modules::a_manifest_family_component_binds_two_parameters`
-/// - witness: `modules::modules::a_kinded_type_component_forms_at_its_classifier`
-/// - witness: `modules::modules::a_transparent_abstract_component_reads_its_type_member`
-/// - witness: `modules::modules::an_abstract_component_kinds_at_a_universe`
+/// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `tests::modules::a_manifest_family_component_binds_two_parameters`
+/// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
+/// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
+/// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
 #[spec(
     captures: first = cursor.peek(),
     ensures: |ret| {
@@ -6674,8 +6674,8 @@ const fn misplaced_in<'source>(
 /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
 /// - witness: `module::tests::a_second_signature_is_refused`
 /// - witness: `module::tests::a_second_definition_is_refused`
-/// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
-/// - witness: `modules::modules::signatures_attach_to_their_defs`
+/// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
+/// - witness: `tests::modules::signatures_attach_to_their_defs`
 /// - witness: `module::tests::a_declaration_missing_its_body_is_refused`
 #[spec(
     captures: first = header.peek(),
@@ -6891,9 +6891,9 @@ const fn unadmitted<'source>(
 /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
 /// - witness: `module::tests::a_second_signature_is_refused`
 /// - witness: `module::tests::a_second_definition_is_refused`
-/// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
+/// - witness: `tests::modules::a_dangling_member_signature_is_an_obligation`
 /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-/// - witness: `modules::modules::opaque_ascription_seals`
+/// - witness: `tests::modules::opaque_ascription_seals`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationOutcome<'source>
 {
@@ -7206,7 +7206,7 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — module members project through their admitted constants.
-/// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+/// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ValueComponent<'source>
 {
@@ -7232,7 +7232,7 @@ pub struct ValueComponent<'source>
 /// # Adequacy
 /// - hypothesis: L3 — manifest definitions expand in later signature
 ///   components.
-/// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ManifestComponent<'source>
 {
@@ -7260,10 +7260,10 @@ pub struct ManifestComponent<'source>
 /// # Adequacy
 /// - hypothesis: L3 — hidden, reordered and nested exports retain their
 ///   respective names and boundaries.
-/// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
-/// - witness: `modules::modules::module_signature_matching_hides_extra_members`
-/// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
-/// - witness: `modules::modules::opaque_ascription_seals`
+/// - witness: `tests::modules::a_reordered_signature_matches_and_canonicalizes`
+/// - witness: `tests::modules::module_signature_matching_hides_extra_members`
+/// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
+/// - witness: `tests::modules::opaque_ascription_seals`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoweredStructure<'source>
 {
@@ -7432,12 +7432,12 @@ impl<'source> LoweredStructure<'source>
 /// # Adequacy
 /// - hypothesis: L3 — real source lowering and composed metadata separate
 ///   declared exports, refusals and invalid names.
-/// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-/// - witness: `modules::modules::module_members_admit_in_source_order`
-/// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
-/// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
-/// - witness: `namespace::namespace::an_unqualified_import_binds_no_alias`
-/// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
+/// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+/// - witness: `tests::modules::module_members_admit_in_source_order`
+/// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
+/// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
+/// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
 /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoweredModule<'source>
@@ -7726,7 +7726,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a module declaring `CatShape` beside a family hands
     ///   back the sign alone.
-    /// - witness: `modules::modules::models::a_lowered_sign_exposes_its_description_and_its_model`
+    /// - witness: `tests::modules::models::a_lowered_sign_exposes_its_description_and_its_model`
     #[inline]
     pub fn signs(&self) -> impl Iterator<Item = crate::model::LoweredSign<'_>>
     {
@@ -7839,7 +7839,7 @@ impl<'source> LoweredModule<'source>
     /// # Adequacy
     /// - hypothesis: L3 — nested and top-level declarations preserve the
     ///   ordered container segments before their own name.
-    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
     /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
     #[spec(
         ensures: |ret| {
@@ -7897,8 +7897,8 @@ impl<'source> LoweredModule<'source>
     ///   walks the declarations once from the last, so the first eligible one
     ///   met at a position is the one that wins, and compares the count of
     ///   positions met with the names returned.
-    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
-    /// - witness: `modules::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::modules::opaque_ascription_seals`
     /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",

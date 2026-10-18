@@ -107,7 +107,7 @@ impl Suites
     /// - hypothesis: L3 — a fake `cargo` that records its flags and lists one
     ///   binary; a build without enforcement, frame pointers or line tables, or
     ///   a lost listing, changes what the fake records or the report.
-    /// - witness: `cli::cli::a_profile_is_charged_to_its_outermost_specification`
+    /// - witness: `tests::cli::a_profile_is_charged_to_its_outermost_specification`
     #[inline]
     pub fn build(
         workloads: &[Workload],
@@ -179,7 +179,7 @@ impl Suites
     /// # Adequacy
     /// - hypothesis: L3 — a listed test is profiled and an unlisted one is
     ///   refused by name; a lookup by binary alone profiles nothing silently.
-    /// - witness: `cli::cli::an_unknown_test_is_refused_by_name`
+    /// - witness: `tests::cli::an_unknown_test_is_refused_by_name`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |suite| suite.tests.contains(&workload.test)))]
     #[inline]
     pub fn get(
@@ -215,7 +215,7 @@ impl Suites
 /// # Adequacy
 /// - hypothesis: L3 — a fake `perf` records its arguments and directory; a lost
 ///   rate, test name, thread limit or directory changes what it records.
-/// - witness: `cli::cli::a_profile_is_charged_to_its_outermost_specification`
+/// - witness: `tests::cli::a_profile_is_charged_to_its_outermost_specification`
 #[inline]
 pub fn record(
     suite: &Suite,
@@ -270,7 +270,7 @@ pub fn record(
 /// # Adequacy
 /// - hypothesis: L3 — a fake `perf script` printing three samples, one nested,
 ///   one in a body and one in a check, yields the asserted ranking.
-/// - witness: `cli::cli::a_profile_is_charged_to_its_outermost_specification`
+/// - witness: `tests::cli::a_profile_is_charged_to_its_outermost_specification`
 #[inline]
 pub fn read_samples(
     data: &Path,
@@ -322,7 +322,7 @@ pub fn read_samples(
 /// # Adequacy
 /// - hypothesis: L3 — a failing fake names its invocation in the refusal; a
 ///   lost program or argument changes the message.
-/// - witness: `cli::cli::a_failing_profile_is_refused_with_its_invocation`
+/// - witness: `tests::cli::a_failing_profile_is_refused_with_its_invocation`
 fn invocation_of(command: &Command) -> String
 {
     core::iter::once(command.get_program())
@@ -349,7 +349,7 @@ fn invocation_of(command: &Command) -> String
 /// # Adequacy
 /// - hypothesis: L3 — a fake that succeeds and one that fails; a swallowed exit
 ///   status lets the failing profile print a ranking.
-/// - witness: `cli::cli::a_failing_profile_is_refused_with_its_invocation`
+/// - witness: `tests::cli::a_failing_profile_is_refused_with_its_invocation`
 fn output(command: &mut Command) -> Result<std::process::Output, CostError>
 {
     let invocation = invocation_of(command);

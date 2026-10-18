@@ -17,6 +17,15 @@ description = "Run treefmt in CI mode"
 depends = ["aube:install"]
 run = "treefmt --ci"
 
+# CI's pass: every formatter but the gandr one, which runs the driver. The
+# plain lane, whose state holds the driver, checks the corpus layout instead
+# (`check:corpus-format`); here the driver would build from nothing each run.
+["treefmt:check-ci"]
+description = "Run treefmt in CI mode without the gandr formatter"
+depends = ["aube:install"]
+tools.yq = "4.54.1"
+run = "treefmt --ci --formatters \"$(yq -p toml -o yaml '.formatter | keys | map(select(. != \"gandr\")) | join(\",\")' treefmt.toml)\""
+
 [changelog]
 description = "Render the root changelog only when preparing a release"
 run = "git-cliff --output CHANGELOG.md"

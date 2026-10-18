@@ -179,8 +179,8 @@ impl App
     ///   submissions are outside the witnesses.
     /// - witness: `app::tests::unicode_edits_and_empty_backspace_preserve_input_boundaries`
     /// - witness: `app::tests::completed_and_interrupted_waits_preserve_the_transcript`
-    /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
-    /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
+    /// - witness: `tests::launch::the_face_drives_the_loop_from_its_keys`
+    /// - witness: `tests::launch::a_waiting_buffer_shows_in_the_input_pane`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

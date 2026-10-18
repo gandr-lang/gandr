@@ -254,7 +254,7 @@ impl StagedDeclaration
     /// # Adequacy
     /// - hypothesis: L3 — a fold admits on its laws and is refused without
     ///   them.
-    /// - witness: `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+    /// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
     #[spec(
         captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.laws().len(), laws.len()),
         ensures: |ret| ret.content_start == entry.0
@@ -582,7 +582,7 @@ impl<'env> Staging<'env>
     /// # Adequacy
     /// - hypothesis: L3 — data admission rejects a malformed signature without
     ///   retaining its nodes.
-    /// - witness: `native_formers::native_formers::data_signature_formation_checks_fields_and_parameters`
+    /// - witness: `tests::native_formers::data_signature_formation_checks_fields_and_parameters`
     #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()), captures: start = self.builder.content_start(), ensures: |ret| ret.content_start == start && matches!(ret.declaration.content(), DeclarationContent::Data { kind: actual, .. } if *actual == kind))]
     #[inline]
     #[must_use]
@@ -1493,8 +1493,8 @@ impl Environment
     ///   decoder that names itself at a place that does not descend, and a
     ///   field naming its family under a function domain, are each refused with
     ///   the environment unchanged.
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_refused_whole`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
     #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark(), members = staged.len()],
         ensures: |ret| match ret.as_ref() {
             Ok(ids) => ids.len() == members
@@ -1567,7 +1567,7 @@ impl Environment
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::add_block`].
-    /// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
     #[spec(captures: entry_len = self.entries.len(), ensures: |ret| ret.as_ref().map_or(true,
         |ids| self.entries.len().checked_sub(entry_len) == Some(ids.len())))]
     fn admit_block(
@@ -1780,9 +1780,9 @@ impl Environment
     ///   reads the atom at its representation, a copy whose atom was downgraded
     ///   to an axiom, and a copy whose provenance was rewritten are each
     ///   refused at the declaration that broke.
-    /// - witness: `sealed_export::sealed_export::the_export_of_a_sealed_module_replays`
-    /// - witness: `sealed_export::sealed_export::an_atom_downgraded_to_an_axiom_fails_to_replay`
-    /// - witness: `sealed_export::sealed_export::sealing_provenance_round_trips_and_cannot_be_rewritten`
+    /// - witness: `tests::sealed_export::the_export_of_a_sealed_module_replays`
+    /// - witness: `tests::sealed_export::an_atom_downgraded_to_an_axiom_fails_to_replay`
+    /// - witness: `tests::sealed_export::sealing_provenance_round_trips_and_cannot_be_rewritten`
     #[spec(ensures: |ret| ret.as_ref().map_or_else(
         |refusal| usize::from(refusal.position()) < declarations.len(),
         |environment| environment.entries.len() == declarations.len(),
@@ -1874,7 +1874,7 @@ impl Environment
     /// # Adequacy
     /// - hypothesis: L3 — a replayed atom closed after one member is manifest
     ///   for that member and opaque for the next declaration.
-    /// - witness: `sealed_export::sealed_export::the_export_of_a_sealed_module_replays`
+    /// - witness: `tests::sealed_export::the_export_of_a_sealed_module_replays`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2033,7 +2033,7 @@ impl Environment
     /// - witness: `env::tests::audit_reports_the_transitive_axiom`
     /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
     /// - witness: `env::tests::audit_reaches_an_axiom_named_only_inside_a_code`
-    /// - witness: `native_formers::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
+    /// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
     #[spec(
         requires: usize::from(position) == self.entries.len(),
         ensures: |ret| ret.contains(&position)
@@ -2116,7 +2116,7 @@ impl Environment
 /// # Adequacy
 /// - hypothesis: L3 — a lone family is no block, and a universe naming its
 ///   decoder leads a block of the two.
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
 #[spec(ensures: |ret| ret > first)]
 fn block_end(
     arena: &TermArena,

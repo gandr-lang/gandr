@@ -416,8 +416,8 @@ pub enum Mismatch
 /// - hypothesis: L3 — the circle's contractibility is refused apart, and a case
 ///   nested over a second looped scrutinee at a fibre that is no path type over
 ///   a looped sort is refused as no set.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
-/// - witness: `native_formers::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LoopRespect
 {

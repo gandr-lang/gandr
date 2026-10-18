@@ -161,7 +161,7 @@ pub enum ExpansionKind
 ///   per-plane counts with closed forms; L3 on four event choices and the
 ///   saturation boundary. These finite traces distinguish mischarging and lost
 ///   counts, not universal correspondence with every checker event.
-/// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
+/// - witness: `tests::acceptance::the_collapse_is_a_closed_form_at_three_depths`
 /// - witness: `census::tests::records_charge_only_the_selected_counter_through_saturation`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ExpansionCensus

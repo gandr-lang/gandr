@@ -456,7 +456,7 @@ impl Error for LevelError
 /// - hypothesis: L2 — generated terms are compared by an independent evaluator
 ///   and semantic equality. L3 separates constant domination at equality from a
 ///   larger constant, observing canonical equality and component values.
-/// - witness: `level_oracle::level_oracle::prop_eq_agrees_with_semantic_reference`
+/// - witness: `tests::level_oracle::prop_eq_agrees_with_semantic_reference`
 /// - witness: `level::tests::max_absorbs_dominated_constant`
 /// - witness: `level::tests::max_keeps_undominated_constant`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -575,8 +575,8 @@ impl Level
     /// - witness: `level::tests::succ_overflow_surfaces_exact_variant`
     /// - witness: `level::tests::arithmetic_boundaries_preserve_values_and_refuse_overflow`
     /// - witness: `level::tests::succ_renormalizes_dominated_constant`
-    /// - witness: `level_oracle::level_oracle::prop_succ_distributes_over_max`
-    /// - witness: `level_oracle::level_oracle::prop_eval_agrees_with_reference`
+    /// - witness: `tests::level_oracle::prop_succ_distributes_over_max`
+    /// - witness: `tests::level_oracle::prop_eval_agrees_with_reference`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -633,8 +633,8 @@ impl Level
     ///   `max(5, x+3)` keeps the constant `5`.
     /// - witness: `level::tests::max_absorbs_dominated_constant`
     /// - witness: `level::tests::max_keeps_undominated_constant`
-    /// - witness: `level_oracle::level_oracle::prop_max_laws`
-    /// - witness: `level_oracle::level_oracle::prop_eval_agrees_with_reference`
+    /// - witness: `tests::level_oracle::prop_max_laws`
+    /// - witness: `tests::level_oracle::prop_eval_agrees_with_reference`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -786,7 +786,7 @@ impl Level
     ///   residue is the overflow guard, asserted by exact variant at the `u128`
     ///   ceiling.
     /// - witness: `level::tests::eval_overflow_surfaces_exact_variant`
-    /// - witness: `level_oracle::level_oracle::prop_eval_agrees_with_reference`
+    /// - witness: `tests::level_oracle::prop_eval_agrees_with_reference`
     ///
     /// [`validate_refutation`]: crate::validate_refutation
     #[cfg_attr(

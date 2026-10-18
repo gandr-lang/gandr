@@ -221,7 +221,7 @@ impl From<BindingCount> for usize
 /// - hypothesis: L3 — moved and reused slots retain the same public map; L2 — a
 ///   deep chain uses an arena rather than recursive ownership.
 /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
-/// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+/// - witness: `tests::namespace::every_namespace_walk_is_iterative`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct NodeId(usize);
@@ -313,7 +313,7 @@ impl<Data, Tag> Node<Data, Tag>
 ///   iteratively.
 /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
 /// - witness: `namespace::trie::tests::a_declined_collision_keeps_the_binding_it_found`
-/// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+/// - witness: `tests::namespace::every_namespace_walk_is_iterative`
 #[derive(Clone)]
 pub struct Trie<Data, Tag>
 {
@@ -505,7 +505,7 @@ impl<Data, Tag> Trie<Data, Tag>
     ///   governing namespace at depths one and two, a value component's field
     ///   and an unbound root, each asserted as the exact resolution the
     ///   outermost scope builds on it.
-    /// - witness: `recognition::recognition::a_path_is_governed_by_its_deepest_resolved_prefix`
+    /// - witness: `tests::recognition::a_path_is_governed_by_its_deepest_resolved_prefix`
     /// - witness: `namespace::trie::tests::a_bound_root_does_not_bridge_a_gap_in_governed_resolution`
     #[spec(
         ensures: |ret| match ret {
@@ -569,8 +569,8 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - hypothesis: L3 — a declaration over a seeded namespace, over a fresh
     ///   name and over a source declaration, each asserted as the exact
     ///   shadowing record.
-    /// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
-    /// - witness: `recognition::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
+    /// - witness: `tests::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
+    /// - witness: `tests::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
     /// - witness: `namespace::trie::tests::first_binding_prefers_a_bound_prefix_then_its_least_descendant`
     #[spec(
         ensures: |ret| match self.get(prefix) {
@@ -706,7 +706,7 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - witness: `namespace::trie::tests::detaching_at_the_root_takes_everything`
     /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
     /// - witness: `namespace::trie::tests::detaching_an_absent_prefix_yields_the_empty_namespace`
-    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
     #[spec(
         captures: before = self.count.0,
         ensures: |ret| {
@@ -766,7 +766,7 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - witness: `namespace::trie::tests::grafting_at_the_root_replaces_everything`
     /// - witness: `namespace::trie::tests::grafting_drops_whatever_was_at_the_target`
     /// - witness: `namespace::trie::tests::grafting_keeps_bindings_outside_the_target`
-    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
     #[spec(
         captures: before = (self.count.0, subtree.count.0),
         ensures: self.count.0 >= before.1
@@ -867,7 +867,7 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - witness: `namespace::trie::tests::union_reports_collisions_in_path_order`
     /// - witness: `namespace::trie::tests::union_propagates_a_declining_resolver`
     /// - witness: `namespace::trie::tests::a_declined_collision_keeps_the_binding_it_found`
-    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
     #[spec(
         captures: before = (self.count.0, later.count.0),
         ensures: |ret| {
@@ -1022,7 +1022,7 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - hypothesis: L3 — collisions inserted out of order are reported at
     ///   their exact whole paths in lexicographic order.
     /// - witness: `namespace::trie::tests::union_reports_collisions_in_path_order`
-    /// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+    /// - witness: `tests::namespace::a_nested_shadow_reports_the_accumulated_prefix`
     #[spec(
         requires: chain.first() == Some(&NodeId::ROOT),
         ensures: |ret| {
@@ -1255,7 +1255,7 @@ impl<Data, Tag> Trie<Data, Tag>
     ///   is iterative.
     /// - witness: `namespace::trie::tests::grafting_drops_whatever_was_at_the_target`
     /// - witness: `namespace::trie::tests::grafting_keeps_bindings_outside_the_target`
-    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
     #[spec(
         requires: !self.nodes.is_empty(),
         captures: before = self.count.0,
@@ -1544,7 +1544,7 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - witness: `namespace::trie::tests::detaching_at_the_root_takes_everything`
     /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
     /// - witness: `namespace::trie::tests::relocation_and_collision_keep_payloads_with_their_tags`
-    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
     /// - witness: `namespace::trie::tests::a_detached_subtree_leaves_its_slots_for_reuse`
     #[spec(
         requires: from.0 < source.nodes.len()
@@ -1609,7 +1609,7 @@ impl<Data, Tag> Trie<Data, Tag>
     ///   no old bindings; L2 — a long now-empty chain is reclaimed iteratively.
     /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
     /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
-    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
     /// - witness: `namespace::trie::tests::pruning_stops_at_a_node_that_still_has_children`
     #[spec(
         requires: chain.first() == Some(&NodeId::ROOT)
@@ -1714,7 +1714,7 @@ fn push_merges(
 /// - hypothesis: L3 — collisions occur at full paths in order; L2 — a deep
 ///   union uses the explicit frontier.
 /// - witness: `namespace::trie::tests::union_reports_collisions_in_path_order`
-/// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+/// - witness: `tests::namespace::every_namespace_walk_is_iterative`
 #[derive(Debug)]
 struct Merge
 {
@@ -1749,7 +1749,7 @@ where
     /// - hypothesis: L3 — a refused import preserves namespace equality, while
     ///   detach, reuse and insertion produce an equal namespace through a
     ///   different arena layout; tags participate in equality.
-    /// - witness: `namespace::namespace::a_refused_multi_entry_import_leaves_the_visible_namespace_as_it_was`
+    /// - witness: `tests::namespace::a_refused_multi_entry_import_leaves_the_visible_namespace_as_it_was`
     /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
     /// - witness: `namespace::trie::tests::relocation_and_collision_keep_payloads_with_their_tags`
     #[spec(

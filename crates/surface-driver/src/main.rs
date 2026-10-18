@@ -201,11 +201,11 @@
 //! timing, terminal backends, source programs or failing filesystem coverage.
 //!
 //! The exit-code witnesses are
-//! `cli::cli::a_script_that_returns_a_value_leaves_successfully` (exit `0`,
+//! `tests::cli::a_script_that_returns_a_value_leaves_successfully` (exit `0`,
 //! `42` alone on standard output),
-//! `cli::cli::a_script_that_blames_leaves_with_a_failure_status` (exit `1`) and
-//! `cli::cli::an_ill_typed_script_is_refused_by_the_checker` (exit `2`);
-//! `cli::cli::the_value_of_a_run_is_printed_once` asserts the value is the
+//! `tests::cli::a_script_that_blames_leaves_with_a_failure_status` (exit `1`)
+//! and `tests::cli::an_ill_typed_script_is_refused_by_the_checker` (exit `2`);
+//! `tests::cli::the_value_of_a_run_is_printed_once` asserts the value is the
 //! whole of standard output.
 //!
 //! # Optional tracing
@@ -714,19 +714,19 @@ enum Screen
 ///   from abrupt termination. Misrouting, wrong severity and reordered output
 ///   change these observations. Arbitrary terminal environments and tracing
 ///   presentation are outside the subprocess domain.
-/// - witness: `cli::cli::a_settled_run_exits_zero`
-/// - witness: `cli::cli::an_unsettled_run_exits_one`
-/// - witness: `cli::cli::an_unreadable_path_exits_two`
-/// - witness: `cli::cli::a_malformed_invocation_exits_two`
-/// - witness: `cli::cli::unwritable_standard_output_exits_two`
-/// - witness: `cli::cli::status_and_version_identify_the_same_build`
-/// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
-/// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
-/// - witness: `cli::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
-/// - witness: `cli::cli::a_script_that_returns_a_value_leaves_successfully`
-/// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
-/// - witness: `cli::cli::an_ill_typed_script_is_refused_by_the_checker`
-/// - witness: `cli::cli::fmt_rewrites_what_check_reports`
+/// - witness: `tests::cli::a_settled_run_exits_zero`
+/// - witness: `tests::cli::an_unsettled_run_exits_one`
+/// - witness: `tests::cli::an_unreadable_path_exits_two`
+/// - witness: `tests::cli::a_malformed_invocation_exits_two`
+/// - witness: `tests::cli::unwritable_standard_output_exits_two`
+/// - witness: `tests::cli::status_and_version_identify_the_same_build`
+/// - witness: `tests::cli::lsp_serves_a_session_over_the_standard_streams`
+/// - witness: `tests::cli::a_piped_repl_session_prints_its_transcript`
+/// - witness: `tests::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
+/// - witness: `tests::cli::a_script_that_returns_a_value_leaves_successfully`
+/// - witness: `tests::cli::a_script_that_blames_leaves_with_a_failure_status`
+/// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
+/// - witness: `tests::cli::fmt_rewrites_what_check_reports`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(UNSETTLED) || ret == ExitCode::from(FAULTED))]
 fn main() -> ExitCode
 {
@@ -909,7 +909,7 @@ fn main() -> ExitCode
 ///   truncated frame are observed as protocol output and exit codes. Wrong
 ///   framing, lost replies and collapsed clean/abrupt/fault statuses change
 ///   these traces. Arbitrary methods and live-editor timing are excluded.
-/// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
+/// - witness: `tests::cli::lsp_serves_a_session_over_the_standard_streams`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
 fn lsp() -> ExitCode
 {
@@ -932,8 +932,8 @@ fn lsp() -> ExitCode
 /// # Adequacy
 /// - hypothesis: L3 — clean, abrupt and broken sessions, standalone and
 ///   relayed, exit with distinct codes.
-/// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
-/// - witness: `cli::cli::lsp_clients_share_one_engine_hub`
+/// - witness: `tests::cli::lsp_serves_a_session_over_the_standard_streams`
+/// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
 fn ended(served: Result<Served, gandr_surface_lsp::TransportFault>) -> ExitCode
 {
@@ -998,7 +998,7 @@ fn hub_fault(error: &std::io::Error) -> ExitCode
 /// # Adequacy
 /// - hypothesis: L3 — a client finding no hub starts one that outlives it by
 ///   its linger; two clients of one hub both end cleanly.
-/// - witness: `cli::cli::lsp_clients_share_one_engine_hub`
+/// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
 #[cfg(unix)]
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
 fn relayed(
@@ -1033,7 +1033,7 @@ fn relayed(
 /// # Adequacy
 /// - hypothesis: L3 — a model session reads the diagnostics an editor's session
 ///   published through the same hub.
-/// - witness: `cli::cli::mcp_reads_what_an_editor_holds_open`
+/// - witness: `tests::cli::mcp_reads_what_an_editor_holds_open`
 #[cfg(unix)]
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn mcp(
@@ -1068,7 +1068,7 @@ fn mcp(
 /// # Adequacy
 /// - hypothesis: L3 — a piped view prints the report of a document an editor
 ///   opens through the same hub, then the next one after the editor's edit.
-/// - witness: `cli::cli::a_view_follows_what_an_editor_holds_open`
+/// - witness: `tests::cli::a_view_follows_what_an_editor_holds_open`
 #[cfg(unix)]
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn view(
@@ -1124,9 +1124,9 @@ fn view(
 /// # Adequacy
 /// - hypothesis: L3 — a client finding no hub starts one, and the next client
 ///   connects to it.
-/// - witness: `cli::cli::lsp_clients_share_one_engine_hub`
-/// - witness: `cli::cli::mcp_reads_what_an_editor_holds_open`
-/// - witness: `cli::cli::a_view_follows_what_an_editor_holds_open`
+/// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
+/// - witness: `tests::cli::mcp_reads_what_an_editor_holds_open`
+/// - witness: `tests::cli::a_view_follows_what_an_editor_holds_open`
 #[cfg(unix)]
 fn reach_hub(
     socket: Option<PathBuf>,
@@ -1181,7 +1181,7 @@ fn reach_hub(
 /// # Adequacy
 /// - hypothesis: L3 — a hub serving a client exits `0` after its linger and
 ///   removes its socket.
-/// - witness: `cli::cli::lsp_clients_share_one_engine_hub`
+/// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
 #[cfg(unix)]
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn hub(
@@ -1241,7 +1241,7 @@ fn hub(
 ///   with pipe selection. Wrong routing, failure classification or reads past
 ///   quit change the observations. Interactive editing and terminal colour
 ///   appearance are outside these finite pipe sessions.
-/// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
+/// - witness: `tests::cli::a_piped_repl_session_prints_its_transcript`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn repl(face: Face) -> ExitCode
 {
@@ -1291,8 +1291,8 @@ fn repl(face: Face) -> ExitCode
 ///   Success/failure confusion, swallowed output errors or terminal escape
 ///   leakage change the observations. Real terminal restoration is outside
 ///   these subprocess fixtures and is exercised by the smoke run.
-/// - witness: `cli::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
-/// - witness: `cli::cli::unwritable_standard_output_exits_two`
+/// - witness: `tests::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
+/// - witness: `tests::cli::unwritable_standard_output_exits_two`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn tui(screen: Screen) -> ExitCode
 {
@@ -1337,7 +1337,7 @@ fn tui(screen: Screen) -> ExitCode
 ///   status. A swallowed write failure or success status changes the result.
 ///   The successful JSON surface is exercised by the command smoke; protocol
 ///   capability contents belong to the server rather than this adapter.
-/// - witness: `cli::cli::unwritable_standard_output_exits_two`
+/// - witness: `tests::cli::unwritable_standard_output_exits_two`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn capabilities() -> ExitCode
 {
@@ -1369,10 +1369,10 @@ fn capabilities() -> ExitCode
 ///   output pipes expose status and output-stream choice. Accepting malformed
 ///   arguments, wrong destinations and swallowed writes change those finite
 ///   observations. Localized usage wording is outside them.
-/// - witness: `cli::cli::a_malformed_invocation_exits_two`
-/// - witness: `cli::cli::help_exits_zero`
-/// - witness: `cli::cli::unwritable_standard_output_exits_two`
-/// - witness: `cli::cli::status_and_version_identify_the_same_build`
+/// - witness: `tests::cli::a_malformed_invocation_exits_two`
+/// - witness: `tests::cli::help_exits_zero`
+/// - witness: `tests::cli::unwritable_standard_output_exits_two`
+/// - witness: `tests::cli::status_and_version_identify_the_same_build`
 #[spec(ensures: |ret| ret == ExitCode::from(FAULTED)
     || (!error.use_stderr() && ret == ExitCode::SUCCESS))]
 fn usage(error: &clap::Error) -> ExitCode
@@ -1398,7 +1398,7 @@ fn usage(error: &clap::Error) -> ExitCode
 /// # Adequacy
 /// - hypothesis: L3 — an undeclared operation exits two naming it, before any
 ///   source is read.
-/// - witness: `cli::cli::a_grant_bounds_held_capabilities_and_refuses_an_unknown_operation`
+/// - witness: `tests::cli::a_grant_bounds_held_capabilities_and_refuses_an_unknown_operation`
 #[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
 fn ungranted(refused: &AuthorityError) -> ExitCode
 {
@@ -1445,14 +1445,14 @@ fn ungranted(refused: &AuthorityError) -> ExitCode
 ///   expose report selection and status precedence under both verbs. Missing
 ///   diagnostics, ledger leakage or fault demotion changes the observations.
 ///   Arbitrary source programs and output devices are excluded.
-/// - witness: `cli::cli::a_settled_run_exits_zero`
-/// - witness: `cli::cli::an_unsettled_run_exits_one`
-/// - witness: `cli::cli::goals_report_an_obligation_without_failing`
-/// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
-/// - witness: `cli::cli::an_unreadable_path_exits_two`
-/// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
-/// - witness: `cli::cli::every_width_stages_the_serial_run`
-/// - witness: `cli::cli::fmt_rewrites_what_check_reports`
+/// - witness: `tests::cli::a_settled_run_exits_zero`
+/// - witness: `tests::cli::an_unsettled_run_exits_one`
+/// - witness: `tests::cli::goals_report_an_obligation_without_failing`
+/// - witness: `tests::cli::the_test_verb_prints_every_fixture_and_pending_source`
+/// - witness: `tests::cli::an_unreadable_path_exits_two`
+/// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
+/// - witness: `tests::cli::every_width_stages_the_serial_run`
+/// - witness: `tests::cli::fmt_rewrites_what_check_reports`
 #[spec(captures: [status = matches!(outcome, Outcome::Status(_))],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
         (*exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED))
@@ -1511,7 +1511,7 @@ fn render(
 ///   over a change, the check writing nothing and a second check passing are
 ///   each distinguished. Formatter refusals and unwritable sources are outside
 ///   these fixtures.
-/// - witness: `cli::cli::fmt_rewrites_what_check_reports`
+/// - witness: `tests::cli::fmt_rewrites_what_check_reports`
 #[spec(captures: [checking = formatting.rewrite() == Rewrite::Check],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
         *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FAULTED)
@@ -1577,8 +1577,8 @@ fn fmt(
 ///   flag and by environment; a malformed spelling exits two before anything
 ///   runs. A refused certificate cannot be built from a spelling; its exit is
 ///   the dispatcher's verdict witness.
-/// - witness: `cli::cli::every_width_stages_the_serial_run`
-/// - witness: `cli::cli::a_malformed_invocation_exits_two`
+/// - witness: `tests::cli::every_width_stages_the_serial_run`
+/// - witness: `tests::cli::a_malformed_invocation_exits_two`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(REFUSED) || *exit == ExitCode::from(FAULTED)))]
 fn stage(
@@ -1639,12 +1639,12 @@ fn stage(
 ///   changes exact counts and statuses. The corpus and a faulting path list
 ///   print byte-identical streams and exits at one thread and several, set by
 ///   flag and by environment. Arbitrary filesystems are excluded.
-/// - witness: `cli::cli::an_unreadable_path_exits_two`
-/// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
-/// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
-/// - witness: `cli::cli::every_width_prints_the_serial_run`
-/// - witness: `cli::cli::verbosity_chooses_how_much_of_a_report_prints`
-/// - witness: `cli::cli::a_lint_reports_each_inferred_exit_and_its_fix_settles_it`
+/// - witness: `tests::cli::an_unreadable_path_exits_two`
+/// - witness: `tests::cli::the_test_verb_prints_every_fixture_and_pending_source`
+/// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
+/// - witness: `tests::cli::every_width_prints_the_serial_run`
+/// - witness: `tests::cli::verbosity_chooses_how_much_of_a_report_prints`
+/// - witness: `tests::cli::a_lint_reports_each_inferred_exit_and_its_fix_settles_it`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
 fn run(
@@ -1748,14 +1748,14 @@ fn run(
 ///   status, value multiplicity and separate diagnostic streams. Wrong status,
 ///   repeated values or evaluation after refusal changes these observations.
 ///   Arbitrary machine programs and interruption timing are outside them.
-/// - witness: `cli::cli::a_script_that_returns_a_value_leaves_successfully`
-/// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
-/// - witness: `cli::cli::an_ill_typed_script_is_refused_by_the_checker`
-/// - witness: `cli::cli::an_outcome_only_refusal_is_visible_in_a_script_run`
-/// - witness: `cli::cli::an_absent_script_is_refused_by_path`
-/// - witness: `cli::cli::a_script_with_no_program_is_refused`
-/// - witness: `cli::cli::the_value_of_a_run_is_printed_once`
-/// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
+/// - witness: `tests::cli::a_script_that_returns_a_value_leaves_successfully`
+/// - witness: `tests::cli::a_script_that_blames_leaves_with_a_failure_status`
+/// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
+/// - witness: `tests::cli::an_outcome_only_refusal_is_visible_in_a_script_run`
+/// - witness: `tests::cli::an_absent_script_is_refused_by_path`
+/// - witness: `tests::cli::a_script_with_no_program_is_refused`
+/// - witness: `tests::cli::the_value_of_a_run_is_printed_once`
+/// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(STOPPED) || *exit == ExitCode::from(UNREACHED)))]
 fn script(

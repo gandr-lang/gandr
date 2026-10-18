@@ -285,10 +285,10 @@ enum DeclKind
 ///   independent proof of the format or arbitrary-input totality; small-stack
 ///   depth witnesses cover iterative graph handling.
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
-/// - witness: `sharing_format::sharing_format::each_segment_ends_where_its_bytes_end`
-/// - witness: `sharing_format::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
-/// - witness: `sharing_format::sharing_format::arbitrary_bytes_never_panic`
-/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+/// - witness: `tests::sharing_format::each_segment_ends_where_its_bytes_end`
+/// - witness: `tests::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
+/// - witness: `tests::sharing_format::arbitrary_bytes_never_panic`
+/// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 /// - witness: `decode::tests::declaration_assembly_preserves_claims_and_consumes_names`
 struct DeclMeta
 {
@@ -355,10 +355,10 @@ struct DeclMeta
 ///   independent proof of the format or arbitrary-input totality; small-stack
 ///   depth witnesses cover iterative graph handling.
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
-/// - witness: `sharing_format::sharing_format::each_segment_ends_where_its_bytes_end`
-/// - witness: `sharing_format::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
-/// - witness: `sharing_format::sharing_format::arbitrary_bytes_never_panic`
-/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+/// - witness: `tests::sharing_format::each_segment_ends_where_its_bytes_end`
+/// - witness: `tests::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
+/// - witness: `tests::sharing_format::arbitrary_bytes_never_panic`
+/// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SegmentLayout
 {
@@ -420,10 +420,10 @@ impl SegmentLayout
 ///   independent proof of the format or arbitrary-input totality; small-stack
 ///   depth witnesses cover iterative graph handling.
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
-/// - witness: `sharing_format::sharing_format::each_segment_ends_where_its_bytes_end`
-/// - witness: `sharing_format::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
-/// - witness: `sharing_format::sharing_format::arbitrary_bytes_never_panic`
-/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+/// - witness: `tests::sharing_format::each_segment_ends_where_its_bytes_end`
+/// - witness: `tests::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
+/// - witness: `tests::sharing_format::arbitrary_bytes_never_panic`
+/// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DecodedArtifact
 {
@@ -517,19 +517,19 @@ impl DecodedArtifact
 ///   independent proof of the format or arbitrary-input totality; small-stack
 ///   depth witnesses cover iterative graph handling.
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
-/// - witness: `sharing_format::sharing_format::each_segment_ends_where_its_bytes_end`
-/// - witness: `sharing_format::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
-/// - witness: `sharing_format::sharing_format::arbitrary_bytes_never_panic`
-/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+/// - witness: `tests::sharing_format::each_segment_ends_where_its_bytes_end`
+/// - witness: `tests::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
+/// - witness: `tests::sharing_format::arbitrary_bytes_never_panic`
+/// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 /// - witness: `decode::tests::normalized_levels_and_literals_are_not_wire_acceptance`
 /// - witness: `decode::tests::budget_scan_matches_explicit_expansion_and_saturating_boundaries`
-/// - witness: `sharing_format::sharing_format::a_repeated_diamond_is_refused_before_any_consumer`
-/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
-/// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
-/// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
-/// - witness: `sharing_format::sharing_format::a_mis_ordered_table_is_refused_as_non_canonical`
-/// - witness: `sharing_format::sharing_format::a_dead_entry_is_refused_as_non_canonical`
-/// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
+/// - witness: `tests::sharing_format::a_repeated_diamond_is_refused_before_any_consumer`
+/// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `tests::sharing_format::a_predecessor_version_is_refused_by_name`
+/// - witness: `tests::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+/// - witness: `tests::sharing_format::a_mis_ordered_table_is_refused_as_non_canonical`
+/// - witness: `tests::sharing_format::a_dead_entry_is_refused_as_non_canonical`
+/// - witness: `tests::sharing_format::a_self_or_forward_child_reference_is_refused`
 #[inline]
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|artifact|
     artifact.metrics.table_entries() <= MAX_TABLE_ENTRIES
@@ -611,8 +611,8 @@ pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
 ///   These observations concern structural wire expansion, not evaluator work
 ///   or inline-payload cost.
 /// - witness: `decode::tests::budget_scan_matches_explicit_expansion_and_saturating_boundaries`
-/// - witness: `sharing_format::sharing_format::a_repeated_diamond_is_refused_before_any_consumer`
-/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `tests::sharing_format::a_repeated_diamond_is_refused_before_any_consumer`
+/// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
 #[spec(
     requires: table.children.iter().enumerate().all(|(parent, children)|
         children.iter().all(|child| child.offset().0 < parent)),
@@ -684,8 +684,8 @@ fn budget_report(
 ///   These observations concern structural wire expansion, not evaluator work
 ///   or inline-payload cost.
 /// - witness: `decode::tests::budget_scan_matches_explicit_expansion_and_saturating_boundaries`
-/// - witness: `sharing_format::sharing_format::a_repeated_diamond_is_refused_before_any_consumer`
-/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `tests::sharing_format::a_repeated_diamond_is_refused_before_any_consumer`
+/// - witness: `tests::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
 #[spec(
     ensures: |ret| if metrics.max_declaration_expanded_work() > MAX_EXPANDED_TERM_WORK { ret.as_ref() == Err(&DecodeError::Malformed { site: MalformedSite::ExpandedWork }) }
         else if metrics.artifact_expanded_work() > MAX_ARTIFACT_EXPANDED_WORK { ret.as_ref() == Err(&DecodeError::Malformed { site: MalformedSite::ArtifactExpandedWork }) }
@@ -749,10 +749,10 @@ fn check_budget(metrics: DecodeMetrics) -> Result<(), DecodeError>
 ///   non-minting positions against the decoded sequence, not against an assumed
 ///   admission history.
 /// - witness: `decode::tests::counted_records_validate_content_and_consumption`
-/// - witness: `sharing_format::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
-/// - witness: `sharing_format::sharing_format::a_minted_atom_table_with_a_repeat_is_refused`
-/// - witness: `sharing_format::sharing_format::a_minted_atom_table_omitting_an_atom_is_refused`
-/// - witness: `sharing_format::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
+/// - witness: `tests::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
+/// - witness: `tests::sharing_format::a_minted_atom_table_with_a_repeat_is_refused`
+/// - witness: `tests::sharing_format::a_minted_atom_table_omitting_an_atom_is_refused`
+/// - witness: `tests::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
 #[spec(ensures: |ret| ret.is_ok() == declared.iter().copied().eq(
     declarations.iter().enumerate().filter_map(|(position, declaration)|
         matches!(*declaration.declaration().content(),
@@ -1614,10 +1614,10 @@ impl<'bytes> ByteReader<'bytes>
 ///   prove local failure atomicity; a later segment failure can retain rows
 ///   from its earlier successful entries.
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
-/// - witness: `sharing_format::sharing_format::each_segment_ends_where_its_bytes_end`
-/// - witness: `sharing_format::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
-/// - witness: `sharing_format::sharing_format::arbitrary_bytes_never_panic`
-/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+/// - witness: `tests::sharing_format::each_segment_ends_where_its_bytes_end`
+/// - witness: `tests::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
+/// - witness: `tests::sharing_format::arbitrary_bytes_never_panic`
+/// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 /// - witness: `decode::tests::declaration_assembly_preserves_claims_and_consumes_names`
 /// - witness: `decode::tests::counted_records_validate_content_and_consumption`
 /// - witness: `encode::tests::a_presented_data_declaration_closes_its_segment_with_its_rules`
@@ -2628,7 +2628,7 @@ fn decode_entry(
 /// # Adequacy
 /// - hypothesis: L3 — native artifacts round-trip; truncated dialogue payloads
 ///   and invalid words are rejected before admission.
-/// - witness: `sharing_format::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
+/// - witness: `tests::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
 #[spec(captures: before = reader.position.0, ensures: |ret| reader.position.0 >= before && ret.as_ref().map_or(true, |dialogues| 1_usize.saturating_add(dialogues.len()).saturating_add(dialogues.iter().map(Vec::len).sum::<usize>()) <= reader.position.0.saturating_sub(before)))]
 fn decode_dialogues(
     reader: &mut ByteReader<'_>
@@ -3183,8 +3183,8 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 ///   cursor positions; it does not claim name normalization, atom truth or
 ///   typing.
 /// - witness: `decode::tests::counted_records_validate_content_and_consumption`
-/// - witness: `sharing_format::sharing_format::a_segment_holding_a_separator_is_refused`
-/// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
+/// - witness: `tests::sharing_format::a_segment_holding_a_separator_is_refused`
+/// - witness: `tests::sharing_format::a_structured_name_round_trips_as_segments`
 #[spec(
     captures: start = reader.position,
     ensures: |ret| reader.position >= start
@@ -3510,7 +3510,7 @@ fn decode_relation(reader: &mut ByteReader<'_>) -> Result<ConstraintRelation, De
 ///   re-encode comparison. Literal and interface fixtures also distinguish
 ///   malformed digits, invalid constraint sides and offset refusal.
 /// - witness: `decode::tests::normalized_levels_and_literals_are_not_wire_acceptance`
-/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[spec(
     captures: start = reader.position,
     ensures: |ret| reader.position >= start
@@ -3566,7 +3566,7 @@ fn decode_level(reader: &mut ByteReader<'_>) -> Result<Level, DecodeError>
 ///   re-encode comparison. Literal and interface fixtures also distinguish
 ///   malformed digits, invalid constraint sides and offset refusal.
 /// - witness: `decode::tests::normalized_levels_and_literals_are_not_wire_acceptance`
-/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+/// - witness: `tests::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[inline]
 #[spec(
     requires: LevelAtomOffset::from(u64::from(offset)) < MAX_DECODED_LEVEL_OFFSET,

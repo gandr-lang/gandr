@@ -332,18 +332,19 @@ run = [
   "target/enforcing/debug/build-state prune --profile-dir target/enforcing/debug target/enforcing/units.jsonl",
 ]
 
-# The plain lane's builds: the plain-only tests, the corpus driver, the
-# private-item rustdoc and the pruning binary itself. A new plain-lane build
-# joins this list, or the next landing rebuilds it.
+# The plain lane's builds: the plain-only tests, the corpus driver, the corpus
+# comments suite, the private-item rustdoc and the pruning binary itself. A
+# new plain-lane build joins this list, or the next landing rebuilds it.
 ["ci:prune-plain"]
 description = "Prune the plain test state to the units this run's builds used"
 env.RUSTDOCFLAGS = "-D warnings"
 run = [
   "cargo nextest run --locked --package gandr-surface-parser --test tests --no-run --cargo-message-format json > target/debug/units-tests.jsonl",
   "cargo build --locked --profile test --package gandr-lang --message-format json > target/debug/units-corpus.jsonl",
+  "cargo test --locked --package gandr-surface-corpus --test tests --no-run --message-format json > target/debug/units-comments.jsonl",
   "cargo doc --locked --workspace --all-features --no-deps --document-private-items --profile test --message-format json > target/debug/units-doc.jsonl",
   "cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
-  "target/debug/build-state prune --profile-dir target/debug target/debug/units-tests.jsonl target/debug/units-corpus.jsonl target/debug/units-doc.jsonl target/debug/units-tool.jsonl",
+  "target/debug/build-state prune --profile-dir target/debug target/debug/units-tests.jsonl target/debug/units-corpus.jsonl target/debug/units-comments.jsonl target/debug/units-doc.jsonl target/debug/units-tool.jsonl",
 ]
 
 # The Clippy lane's two passes, with the arguments ci.yml gives them, and the

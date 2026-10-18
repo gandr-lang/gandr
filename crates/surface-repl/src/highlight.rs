@@ -76,7 +76,7 @@ pub fn span_order(spans: &[HlSpan]) -> SpanOrder
 /// - witness: `highlight::tests::a_keyword_is_classified`
 /// - witness: `highlight::tests::spans_are_sorted_and_disjoint`
 /// - witness: `highlight::tests::an_unclassifiable_buffer_yields_no_panic`
-/// - witness: `loop::tests::a_submission_carries_highlight_spans`
+/// - witness: `tests::repl_loop::a_submission_carries_highlight_spans`
 /// - witness: `highlight::tests::unicode_literals_keep_their_byte_boundaries`
 #[spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1))
     .all(|(left, right)| left.range.end() <= right.range.start())

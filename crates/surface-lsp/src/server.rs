@@ -240,8 +240,8 @@ impl Document
 ///   each keystroke to a fresh connection's over the same text and every hover
 ///   to answering; a reading kept past a change disagrees at the keystroke that
 ///   made it.
-/// - witness: `editor::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
-/// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+/// - witness: `tests::editor::scenarios::sweeps::random_edits_keep_every_answer_faithful`
+/// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
 struct HeldText
 {
     /// The text.
@@ -601,7 +601,7 @@ impl fmt::Display for Logged
     /// # Adequacy
     /// - hypothesis: L3 — the transcript reads each logged line back, naming
     ///   the document and the version it was synchronised to.
-    /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+    /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
     #[inline]
     fn fmt(
         &self,
@@ -1199,8 +1199,8 @@ impl Server
     /// # Adequacy
     /// - hypothesis: L3 — a held diagnostic publishes at the copy's version
     ///   when released, and a copy holding nothing publishes nothing.
-    /// - witness: `editor::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
-    /// - witness: `session::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+    /// - witness: `tests::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
+    /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
     #[spec(ensures: |ret| ret.len() <= 1)]
     #[inline]
     #[must_use]
@@ -1345,7 +1345,7 @@ impl Server
     ///   document is left as it was. Corrections are made in log order, so the
     ///   predicate matches them against the log in one ordered pass.
     /// - witness: `server::tests::an_admission_follows_its_synchronisation`
-    /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+    /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2248,9 +2248,9 @@ fn caret_range(
 ///   declaration distinguishes a held diagnostic from a published one.
 /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
 /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
-/// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
-/// - witness: `editor::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
+/// - witness: `tests::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
 #[spec(ensures: |ret| ret.flow == Flow::Continue
     && matches!(*ret.messages.as_slice(), [Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }]
         if params.uri == *uri && params.version == Some(document.version)
@@ -2329,10 +2329,10 @@ fn synchronised(
 ///   one whose stream breaks inside a frame, an editor-shaped edit to a large
 ///   document whose log carries one timing line per synchronisation, and a held
 ///   diagnostic published once the document is quiet.
-/// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
-/// - witness: `session::session::a_stream_closed_without_exit_ends_abruptly`
-/// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
-/// - witness: `session::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+/// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
+/// - witness: `tests::session::a_stream_closed_without_exit_ends_abruptly`
+/// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
 #[inline]
 pub fn serve<Input, Output, Log>(
     input: &mut Input,
@@ -2390,7 +2390,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every frame a served session writes passes here.
-/// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
+/// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
 fn written<Output>(
     output: &mut Output,
     message: &Outgoing,

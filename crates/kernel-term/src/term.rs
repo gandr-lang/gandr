@@ -869,7 +869,7 @@ impl From<StagedPosition> for usize
 /// # Adequacy
 /// - hypothesis: L3 — artifact framing retains both ordered dialogue lists,
 ///   including empty dialogues and the full portable decision alphabet.
-/// - witness: `sharing_format::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
+/// - witness: `tests::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct PathEvidence
 {
@@ -983,7 +983,7 @@ impl PathEvidence
     /// # Adequacy
     /// - hypothesis: L3 — persisted evidence retains dialogue boundaries,
     ///   order, sides and negative premise positions.
-    /// - witness: `sharing_format::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
+    /// - witness: `tests::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
     #[inline]
     pub fn words(&self) -> impl Iterator<Item = EvidenceWord> + '_
     {
@@ -1014,7 +1014,7 @@ impl PathEvidence
 ///
 /// # Adequacy
 /// - hypothesis: L3 — wire decoding distinguishes sides and premise positions.
-/// - witness: `sharing_format::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
+/// - witness: `tests::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
 #[spec(ensures: |ret| gandr_kernel_conversion_trace::ConversionDecision::<()>::try_from(ret) == Ok(decision))]
 pub fn decision_word(
     decision: gandr_kernel_conversion_trace::ConversionDecision<()>

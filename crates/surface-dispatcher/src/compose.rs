@@ -278,7 +278,7 @@ impl LoweringCount
     ///   trees and the corpus; a lost or doubled absorption changes that count.
     ///   Saturation is not reached by these witnesses.
     /// - witness: `walk::tests::a_tree_is_walked_in_order`
-    /// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
+    /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
     #[inline]
     #[spec(captures: [before = self.0], ensures: |_| self.0 == before.saturating_add(other.0))]
     pub(crate) fn absorb(
@@ -324,7 +324,7 @@ impl SpellingCount
     /// - hypothesis: L3 — a walk over the identity subject counts one pass per
     ///   component, however many sources share it; a pass per member, or none,
     ///   changes the count. Saturation is not reached by the witness.
-    /// - witness: `corpus::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
+    /// - witness: `tests::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
     #[inline]
     #[spec(captures: [before = self.0], ensures: |_| self.0 == before.saturating_add(1))]
     pub(crate) fn tick(&mut self)
@@ -482,7 +482,7 @@ impl Composed<'_>
 ///   the kernel has been offered anything, and admitting it gives the
 ///   composition; the corpus at every width composes alike through it.
 /// - witness: `compose::tests::a_judged_module_renders_before_its_admission`
-/// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
+/// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
 #[derive(Clone, Debug)]
 pub struct Judged<'source>
 {
@@ -1198,7 +1198,7 @@ struct Share<'source>
 ///   once per component.
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `compose::tests::a_module_settles_every_declaration_once`
-/// - witness: `corpus::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
+/// - witness: `tests::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
 #[spec(ensures: |ref ret| ret.0.earlier.len() == earlier.len())]
 fn judge_members<'source>(
     root: CorpusRoot,
@@ -1436,8 +1436,8 @@ fn settled<'source>(
 ///   declarations, each certificate holding the base's segments once, first;
 ///   the corpus at every width composes alike.
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
-/// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
-/// - witness: `corpus::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
+/// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
+/// - witness: `tests::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
 #[spec(ensures: |ref ret| ret.len() == members.len())]
 pub fn judge_component<'source>(
     root: CorpusRoot,
@@ -1722,7 +1722,7 @@ pub fn compose<'source>(
 ///   the serial walk.
 /// - witness: `compose::tests::a_module_settles_every_declaration_once`
 /// - witness: `compose::tests::a_root_that_is_no_list_of_declarations_is_refused_whole`
-/// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
+/// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
 #[inline]
 #[spec(
     captures: [refused = matches!(lowering.lowered, Lowered::Refused(_))],

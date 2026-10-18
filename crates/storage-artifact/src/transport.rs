@@ -474,12 +474,12 @@ impl fmt::Display for TransportStepId
 /// - hypothesis: L2 — the pinned frame golden fixes framing and field order;
 ///   rebuilt cells and permuted stores preserve identity. L3 — position and
 ///   content perturbations separate omitted fields.
-/// - witness: `certificate_transport::tests::the_v1_golden_step_identity_is_stable`
-/// - witness: `certificate_transport::tests::an_independently_rebuilt_cell_mints_the_same_identity`
-/// - witness: `certificate_transport::tests::the_identity_reads_the_position`
-/// - witness: `certificate_transport::tests::the_identity_reads_the_cell_content`
-/// - witness: `certificate_transport::tests::the_identity_is_stable_across_store_insertion_orders`
-/// - witness: `certificate_transport::tests::every_orientation_provenance_and_polarity_is_bound`
+/// - witness: `tests::certificate_transport::the_v1_golden_step_identity_is_stable`
+/// - witness: `tests::certificate_transport::an_independently_rebuilt_cell_mints_the_same_identity`
+/// - witness: `tests::certificate_transport::the_identity_reads_the_position`
+/// - witness: `tests::certificate_transport::the_identity_reads_the_cell_content`
+/// - witness: `tests::certificate_transport::the_identity_is_stable_across_store_insertion_orders`
+/// - witness: `tests::certificate_transport::every_orientation_provenance_and_polarity_is_bound`
 #[inline]
 #[spec(ensures: |output| output.is_ok() == step_fields(cell, at).all(|field| match field {
     CertificateField::Tag(_) => true,
@@ -665,10 +665,10 @@ impl TransportStepIndex
 /// - hypothesis: L2 — repeated normalization preserves the index and distinct
 ///   derivations keep distinct factorizations. L3 — exact graded entries and an
 ///   unresolved store distinguish lost factors and fabricated resolution.
-/// - witness: `certificate_transport::tests::the_index_preserves_the_graded_factorization`
-/// - witness: `certificate_transport::tests::the_index_is_deterministic_across_repeated_normalization`
-/// - witness: `certificate_transport::tests::distinct_factorizations_index_distinctly`
-/// - witness: `certificate_transport::tests::the_index_refuses_an_unresolved_cell`
+/// - witness: `tests::certificate_transport::the_index_preserves_the_graded_factorization`
+/// - witness: `tests::certificate_transport::the_index_is_deterministic_across_repeated_normalization`
+/// - witness: `tests::certificate_transport::distinct_factorizations_index_distinctly`
+/// - witness: `tests::certificate_transport::the_index_refuses_an_unresolved_cell`
 #[inline]
 #[spec(ensures: |output| output.as_ref().map_or(true, |index| normal_form.primitives.values().all(|graded|
     index.entries.values().any(|held| held.0 == graded.0 && held.1 >= graded.1))))]

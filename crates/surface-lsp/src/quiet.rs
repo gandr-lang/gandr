@@ -258,7 +258,7 @@ pub struct Holding(pub bool);
 /// - hypothesis: L3 — a refusal inside the form under the caret is held, one
 ///   two declarations below is not, a goal inside the form is not, and with no
 ///   form every diagnostic publishes.
-/// - witness: `editor::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
+/// - witness: `tests::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
 /// - witness: `quiet::tests::a_diagnostic_touching_the_form_is_held_and_one_apart_from_it_published`
 #[spec(ensures: |ret| ret.0.len() <= checked.len() && ret.1.0 == (ret.0.len() < checked.len()))]
 #[must_use]
@@ -307,7 +307,7 @@ impl Deadlines
     /// # Adequacy
     /// - hypothesis: L3 — a held publication arms the deadline and a change
     ///   that holds nothing disarms it.
-    /// - witness: `session::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+    /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
     #[spec(ensures: |_| log.last().is_none_or(|last| {
         !last.holding().0 || now.checked_add(quiet).is_none() || self.0.contains_key(last.uri())
     }))]
@@ -351,7 +351,7 @@ impl Deadlines
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Deadlines::note`].
-    /// - witness: `session::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+    /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
     #[spec(ensures: |ret| ret.iter().all(|uri| !self.0.contains_key(uri)))]
     fn due(
         &mut self,
@@ -408,9 +408,9 @@ pub enum Met
 /// - hypothesis: L2 — every served editor session runs here in lockstep; L3 — a
 ///   held diagnostic publishes after the interval with no frame sent, and a
 ///   session ends at `exit` and at a closed stream.
-/// - witness: `session::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
-/// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
-/// - witness: `session::session::a_stream_closed_without_exit_ends_abruptly`
+/// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+/// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
+/// - witness: `tests::session::a_stream_closed_without_exit_ends_abruptly`
 #[inline]
 pub fn paced<Input, Visit, Ended>(
     input: &mut Input,

@@ -125,7 +125,7 @@ pub(super) struct Read
 /// - hypothesis: L3 — a rose tree's node and its list of children, one block,
 ///   recurse through each other at one stage, and a lone family's case stages
 ///   only its own fields.
-/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
+/// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
 #[spec(ensures: |ret| ret.is_ok() == matches!(arena.value_type(datatype), Some(&ValueType::Data { .. })))]
 pub(super) fn families(
     arena: &TermArena,
@@ -213,9 +213,9 @@ impl Dependence
 ///   admitted, the same recursion calling itself at its own parameter is
 ///   refused, and a fixpoint at a returner opens nothing; a recursion at the
 ///   sum of a rose tree's two families stages each summand.
-/// - witness: `recursive_data::recursive_data::a_recursion_descends_on_its_first_parameter`
-/// - witness: `recursive_data::recursive_data::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
-/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
+/// - witness: `tests::recursive_data::a_recursion_descends_on_its_first_parameter`
+/// - witness: `tests::recursive_data::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
+/// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |opened| arena.comp_type(opened.own).is_some() && arena.comp_type(opened.inside).is_some()))]
 pub(super) fn open_fixpoint(
     arena: &mut TermArena,
@@ -306,8 +306,8 @@ pub(super) fn open_fixpoint(
 ///   its fields each mint one child, so a call on a field two cases deep is two
 ///   steps below the fixpoint's stage; a case on a stratified value at no stage
 ///   binds its negative field at a root its own scrutinee does not fit.
-/// - witness: `recursive_data::recursive_data::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
-/// - witness: `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call`
+/// - witness: `tests::recursive_data::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+/// - witness: `tests::recursive_data::currys_consumer_is_refused_at_its_call`
 #[spec(ensures: |ret| match ret {
     Ok((read, Maybe::Present(_))) => read == scrutinee || matches!(arena.value_type(scrutinee), Some(&ValueType::Staged { base, .. }) if base == read),
     Ok((read, Maybe::Absent(_))) => read == scrutinee,
@@ -477,8 +477,8 @@ const fn computation_part(part: Part) -> Result<CompTypeId, KernelError>
 /// - hypothesis: L3 — a function field over its own family is rebuilt at the
 ///   case's stage, so a call through it on the chain before the link is
 ///   admitted and one on the link itself is refused.
-/// - witness: `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`
-/// - witness: `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call`
+/// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `tests::recursive_data::currys_consumer_is_refused_at_its_call`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |rebuilt| matches!((part, *rebuilt),
     (Part::Value(_), Part::Value(_)) | (Part::Computation(_), Part::Computation(_)))))]
 fn rebuild(
@@ -612,9 +612,9 @@ fn rebuild(
 /// - hypothesis: L3 — a direct field moves to the stage and a call on it is
 ///   admitted; a field under a function's domain moves with it; a field holding
 ///   no occurrence stays.
-/// - witness: `recursive_data::recursive_data::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
-/// - witness: `recursive_data::recursive_data::currys_consumer_is_refused_at_its_call`
-/// - witness: `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `tests::recursive_data::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+/// - witness: `tests::recursive_data::currys_consumer_is_refused_at_its_call`
+/// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| staged == field
     || arena.value_type(staged).is_some()))]
 pub(super) fn stage_field(
@@ -700,9 +700,9 @@ pub(super) fn stage_field(
 ///   call on it is admitted, while the zero branch binds nothing; a universe's
 ///   function field names its decoder, read as the self binder, and the decoder
 ///   at a place that does not descend is refused.
-/// - witness: `recursive_data::recursive_data::a_recursion_descends_on_its_first_parameter`
-/// - witness: `recursive_data::recursive_data::a_mutual_block_is_admitted`
-/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
+/// - witness: `tests::recursive_data::a_recursion_descends_on_its_first_parameter`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
+/// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| arena.comp_type(staged).is_some()))]
 pub(super) fn stage_branch(
     arena: &mut TermArena,
@@ -787,9 +787,9 @@ pub(super) fn stage_branch(
 ///   rebuilt below the stage wants its list of children below it; a constructor
 ///   whose one recursive field is thunked is refused with nothing below the
 ///   stage.
-/// - witness: `recursive_data::recursive_data::a_nullary_argument_needs_a_value_below_the_stage`
-/// - witness: `recursive_data::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
-/// - witness: `recursive_data::recursive_data::a_thunked_field_shows_no_value_below_the_stage_598`
+/// - witness: `tests::recursive_data::a_nullary_argument_needs_a_value_below_the_stage`
+/// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families`
+/// - witness: `tests::recursive_data::a_thunked_field_shows_no_value_below_the_stage_598`
 #[spec(ensures: |ret| match ret {
     Ok(()) => true,
     Err(ref error) => matches!(*error, KernelError::StageNotBelow { found: Standing::Top, bound } if bound == wanted) || *error == KernelError::ArenaFault,
@@ -861,7 +861,7 @@ enum Room
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`constructor_fields`].
-/// - witness: `recursive_data::recursive_data::a_nullary_argument_needs_a_value_below_the_stage`
+/// - witness: `tests::recursive_data::a_nullary_argument_needs_a_value_below_the_stage`
 #[spec(ensures: |ret| ret == Room::Unwitnessed || context.iter().any(|&slot| matches!(arena.value_type(slot), Some(ValueType::Staged { .. }))))]
 fn room(
     arena: &TermArena,
@@ -902,7 +902,7 @@ fn room(
 /// - hypothesis: L3 — a field below the stage passes at the self binder's
 ///   bound, the parameter at the stage itself does not, and a value at no stage
 ///   does not.
-/// - witness: `recursive_data::recursive_data::a_recursion_descends_on_its_first_parameter`
+/// - witness: `tests::recursive_data::a_recursion_descends_on_its_first_parameter`
 #[spec(ensures: |ret| match ret {
     Ok((wanted, _)) => !matches!(arena.value_type(wanted), Some(ValueType::Staged { .. })),
     Err(ref error) => matches!(*error, KernelError::StageNotBelow { .. }),
@@ -979,9 +979,9 @@ pub(super) enum Subsumed
 ///   type is admitted, and the self binder handed on where any value of its
 ///   domain is wanted is refused; a negative field below its stage, under its
 ///   thunk's domain, is handed on at the arm's stage.
-/// - witness: `recursive_data::recursive_data::derived_eliminators_are_admitted`
-/// - witness: `recursive_data::recursive_data::a_self_reference_never_stands_for_an_unstaged_function`
-/// - witness: `recursive_data::recursive_data::a_negative_occurrence_below_the_stage_declares`
+/// - witness: `tests::recursive_data::derived_eliminators_are_admitted`
+/// - witness: `tests::recursive_data::a_self_reference_never_stands_for_an_unstaged_function`
+/// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
 #[spec(ensures: |ret| match pair {
     Subsumed::Values(wanted, found) if wanted == found => ret.is_ok(),
     Subsumed::Comps(wanted, found) if wanted == found => ret.is_ok(),
@@ -1140,8 +1140,8 @@ pub(super) fn subsumes(
 ///   node itself in a one-element list instantiates nothing and the claim is
 ///   refused; a value of a stage handed to a generic `apply` instantiates its
 ///   parameter at that stage.
-/// - witness: `recursive_data::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
-/// - witness: `recursive_data::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`
+/// - witness: `tests::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+/// - witness: `tests::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(staged) => matches!(arena.value(staged), Some(&Value::Quote(quoted))
         if matches!(arena.value_type(quoted), Some(ValueType::Staged { .. }))),
@@ -1218,8 +1218,8 @@ enum Held
 /// - hypothesis: L3 — `map`'s list parameter meets a rose tree's children at
 ///   their stage, and `apply`'s decoded parameter a predecessor at its stage; a
 ///   list built around the scrutinee holds no stage.
-/// - witness: `recursive_data::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
-/// - witness: `recursive_data::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`
+/// - witness: `tests::recursive_data::a_type_parameter_instantiates_at_a_staged_code`
+/// - witness: `tests::recursive_data::a_claim_at_the_scrutinee_through_map_is_refused`
 #[spec(ensures: |ret| match ret {
     Maybe::Present((base, Held::Itself)) => matches!(arena.value_type(found),
         Some(&ValueType::Staged { base: inner, .. }) if inner == base),

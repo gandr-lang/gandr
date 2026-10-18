@@ -144,7 +144,7 @@ impl<'memo, Support, Outcome> MemoHit<'memo, Support, Outcome>
 ///   replacement and inactive-path observations distinguish false hits, stale
 ///   outcomes and accounting on the null path. These witnesses cover the
 ///   shipped implementations, not arbitrary downstream stores.
-/// - witness: `differential::tests::memoized_and_memoless_agree_answer_for_answer`
+/// - witness: `tests::differential::tests::memoized_and_memoless_agree_answer_for_answer`
 /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
 /// - witness: `memo::tests::remembering_an_agreeing_support_replaces_rather_than_accumulates`
 /// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`

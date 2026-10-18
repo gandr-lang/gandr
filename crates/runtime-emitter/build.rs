@@ -11,9 +11,9 @@
 //! that grows a `memcpy` call, a jump table or a constant pool fails the build
 //! rather than the run.
 //!
-//! A target without a patcher — anything but macOS arm64 and Linux x86-64 —
-//! compiles no object and writes an empty table: its runs take the portable
-//! executor.
+//! A target without a patcher — anything but arm64 on macOS or Linux and
+//! Linux x86-64 — compiles no object and writes an empty table: its runs take
+//! the portable executor.
 
 use core::fmt::Write as _;
 use std::env;
@@ -133,13 +133,18 @@ impl From<core::fmt::Error> for Refusal
     }
 }
 
-/// The two object layouts a patcher exists for.
+/// The three object layouts a patcher exists for.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Layout
 {
     /// `aarch64-apple-darwin`: one `__text` section, `_`-prefixed symbols,
     /// `BRANCH26` and `GOT_LOAD` pairs.
     MachOArm64,
+    /// `aarch64-unknown-linux-gnu`, the default position-independent model:
+    /// one section per function, `JUMP26` branches and `ADR_GOT_PAGE` /
+    /// `LD64_GOT_LO12_NC` pairs — Mach-O's three kinds under ELF's names, so
+    /// one arm64 patcher takes both.
+    ElfArm64,
     /// `x86_64-unknown-linux-gnu`, static relocation model: one section per
     /// function, `PLT32` branches and absolute or PC-relative operands.
     ElfX86_64,
@@ -224,6 +229,7 @@ fn main() -> Result<(), Refusal>
     let arch = variable("CARGO_CFG_TARGET_ARCH")?;
     let layout = match (os.to_str(), arch.to_str()) {
         (Some("macos"), Some("aarch64")) => Layout::MachOArm64,
+        (Some("linux"), Some("aarch64")) => Layout::ElfArm64,
         (Some("linux"), Some("x86_64")) => Layout::ElfX86_64,
         _ => {
             fs::write(
@@ -278,7 +284,7 @@ fn main() -> Result<(), Refusal>
     let file = object::File::parse(&*data)?;
     let prefix = match layout {
         Layout::MachOArm64 => "_",
-        Layout::ElfX86_64 => "",
+        Layout::ElfArm64 | Layout::ElfX86_64 => "",
     };
 
     for section in file.sections() {
@@ -385,6 +391,26 @@ fn main() -> Result<(), Refusal>
                     },
                     _ => return Err(at(&format!("Mach-O relocation kind {r_type} on {bare}"))),
                 },
+                (Layout::ElfArm64, RelocationFlags::Elf { r_type }) => {
+                    if relocation.addend() != 0 {
+                        return Err(at(&format!(
+                            "ELF relocation kind {r_type} on {bare} with addend {}",
+                            relocation.addend()
+                        )));
+                    }
+                    match r_type {
+                        object::elf::R_AARCH64_JUMP26 if continuation => {
+                            String::from("HoleKind::Branch26")
+                        },
+                        object::elf::R_AARCH64_ADR_GOT_PAGE if !continuation => {
+                            String::from("HoleKind::Page21")
+                        },
+                        object::elf::R_AARCH64_LD64_GOT_LO12_NC if !continuation => {
+                            String::from("HoleKind::PageOff12")
+                        },
+                        _ => return Err(at(&format!("ELF relocation kind {r_type} on {bare}"))),
+                    }
+                },
                 (Layout::ElfX86_64, RelocationFlags::Elf { r_type }) => {
                     let addend = relocation.addend();
                     match r_type {
@@ -400,7 +426,7 @@ fn main() -> Result<(), Refusal>
                         _ => return Err(at(&format!("ELF relocation kind {r_type} on {bare}"))),
                     }
                 },
-                (Layout::MachOArm64 | Layout::ElfX86_64, _) => {
+                (Layout::MachOArm64 | Layout::ElfArm64 | Layout::ElfX86_64, _) => {
                     return Err(at("a relocation in another object format's flags"));
                 },
             };
@@ -418,7 +444,7 @@ fn main() -> Result<(), Refusal>
 
     for stencil in &mut read {
         stencil.holes.sort_unstable();
-        if layout == Layout::MachOArm64 {
+        if layout != Layout::ElfX86_64 {
             check_got_pairs(stencil)?;
         }
         stencil.tail = droppable_tail(layout, stencil);
@@ -575,7 +601,7 @@ fn droppable_tail(
         return Tail(0);
     }
     Tail(match layout {
-        Layout::MachOArm64 => {
+        Layout::MachOArm64 | Layout::ElfArm64 => {
             let word = length
                 .checked_sub(4)
                 .and_then(|at| stencil.bytes.get(at ..))

@@ -34,7 +34,7 @@ use crate::units::SquaredOverflow;
 /// - hypothesis: L3 — both ending policies are observed through complete
 ///   rendered bytes and VM byte reconciliation; swapping endings or treating
 ///   CRLF as one byte changes output or produces a mismatch.
-/// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+/// - witness: `tests::algebra::render_preserves_verbatim_bytes_and_physical_endings`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
 pub enum PhysicalLineEnding
@@ -59,7 +59,7 @@ impl PhysicalLineEnding
     /// - hypothesis: L3 — LF and CRLF policies expose byte accounting through
     ///   complete rendered output; a wrong ending width makes the VM byte
     ///   reconciliation fail even when the scalar width is unchanged.
-    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+    /// - witness: `tests::algebra::render_preserves_verbatim_bytes_and_physical_endings`
     #[spec(
         ensures: |ret| u64::from(ret) == match self { Self::Lf => 1, Self::CrLf => 2 }
     )]
@@ -197,7 +197,7 @@ impl LayoutOptions
 ///   overflow-first ordering; exact sums and overflow precedence distinguish
 ///   swapped fields, saturation and omitted components.
 /// - witness: `measure::tests::cost_and_byte_addition_preserve_components_and_error_priority`
-/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `tests::algebra::resolver_choice_uses_squared_overflow_before_line_breaks`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LayoutCost
 {
@@ -252,8 +252,8 @@ impl LayoutCost
 /// - hypothesis: L3 — bounded and width-tainted contexts are observed through
 ///   the public taint projection and complete selected output. Dropping taint,
 ///   truncating the promise or changing left bias changes those observations.
-/// - witness: `algebra::tests::tainted_contexts_preserve_taint_and_output`
-/// - witness: `algebra::tests::render_tainted_root_uses_complete_left_biased_output`
+/// - witness: `tests::algebra::tainted_contexts_preserve_taint_and_output`
+/// - witness: `tests::algebra::render_tainted_root_uses_complete_left_biased_output`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
 pub enum WidthTaint
@@ -280,8 +280,8 @@ pub enum WidthTaint
 ///   output with a direct oracle, while complete rendering checks byte
 ///   reconciliation. Mixing summaries from different candidates or confusing
 ///   scalar columns with bytes changes the winner or output.
-/// - witness: `algebra::tests::exhaustive_small_documents_match_the_direct_oracle`
-/// - witness: `algebra::tests::render_text_and_layout_metadata_are_exact`
+/// - witness: `tests::algebra::exhaustive_small_documents_match_the_direct_oracle`
+/// - witness: `tests::algebra::render_text_and_layout_metadata_are_exact`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Measure
 {

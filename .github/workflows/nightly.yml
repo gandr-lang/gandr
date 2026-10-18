@@ -46,7 +46,9 @@ jobs:
   template:
     if: false
     needs: ci-image-ref
-    runs-on: &linux ubuntu-latest
+    # ci.yml's runner: the test states this workflow restores are its arm64
+    # ones.
+    runs-on: &linux ubuntu-24.04-arm
     permissions: &image-read-permissions
       contents: read
       packages: read
@@ -222,7 +224,10 @@ jobs:
   # rebuilds the whole enforcing graph and takes longer than a surface one,
   # so one budget is wrong on both sides; each class is held to its own.
   # The deep budget is the surface one plus the measured cost of the extra
-  # units a deep landing rebuilds.
+  # units a deep landing rebuilds. The enforcing shards' budgets scale the
+  # lane's by each shard's share of the arm64 probe's deep rebuild and suite
+  # (#702): surface 0.51, checker 0.41, rest 0.26; a join is setup, transfer
+  # and the witness listing.
   lane-budget:
     name: hold each CI lane to its budget
     needs: ci-image-ref
@@ -246,11 +251,21 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: >-
           mise run ci:lane-budget --issue "CI lane budgets"
-          --budget "test enforcing targets (linux)=360"
-          --budget "test enforcing targets (linux):deep=540"
-          --budget "test enforcing targets (macos-arm64)=420"
-          --budget "test enforcing targets (macos-arm64):deep=600"
-          --budget "test plain-only targets (linux)=150"
+          --budget "test enforcing targets (linux, surface)=230"
+          --budget "test enforcing targets (linux, surface):deep=340"
+          --budget "test enforcing targets (linux, checker)=190"
+          --budget "test enforcing targets (linux, checker):deep=285"
+          --budget "test enforcing targets (linux, rest)=135"
+          --budget "test enforcing targets (linux, rest):deep=200"
+          --budget "join the enforcing shards (linux)=120"
+          --budget "test enforcing targets (macos-arm64, surface)=220"
+          --budget "test enforcing targets (macos-arm64, surface):deep=310"
+          --budget "test enforcing targets (macos-arm64, checker)=175"
+          --budget "test enforcing targets (macos-arm64, checker):deep=250"
+          --budget "test enforcing targets (macos-arm64, rest)=115"
+          --budget "test enforcing targets (macos-arm64, rest):deep=160"
+          --budget "join the enforcing shards (macos-arm64)=150"
+          --budget "test plain-only targets (linux)=210"
           --budget "check quenchant compiler policy=180"
           --budget "check Clippy wall=150"
           --budget "re-verify obligated specifications (linux)=180"

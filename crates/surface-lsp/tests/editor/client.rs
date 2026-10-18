@@ -159,8 +159,8 @@ impl Client
     ///   framed, reordered, dropped or added a message, or a loop that answered
     ///   other than `handle` and `admit` do, changes an answer at the keystroke
     ///   that caused it.
-    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
-    /// - witness: `editor::editor::scenarios::fixing_a_mismatch_clears_its_diagnostic`
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::fixing_a_mismatch_clears_its_diagnostic`
     #[spec(ensures: |ret| ret.requests == 1 && matches!(ret.connection, Connection::Served(_)))]
     pub fn served() -> Self
     {
@@ -203,7 +203,7 @@ impl Client
     /// - hypothesis: L3 — every scenario starts here or at
     ///   [`served`](Self::served), and its requests would be refused by a
     ///   connection left waiting, which `request` asserts.
-    /// - witness: `editor::editor::scenarios::sweeps::two_editors_on_one_buffer_each_keep_their_answers`
+    /// - witness: `tests::editor::scenarios::sweeps::two_editors_on_one_buffer_each_keep_their_answers`
     #[spec(ensures: |ret| ret.requests == 1 && matches!(ret.connection,
         Connection::Joined(ref joined) if joined.record == record
             && (record == Record::Dropped || joined.sent.len() == 2)))]
@@ -229,7 +229,7 @@ impl Client
     /// - hypothesis: L3 — the two-editor scenarios open one document from both
     ///   connections; a connection that shared no workspace would never meet
     ///   the other's document, and its answers would agree trivially.
-    /// - witness: `editor::editor::scenarios::sweeps::two_editors_on_one_buffer_each_keep_their_answers`
+    /// - witness: `tests::editor::scenarios::sweeps::two_editors_on_one_buffer_each_keep_their_answers`
     #[spec(ensures: |ret| ret.requests == 1 && match ret.connection {
         Connection::Joined(ref joined) => match self.connection {
             Connection::Joined(ref this) => Rc::ptr_eq(&joined.shared, &this.shared),
@@ -313,7 +313,7 @@ impl Client
     /// # Adequacy
     /// - hypothesis: L3 — the quiet scenario stops mid-form and reads the held
     ///   diagnostics here; a release that dropped or reordered them fails it.
-    /// - witness: `editor::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
+    /// - witness: `tests::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
     pub fn lapse(
         &mut self,
         uri: &DocumentUri,
@@ -360,7 +360,7 @@ impl Client
     /// - hypothesis: L3 — every query at every keystroke goes through here; a
     ///   request answered twice, answered with an error or not answered fails
     ///   the scenario at that keystroke.
-    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
     pub fn request(
         &mut self,
         method: Method,
@@ -410,8 +410,8 @@ impl Client
     /// - hypothesis: L3 — the corpus sessions and the scripted sessions end
     ///   here; a loop that answered `shutdown` twice or not at all, wrote after
     ///   `exit`, or ended abruptly fails the scenario.
-    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
-    /// - witness: `editor::editor::scenarios::fixing_a_mismatch_clears_its_diagnostic`
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::fixing_a_mismatch_clears_its_diagnostic`
     pub fn closes_over_streams(mut self)
     {
         let shutdown =
@@ -461,7 +461,7 @@ impl Client
     /// - hypothesis: L2 — the two-editor scenarios end here; a transport that
     ///   reordered, dropped or added a message, or framed one wrongly, differs
     ///   from the in-process record.
-    /// - witness: `editor::editor::scenarios::sweeps::two_editors_on_one_buffer_each_keep_their_answers`
+    /// - witness: `tests::editor::scenarios::sweeps::two_editors_on_one_buffer_each_keep_their_answers`
     pub fn replays_over_streams(&self)
     {
         let Connection::Joined(ref joined) = self.connection
@@ -527,7 +527,7 @@ impl Streams
     ///   that returned before the loop's writes ended, or read another frame's,
     ///   leaves a publication stale or a request answered other than once, and
     ///   the session fails at that keystroke.
-    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
     fn exchange(
         &self,
         message: &Value,

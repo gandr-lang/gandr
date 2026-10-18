@@ -594,7 +594,7 @@ impl BatchGraph
     /// # Adequacy
     /// - hypothesis: L2 finite stream comparisons expose missing candidate
     ///   edges.
-    /// - witness: `dynamic_graphs::differential::tests::the_differential_catches_a_seeded_wrong_verdict`
+    /// - witness: `tests::differential::tests::the_differential_catches_a_seeded_wrong_verdict`
     #[inline]
     #[spec(ensures: |ret| edges.iter().all(|&edge| bool::from(ret.holds(edge))))]
     pub fn with_edges(
@@ -618,7 +618,7 @@ impl BatchGraph
     ///
     /// # Adequacy
     /// - hypothesis: L2 candidate-graph comparisons distinguish edge omission.
-    /// - witness: `dynamic_graphs::differential::tests::the_differential_catches_a_seeded_wrong_verdict`
+    /// - witness: `tests::differential::tests::the_differential_catches_a_seeded_wrong_verdict`
     #[inline]
     #[spec(ensures: |_| bool::from(self.holds(edge)))]
     pub fn add(
@@ -647,7 +647,7 @@ impl BatchGraph
     ///
     /// # Adequacy
     /// - hypothesis: L2 comparisons distinguish inverted cycle verdicts.
-    /// - witness: `dynamic_graphs::differential::tests::the_differential_catches_a_seeded_wrong_verdict`
+    /// - witness: `tests::differential::tests::the_differential_catches_a_seeded_wrong_verdict`
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -871,7 +871,7 @@ impl Family
 /// # Adequacy
 /// - hypothesis: finite fixture streams distinguish invalid graph observations
 ///   and incomplete comparisons through L2 agreement and L3 exact boundaries.
-/// - witness: `dynamic_graphs::differential::tests::every_stream_family_is_drift_free`
+/// - witness: `tests::differential::tests::every_stream_family_is_drift_free`
 #[inline]
 #[spec(ensures: |ret| ret.len() <= usize::from(length) && ret.iter().all(|edge| edge.source != edge.target && u32::from(edge.source) < u32::from(nodes) && u32::from(edge.target) < u32::from(nodes)))]
 pub fn stream(

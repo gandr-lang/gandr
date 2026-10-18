@@ -71,7 +71,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a value path and a type path off an application of a
     ///   functor are each refused by name, and a path off a call of a function
     ///   is not.
-    /// - witness: `modules::modules::functors::an_application_is_bound_before_anything_projects_from_it`
+    /// - witness: `tests::modules::functors::an_application_is_bound_before_anything_projects_from_it`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -136,8 +136,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a body reads its parameter's type and value by path,
     ///   and a declaration outside the functor does not; another module's path
     ///   inside the functor reads as that module.
-    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `modules::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(parameter) => self.collected.structures.get(usize::from(parameter)).is_some_and(|structure| matches!(structure.stratum,
             Stratum::Parameter(functor) if self.collected.functors.get(usize::from(functor))
@@ -195,8 +195,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a body reads a parameter's value, and a name the
     ///   parameter does not state is refused by name.
-    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `modules::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
         | Ok(Read::Unread) => matches!(self.parameter_named(site, self.name_at(head)), Maybe::Absent(_)),
         | Ok(Read::Planned) => matches!(self.plans.get(usize::from(site.at.node)), Some(&super::Plan::Constant(_))),
@@ -272,8 +272,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a body's signature reads the parameter's abstract
     ///   type, and a type the parameter does not state is refused by name.
-    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `modules::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(ensures: |ret| match ret {
         | Ok(Read::Unread) => matches!(self.parameter_named(site, self.name_at(head)), Maybe::Absent(_)),
         | Ok(Read::Planned) => matches!(self.plans.get(usize::from(site.at.node)), Some(&(super::Plan::Sealed(_) | super::Plan::Transparent(_)))),
@@ -335,8 +335,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — an instance applied to a sealed argument reads the
     ///   argument's atom, and one applied to an instance reads that instance's
     ///   type.
-    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `modules::modules::functors::an_instance_can_be_an_argument`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::an_instance_can_be_an_argument`
     #[spec(
         captures: before_count = self.renamings.len(),
         ensures: self.renamings.len() >= before_count && self.renamings.len() <= self.collected.instances.len(),
@@ -373,7 +373,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::rename_instances_before`].
-    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     #[spec(ensures: |ret| ret.is_ok() || self.collected.instances.get(usize::from(index)).is_some())]
     fn instance_renaming(
         &self,
@@ -460,8 +460,8 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::rename_instances_before`].
-    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `modules::modules::functors::an_instance_can_be_an_argument`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::an_instance_can_be_an_argument`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn argument_type(
         &self,
@@ -531,7 +531,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a transparent functor's manifest result reads the
     ///   argument's type at each instance.
-    /// - witness: `modules::modules::functors::a_transparent_result_reads_the_argument_through`
+    /// - witness: `tests::modules::functors::a_transparent_result_reads_the_argument_through`
     #[spec(
         captures: before = self.instance_types.len(),
         ensures: self.instance_types.len() >= before,
@@ -602,8 +602,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — two applications of a counter functor yield two
     ///   abstract types at two sites, and their members each typed at its own.
-    /// - witness: `modules::modules::functors::the_classic_functor_pair_checks`
-    /// - witness: `modules::modules::functors::two_applications_mint_distinct_atoms`
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     #[spec(
         captures: before = self.instantiated.len(),
         ensures: self.instantiated.len() >= before,
@@ -721,7 +721,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_instances`].
-    /// - witness: `modules::modules::functors::an_argument_is_matched_against_the_parameter`
+    /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(DeclarationOutcome::Completed { .. })))]
     fn witness_outcome(
         &self,

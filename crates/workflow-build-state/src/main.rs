@@ -70,9 +70,9 @@ enum Command
 /// - hypothesis: L3 — a prune, a failed build's messages, a missing file and an
 ///   invocation without message files; a swapped stream or exit code changes
 ///   the observed process result.
-/// - witness: `cli::cli::a_prune_reports_what_it_removed`
-/// - witness: `cli::cli::a_refusal_removes_nothing_and_exits_two`
-/// - witness: `cli::cli::a_malformed_invocation_exits_two`
+/// - witness: `tests::cli::a_prune_reports_what_it_removed`
+/// - witness: `tests::cli::a_refusal_removes_nothing_and_exits_two`
+/// - witness: `tests::cli::a_malformed_invocation_exits_two`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(REFUSED))]
 fn main() -> ExitCode
 {
@@ -114,8 +114,8 @@ fn main() -> ExitCode
 /// # Adequacy
 /// - hypothesis: L3 — a prune of a profile with one superseded library reports
 ///   it; a failed build's messages remove nothing.
-/// - witness: `cli::cli::a_prune_reports_what_it_removed`
-/// - witness: `cli::cli::a_refusal_removes_nothing_and_exits_two`
+/// - witness: `tests::cli::a_prune_reports_what_it_removed`
+/// - witness: `tests::cli::a_refusal_removes_nothing_and_exits_two`
 fn run(cli: Cli) -> Result<(), BuildStateError>
 {
     let Command::Prune {

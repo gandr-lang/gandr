@@ -1027,7 +1027,7 @@ impl CoreArena
     ///   unreduced; and a spine fifty thousand applications deep is built,
     ///   rewritten and walked inside a small stack.
     /// - witness: `arena::tests::flat_arena_round_trips_all_static_argument_shapes`
-    /// - witness: `deep_static::deep_static::flat_arena_round_trips_deep_static_family_without_stack_recursion`
+    /// - witness: `tests::deep_static::flat_arena_round_trips_deep_static_family_without_stack_recursion`
     #[inline]
     #[spec(ensures: |ret| self.value(ret) == Some(&Value::StaticApplication(head, argument)))]
     pub fn value_static_application(

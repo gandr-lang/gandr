@@ -54,11 +54,11 @@
 //! rule first.
 //!
 //! Witnesses:
-//! `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`,
-//! `recursive_data::recursive_data::derived_eliminators_are_admitted_and_readmitted`,
-//! `recursive_data::recursive_data::definitions_by_eliminator_normalise`,
-//! `recursive_data::recursive_data::the_kernel_replays_a_conversion_through_a_definition_by_eliminator`
-//! and `recursive_data::recursive_data::the_export_is_deterministic`.
+//! `tests::recursive_data::recursive_blocks_are_admitted_in_both_checkers`,
+//! `tests::recursive_data::derived_eliminators_are_admitted_and_readmitted`,
+//! `tests::recursive_data::definitions_by_eliminator_normalise`,
+//! `tests::recursive_data::the_kernel_replays_a_conversion_through_a_definition_by_eliminator`
+//! and `tests::recursive_data::the_export_is_deterministic`.
 
 use alloc::vec::Vec;
 
@@ -231,8 +231,8 @@ fn variables(
 /// - hypothesis: L3 — `List A`'s element and tail and `Tree`'s function field
 ///   take the three shapes; a shape misread is a derived eliminator the checker
 ///   refuses, never one it accepts.
-/// - witness: `recursive_data::recursive_data::derived_eliminators_are_admitted_and_readmitted`
-/// - witness: `recursive_data::recursive_data::a_function_field_into_another_type_takes_no_hypothesis`
+/// - witness: `tests::recursive_data::derived_eliminators_are_admitted_and_readmitted`
+/// - witness: `tests::recursive_data::a_function_field_into_another_type_takes_no_hypothesis`
 #[spec(ensures: |ret| (ret == FieldShape::Direct)
     == matches!(arena.value_type(field), Some(&ValueType::Data { declaration, .. }) if declaration == position)
     && match ret {
@@ -295,7 +295,7 @@ fn shape(
 /// # Adequacy
 /// - hypothesis: L3 — `Tree`'s `Nat → F Tree` field has the hypothesis `Nat →
 ///   C`, and a W-type's function field after its index code reads that code.
-/// - witness: `recursive_data::recursive_data::derived_eliminators_are_admitted_and_readmitted`
+/// - witness: `tests::recursive_data::derived_eliminators_are_admitted_and_readmitted`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|id| arena.comp_type(*id).is_some()))]
 fn function_hypothesis(
     arena: &mut CoreArena,
@@ -392,7 +392,7 @@ fn arity(
 ///   and dependent motives that the checker accepts and the kernel readmits
 ///   with an empty audit, and a dependent motive over `Tree`'s function field
 ///   is refused by name.
-/// - witness: `recursive_data::recursive_data::derived_eliminators_are_admitted_and_readmitted`
+/// - witness: `tests::recursive_data::derived_eliminators_are_admitted_and_readmitted`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|derived| arena.value_type(derived.declared).is_some() && arena.value(derived.body).is_some()))]
 #[inline]
 pub fn derive(

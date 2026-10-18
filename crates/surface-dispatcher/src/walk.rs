@@ -539,7 +539,7 @@ impl Walk
     /// - witness: `walk::tests::each_root_stands_its_sources`
     /// - witness: `walk::tests::a_stopped_visit_hands_over_nothing_more`
     /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
-    /// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
+    /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
     #[inline]
     pub fn visit<Stop, Visitor>(
         mut self,
@@ -1041,7 +1041,7 @@ fn settled<'step>(
 ///   visit source by source; a diamond's base is lowered once; an import its
 ///   component's parse does not read is judged as each source's own parse reads
 ///   it; an importer is parsed whole once.
-/// - witness: `corpus::corpus::sweeps::every_width_composes_the_corpus_alike`
+/// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
 /// - witness: `walk::tests::an_import_parses_its_importer_once_617`

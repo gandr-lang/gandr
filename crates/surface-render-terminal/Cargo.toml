@@ -9,6 +9,13 @@ license.workspace = true
 keywords = ["diagnostics", "gandr", "language"]
 categories = ["development-tools"]
 publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 # The renderer reads the diagnostics model alone: no producer, no dispatcher.
 # `annotate-snippets` lays the snippet out; the model names the spans it

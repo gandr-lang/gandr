@@ -10,10 +10,17 @@ license.workspace = true
 keywords = ["budget", "ci", "gandr", "github-actions"]
 categories = ["development-tools"]
 publish.workspace = true
+autotests = false
 
 [[bin]]
 name = "lane-budget"
 path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the specification attribute; the shape
 # crate the `Maybe` a lane without a sample has for its median. serde reads

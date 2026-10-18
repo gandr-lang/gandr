@@ -101,7 +101,7 @@ pub const TRANSCRIPT_WIDTH: u32 = 100;
 /// - hypothesis: L2 — one-line signatures in three selected strict corpus
 ///   sources retain their written type spelling at the transcript's width; the
 ///   former-by-former spellings are witnessed where [`ContentSource`] is.
-/// - witness: `loop::tests::corpus_types_spell_as_their_source_writes_them`
+/// - witness: `tests::repl_loop::corpus_types_spell_as_their_source_writes_them`
 #[spec(ensures: |ret| match nodes.get(usize::from(root)) {
     None | Some(&ContentNode::Unresolved(_)) => ret.as_ref().is_ok_and(|shown|
         shown.as_ref() == "?" && shown.fidelity() == gandr_surface_pretty::Fidelity::Approximate),

@@ -753,7 +753,7 @@ pub enum ReplayDecline
 /// - hypothesis: L3 — a pinned table of replay inputs separates every refusal
 ///   variant; the unit witnesses distinguish both certified answers from
 ///   disagreement and budget exhaustion.
-/// - witness: `replay_laws::laws::every_replay_refusal_carries_its_pinned_class`
+/// - witness: `tests::replay_laws::every_replay_refusal_carries_its_pinned_class`
 /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
 /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -818,7 +818,7 @@ pub enum KernelVerdict
 /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
 /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
 /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
-/// - witness: `replay_laws::laws::replay_is_pure_across_repeated_and_cloned_arenas`
+/// - witness: `tests::replay_laws::replay_is_pure_across_repeated_and_cloned_arenas`
 /// - witness: `replay::tests::engine_decline_and_zero_budget_do_not_read_the_trace`
 /// - witness: `replay::tests::reduced_heads_retain_application_and_bind_frames`
 // Unit and cross-run purity are witnessed relations, not predicates over one
@@ -2750,7 +2750,7 @@ where
     /// - hypothesis: L3 — `spin(S(x)) then spin(a)` against `loop ∷ (spin(x)
     ///   then spin(a))` at the mode switch: unfolded to the bare fixpoint, the
     ///   recursive call reads `fix f x` and the sides stay apart.
-    /// - witness: `native_formers::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    /// - witness: `tests::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
     #[spec(ensures: |ret| ret.map_or(true, |reduct| matches!((term, reduct), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))))]
     fn unfold_refolded(
         &mut self,
@@ -5075,8 +5075,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
     /// - witness: `replay::tests::reduced_heads_retain_application_and_bind_frames`
     /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
-    /// - witness: `recursive_data::recursive_data::a_fixpoint_computes_at_a_constructor_and_replays`
-    /// - witness: `recursive_data::recursive_data::a_partial_fixpoint_declines_at_its_gate`
+    /// - witness: `tests::recursive_data::a_fixpoint_computes_at_a_constructor_and_replays`
+    /// - witness: `tests::recursive_data::a_partial_fixpoint_declines_at_its_gate`
     /// - witness: `path_universe::tests::transport_computes`
     /// - witness: `path_universe::tests::refl_collapses`
     /// - witness: `replay::tests::native_list_fold_reduces_without_capturing_outer_variables`
@@ -5996,7 +5996,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   `loop ∷ (spin(x) then spin(a))`, the recursive call held as written;
     ///   δ-stepped, it reads as the bare fixpoint at `x` and the sides stay
     ///   apart.
-    /// - witness: `native_formers::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    /// - witness: `tests::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
     #[spec(ensures: |ret| ret.is_none_or(|constant| self.unfoldings.unfolding(constant) != Unfoldable::Opaque))]
     fn shut_recursion(
         &self,
@@ -6072,7 +6072,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - hypothesis: L3 — `spin(Z) then spin(a)` replays as `spin(a)`; left
     ///   held, the call sticks the bind that runs it and the replay refuses
     ///   what the checker accepted.
-    /// - witness: `native_formers::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+    /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
     #[spec(ensures: |ret| match ret {
         Ok(read) => self.arena.value(read.value).is_some(),
         Err(_) => true,
@@ -6170,7 +6170,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - hypothesis: L3 — `spin(S(x)) then spin(a)` replays as `loop ∷ (spin(x)
     ///   then spin(a))`, as the checker reads it; run first, the held `spin(a)`
     ///   sticks the bind and the replay refuses what the checker accepted.
-    /// - witness: `native_formers::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+    /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
     #[spec(ensures: |ret| match ret {
         Ok(crate::path_universe::Reduction::Reduced(reduct)) => self.arena.computation(reduct).is_some(),
         Ok(crate::path_universe::Reduction::Stuck) | Err(_) => true,

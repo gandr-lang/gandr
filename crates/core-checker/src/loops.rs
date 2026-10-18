@@ -131,7 +131,7 @@ pub struct Loop
 /// # Adequacy
 /// - hypothesis: L3 — the circle's case owes its one loop and a case over the
 ///   integers owes none.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.iter().all(|owed| context.data_signatures().get(&owed.words).is_some_and(|signature| signature.presentation().cells().is_some())))]
 pub fn loops(
     context: &mut CheckingContext<'_>,
@@ -206,7 +206,7 @@ pub fn loops(
 ///   Base, x)` is refused at its loop while the same arm at `Path(Circle, x,
 ///   x)` and `Base => loop` there are admitted, and a non-dependent case owes
 ///   nothing.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. } | CheckRefusal::LoopUndecided { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn respected(
     context: &mut CheckingContext<'_>,
@@ -346,7 +346,7 @@ pub fn respected(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`].
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 fn owe(
     context: &CheckingContext<'_>,
     (at, cell): (ComputationId, CellIndex),
@@ -411,7 +411,7 @@ struct Held
 /// # Adequacy
 /// - hypothesis: L3 — `rotInv1`'s answer at `Base` is a case over `b`, held at
 ///   `Base`; without it the obligation over `a` reads `b` free and sticks.
-/// - witness: `native_formers::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
+/// - witness: `tests::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|held| !held.points.is_empty())))]
 fn scrutinees(
     context: &mut CheckingContext<'_>,
@@ -507,7 +507,7 @@ fn scrutinees(
 /// - hypothesis: L3 — `rotInv1`'s fibre, a path over the circle, is a set; a
 ///   record holding a point of the circle is not, and its nested case is
 ///   refused naming the square.
-/// - witness: `native_formers::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
+/// - witness: `tests::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|sort| matches!(context.arena().value_type(family), Some(&ValueType::Path { carrier, .. }) if carrier == sort))))]
 fn presented_set(
     context: &mut CheckingContext<'_>,
@@ -560,7 +560,7 @@ fn presented_set(
 /// - hypothesis: L3 — `invLooper`'s arm `loop => back(loop)` checks at
 ///   `Path(Circle, Base, Base)` read through its constant family, and a
 ///   dependent arm at the wrong endpoints is refused.
-/// - witness: `native_formers::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn arm_type(
     context: &mut CheckingContext<'_>,
@@ -629,7 +629,7 @@ pub fn arm_type(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`]: the circle's point is `Base`.
-/// - witness: `native_formers::native_formers::a_case_over_the_circle_owes_its_loop_377`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&point| matches!(context.arena().value(point), Some(Value::Constructor { .. }))))]
 pub fn point(
     context: &mut CheckingContext<'_>,
@@ -685,7 +685,7 @@ pub fn point(
 /// - hypothesis: L3 — the circle's words loop at `Base`, so a path type over
 ///   the circle at `kept(Base)` reads as its words once both endpoints convert
 ///   with `Base`, in both checkers.
-/// - witness: `native_formers::native_formers::a_path_whose_endpoints_compute_the_point_is_its_words_485`
+/// - witness: `tests::native_formers::a_path_whose_endpoints_compute_the_point_is_its_words_485`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |point| point.is_none_or(|point| matches!(context.arena().value(point), Some(Value::Constructor { .. })))))]
 pub fn point_of(
     context: &mut CheckingContext<'_>,

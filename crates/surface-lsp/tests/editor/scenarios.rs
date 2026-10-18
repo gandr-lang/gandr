@@ -307,7 +307,7 @@ pub(super) struct Source
 /// # Adequacy
 /// - hypothesis: L3 — the goldens find each headline source here; an empty or
 ///   truncated walk loses one.
-/// - witness: `editor::editor::shapes::the_headline_sources_hover_as_their_goldens`
+/// - witness: `tests::editor::shapes::the_headline_sources_hover_as_their_goldens`
 #[spec(ensures: |ret| ret.len() > 100)]
 pub(super) fn corpus() -> Vec<Source>
 {
@@ -327,7 +327,7 @@ pub(super) fn corpus() -> Vec<Source>
 /// # Adequacy
 /// - hypothesis: L3 — every corpus sweep opens its sources through this; a lost
 ///   source or a URI the walk does not classify fails a sweep.
-/// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+/// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
 #[spec(ensures: |ret| ret.len() == sources.len() && ret.iter().all(|source|
     source.uri.starts_with("file://")
         && Path::new(&source.uri).extension().is_some_and(|extension| extension == "gandr")))]
@@ -431,7 +431,7 @@ pub(super) struct Owner
 /// - hypothesis: L3 — the sweep's per-kind table separates a pattern's name,
 ///   the operator of a cons pattern and the keywords of a match, each measured
 ///   against the answers the issue recorded.
-/// - witness: `editor::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
+/// - witness: `tests::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
 #[spec(ensures: |ret| ret.is_sorted_by_key(|owner| owner.leaf.0)
     && ret.iter().all(|owner| owner.node.0 <= owner.leaf.0 && owner.leaf.1 <= owner.node.1
         && owner.form.0 <= owner.node.0 && owner.node.1 <= owner.form.1))]
@@ -783,7 +783,7 @@ fn apply(
 /// - hypothesis: L3 — the corpus scenarios visit through here; one shared index
 ///   hands each source to exactly one worker, and a panic in a worker fails the
 ///   scope, so a failing source fails the scenario, and the run's log names it.
-/// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+/// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
 fn each_in_parallel(
     sources: &[Source],
     visit: impl Fn(&Source) + Sync,
@@ -835,9 +835,9 @@ pub(super) struct Hovered
 /// # Adequacy
 /// - hypothesis: L3 — the sweep counts every non-comment position of the corpus
 ///   through this, and the goldens pin every answer of five sources.
-/// - witness: `editor::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
-/// - witness: `editor::editor::shapes::the_headline_sources_hover_as_their_goldens`
-/// - witness: `editor::editor::scenarios::a_line_comment_holds_the_newline_closing_it_456`
+/// - witness: `tests::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
+/// - witness: `tests::editor::shapes::the_headline_sources_hover_as_their_goldens`
+/// - witness: `tests::editor::scenarios::a_line_comment_holds_the_newline_closing_it_456`
 #[spec(ensures: |ret| ret.len() == source.text.chars().count().saturating_add(1))]
 pub(super) fn hovered(
     grammar: &Pbg,
@@ -1380,8 +1380,8 @@ mod sweeps
     /// - hypothesis: L3 — every corpus sweep draws its sources through this; a
     ///   lost or misordered source changes what a sweep visits, which the
     ///   sample's own witnesses in `gandr-workflow-sweep` pin.
-    /// - witness: `editor::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
-    /// - witness: `editor::editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
     #[spec(ensures: |ret| ret.is_sorted_by(|longer, shorter| longer.text.len() >= shorter.text.len()))]
     fn visited(
         sample: Sample,

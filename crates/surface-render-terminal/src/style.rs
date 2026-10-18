@@ -45,7 +45,7 @@ impl From<bool> for TerminalCapability
     /// - hypothesis: L3 — both boolean inputs reach an exact style observation
     ///   through the capability. A reversed or constant mapping changes one
     ///   result; operating-system detection is outside this conversion.
-    /// - witness: `render::render::render_style_follows_terminal_capability`
+    /// - witness: `tests::render::render_style_follows_terminal_capability`
     #[spec(ensures: |ret| matches!(ret, Self::Terminal) == is_terminal)]
     #[inline]
     fn from(is_terminal: bool) -> Self
@@ -89,7 +89,7 @@ impl RenderStyle
     /// - hypothesis: L3 — the two capabilities exhaust the typed domain,
     ///   observed through their exact styles. Reversed or constant selection
     ///   changes a result; backend rendering is a separate decision surface.
-    /// - witness: `render::render::render_style_follows_terminal_capability`
+    /// - witness: `tests::render::render_style_follows_terminal_capability`
     #[spec(ensures: |ret| matches!((capability, ret),
         (TerminalCapability::NonTerminal, Self::Plain)
             | (TerminalCapability::Terminal, Self::Styled)

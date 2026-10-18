@@ -62,9 +62,9 @@ struct Cli
 /// - hypothesis: L3 — a report filed over budget, one within, a failing `gh`
 ///   and a malformed budget; a swapped stream or exit code changes the observed
 ///   process result.
-/// - witness: `cli::cli::an_over_budget_lane_opens_the_issue`
-/// - witness: `cli::cli::a_failing_gh_is_reported_with_its_message`
-/// - witness: `cli::cli::a_malformed_budget_exits_two`
+/// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
+/// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
+/// - witness: `tests::cli::a_malformed_budget_exits_two`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(REFUSED))]
 fn main() -> ExitCode
 {
@@ -104,8 +104,8 @@ fn main() -> ExitCode
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`main`].
-/// - witness: `cli::cli::an_over_budget_lane_opens_the_issue`
-/// - witness: `cli::cli::an_issue_follows_the_budget_both_ways`
+/// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
+/// - witness: `tests::cli::an_issue_follows_the_budget_both_ways`
 fn run(cli: Cli) -> Result<(), BudgetError>
 {
     let runs = github::recent_runs(cli.runs)?;

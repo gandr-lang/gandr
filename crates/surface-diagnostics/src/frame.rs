@@ -293,9 +293,9 @@ pub fn sentence(role: FrameRole) -> Sentence
 ///   its type while checking its body, with the force at the primary span left
 ///   out; a mismatch under a `run` binder names the binder; a refusal inside a
 ///   checker-minted node keeps an unlocated context.
-/// - witness: `diagnostics::diagnostics::a_refusal_names_the_rules_it_stood_inside`
-/// - witness: `diagnostics::diagnostics::a_mismatch_under_a_binder_names_it`
-/// - witness: `diagnostics::diagnostics::an_unlocated_rule_becomes_a_note`
+/// - witness: `tests::diagnostics::a_refusal_names_the_rules_it_stood_inside`
+/// - witness: `tests::diagnostics::a_mismatch_under_a_binder_names_it`
+/// - witness: `tests::diagnostics::an_unlocated_rule_becomes_a_note`
 #[spec(ensures: |ret| ret.0.iter().all(|context| match context.locus {
     Maybe::Present(locus) => primary != Maybe::Present(locus.span),
     Maybe::Absent(_) => true,
@@ -401,8 +401,8 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a `run` binder and a function's parameters are named, and
 ///   a type over them spells them by those names.
-/// - witness: `diagnostics::diagnostics::a_mismatch_under_a_binder_names_it`
-/// - witness: `diagnostics::diagnostics::a_refusal_spells_its_binders_by_name_418`
+/// - witness: `tests::diagnostics::a_mismatch_under_a_binder_names_it`
+/// - witness: `tests::diagnostics::a_refusal_spells_its_binders_by_name_418`
 #[spec(ensures: |ret| ret.len() == obligation.binders().len())]
 pub fn opened(
     obligation: &Obligation,

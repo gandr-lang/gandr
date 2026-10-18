@@ -9,6 +9,13 @@ license.workspace = true
 keywords = ["diagnostics", "gandr", "language"]
 categories = ["development-tools"]
 publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 # The model reads the producers' own vocabulary: the settle comparison's
 # declaration report and refusal names, the lowering's refusals and origin

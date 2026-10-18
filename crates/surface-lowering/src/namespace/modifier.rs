@@ -80,7 +80,7 @@ use crate::namespace::trie::Trie;
 /// # Adequacy
 /// - hypothesis: L3 — nested composition preserves its meaning after operand
 ///   relocation; the bounds are checked when the interpreter enters.
-/// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
+/// - witness: `tests::namespace::a_nested_modifier_survives_a_round_trip`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct ConstructorId(usize);
@@ -101,7 +101,7 @@ impl ConstructorId
     /// - hypothesis: L3 — composed modifiers preserve their inner behavior
     ///   after relocation; the fixture covers representable arena positions,
     ///   not exhaustion.
-    /// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
+    /// - witness: `tests::namespace::a_nested_modifier_survives_a_round_trip`
     #[spec(
         ensures: |ret| ret.0 == self.0.saturating_add(offset.0),
     )]
@@ -132,9 +132,9 @@ struct Offset(usize);
 /// # Adequacy
 /// - hypothesis: L3 — every constructor has a namespace effect or event
 ///   witness; composition fixes the finite order of its operands.
-/// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
-/// - witness: `namespace::namespace::in_runs_the_inner_modifier_on_one_subtree`
-/// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
+/// - witness: `tests::namespace::each_union_branch_runs_on_the_original_namespace`
+/// - witness: `tests::namespace::in_runs_the_inner_modifier_on_one_subtree`
+/// - witness: `tests::namespace::a_hook_can_replace_the_namespace`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Constructor<Label>
 {
@@ -180,8 +180,8 @@ impl<Label> Constructor<Label>
     /// - hypothesis: L3 — composition preserves the behavior of nested sequence
     ///   and union operands; scalar shift predicates and endpoint checks
     ///   constrain relocation without copying operand vectors.
-    /// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
-    /// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
+    /// - witness: `tests::namespace::a_nested_modifier_survives_a_round_trip`
+    /// - witness: `tests::namespace::each_union_branch_runs_on_the_original_namespace`
     #[spec(
         captures: before = (core::mem::discriminant(&self), match self {
             | Self::In { inner, .. } => Some((1_usize, Some(inner), Some(inner))),
@@ -256,8 +256,8 @@ impl<Label> Constructor<Label>
 /// # Adequacy
 /// - hypothesis: L3 — nested compositions agree with their direct reading; L2 —
 ///   a fixed deep modifier is constructed and run iteratively.
-/// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
-/// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+/// - witness: `tests::namespace::a_nested_modifier_survives_a_round_trip`
+/// - witness: `tests::namespace::every_namespace_walk_is_iterative`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Modifier<Label>
@@ -283,9 +283,9 @@ impl<Label> Modifier<Label>
     /// # Adequacy
     /// - hypothesis: L3 — identity, emptiness checks, relocation and hooks
     ///   retain their distinct effects on the namespace and handler.
-    /// - witness: `namespace::namespace::the_identity_checks_nothing_on_an_empty_namespace`
-    /// - witness: `namespace::namespace::the_core_relocation_performs_no_emptiness_check`
-    /// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
+    /// - witness: `tests::namespace::the_identity_checks_nothing_on_an_empty_namespace`
+    /// - witness: `tests::namespace::the_core_relocation_performs_no_emptiness_check`
+    /// - witness: `tests::namespace::a_hook_can_replace_the_namespace`
     #[spec(
         requires: match constructor {
             | Constructor::In { .. } => false,
@@ -326,10 +326,10 @@ impl<Label> Modifier<Label>
     /// # Adequacy
     /// - hypothesis: L3 — empty sequences and unions have different identities,
     ///   while nested composition preserves operand order and source isolation.
-    /// - witness: `namespace::namespace::the_empty_sequence_is_the_identity`
-    /// - witness: `namespace::namespace::the_empty_union_is_the_empty_namespace`
-    /// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
-    /// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
+    /// - witness: `tests::namespace::the_empty_sequence_is_the_identity`
+    /// - witness: `tests::namespace::the_empty_union_is_the_empty_namespace`
+    /// - witness: `tests::namespace::each_union_branch_runs_on_the_original_namespace`
+    /// - witness: `tests::namespace::a_nested_modifier_survives_a_round_trip`
     #[spec(
         requires: operands
             .iter()
@@ -417,8 +417,8 @@ impl<Label> Modifier<Label>
     /// - hypothesis: L3 — dropping an empty namespace performs not-found,
     ///   whereas identity does not; excluding an absent subtree reaches the
     ///   same check.
-    /// - witness: `namespace::namespace::except_on_an_absent_subtree_performs_not_found`
-    /// - witness: `namespace::namespace::the_identity_checks_nothing_on_an_empty_namespace`
+    /// - witness: `tests::namespace::except_on_an_absent_subtree_performs_not_found`
+    /// - witness: `tests::namespace::the_identity_checks_nothing_on_an_empty_namespace`
     #[spec(
         ensures: |ret| {
             ret.constructors.len() == 3
@@ -449,8 +449,8 @@ impl<Label> Modifier<Label>
     /// # Adequacy
     /// - hypothesis: L3 — selecting an existing subtree drops its siblings, and
     ///   selecting an absent subtree reports the written path.
-    /// - witness: `namespace::namespace::only_keeps_the_named_subtree_and_drops_the_rest`
-    /// - witness: `namespace::namespace::a_selection_that_matched_nothing_performs_not_found`
+    /// - witness: `tests::namespace::only_keeps_the_named_subtree_and_drops_the_rest`
+    /// - witness: `tests::namespace::a_selection_that_matched_nothing_performs_not_found`
     #[spec(
         ensures: |ret| {
             ret.constructors.len() == 5
@@ -525,9 +525,9 @@ impl<Label> Modifier<Label>
     /// # Adequacy
     /// - hypothesis: L3 — an absent source is reported before a move; moving to
     ///   the root unqualifies, and an occupied target is replaced.
-    /// - witness: `namespace::namespace::the_checked_renaming_builder_performs_not_found_on_an_absent_source`
-    /// - witness: `namespace::namespace::renaming_to_the_root_unqualifies`
-    /// - witness: `namespace::namespace::renaming_drops_whatever_was_at_the_target`
+    /// - witness: `tests::namespace::the_checked_renaming_builder_performs_not_found_on_an_absent_source`
+    /// - witness: `tests::namespace::renaming_to_the_root_unqualifies`
+    /// - witness: `tests::namespace::renaming_drops_whatever_was_at_the_target`
     #[spec(
         ensures: |ret| {
             ret.constructors.len() == 4
@@ -592,11 +592,11 @@ impl<Label> Modifier<Label>
     /// - hypothesis: L3 — one subtree changes without its siblings; nested
     ///   events retain their full prefix. L2 — deep nesting is constructed
     ///   iteratively.
-    /// - witness: `namespace::namespace::in_runs_the_inner_modifier_on_one_subtree`
-    /// - witness: `namespace::namespace::a_nested_event_reports_the_accumulated_prefix`
-    /// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
-    /// - witness: `namespace::namespace::a_nested_hook_reports_the_accumulated_prefix`
-    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    /// - witness: `tests::namespace::in_runs_the_inner_modifier_on_one_subtree`
+    /// - witness: `tests::namespace::a_nested_event_reports_the_accumulated_prefix`
+    /// - witness: `tests::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+    /// - witness: `tests::namespace::a_nested_hook_reports_the_accumulated_prefix`
+    /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
     #[spec(
         requires: !inner.constructors.is_empty(),
         captures: before = inner.constructors.len(),
@@ -660,8 +660,8 @@ impl<Label> Modifier<Label>
     /// # Adequacy
     /// - hypothesis: L3 — the alias qualifies a two-level namespace and retains
     ///   the checked renaming refusal on an empty import.
-    /// - witness: `namespace::namespace::as_name_qualifies_every_imported_path`
-    /// - witness: `namespace::namespace::as_name_on_an_empty_import_performs_not_found`
+    /// - witness: `tests::namespace::as_name_qualifies_every_imported_path`
+    /// - witness: `tests::namespace::as_name_on_an_empty_import_performs_not_found`
     #[inline]
     #[must_use]
     pub fn alias_as(alias: Segment) -> Self
@@ -705,27 +705,27 @@ impl<Label> Modifier<Label>
     ///   empty namespace, which performs nothing. L2 — a composed modifier
     ///   agrees with its inner modifier run by hand, and nesting one hundred
     ///   thousand deep runs inside a small stack.
-    /// - witness: `namespace::namespace::only_keeps_the_named_subtree_and_drops_the_rest`
-    /// - witness: `namespace::namespace::except_drops_the_named_subtree`
-    /// - witness: `namespace::namespace::except_on_an_absent_subtree_performs_not_found`
-    /// - witness: `namespace::namespace::the_identity_checks_nothing_on_an_empty_namespace`
-    /// - witness: `namespace::namespace::in_runs_the_inner_modifier_on_one_subtree`
-    /// - witness: `namespace::namespace::renaming_to_the_root_unqualifies`
-    /// - witness: `namespace::namespace::renaming_drops_whatever_was_at_the_target`
-    /// - witness: `namespace::namespace::the_checked_renaming_builder_performs_not_found_on_an_absent_source`
-    /// - witness: `namespace::namespace::the_core_relocation_performs_no_emptiness_check`
-    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_missing_renaming_source`
-    /// - witness: `namespace::namespace::a_deep_patch_merges_instead_of_capturing`
-    /// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
-    /// - witness: `namespace::namespace::the_empty_sequence_is_the_identity`
-    /// - witness: `namespace::namespace::the_empty_union_is_the_empty_namespace`
-    /// - witness: `namespace::namespace::a_selection_that_matched_nothing_performs_not_found`
-    /// - witness: `namespace::namespace::a_nested_event_reports_the_accumulated_prefix`
-    /// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
-    /// - witness: `namespace::namespace::a_nested_hook_reports_the_accumulated_prefix`
-    /// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
-    /// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
-    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    /// - witness: `tests::namespace::only_keeps_the_named_subtree_and_drops_the_rest`
+    /// - witness: `tests::namespace::except_drops_the_named_subtree`
+    /// - witness: `tests::namespace::except_on_an_absent_subtree_performs_not_found`
+    /// - witness: `tests::namespace::the_identity_checks_nothing_on_an_empty_namespace`
+    /// - witness: `tests::namespace::in_runs_the_inner_modifier_on_one_subtree`
+    /// - witness: `tests::namespace::renaming_to_the_root_unqualifies`
+    /// - witness: `tests::namespace::renaming_drops_whatever_was_at_the_target`
+    /// - witness: `tests::namespace::the_checked_renaming_builder_performs_not_found_on_an_absent_source`
+    /// - witness: `tests::namespace::the_core_relocation_performs_no_emptiness_check`
+    /// - witness: `tests::namespace::a_rejecting_handler_refuses_a_missing_renaming_source`
+    /// - witness: `tests::namespace::a_deep_patch_merges_instead_of_capturing`
+    /// - witness: `tests::namespace::each_union_branch_runs_on_the_original_namespace`
+    /// - witness: `tests::namespace::the_empty_sequence_is_the_identity`
+    /// - witness: `tests::namespace::the_empty_union_is_the_empty_namespace`
+    /// - witness: `tests::namespace::a_selection_that_matched_nothing_performs_not_found`
+    /// - witness: `tests::namespace::a_nested_event_reports_the_accumulated_prefix`
+    /// - witness: `tests::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+    /// - witness: `tests::namespace::a_nested_hook_reports_the_accumulated_prefix`
+    /// - witness: `tests::namespace::a_hook_can_replace_the_namespace`
+    /// - witness: `tests::namespace::a_nested_modifier_survives_a_round_trip`
+    /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -833,14 +833,14 @@ impl<Label> Modifier<Label>
     ///   isolation and hook replacement; rejecting policies cover the two
     ///   immediate event kinds. L2 — nested interpretation uses the explicit
     ///   stack.
-    /// - witness: `namespace::namespace::the_identity_checks_nothing_on_an_empty_namespace`
-    /// - witness: `namespace::namespace::in_runs_the_inner_modifier_on_one_subtree`
-    /// - witness: `namespace::namespace::renaming_drops_whatever_was_at_the_target`
-    /// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
-    /// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
-    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_missing_selection`
-    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_hook`
-    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    /// - witness: `tests::namespace::the_identity_checks_nothing_on_an_empty_namespace`
+    /// - witness: `tests::namespace::in_runs_the_inner_modifier_on_one_subtree`
+    /// - witness: `tests::namespace::renaming_drops_whatever_was_at_the_target`
+    /// - witness: `tests::namespace::each_union_branch_runs_on_the_original_namespace`
+    /// - witness: `tests::namespace::a_hook_can_replace_the_namespace`
+    /// - witness: `tests::namespace::a_rejecting_handler_refuses_a_missing_selection`
+    /// - witness: `tests::namespace::a_rejecting_handler_refuses_a_hook`
+    /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
     #[spec(
         requires: constructor.0 < self.constructors.len(),
         captures: before = (stack.len(), usize::from(current.binding_count())),
@@ -984,11 +984,11 @@ impl<Label> Modifier<Label>
 /// # Adequacy
 /// - hypothesis: L3 — nested events retain their prefixes and each union branch
 ///   reads the original input; L2 — a fixed deep run uses this frontier.
-/// - witness: `namespace::namespace::a_nested_event_reports_the_accumulated_prefix`
-/// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
-/// - witness: `namespace::namespace::a_nested_hook_reports_the_accumulated_prefix`
-/// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
-/// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+/// - witness: `tests::namespace::a_nested_event_reports_the_accumulated_prefix`
+/// - witness: `tests::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+/// - witness: `tests::namespace::a_nested_hook_reports_the_accumulated_prefix`
+/// - witness: `tests::namespace::each_union_branch_runs_on_the_original_namespace`
+/// - witness: `tests::namespace::every_namespace_walk_is_iterative`
 enum Instruction<'modifier, Data, Tag>
 {
     /// Run `constructor` on the current namespace, reporting at `prefix`.

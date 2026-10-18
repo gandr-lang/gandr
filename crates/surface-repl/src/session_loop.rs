@@ -226,8 +226,8 @@ impl SessionLoop
     /// # Adequacy
     /// - hypothesis: L3 — a fresh loop has no pending submission, so finishing
     ///   it yields no transcript; its first open form changes the fresh prompt.
-    /// - witness: `loop::tests::finishing_an_empty_loop_yields_nothing`
-    /// - witness: `loop::tests::an_open_form_continues`
+    /// - witness: `tests::repl_loop::finishing_an_empty_loop_yields_nothing`
+    /// - witness: `tests::repl_loop::an_open_form_continues`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|repl|
         repl.accepted.is_empty() && repl.pending.is_empty() && repl.standings == Standings::default()
             && repl.style == style && matches!(repl.session.last(), Maybe::Absent(_))))]
@@ -257,7 +257,7 @@ impl SessionLoop
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an open form changes the prompt until it is closed.
-    /// - witness: `loop::tests::an_open_form_continues`
+    /// - witness: `tests::repl_loop::an_open_form_continues`
     #[spec(ensures: |ret| (ret == Prompt::Fresh) == self.pending.is_empty())]
     #[inline]
     #[must_use]
@@ -284,8 +284,8 @@ impl SessionLoop
     /// - hypothesis: L3 — interrupting an open form prevents its echo while the
     ///   next complete declaration is submitted normally, retaining
     ///   declarations accepted before the interruption.
-    /// - witness: `loop::tests::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
-    /// - witness: `loop::tests::multiline_and_interrupted_buffers_preserve_accepted_declarations`
+    /// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+    /// - witness: `tests::repl_loop::multiline_and_interrupted_buffers_preserve_accepted_declarations`
     #[spec(captures: [accepted = self.accepted.len()],
         ensures: self.pending.is_empty() && self.accepted.len() == accepted)]
     #[inline]
@@ -319,15 +319,15 @@ impl SessionLoop
     ///   meta-command, a refused chunk, a definition used on the next line, and
     ///   a goal completed later are asserted at their exact events; pasted line
     ///   breaks survive and pending text does not dispatch meta-commands.
-    /// - witness: `loop::tests::an_open_form_continues`
-    /// - witness: `loop::tests::a_complete_atom_submits`
-    /// - witness: `loop::tests::quit_stops_the_loop`
-    /// - witness: `loop::tests::a_definition_is_visible_on_the_next_line`
-    /// - witness: `loop::tests::a_refused_chunk_is_not_kept`
-    /// - witness: `loop::tests::multiline_and_interrupted_buffers_preserve_accepted_declarations`
-    /// - witness: `loop::tests::the_meta_commands_answer`
-    /// - witness: `loop::tests::the_type_command_answers_without_keeping_the_probe`
-    /// - witness: `loop::tests::a_loaded_file_is_one_chunk`
+    /// - witness: `tests::repl_loop::an_open_form_continues`
+    /// - witness: `tests::repl_loop::a_complete_atom_submits`
+    /// - witness: `tests::repl_loop::quit_stops_the_loop`
+    /// - witness: `tests::repl_loop::a_definition_is_visible_on_the_next_line`
+    /// - witness: `tests::repl_loop::a_refused_chunk_is_not_kept`
+    /// - witness: `tests::repl_loop::multiline_and_interrupted_buffers_preserve_accepted_declarations`
+    /// - witness: `tests::repl_loop::the_meta_commands_answer`
+    /// - witness: `tests::repl_loop::the_type_command_answers_without_keeping_the_probe`
+    /// - witness: `tests::repl_loop::a_loaded_file_is_one_chunk`
     #[spec(captures: [accepted = self.accepted.len()],
         ensures: |ret| match ret {
             Ok(LoopEvent::Continue) => self.accepted.len() == accepted
@@ -384,9 +384,9 @@ impl SessionLoop
     /// # Adequacy
     /// - hypothesis: L3 — an open buffer is submitted at the end, an empty loop
     ///   answers the absence, and a second finish answers it too.
-    /// - witness: `loop::tests::an_incomplete_buffer_is_submitted_at_end_of_input`
-    /// - witness: `loop::tests::finishing_an_empty_loop_yields_nothing`
-    /// - witness: `loop::tests::finishing_twice_reports_once`
+    /// - witness: `tests::repl_loop::an_incomplete_buffer_is_submitted_at_end_of_input`
+    /// - witness: `tests::repl_loop::finishing_an_empty_loop_yields_nothing`
+    /// - witness: `tests::repl_loop::finishing_twice_reports_once`
     #[spec(captures: [empty = self.pending.trim().is_empty(), accepted = self.accepted.len()],
         ensures: |ret| self.pending.is_empty() && if empty {
             self.accepted.len() == accepted && matches!(ret, Ok(Maybe::Absent(finished::Absent::Empty)))
@@ -425,8 +425,8 @@ impl SessionLoop
     /// # Adequacy
     /// - hypothesis: L3 — through [`Self::offer`]'s meta-command witnesses,
     ///   each answer asserted exactly.
-    /// - witness: `loop::tests::the_meta_commands_answer`
-    /// - witness: `loop::tests::a_loaded_file_is_one_chunk`
+    /// - witness: `tests::repl_loop::the_meta_commands_answer`
+    /// - witness: `tests::repl_loop::a_loaded_file_is_one_chunk`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -532,8 +532,8 @@ impl SessionLoop
     /// # Adequacy
     /// - hypothesis: L3 — a probe after a declaration named `it` still answers
     ///   the expression's type.
-    /// - witness: `loop::tests::the_type_command_answers_without_keeping_the_probe`
-    /// - witness: `loop::tests::a_refused_type_probe_is_reported_under_the_first_free_probe_name`
+    /// - witness: `tests::repl_loop::the_type_command_answers_without_keeping_the_probe`
+    /// - witness: `tests::repl_loop::a_refused_type_probe_is_reported_under_the_first_free_probe_name`
     #[spec(ensures: |ret|
         self.standings.names(SourceFragment::from(ret.as_str())) == Naming::Free
             && if self.standings.names(SourceFragment::from("it")) == Naming::Free { ret == "it" }
@@ -566,7 +566,7 @@ impl SessionLoop
     /// # Adequacy
     /// - hypothesis: L3 — through [`Self::offer`]'s witnesses, the echo and its
     ///   spans asserted.
-    /// - witness: `loop::tests::a_submission_carries_highlight_spans`
+    /// - witness: `tests::repl_loop::a_submission_carries_highlight_spans`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|block|
         block.source == <&str>::from(chunk) && block.source_hl.iter().all(|span|
             block.source.is_char_boundary(usize::from(span.range.start()))
@@ -601,8 +601,8 @@ impl SessionLoop
     /// # Adequacy
     /// - hypothesis: L3 — through [`Self::offer`]'s witnesses, a kept and a
     ///   dropped chunk each asserted by what the next submission sees.
-    /// - witness: `loop::tests::a_refused_chunk_is_not_kept`
-    /// - witness: `loop::tests::a_definition_is_visible_on_the_next_line`
+    /// - witness: `tests::repl_loop::a_refused_chunk_is_not_kept`
+    /// - witness: `tests::repl_loop::a_definition_is_visible_on_the_next_line`
     #[spec(captures: [accepted = self.accepted.len()],
         ensures: |ret| if ret.is_err() || matches!(subject, Subject::Probe { .. }) {
             self.accepted.len() == accepted

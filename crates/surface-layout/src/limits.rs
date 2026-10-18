@@ -33,7 +33,7 @@
 //!
 //! Every store checks its ceiling before it grows, every counter checks its
 //! arithmetic, and a refused charge leaves the counter unchanged
-//! (`algebra::tests::a_refused_charge_leaves_the_counter_unchanged`). The
+//! (`tests::algebra::a_refused_charge_leaves_the_counter_unchanged`). The
 //! defaults:
 //!
 //! | Ceiling | Default |
@@ -115,7 +115,7 @@ use crate::units::VmStepsUsed;
 ///   unrelated counters and mutation before refusal. Preflights must leave the
 ///   complete snapshot unchanged.
 /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-/// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+/// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BuildLimits
 {
@@ -148,7 +148,7 @@ pub struct BuildLimits
 ///   unrelated counters and mutation before refusal. Preflights must leave the
 ///   complete snapshot unchanged.
 /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-/// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+/// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BuildUsage
 {
@@ -185,7 +185,7 @@ pub struct BuildUsage
 ///   unrelated counters and mutation before refusal. Preflights must leave the
 ///   complete snapshot unchanged.
 /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-/// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+/// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
 #[derive(Debug)]
 pub struct BuildMeter
 {
@@ -230,7 +230,7 @@ impl BuildMeter
     ///   changes to unrelated counters and mutation before refusal. Preflights
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    /// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
     #[spec(
         ensures: |ret| ret.limits == limits
                 && u64::from(ret.used.doc_nodes) == 0
@@ -268,7 +268,7 @@ impl BuildMeter
     ///   changes to unrelated counters and mutation before refusal. Preflights
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    /// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
     #[spec(
         ensures: |ret| ret == self.used
     )]
@@ -300,7 +300,7 @@ impl BuildMeter
     ///   changes to unrelated counters and mutation before refusal. Preflights
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    /// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
     #[spec(
         ensures: |ret| { let next = u128::from(u64::from(self.used.doc_nodes)).saturating_add(u128::from(1_u64));
             let ceiling = Some(u64::from(u32::from(self.limits.max_doc_nodes)));
@@ -339,7 +339,7 @@ impl BuildMeter
     ///   changes to unrelated counters and mutation before refusal. Preflights
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    /// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
     #[spec(
         ensures: |ret| { let next = u128::from(u64::from(self.used.text_bytes)).saturating_add(u128::from(u64::from(amount)));
             let ceiling = u64::try_from(usize::from(self.limits.max_text_bytes)).ok();
@@ -383,7 +383,7 @@ impl BuildMeter
     ///   changes to unrelated counters and mutation before refusal. Preflights
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    /// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
     #[spec(
         ensures: |ret| { let next = u128::from(u64::from(self.used.verbatim_lines)).saturating_add(u128::from(u64::from(amount)));
             let ceiling = Some(u64::from(u32::from(self.limits.max_verbatim_lines)));
@@ -426,7 +426,7 @@ impl BuildMeter
     ///   changes to unrelated counters and mutation before refusal. Preflights
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    /// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
     #[spec(
         ensures: |ret| { let next = u128::from(u64::from(self.used.build_steps)).saturating_add(u128::from(1_u64));
             let ceiling = Some(u64::from(self.limits.max_build_steps));
@@ -469,7 +469,7 @@ impl BuildMeter
     ///   changes to unrelated counters and mutation before refusal. Preflights
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    /// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
     #[spec(
         captures: before = self.used,
         ensures: |ret| { let next = u128::from(u64::from(before.doc_nodes)).saturating_add(u128::from(1_u64));
@@ -517,7 +517,7 @@ impl BuildMeter
     ///   changes to unrelated counters and mutation before refusal. Preflights
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    /// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
     #[spec(
         captures: before = self.used,
         ensures: |ret| { let next = u128::from(u64::from(before.text_bytes)).saturating_add(u128::from(u64::from(amount)));
@@ -568,7 +568,7 @@ impl BuildMeter
     ///   changes to unrelated counters and mutation before refusal. Preflights
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    /// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
     #[spec(
         captures: before = self.used,
         ensures: |ret| { let next = u128::from(u64::from(before.verbatim_lines)).saturating_add(u128::from(u64::from(amount)));
@@ -619,7 +619,7 @@ impl BuildMeter
     ///   changes to unrelated counters and mutation before refusal. Preflights
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
-    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    /// - witness: `tests::algebra::build_usage_is_monotone_across_a_whole_document`
     #[spec(
         captures: before = self.used,
         ensures: |ret| { let next = u128::from(u64::from(before.build_steps)).saturating_add(u128::from(1_u64));
