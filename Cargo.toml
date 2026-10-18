@@ -1110,13 +1110,15 @@ features = ["alloc", "derive"]
 
 # JSON: the language server's and the Model Context Protocol server's wire
 # format, the diagnostics' JSON verbosity level, the render bus's line format
-# and the format its codec witnesses round-trip through, nextest's
-# machine-readable test list, Cargo's build messages and `gh`'s issue listing.
+# and the format its codec witnesses round-trip through, the syntax ledger's
+# machine form, nextest's machine-readable test list, Cargo's build messages
+# and `gh`'s issue listing.
 # features:
 # - alloc: the owned value tree and the string encoder without std
 # consumers:
 # - core-checker (dev)
 # - surface-diagnostics
+# - surface-dispatcher
 # - surface-driver
 # - surface-lsp
 # - surface-mcp

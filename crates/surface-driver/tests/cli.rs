@@ -705,6 +705,53 @@ fn fmt_rewrites_what_check_reports()
 }
 
 #[test]
+fn the_syntax_ledger_is_written_and_reproduced()
+{
+    let scratch = Scratch::new(Path::new("ledger"));
+    let directory = scratch.0.join("ledger");
+    let (ledger, syntax, write) = (
+        Path::new("ledger"),
+        Path::new("syntax"),
+        Path::new("--write"),
+    );
+
+    let written = ran(gandr(&[ledger, syntax, write, &directory]));
+    assert_eq!(code(&written), Code(0_i32), "{}", stderr(&written));
+    let markdown = directory.join("syntax.md");
+    let json = directory.join("syntax.json");
+    assert_eq!(
+        stdout(&written),
+        format!("{}\n{}\n", markdown.display(), json.display()),
+        "each file written is printed, in order"
+    );
+    let first = (
+        std::fs::read(&markdown).expect("the reading form is written"),
+        std::fs::read(&json).expect("the machine form is written"),
+    );
+    assert!(
+        String::from_utf8_lossy(&first.0).contains("- Grammar fingerprint: `0x"),
+        "the reading form names the fingerprint"
+    );
+
+    let again = ran(gandr(&[ledger, syntax, write, &directory]));
+    assert_eq!(code(&again), Code(0_i32), "{}", stderr(&again));
+    let second = (
+        std::fs::read(&markdown).expect("the reading form is written"),
+        std::fs::read(&json).expect("the machine form is written"),
+    );
+    assert_eq!(first, second, "a second run writes the same bytes");
+
+    let blocked = scratch.file(Path::new("file"), Text::from(""));
+    let refused = ran(gandr(&[ledger, syntax, write, &blocked.join("ledger")]));
+    assert_eq!(code(&refused), Code(2_i32), "{}", stdout(&refused));
+    assert!(
+        stderr(&refused).starts_with(&format!("gandr: {}", blocked.join("ledger").display())),
+        "{}",
+        stderr(&refused)
+    );
+}
+
+#[test]
 fn every_width_prints_the_serial_run()
 {
     let scratch = Scratch::new(Path::new("widths"));

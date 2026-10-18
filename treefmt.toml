@@ -77,10 +77,13 @@ command = "tombi"
 options = ["lint", "--error-on-warnings"]
 includes = ["*.toml"]
 
+# The syntax ledger's machine form is generated, one rule per line, and
+# `check:syntax-ledger` owns its bytes.
 [formatter.oxfmt]
 command = "oxfmt"
 options = ["--config", ".oxfmtrc.json"]
 includes = ["*.json", "*.jsonc", "*.yaml", "*.yml", "*.mjs", "*.ts"]
+excludes = ["ledger/syntax.json"]
 
 # Check-only: type-aware lint, the TypeScript checker included.
 [formatter.oxlint]

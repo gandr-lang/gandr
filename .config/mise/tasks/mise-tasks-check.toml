@@ -414,9 +414,12 @@ run = "typos"
 # linking into the crate's rustdoc, where mechanism, decisions and
 # specification detail live. The first command refuses tracked markdown
 # outside the allowlist, matched by Git's glob pathspec so `*` stays within
-# one directory, which sizelint's patterns cannot express. The second holds
-# every tracked markdown file to its budget in `sizelint.toml`; treefmt's
-# sizelint pass leaves markdown to this gate.
+# one directory, which sizelint's patterns cannot express. The ledger's
+# README and its generated syntax ledger are on it. The second holds every
+# tracked markdown file to its budget in `sizelint.toml`; treefmt's sizelint
+# pass leaves markdown to this gate. The syntax ledger is exempt: it is
+# generated, one row per grammar rule, and `check:syntax-ledger` owns its
+# bytes.
 ["check:markdown"]
 description = "Tracked markdown on the README allowlist and within its budgets"
 run = [
@@ -426,7 +429,9 @@ outside=$(git ls-files -- '*.md' \
   ':(exclude,glob)CHANGELOG.md' \
   ':(exclude,glob)crates/README.md' \
   ':(exclude,glob)crates/*/README.md' \
-  ':(exclude,glob)contrib/*/README.md')
+  ':(exclude,glob)contrib/*/README.md' \
+  ':(exclude,glob)ledger/README.md' \
+  ':(exclude,glob)ledger/syntax.md')
 if [ -n "$outside" ]; then
   printf '%s\n' "$outside" >&2
   echo 'markdown check FAILED: tracked markdown outside the README allowlist; move its prose into rustdoc' >&2
@@ -434,8 +439,32 @@ if [ -n "$outside" ]; then
 fi
 echo 'markdown check OK: every tracked markdown file is on the README allowlist'
 ''',
-  "git ls-files -z -- '*.md' | xargs -0 sizelint check",
+  "git ls-files -z -- '*.md' ':(exclude,glob)ledger/syntax.md' | xargs -0 sizelint check",
 ]
+
+# The syntax ledger is generated from the grammar and the attribute registry
+# (`gandr-surface-dispatcher`'s `ledger` module): regenerated into a temporary
+# directory and compared with the committed `ledger/syntax.md` and
+# `ledger/syntax.json` byte for byte. A difference is printed and fails the
+# gate; `gandr ledger syntax --write ledger` rewrites both files.
+["check:syntax-ledger"]
+description = "The committed syntax ledger is the one the grammar generates"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+cargo run --locked --quiet --profile test --package gandr-lang -- ledger syntax --write "$fresh" > /dev/null
+stale=0
+for file in syntax.md syntax.json; do
+  diff -u "ledger/$file" "$fresh/$file" || stale=1
+done
+if (( stale )); then
+  echo 'syntax ledger check FAILED: the committed ledger is not the grammar'"'"'s; run `gandr ledger syntax --write ledger`' >&2
+  exit 1
+fi
+echo 'syntax ledger check OK: the committed ledger is the grammar'"'"'s'
+'''
 
 ["check:tests"]
 description = "Unit and integration tests over every target"

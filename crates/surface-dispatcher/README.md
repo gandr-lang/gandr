@@ -111,6 +111,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The exercised table | [`exercised`](src/exercised.rs) |
 | The stage verb | [`stage`](src/stage.rs) |
 | The format verb | [`format`](src/format.rs) |
+| The ledger verb | [`ledger`](src/ledger.rs) |
 
 ## License
 
