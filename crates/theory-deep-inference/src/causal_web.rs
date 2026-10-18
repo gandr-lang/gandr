@@ -139,6 +139,10 @@ impl DependenceBits
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-event order's relation has two coordinates.
+    /// - witness: `causal_web::tests::the_precedence_relation_has_one_coordinate_per_event`
     #[inline]
     #[must_use]
     pub fn vertex_count(&self) -> WebVertexCount
@@ -1174,6 +1178,13 @@ mod tests
             }),
             looped.linearizes(&[alone])
         );
+    }
+
+    #[test]
+    fn the_precedence_relation_has_one_coordinate_per_event()
+    {
+        let web = causal_web(&dependent_order());
+        assert_eq!(WebVertexCount::from(2_usize), web.precedes.vertex_count());
     }
 
     #[test]

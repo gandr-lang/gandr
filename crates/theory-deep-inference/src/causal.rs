@@ -1238,6 +1238,8 @@ where
 #[cfg(test)]
 mod tests
 {
+    use alloc::boxed::Box;
+
     use gandr_theory_cell_complexes::Cell;
     use gandr_theory_cell_complexes::CellId;
     use gandr_theory_cell_complexes::CellProvenance;
@@ -1253,8 +1255,11 @@ mod tests
     use gandr_theory_cell_complexes_tools::toy_cell;
 
     use super::*;
+    use crate::normal_form::NormalFormObstruction;
+    use crate::normal_form::PrimCert;
     use crate::normal_form::event_order;
     use crate::normal_form::prim_address;
+    use crate::normal_form::refuse_key_collisions;
 
     /// (add-S): `⟨Succ(m) | add(n; α)⟩ ~> ⟨m | add(n; Succ⁻(α))⟩`.
     ///
@@ -1609,6 +1614,27 @@ mod tests
             }),
             order.refuse_key_collisions(),
             "the refusal names both events, the shared depth, and the shared key"
+        );
+    }
+
+    #[test]
+    fn a_tie_is_refused_naming_both_primitives_and_their_depth()
+    {
+        let (address, _other) = two_addresses();
+        let key = EventKey {
+            address,
+            past: causal_past_address(address, &[]),
+        };
+        let depth = CausalDepth::from(1_usize);
+        let order = assembled_order(&[(root_step(), depth, key), (root_step(), depth, key)]);
+        assert_eq!(
+            Err(NormalFormObstruction::CanonicalKeyCollision {
+                earlier: Box::new(PrimCert(root_step())),
+                later: Box::new(PrimCert(root_step())),
+                depth,
+            }),
+            refuse_key_collisions(&order),
+            "the refusal carries both tying events as primitives and their depth"
         );
     }
 
