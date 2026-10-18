@@ -15,8 +15,8 @@
 //! | Kind | First line | Primary annotation and label | Note |
 //! | ---- | ---------- | ---------------------------- | ---- |
 //! | refusal | `error[<refusal>]: <message>` | the refusal's span, labelled with what the bytes there are | in words, what the declaration is expected to do and why the refusal leaves it unsettled |
-//! | unsettled declaration | ``error: `<name>` states …; produced …`` | the declaration, labelled with how it is unsettled | none |
-//! | goal | ``goal: `<name>` states …; produced …`` | the declaration, labelled with its surviving obligations | none |
+//! | unsettled declaration | ``error: `<name>` states …; produced …`` and, for a suspended declaration, ``; it waits on `<hole>`, …`` | the declaration, labelled with how it is unsettled | none |
+//! | goal | ``goal: `<name>` states …; produced …`` and, for a suspended declaration, ``; it waits on `<hole>`, …`` | the declaration, labelled with its surviving obligations | none |
 //! | source refused as a whole | `error[<refusal>]: the source is not a list of declarations: …` | the refusal's span | none |
 //! | shadowed builtin | ``warning[ShadowedBuiltin]: `<path>` shadows a builtin name; the source's binding wins`` | the shadowing name, labelled `shadows a builtin` | none |
 //! | inferred exit | ``warning[explicit-exits]: this path ends without its exit; …`` | the tail, labelled with the exit inferred there; the fix writes that keyword before it | none |
@@ -958,8 +958,8 @@ impl fmt::Display for TitleText<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: writes the refusal's message or the declaration identity with
-    ///   its stated and produced outcomes; whole-source refusal keeps its
-    ///   scope.
+    ///   its stated and produced outcomes, and the holes a suspended
+    ///   declaration waits on by name; whole-source refusal keeps its scope.
     /// - provides: the producer's own wording, which a detailed level shows.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -967,8 +967,10 @@ impl fmt::Display for TitleText<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — unresolved-name and goal titles retain source names
-    ///   and numeric roles; mismatch titles expose no core addresses.
+    ///   and numeric roles; mismatch titles expose no core addresses; a
+    ///   suspended declaration's goal names the hole it waits on.
     /// - witness: `tests::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
+    /// - witness: `tests::diagnostics::a_suspended_goal_names_the_hole_it_waits_on`
     #[inline]
     fn fmt(
         &self,
@@ -988,13 +990,23 @@ impl fmt::Display for TitleText<'_>
                 refusal: Refusal::Corpus(refusal),
                 ..
             } => fmt::Display::fmt(&refusal, f),
-            Subject::Unsettled { declaration, .. } | Subject::Goal(declaration) => write!(
-                f,
-                "`{}` states {}; produced {}",
-                declaration.name(),
-                declaration.stated(),
-                declaration.outcome()
-            ),
+            Subject::Unsettled { declaration, .. } | Subject::Goal(declaration) => {
+                write!(
+                    f,
+                    "`{}` states {}; produced {}",
+                    declaration.name(),
+                    declaration.stated(),
+                    declaration.outcome()
+                )?;
+                let mut waits = declaration.waits().iter();
+                if let Some(first) = waits.next() {
+                    write!(f, "; it waits on `{first}`")?;
+                    for hole in waits {
+                        write!(f, ", `{hole}`")?;
+                    }
+                }
+                Ok(())
+            },
             Subject::Source(refusal) => {
                 write!(f, "the lowering refused the source as a whole: {refusal}")
             },

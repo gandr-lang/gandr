@@ -167,6 +167,8 @@ enum Judgement
     Synthesised,
     /// The body is a hole, owed.
     Owed,
+    /// The body waits on owed holes.
+    Suspended,
     /// The body's type does not convert to the declared one.
     Mismatched,
     /// Any other refusal.
@@ -1070,6 +1072,10 @@ fn report(lowered: &mut Lowered<'_>) -> ModuleReport
                                 declaration.outcome(),
                                 DeclarationOutcome::Uncompleted { .. }
                             ),
+                            | Judgement::Suspended => matches!(
+                                declaration.outcome(),
+                                DeclarationOutcome::Completed { .. } | DeclarationOutcome::Bodied { .. }
+                            ),
                             | Judgement::Mismatched | Judgement::Refused => true,
                             | Judgement::Declared => matches!(
                                 declaration.outcome(),
@@ -1093,6 +1099,7 @@ fn verdicts(lowered: &mut Lowered<'_>) -> Vec<(ConstantIndex, Judgement)>
                 Verdict::Checked { .. } => Judgement::Checked,
                 Verdict::Synthesised { .. } => Judgement::Synthesised,
                 Verdict::Owed(_) => Judgement::Owed,
+                Verdict::Suspended(_) => Judgement::Suspended,
                 Verdict::Refused(CheckRefusal::TypeMismatch(_)) => Judgement::Mismatched,
                 Verdict::Refused(_) => Judgement::Refused,
             };

@@ -19,8 +19,9 @@
 //! another position, or a verdict left over is `SettleFault`, a caller fault
 //! rather than a verdict, as is a payload the arena given does not hold. A
 //! declaration's own obligations are read off its verdict — one for an owed
-//! verdict, none otherwise — because the checker records exactly one ledger
-//! entry per owed verdict; the run's ledger size is read off the ledger.
+//! verdict, one per blocker for a suspended one, none otherwise — because the
+//! checker records exactly one ledger entry per owed verdict and a suspension
+//! per suspended one; the run's ledger size is read off the ledger.
 //!
 //! The alternative was pairing by origin token, which the driver issues and
 //! could issue in any scheme; the admission position is the one index both the
@@ -30,16 +31,19 @@
 //!
 //! # A declaration's own obligations
 //!
-//! A declaration produces one obligation when its verdict is owed and none
-//! otherwise: the checker records exactly one ledger entry per owed verdict,
-//! so the count is read off the verdict, and the ledger size off the ledger.
+//! A declaration produces one obligation when its verdict is owed, one per
+//! hole it waits on when its verdict is suspended, and none otherwise: the
+//! checker records exactly one ledger entry per owed verdict and the blockers
+//! of each suspension, so the count is read off the verdict, and the ledger
+//! size off the ledger.
 //!
 //! # One predicate: settled
 //!
 //! A declaration is settled when the verdict it produced equals the verdict it
 //! states. A verdict is one of three shapes: _checks, owing n_ — checked,
-//! synthesised, or owed, with n the obligations its verdict left in the ledger,
-//! or for a fold the owed laws it rests on — _runs to_ a spelled value, or
+//! synthesised, owed or suspended, with n the obligations its verdict left in
+//! the ledger, the holes a suspension waits on, or for a fold the owed laws it
+//! rests on — _runs to_ a spelled value, or
 //! _refuses_ a named refusal. `checks` states _checks, owing 0_; `owes(n)`
 //! states _checks, owing n_; `runs("spelling")` states _runs to_ the spelling;
 //! `refuses("Name")` states the named refusal; a declaration carrying none of
@@ -247,7 +251,7 @@ impl<'source> Produced<'source>
     matches!(
         (* self, ret), (Self::Judged(Verdict::Refused(_)),
         Maybe::Present(Refusal::Checking(_))) | (Self::Judged(Verdict::Checked { .. } |
-        Verdict::Data | Verdict::Synthesised { .. } | Verdict::Owed(_)),
+        Verdict::Data | Verdict::Synthesised { .. } | Verdict::Owed(_) | Verdict::Suspended(_)),
         Maybe::Absent(produced_refusal::Absent::Unrefused)) | (Self::Unlowered(_),
         Maybe::Present(Refusal::Lowering(_))) | (Self::Guarded(_),
         Maybe::Present(Refusal::Corpus(_)))
@@ -263,7 +267,8 @@ impl<'source> Produced<'source>
                 Verdict::Data
                 | Verdict::Checked { .. }
                 | Verdict::Synthesised { .. }
-                | Verdict::Owed(_),
+                | Verdict::Owed(_)
+                | Verdict::Suspended(_),
             ) => Maybe::Absent(produced_refusal::Absent::Unrefused),
             Self::Unlowered(refusal) => Maybe::Present(Refusal::Lowering(refusal)),
             Self::Guarded(refusal) => Maybe::Present(Refusal::Corpus(refusal)),
@@ -418,6 +423,9 @@ pub struct DeclarationReport<'source>
     produced: Produced<'source>,
     /// The obligations its verdict left in the ledger.
     owed: ObligationCount,
+    /// The owed holes a suspended verdict waits on, by name, in admission
+    /// order; empty for every other verdict.
+    waits: Vec<SurfaceName<'source>>,
     /// The outcome its run produced, or the line its block's normal form
     /// produced, when it states one and was accepted.
     ran: Maybe<RunSpelling, ran::Absent>,
@@ -518,6 +526,18 @@ impl<'source> DeclarationReport<'source>
     pub const fn owed(&self) -> ObligationCount
     {
         self.owed
+    }
+
+    /// The owed holes the name's suspended verdict waits on, by name, in
+    /// admission order; empty unless the verdict is suspended.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn waits(&self) -> &[SurfaceName<'source>]
+    {
+        &self.waits
     }
 
     /// The produced verdict, read in the stated verdict's shape.
@@ -743,6 +763,13 @@ impl fmt::Display for DeclarationReport<'_>
             self.stated,
             self.outcome()
         )?;
+        let mut waits = self.waits.iter();
+        if let Some(first) = waits.next() {
+            write!(f, "; waits on `{first}`")?;
+            for hole in waits {
+                write!(f, ", `{hole}`")?;
+            }
+        }
         if let Maybe::Present(refusal) = self.produced.refusal() {
             write!(f, " ({})", refusal.classify())?;
         }
@@ -1104,13 +1131,15 @@ pub fn settle<'source>(
             ) => Maybe::Present(normalized(module, lowered, line)),
             (
                 &Stated::Verdict(Outcome::Runs(_)),
-                Produced::Judged(Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_))
+                Produced::Judged(
+                    Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_),
+                )
                 | Produced::Unlowered(_)
                 | Produced::Guarded(_),
             )
             | (
                 &Stated::Verdict(Outcome::Normalizes(_)),
-                Produced::Judged(Verdict::Owed(_) | Verdict::Refused(_))
+                Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_))
                 | Produced::Unlowered(_)
                 | Produced::Guarded(_),
             ) => Maybe::Absent(ran::Absent::Unaccepted),
@@ -1118,6 +1147,18 @@ pub fn settle<'source>(
                 &Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_)) | &Stated::Malformed(_),
                 _,
             ) => Maybe::Absent(ran::Absent::Unstated),
+        };
+        let waits = match produced {
+            Produced::Judged(Verdict::Suspended(_)) => waits(module, verdicts, lowered.constant()),
+            Produced::Judged(
+                Verdict::Data
+                | Verdict::Checked { .. }
+                | Verdict::Synthesised { .. }
+                | Verdict::Owed(_)
+                | Verdict::Refused(_),
+            )
+            | Produced::Unlowered(_)
+            | Produced::Guarded(_) => Vec::new(),
         };
         declarations.push(DeclarationReport {
             name: lowered.name(),
@@ -1127,6 +1168,7 @@ pub fn settle<'source>(
             stated: expectations.stated,
             produced,
             owed,
+            waits,
             ran,
         });
     }
@@ -1143,17 +1185,60 @@ pub fn settle<'source>(
     ))
 }
 
-/// The obligations `answer` owes: one for an owed declaration, and for a
-/// checked fold one per law it rests on that is itself owed. A fold's laws
-/// are its evidence, so what they still owe is owed by what rests on them;
-/// the ledger holds each law's obligation once, under the law.
+/// The names of the owed holes the suspended declaration at `constant` waits
+/// on, in admission order.
+///
+/// # Specification
+/// - requires: `verdicts` judged `module`.
+/// - ensures: one name per blocker of the suspension `verdicts` keeps at
+///   `constant` that names a declaration of `module`, in admission order; empty
+///   when it keeps none.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration decoding an owed code hole names that hole,
+///   and the same declaration after its hole is filled names none.
+/// - witness: `settle::tests::a_suspended_declaration_owes_its_blockers`
+#[spec(ensures: |ret| ret.len() <= verdicts.suspensions().get(&constant).map_or(0, |waiting| waiting.blockers().len()))]
+fn waits<'source>(
+    module: &LoweredModule<'source>,
+    verdicts: &ModuleReport,
+    constant: ConstantIndex,
+) -> Vec<SurfaceName<'source>>
+{
+    let Some(waiting) = verdicts.suspensions().get(&constant)
+    else {
+        return Vec::new();
+    };
+    let declarations = module.declarations();
+    waiting
+        .blockers()
+        .iter()
+        .filter_map(|&hole| {
+            declarations
+                .binary_search_by_key(&hole, LoweredDeclaration::constant)
+                .ok()
+                .and_then(|at| declarations.get(at))
+                .map(LoweredDeclaration::name)
+        })
+        .collect()
+}
+
+/// The obligations `answer` owes: one for an owed declaration, one per
+/// blocker for a suspended one, and for a checked fold one per law it rests
+/// on that is itself owed. A fold's laws are its evidence, and a suspension's
+/// blockers the holes its judgement waits on, so what they still owe is owed
+/// by what rests on them; the ledger holds each hole's obligation once, under
+/// the hole.
 ///
 /// # Specification
 /// - requires: `answer` is one of `verdicts`' judgements, whose constants
 ///   ascend in admission order.
-/// - ensures: `1` for an owed verdict; for a checked or synthesised one, the
-///   number of laws `verdicts` records for its constant whose own judgement is
-///   owed; `0` otherwise.
+/// - ensures: `1` for an owed verdict; for a suspended one, the number of holes
+///   its suspension is blocked on; for a checked or synthesised one, the number
+///   of laws `verdicts` records for its constant whose own judgement is owed;
+///   `0` otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1164,10 +1249,15 @@ pub fn settle<'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's winding number into the native integers owes
-///   its two laws and each law owes itself.
+///   its two laws and each law owes itself; a declaration decoding an owed code
+///   hole owes that hole.
 /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+/// - witness: `settle::tests::a_suspended_declaration_owes_its_blockers`
 #[spec(ensures: |ret| match answer.verdict() {
     | Verdict::Owed(_) => usize::from(ret) == 1,
+    | Verdict::Suspended(_) => {
+        usize::from(ret) == verdicts.suspensions().get(&answer.constant()).map_or(0, |waiting| waiting.blockers().len())
+    },
     | Verdict::Checked { .. } | Verdict::Synthesised { .. } => {
         usize::from(ret) <= verdicts.laws().get(&answer.constant()).map_or(0, Vec::len)
     },
@@ -1180,6 +1270,10 @@ fn owed_by(
 {
     let owed = match answer.verdict() {
         Verdict::Owed(_) => 1_usize,
+        Verdict::Suspended(_) => verdicts
+            .suspensions()
+            .get(&answer.constant())
+            .map_or(0_usize, |waiting| waiting.blockers().len()),
         Verdict::Checked { .. } | Verdict::Synthesised { .. } => {
             let judged = verdicts.judged();
             verdicts
@@ -1320,6 +1414,7 @@ mod tests
 
     use anodized::spec;
     use gandr_core_checker::ObligationCount;
+    use gandr_core_checker::Verdict;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
     use gandr_kernel_term::ConstantIndex;
@@ -1629,6 +1724,48 @@ mod tests
             Outcome::Refuses(RefusalName::ExpectationOutsideFixtureRoot),
             "naming the guard's own refusal produces it, and still states checks"
         );
+    }
+
+    #[test]
+    fn a_suspended_declaration_owes_its_blockers()
+    {
+        let report = settled(
+            CorpusRoot::Fixture,
+            SourceText::from(
+                "def code : Type ; def three : code ; def three = 3 ; def filled : Type ; \
+                 def filled = Integer ; def resumed : filled ; def resumed = 3 ;",
+            ),
+        );
+        let &[ref code, ref three, _, ref resumed] = report.declarations()
+        else {
+            panic!("four declarations: {:?}", report.declarations());
+        };
+        assert!(
+            matches!(three.produced(), Produced::Judged(Verdict::Suspended(_))),
+            "a value at an owed code's decode waits: {:?}",
+            three.produced()
+        );
+        assert_eq!(
+            usize::from(three.owed()),
+            1_usize,
+            "it owes the one hole it waits on"
+        );
+        assert_eq!(three.waits(), [code.name()], "and names that hole");
+        assert_eq!(
+            usize::from(report.ledger()),
+            1_usize,
+            "the ledger holds the hole once, under the hole"
+        );
+        assert!(
+            matches!(
+                resumed.produced(),
+                Produced::Judged(Verdict::Checked { .. })
+            ),
+            "the same value at a filled code's decode checks: {:?}",
+            resumed.produced()
+        );
+        assert_eq!(usize::from(resumed.owed()), 0_usize);
+        assert!(resumed.waits().is_empty());
     }
 
     #[test]

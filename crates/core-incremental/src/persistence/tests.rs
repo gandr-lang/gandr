@@ -407,6 +407,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Checked { .. } => "checked",
         Typing::Synthesised { .. } => "synthesised",
         Typing::Owed => "owed",
+        Typing::Suspended => "suspended",
         Typing::Refused(Refusal::PathCode(_)) => "path-code",
         Typing::Refused(Refusal::EndpointMismatch { .. }) => "endpoint-mismatch",
         Typing::Refused(Refusal::CompoundEndpoint { .. }) => "compound-endpoint",
@@ -712,6 +713,58 @@ fn universe_sorts_and_levels_round_trip()
         decoded(&bytes_of(&checkpoints)),
         Ok(checkpoints),
         "and each sort and its level round trip"
+    );
+}
+
+#[test]
+fn a_suspended_typing_round_trips()
+{
+    let mut arena = CoreArena::new();
+    let universe = arena.value_type_universe(
+        gandr_core_term::Sort::Ground(GroundSort::Value),
+        Level::zero(),
+    );
+    let code = arena.value_constant(ConstantIndex::from(0_usize));
+    let decoded_type = arena.value_type_element(code, Level::zero());
+    let zero = arena.value_literal(gandr_kernel_term::Literal::Integer(
+        gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            gandr_kernel_term::Magnitude::zero(),
+        ),
+    ));
+    let items = vec![
+        Item::new(
+            ItemKey::from("code"),
+            declaration(
+                Position(0_usize),
+                Maybe::Present(universe),
+                Maybe::Absent(body::Absent::Hole),
+            ),
+        ),
+        Item::new(
+            ItemKey::from("zero"),
+            declaration(
+                Position(1_usize),
+                Maybe::Present(decoded_type),
+                Maybe::Present(zero),
+            ),
+        ),
+    ];
+    let checkpoints = checked(&mut Program::new(arena, items).expect("positions ascend"));
+    let kinds: Vec<&str> = checkpoints
+        .items()
+        .iter()
+        .map(|checkpoint| kind(checkpoint.typing()).0)
+        .collect();
+    assert_eq!(
+        kinds,
+        ["owed", "suspended"],
+        "a value at an owed code's decode waits on it"
+    );
+    assert_eq!(
+        decoded(&bytes_of(&checkpoints)),
+        Ok(checkpoints),
+        "and the suspension round trips"
     );
 }
 

@@ -13,11 +13,13 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 ## Synopsis
 
-**What.** `check_module` judges name-free `Declaration`s in a `CheckingContext` over a core arena. Each input carries an admission position, an echoed `OriginToken`, and either optional value signature/body halves or a complete nominal data signature. Its `Verdict` records an admitted data signature, a checked body, a synthesised type, an owed hole or a refusal. Four public faces judge individual values and computations. The ledger collects holes; refusal classification separates malformed source, unrepresentable syntax and engine faults. The kernel independently checks the exportable pure fragment.
+**What.** `check_module` judges name-free `Declaration`s in a `CheckingContext` over a core arena. Each input carries an admission position, an echoed `OriginToken`, and either optional value signature/body halves or a complete nominal data signature. Its `Verdict` records an admitted data signature, a checked body, a synthesised type, an owed hole, a suspension or a refusal. Four public faces judge individual values and computations. The ledger collects holes; refusal classification separates malformed source, unrepresentable syntax and engine faults. The kernel independently checks the exportable pure fragment.
 
 **Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. A mode per former and comparison only at mode changes are enforced by lint and module visibility, not review. Kernel readmission independently checks pure acceptances.
 
-**How.** One goal-and-frame machine charges each transition to `CheckBudget`. Checking receives formed types and dispatches on the term former. Synthesis crosses a private conversion bridge when checking needs it. Formation computes the natural classifier. Code unfolding is certified before comparison; readmission replays those certificates. The module documentation specifies each boundary.
+**How.** One goal-and-frame machine charges each transition to `CheckBudget`; [`src/lib.rs`](src/lib.rs) states the decisions that shape it, and each module the boundary it owns.
+
+**Suspension.** A judgement waiting on an owed code hole is `Verdict::Suspended`, naming its holes in `ModuleReport::suspensions`; [`elaboration`](src/elaboration.rs) emits, fills and resumes, and states the fragment and its guarantees.
 
 ## Provided features
 
@@ -32,7 +34,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input. Values retain optional signature/body halves; data retain a `DataSignature`.
 - `check_declaration`, `check_module`, `Verdict`, `Judged` and `ModuleReport`: one verdict per declaration, retaining accepted value definitions, native data signatures and recorded lifts.
 - `Nesting`, `NestedElaboration` and `ModuleReport::nested_elaborations`: each computation written where a value is read, run or suspended by the type expected there, and the body rebuilt with every run bound.
-- `Funext`, `FunextStep`, `Evaluation`, `Reading`, `Stalled`, `evaluated::Absent`, `ModuleReport::funexts`, `Equivalence`, `ModuleReport::equivalences`, `Reflexivity`, `converted::Absent`, `ModuleReport::reflexivities`, `EndpointRelation` and `ModuleReport::relations`: function extensionality, `equiv(f, g)`, reflexivity and the path endpoints a type conversion relates decided by computation, each with the traces the kernel replays; `ua::derive` lifts `equiv(f, g)` to `ua_n` at every stratum the site certifies; `ModuleReport::natives`: what `ua[n, k]` derives and what `pathProduct(p, q)` elaborates to.
+- `Funext`, `FunextStep`, `Evaluation`, `Reading`, `Stalled`, `evaluated::Absent`, `ModuleReport::funexts`, `Equivalence`, `ModuleReport::equivalences`, `Reflexivity`, `converted::Absent`, `ModuleReport::reflexivities`, `EndpointRelation` and `ModuleReport::relations`: function extensionality, `equiv(f, g)`, reflexivity and the path endpoints a type conversion relates decided by computation, each with the traces the kernel replays; `ua::derive` and `ModuleReport::natives`: `ua_n` at every certified stratum, and the native paths it and `pathProduct` cross as.
 - `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
 - `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance.
 - `Absence`, `ObligationEntry`, `ObligationLedger` and `ObligationCount`: the absence-only ledger.
@@ -42,7 +44,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `CheckRefusal::compared`, `Compared` and `compared::Absent`: the types a refusal sets against each other, the one its rule expected and the one it found, as nodes a face spells.
 - `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the checking machine held when it refused, kept per refused body by position ([`failure`](src/failure.rs)).
 - `bridge::readmit` and `bridge::Readmission`: independent admission of accepted declarations into a fresh kernel environment.
-- `bridge::Readmitted` and `bridge::Outcome`: each origin and its defined-value, admitted-data, assumed-hole, static-definition, marked, refused or rejected outcome.
+- `bridge::Readmitted` and `bridge::Outcome`: each origin and its defined-value, admitted-data, assumed-hole, static-definition, marked, suspended, refused or rejected outcome.
 - `bridge::ArtifactAudit`: owed-hole and native-runtime assumptions used by admitted declarations.
 - `bridge::Replayed` and `bridge::Readmitted::certificates`: kernel replay results for distinct reduction instances.
 - `bridge::Readmission::export`: canonical artifacts with crossed declarations and producer names.

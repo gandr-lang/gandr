@@ -349,6 +349,8 @@ pub struct CheckingContext<'arena>
     budget: CheckBudget,
     /// The answers the running supported judgement consulted, when one runs.
     support: SupportLog,
+    /// Residual equations recorded only inside the elaboration entry point.
+    deferrals: crate::elaboration::Deferrals,
     /// The data declarations whose signatures are forming, each naming
     /// itself and the others: one alone, or the families of a mutual block.
     forming: Vec<(
@@ -467,10 +469,15 @@ impl<'arena> CheckingContext<'arena>
     /// - witness: `context::tests::the_producer_declares_the_rigid_base_atoms`
     /// - witness: `context::tests::an_undeclared_type_name_is_refused_by_name`
     /// - witness: `judgement::tests::an_exhausted_allowance_is_refused_with_the_budget`
+    /// - witness: `elaboration::tests::owed_conversion_suspends`
     #[spec(ensures: |ret| ret.budget.0 == budget.0
         && ret.signatures.is_empty() && ret.definitions.definitions().next().is_none()
         && ret.lifts.is_empty() && matches!(ret.admitted, Maybe::Absent(admission::Absent::Fresh))
         && matches!(ret.support, SupportLog::Off)
+        && ret.deferrals.owed.is_empty() && ret.deferrals.suspended.is_empty()
+        && ret.deferrals.residue == crate::elaboration::Residue::default()
+        && ret.deferrals.collecting == crate::elaboration::Collecting::Off
+        && matches!(ret.deferrals.emission, crate::elaboration::Emission::Off)
         && ret.grants == crate::capability::Grants::Unbounded
         && ret.depth(Zone::Intuitionistic) == BinderDepth::default()
         && ret.depth(Zone::Linear) == BinderDepth::default())]
@@ -510,6 +517,7 @@ impl<'arena> CheckingContext<'arena>
             seals: SealTable::new(),
             budget,
             support: SupportLog::Off,
+            deferrals: crate::elaboration::Deferrals::default(),
             forming: Vec::new(),
             mutual: Maybe::Absent(mutual::Absent::Lone),
             defining: Vec::new(),
@@ -1464,9 +1472,13 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   [`Self::signature`] answers `supplied` for it, and a present body is
     ///   defined only when a type is supplied, with the elaboration performed
     ///   by [`Self::define`]. A body without a supplied type is not installed.
+    ///   An absent body owed ([`unfolding::Absent::Owed`]) or waiting
+    ///   ([`unfolding::Absent::Waiting`]) is held so, as the judgement that
+    ///   gave it holds it, for a later judgement to suspend on.
     /// - provides: the seat an incremental caller places a reused verdict in;
     ///   the caller, not the context, vouches that the verdict still answers,
-    ///   and passes the body exactly when the verdict it reuses accepted it.
+    ///   and passes the body exactly when the verdict it reuses accepted it,
+    ///   and the reason it has none otherwise.
     /// - fails: [`CheckRefusal::AdmissionOrder`] when `constant` is not above
     ///   the highest position admitted; the context is unchanged.
     /// - panics: none.
@@ -1479,10 +1491,11 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - hypothesis: L3 — the surfaces are the admission, the record and the
     ///   definition, separated by an adopted type a later declaration reads, an
     ///   adopted absence a later declaration finds no type at, an adoption out
-    ///   of order refused with the table unchanged, and an adopted body a later
-    ///   decode unfolds to.
+    ///   of order refused with the table unchanged, an adopted body a later
+    ///   decode unfolds to, and an adopted hole a later decode suspends on.
     /// - witness: `module::tests::an_adopted_answer_is_read_as_if_judged`
     /// - witness: `context::tests::an_adopted_untyped_body_does_not_become_a_definition`
+    /// - witness: `elaboration::tests::incremental_equals_from_scratch`
     #[spec(
         captures: [admitted = self.admitted, entries = self.signatures.len(), previous = self.definitions.body(constant)],
         ensures: |ret| match ret {
@@ -1491,7 +1504,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 && matches!((supplied, unfolds, self.definitions.body(constant)),
                     (Maybe::Present(_), Maybe::Present(_), Maybe::Present(_))
                         | (Maybe::Absent(_), _, Maybe::Absent(_))
-                        | (_, Maybe::Absent(_), Maybe::Absent(_))),
+                        | (_, Maybe::Absent(_), Maybe::Absent(_)))
+                && (unfolds != Maybe::Absent(unfolding::Absent::Owed) || self.deferrals.owed.contains(&constant))
+                && (unfolds != Maybe::Absent(unfolding::Absent::Waiting) || self.deferrals.suspended.contains(&constant)),
             | Err(_) => self.admitted == admitted && self.signatures.len() == entries
                 && self.definitions.body(constant) == previous,
         },
@@ -1510,6 +1525,15 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             if let Maybe::Present(body) = unfolds {
                 self.define(constant, declared, body);
             }
+        }
+        match unfolds {
+            Maybe::Absent(unfolding::Absent::Owed) => {
+                self.deferrals.owed.insert(constant);
+            },
+            Maybe::Absent(unfolding::Absent::Waiting) => {
+                self.deferrals.suspended.insert(constant);
+            },
+            Maybe::Present(_) | Maybe::Absent(unfolding::Absent::Rigid) => {},
         }
         Ok(())
     }
@@ -1548,6 +1572,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         if let SupportLog::Recording { ref mut values, .. } = self.support {
             values.push(Consulted::new(constant, answer));
         }
+        self.deferrals.read(constant);
         answer
     }
 
@@ -1731,22 +1756,97 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         &self.lifts
     }
 
+    /// The residual collector: the holes owed, the declarations suspended and
+    /// what the running judgement left.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn deferrals(&self) -> &crate::elaboration::Deferrals
+    {
+        &self.deferrals
+    }
+
+    /// The residual collector, for the module run and the elaboration driver
+    /// to open, read and mark.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn deferrals_mut(&mut self) -> &mut crate::elaboration::Deferrals
+    {
+        &mut self.deferrals
+    }
+
+    /// Record a permitted residual, or retain ordinary rigid conversion.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn defer(
+        &mut self,
+        left: TypeNode,
+        right: TypeNode,
+    ) -> crate::elaboration::Deferred
+    {
+        self.deferrals.defer(self.arena, left, right)
+    }
+
+    /// Record a code occurrence that needs no universe transport.
+    ///
+    /// # Specification
+    /// - requires: this occurrence checks at its natural universe.
+    /// - ensures: elaboration records an identity occurrence; ordinary checking
+    ///   is unchanged. Neither mode writes the ordinary lift side table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — one shared code used at a higher and an equal
+    ///   universe distinguishes an identity occurrence from a missing record.
+    /// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+    /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
+    #[spec(
+        captures: [count = self.lifts.len(), held = self.lifts.contains_key(&at)],
+        ensures: self.lifts.len() == count && self.lifts.contains_key(&at) == held,
+    )]
+    pub(crate) fn record_unlifted(
+        &mut self,
+        at: ValueId,
+    )
+    {
+        if let crate::elaboration::Emission::Recording(ref mut transports) = self.deferrals.emission
+        {
+            transports.record(at, crate::elaboration::CodeUse::Unchanged);
+        }
+    }
+
     /// Record that the code `at` was checked at a universe above its own.
     ///
     /// # Specification
     /// - requires: the natural level is strictly below the target.
-    /// - ensures: `at` has a recorded lift, replacing an earlier record there.
+    /// - ensures: ordinary checking records this lift at `at`, replacing any
+    ///   earlier record there. Elaboration appends an occurrence instead,
+    ///   leaving the ordinary side table unchanged.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the value bridge on equal, lower and higher code
     ///   levels distinguishes recording a genuine lift from recording an
-    ///   equality or refusal; readmission observes the resulting coercion.
+    ///   equality or refusal; readmission observes the resulting coercion;
+    ///   shared uses distinguish occurrence-specific output from one transport
+    ///   per source node.
     /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
     /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    /// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
     #[spec(
         requires: bool::from(lift.natural().lt(lift.target())),
-        ensures: self.lifts.contains_key(&at),
+        captures: [
+            count = self.lifts.len(),
+            held = self.lifts.contains_key(&at),
+            expected = lift.clone(),
+        ],
+        ensures: match self.deferrals.emission {
+            | crate::elaboration::Emission::Off => self.lifts.get(&at) == Some(&expected),
+            | crate::elaboration::Emission::Recording(_) =>
+                self.lifts.len() == count && self.lifts.contains_key(&at) == held,
+        },
     )]
     pub(crate) fn record_lift(
         &mut self,
@@ -1754,7 +1854,14 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         lift: Lift,
     )
     {
-        self.lifts.insert(at, lift);
+        match self.deferrals.emission {
+            crate::elaboration::Emission::Off => {
+                self.lifts.insert(at, lift);
+            },
+            crate::elaboration::Emission::Recording(ref mut transports) => {
+                transports.record(at, crate::elaboration::CodeUse::Lifted(lift));
+            },
+        }
     }
 
     /// The function extensionalities the judgement decided, by node.

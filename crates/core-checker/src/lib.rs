@@ -14,7 +14,7 @@
 //! halves each present or absent for a stated reason, and an opaque origin
 //! token the verdict echoes back.
 //!
-//! # Nine decisions that interlock
+//! # The decisions that interlock
 //!
 //! **The former decides the mode.** Leaves and eliminations synthesise,
 //! introductions check, and a dispatch on the direction names both cases, so a
@@ -61,17 +61,26 @@
 //! the hole rule makes; a refusal cannot be spelled as an obligation, and the
 //! classifier leaves its absence class empty.
 //!
+//! **A judgement waiting on a hole is suspended, not refused.** A comparison
+//! between the decode of an owed code and a constructor-headed type waits on
+//! that code: the declaration that made it is [`Verdict::Suspended`], typed
+//! but not defined, and [`ModuleReport::suspensions`] names the holes it
+//! waits on. A refusal wins over a wait, and a reader of a waiting
+//! declaration waits with it. The [`elaboration`] module states the fragment,
+//! the term-producing run that fills a hole and resumes what waited, and the
+//! alternatives.
+//!
 //! **One machine, no recursion.** Every face and formation run one explicit
 //! machine of goals and frames, charged one step per transition against an
 //! allowance.
 //!
 //! **The kernel re-derives.** [`bridge::readmit`] erases every accepted
 //! declaration and offers it to the kernel's one checked entry: a body as a
-//! definition, an owed hole as an axiom, a refused declaration as nothing. A
-//! decode of a code constant is unfolded at export and the kernel replays
-//! the normaliser's certificate for every unfolding before it admits the
-//! declaration. The artifact's audit is empty exactly when the ledger is, and
-//! gates nothing.
+//! definition, an owed hole as an axiom, a refused or suspended declaration
+//! as nothing. A decode of a code constant is unfolded at export and the
+//! kernel replays the normaliser's certificate for every unfolding before it
+//! admits the declaration. The artifact's audit is empty exactly when the
+//! ledger is, and gates nothing.
 //!
 //! **Sealing mints an atom.** An abstract type is a nominal declaration: its
 //! kind is a value universe, its representation forms within it, and its
@@ -479,6 +488,7 @@ mod context;
 mod conversion;
 mod coverage;
 mod declaration;
+pub mod elaboration;
 pub mod eliminator;
 mod equiv;
 mod failure;
@@ -589,6 +599,7 @@ pub use crate::module::Verdict;
 pub use crate::module::check_declaration;
 pub use crate::module::check_declaration_supported;
 pub use crate::module::check_module;
+pub use crate::module::elaborated_report;
 pub use crate::module::type_module;
 pub use crate::nested::NestedElaboration;
 pub use crate::nested::Nesting;

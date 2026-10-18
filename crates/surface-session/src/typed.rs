@@ -120,12 +120,12 @@ pub fn type_of(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a checked or owed value by its signature, a synthesised value by
-///   its produced classifier, and a native declaration by its declared
-///   universe, each projected to its de Bruijn table and laid out through
-///   [`present_type`] over a [`ContentSource`]; a refused item, an unsigned
-///   owed or checked one, and a refused projection or layout are each absences
-///   naming their reason.
+/// - ensures: a checked, owed or suspended value by its signature, a
+///   synthesised value by its produced classifier, and a native declaration by
+///   its declared universe, each projected to its de Bruijn table and laid out
+///   through [`present_type`] over a [`ContentSource`]; a refused item, an
+///   unsigned owed, checked or suspended one, and a refused projection or
+///   layout are each absences naming their reason.
 /// - provides: the one spelling both lookups share.
 /// - fails: never.
 /// - panics: none.
@@ -138,10 +138,10 @@ pub fn type_of(
 /// - witness: `typed::tests::a_synthesised_type_is_spelled`
 #[spec(ensures: |ret| match *checkpoint.typing() {
     Typing::Refused(_) => matches!(ret, Maybe::Absent(spelled::Absent::Refused)),
-    Typing::Checked { .. } | Typing::Owed
+    Typing::Checked { .. } | Typing::Owed | Typing::Suspended
         if matches!(checkpoint.content().declaration(), DeclarationRoots::Value {signature:Maybe::Absent(_),..}) =>
         matches!(ret, Maybe::Absent(spelled::Absent::Unsigned)),
-    Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Synthesised { .. } =>
+    Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Suspended | Typing::Synthesised { .. } =>
         matches!(ret, Maybe::Present(_) | Maybe::Absent(spelled::Absent::Unpresentable)),
 })]
 fn spelled_type(
@@ -174,7 +174,8 @@ fn spelled_type(
                 Maybe::Absent(spelled::Absent::Unpresentable)
             },
         },
-        Typing::Checked { .. } | Typing::Owed => match *(content.declaration()) {
+        Typing::Checked { .. } | Typing::Owed | Typing::Suspended => match *(content.declaration())
+        {
             DeclarationRoots::Value {
                 signature: Maybe::Present(ref root),
                 ..

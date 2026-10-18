@@ -166,6 +166,7 @@ use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::Mismatch;
 use crate::refusal::TermNode;
+use crate::refusal::TypeNode;
 use crate::view::CompTypeView;
 use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
@@ -295,9 +296,11 @@ pub enum Agreement
 /// - ensures: when both types are universes at their weak heads, success
 ///   exactly when they share a sort and the synthesised level lies at or below
 ///   the expected one, below only in the value sort, which records a [`Lift`]
-///   at `at` from the synthesised level to the expected one; otherwise success
-///   exactly when [`convert`] answers convertible. `tally` advances once on
-///   every outcome, saturating at its ceiling.
+///   at `at` from the synthesised level to the expected one — in the side table
+///   under ordinary checking, as one more occurrence of `at` under a
+///   term-producing run, which records an equal level as an identity occurrence
+///   too; otherwise success exactly when [`convert`] answers convertible.
+///   `tally` advances once on every outcome, saturating at its ceiling.
 /// - provides: the only comparison of value types the judgement makes, and the
 ///   only place a code moves up a universe.
 /// - fails: [`CheckRefusal::SortMismatch`] for two universes of different
@@ -330,6 +333,7 @@ pub enum Agreement
 /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
 /// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
 /// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
+/// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
 #[spec(
     captures: before = tally.0,
     ensures: |ret| tally.0 == before.saturating_add(1)
@@ -342,7 +346,8 @@ pub enum Agreement
             (value_type_view(context.arena(), synthesised), value_type_view(context.arena(), expected)) {
             let lifts = found_sort == GroundSort::Value && bool::from(found.lt(wanted));
             ret.is_ok() == (found_sort == wanted_sort && (found == wanted || lifts))
-                && (ret.is_err() || !lifts || context.lifts().get(&at).is_some_and(|lift| lift.natural() == found && lift.target() == wanted))
+                && (ret.is_err() || !lifts || !matches!(context.deferrals().emission, crate::elaboration::Emission::Off)
+                    || context.lifts().get(&at).is_some_and(|lift| lift.natural() == found && lift.target() == wanted))
         } else {
             true
         },
@@ -380,6 +385,7 @@ pub fn value_bridge(
             });
         }
         if found_level == wanted_level {
+            context.record_unlifted(at);
             return Ok(());
         }
         if found_sort == GroundSort::Value && bool::from(found_level.lt(&wanted_level)) {
@@ -696,11 +702,14 @@ fn endpoints_agree(
 ///   applications of agreeing heads to agreeing arguments, or static lambdas
 ///   over agreeing bodies; two data indices agree when either root is a hole or
 ///   a mark or they are equal as syntax; [`Agreement::Apart`] at the first
-///   position they differ. Two staged types agree invariantly at one stage and
-///   agreeing bases; under subtyping a found staged type agrees with a wanted
-///   one whose stage its own fits within, and with an unstaged type as its
-///   base, while an unstaged type against a staged one, or a stage the order
-///   refuses, is [`Agreement::NotBelow`].
+///   rigid disagreement. Inside the elaboration run a bare owed flex–rigid
+///   equation is accumulated instead: agreement is then conditional on those
+///   residuals, and a later rigid disagreement still answers `Apart`. Two
+///   staged types agree invariantly at one stage and agreeing bases; under
+///   subtyping a found staged type agrees with a wanted one whose stage its own
+///   fits within, and with an unstaged type as its base, while an unstaged type
+///   against a staged one, or a stage the order refuses, is
+///   [`Agreement::NotBelow`].
 /// - fails: the refusal a view gives for a node outside the fragment or a
 ///   dangling id, and the unfolding's refusal when a decode or a code does not
 ///   reduce.
@@ -736,6 +745,8 @@ fn endpoints_agree(
 /// - witness: `conversion::tests::invariant_capabilities_agree_on_authority_grade_and_region`
 /// - witness: `conversion::tests::a_path_type_is_apart_from_data_it_does_not_read_as`
 /// - witness: `conversion::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
+/// - witness: `elaboration::tests::owed_conversion_suspends`
+/// - witness: `elaboration::tests::residual_conjunction_does_not_hide_refusal`
 #[spec(ensures: |ret| match root {
     | Pairing::Values(left, right) | Pairing::Assignable(left, right) | Pairing::SubValues(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) | Pairing::SubComps(left, right) if left == right => ret == Ok(Agreement::Convertible),
@@ -816,6 +827,11 @@ fn convert(
             Pairing::Values(left, right) | Pairing::SubValues(left, right) => {
                 let left = context.whnf_value_type(left)?;
                 let right = context.whnf_value_type(right)?;
+                if context.defer(TypeNode::Value(left), TypeNode::Value(right))
+                    == crate::elaboration::Deferred::Yes
+                {
+                    continue;
+                }
                 match (
                     value_type_view(context.arena(), left)?,
                     value_type_view(context.arena(), right)?,
@@ -1186,6 +1202,11 @@ fn convert(
             Pairing::Comps(left, right) | Pairing::SubComps(left, right) => {
                 let left = context.whnf_comp_type(left)?;
                 let right = context.whnf_comp_type(right)?;
+                if context.defer(TypeNode::Computation(left), TypeNode::Computation(right))
+                    == crate::elaboration::Deferred::Yes
+                {
+                    continue;
+                }
                 match (
                     comp_type_view(context.arena(), left)?,
                     comp_type_view(context.arena(), right)?,

@@ -1522,6 +1522,7 @@ fn a_fold_rests_on_the_laws_of_the_rules_it_computes_apart()
                     | Outcome::Defined { .. }
                     | Outcome::Marked(_)
                     | Outcome::Static
+                    | Outcome::Suspended
                     | Outcome::Refused(_)
                     | Outcome::Rejected(_)) => {
                         panic!("each hole crosses as an axiom: {other:?}")

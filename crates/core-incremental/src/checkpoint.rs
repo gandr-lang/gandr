@@ -2013,7 +2013,10 @@ fn adopt(
                     }
                     Answer::Data(None)
                 },
-                Typing::Checked { .. } | Typing::Synthesised { .. } | Typing::Owed => {
+                Typing::Checked { .. }
+                | Typing::Synthesised { .. }
+                | Typing::Owed
+                | Typing::Suspended => {
                     return Maybe::Absent(recall::Absent::Unseated);
                 },
             };
@@ -2045,7 +2048,10 @@ fn adopt(
                         return Maybe::Absent(recall::Absent::Unseated);
                     }
                 },
-                Typing::Checked { .. } | Typing::Synthesised { .. } | Typing::Owed => {
+                Typing::Checked { .. }
+                | Typing::Synthesised { .. }
+                | Typing::Owed
+                | Typing::Suspended => {
                     return Maybe::Absent(recall::Absent::Unseated);
                 },
             }
@@ -2105,6 +2111,9 @@ fn adopt(
             seat = Maybe::Present(formed);
             answer = Answer::Typed(produced.clone());
         },
+        // An unsigned declaration that waits supplied a type no checkpoint
+        // keeps; it is judged again.
+        (Maybe::Absent(_), &Typing::Suspended) => return Maybe::Absent(recall::Absent::Unseated),
         (
             Maybe::Absent(_),
             &(Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_)),
@@ -2117,10 +2126,12 @@ fn adopt(
         (&(Typing::Checked { .. } | Typing::Synthesised { .. }), Maybe::Present(body)) => {
             Maybe::Present(body)
         },
-        (_, Maybe::Absent(_))
-        | (&(Typing::Data | Typing::Owed | Typing::Refused(_)), Maybe::Present(_)) => {
-            Maybe::Absent(unfolding::Absent::Rigid)
-        },
+        // A hole and a declaration waiting on one are held so, for a later
+        // judgement to suspend on as the judgement that gave them did.
+        (&Typing::Owed, _) => Maybe::Absent(unfolding::Absent::Owed),
+        (&Typing::Suspended, _) => Maybe::Absent(unfolding::Absent::Waiting),
+        (&(Typing::Checked { .. } | Typing::Synthesised { .. }), Maybe::Absent(_))
+        | (&(Typing::Data | Typing::Refused(_)), _) => Maybe::Absent(unfolding::Absent::Rigid),
     };
     if context
         .adopt(input.declaration.constant(), seat, unfolds)

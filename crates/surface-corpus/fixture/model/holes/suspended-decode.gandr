@@ -1,0 +1,43 @@
+// A judgement blocked on an owed hole waits; it is not refused. A value at
+// the decode of a code the module owes cannot be checked until the code is
+// filled — filling it with `Integer` settles the comparison, filling it with
+// `String` refutes it — so the checker suspends the declaration, records the
+// hole it waits on, and owes that hole until a fill resumes it (Slattery and
+// Sterling, _Bidirectional Elaborators à la Carte_, arXiv:2607.09564, Exegesis
+// 6.6: suspension, not failure). The same declarations over a filled code
+// check.
+
+/// A code the module owes: a type to be named later.
+@[ owes(1) ]
+def code : Type ;
+
+/// Three, at the decode of the owed code: the comparison of `Integer` with
+/// the decode waits on `code`, so the declaration owes it.
+@[ owes(1) ]
+def three : code ;
+def three = 3 ;
+
+/// A reader of a waiting declaration waits with it, on the same hole.
+@[ owes(1) ]
+def again : code ;
+def again = three ;
+
+/// A declaration that reads no hole checks beside them.
+@[ checks ]
+def four : Integer ;
+def four = 4 ;
+
+/// The code filled: a type named now.
+@[ checks ]
+def filled : Type ;
+def filled = Integer ;
+
+/// Three, resumed: at the decode of the filled code the comparison settles.
+@[ checks ]
+def threeFilled : filled ;
+def threeFilled = 3 ;
+
+/// The reader, resumed with it.
+@[ checks ]
+def againFilled : filled ;
+def againFilled = threeFilled ;

@@ -351,7 +351,11 @@ fn crossed_at(
         Outcome::Defined { admitted, .. }
         | Outcome::Assumed { admitted, .. }
         | Outcome::Data { admitted, .. } => admitted.position(),
-        Outcome::Marked(_) | Outcome::Static | Outcome::Refused(_) | Outcome::Rejected(_) => {
+        Outcome::Marked(_)
+        | Outcome::Suspended
+        | Outcome::Static
+        | Outcome::Refused(_)
+        | Outcome::Rejected(_) => {
             panic!("the declaration at this position crosses")
         },
     }
@@ -1434,6 +1438,7 @@ fn a_bound_sealed_atom_lowers_to_the_kernel_atom()
             Outcome::Defined { admitted, .. } => Ok(("defined", usize::from(admitted.position()))),
             ref other @ (Outcome::Assumed { .. }
             | Outcome::Marked(_)
+            | Outcome::Suspended
             | Outcome::Static
             | Outcome::Refused(_)
             | Outcome::Rejected(_)) => Err(other.clone()),
@@ -3173,7 +3178,11 @@ fn each_owed_hole_is_an_axiom_of_the_artifact()
             Outcome::Defined { ref audit, .. }
             | Outcome::Assumed { ref audit, .. }
             | Outcome::Data { ref audit, .. } => audit.axioms().to_vec(),
-            Outcome::Marked(_) | Outcome::Static | Outcome::Refused(_) | Outcome::Rejected(_) => {
+            Outcome::Marked(_)
+            | Outcome::Suspended
+            | Outcome::Static
+            | Outcome::Refused(_)
+            | Outcome::Rejected(_) => {
                 panic!("every declaration crosses")
             },
         })
@@ -3707,6 +3716,7 @@ fn family_argument_at_wrong_classifier_raises_the_exact_variant()
         | Verdict::Checked { .. }
         | Verdict::Synthesised { .. }
         | Verdict::Owed(_)
+        | Verdict::Suspended(_)
         | Verdict::Refused(_)) => panic!("refused at the argument's classifier: {verdict:?}"),
     };
     assert_eq!(

@@ -1076,7 +1076,7 @@ impl<'text> Submission<'text>
                     Produced::Judged(
                         Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. },
                     ) => matches!(ret, Maybe::Present(_)),
-                    Produced::Judged(Verdict::Owed(_)) => {
+                    Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_)) => {
                         matches!(ret, Maybe::Absent(evaluation::Absent::Holed))
                     }
                     Produced::Judged(Verdict::Refused(_))
@@ -1124,10 +1124,10 @@ impl<'text> Submission<'text>
 /// - ensures: a declaration whose produced verdict is checked or synthesised
 ///   runs as the dispatcher's run stage runs it, and what the run came to is
 ///   returned — a value, the blame of a goal it reaches, or why it stopped or
-///   never ran. A declaration owed its body declines with
-///   [`evaluation::Absent::Holed`]; one refused, by the lowering, the checker
-///   or its root, declines with [`evaluation::Absent::Unaccepted`]. Nothing
-///   runs for a declined item.
+///   never ran. A declaration owed its body, or waiting on holes that are,
+///   declines with [`evaluation::Absent::Holed`]; one refused, by the lowering,
+///   the checker or its root, declines with [`evaluation::Absent::Unaccepted`].
+///   Nothing runs for a declined item.
 /// - provides: the one rule for what a session evaluates, shared by a
 ///   submission and by a face holding the submission's step.
 /// - fails: the declining absences the ensures clause names.
@@ -1146,7 +1146,7 @@ impl<'text> Submission<'text>
     Produced::Judged(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
         matches!(ret, Maybe::Present(_))
     }
-    Produced::Judged(Verdict::Owed(_)) => {
+    Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_)) => {
         matches!(ret, Maybe::Absent(evaluation::Absent::Holed))
     }
     Produced::Judged(Verdict::Refused(_))
@@ -1166,7 +1166,9 @@ pub fn evaluate<'text>(
         Produced::Judged(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
             Maybe::Present(program.evaluate(declaration.constant()))
         },
-        Produced::Judged(Verdict::Owed(_)) => Maybe::Absent(evaluation::Absent::Holed),
+        Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_)) => {
+            Maybe::Absent(evaluation::Absent::Holed)
+        },
         Produced::Judged(Verdict::Refused(_)) | Produced::Unlowered(_) | Produced::Guarded(_) => {
             Maybe::Absent(evaluation::Absent::Unaccepted)
         },
