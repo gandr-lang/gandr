@@ -521,6 +521,10 @@ impl core::error::Error for OverlapRefusal
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a seam refusal and a kind refusal answer apart.
+    /// - witness: `overlap::tests::overlap_reducts_preserve_refusal_precedence`
     #[inline]
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)>
     {
@@ -1313,6 +1317,16 @@ mod tests
         assert_eq!(
             Err(OverlapRefusal::SeamSplice(CommandSpliceRefusal::OffTerm)),
             off_term.composite(&store)
+        );
+        let seam_refusal = OverlapRefusal::SeamSplice(CommandSpliceRefusal::OffTerm);
+        assert_eq!(
+            core::error::Error::source(&seam_refusal).map(|source| alloc::format!("{source}")),
+            Some(alloc::format!("{}", CommandSpliceRefusal::OffTerm)),
+            "a seam refusal's source is the splice refusal"
+        );
+        assert!(
+            core::error::Error::source(&OverlapRefusal::NotAComposition).is_none(),
+            "a kind refusal has no source"
         );
         let identity = toy_cell(Toy::zero(), Toy::zero());
         let identity_id = store.insert(identity.clone());
