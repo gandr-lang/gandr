@@ -1827,6 +1827,55 @@ fn a_thunk_reads_back_closed_over_its_environment()
     );
 }
 
+/// `x ← return 4; y ← return 5; z ← return 6; return (thunk (return (x, z)))`
+/// halts on every tier with a thunk whose environment binds exactly `z` and
+/// `x`, innermost first: `y` is in scope where the thunk is created, but
+/// nothing in the thunk names it, so it is never moved into the store, and
+/// the thunk still reads back closed over the two it names.
+#[test]
+fn a_captured_environment_holds_exactly_its_support()
+{
+    let mut core = CoreArena::new();
+    let four = integer(&mut core, Digits("4"));
+    let five = integer(&mut core, Digits("5"));
+    let six = integer(&mut core, Digits("6"));
+    let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+    let inner = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let pair = core.value_tuple(&[outer, inner]);
+    let body = core.computation_return(pair);
+    let thunk = core.value_thunk(body);
+    let mut program = core.computation_return(thunk);
+    for bound in [six, five, four] {
+        let head = core.computation_return(bound);
+        program = core.computation_bind(head, program);
+    }
+    let mut arena = CommandArena::new();
+    let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
+        .expect("a closed term focuses");
+    let (store, value) = halted(&arena, &Definitions::new(), command);
+    let Some(&HeapValue::Thunk { environment, .. }) = store.value(value)
+    else {
+        panic!("the run halts with a thunk");
+    };
+    let mut captured = Vec::new();
+    for bound in store.bound_values(environment) {
+        let read = read_back_value(&arena, &store, bound, &mut core).expect("a literal reads back");
+        captured.push(core.value(read).cloned());
+    }
+    assert_eq!(
+        alloc::vec![core.value(six).cloned(), core.value(four).cloned()],
+        captured,
+        "the environment binds z then x, and not y"
+    );
+    let read = read_back_value(&arena, &store, value, &mut core).expect("a thunk is a value");
+    let wrapped = core.computation_return(read);
+    assert_eq!(
+        "⟨{force(α) ⇒ ⟨pair(4, 6) |+ α0⟩} |+ ★⟩",
+        shown(&core, wrapped),
+        "the thunk reads back closed over the two it names"
+    );
+}
+
 /// `⟨pair(μα. ⟨() |+ α0⟩, ()) |+ ★⟩` halts with a suspended capture as a
 /// field, which has no core reading; the core arena is left at its mark.
 #[test]

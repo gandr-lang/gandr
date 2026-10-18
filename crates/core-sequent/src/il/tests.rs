@@ -1,5 +1,6 @@
 use alloc::string::String;
 
+use gandr_core_term::support::Thinning;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Side;
@@ -555,4 +556,296 @@ fn the_first_dangling_child_wins()
         arena.mint_cut(Polarity::Negative, leaf, missing_consumer)
     );
     assert_eq!(entry, arena.watermark());
+}
+
+/// The unit value, minted.
+///
+/// # Specification
+/// trivial.
+fn unit(arena: &mut CommandArena) -> ProducerId
+{
+    arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+            producers: Box::from([]),
+            consumers: Box::from([]),
+        })
+        .expect("a leaf mints")
+}
+
+/// The intuitionistic variable `index`, minted.
+///
+/// # Specification
+/// trivial.
+fn variable(
+    arena: &mut CommandArena,
+    zone: Zone,
+    index: DeBruijnIndex,
+) -> ProducerId
+{
+    arena
+        .mint_producer(ProducerNode::Variable { zone, index })
+        .expect("a leaf mints")
+}
+
+/// The edge from `node` to its first child, in the producer zones and in
+/// the covariable zone.
+///
+/// # Specification
+/// trivial.
+fn first_edges(
+    arena: &CommandArena,
+    node: NodeAddress,
+) -> (Thinning, Thinning)
+{
+    let cover = arena
+        .node_cover(node)
+        .expect("a minted node carries a cover");
+    (
+        cover.producers.edges().first().cloned().expect("one child"),
+        cover
+            .covariables
+            .edges()
+            .first()
+            .cloned()
+            .expect("one child"),
+    )
+}
+
+/// A binder's edge to its body selects its bound name exactly when the body
+/// names it: a `μ̃` over `x1` and over `x0`, a hold over a body ignoring and
+/// a view's access naming its linear binder, and a `μ` over `★` and over
+/// `α0`, one per zone.
+#[test]
+fn an_unused_binder_thins_to_zero()
+{
+    let mut arena = CommandArena::new();
+    let terminal = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+    let returned = arena
+        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+        .expect("leaf");
+    let zero = DeBruijnIndex::from(0_u32);
+
+    for (named, selected) in [(1_u32, false), (0_u32, true)] {
+        let occurrence = variable(&mut arena, Zone::Intuitionistic, DeBruijnIndex::from(named));
+        let body = arena
+            .mint_cut(Polarity::Positive, occurrence, terminal)
+            .expect("children resolve");
+        let binder = arena
+            .mint_consumer(ConsumerNode::MuTilde { body })
+            .expect("the body resolves");
+        let (edge, _) = first_edges(&arena, NodeAddress::Consumer(binder));
+        assert_eq!(
+            selected,
+            edge.indices(Zone::Intuitionistic).contains(&zero),
+            "μ̃ over x{named}"
+        );
+    }
+
+    let value = unit(&mut arena);
+    let ignoring = arena
+        .mint_cut(Polarity::Positive, value, returned)
+        .expect("children resolve");
+    let held = variable(&mut arena, Zone::Linear, DeBruijnIndex::from(0_u32));
+    let naming = arena
+        .mint_cut(Polarity::Positive, held, returned)
+        .expect("children resolve");
+    for (body, selected) in [(ignoring, false), (naming, true)] {
+        let hold = arena
+            .mint_command(CommandNode::Memory {
+                form: gandr_core_term::memory::MemoryForm::Hold { value, body },
+                continuation: terminal,
+            })
+            .expect("children resolve");
+        let cover = arena
+            .node_cover(NodeAddress::Command(hold))
+            .expect("a minted node carries a cover");
+        let edge = cover.producers.edges().get(1).expect("the body's edge");
+        assert_eq!(
+            selected,
+            edge.indices(Zone::Linear).contains(&zero),
+            "a hold whose body names its binder: {selected}"
+        );
+        assert!(
+            cover.producers.support().indices(Zone::Linear).is_empty(),
+            "the hold binds its own linear variable"
+        );
+    }
+
+    for (consumer, selected) in [(terminal, false), (returned, true)] {
+        let body = arena
+            .mint_cut(Polarity::Positive, value, consumer)
+            .expect("children resolve");
+        let capture = arena
+            .mint_producer(ProducerNode::Mu { body })
+            .expect("the body resolves");
+        let (_, edge) = first_edges(&arena, NodeAddress::Producer(capture));
+        assert_eq!(
+            selected,
+            edge.indices(Zone::Intuitionistic).contains(&zero),
+            "μ over a body naming α0: {selected}"
+        );
+        assert!(
+            arena
+                .node_cover(NodeAddress::Producer(capture))
+                .expect("a minted node carries a cover")
+                .covariables
+                .support()
+                .indices(Zone::Intuitionistic)
+                .is_empty(),
+            "the μ binds its own covariable"
+        );
+    }
+}
+
+/// A suspension captures its support's intuitionistic indices past its own
+/// former's binders, lowered past them: none for a thunk, the thunk itself
+/// for a fixpoint, the argument for an `apply` arm, the value for a bind
+/// frame; a body the arena does not hold captures nothing.
+#[test]
+fn captures_skip_each_suspensions_own_binders()
+{
+    let mut arena = CommandArena::new();
+    let fields: Vec<ProducerId> = [0_u32, 1, 3]
+        .into_iter()
+        .map(|index| variable(&mut arena, Zone::Intuitionistic, DeBruijnIndex::from(index)))
+        .collect();
+    let triple = arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::Tuple(ProducerArity::from(3_usize)),
+            producers: fields.into_boxed_slice(),
+            consumers: Box::from([]),
+        })
+        .expect("fields resolve");
+    let returned = arena
+        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+        .expect("leaf");
+    let body = arena
+        .mint_cut(Polarity::Positive, triple, returned)
+        .expect("children resolve");
+    let thunk = arena
+        .mint_producer(ProducerNode::Thunk { body })
+        .expect("the body resolves");
+    let fixpoint = arena
+        .mint_producer(ProducerNode::Fixpoint {
+            body,
+            evidence: gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        })
+        .expect("the body resolves");
+    let function = arena
+        .mint_producer(ProducerNode::Cocase {
+            arms: Box::from([CopatternArm {
+                destructor: DestructorTag::Apply,
+                body,
+            }]),
+        })
+        .expect("the arm resolves");
+    let stack = arena
+        .mint_producer(ProducerNode::Reify(alloc::sync::Arc::from([
+            gandr_core_term::control::StackFrame::Bind(body),
+        ])))
+        .expect("the frame resolves");
+    let indices = |values: &[u32]| {
+        values
+            .iter()
+            .map(|&index| DeBruijnIndex::from(index))
+            .collect::<Vec<_>>()
+    };
+    for (suspension, expected) in [
+        (Suspension::Thunk(body), indices(&[0, 1, 3])),
+        (Suspension::Producer(thunk), indices(&[0, 1, 3])),
+        (Suspension::Fixpoint(body), indices(&[0, 2])),
+        (Suspension::Producer(fixpoint), indices(&[0, 2])),
+        (Suspension::Producer(function), indices(&[0, 2])),
+        (Suspension::Bind(body), indices(&[0, 2])),
+    ] {
+        let captures = arena.captures(suspension).expect("the suspension resolves");
+        assert_eq!(expected.len(), captures.len(), "{suspension:?}");
+        assert_eq!(
+            expected,
+            captures.clone().collect::<Vec<_>>(),
+            "{suspension:?}"
+        );
+        assert!(
+            expected.iter().rev().copied().eq(captures.rev()),
+            "{suspension:?} reads from the outermost end"
+        );
+    }
+    let stack_cover = arena
+        .node_cover(NodeAddress::Producer(stack))
+        .expect("a minted node carries a cover");
+    assert_eq!(
+        indices(&[0, 2]).as_slice(),
+        stack_cover
+            .producers
+            .support()
+            .indices(Zone::Intuitionistic),
+        "a bind frame's stack has the frame body's support past its value"
+    );
+    assert!(
+        arena
+            .captures(Suspension::Thunk(CommandId::from(u32::MAX)))
+            .is_none()
+    );
+    assert!(
+        arena
+            .captures(Suspension::Producer(ProducerId::from(u32::MAX)))
+            .is_none()
+    );
+}
+
+/// A fold's annotations count in its support: a fold whose element type
+/// names `x3`, which no term of the fold names, has `x3` free, and the check
+/// derives the same; a fold over closed types has none.
+#[test]
+fn an_annotation_counts_in_its_nodes_support()
+{
+    let mut arena = CommandArena::new();
+    let code = arena
+        .annotations_mut()
+        .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
+    let open = arena
+        .annotations_mut()
+        .value_type_element(code, Level::zero());
+    let closed = arena.annotations_mut().value_type_unit();
+    let value = unit(&mut arena);
+    let returned = arena
+        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+        .expect("leaf");
+    let branch = arena
+        .mint_cut(Polarity::Positive, value, returned)
+        .expect("children resolve");
+    let terminal = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+    let list = arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::ListNil,
+            producers: Box::from([]),
+            consumers: Box::from([]),
+        })
+        .expect("a leaf mints");
+    for (element, expected) in [
+        (
+            open,
+            alloc::collections::BTreeSet::from([(
+                Zone::Intuitionistic,
+                DeBruijnIndex::from(3_u32),
+            )]),
+        ),
+        (closed, alloc::collections::BTreeSet::new()),
+    ] {
+        let fold = arena
+            .mint_consumer(ConsumerNode::ListFold {
+                element,
+                result: closed,
+                on_nil: branch,
+                on_cons: branch,
+                continuation: terminal,
+            })
+            .expect("children resolve");
+        let root = arena
+            .mint_cut(Polarity::Positive, list, fold)
+            .expect("children resolve");
+        let free = crate::check::check_command(&arena, root).expect("the carried covers check");
+        assert_eq!(&expected, free.producers());
+    }
 }

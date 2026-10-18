@@ -150,8 +150,9 @@ fn binder_depths_saturate_independently()
     }
 }
 
-/// Substitution respects the binder boundary, closing order, residual index
-/// and zone.
+/// Substitution respects the binder boundary, the captured indices, the
+/// residual index between and past them, and the zone; a closing pairs one
+/// value with each strictly ascending index or is refused.
 #[test]
 fn closing_substitution_distinguishes_binders_and_zones()
 {
@@ -161,49 +162,94 @@ fn closing_substitution_distinguishes_binders_and_zones()
     let mut core = CoreArena::new();
     let first = core.value_unit();
     let second = core.value_constant(7_usize.into());
-    let closing = [first, second];
-    for (zone, index, producers, length, expected) in [
-        (Zone::Intuitionistic, 0_u32, 0_u32, 2_usize, Value::unit()),
+    let values = [first, second];
+    let sparse = [DeBruijnIndex::from(0_u32), DeBruijnIndex::from(2_u32)];
+    let variable = |zone, index: u32| Value::Variable {
+        zone,
+        index: index.into(),
+    };
+    assert_eq!(None, Closing::new(&sparse[.. 1], &values));
+    assert_eq!(None, Closing::new(&sparse, &values[.. 1]));
+    assert_eq!(
+        None,
+        Closing::new(
+            &[DeBruijnIndex::from(2_u32), DeBruijnIndex::from(0_u32)],
+            &values
+        )
+    );
+    assert_eq!(
+        None,
+        Closing::new(
+            &[DeBruijnIndex::from(1_u32), DeBruijnIndex::from(1_u32)],
+            &values
+        )
+    );
+    let closing = Closing::new(&sparse, &values).expect("one value per ascending index");
+    for (zone, index, producers, closing, expected) in [
+        (Zone::Intuitionistic, 0_u32, 0_u32, closing, Value::unit()),
         (
             Zone::Intuitionistic,
             1,
             0,
+            closing,
+            variable(Zone::Intuitionistic, 0),
+        ),
+        (
+            Zone::Intuitionistic,
             2,
+            0,
+            closing,
             Value::Constant(7_usize.into()),
         ),
-        (Zone::Intuitionistic, 2, 0, 2, Value::Variable {
-            zone: Zone::Intuitionistic,
-            index: 0_u32.into(),
-        }),
-        (Zone::Intuitionistic, 0, 1, 2, Value::Variable {
-            zone: Zone::Intuitionistic,
-            index: 0_u32.into(),
-        }),
-        (Zone::Intuitionistic, 1, 1, 2, Value::unit()),
+        (
+            Zone::Intuitionistic,
+            3,
+            0,
+            closing,
+            variable(Zone::Intuitionistic, 1),
+        ),
+        (
+            Zone::Intuitionistic,
+            0,
+            1,
+            closing,
+            variable(Zone::Intuitionistic, 0),
+        ),
+        (Zone::Intuitionistic, 1, 1, closing, Value::unit()),
         (
             Zone::Intuitionistic,
             2,
             1,
-            2,
+            closing,
+            variable(Zone::Intuitionistic, 1),
+        ),
+        (
+            Zone::Intuitionistic,
+            3,
+            1,
+            closing,
             Value::Constant(7_usize.into()),
         ),
-        (Zone::Intuitionistic, 3, 1, 2, Value::Variable {
-            zone: Zone::Intuitionistic,
-            index: 1_u32.into(),
-        }),
-        (Zone::Intuitionistic, 1, 0, 0, Value::Variable {
-            zone: Zone::Intuitionistic,
-            index: 1_u32.into(),
-        }),
-        (Zone::Linear, 2, 1, 2, Value::Variable {
-            zone: Zone::Linear,
-            index: 2_u32.into(),
-        }),
+        (
+            Zone::Intuitionistic,
+            4,
+            1,
+            closing,
+            variable(Zone::Intuitionistic, 2),
+        ),
+        (
+            Zone::Intuitionistic,
+            1,
+            0,
+            Closing::default(),
+            variable(Zone::Intuitionistic, 1),
+        ),
+        (Zone::Linear, 2, 1, closing, variable(Zone::Linear, 2)),
     ] {
         let mut walk = Unfocusing {
             arena: &arena,
             core: &mut core,
-            closing: &closing[.. length],
+            closing,
             tasks: Vec::new(),
             values: Vec::new(),
             computations: Vec::new(),
@@ -279,8 +325,11 @@ fn closing_fold_annotations_substitutes_captured_codes()
     let mut core = CoreArena::new();
     let unit = core.value_type_unit();
     let code = core.value_quote(unit);
+    let captured = [DeBruijnIndex::from(0_u32)];
+    let codes = [code];
+    let closing = Closing::new(&captured, &codes).expect("one code for x0");
     let Decoded::Computation(closed) =
-        decode(&arena, Root::Command(root), &mut core, &[code]).expect("captured code closes")
+        decode(&arena, Root::Command(root), &mut core, closing).expect("captured code closes")
     else {
         panic!("computation");
     };
@@ -337,7 +386,12 @@ fn decoding_refuses_missing_roots_and_malformed_heads()
     );
     assert_eq!(
         Err(UnfocusRefusal::DanglingProducer(missing_producer)),
-        decode(&arena, Root::Copattern(missing_producer), &mut core, &[])
+        decode(
+            &arena,
+            Root::Copattern(missing_producer),
+            &mut core,
+            Closing::default()
+        )
     );
     assert_eq!(mark, core.watermark());
     let unit = arena
@@ -356,7 +410,7 @@ fn decoding_refuses_missing_roots_and_malformed_heads()
         .expect("live children");
     assert_eq!(
         Err(UnfocusRefusal::ProducerOutsideTheImage(unit)),
-        decode(&arena, Root::Copattern(unit), &mut core, &[])
+        decode(&arena, Root::Copattern(unit), &mut core, Closing::default())
     );
     for node in [
         ProducerNode::Constructor {
@@ -408,7 +462,7 @@ fn decoding_refuses_missing_roots_and_malformed_heads()
             .expect("references resolve");
         assert_eq!(
             Err(UnfocusRefusal::ProducerOutsideTheImage(bad)),
-            decode(&arena, Root::Copattern(bad), &mut core, &[])
+            decode(&arena, Root::Copattern(bad), &mut core, Closing::default())
         );
         assert_eq!(
             Err(UnfocusRefusal::ProducerOutsideTheImage(bad)),
@@ -481,7 +535,7 @@ fn spines_distinguish_return_points_and_frame_arities()
         let mut walk = Unfocusing {
             arena: &arena,
             core: &mut core,
-            closing: &[],
+            closing: Closing::default(),
             tasks: Vec::new(),
             values: Vec::new(),
             computations: alloc::vec![result],
@@ -519,7 +573,7 @@ fn spines_distinguish_return_points_and_frame_arities()
         let mut walk = Unfocusing {
             arena: &arena,
             core: &mut core,
-            closing: &[],
+            closing: Closing::default(),
             tasks: Vec::new(),
             values: Vec::new(),
             computations: alloc::vec![result],
@@ -533,7 +587,7 @@ fn spines_distinguish_return_points_and_frame_arities()
     let mut walk = Unfocusing {
         arena: &arena,
         core: &mut core,
-        closing: &[],
+        closing: Closing::default(),
         tasks: Vec::new(),
         values: Vec::new(),
         computations: alloc::vec![result],
@@ -565,7 +619,7 @@ fn decoding_result_stacks_refuse_underflow_and_surplus()
     let mut walk = Unfocusing {
         arena: &arena,
         core: &mut core,
-        closing: &[],
+        closing: Closing::default(),
         tasks: Vec::new(),
         values: alloc::vec![first, last],
         computations: alloc::vec![before, after],

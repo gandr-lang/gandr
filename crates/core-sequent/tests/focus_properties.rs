@@ -2,22 +2,31 @@
 //!
 //! The generated suites run over closed, well-typed computations and values
 //! from [`crate::generate`]: focusing is total on them, its image passes the
-//! typed-IL check closed, every covariable it mints is the innermost one, and
-//! unfocusing reads each image back as the term it came from. The hand-built
-//! suite preserves each former's syntax, scope, and provenance through a round
-//! trip.
+//! typed-IL check closed, every command of it carries the support an
+//! independent walk computes, every covariable it mints is the innermost one,
+//! and unfocusing reads each image back as the term it came from. The
+//! hand-built suite preserves each former's syntax, scope, and provenance
+//! through a round trip.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_sequent::CommandArena;
+use gandr_core_sequent::CommandId;
+use gandr_core_sequent::CommandNode;
+use gandr_core_sequent::ConsumerArity;
 use gandr_core_sequent::ConsumerId;
 use gandr_core_sequent::ConsumerNode;
 use gandr_core_sequent::CovariableIndex;
 use gandr_core_sequent::FocusOrigin;
 use gandr_core_sequent::FreeSet;
+use gandr_core_sequent::Introduces;
+use gandr_core_sequent::ProducerArity;
+use gandr_core_sequent::ProducerId;
+use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::Provenance;
+use gandr_core_sequent::Route;
 use gandr_core_sequent::check_command;
 use gandr_core_sequent::focus_computation;
 use gandr_core_sequent::focus_top_value;
@@ -28,8 +37,12 @@ use gandr_core_term::ComponentCount;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Zone;
+use gandr_core_term::control::StackFrame;
+use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::value_type_support;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
 use proptest::prelude::*;
@@ -136,6 +149,7 @@ fn hand_built_control_cases_cover_every_former()
         let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
             .expect("control focuses");
         assert_eq!(Ok(FreeSet::default()), check_command(&arena, command));
+        assert_eq!(Agreement::Same, supports_are_walked(&arena));
         let restored = unfocus_command(&arena, command, &mut core).expect("image unfocuses");
         let actual = core.value_thunk(restored);
         assert_eq!(
@@ -180,6 +194,371 @@ fn every_covariable_is_innermost(arena: &CommandArena) -> Agreement
     Agreement::Same
 }
 
+/// The binders a node stands under, per space, counted from the command an
+/// oracle walk starts at.
+#[derive(Clone, Copy, Debug, Default)]
+struct Depth
+{
+    /// Intuitionistic producer binders.
+    producers: u32,
+    /// Covariable binders.
+    covariables: u32,
+    /// Linear producer binders.
+    linears: u32,
+}
+
+impl Depth
+{
+    /// The depth under further intuitionistic producer binders and
+    /// covariable binders.
+    ///
+    /// # Specification
+    /// trivial.
+    fn under(
+        self,
+        producers: ProducerArity,
+        covariables: ConsumerArity,
+    ) -> Self
+    {
+        Self {
+            producers: self
+                .producers
+                .checked_add(u32::try_from(usize::from(producers)).expect("a small arity"))
+                .expect("a shallow term"),
+            covariables: self
+                .covariables
+                .checked_add(u32::try_from(usize::from(covariables)).expect("a small arity"))
+                .expect("a shallow term"),
+            linears: self.linears,
+        }
+    }
+}
+
+/// One node an oracle walk visits, under the binders above it.
+#[derive(Clone, Copy, Debug)]
+enum Visit
+{
+    /// A command.
+    Command(CommandId, Depth),
+    /// A producer.
+    Producer(ProducerId, Depth),
+    /// A consumer.
+    Consumer(ConsumerId, Depth),
+}
+
+/// A free set, as the check answers one.
+type Free = (BTreeSet<(Zone, DeBruijnIndex)>, BTreeSet<CovariableIndex>);
+
+/// The free variables and covariables of `command`, by a walk independent of
+/// the carried covers: every occurrence below it, and every index an
+/// annotation below it names, counted past the binders above it.
+///
+/// # Specification
+/// - requires: `command` and everything below it resolve.
+/// - ensures: each producer variable and covariable an occurrence names past
+///   its binders, lowered by them; a linear variable is bound only by a memory
+///   form's hold or access body.
+/// - panics: on a node the arena does not hold.
+/// - executable: none — this is the reference the carried supports are held to;
+///   it is the walk the check ran before scope was carried.
+///
+/// # Adequacy
+/// - hypothesis: L2 — agreement with the check on every command of every
+///   generated and hand-built focused term.
+/// - witness: `tests::focus_properties::root_support_equals_the_walk_on_every_focused_term`
+fn walked(
+    arena: &CommandArena,
+    command: CommandId,
+) -> Free
+{
+    let mut scratch = arena.annotations().clone();
+    let mut free = Free::default();
+    let mut stack = alloc::vec![Visit::Command(command, Depth::default())];
+    let named = |free: &mut Free, scratch: &mut CoreArena, ty, depth: Depth| {
+        for &index in value_type_support(scratch, ty).indices(Zone::Intuitionistic) {
+            if let Some(past) = u32::from(index).checked_sub(depth.producers) {
+                free.0
+                    .insert((Zone::Intuitionistic, DeBruijnIndex::from(past)));
+            }
+        }
+    };
+    while let Some(visit) = stack.pop() {
+        match visit {
+            Visit::Command(id, depth) => match *arena.command(id).expect("the command resolves") {
+                CommandNode::Cut {
+                    producer, consumer, ..
+                } => {
+                    stack.push(Visit::Producer(producer, depth));
+                    stack.push(Visit::Consumer(consumer, depth));
+                },
+                CommandNode::Perform {
+                    ref signature,
+                    route,
+                    payload,
+                    continuation,
+                    ..
+                } => {
+                    for ty in signature.types() {
+                        named(&mut free, &mut scratch, ty, depth);
+                    }
+                    if let Route::Capability(capability) = route {
+                        stack.push(Visit::Producer(capability, depth));
+                    }
+                    stack.push(Visit::Producer(payload, depth));
+                    stack.push(Visit::Consumer(continuation, depth));
+                },
+                CommandNode::Handle {
+                    ref signature,
+                    introduces,
+                    subject,
+                    on_return,
+                    ref clauses,
+                    continuation,
+                } => {
+                    for ty in signature.types() {
+                        named(&mut free, &mut scratch, ty, depth);
+                    }
+                    let introduced = match introduces {
+                        Introduces::Nothing => ProducerArity::ZERO,
+                        Introduces::Capability => ProducerArity::ONE,
+                    };
+                    stack.push(Visit::Command(
+                        subject,
+                        depth.under(introduced, ConsumerArity::ONE),
+                    ));
+                    stack.push(Visit::Command(
+                        on_return,
+                        depth.under(ProducerArity::ONE, ConsumerArity::ONE),
+                    ));
+                    for clause in clauses.iter() {
+                        stack.push(Visit::Command(
+                            clause.body,
+                            depth.under(ProducerArity::TWO, ConsumerArity::ONE),
+                        ));
+                    }
+                    stack.push(Visit::Consumer(continuation, depth));
+                },
+                CommandNode::Resume {
+                    stack: captured,
+                    body,
+                    continuation,
+                } => {
+                    stack.push(Visit::Producer(captured, depth));
+                    stack.push(Visit::Command(
+                        body,
+                        depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
+                    ));
+                    stack.push(Visit::Consumer(continuation, depth));
+                },
+                CommandNode::Reset { body, continuation } => {
+                    stack.push(Visit::Command(
+                        body,
+                        depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
+                    ));
+                    stack.push(Visit::Consumer(continuation, depth));
+                },
+                CommandNode::Shift { body, continuation } => {
+                    stack.push(Visit::Command(
+                        body,
+                        depth.under(ProducerArity::ONE, ConsumerArity::ONE),
+                    ));
+                    stack.push(Visit::Consumer(continuation, depth));
+                },
+                CommandNode::Memory {
+                    ref form,
+                    continuation,
+                } => {
+                    for value in form.values() {
+                        stack.push(Visit::Producer(value, depth));
+                    }
+                    for (body, linears) in form.scoped() {
+                        let mut under = depth.under(ProducerArity::ZERO, ConsumerArity::ONE);
+                        under.linears = under
+                            .linears
+                            .checked_add(u32::from(linears))
+                            .expect("a shallow term");
+                        stack.push(Visit::Command(body, under));
+                    }
+                    match *form {
+                        MemoryForm::Access { held: index, .. }
+                        | MemoryForm::Resume { view: index, .. }
+                        | MemoryForm::Abort { view: index } => {
+                            if let Some(past) = u32::from(index).checked_sub(depth.linears) {
+                                free.0.insert((Zone::Linear, DeBruijnIndex::from(past)));
+                            }
+                        },
+                        MemoryForm::Hold { .. } => {},
+                    }
+                    stack.push(Visit::Consumer(continuation, depth));
+                },
+            },
+            Visit::Producer(id, depth) => {
+                match *arena.producer(id).expect("the producer resolves") {
+                    ProducerNode::Reify(ref frames) => {
+                        for frame in frames.iter() {
+                            match *frame {
+                                StackFrame::Apply(value) => {
+                                    stack.push(Visit::Producer(value, depth));
+                                },
+                                StackFrame::Bind(body) => {
+                                    stack.push(Visit::Command(
+                                        body,
+                                        depth.under(ProducerArity::ONE, ConsumerArity::ONE),
+                                    ));
+                                },
+                                StackFrame::Project(_) => {},
+                            }
+                        }
+                    },
+                    ProducerNode::Primitive { ref arguments, .. } => {
+                        for &argument in arguments.iter() {
+                            stack.push(Visit::Producer(argument, depth));
+                        }
+                    },
+                    ProducerNode::Variable { zone, index } => {
+                        let bound = match zone {
+                            Zone::Intuitionistic => depth.producers,
+                            Zone::Linear => depth.linears,
+                        };
+                        if let Some(past) = u32::from(index).checked_sub(bound) {
+                            free.0.insert((zone, DeBruijnIndex::from(past)));
+                        }
+                    },
+                    ProducerNode::Constant(_) | ProducerNode::Literal(_) => {},
+                    ProducerNode::Constructor {
+                        ref producers,
+                        ref consumers,
+                        ..
+                    } => {
+                        for &producer in producers {
+                            stack.push(Visit::Producer(producer, depth));
+                        }
+                        for &consumer in consumers {
+                            stack.push(Visit::Consumer(consumer, depth));
+                        }
+                    },
+                    ProducerNode::Thunk { body } | ProducerNode::Mu { body } => {
+                        stack.push(Visit::Command(
+                            body,
+                            depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
+                        ));
+                    },
+                    ProducerNode::Fixpoint { body, .. } => {
+                        stack.push(Visit::Command(
+                            body,
+                            depth.under(ProducerArity::ONE, ConsumerArity::ONE),
+                        ));
+                    },
+                    ProducerNode::Cocase { ref arms } => {
+                        for arm in arms {
+                            let under = depth.under(
+                                arm.destructor.producer_arity(),
+                                arm.destructor.consumer_arity(),
+                            );
+                            stack.push(Visit::Command(arm.body, under));
+                        }
+                    },
+                }
+            },
+            Visit::Consumer(id, depth) => {
+                match *arena.consumer(id).expect("the consumer resolves") {
+                    ConsumerNode::Covariable(index) => {
+                        if let Some(past) = u32::from(index).checked_sub(depth.covariables) {
+                            free.1.insert(CovariableIndex::from(past));
+                        }
+                    },
+                    ConsumerNode::Top => {},
+                    ConsumerNode::ListFold {
+                        element,
+                        result,
+                        on_nil,
+                        on_cons,
+                        continuation,
+                    } => {
+                        named(&mut free, &mut scratch, element, depth);
+                        named(&mut free, &mut scratch, result, depth);
+                        stack.push(Visit::Command(
+                            on_nil,
+                            depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
+                        ));
+                        stack.push(Visit::Command(
+                            on_cons,
+                            depth.under(ProducerArity::TWO, ConsumerArity::ONE),
+                        ));
+                        stack.push(Visit::Consumer(continuation, depth));
+                    },
+                    ConsumerNode::MuTilde { body } => {
+                        stack.push(Visit::Command(
+                            body,
+                            depth.under(ProducerArity::ONE, ConsumerArity::ZERO),
+                        ));
+                    },
+                    ConsumerNode::Destructor {
+                        ref producers,
+                        ref consumers,
+                        ..
+                    } => {
+                        for &producer in producers {
+                            stack.push(Visit::Producer(producer, depth));
+                        }
+                        for &consumer in consumers {
+                            stack.push(Visit::Consumer(consumer, depth));
+                        }
+                    },
+                    ConsumerNode::Case { ref arms } => {
+                        for arm in arms {
+                            let under = depth.under(
+                                arm.constructor.producer_arity(),
+                                arm.constructor.consumer_arity(),
+                            );
+                            stack.push(Visit::Command(arm.body, under));
+                        }
+                    },
+                    ConsumerNode::DataCase { ref branches, then } => {
+                        for &branch in branches {
+                            stack.push(Visit::Producer(branch, depth));
+                        }
+                        stack.push(Visit::Consumer(then, depth));
+                    },
+                    ConsumerNode::Select { then, .. } => {
+                        stack.push(Visit::Consumer(then, depth));
+                    },
+                }
+            },
+        }
+    }
+    free
+}
+
+/// Every command of `arena` checks, and its checked free set is the one an
+/// independent walk computes.
+///
+/// # Specification
+/// - requires: every command of the arena resolves everything below it.
+/// - ensures: Same exactly when, at every command, the check succeeds and
+///   answers [`walked`]'s free set.
+/// - panics: on a node the arena does not hold.
+/// - executable: none — the observation of the witnesses below.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated and hand-built focused terms over every former
+///   the focuser emits.
+/// - witness: `tests::focus_properties::root_support_equals_the_walk_on_every_focused_term`
+/// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+/// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+fn supports_are_walked(arena: &CommandArena) -> Agreement
+{
+    for offset in 0 .. usize::from(arena.command_count()) {
+        let id = CommandId::from(u32::try_from(offset).expect("a small arena"));
+        let carried = check_command(arena, id)
+            .map(|free| (free.producers().clone(), free.covariables().clone()));
+        if carried != Ok(walked(arena, id)) {
+            return Agreement::Differ;
+        }
+    }
+    Agreement::Same
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1024))]
 
@@ -198,6 +577,21 @@ proptest! {
         let command = focused.expect("checked above");
         prop_assert_eq!(Ok(FreeSet::default()), check_command(&arena, command), "the image is well formed and closed");
         prop_assert_eq!(Agreement::Same, every_covariable_is_innermost(&arena), "a covariable other than α0 was minted");
+    }
+
+    /// Every command of a focused computation carries the support an
+    /// independent walk computes: the check's answer, read off the carried
+    /// support, is the walked free set at every command, not only the root.
+    #[test]
+    fn root_support_equals_the_walk_on_every_focused_term(generated in computations())
+    {
+        let GeneratedRoot::Computation(root) = generated.root else {
+            return Err(TestCaseError::fail("the strategy yields computations"));
+        };
+        let mut arena = CommandArena::new();
+        let mut provenance = Provenance::new();
+        focus_computation(&generated.core, root, &mut arena, &mut provenance).expect("focusing is total");
+        prop_assert_eq!(Agreement::Same, supports_are_walked(&arena), "a carried support differs from the walk");
     }
 
     /// Unfocusing reads a focused computation back as the computation it came
@@ -554,6 +948,12 @@ fn hand_built_cases_cover_every_former()
             Ok(FreeSet::default()),
             check_command(&arena, command),
             "{}: the image is well formed and closed",
+            case.label
+        );
+        assert_eq!(
+            Agreement::Same,
+            supports_are_walked(&arena),
+            "{}: every command carries its walked support",
             case.label
         );
         let mut decoded = CoreArena::new();
