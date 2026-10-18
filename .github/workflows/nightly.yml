@@ -227,7 +227,8 @@ jobs:
   # units a deep landing rebuilds. The enforcing shards' budgets scale the
   # lane's by each shard's share of the arm64 probe's deep rebuild and suite
   # (#702): surface 0.51, checker 0.41, rest 0.26; a join is setup, transfer
-  # and the witness listing.
+  # and the witness listing. The macOS lanes run on main's push and the daily
+  # run, which this job does not sample.
   lane-budget:
     name: hold each CI lane to its budget
     needs: ci-image-ref
@@ -258,13 +259,6 @@ jobs:
           --budget "test enforcing targets (linux, rest)=135"
           --budget "test enforcing targets (linux, rest):deep=200"
           --budget "join the enforcing shards (linux)=120"
-          --budget "test enforcing targets (macos-arm64, surface)=220"
-          --budget "test enforcing targets (macos-arm64, surface):deep=310"
-          --budget "test enforcing targets (macos-arm64, checker)=175"
-          --budget "test enforcing targets (macos-arm64, checker):deep=250"
-          --budget "test enforcing targets (macos-arm64, rest)=115"
-          --budget "test enforcing targets (macos-arm64, rest):deep=160"
-          --budget "join the enforcing shards (macos-arm64)=150"
           --budget "test plain-only targets (linux)=210"
           --budget "check quenchant compiler policy=180"
           --budget "check Clippy wall=150"

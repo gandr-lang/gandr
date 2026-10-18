@@ -14,17 +14,19 @@ on:
         description: Also time the plain baseline the enforcing lanes compare with
         type: boolean
         default: false
-  # The push to main runs no checks: the merge-group run already tested this
-  # exact commit, so a rerun could only disagree through its environment. It
-  # promotes caches instead. Queue refs cannot warm sibling branches, so cache
-  # misses may reuse artifacts from the latest completed queue run. Successful
-  # builds publish state even when a later test fails. Main promotes only the
-  # exact landing's state; cached state never substitutes for running a gate.
+  # The push to main reruns no Linux check: the merge-group run already
+  # tested this exact commit, so a rerun could only disagree through its
+  # environment. It promotes caches instead. Queue refs cannot warm sibling
+  # branches, so cache misses may reuse artifacts from the latest completed
+  # queue run. Successful builds publish state even when a later test fails.
+  # Main promotes only the exact landing's state; cached state never
+  # substitutes for running a gate. macOS is tested here and daily, never in
+  # the queue: no landing waits for it (#702).
   push:
     branches: [main]
   merge_group: {}
-  # The daily run times only the plain baseline of main, which every enforcing
-  # lane divides its own report by; it gates nothing.
+  # The daily run times the plain baseline of main, which every enforcing
+  # lane divides its own report by, and tests main on macOS.
   schedule:
     - cron: "37 5 * * *"
 
@@ -102,16 +104,16 @@ jobs:
       # Main promotes queue state into shared caches. Manual test runs warm
       # only their own branch, making a second dispatch a warm measurement.
       # A promote job that found no state skips the setup. Each platform has
-      # one writer: the plain lane on Linux, the enforcing lane on macOS,
-      # which runs no plain lane.
+      # one writer: the plain lane on Linux, the enforcing join of main's push
+      # on macOS, which runs no plain lane.
       - &setup-rust
         id: setup-rust
         name: setup rust
-        if: ${{ github.event_name != 'push' || hashFiles('build-state-*.tar.zst') != '' }}
+        if: ${{ github.event_name != 'push' || env.CI_ON_MAIN == 'true' || hashFiles('build-state-*.tar.zst') != '' }}
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
           install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.ci-image-ref.outputs.ref == '' }}
-          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (hashFiles('build-state-*.tar.zst') != '' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
+          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (hashFiles('build-state-*.tar.zst') != '' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || (github.event_name == 'push' && env.CI_ON_MAIN == 'true' && env.CI_SHARDS != '')) }}
       # Cache installed tools by locked pins, including source-built sizelint
       # and macOS Dylint tools. Install the complete CI subset inside the cache.
       # A hosted runner carries rustup and the setup step installs the pinned
@@ -251,15 +253,18 @@ jobs:
           path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
           key: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-${{ env.CI_BUILD_FINGERPRINT }}-${{ github.sha }}
           restore-keys: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-
-          # Promotion already downloads the verified queue artifact.
-          lookup-only: ${{ github.event_name == 'push' }}
+          # Promotion already downloads the verified queue artifact; a lane
+          # that runs on main's push restores main's newest state itself.
+          lookup-only: ${{ github.event_name == 'push' && env.CI_ON_MAIN != 'true' }}
       # A cache a queue run saves is visible to that queue ref alone, so
-      # only main's promotion and a dispatch save: a queue run's save would
-      # take gigabytes of the repository's cache for no reader.
+      # only main's push and a dispatch save: a queue run's save would take
+      # gigabytes of the repository's cache for no reader. A lane on main's
+      # push saves only the state it archived, and a shard none: its join
+      # hands the whole on.
       - &save-test-state
         name: cache complete test state
         id: save-test-state
-        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' && steps.build-state-archive.outcome == 'success') && steps.test-state-restore.outputs.cache-hit != 'true' && hashFiles(format('build-state-{0}.tar.zst', env.CI_BUILD_STATE)) != '' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && env.CI_SHARD == '' && (github.event_name == 'push' && (env.CI_ON_MAIN != 'true' || steps.build-state-archive.outcome == 'success') || github.event_name == 'workflow_dispatch' && steps.build-state-archive.outcome == 'success') && steps.test-state-restore.outputs.cache-hit != 'true' && hashFiles(format('build-state-{0}.tar.zst', env.CI_BUILD_STATE)) != '' }}
         uses: *cache-save
         with:
           path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
@@ -281,14 +286,15 @@ jobs:
       # shard's build is part of the state, which the join hands on.
       - &prune-build-state
         name: prune build state to this run's units
-        if: &hand-on-state ${{ !cancelled() && env.CI_PLAIN_BASELINE != 'true' && env.CI_SHARD == '' && steps.build-workspace.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true')) }}
+        if: &hand-on-state ${{ !cancelled() && env.CI_PLAIN_BASELINE != 'true' && env.CI_SHARD == '' && steps.build-workspace.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true') || (github.event_name == 'push' && env.CI_ON_MAIN == 'true')) }}
         continue-on-error: true
         env:
           CI_PRUNE_TASK: ${{ env.CI_ENFORCING == 'true' && 'ci:prune-enforcing' || 'ci:prune-plain' }}
         run: mise run "$CI_PRUNE_TASK"
       # Keep modes and mtimes in a zstd tar; upload without zip recompression.
       # Each flavor keeps only its own test-profile target directory.
-      # Dispatches also upload, so warm measurements cover the promotion path.
+      # Dispatches also upload, so warm measurements cover the promotion path;
+      # a lane on main's push caches its state itself and uploads none.
       # The plain baseline only reads state: its full plain build would evict
       # the queue's from the cache.
       - &archive-build-state
@@ -301,7 +307,7 @@ jobs:
         run: tar -cf - "$CI_BUILD_TARGET" | zstd -T0 -3 -f -o "build-state-$GITHUB_JOB.tar.zst"
       - &upload-build-state
         name: upload build state
-        if: ${{ !cancelled() && env.ACT != 'true' && steps.build-state-archive.outcome == 'success' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && github.event_name != 'push' && steps.build-state-archive.outcome == 'success' }}
         uses: *upload-artifact
         with:
           path: build-state-${{ github.job }}.tar.zst
@@ -319,7 +325,7 @@ jobs:
       - &download-build-state
         name: download reusable queue build state
         id: download-build-state
-        if: ${{ (github.event_name == 'push' && steps.test-state-restore.outputs.cache-hit != 'true' || github.event_name != 'push' && steps.test-state-restore.outputs.cache-matched-key == '') && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), format('build-state-{0}--{1}', env.CI_BUILD_STATE, env.CI_BUILD_GENERATION)) }}
+        if: ${{ (github.event_name == 'push' && env.CI_ON_MAIN != 'true' && steps.test-state-restore.outputs.cache-hit != 'true' || (github.event_name != 'push' || env.CI_ON_MAIN == 'true') && steps.test-state-restore.outputs.cache-matched-key == '') && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), format('build-state-{0}--{1}', env.CI_BUILD_STATE, env.CI_BUILD_GENERATION)) }}
         uses: &download-artifact actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: build-state-${{ env.CI_BUILD_STATE }}--${{ env.CI_BUILD_GENERATION }}
@@ -338,7 +344,8 @@ jobs:
 
   # Always trigger the workflow: a skipped workflow supplies no required
   # check, whereas a skipped job succeeds. Formatting sees docs-only changes.
-  # A push and the scheduled baseline gate nothing.
+  # A push and the scheduled baseline gate nothing; the macOS verdict runs
+  # only there, so the queue's required macOS check is a skipped job.
   changes:
     name: detect changed-file categories
     if: &gate-run ${{ !cancelled() && !failure() && github.event_name != 'push' && github.event_name != 'schedule' }}
@@ -713,19 +720,24 @@ jobs:
   # Windows and big-endian lanes have no local surface under act; macOS arm64
   # remains the other hosted platform. Its enforcing run is the full test pass
   # in the Linux lane's shards; the plain delta is platform-neutral and runs
-  # on Linux.
+  # on Linux. It runs on main's push, the daily run and a dispatch, never in
+  # the queue or on a pull request: a warm queue run's macOS surface shard
+  # built in 192 s where Linux's took 102 s, and no landing waits for it
+  # (#702). Main's push builds over main's newest state and its join caches
+  # the result, so it needs no promotion.
   cargo-test-macos-enforcing-shard:
     name: test enforcing targets (macos-arm64, ${{ matrix.shard }})
     needs: *cached-test-needs
-    if: *heavy-lane
+    if: &main-lane ${{ !cancelled() && !failure() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: macos-latest
-    permissions: &macos-read-permissions
+    permissions:
       contents: read
       actions: read
     timeout-minutes: 45
     strategy: *enforcing-shards
     env:
       CI_INSTALL_TOOLCHAIN: "true"
+      CI_ON_MAIN: "true"
       CI_BUILD_STATE: cargo-test-macos-enforcing
       CI_ENFORCING: "true"
       CI_FETCH_DEPTH: "2"
@@ -734,17 +746,20 @@ jobs:
       CI_SHARD_EXCLUDES: ${{ join(matrix.excludes, ' ') }}
     steps: *workspace-test-steps
 
-  # The macOS join only hands the state on; witnesses resolve on Linux, so
-  # no verdict waits for it.
+  # The macOS join hands the state on; witnesses resolve on Linux. On main's
+  # push it caches the state in place of the one it supersedes.
   cargo-test-macos-enforcing:
     name: join the enforcing shards (macos-arm64)
     needs: [changes, build-state, cargo-test-macos-enforcing-shard]
-    if: *heavy-lane
+    if: *main-lane
     runs-on: macos-latest
-    permissions: *macos-read-permissions
+    permissions:
+      contents: read
+      actions: write
     timeout-minutes: 30
     env:
       CI_INSTALL_TOOLCHAIN: "true"
+      CI_ON_MAIN: "true"
       CI_BUILD_STATE: cargo-test-macos-enforcing
       CI_SHARDS: cargo-test-macos-enforcing-shard
       CI_ENFORCING: "true"
@@ -755,7 +770,7 @@ jobs:
   cargo-test:
     name: test the workspace (linux)
     needs: [cargo-test-plain-only, cargo-test-enforcing-shard, cargo-test-enforcing]
-    if: &test-verdict ${{ always() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ always() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions: {}
     timeout-minutes: 5
@@ -767,18 +782,21 @@ jobs:
       - name: require both test flavors and the witnesses
         run: test "$PLAIN_RESULT:$SHARDS_RESULT:$JOIN_RESULT" = success:success:success
 
+  # Skipped on a pull request and in the queue, which a skipped job satisfies;
+  # on main's push and the daily run a failed macOS lane fails it there.
   cargo-test-macos:
     name: test the workspace (macos-arm64)
-    needs: [cargo-test-macos-enforcing-shard]
-    if: *test-verdict
+    needs: [cargo-test-macos-enforcing-shard, cargo-test-macos-enforcing]
+    if: ${{ always() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: macos-latest
     permissions: {}
     timeout-minutes: 5
     env:
-      ENFORCING_RESULT: ${{ needs.cargo-test-macos-enforcing-shard.result }}
+      SHARDS_RESULT: ${{ needs.cargo-test-macos-enforcing-shard.result }}
+      JOIN_RESULT: ${{ needs.cargo-test-macos-enforcing.result }}
     steps:
       - name: require the enforcing test pass
-        run: test "$ENFORCING_RESULT" = success
+        run: test "$SHARDS_RESULT:$JOIN_RESULT" = success:success
 
   # Clippy writes check metadata, which a restored test build does not hold,
   # so the lane keeps its own state: main's newest, restored by prefix on the
@@ -1211,20 +1229,6 @@ jobs:
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:
       CI_BUILD_STATE: cargo-test-enforcing
-      CI_ENFORCING: "true"
-    steps: *promote-steps
-
-  promote-test-macos-enforcing:
-    name: promote enforcing build state (macos-arm64)
-    needs: *promote-needs
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-macos-enforcing--') }}
-    runs-on: macos-latest
-    permissions:
-      contents: read
-      actions: write
-    env:
-      CI_BUILD_STATE: cargo-test-macos-enforcing
-      CI_INSTALL_TOOLCHAIN: "true"
       CI_ENFORCING: "true"
     steps: *promote-steps
 
