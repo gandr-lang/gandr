@@ -742,6 +742,11 @@ primitive_copy_wrapper!(
     pub struct HeadOperandPresence(bool);
 );
 primitive_copy_wrapper!(
+    /// Whether the stack head is the nearest open form's frontier tile, so the
+    /// slot that tile opens holds nothing yet.
+    pub struct HeadFrontier(bool);
+);
+primitive_copy_wrapper!(
     /// Whether no slot is open at the slope head: the top level, where an
     /// item begins.
     pub struct BoundarySlot(bool);
@@ -2354,6 +2359,29 @@ impl<'pbg> MeldState<'pbg>
             self.stack.last().map(|cell| cell.role),
             Some(Role::Operand)
         ))
+    }
+
+    /// Return whether the topmost slope cell is the nearest open form's
+    /// frontier tile: nothing stands yet in the slot that tile opens.
+    ///
+    /// # Specification
+    /// - ensures: reports whether a form is open and its frontier cell is the
+    ///   last slope cell; an empty slope is false.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration's name slot, empty after its head tile,
+    ///   separates a keyword written there from one written after a name.
+    /// - witness: `tests::acceptance::a_keyword_in_a_name_slot_stands_there_unmolded_722`
+    #[inline]
+    #[spec(ensures: |ret| bool::from(ret) == self.nearest_open_form().is_some_and(|frontier| usize::from(frontier).checked_add(1) == Some(self.stack.len())))]
+    pub(crate) fn head_is_frontier(&self) -> HeadFrontier
+    {
+        HeadFrontier::from(
+            self.nearest_open_form().is_some_and(|frontier| {
+                usize::from(frontier).checked_add(1) == Some(self.stack.len())
+            }),
+        )
     }
 
     /// Return the sort of the head operand cell, if the head is an operand.
