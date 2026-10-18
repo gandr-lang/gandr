@@ -1474,6 +1474,48 @@ fn two_imports_binding_one_name_refuse_its_use()
 }
 
 #[test]
+fn a_model_of_an_imported_sign_derives_its_signature_726()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(
+                "sign Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
+                 Nat) --> Nat;\n}",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) {\n  type Nat = \
+                 Integer;\n  def zero() -> -F Integer { return 0 }\n  def succ(n : Integer) -> \
+                 -F Integer { return n + 1 }\n}",
+            ),
+            &[ImportTarget::Source(SourceIndex::from(0_usize))],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+
+    let declarations: Vec<(String, String)> = module
+        .declarations()
+        .iter()
+        .map(|declaration| {
+            (
+                String::from(declaration.name().as_ref()),
+                format!("{:?}", declaration.outcome()),
+            )
+        })
+        .collect();
+    assert!(
+        declarations
+            .iter()
+            .all(|&(_, ref outcome)| !outcome.starts_with("Refused")),
+        "`Model(Nat)` reads the imported block as a local one: {declarations:?}"
+    );
+}
+
+#[test]
 fn a_pending_declaration_is_not_exported()
 {
     let pbg = grammar();
