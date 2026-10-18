@@ -58,6 +58,23 @@
 //! `description::sign::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`,
 //! `model::tests::an_underivable_component_keeps_its_fault`.
 //!
+//! # The shape parameter
+//!
+//! A `shape` member states the finite shape the signature's cells are stated
+//! over and its named faces: `shape Square : 4 { left = {0, 2}; right = {1,
+//! 3}; }` is a shape of four points and two faces of it, each the subshape of
+//! the points it lists (Schönlank, Nuyts and Devriese, _Towards `FaceTT`_,
+//! TYPES 2026: the shape parameter `ft`). The reader codes it in the value at
+//! the head of the sort chain, so the block's rendering reads back to its
+//! description; a face with a point past the shape and a face named twice are
+//! the description check's `FaceOutsideShape` and `DuplicateFaceName`, and a
+//! second `shape` member is malformed. The extension type reads a face as the
+//! subshape a cell is fixed on. The spelling is provisional: the keyword, the
+//! size after the colon and the braces around each face's points are the
+//! first that read, not a settled surface. Witnesses:
+//! `description::sign::tests::a_rendered_signature_reparses_to_itself`,
+//! `description::sign::tests::a_face_past_its_shape_is_refused_by_name`.
+//!
 //! # A presentation is a value
 //!
 //! The reader reads a block's members once, into the parts of a presentation
@@ -123,6 +140,9 @@ use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::Representability;
 use gandr_theory_levitation::RewritePort;
 use gandr_theory_levitation::RuleFace;
+use gandr_theory_levitation::ShapeFace;
+use gandr_theory_levitation::ShapePoint;
+use gandr_theory_levitation::ShapeSize;
 use gandr_theory_levitation::SigBinder;
 use gandr_theory_levitation::SigOperation;
 use gandr_theory_levitation::SigParts;
@@ -131,12 +151,14 @@ use gandr_theory_levitation::SigRule;
 use gandr_theory_levitation::SigSort;
 use gandr_theory_levitation::SigValue;
 use gandr_theory_levitation::SignDesc;
+use gandr_theory_levitation::SignShape;
 use gandr_theory_levitation::SortDesc;
 use gandr_theory_levitation::SortIndex;
 use gandr_theory_levitation::SortRef;
 use gandr_theory_levitation::SurfaceSpan;
 use gandr_theory_levitation::derive_boundaries;
 use gandr_theory_levitation::derive_cell_var_meta;
+use gandr_theory_levitation::shape_parameter;
 use quenchant_shape::shape::Maybe;
 
 use super::DescribedDeclaration;
@@ -327,6 +349,16 @@ impl Reader<'_, '_>
                 }
                 continue;
             }
+            if reading.eat(Spelling("shape")).0 {
+                match self.signature_shape(&mut reading) {
+                    Ok(_) if matches!(parts.shape, Maybe::Present(_)) => {
+                        diagnostics.push(reading.fault(DescriptionFault::Malformed));
+                    },
+                    Ok(shape) => parts.shape = Maybe::Present(shape),
+                    Err(diagnostic) => diagnostics.push(diagnostic),
+                }
+                continue;
+            }
             if !reading.eat(Spelling("sort")).0 {
                 continue;
             }
@@ -345,7 +377,7 @@ impl Reader<'_, '_>
         for member in members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
-            let result = if reading.eat(Spelling("sort")).0 {
+            let result = if reading.eat(Spelling("sort")).0 || reading.eat(Spelling("shape")).0 {
                 continue;
             }
             else if reading.eat(Spelling("data")).0 {
@@ -551,6 +583,100 @@ impl Reader<'_, '_>
                 indices: written,
             },
         ))
+    }
+
+    /// Read a shape member: the finite shape the signature's cells are stated
+    /// over, and its named faces.
+    ///
+    /// # Specification
+    /// - ensures: the shape of the written name and size, one face per written
+    ///   face in order, each holding the points it lists; a point past the
+    ///   shape is kept for the description check to refuse by name.
+    /// - fails: a size or a point that is not a decimal numeral, and a member
+    ///   missing its colon, a brace, an equals sign or a separator, is a
+    ///   member-local refusal.
+    /// - panics: none.
+    /// - executable: none — the written member is source syntax the shape does
+    ///   not retain.
+    ///
+    /// # Errors
+    /// Returns malformed syntax.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shape with two faces and an empty one reads back
+    ///   from its rendering, and a face past its shape is refused by the
+    ///   description check rather than by the reader.
+    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
+    /// - witness: `description::sign::tests::a_face_past_its_shape_is_refused_by_name`
+    fn signature_shape(
+        &self,
+        run: &mut Run<'_>,
+    ) -> Result<SignShape, DescriptionDiagnostic>
+    {
+        let name = run.take()?;
+        if !run.eat(Spelling(":")).0 {
+            return Err(run.signature_fault(SignatureFault::MissingJudgment));
+        }
+        let size = run.take()?;
+        let size: ShapeSize = self.numeral(size, run)?;
+        if !run.eat(Spelling("{")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let mut faces = Vec::new();
+        while !run.eat(Spelling("}")).0 {
+            let face = run.take()?;
+            if !run.eat(Spelling("=")).0 || !run.eat(Spelling("{")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+            let mut points: Vec<ShapePoint> = Vec::new();
+            while !run.eat(Spelling("}")).0 {
+                let point = run.take()?;
+                points.push(self.numeral(point, run)?);
+                if !run.eat(Spelling(",")).0 && !run.at(Spelling("}")).0 {
+                    return Err(run.fault(DescriptionFault::Malformed));
+                }
+            }
+            if !run.eat(Spelling(";")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+            faces.push(ShapeFace::new(self.text(face).0, points));
+        }
+        run.end()?;
+        Ok(SignShape::new(self.text(name).0, size, faces))
+    }
+
+    /// The count a numeral tile writes, as the wrapper `Count` that holds it.
+    ///
+    /// # Specification
+    /// - ensures: the decimal value of the tile's text.
+    /// - fails: text that is not a decimal numeral within the machine word is a
+    ///   member-local refusal.
+    /// - panics: none.
+    /// - executable: none — the numeral's text is source syntax the count does
+    ///   not retain.
+    ///
+    /// # Errors
+    /// Returns malformed syntax.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::signature_shape`].
+    /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
+    fn numeral<Count>(
+        &self,
+        at: Placed,
+        run: &Run<'_>,
+    ) -> Result<Count, DescriptionDiagnostic>
+    where
+        Count: From<usize>,
+    {
+        let written = self.text(at).0;
+        if written.is_empty() || !written.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        written
+            .parse::<usize>()
+            .map(Count::from)
+            .map_err(|_overflow| run.fault(DescriptionFault::Malformed))
     }
 
     /// Read a boundary-only operation; never discard its filler or a port.
@@ -1400,13 +1526,14 @@ fn fresh_port(at: Placed) -> Name
 /// declaration table the cell gate, the rules check and coincidence read.
 ///
 /// # Specification
-/// - ensures: one data sort per sort the value codes, its index telescope each
-///   index port's name over its sort's spelling, representable when the value
-///   codes it so; one operation per operation, its arity the ports in order, an
-///   unnamed one at its placeholder, each port under its binders, each binder's
-///   domain its sort's name over its index terms; one face per rule, its
-///   variables derived from its left side and its provenance the whole member
-///   the placement records; no parameter, constructor or circuit.
+/// - ensures: the shape parameter the value codes, when it codes one; one data
+///   sort per sort the value codes, its index telescope each index port's name
+///   over its sort's spelling, representable when the value codes it so; one
+///   operation per operation, its arity the ports in order, an unnamed one at
+///   its placeholder, each port under its binders, each binder's domain its
+///   sort's name over its index terms; one face per rule, its variables derived
+///   from its left side and its provenance the whole member the placement
+///   records; no parameter, constructor or circuit.
 /// - fails: as [`Presentation::members`]: a value that codes no presentation,
 ///   or a rule no member places.
 /// - panics: none.
@@ -1420,7 +1547,8 @@ fn fresh_port(at: Placed) -> Name
 /// - hypothesis: L3 — a block's description agrees with the value it defines,
 ///   member for member, an unnamed port at its placeholder and a face at its
 ///   member's span; a rule the placement does not place is refused; a rendered
-///   second-order signature's representable sorts and binders read back.
+///   second-order signature's representable sorts and binders read back, and a
+///   rendered shaped signature's shape and faces.
 /// - witness: `description::sign::tests::the_description_is_read_off_the_value`
 /// - witness: `description::sign::tests::the_cat_shape_laws_are_written_faces`
 /// - witness: `description::sign::tests::a_rendered_signature_reparses_to_itself`
@@ -1473,11 +1601,15 @@ fn described(
         DeclPolarity::Data,
         Attrs::empty(),
     );
-    Ok(if sorts.is_empty() {
+    let description = if sorts.is_empty() {
         description
     }
     else {
         description.with_sorts(sorts)
+    };
+    Ok(match parts.shape {
+        Maybe::Present(shape) => description.with_shape(shape),
+        Maybe::Absent(shape_parameter::Absent::Unshaped) => description,
     })
 }
 

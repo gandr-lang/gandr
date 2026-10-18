@@ -12,9 +12,39 @@
 //! when their values encode alike, and no serial, name or digest stands beside
 //! them as a second one.
 //!
+//! # Two encodings of a `sign` block
+//!
+//! A `sign` block has two encodings, and the second is read off the first.
+//! [`SigValue`] is the presentation as a value: what the block states, coded
+//! so its bytes are the presentation's identity, the core definition `S : Sig`
+//! and what `Model(S)` derives from. [`SignDesc`] is the declaration table
+//! that [`check_desc`](crate::check_desc), the first-order fold
+//! ([`first_order`](crate::first_order())) and the cell layer read; every
+//! `data` declaration and retrofitted former shares it, so it also has fields
+//! no presentation fills: parameters, constructors as graded and attributed
+//! codes, a polarity. The `sign` reader encodes the value once and decodes the
+//! table from it, adding three things the value cannot hold. The first is the
+//! minted nominal identity: the value's identity is structural, so two blocks
+//! that state the same members share one identity yet stay two declarations.
+//! The second is the members' spans, which are provenance and would tie
+//! identity to layout. The third is the circuit rules, which `Sig` does not
+//! code yet (§ What waits) and which travel beside the value.
+//!
+//! - **Choice.** The table is a reading of the value, not a second record of
+//!   the block: one reading of the block, one identity, and the consumers of
+//!   the table unchanged.
+//! - **Alternatives.** Reading the block twice, once into each encoding, lets
+//!   the two drift. The value alone, with every consumer reading `Sig`, moves
+//!   the cell layer onto a code that does not yet hold circuit rules.
+//! - **Reversal.** Once `Sig` codes circuit rules, a `sign` block's table is
+//!   wholly a reading of its value, and its consumers can read the value
+//!   itself. The decoding lives in the `sign` reader today; moving it here, as
+//!   the one function from a value, its nominal identity and its spans to a
+//!   table, is the step before.
+//!
 //! # One sort, chained
 //!
-//! `Sig` is one self-recursive sort of thirteen constructors, in tag order:
+//! `Sig` is one self-recursive sort of fifteen constructors, in tag order:
 //!
 //! | tag | constructor | fields |
 //! |---|---|---|
@@ -31,6 +61,8 @@
 //! | 10 | `Arg` | a term, the rest of the arguments |
 //! | 11 | `Representable` | as `Sort`, for a representable sort |
 //! | 12 | `Bound` | as `Port`, then its binders, before the rest |
+//! | 13 | `Shape` | name, size, its face chain, the rest of the sorts |
+//! | 14 | `Face` | name, its points, the rest of the faces |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -71,19 +103,45 @@
 //!   anyway, carries representability and binding as fields of its sort and
 //!   port families.
 //!
+//! # The shape parameter
+//!
+//! A signature stated over a finite shape, `shape Square : 4 { left = {0, 2};
+//! }`, codes it as a `Shape` member at the head of its sort chain: the shape's
+//! name, its size as a decimal numeral, and the chain of its faces, each a
+//! `Face` with its name and its points as decimal numerals joined by `,`,
+//! ascending and each once. A sort chain holds at most one `Shape`, first; a
+//! presentation that states none keeps the bytes it had, as a first-order one
+//! does beside the second-order constructors.
+//!
+//! - **Choice.** A size and a point are numerals in a `String` field, as a name
+//!   is: one constructor for the shape and one for a face, and a face's points
+//!   one field in their one spelling, so a subshape has one value. The
+//!   alternatives were a unary chain of point constructors under each face,
+//!   which codes a number in constructors at the cost of a value per point of
+//!   every face, and a membership string over the carrier, which cannot hold a
+//!   point outside it — and the description check must see such a point to
+//!   refuse it by name.
+//! - **Reversal.** A program over `Sig` that computes with a shape's points,
+//!   rather than carrying them, wants a numeric field the code grammar does not
+//!   have yet; that field replaces the numerals and re-keys every shaped
+//!   presentation.
+//!
 //! # What waits
 //!
 //! The constructors above are the part of the code grammar the fragment
-//! admits: sorts and their index telescopes, representable sorts, operations
-//! and their ports, ports under restricted binders, and rule faces between
-//! terms of variables, operation applications, constructor applications and
-//! results tuples. The rest of the grammar waits on a constructor `Sig` does
-//! not have yet: circuit rules (a body of wired nodes and its rewrite ports),
-//! higher cells (a rule between rules), a sort's polarity (every presented
-//! sort is data), constructors and parameters (a presentation declares none),
-//! attributes, and atom binders. A presentation's circuit rules are kept
-//! beside its value by the reader that reads them.
+//! admits: a shape parameter and its faces, sorts and their index telescopes,
+//! representable sorts, operations and their ports, ports under restricted
+//! binders, and rule faces between terms of variables, operation
+//! applications, constructor applications and results tuples. The rest of
+//! the grammar waits on a constructor `Sig` does not have yet: circuit rules
+//! (a body of wired nodes and its rewrite ports), higher cells (a rule between
+//! rules), a sort's polarity (every presented sort is data), constructors and
+//! parameters (a presentation declares none), attributes, and atom binders. A
+//! presentation's circuit rules are kept beside its value by the reader that
+//! reads them.
 
+use alloc::format;
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -93,6 +151,8 @@ use quenchant_shape::shape::Maybe;
 use crate::boundary::ConstructorTag;
 use crate::boundary::NominalSerial;
 use crate::boundary::SerializedValueBytes;
+use crate::boundary::ShapePoint;
+use crate::boundary::ShapeSize;
 use crate::code::Attrs;
 use crate::code::Code;
 use crate::code::Name;
@@ -102,8 +162,11 @@ use crate::desc::CtorDesc;
 use crate::desc::DeclPolarity;
 use crate::desc::NominalId;
 use crate::desc::Representability;
+use crate::desc::ShapeFace;
 use crate::desc::SignDesc;
+use crate::desc::SignShape;
 use crate::desc::SortDesc;
+use crate::desc::shape_parameter;
 use crate::generic::DescValue;
 use crate::generic::Payload;
 use crate::generic::PayloadNode;
@@ -115,7 +178,7 @@ use crate::rule::TermView;
 
 /// The names of `Sig`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const SIG_CONSTRUCTORS: [&str; 13] = [
+pub const SIG_CONSTRUCTORS: [&str; 15] = [
     "Presents",
     "End",
     "Sort",
@@ -129,11 +192,13 @@ pub const SIG_CONSTRUCTORS: [&str; 13] = [
     "Arg",
     "Representable",
     "Bound",
+    "Shape",
+    "Face",
 ];
 
 /// Each constructor of `Sig`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 13] = [
+const CONSTRUCTORS: [(&str, usize, usize); 15] = [
     (SIG_CONSTRUCTORS[0], 0, 3),
     (SIG_CONSTRUCTORS[1], 0, 0),
     (SIG_CONSTRUCTORS[2], 1, 2),
@@ -147,6 +212,8 @@ const CONSTRUCTORS: [(&str, usize, usize); 13] = [
     (SIG_CONSTRUCTORS[10], 0, 2),
     (SIG_CONSTRUCTORS[11], 1, 2),
     (SIG_CONSTRUCTORS[12], 2, 3),
+    (SIG_CONSTRUCTORS[13], 2, 2),
+    (SIG_CONSTRUCTORS[14], 2, 1),
 ];
 
 /// One constructor of `Sig`, by its tag.
@@ -179,6 +246,10 @@ enum Tag
     Representable,
     /// A port under its binders and the rest of the ports.
     Bound,
+    /// The shape parameter, its faces and the rest of the sorts.
+    Shape,
+    /// A face of the shape and the rest of the faces.
+    Face,
 }
 
 impl Tag
@@ -204,11 +275,13 @@ impl Tag
             Self::Arg => 10,
             Self::Representable => 11,
             Self::Bound => 12,
+            Self::Shape => 13,
+            Self::Face => 14,
         })
     }
 }
 
-/// The description of `Sig`, one data sort of thirteen constructors.
+/// The description of `Sig`, one data sort of fifteen constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -216,10 +289,11 @@ impl Tag
 /// # Specification
 /// - ensures: no parameters, one data sort `Sig`, and the constructors
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
-///   `Tuple`, `Arg`, `Representable` and `Bound` in that order, each at the
-///   result sort `Sig`; a constructor's `String` fields carry `grade` and come
-///   first, two for `Port` and `Bound` and one for every other constructor that
-///   names something, and its remaining fields are `Sig`.
+///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape` and `Face` in that
+///   order, each at the result sort `Sig`; a constructor's `String` fields
+///   carry `grade` and come first, two for `Port`, `Bound`, `Shape` and `Face`
+///   and one for every other constructor that names something, and its
+///   remaining fields are `Sig`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -228,7 +302,7 @@ impl Tag
 ///   constructor table and the exact identity bytes of a presentation;
 ///   reordered constructors, a dropped field or a name read as a recursion
 ///   change them.
-/// - witness: `sig::tests::the_code_is_one_data_sort_of_thirteen_constructors`
+/// - witness: `sig::tests::the_code_is_one_data_sort_of_fifteen_constructors`
 /// - witness: `sig::tests::a_presentation_encodes_to_its_exact_identity_bytes`
 #[inline]
 #[must_use]
@@ -399,15 +473,35 @@ pub struct SigRule
 /// # Adequacy
 /// - hypothesis: L3 — as [`SigValue::encode`].
 /// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SigParts
 {
+    /// The shape parameter, absent for a presentation that states none.
+    pub shape: Maybe<SignShape, shape_parameter::Absent>,
     /// The sorts.
     pub sorts: Vec<SigSort>,
     /// The operations.
     pub operations: Vec<SigOperation>,
     /// The rule faces.
     pub rules: Vec<SigRule>,
+}
+
+impl Default for SigParts
+{
+    /// The presentation of nothing: no shape and no members.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            shape: Maybe::Absent(shape_parameter::Absent::Unshaped),
+            sorts: Vec::new(),
+            operations: Vec::new(),
+            rules: Vec::new(),
+        }
+    }
 }
 
 /// Why a value of `Sig`'s description codes no presentation.
@@ -432,6 +526,10 @@ pub enum SigFault
     Payload,
     /// A name is not UTF-8 text.
     Text,
+    /// A shape's size is not one decimal numeral, or a face's points are not
+    /// decimal numerals joined by `,`, ascending and each once, each in its
+    /// one spelling.
+    Numeral,
 }
 
 /// A value of `Sig`: one presentation.
@@ -457,9 +555,10 @@ impl SigValue
     /// - requires: only an operation's port binds, and a binder binds nothing
     ///   of its own: the grammar has no other place for a binder.
     /// - ensures: the root is `Presents` over the sort, operation and rule
-    ///   chains, each member in order, a representable sort as `Representable`
-    ///   and a port with binders as `Bound`; [`Self::decode`] reads `parts`
-    ///   back.
+    ///   chains, each member in order, a shape as a `Shape` at the head of the
+    ///   sort chain over its `Face` chain, a representable sort as
+    ///   `Representable` and a port with binders as `Bound`; [`Self::decode`]
+    ///   reads `parts` back.
     /// - panics: none.
     /// - intension: every chain is folded from its end and every term built
     ///   from a post-order worklist, so no step recurses.
@@ -468,13 +567,15 @@ impl SigValue
     /// - hypothesis: L3 — a presentation with an indexed sort, a representable
     ///   sort, a two-output operation, an unnamed port, a port under two
     ///   binders and rules whose sides apply operations, constructors and a
-    ///   results tuple round-trips exactly, and a first-order presentation
-    ///   encodes to its exact bytes; a dropped member, a swapped chain, a lost
-    ///   index or binder or a forgotten representability changes the decoded
-    ///   parts or the bytes.
+    ///   results tuple round-trips exactly, a shaped presentation round-trips
+    ///   with its faces, and a first-order presentation encodes to its exact
+    ///   bytes; a dropped member, a swapped chain, a lost index, binder or face
+    ///   or a forgotten representability changes the decoded parts or the
+    ///   bytes.
     /// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
     /// - witness: `sig::tests::a_presentation_encodes_to_its_exact_identity_bytes`
     /// - witness: `sig::tests::a_second_order_presentation_encodes_its_binders`
+    /// - witness: `sig::tests::a_shaped_presentation_codes_its_faces`
     #[inline]
     #[must_use]
     #[spec(
@@ -491,6 +592,22 @@ impl SigValue
                 Representability::Representable => Tag::Representable,
             };
             sorts = value(tag, vec![leaf(&sort.name), rec(indices), rec(sorts)]);
+        }
+        if let Maybe::Present(ref shape) = parts.shape {
+            let mut faces = value(Tag::End, Vec::new());
+            for face in shape.faces.iter().rev() {
+                faces = value(Tag::Face, vec![
+                    leaf(face.name()),
+                    Payload::leaf(numerals(face.points()).as_bytes()),
+                    rec(faces),
+                ]);
+            }
+            sorts = value(Tag::Shape, vec![
+                leaf(&shape.name),
+                Payload::leaf(format!("{}", usize::from(shape.points)).as_bytes()),
+                rec(faces),
+                rec(sorts),
+            ]);
         }
         let mut operations = value(Tag::End, Vec::new());
         for operation in parts.operations.iter().rev() {
@@ -550,9 +667,11 @@ impl SigValue
     ///   value read is a `Presents` value.
     /// - fails: a root other than `Presents`, a chain member of another
     ///   constructor, a term position holding no term, a payload unlike its
-    ///   constructor's code, or a name that is not UTF-8; a `Bound` port
-    ///   anywhere but an operation's port chain, a `Bound` binder, or a `Bound`
-    ///   port binding nothing is misplaced, so a port's value has one spelling.
+    ///   constructor's code, a name that is not UTF-8, or a size or a face's
+    ///   points not in their one numeral spelling; a `Shape` anywhere but the
+    ///   head of the sort chain is misplaced, and so are a `Bound` port
+    ///   anywhere but an operation's port chain, a `Bound` binder and a `Bound`
+    ///   port binding nothing, so a port's value has one spelling.
     /// - panics: none.
     /// - intension: chains are walked in loops and terms rebuilt from a
     ///   post-order worklist, so no step recurses.
@@ -562,14 +681,16 @@ impl SigValue
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the round trip of a presentation exercising every
-    ///   constructor, and seven malformed values — an `End` root, a rule in the
+    ///   constructor, and ten malformed values — an `End` root, a rule in the
     ///   sort chain, a port where a term stands, a non-UTF-8 name, a binding
-    ///   index port, a binding binder and a binderless `Bound` port — each
+    ///   index port, a binding binder, a binderless `Bound` port, a second
+    ///   `Shape`, a size of two numerals and descending face points — each
     ///   refused by its exact fault.
     /// - witness: `sig::tests::a_presentation_round_trips_through_its_value`
     /// - witness: `sig::tests::a_second_order_presentation_encodes_its_binders`
     /// - witness: `sig::tests::a_value_outside_the_grammar_is_refused_by_name`
     /// - witness: `sig::tests::a_binder_outside_an_operation_port_is_misplaced`
+    /// - witness: `sig::tests::a_shaped_presentation_codes_its_faces`
     #[inline]
     #[spec(ensures: |ref ret| ret.is_err() || self.0.ctor == Tag::Presents.constructor())]
     pub fn decode(&self) -> Result<SigParts, SigFault>
@@ -581,6 +702,11 @@ impl SigValue
         let [sorts, operations, rules] = expect::<3>(root, Tag::Presents)?;
         let mut parts = SigParts::default();
         let mut at = nested(sorts)?;
+        if at.ctor == Tag::Shape.constructor() {
+            let [name, size, faces, rest] = expect::<4>(at, Tag::Shape)?;
+            parts.shape = Maybe::Present(read_shape(name, size, faces)?);
+            at = nested(rest)?;
+        }
         loop {
             let representability = if at.ctor == Tag::Representable.constructor() {
                 Representability::Representable
@@ -995,6 +1121,104 @@ fn text(field: PayloadNode<'_>) -> Result<Name, SigFault>
     };
     let spelled = core::str::from_utf8(bytes.as_ref()).map_err(|_invalid| SigFault::Text)?;
     Ok(Name::from(spelled))
+}
+
+/// The numerals spelling `points`, joined by `,`: a face's points field.
+///
+/// # Specification
+/// trivial.
+fn numerals(points: &[ShapePoint]) -> String
+{
+    let spelled: Vec<String> = points
+        .iter()
+        .map(|point| format!("{}", usize::from(*point)))
+        .collect();
+    spelled.join(",")
+}
+
+/// The points a numerals field spells.
+///
+/// # Specification
+/// - ensures: the numbers in order when the field is decimal numerals joined by
+///   `,`, strictly ascending, each in its one spelling — no sign and no leading
+///   zero but `0` itself; the empty field spells none.
+/// - fails: [`SigFault::Numeral`] for any other field, a number past the
+///   machine's word among them.
+/// - panics: none.
+///
+/// # Errors
+/// As stated.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`SigValue::decode`].
+/// - witness: `sig::tests::a_shaped_presentation_codes_its_faces`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref points) => numerals(points) == spelled.as_ref(),
+    Err(fault) => fault == SigFault::Numeral,
+})]
+fn read_numerals(spelled: &Name) -> Result<Vec<ShapePoint>, SigFault>
+{
+    let mut read: Vec<ShapePoint> = Vec::new();
+    if spelled.as_ref().is_empty() {
+        return Ok(read);
+    }
+    for numeral in spelled.as_ref().split(',') {
+        let number: usize = numeral.parse().map_err(|_unread| SigFault::Numeral)?;
+        let point = ShapePoint::from(number);
+        if format!("{number}") != numeral || read.last().is_some_and(|last| *last >= point) {
+            return Err(SigFault::Numeral);
+        }
+        read.push(point);
+    }
+    Ok(read)
+}
+
+/// The shape a `Shape` member codes: its name, its size and its faces.
+///
+/// # Specification
+/// - ensures: the shape named by `name`, of the size `size` spells, with one
+///   face per `Face` member of the chain at `faces`, in order.
+/// - fails: as [`text`], [`member`] and [`nested`]; [`SigFault::Numeral`] for a
+///   size that is not one numeral or face points not in their one spelling.
+/// - panics: none.
+/// - executable: none — a predicate would read the chain a second time.
+///
+/// # Errors
+/// As stated.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`SigValue::decode`].
+/// - witness: `sig::tests::a_shaped_presentation_codes_its_faces`
+fn read_shape(
+    name: PayloadNode<'_>,
+    size: PayloadNode<'_>,
+    faces: PayloadNode<'_>,
+) -> Result<SignShape, SigFault>
+{
+    let name = text(name)?;
+    let size = text(size)?;
+    let &[points] = read_numerals(&size)?.as_slice()
+    else {
+        return Err(SigFault::Numeral);
+    };
+    let mut node = nested(faces)?;
+    let mut read = Vec::new();
+    loop {
+        let next = member::<3>(node, Tag::Face)?;
+        let Maybe::Present([face, members, rest]) = next
+        else {
+            break;
+        };
+        let face = text(face)?;
+        let members = text(members)?;
+        read.push(ShapeFace::new(face, read_numerals(&members)?));
+        node = nested(rest)?;
+    }
+    Ok(SignShape::new(
+        name,
+        ShapeSize::from(usize::from(points)),
+        read,
+    ))
 }
 
 /// The ports of an operation's chain at `node`, in order, each with the

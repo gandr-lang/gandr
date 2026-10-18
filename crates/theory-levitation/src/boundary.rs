@@ -307,6 +307,16 @@ count_wrapper! {
     pub struct CircuitNodeBudget(usize);
 }
 
+count_wrapper! {
+    /// A point of a signature's shape, numbered from zero.
+    pub struct ShapePoint(usize);
+}
+
+count_wrapper! {
+    /// The number of points of a signature's shape.
+    pub struct ShapeSize(usize);
+}
+
 impl CircuitNodeBudget
 {
     /// The standing ceiling a circuit derivation runs under.

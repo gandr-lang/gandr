@@ -1,6 +1,8 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
+use quenchant_shape::shape::Maybe;
+
 use super::SigBinder;
 use super::SigFault;
 use super::SigOperation;
@@ -12,11 +14,16 @@ use super::SigValue;
 use super::Tag;
 use super::sig_desc;
 use crate::boundary::ConstructorTag;
+use crate::boundary::ShapePoint;
+use crate::boundary::ShapeSize;
 use crate::code::CodeView;
 use crate::code::Name;
 use crate::code::PrimTy;
 use crate::code::ValueTypeRef;
 use crate::desc::Representability;
+use crate::desc::ShapeFace;
+use crate::desc::SignShape;
+use crate::desc::shape_parameter;
 use crate::generic::DescValue;
 use crate::generic::Payload;
 use crate::rule::FreeTerm;
@@ -106,6 +113,7 @@ fn lambda() -> SigParts
             },
         ],
         rules: Vec::new(),
+        ..SigParts::default()
     }
 }
 
@@ -151,11 +159,12 @@ fn cat_like() -> SigParts
                 right: FreeTerm::results([x(), x()]),
             },
         ],
+        ..SigParts::default()
     }
 }
 
 #[test]
-fn the_code_is_one_data_sort_of_thirteen_constructors()
+fn the_code_is_one_data_sort_of_fifteen_constructors()
 {
     let desc = sig_desc(Grade::One);
     assert_eq!(
@@ -208,6 +217,8 @@ fn the_code_is_one_data_sort_of_thirteen_constructors()
         ("Arg", vec!["Sig", "Sig"]),
         ("Representable", vec!["String", "Sig", "Sig"]),
         ("Bound", vec!["String", "String", "Sig", "Sig", "Sig"]),
+        ("Shape", vec!["String", "String", "Sig", "Sig"]),
+        ("Face", vec!["String", "String", "Sig"]),
     ]);
 }
 
@@ -238,8 +249,7 @@ fn a_presentation_encodes_to_its_exact_identity_bytes()
 {
     let one_sort = SigParts {
         sorts: vec![sort("M", Representability::Ordinary)],
-        operations: Vec::new(),
-        rules: Vec::new(),
+        ..SigParts::default()
     };
     assert_eq!(
         SigValue::encode(&one_sort).identity().as_ref(),
@@ -460,6 +470,111 @@ fn a_value_outside_the_grammar_is_refused_by_name()
         Err(SigFault::Text),
         "a name that is not UTF-8"
     );
+}
+
+#[test]
+fn a_shaped_presentation_codes_its_faces()
+{
+    let points = |raw: &[usize]| {
+        raw.iter()
+            .copied()
+            .map(ShapePoint::from)
+            .collect::<Vec<_>>()
+    };
+    let shaped = SigParts {
+        shape: Maybe::Present(SignShape::new("Square", ShapeSize::from(4_usize), [
+            ShapeFace::new("left", points(&[2, 0])),
+            ShapeFace::new("none", []),
+        ])),
+        sorts: vec![sort("M", Representability::Ordinary)],
+        ..SigParts::default()
+    };
+    let value = SigValue::encode(&shaped);
+    assert_eq!(
+        value.decode(),
+        Ok(shaped.clone()),
+        "the shape and its faces read back"
+    );
+    assert_eq!(
+        value.identity().as_ref(),
+        [
+            0, 0, 0, 0, // Presents
+            13, 0, 0, 0, // Shape
+            6, 0, 0, 0, b'S', b'q', b'u', b'a', b'r', b'e', // its name
+            1, 0, 0, 0, b'4', // its size
+            14, 0, 0, 0, // Face
+            4, 0, 0, 0, b'l', b'e', b'f', b't', // its name
+            3, 0, 0, 0, b'0', b',', b'2', // its points, ascending
+            14, 0, 0, 0, // Face
+            4, 0, 0, 0, b'n', b'o', b'n', b'e', // its name
+            0, 0, 0, 0, // no point
+            1, 0, 0, 0, // End: no further face
+            2, 0, 0, 0, // Sort
+            1, 0, 0, 0, b'M', // its name
+            1, 0, 0, 0, // End: no indices
+            1, 0, 0, 0, // End: no further sort
+            1, 0, 0, 0, // End: no operation
+            1, 0, 0, 0, // End: no rule
+        ],
+        "the shape heads the sort chain, each face its points' one spelling"
+    );
+    let unshaped = SigParts {
+        shape: Maybe::Absent(shape_parameter::Absent::Unshaped),
+        ..shaped
+    };
+    assert_ne!(
+        SigValue::encode(&unshaped).identity(),
+        value.identity(),
+        "a shape is part of the presentation"
+    );
+    let shape = |size: &[u8], faces: Payload, rest: Payload| {
+        node(
+            Tag::Shape,
+            Payload::pair(
+                Payload::leaf(&b"S"[..]),
+                Payload::pair(Payload::leaf(size), Payload::pair(faces, rest)),
+            ),
+        )
+    };
+    let face = |spelled: &[u8]| {
+        Payload::rec(node(
+            Tag::Face,
+            Payload::pair(
+                Payload::leaf(&b"f"[..]),
+                Payload::pair(Payload::leaf(spelled), end()),
+            ),
+        ))
+    };
+    assert_eq!(
+        presenting(shape(b"2", face(b"0,1"), end()))
+            .decode()
+            .map(|parts| parts.shape),
+        Ok(Maybe::Present(SignShape::new(
+            "S",
+            ShapeSize::from(2_usize),
+            [ShapeFace::new("f", points(&[0, 1]))]
+        ))),
+        "a hand-built shape reads"
+    );
+    assert_eq!(
+        presenting(shape(b"2", end(), Payload::rec(shape(b"2", end(), end())))).decode(),
+        Err(SigFault::Misplaced(ConstructorTag::from(13_usize))),
+        "a second shape is misplaced"
+    );
+    for size in [&b"2,3"[..], b"", b"02", b"+2", b"two"] {
+        assert_eq!(
+            presenting(shape(size, end(), end())).decode(),
+            Err(SigFault::Numeral),
+            "a size is one numeral in its one spelling: {size:?}"
+        );
+    }
+    for spelled in [&b"1,0"[..], b"0,0", b"0,", b",1", b"00"] {
+        assert_eq!(
+            presenting(shape(b"2", face(spelled), end())).decode(),
+            Err(SigFault::Numeral),
+            "a face's points ascend once each in their one spelling: {spelled:?}"
+        );
+    }
 }
 
 /// A `Bound` port named `t` at `Tm`, under the binder chain `binders`,
