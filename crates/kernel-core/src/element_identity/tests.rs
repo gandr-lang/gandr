@@ -568,6 +568,46 @@ fn native_evidence_checks_against_the_fold_fibre()
     ));
 }
 
+/// #719: native evidence at a function identity is refused by name; its
+/// fold fibre is the identity itself, which the checking machine redirected
+/// to without end.
+#[test]
+fn a_tuple_at_a_function_identity_is_refused_719()
+{
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let unit = arena.value_unit();
+    let unit_type = arena.value_type_unit();
+    let points = thunk_type(&mut arena, unit_type, boolean.ty);
+    let body = arena.computation_return(boolean.truth);
+    let lambda = arena.computation_lambda(body);
+    let constant = arena.value_thunk(lambda);
+    let reflexive = arena.value_type_path(points, constant, constant);
+    let between = arena.value_type_path(boolean.function, boolean.not, boolean.identity);
+    for identity in [reflexive, between] {
+        assert_eq!(
+            check_closed_value(&mut arena, unit, identity),
+            Err(KernelError::Identity(
+                IdentityError::HigherEvaluationRequired
+            ))
+        );
+    }
+    // A function identity beside a first-order one refuses at its component.
+    let pairs = arena.value_type_product(&[points, boolean.ty]);
+    let left = arena.value_tuple(&[constant, boolean.truth]);
+    let paired = arena.value_type_path(pairs, left, left);
+    let evidence = arena.value_tuple(&[unit, unit]);
+    assert_eq!(
+        check_closed_value(&mut arena, evidence, paired),
+        Err(KernelError::Identity(
+            IdentityError::HigherEvaluationRequired
+        ))
+    );
+    // `here` keeps its own arm.
+    let here = arena.value_here(constant);
+    check_closed_value(&mut arena, here, reflexive).expect("reflexivity at a function");
+}
+
 #[test]
 fn a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair()
 {
