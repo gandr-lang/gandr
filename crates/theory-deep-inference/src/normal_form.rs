@@ -1205,6 +1205,7 @@ where
 ///   primitives or reporting the wrong depth.
 /// - witness: `tests::normal_form::two_primitives_sharing_a_content_address_are_refused_rather_than_merged`
 /// - witness: `normal_form::tests::a_recorded_derivation_normalizes_to_a_replay_receipt`
+/// - witness: `causal::tests::a_tie_is_refused_naming_both_primitives_and_their_depth`
 #[spec(ensures: |output| output == order.refuse_key_collisions().map_or_else(
     |collision| match (order.event(collision.earlier), order.event(collision.later)) {
         (Maybe::Present(earlier), Maybe::Present(later)) =>
@@ -1216,7 +1217,7 @@ where
     },
     |()| Ok(()),
 ))]
-fn refuse_key_collisions<A>(order: &EventOrder<A>) -> Result<(), NormalFormObstruction<A>>
+pub fn refuse_key_collisions<A>(order: &EventOrder<A>) -> Result<(), NormalFormObstruction<A>>
 where
     A: CellAlphabet,
 {
@@ -1341,6 +1342,7 @@ where
 /// - witness: `normal_form::tests::across_stores_agrees_with_nf_equal_on_one_store`
 /// - witness: `normal_form::tests::two_stores_holding_different_cells_at_one_handle_compare_unequal`
 /// - witness: `normal_form::tests::a_factor_naming_an_absent_cell_is_refused_across_stores`
+/// - witness: `normal_form::tests::one_differing_field_makes_two_forms_unequal_across_stores`
 #[spec(ensures: |output| output.as_ref().map_or_else(
     |refusal| match *refusal {
         NormalFormObstruction::UnknownCell { cell } =>
@@ -2601,6 +2603,46 @@ mod tests
             !bool::from(across),
             "so the comparison answers negative on the content it resolved"
         );
+    }
+
+    #[test]
+    fn one_differing_field_makes_two_forms_unequal_across_stores()
+    {
+        let (store, peak, joins_at, steps) = chain_fixture();
+        let form = normalize(&store, &peak, &joins_at, &steps).expect("the chain normalizes");
+        let first = *form.schedule.first().expect("the chain schedules a step");
+        let unequal = |changed: &TraceletNf, case: &str| {
+            let across = nf_equal_across_stores(&store, changed, &store, &form)
+                .expect("every factor resolves");
+            assert!(!bool::from(across), "{case}");
+        };
+        let mut changed = form.clone();
+        changed.peak = form.joins_at.clone();
+        unequal(&changed, "the peaks differ");
+        let mut changed = form.clone();
+        changed.joins_at = form.peak.clone();
+        unequal(&changed, "the joins differ");
+        let mut changed = form.clone();
+        changed.convexity = match form.convexity {
+            ConvexityDischarge::StronglyConnectedOverAcyclicTarget => {
+                ConvexityDischarge::ReCheckRequired
+            },
+            ConvexityDischarge::ReCheckRequired => {
+                ConvexityDischarge::StronglyConnectedOverAcyclicTarget
+            },
+        };
+        unequal(&changed, "the convexity warrants differ");
+        let mut changed = form.clone();
+        changed.schedule.push(first);
+        unequal(&changed, "the schedules differ");
+        let mut changed = form.clone();
+        changed.primitives.remove(&first);
+        unequal(&changed, "the held form has fewer primitives");
+        let mut changed = form.clone();
+        if let Some(graded) = changed.primitives.get_mut(&first) {
+            graded.1 = PrimMultiplicity::from(u32::MAX);
+        }
+        unequal(&changed, "a primitive's grade differs");
     }
 
     #[test]

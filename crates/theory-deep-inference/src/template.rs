@@ -958,6 +958,9 @@ where
 /// - witness: `tests::template::the_inheritance_check_runs_once_per_distinct_triple`
 /// - witness: `tests::template::a_poisoned_inheritance_entry_is_caught_at_admission`
 /// - witness: `tests::template::empty_input_and_report_inputs_do_not_rewrite_production_counts`
+/// - witness: `tests::template::a_member_whose_left_cell_alone_differs_is_named_divergent`
+/// - witness: `tests::template::a_member_whose_right_cell_alone_differs_is_named_divergent`
+/// - witness: `tests::template::a_member_whose_overlap_kind_alone_differs_is_named_divergent`
 #[spec(captures: [checked = cache.checked, hits = cache.hits], ensures: |output| {
     let unchanged = cache.checked == checked && cache.hits == hits;
     match family.split_first() {
@@ -1221,6 +1224,11 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an emitted template's factor is its plain size over
+    ///   its template size, rounded down.
+    /// - witness: `tests::template::a_template_reports_its_expansion_factor`
     #[inline]
     #[must_use]
     pub fn expansion_factor(&self) -> ExpansionFactor
