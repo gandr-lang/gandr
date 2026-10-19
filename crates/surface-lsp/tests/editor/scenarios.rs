@@ -1349,7 +1349,8 @@ mod sweeps
     /// closure, typed for 4.5 to 6.8 s each with specifications enforced, and
     /// a 1 KB refusal over a 13 KB closure for 12.8 s. A changed source past
     /// it is typed nightly, a part of it each night; the erasure and the hover
-    /// sweep visit it on the pull request.
+    /// sweep visit it on the pull request within their own ceilings
+    /// ([`ERASED_CEILING`], [`HOVERED_CEILING`]).
     const TYPED_CEILING: Ceiling = Ceiling(1024);
 
     /// The erasure's sample: twenty-four sources, every keystroke held to the
@@ -1365,19 +1366,28 @@ mod sweeps
     /// took 13.7 s alone on a local machine and timed out on the Linux runner,
     /// about three times slower. A sampled erasure of a longer source deletes
     /// as many lines per keystroke as keep it to this many, and its checks to
-    /// [`ERASED_BYTES`]; the circle group erases five at a time, about 3 s
-    /// locally. The `sweeps` profile erases every source line by line.
+    /// [`ERASED_BYTES`]. The `sweeps` profile erases every source line by
+    /// line.
     const ERASED_KEYSTROKES: usize = 48;
 
     /// The most bytes a sampled erasure's checks read for one source, summed
-    /// over its keystrokes: 96 KiB. A keystroke checks the text left laid out
+    /// over its keystrokes: 32 KiB. A keystroke checks the text left laid out
     /// after the source's import closure ([`checked`]), so a short source
-    /// over a long closure pays the closure's check at every keystroke: the
-    /// λ-calculus model's record, 111 lines over a 41 KB closure, took 29.1 s
-    /// for its 37 keystrokes with specifications enforced. A source whose
-    /// check reads more than a 48th of this erases in fewer keystrokes, one at
-    /// least; the record erases in two.
-    const ERASED_BYTES: usize = 98_304;
+    /// over a long closure pays the closure's check at every keystroke, and
+    /// the oracle a fresh session's beside it: the λ-calculus model's sources,
+    /// 10 to 42 KB a check, erased for 0.5 to 2.5 s each with specifications
+    /// enforced in two to nine keystrokes, and together took the macOS
+    /// runner's erasure past the bound. A source whose check reads more than
+    /// a 48th of this erases in fewer keystrokes, one at least.
+    const ERASED_BYTES: usize = 0x8000;
+
+    /// The most bytes one check of a source a sampled erasure visits may
+    /// read: half of [`ERASED_BYTES`], since opening a source and erasing it
+    /// in a single keystroke checks it twice. A changed source past it is
+    /// erased under the `sweeps` and nightly profiles; of the sources before
+    /// the λ-calculus model, the loop space, the open fold and the two
+    /// univalence sources are.
+    const ERASED_CEILING: Ceiling = Ceiling(ERASED_BYTES.div_euclid(2));
 
     /// The stride a run erases `source` at: one line per keystroke under the
     /// `sweeps` profile; otherwise as many lines as keep it to
@@ -1410,14 +1420,25 @@ mod sweeps
     };
 
     /// The most a sampled hover of one source costs, counted as the positions
-    /// it hovers times the bytes its check reads ([`checked`]): 16 MiB. A
+    /// it hovers times the bytes its check reads ([`checked`]): 4 MiB. A
     /// hover answers from the type table of the whole text the server judges,
     /// and the types it prints grow with the development that text lays out:
     /// the λ-calculus model's record, 3796 positions over a 41 KB closure,
     /// hovered for 17.3 s with specifications enforced, its 9 KB base, 5239
     /// positions, for 0.6 s. A source past it is hovered as many positions
-    /// apart as keep it within; the record, ten apart.
-    const HOVERED_BYTES: usize = 0x0100_0000;
+    /// apart as keep it within.
+    const HOVERED_BYTES: usize = 0x0040_0000;
+
+    /// The most bytes one check of a source a sampled hover visits may read:
+    /// 16 KiB. The first position of each name and constructor pattern is
+    /// hovered however far apart the others are ([`hovered`]), so spacing
+    /// bounds a long closure's cost only so far: hovered ten apart, the
+    /// λ-calculus model's sources together took the macOS runner's hover sweep
+    /// to 27 s, and thirty-eight apart its record still hovered for 1.4 s. A
+    /// changed source past it is hovered under the `sweeps` and nightly
+    /// profiles; of the sources before that model, the loop space, the open
+    /// fold and the two univalence sources are.
+    const HOVERED_CEILING: Ceiling = Ceiling(0x4000);
 
     /// How many positions apart a run hovers `source`: one under the `sweeps`
     /// profile; otherwise as few as keep its positions times its [`checked`]
@@ -1619,7 +1640,7 @@ mod sweeps
     #[test]
     fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
     {
-        let (_rotation, sources) = visited(ERASED, None, Nightly::Slice);
+        let (_rotation, sources) = visited(ERASED, Some(ERASED_CEILING), Nightly::Slice);
         let grammar = built_in().expect("the built-in grammar builds");
         each_in_parallel(&sources, |source| {
             let mut session = Session::open(
@@ -1648,7 +1669,7 @@ mod sweeps
             sources
         }
         else {
-            visited(HOVERED, None, Nightly::Slice).1
+            visited(HOVERED, Some(HOVERED_CEILING), Nightly::Slice).1
         };
         let grammar = built_in().expect("the built-in grammar builds");
         let positions = AtomicUsize::new(0_usize);
