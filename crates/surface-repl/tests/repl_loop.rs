@@ -395,21 +395,18 @@ fn an_expression_is_read_as_a_probe()
     ]);
 }
 
-/// A type at the prompt reports its sort: a sort literal synthesizes a
-/// universe, so its printed type is the sort; the session evaluates the probe
-/// and the machine carries no image of a code, so a stuck note follows, as a
-/// declaration of the same code answers.
+/// A type at the prompt reports its sort alone: a sort literal synthesizes a
+/// universe, so its printed type is the sort, and the session does not
+/// evaluate a universe — the machine carries no image of a code, and the
+/// stuck note is not part of the answer.
 #[test]
 fn a_type_reports_its_sort()
 {
     let mut repl = repl();
-    assert_eq!(lines(&mut repl, "Integer"), [
-        (OutKind::Type, "it : Type".to_owned()),
-        (
-            OutKind::Stuck,
-            "unrunnable: `it` is a code, which the machine carries no image of".to_owned()
-        )
-    ]);
+    assert_eq!(lines(&mut repl, "Integer"), [(
+        OutKind::Type,
+        "it : Type".to_owned()
+    )]);
 }
 
 /// An item at the prompt still declares: a declaration head is read as
