@@ -2389,11 +2389,14 @@ mod tests
     }
 
     /// The ghost-text sweep: every cursor of each corpus source, in the whole
-    /// text and in the prefix before it, each source labeled once.
+    /// text and in the prefix before it, each source labeled once; a pull
+    /// request reads a long source's cursors further apart (`MOLDED_BYTES`).
     mod sweeps
     {
+        use gandr_surface_grammar::Pbg;
         use gandr_surface_render_remote::ByteOffset;
         use gandr_surface_syntax::SourceText;
+        use gandr_workflow_sweep::Coverage;
         use gandr_workflow_sweep::Sample;
         use gandr_workflow_sweep::SampleName;
         use gandr_workflow_sweep::SampleSize;
@@ -2401,6 +2404,7 @@ mod tests
         use gandr_workflow_sweep::corpus;
 
         use super::super::Labeled;
+        use super::super::Molder;
         use super::tools;
 
         /// The sample: twenty-four sources, ranked by their BLAKE3 digest under
@@ -2418,6 +2422,82 @@ mod tests
         /// every sixth cursor, in every run.
         const CURSOR_STRIDE: usize = if cfg!(anodized_panic) { 6 } else { 1 };
 
+        /// The most bytes a sampled run lets the requests over one source
+        /// mold. A request molds the form its cursor ends, from the form's
+        /// start to the cursor, so a form of `n` bytes costs its cursors
+        /// `n (n + 1) / 2` bytes and a source the sum over its forms: about
+        /// half a microsecond a byte without enforcement, so the λ-calculus's
+        /// syntax model, 3.1 MB molded, took 1.3 s at every cursor and the
+        /// corpus's median source a few milliseconds. A source past it is read
+        /// at cursors as many times further apart as keep it within; the
+        /// `sweeps` profile reads every source at the stride above.
+        const MOLDED_BYTES: usize = 0x0004_0000;
+
+        /// The bytes the requests over a source mold.
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+        struct Molded(usize);
+
+        /// The bytes the requests at every cursor of `whole` mold, each from
+        /// the start of the form its cursor ends.
+        ///
+        /// # Specification
+        /// trivial.
+        fn molded(
+            whole: &Labeled<'_>,
+            grammar: &Pbg,
+        ) -> Molded
+        {
+            let text = <&str>::from(whole.text);
+            let tokens = whole.labeling.tokens();
+            let starts: Vec<usize> = Molder::new(grammar)
+                .form_runs(tokens, whole.text)
+                .iter()
+                .filter_map(|run| tokens.get(usize::from(run.start())))
+                .filter_map(|token| usize::try_from(token.start).ok())
+                .chain([text.len()])
+                .collect();
+            Molded(
+                starts
+                    .windows(2)
+                    .map(|pair| match *pair {
+                        [from, to] => {
+                            let length = to.saturating_sub(from);
+                            length
+                                .saturating_mul(length.saturating_add(1))
+                                .div_euclid(2)
+                        },
+                        _ => 0,
+                    })
+                    .fold(0, usize::saturating_add),
+            )
+        }
+
+        /// How many cursors apart a run reads a source; at least one.
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        struct Stride(usize);
+
+        /// How many cursors apart a run reads `whole`: [`CURSOR_STRIDE`] under
+        /// the `sweeps` profile, and as many times that as keep a sampled
+        /// source's molding within [`MOLDED_BYTES`].
+        ///
+        /// # Specification
+        /// trivial.
+        fn stride(
+            whole: &Labeled<'_>,
+            grammar: &Pbg,
+        ) -> Stride
+        {
+            match Coverage::asked() {
+                Coverage::Full => Stride(CURSOR_STRIDE),
+                Coverage::Sampled => Stride(
+                    CURSOR_STRIDE
+                        .saturating_mul(molded(whole, grammar).0.div_ceil(MOLDED_BYTES).max(1)),
+                ),
+            }
+        }
+
         #[test]
         fn every_corpus_cursor_has_a_ghost_text()
         {
@@ -2432,8 +2512,9 @@ mod tests
             for source in sources {
                 let text = std::fs::read_to_string(&source.path).expect("a corpus source reads");
                 let whole = Labeled::new(SourceText::from(text.as_str()));
+                let Stride(stride) = stride(&whole, &tools.grammar);
                 let cursors = text.char_indices().map(|(at, _)| at).chain([text.len()]);
-                for at in cursors.step_by(CURSOR_STRIDE) {
+                for at in cursors.step_by(stride) {
                     let prefix = whole.cut(ByteOffset::from(at));
                     for labeled in [&whole, &prefix] {
                         let found = labeled.ghost_before(&prefix, &tools.grammar, &tools.forms);
