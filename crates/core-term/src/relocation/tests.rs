@@ -1,5 +1,3 @@
-use alloc::vec::Vec;
-
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -17,7 +15,7 @@ use crate::syntax::Zone;
 /// trivial.
 fn support(indices: &[DeBruijnIndex]) -> Thinning
 {
-    Thinning::from_ascending(indices.to_vec(), Vec::new()).expect("ascending")
+    Thinning::from_ascending(indices, &[]).expect("ascending")
 }
 
 /// The raise by `amount` at `cutoff`.

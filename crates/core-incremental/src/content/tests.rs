@@ -1827,8 +1827,8 @@ fn debruijn_projection_reports_index_overflow()
         Ok(raw.to_vec()),
         "the ceiling under a binder is representable"
     );
-    content.root = Thinning::from_ascending(vec![DeBruijnIndex::from(u32::MAX)], Vec::new())
-        .expect("one index");
+    content.root =
+        Thinning::from_ascending(&[DeBruijnIndex::from(u32::MAX)], &[]).expect("one index");
     assert_eq!(
         content.debruijn(),
         Err(PlacementError::IndexOverflow),

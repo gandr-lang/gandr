@@ -36,7 +36,7 @@
 //! - [`world`] holds the located vocabulary: the handle type `A at w`, the
 //!   capability `cap_w` a migration spends, and the computations `hold`, `leta`
 //!   and `migrate [w]`, one former each beside the rest of the core.
-//! - [`support`] is the co-de Bruijn carrier: a two-zone bitset
+//! - [`support`] is the co-de Bruijn carrier: a two-zone selection
 //!   [`support::Thinning`] selects a node's support from its scope, every arena
 //!   node carries its support from the moment it is minted, a
 //!   [`support::Cover`] embeds each child's support in its parent's, and
@@ -95,10 +95,10 @@
 //! - Reversal: a consumer whose zones are not `Γ; Σ` moves the carrier into a
 //!   crate of its own.
 //!
-//! A thinning is a bitset with a spill past the inline widths ([`support`] §
-//! Bit selections), and every node of a [`CoreArena`] carries its support
-//! from the moment it is minted (the arena module's § Carried supports), so
-//! a support is read in constant time and nothing walks a term to find one.
+//! A thinning is a tiered, self-describing code of words ([`support`] § The
+//! tiered code), and every node of a [`CoreArena`] carries its support from
+//! the moment it is minted (the arena module's § Carried supports), so a
+//! support is read in constant time and nothing walks a term to find one.
 //! The support is syntactic and over-approximates dependence; it keys,
 //! footprints, schedules and decides the syntactic strengthening, never a
 //! semantic one.

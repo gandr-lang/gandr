@@ -544,7 +544,7 @@ impl CoreArena
     ///   arena carries.
     /// - witness: `relocation::tests::a_relocation_fits_to_its_support`
     #[spec(ensures: |ret| ret.node() == node
-        && ret.relocation() == self.value_support(node).map_or(at, |support| at.fitted(support.view())))]
+        && ret.relocation() == self.value_support(node).map_or(at, |support| at.fitted(support)))]
     #[inline]
     #[must_use]
     pub fn place_value(
@@ -558,7 +558,7 @@ impl CoreArena
         }
         let at = self
             .value_support(node)
-            .map_or(at, |support| at.fitted(support.view()));
+            .map_or(at, |support| at.fitted(support));
         Relocated { node, at }
     }
 
@@ -574,7 +574,7 @@ impl CoreArena
     /// - witness: `relocation::tests::a_relocation_fits_to_its_support`
     #[spec(ensures: |ret| ret.node() == node
         && ret.relocation()
-            == self.computation_support(node).map_or(at, |support| at.fitted(support.view())))]
+            == self.computation_support(node).map_or(at, |support| at.fitted(support)))]
     #[inline]
     #[must_use]
     pub fn place_computation(
@@ -588,7 +588,7 @@ impl CoreArena
         }
         let at = self
             .computation_support(node)
-            .map_or(at, |support| at.fitted(support.view()));
+            .map_or(at, |support| at.fitted(support));
         Relocated { node, at }
     }
 
@@ -604,7 +604,7 @@ impl CoreArena
     /// - witness: `relocation::tests::a_relocation_fits_to_its_support`
     #[spec(ensures: |ret| ret.node() == node
         && ret.relocation()
-            == self.value_type_support(node).map_or(at, |support| at.fitted(support.view())))]
+            == self.value_type_support(node).map_or(at, |support| at.fitted(support)))]
     #[inline]
     #[must_use]
     pub fn place_value_type(
@@ -618,7 +618,7 @@ impl CoreArena
         }
         let at = self
             .value_type_support(node)
-            .map_or(at, |support| at.fitted(support.view()));
+            .map_or(at, |support| at.fitted(support));
         Relocated { node, at }
     }
 
@@ -634,7 +634,7 @@ impl CoreArena
     /// - witness: `relocation::tests::a_relocation_fits_to_its_support`
     #[spec(ensures: |ret| ret.node() == node
         && ret.relocation()
-            == self.comp_type_support(node).map_or(at, |support| at.fitted(support.view())))]
+            == self.comp_type_support(node).map_or(at, |support| at.fitted(support)))]
     #[inline]
     #[must_use]
     pub fn place_comp_type(
@@ -648,7 +648,7 @@ impl CoreArena
         }
         let at = self
             .comp_type_support(node)
-            .map_or(at, |support| at.fitted(support.view()));
+            .map_or(at, |support| at.fitted(support));
         Relocated { node, at }
     }
 }

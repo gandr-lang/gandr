@@ -747,7 +747,7 @@ impl<'arena> Engine<'arena>
             Node::ValueType(id) => self.arena.value_type_support(id),
             Node::CompType(id) => self.arena.comp_type_support(id),
         };
-        match support.and_then(|support| support.view().indices(Zone::Intuitionistic).next_back()) {
+        match support.and_then(|support| support.indices(Zone::Intuitionistic).next_back()) {
             Some(outermost) if u32::from(outermost) >= depth.0 => Maybe::Present(outermost),
             Some(_) | None => Maybe::Absent(free::Absent::Inside),
         }
@@ -3683,9 +3683,7 @@ fn carried(
         Node::ValueType(id) => arena.value_type_support(id),
         Node::CompType(id) => arena.comp_type_support(id),
     };
-    support.map_or(Maybe::Absent(unminted::Absent::Dangling), |support| {
-        Maybe::Present(support.view())
-    })
+    support.map_or(Maybe::Absent(unminted::Absent::Dangling), Maybe::Present)
 }
 
 /// Move `node`'s free indices past `scope` by `offset` at once, minting the
