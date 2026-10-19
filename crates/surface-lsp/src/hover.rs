@@ -261,6 +261,33 @@ impl Hovering
         self.paths.get(usize::from(source)).map(PathBuf::as_path)
     }
 
+    /// The unit's source whose canonical path is `path`, none when the closure
+    /// reads no such source or the text was typed alone.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first source of the closure whose path is `path`.
+    /// - provides: where another document's name stands in this unit.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: a walk over the closure's paths, one per source it reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sibling read by an importer and by itself is found
+    ///   in each.
+    /// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
+    #[spec(ensures: |ret| ret.is_none_or(|source| self.source_path(source) == Some(path)))]
+    pub(crate) fn source_at(
+        &self,
+        path: &Path,
+    ) -> Option<SourceIndex>
+    {
+        self.paths
+            .iter()
+            .position(|held| held == path)
+            .map(SourceIndex::from)
+    }
+
     /// The names the table's unit declares, each with its name's range in its
     /// source's text, read at the first workspace-symbol request.
     ///

@@ -117,6 +117,8 @@ use crate::protocol::MarkupContent;
 use crate::protocol::PositionParams;
 use crate::protocol::PublishParams;
 use crate::protocol::RangeParams;
+use crate::protocol::ReferenceContext;
+use crate::protocol::ReferenceParams;
 use crate::protocol::RegistrationParams;
 use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
@@ -160,6 +162,8 @@ use crate::transport::Body;
 use crate::transport::TransportFault;
 use crate::transport::write_frame;
 use crate::uses::highlights;
+use crate::uses::located;
+use crate::uses::placed;
 use crate::view::report;
 
 /// Where the server stands in the protocol's lifecycle.
@@ -1554,6 +1558,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
                 },
+            (Phase::Running, "textDocument/references") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Locations(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } => false,
+                },
             (Phase::Running, "textDocument/documentHighlight") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Highlights(_), .. } => true,
@@ -1705,6 +1715,20 @@ impl Server
                     Ok(params) => success(
                         id,
                         workspace.highlight(&params.text_document.uri, self.peer, params.position),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/references") => {
+                match serde_json::from_value::<ReferenceParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.references(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.position,
+                            params.context,
+                        ),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -2632,6 +2656,88 @@ impl Workspace
             })
     }
 
+    /// What a reference request at `position` of the copy of the document at
+    /// `uri` that `peer` is answered from answers, the declaring name included
+    /// when `context` asks for it.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: an unknown document, and one whose session holds no grammar,
+    ///   yields Nothing; otherwise, for the name [`placed`] places, its
+    ///   declaring name first when `context` asks for it, at the open document
+    ///   whose path is the name's source when one is open and at that path
+    ///   otherwise; then each open document's own uses of it, as [`located`]
+    ///   answers, in URI order. No name answers the empty list.
+    /// - provides: the answer to `textDocument/references`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sibling's name asked from an importer is found in
+    ///   the sibling and in every open importer, with its declaration when
+    ///   asked and without it otherwise; a binder's uses stay in its document;
+    ///   an unknown document answers `null`.
+    /// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Locations(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn references(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+        context: ReferenceContext,
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        let Ok(session) = document.session.as_ref()
+        else {
+            return Answer::Nothing;
+        };
+        let Some(name) = placed(
+            document.text.source(),
+            &named_path(&uri.path()),
+            document.text.hovering(&uri.path(), session),
+            position,
+        )
+        else {
+            return Answer::Locations(Vec::new());
+        };
+        let mut found = Vec::new();
+        if context.include_declaration
+            && let Some(range) = name.range
+            && let Some(target) = self
+                .documents
+                .keys()
+                .find(|held| named_path(&held.path()) == name.path)
+                .cloned()
+                .or_else(|| DocumentUri::of_path(&name.path))
+        {
+            found.push(Location { uri: target, range });
+        }
+        for held in self.documents.keys() {
+            let Maybe::Present(document) = self.view(held, peer)
+            else {
+                continue;
+            };
+            let Ok(session) = document.session.as_ref()
+            else {
+                continue;
+            };
+            found.extend(located(
+                document.text.source(),
+                held,
+                &named_path(&held.path()),
+                document.text.hovering(&held.path(), session),
+                &name.path,
+                name.named,
+            ));
+        }
+        Answer::Locations(found)
+    }
+
     /// The answer to a formatting request `id` over `window` of the copy of
     /// the document at `uri` that `peer` is answered from.
     ///
@@ -3264,7 +3370,8 @@ mod tests
                         "codeLensProvider":{"resolveProvider":false},
                         "codeActionProvider":true,
                         "workspaceSymbolProvider":true,
-                        "documentHighlightProvider":true},
+                        "documentHighlightProvider":true,
+                        "referencesProvider":true},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
@@ -3431,6 +3538,101 @@ mod tests
             names(&search(&mut server, "qq")),
             [],
             "a query no name holds finds nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn references_find_a_name_s_uses_in_every_open_document()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-references-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let disk = [
+            (
+                "base.gandr",
+                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+                 def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
+                 Succ(p) => Succ(plus[<](n, p))\n  }\n}\n",
+            ),
+            (
+                "first.gandr",
+                "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n",
+            ),
+            (
+                "second.gandr",
+                "import \"./base.gandr\" ;\ndef other : Nat ;\ndef other = Zero ;\n",
+            ),
+            (
+                "unopened.gandr",
+                "import \"./base.gandr\" ;\ndef unseen : Nat ;\ndef unseen = Zero ;\n",
+            ),
+        ];
+        for (file, text) in disk {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let mut server = initialized();
+        for &(file, text) in disk.iter().take(3) {
+            let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": uri(file), "languageId": "gandr", "version": 1_i32, "text": text}}});
+            let _published = send(&mut server, Json(&open.to_string()));
+        }
+        let mut references = |file: &str, line: u32, character: u32, declared: bool| {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 10_i32, "method": "textDocument/references",
+                "params": {"textDocument": {"uri": uri(file)},
+                    "position": at(Line::from(line), Character::from(character)),
+                    "context": {"includeDeclaration": declared}}});
+            send(&mut server, Json(&request.to_string()))
+                .pointer("/0/result")
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        let location = |file: &str, line: u32, start: u32, end: u32| {
+            serde_json::json!({"uri": uri(file), "range": Range {
+                start: at(Line::from(line), Character::from(start)),
+                end: at(Line::from(line), Character::from(end)),
+            }})
+        };
+        let uses = [
+            location("base.gandr", 6, 4, 8),
+            location("first.gandr", 2, 13, 17),
+            location("second.gandr", 2, 12, 16),
+        ];
+        assert_eq!(
+            references("first.gandr", 2, 14, true),
+            Value::Array(
+                core::iter::once(location("base.gandr", 1, 2, 6))
+                    .chain(uses.iter().cloned())
+                    .collect()
+            ),
+            "a sibling's constructor asked from an importer: its declaration at the open sibling, \
+             then its uses in every open document, an unopened importer's not read"
+        );
+        assert_eq!(
+            references("base.gandr", 1, 3, false),
+            Value::Array(uses.to_vec()),
+            "the same uses from the declaring name, the declaration left out"
+        );
+        assert_eq!(
+            references("base.gandr", 6, 12, true),
+            Value::Array(vec![
+                location("base.gandr", 4, 13, 14),
+                location("base.gandr", 6, 12, 13),
+                location("base.gandr", 7, 28, 29),
+            ]),
+            "a parameter's uses stay in its declaration, though every importer reads the source"
+        );
+        assert_eq!(
+            references("base.gandr", 5, 3, true),
+            Value::Array(vec![]),
+            "a keyword refers to nothing"
+        );
+        assert_eq!(
+            references("closed.gandr", 0, 0, true),
+            Value::Null,
+            "a document the server does not hold answers null"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

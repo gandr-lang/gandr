@@ -13,7 +13,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 
 ## Synopsis
 
-**What.** `gandr-surface-lsp` serves a subset of the Language Server Protocol 3.17: the base protocol's framing, the JSON-RPC 2.0 envelope with its standard error codes, the lifecycle from `initialize` to `exit`, incremental document synchronisation, `textDocument/publishDiagnostics` after every synchronisation, `textDocument/semanticTokens/full` and `textDocument/semanticTokens/range`, `textDocument/completion`, `textDocument/signatureHelp`, `textDocument/documentSymbol`, `textDocument/foldingRange` and `textDocument/selectionRange`, `textDocument/hover`, `textDocument/definition` and `textDocument/typeDefinition`, `textDocument/documentHighlight`, `workspace/symbol`, and `textDocument/codeLens` and `textDocument/codeAction` over checked model proposals; and, from 3.18, `textDocument/inlineCompletion`. `serve` runs one session over any `BufRead` and `Write` pair, logging one timing line per synchronisation to a third `Write`; `Capabilities` displays what `initialize` answers. On Unix, `run_hub` serves every connection a socket accepts over one shared set of open documents, `bind` and `socket_for` find the one hub per workspace, and `relay` carries a client's streams to it. The driver's `gandr lsp` relays standard input and output to the hub of the current directory, starting `gandr serve` when none runs; `gandr lsp --standalone` serves in its own process.
+**What.** `gandr-surface-lsp` serves a subset of the Language Server Protocol 3.17: the base protocol's framing, the JSON-RPC 2.0 envelope with its standard error codes, the lifecycle from `initialize` to `exit`, incremental document synchronisation, `textDocument/publishDiagnostics` after every synchronisation, `textDocument/semanticTokens/full` and `textDocument/semanticTokens/range`, `textDocument/completion`, `textDocument/signatureHelp`, `textDocument/documentSymbol`, `textDocument/foldingRange` and `textDocument/selectionRange`, `textDocument/hover`, `textDocument/definition` and `textDocument/typeDefinition`, `textDocument/documentHighlight`, `textDocument/references`, `workspace/symbol`, and `textDocument/codeLens` and `textDocument/codeAction` over checked model proposals; and, from 3.18, `textDocument/inlineCompletion`. `serve` runs one session over any `BufRead` and `Write` pair, logging one timing line per synchronisation to a third `Write`; `Capabilities` displays what `initialize` answers. On Unix, `run_hub` serves every connection a socket accepts over one shared set of open documents, `bind` and `socket_for` find the one hub per workspace, and `relay` carries a client's streams to it. The driver's `gandr lsp` relays standard input and output to the hub of the current directory, starting `gandr serve` when none runs; `gandr lsp --standalone` serves in its own process.
 
 **Why.** An editor should show what `gandr check` prints, where it prints it, while the source is written. The server is a face over the pipeline's own outputs, never a second pipeline: its diagnostics are projections of the diagnostics `gandr-surface-diagnostics` builds for the dispatcher's step, the same ones the terminal lays out, and its tokens are the roles `gandr-surface-grammar`'s highlighter classifies, so an editor, a terminal and a test cannot disagree about a refusal or a token.
 
@@ -44,7 +44,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - The outline: document symbols nesting each declaration inside the one that holds it, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node around a position to the whole document.
 - Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal.
 - Definitions: what the name under the cursor refers to, and the families its type names, here or in an imported sibling.
-- Document highlights: where the name under the cursor is declared and used in the document.
+- Document highlights: where the name under the cursor is declared and used in the document; references: its declaration and its uses in every open document.
 - Workspace symbols: the names the open documents' import closures declare, each holding the query's characters in order.
 - Formatting: the whole document as one edit trimmed to the span its layout changes, and a range as one edit per top-level form it touches, each from `gandr-surface-format`.
 - Positions in UTF-16 code units, a position past a line's end or past the last line clamped.
@@ -109,7 +109,7 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | Hover | [`hover`](src/hover.rs) |
 | Definitions | [`goto`](src/goto.rs) |
 | Workspace symbols | [`search`](src/search.rs) |
-| Document highlights | [`uses`](src/uses.rs) |
+| Document highlights and references | [`uses`](src/uses.rs) |
 | UTF-16 positions | [`position`](src/position.rs) |
 | The lifecycle, its error codes, document URIs | [`server`](src/server.rs) |
 | Formatting | [`format`](src/format.rs) |

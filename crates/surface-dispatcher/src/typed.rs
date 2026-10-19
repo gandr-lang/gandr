@@ -1990,16 +1990,17 @@ impl TypeTable
         )
     }
 
-    /// The span of every written use referring to the name `referent` names,
-    /// in the source's own text, one per start, ascending.
+    /// The span of every written use referring to the name written at `named`
+    /// of `source`, in the table's own text, one per start, ascending.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the narrowest use starting at each offset whose referent is
-    ///   written where `referent` is, as `Referents::uses_of` states, in order;
-    ///   none for a name no use refers to.
+    ///   written at `named` of `source`, as `Referents::uses_of` states, in
+    ///   order; none for a name no use refers to.
     /// - provides: the uses a highlight, a reference search and a rename
-    ///   answer.
+    ///   answer; a name is asked for by where it is written, so another table's
+    ///   referent is asked for at this table's index of its source.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the answer is a lazy iterator over the index; the
@@ -2013,11 +2014,12 @@ impl TypeTable
     #[inline]
     pub fn uses_of(
         &self,
-        referent: Referent,
+        source: SourceIndex,
+        named: ByteSpan,
     ) -> impl Iterator<Item = ByteSpan> + '_
     {
         self.referents
-            .uses_of(referent)
+            .uses_of(source, named)
             .iter()
             .map(|&(_, span)| span)
     }
@@ -4080,7 +4082,7 @@ mod tests
                 return Vec::new();
             };
             table
-                .uses_of(referent)
+                .uses_of(referent.source(), referent.named())
                 .map(super::ByteSpan::start)
                 .collect()
         };
