@@ -597,6 +597,14 @@
 //! [`Environment::add_decl`]: crate::env::Environment::add_decl
 
 #![no_std]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reverse_after_build,
+        reason = "3 cost-shape sites (2 linear_search_in_loop, 1 reverse_after_build); #814 lists them"
+    )
+)]
 
 extern crate alloc;
 

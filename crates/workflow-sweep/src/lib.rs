@@ -106,6 +106,18 @@
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-sweep/README.md).
 
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(linear_search_in_loop, reason = "4 cost-shape sites; #814 lists them")
+)]
+#![cfg_attr(
+    all(test, dylint_lib = "quenchant_dylints"),
+    expect(
+        count_against_constant,
+        reason = "1 cost-shape site in test modules; #814 lists it"
+    )
+)]
+
 extern crate alloc;
 
 pub mod changed;

@@ -132,6 +132,14 @@
 //! The papers the crate draws on are in its `README.md`, § References.
 
 #![no_std]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reverse_after_build,
+        reason = "2 cost-shape sites (1 linear_search_in_loop, 1 reverse_after_build); #814 lists them"
+    )
+)]
 
 extern crate alloc;
 

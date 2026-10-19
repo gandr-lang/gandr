@@ -152,6 +152,13 @@
 //!   fragment and not built here.
 
 #![no_std]
+#![cfg_attr(
+    all(test, dylint_lib = "quenchant_dylints"),
+    expect(
+        linear_search_in_loop,
+        reason = "1 cost-shape site in test modules; #814 lists it"
+    )
+)]
 
 extern crate alloc;
 

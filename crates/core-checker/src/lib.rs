@@ -477,6 +477,14 @@
 //! reverse it, is stated in the documentation of the module it governs.
 
 #![no_std]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        collect_read_once,
+        linear_search_in_loop,
+        reason = "11 cost-shape sites (10 linear_search_in_loop, 1 collect_read_once); #814 lists them"
+    )
+)]
 
 extern crate alloc;
 

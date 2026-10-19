@@ -7,6 +7,11 @@
 //! two applications that could commute; the description suites read the
 //! sequent alphabet, which is what a description elaborates into.
 
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(linear_search_in_loop, reason = "2 cost-shape sites; #814 lists them")
+)]
+
 /// A toy position from child indices, read from the root outward.
 macro_rules! at {
     ($($step:expr),* $(,)?) => {
