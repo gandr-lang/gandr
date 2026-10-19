@@ -6370,11 +6370,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
     }
 
     /// Note that a type after `value` reads it, so a pure run there stands
-    /// as what it returns.
+    /// as what it returns, and so does each run written beneath it: an
+    /// argument of a call it returns or runs, a field of a constructor, a
+    /// component of a tuple, record or injection. A run beneath decided to run
+    /// would bind its value ahead of the call, and the type would read the
+    /// bound variable rather than the call the source wrote (#762).
     ///
     /// # Specification
     /// - requires: a dependent type is instantiated at `value`.
-    /// - ensures: a nested computation at `value` decided to run purely, or not
+    /// - ensures: each nested computation at `value` or beneath it, through
+    ///   call arguments, fields and components, decided to run purely or not
     ///   decided yet, is decided [`Nesting::Returned`], which the run's own
     ///   decision keeps when it runs purely; any other value, or a decision to
     ///   suspend or to run effectfully, is left as it is.
@@ -6384,8 +6389,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Adequacy
     /// - hypothesis: L3 — a call as a dependent pair's first component and a
     ///   projection as a dependent function's argument each stand in the type
-    ///   after them as what they return, and the second run accepts them.
+    ///   after them as what they return, and the second run accepts them; a
+    ///   call written two deep, or under a constructor, as a dependent argument
+    ///   converts with the type written with it.
     /// - witness: `module::tests::a_pure_run_a_type_reads_stands_as_what_it_returns_444`
+    /// - witness: `module::tests::a_call_beneath_a_type_read_argument_stands_as_written_762`
     #[spec(
         captures: [
             before = self.context.nesting().get(&value).copied(),
@@ -6401,18 +6409,52 @@ impl<'context, 'arena> Machine<'context, 'arena>
         value: ValueId,
     )
     {
-        if !matches!(self.context.arena().value(value), Some(&Value::Nested(_))) {
-            return;
-        }
-        match self.context.nesting().get(&value) {
-            None | Some(&Nesting::Ran(gandr_core_term::effect::Purity::Pure)) => {
-                self.context.record_nesting(value, Nesting::Returned);
-            },
-            Some(
-                &(Nesting::Suspended
-                | Nesting::Returned
-                | Nesting::Ran(gandr_core_term::effect::Purity::Effectful)),
-            ) => {},
+        let mut seen = alloc::collections::BTreeSet::new();
+        let mut pending = Vec::from([value]);
+        while let Some(at) = pending.pop() {
+            if !seen.insert(at) {
+                continue;
+            }
+            let call = match self.context.arena().value(at) {
+                Some(&Value::Nested(call)) => {
+                    match self.context.nesting().get(&at) {
+                        None | Some(&Nesting::Ran(gandr_core_term::effect::Purity::Pure)) => {
+                            self.context.record_nesting(at, Nesting::Returned);
+                        },
+                        Some(
+                            &(Nesting::Suspended
+                            | Nesting::Ran(gandr_core_term::effect::Purity::Effectful)),
+                        ) => continue,
+                        Some(&Nesting::Returned) => {},
+                    }
+                    call
+                },
+                Some(&Value::Returned(call)) => call,
+                Some(&Value::Constructor { ref fields, .. }) => {
+                    pending.extend(fields.iter().copied());
+                    continue;
+                },
+                Some(&Value::Tuple(ref components)) => {
+                    pending.extend(components.iter().copied());
+                    continue;
+                },
+                Some(&Value::Record(ref fields)) => {
+                    pending.extend(fields.values().copied());
+                    continue;
+                },
+                Some(&Value::Injection(_, component)) => {
+                    pending.push(component);
+                    continue;
+                },
+                _ => continue,
+            };
+            let mut head = call;
+            while let Some(&Computation::Application(function, argument)) =
+                self.context.arena().computation(head)
+            {
+                pending.push(argument);
+                head = function;
+            }
         }
     }
 
