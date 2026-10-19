@@ -773,6 +773,12 @@ impl Token
 /// comparison `<` before a `~>` no slot takes, so neither re-munches anything
 /// written.
 ///
+/// **`::` is the ASCII spelling of `∷`**, which the molder offers as that
+/// tile. It extends the live single tile `:`, and `:` is only ever followed by
+/// a type or a signature, neither of which begins with `:`, so nothing written
+/// re-munches. The spellings themselves are `gandr_surface_grammar::SPELLED`'s;
+/// this table holds the tokens the lexer must munch whole.
+///
 /// **`:>` is the opaque-ascription tile**: `module M :> #{ …
 /// }` against transparent `module M : #{ … }`, the ML-family spelling. It
 /// extends the live single tile `:`, so it sits in this table for the maximal
@@ -782,7 +788,7 @@ impl Token
 /// begin with `>`, so no existing byte sequence re-munches.
 const MULTI_PUNCT: &[&str] = &[
     "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "/\\", "~>", "->", "<-", "=>",
-    "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>",
+    "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>", "::",
 ];
 
 /// UTF-8 bytes for U+00A0 NO-BREAK SPACE.
@@ -3044,7 +3050,7 @@ mod tests
         for operator in [
             "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "/\\", "~>", "->", "<-",
             "=>", "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[",
-            ":>",
+            ":>", "::",
         ] {
             assert_eq!(
                 super::punct_len(super::SourceBytes::from(operator.as_bytes()), zero)

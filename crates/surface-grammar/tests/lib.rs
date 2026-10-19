@@ -14,6 +14,8 @@ mod pbg;
 #[cfg(test)]
 mod regex;
 #[cfg(test)]
+mod spelling;
+#[cfg(test)]
 mod surface;
 #[cfg(test)]
 mod walk;
