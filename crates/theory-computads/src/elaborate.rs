@@ -256,6 +256,7 @@
 //! minted cells or the reason none was. A caller rendering diagnostics reads
 //! each decline against the declared member's own span.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -992,12 +993,12 @@ fn elaborate_desc<G>(
     let mut declined_opers = Vec::new();
     // The names no cell may mention, gathered while the operation pass runs so
     // the face pass can consult them.
-    let mut unrepresentable: Vec<&Name> = Vec::new();
+    let mut unrepresentable: BTreeSet<&Name> = BTreeSet::new();
     for (index, op) in desc.opers.iter().enumerate() {
         match admit_op(op) {
             Ok(frame) => opers.push(frame),
             Err(error) => {
-                unrepresentable.push(&op.name);
+                unrepresentable.insert(&op.name);
                 declined_opers.push((DeclinedOpIndex::from(index), error));
             },
         }
@@ -1105,7 +1106,7 @@ fn admit_face(
     face: &RuleFace,
     polarity: DeclPolarity,
     opers: &[OpFrame],
-    unrepresentable: &[&Name],
+    unrepresentable: &BTreeSet<&Name>,
 ) -> Result<CellId, ElaborateError>
 {
     declined_operation(face, unrepresentable)?;
@@ -1158,7 +1159,7 @@ fn admit_circuit_rule(
     rule: &CircuitRule,
     polarity: DeclPolarity,
     opers: &[OpFrame],
-    unrepresentable: &[&Name],
+    unrepresentable: &BTreeSet<&Name>,
 ) -> CircuitElaboration
 {
     let composite = match elaborate_body(&rule.body) {
@@ -1674,7 +1675,7 @@ fn admit_op(op: &OperDesc) -> Result<OpFrame, OpElaborateError>
 )]
 fn declined_operation(
     face: &RuleFace,
-    declined: &[&Name],
+    declined: &BTreeSet<&Name>,
 ) -> Result<(), ElaborateError>
 {
     let mut stack: Vec<TermNode<'_>> = alloc::vec![face.lhs.to_node(), face.rhs.to_node()];
@@ -3885,12 +3886,12 @@ mod tests
         let good = add_zero_face();
         assert_eq!(
             Ok(CellId::from(1_usize)),
-            admit_face(&mut store, &good, DeclPolarity::Data, &[], &[])
+            admit_face(&mut store, &good, DeclPolarity::Data, &[], &BTreeSet::new())
         );
         let before = store.clone();
         assert_eq!(
             Ok(CellId::from(1_usize)),
-            admit_face(&mut store, &good, DeclPolarity::Data, &[], &[]),
+            admit_face(&mut store, &good, DeclPolarity::Data, &[], &BTreeSet::new()),
             "an equal face is the cell already admitted"
         );
         assert_eq!(before, store);
@@ -3906,7 +3907,16 @@ mod tests
                 FreeTerm::ctor("Zero", []),
             ),
         ] {
-            assert!(admit_face(&mut store, &refused, DeclPolarity::Data, &[], &[]).is_err());
+            assert!(
+                admit_face(
+                    &mut store,
+                    &refused,
+                    DeclPolarity::Data,
+                    &[],
+                    &BTreeSet::new()
+                )
+                .is_err()
+            );
             assert_eq!(before, store);
         }
         assert_eq!(CellCount::from(2_usize), store.len());
@@ -3930,13 +3940,19 @@ mod tests
         ] {
             assert_eq!(
                 Err(ElaborateError::UnrepresentableOperation),
-                declined_operation(&input, &[&blocked])
+                declined_operation(&input, &BTreeSet::from([&blocked]))
             );
-            assert_eq!(Ok(()), declined_operation(&input, &[]));
+            assert_eq!(Ok(()), declined_operation(&input, &BTreeSet::new()));
             let mut store = CellStore::new();
             assert_eq!(
                 Err(ElaborateError::UnrepresentableOperation),
-                admit_face(&mut store, &input, DeclPolarity::Data, &[], &[&blocked])
+                admit_face(
+                    &mut store,
+                    &input,
+                    DeclPolarity::Data,
+                    &[],
+                    &BTreeSet::from([&blocked])
+                )
             );
             assert!(bool::from(store.is_empty()));
         }
@@ -3944,7 +3960,10 @@ mod tests
             FreeTerm::op("f", [FreeTerm::ctor("ban", [])]),
             FreeTerm::ctor("ban", []),
         );
-        assert_eq!(Ok(()), declined_operation(&constructor, &[&blocked]));
+        assert_eq!(
+            Ok(()),
+            declined_operation(&constructor, &BTreeSet::from([&blocked]))
+        );
     }
 
     #[test]
@@ -3976,7 +3995,7 @@ mod tests
         store.insert(frame_cell(&Sym::from("Seed"), Polarity::Positive));
         let before = store.clone();
         assert!(matches!(
-            admit_circuit_rule(&mut store, &rule, DeclPolarity::Data, &[], &[]),
+            admit_circuit_rule(&mut store, &rule, DeclPolarity::Data, &[], &BTreeSet::new()),
             CircuitElaboration::Declined(ElaborateError::NoCircuitComposite(_))
         ));
         assert_eq!(before, store);
@@ -4268,7 +4287,7 @@ mod tests
             }
             assert!(matches!(continuation.view(), ConsView::Meta(var) if var.hole().as_ref() == RETURN_CONT));
             let blocked = Name::from("g");
-            assert_eq!(Err(ElaborateError::UnrepresentableOperation), declined_operation(&face(pure, framed), &[&blocked]));
+            assert_eq!(Err(ElaborateError::UnrepresentableOperation), declined_operation(&face(pure, framed), &BTreeSet::from([&blocked])));
         }).expect("bounded-stack worker").join().expect("iterative elaboration");
     }
 
