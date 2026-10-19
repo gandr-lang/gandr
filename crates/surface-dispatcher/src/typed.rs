@@ -2108,13 +2108,12 @@ impl TypeTable
         // The printer writes no stage, so its child table stops at one: a
         // staged type is walked again from the type its stage refines.
         let mut families: Vec<ConstantIndex> = Vec::new();
-        let mut walked: Vec<CoreNode> = Vec::new();
+        let mut walked: BTreeSet<CoreNode> = BTreeSet::new();
         let mut pending = Vec::from([root(entry.ty)]);
         while let Some(from) = pending.pop() {
-            if walked.contains(&from) {
+            if !walked.insert(from) {
                 continue;
             }
-            walked.push(from);
             for node in Scopes::of(&printer, [from]).reached() {
                 let CoreNode::ValueType(ty) = node
                 else {
@@ -2996,18 +2995,20 @@ impl TypeTable
         // A type the lowering recorded as written as a relation stands at each
         // copy a shift made of it, so a type read under a dropped binder
         // reprints as written (#674). The copies are taken in the order the
-        // shifts made them, so a copy of a copy finds its source's relation.
+        // shifts made them, so a copy of a copy finds its source's relation;
+        // a type recorded twice keeps its first relation.
+        let mut related: BTreeMap<ValueTypeId, Relation> = BTreeMap::new();
+        for &(ty, relation) in &read_back.relations {
+            related.entry(ty).or_insert(relation);
+        }
         for copy in carried {
             let Carried::ValueType(source, image) = copy
             else {
                 continue;
             };
-            if let Some(&(_, relation)) = read_back
-                .relations
-                .iter()
-                .find(|&&(related, _)| related == source)
-            {
+            if let Some(&relation) = related.get(&source) {
                 read_back.relations.push((image, relation));
+                related.entry(image).or_insert(relation);
             }
         }
         printed
