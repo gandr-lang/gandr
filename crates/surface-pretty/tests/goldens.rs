@@ -2867,6 +2867,45 @@ fn a_constructor_at_the_depth_limit_binds_every_field()
     );
 }
 
+/// Arms that share one body bind distinct fields: the body walks once,
+/// under the last arm, so a wider arm before it holds no recorded name for
+/// its last binders and each takes the next generated one, never the same
+/// one twice (`Bound(b, c, d, e, e)` read back as a duplicate binder, #815).
+#[test]
+fn arms_sharing_a_body_bind_distinct_fields_815()
+{
+    let mut core = CoreArena::new();
+    let theory = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_theory = core.comp_type_returner(theory);
+    let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let unit = core.value_unit();
+    let shared = core.computation_return(unit);
+    let mut branches = Vec::new();
+    for fields in [5_usize, 3_usize] {
+        let mut branch = shared;
+        for _ in 0 .. fields {
+            branch = core.computation_lambda(branch);
+        }
+        branches.push(branch);
+    }
+    let data_case = core.computation_data_case(scrutinee, returns_theory, branches);
+    let matched = core.computation_lambda(data_case);
+    let names = [Name::from("Theory")];
+    let mut constructors = Constructors::default();
+    constructors.family(Name::from("Theory"), [
+        (Name::from("Bound"), Arity::from(5_usize)),
+        (Name::from("Sort"), Arity::from(3_usize)),
+    ]);
+    constructors.case(data_case, Name::from("Theory"));
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    let (text, fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(matched)));
+    assert_eq!(Fidelity::Faithful, fidelity, "{text}");
+    assert!(
+        text.contains("Sort(b, c, d) => unit") && text.contains("Bound(b, c, d, e, f) => unit"),
+        "each arm binds distinct fields: {text}"
+    );
+}
+
 /// A returner over a row of two interfaces lists them between brackets,
 /// a comma between each and the next and none before the first.
 #[test]
