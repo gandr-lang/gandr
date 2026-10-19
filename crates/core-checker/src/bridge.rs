@@ -334,11 +334,49 @@
 //! byte-identical artifact; the names then move to that side table and the
 //! export writes none.
 //!
+//! # A readmission resumes the leading declarations it was handed
+//!
+//! [`readmit_resuming`] records what its first declarations built — the
+//! kernel environment, the positions they took, their kernel bodies, exports
+//! and outcomes, as a [`Crossed`] — and a later readmission of a report that
+//! leads with the same declarations starts from that record rather than
+//! crossing them again. An editor's recheck readmits a document laid out after
+//! its import closure, and an edit to the document leaves the closure's
+//! declarations as they were; on the λ-calculus closure of #776 readmitting
+//! them took 85 ms of each recheck with specifications enforced, the
+//! document's own a few.
+//!
+//! The kernel is not asked to trust anything it did not do: the record holds
+//! the environment the kernel itself built when it admitted those
+//! declarations, and the declarations after the boundary are offered to it as
+//! ever. Which declarations are the same is the caller's to establish, by
+//! content — the session compares the closure's text and its declarations'
+//! checkpoints pointwise — because a report keys nothing by content. The
+//! bridge checks what it can read: the arena's native signatures are the ones
+//! the record seeded, and each leading declaration stands at the recorded
+//! position under a verdict of the kind its outcome crossed. The core bodies a
+//! later declaration unfolds name nodes of the arena the record was made over,
+//! so the record keeps none and the resumption defines them again from its own
+//! report, in the order crossing them did. A record is made only at a boundary
+//! the readmission reaches between declarations — no mutual block or open
+//! seal across it — where every leading declaration was admitted or static, so
+//! no later step rewrites a recorded entry.
+//!
+//! The alternatives were a memo of each declaration's admission keyed by its
+//! content digest, which the kernel's admission entry takes no memo for and
+//! which would still rebuild the environment one declaration at a time, and
+//! an environment shared across modules, where the environment assigns
+//! positions; the first is the per-declaration reuse an edit to an imported
+//! source would want, and both wait on each imported source being composed
+//! once. The choice reverses then: a source's readmission is kept beside its
+//! own composition, and resuming a whole prefix goes.
+//!
 //! [`Staging::axiom`]: gandr_kernel_core::Staging::axiom
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
+use core::fmt;
 
 use anodized::spec;
 use gandr_core_nbe::TraceNode;
@@ -994,6 +1032,9 @@ pub struct Readmission
     /// The declarations the kernel admitted, as they were staged, in kernel
     /// admission order.
     admitted: Vec<KernelDeclaration>,
+    /// How many leading entries were resumed from an earlier readmission's
+    /// [`Crossed`] rather than crossed again.
+    resumed: usize,
 }
 
 impl Readmission
@@ -1030,6 +1071,18 @@ impl Readmission
     pub const fn audit(&self) -> &ArtifactAudit
     {
         &self.audit
+    }
+
+    /// How many leading entries [`readmit_resuming`] resumed from an earlier
+    /// readmission rather than crossed again: none for [`readmit`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn resumed(&self) -> LeadingCount
+    {
+        LeadingCount(self.resumed)
     }
 
     /// The artifact of every declaration that crossed, each under the
@@ -1109,6 +1162,266 @@ impl Readmission
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a readmission has no record of its leading declarations to resume
+    /// from or to keep.
+    pub mod crossed {
+        /// The reason no record is at hand.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No record was asked for, or none is held.
+            Unasked,
+            /// The readmission crossed none of the leading declarations: it
+            /// resumed them all, or there are none.
+            Unchanged,
+            /// A leading declaration was neither admitted nor static, or the
+            /// arena's native signatures did not seed.
+            Unadmitted,
+            /// The boundary falls inside a mutual block, under an open seal,
+            /// or past the report's last declaration.
+            Unaligned,
+        }
+    }
+}
+
+/// How many of a report's declarations, counted from its first: those a
+/// readmission resumed, or the leading ones a record holds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LeadingCount(usize);
+
+impl LeadingCount
+{
+    /// No declaration.
+    pub const NONE: Self = Self(0_usize);
+}
+
+impl From<usize> for LeadingCount
+{
+    /// The first `declarations` declarations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(declarations: usize) -> Self
+    {
+        Self(declarations)
+    }
+}
+
+impl From<LeadingCount> for usize
+{
+    /// The number of declarations `count` counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: LeadingCount) -> Self
+    {
+        count.0
+    }
+}
+
+impl fmt::Display for LeadingCount
+{
+    /// Writes the number of declarations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
+/// What readmitting a module's leading declarations built.
+///
+/// The kernel environment, the positions they took, their kernel bodies,
+/// exports and entries, kept so that a later readmission of a module leading
+/// with the same declarations resumes from it rather than crossing them again.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the parts of one readmission at one boundary: the environment and
+///   positions it had built once its first [`Crossed::boundary`] entries were
+///   recorded, and those entries; no core body, since a core body names a node
+///   of the arena the record was made over, and a resuming readmission reads
+///   each from its own report.
+/// - panics: none.
+/// - executable: none — the fields are private and set only by
+///   [`Crossed::record`], whose specification states them.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readmit_resuming`].
+/// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+#[derive(Clone, Debug)]
+pub struct Crossed
+{
+    /// The environment once the leading declarations crossed.
+    environment: Environment,
+    /// The positions they took, with no core body.
+    positions: Positions,
+    /// Their entries, in order.
+    readmitted: Vec<Readmitted>,
+}
+
+impl Crossed
+{
+    /// How many leading declarations the record holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn boundary(&self) -> LeadingCount
+    {
+        LeadingCount(self.readmitted.len())
+    }
+
+    /// The record of `built` — the environment, positions and entries of a
+    /// readmission that resumed `from` entries, once it reached its boundary —
+    /// when it holds one.
+    ///
+    /// # Specification
+    /// - requires: `built` is a readmission's state between two declarations,
+    ///   over native signatures that seeded.
+    /// - ensures: absent as [`crossed::Absent::Unchanged`] when no entry
+    ///   follows the `from` resumed; as [`crossed::Absent::Unadmitted`] when an
+    ///   entry is neither admitted nor static; as
+    ///   [`crossed::Absent::Unaligned`] when a seal is open; otherwise the
+    ///   environment, the entries, and the positions with no core body and no
+    ///   open seal.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record made over one arena resumes a readmission
+    ///   over another to the answer a whole readmission gives.
+    /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref crossed) => usize::from(crossed.boundary()) == built.2.len()
+            && crossed.boundary() > from && built.1.open.is_empty(),
+        Maybe::Absent(_) => true,
+    })]
+    fn record(
+        built: (&Environment, &Positions, &[Readmitted]),
+        from: LeadingCount,
+    ) -> Maybe<Self, crossed::Absent>
+    {
+        let (environment, positions, readmitted) = built;
+        if readmitted.len() <= from.0 {
+            return Maybe::Absent(crossed::Absent::Unchanged);
+        }
+        if !readmitted.iter().all(|entry| {
+            matches!(
+                entry.outcome,
+                Outcome::Defined { .. }
+                    | Outcome::Data { .. }
+                    | Outcome::Assumed { .. }
+                    | Outcome::Static
+            )
+        }) {
+            return Maybe::Absent(crossed::Absent::Unadmitted);
+        }
+        if !positions.open.is_empty() {
+            return Maybe::Absent(crossed::Absent::Unaligned);
+        }
+        Maybe::Present(Self {
+            environment: environment.clone(),
+            positions: Positions {
+                native: positions.native.clone(),
+                admitted: positions.admitted.clone(),
+                definitions: CodeDefinitions::new(),
+                unfoldings: positions.unfoldings.clone(),
+                exports: positions.exports.clone(),
+                open: Vec::new(),
+                presentations: positions.presentations.clone(),
+            },
+            readmitted: readmitted.to_vec(),
+        })
+    }
+
+    /// The environment, positions and entries a readmission of `report` over
+    /// `arena` resumes from the record, when the record agrees with it.
+    ///
+    /// # Specification
+    /// - requires: the record's declarations were judged as `report`'s leading
+    ///   ones were ([`readmit_resuming`]).
+    /// - ensures: `None` unless the record seeded exactly the native signatures
+    ///   `arena` holds, and `report` has at least [`Crossed::boundary`]
+    ///   declarations, each at the position of the record's entry at its index
+    ///   under a verdict of the kind that entry's outcome crossed: a body for
+    ///   [`Outcome::Defined`], a body or a world for [`Outcome::Static`], a
+    ///   nominal declaration for [`Outcome::Data`], a signed one for
+    ///   [`Outcome::Assumed`]. Then the record's environment, its positions
+    ///   with each core body defined and each data signature presented again
+    ///   from `report` in order, as crossing them did, and its entries with
+    ///   `report`'s origins.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record resumes a readmission over another arena to
+    ///   a whole readmission's answer, and one whose verdicts disagree with the
+    ///   report is not resumed.
+    /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|resumed| resumed.2.len() == usize::from(self.boundary())
+        && resumed.2.iter().zip(report.judged()).all(|(entry, judged)|
+            entry.constant == judged.constant() && entry.origin == judged.origin())))]
+    fn resume(
+        &self,
+        arena: &CoreArena,
+        report: &ModuleReport,
+    ) -> Option<(Environment, Positions, Vec<Readmitted>)>
+    {
+        let natives: BTreeSet<_> = arena.native_primitives().collect();
+        if !natives.iter().eq(self.positions.native.keys()) {
+            return None;
+        }
+        let leading = report.judged().get(.. self.boundary().0)?;
+        let mut definitions = CodeDefinitions::new();
+        let mut readmitted = Vec::with_capacity(report.judged().len());
+        for (entry, judged) in self.readmitted.iter().zip(leading) {
+            let constant = judged.constant();
+            if entry.constant != constant {
+                return None;
+            }
+            let defined =
+                |body: ValueId| report.definitions().get(&constant).copied().unwrap_or(body);
+            match (&entry.outcome, judged.verdict()) {
+                (
+                    &(Outcome::Defined { .. } | Outcome::Static),
+                    Verdict::Checked { body, .. } | Verdict::Synthesised { body, .. },
+                ) => definitions.define(constant, defined(body)),
+                (&Outcome::Static, Verdict::Data) if report.worlds().contains(&constant) => {},
+                (&Outcome::Data { .. }, Verdict::Data) => {
+                    if let Some(signature) = report.data_signatures().get(&constant) {
+                        definitions.present(constant, signature);
+                    }
+                },
+                (
+                    &Outcome::Assumed { .. },
+                    Verdict::Owed(_) | Verdict::Checked { .. } | Verdict::Synthesised { .. },
+                ) => {},
+                _ => return None,
+            }
+            readmitted.push(Readmitted {
+                constant,
+                origin: judged.origin(),
+                outcome: entry.outcome.clone(),
+                certificates: entry.certificates.clone(),
+            });
+        }
+        let mut positions = self.positions.clone();
+        positions.definitions = definitions;
+        Some((self.environment.clone(), positions, readmitted))
+    }
+}
+
 /// Re-derive every declaration `report` accepted in a fresh kernel
 /// environment.
 ///
@@ -1185,6 +1498,55 @@ pub fn readmit(
     readmit_with(arena, report, |certificate| certificate)
 }
 
+/// [`readmit`] of `report`, resuming its leading declarations from `crossed`.
+///
+/// `crossed` is what an earlier readmission recorded for them, resumed when it
+/// agrees with `report`; this readmission records what its first `boundary`
+/// declarations built for a later one to resume.
+///
+/// # Specification
+/// - requires: as [`readmit`]; `crossed`, when present, was recorded by a
+///   readmission of a report whose first [`Crossed::boundary`] declarations the
+///   judgement judged alike — the same content, consulting the same answers —
+///   which the caller compares: a report keys nothing by content.
+/// - ensures: as [`readmit`]. The entries `crossed` holds are resumed rather
+///   than crossed again when the native signatures it seeded are the arena's
+///   and each names the position the report's declaration at its index carries,
+///   under a verdict of the kind its outcome crossed: its outcome and
+///   certificates as recorded, its origin the report's, and the core bodies a
+///   later declaration unfolds read from the report; [`Readmission::resumed`]
+///   counts them, none when `crossed` is absent or disagrees. The record is
+///   present when this readmission crossed at least one of the first `boundary`
+///   declarations, every one of them was admitted or static, and no mutual
+///   block or open seal spans the boundary; absent otherwise.
+/// - provides: the language server's recheck of a document laid out after its
+///   import closure: the closure's declarations cross once, and each later
+///   revision of the document resumes them.
+/// - fails: never; every declaration gets an outcome.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module readmitted whole and the same module resumed
+///   from a record of its leading declarations made over another arena answer
+///   the same entries, audit and artifact; a record whose verdicts disagree
+///   with the report is not resumed, and answers as a whole readmission does.
+/// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+#[inline]
+#[spec(ensures: |ret| ret.0.readmitted().len() == report.judged().len()
+    && usize::from(ret.0.resumed()) <= report.judged().len())]
+pub fn readmit_resuming(
+    arena: &mut CoreArena,
+    report: &ModuleReport,
+    boundary: LeadingCount,
+    crossed: Maybe<&Crossed, crossed::Absent>,
+) -> (Readmission, Maybe<Crossed, crossed::Absent>)
+{
+    readmit_from(arena, report, |certificate| certificate, Resume::Leading {
+        boundary,
+        crossed,
+    })
+}
+
 /// [`readmit`], with every certificate passed through `vouch` before the
 /// kernel replays it.
 ///
@@ -1211,10 +1573,54 @@ fn readmit_with<Vouch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
-    let mut environment = Environment::new();
-    let mut positions = Positions::default();
-    let seeded = positions.seed_native(&mut environment, arena);
-    let mut readmitted = Vec::with_capacity(report.judged().len());
+    readmit_from(arena, report, vouch, Resume::Whole).0
+}
+
+/// How a readmission treats its report's leading declarations.
+#[derive(Clone, Copy, Debug)]
+enum Resume<'crossed>
+{
+    /// Cross every declaration and record nothing.
+    Whole,
+    /// Resume what `crossed` recorded when it agrees with the report, and
+    /// record what the first `boundary` declarations built.
+    Leading
+    {
+        /// How many leading declarations to record.
+        boundary: LeadingCount,
+        /// An earlier readmission's record, when the caller holds one.
+        crossed: Maybe<&'crossed Crossed, crossed::Absent>,
+    },
+}
+
+/// [`readmit_with`] under `resume`: the readmission, and the record of its
+/// leading declarations [`Resume::Leading`] asks for.
+///
+/// # Specification
+/// - requires: as [`readmit_resuming`].
+/// - ensures: under [`Resume::Leading`], [`readmit_resuming`]'s answer with
+///   each certificate vouched as [`readmit_with`] vouches it; under
+///   [`Resume::Whole`], [`readmit_with`]'s readmission, nothing resumed, and no
+///   record.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readmit`] and [`readmit_resuming`].
+/// - witness: `bridge::tests::every_readmission_certificate_replays`
+/// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+#[spec(ensures: |ret| ret.0.readmitted().len() == report.judged().len()
+    && (matches!(resume, Resume::Leading { .. })
+        || (usize::from(ret.0.resumed()) == 0 && matches!(ret.1, Maybe::Absent(_)))))]
+fn readmit_from<Vouch>(
+    arena: &mut CoreArena,
+    report: &ModuleReport,
+    vouch: Vouch,
+    resume: Resume<'_>,
+) -> (Readmission, Maybe<Crossed, crossed::Absent>)
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
     let source = Source {
         lifts: report.lifts(),
         funexts: report.funexts(),
@@ -1228,8 +1634,54 @@ where
         definitions: report.definitions(),
     };
     let judged_all = report.judged();
-    let mut index = 0_usize;
-    while let Some(judged) = judged_all.get(index) {
+    let (boundary, offered) = match resume {
+        Resume::Whole => (None, None),
+        Resume::Leading { boundary, crossed } => (Some(boundary.0), match crossed {
+            Maybe::Present(crossed) => Some(crossed),
+            Maybe::Absent(_) => None,
+        }),
+    };
+    let (mut environment, mut positions, mut readmitted, seeded) =
+        if let Some((environment, positions, readmitted)) =
+            offered.and_then(|crossed| crossed.resume(arena, report))
+        {
+            (environment, positions, readmitted, Ok(()))
+        }
+        else {
+            let mut environment = Environment::new();
+            let mut positions = Positions::default();
+            let seeded = positions.seed_native(&mut environment, arena);
+            (
+                environment,
+                positions,
+                Vec::with_capacity(judged_all.len()),
+                seeded,
+            )
+        };
+    let from = readmitted.len();
+    let mut recorded = Maybe::Absent(if boundary.is_some() {
+        crossed::Absent::Unaligned
+    }
+    else {
+        crossed::Absent::Unasked
+    });
+    let mut index = from;
+    loop {
+        if boundary == Some(index) {
+            recorded = if seeded.is_ok() {
+                Crossed::record(
+                    (&environment, &positions, readmitted.as_slice()),
+                    LeadingCount(from),
+                )
+            }
+            else {
+                Maybe::Absent(crossed::Absent::Unadmitted)
+            };
+        }
+        let Some(judged) = judged_all.get(index)
+        else {
+            break;
+        };
         index = index.saturating_add(1);
         if let Err(ref error) = seeded {
             readmitted.push(Readmitted {
@@ -1396,12 +1848,16 @@ where
         ConstantIndex::from(usize::MAX),
     );
     let audit = ArtifactAudit::of(&readmitted);
-    Readmission {
-        environment,
-        readmitted,
-        audit,
-        admitted: positions.exports,
-    }
+    (
+        Readmission {
+            environment,
+            readmitted,
+            audit,
+            admitted: positions.exports,
+            resumed: from,
+        },
+        recorded,
+    )
 }
 
 /// The offers of the mutual block the first of `run`, the judged declarations

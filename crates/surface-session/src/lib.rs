@@ -24,6 +24,17 @@
 //! joined parse equals the whole parse of the revision. [`Submission::forms`]
 //! counts them.
 //!
+//! # An import closure is readmitted once per process
+//!
+//! A document that imports a sibling is judged laid out after its import
+//! closure, and the kernel readmits the closure's declarations with its own.
+//! [`Session::admit`] resumes that readmission from the one the process holds
+//! for the same closure — its text selects the candidate, its declarations'
+//! checkpoints compared pointwise with the latest resume's admit it — so an
+//! edit to the document's own text offers the kernel its own declarations,
+//! and [`Admitted::crossed`] counts them. The choice, its alternatives and its
+//! reversal are in the `closures` module.
+//!
 //! # The report is the dispatcher's composition
 //!
 //! A submission lowers its parse with the dispatcher's
@@ -140,6 +151,7 @@
 
 extern crate alloc;
 
+mod closures;
 mod edit;
 mod forms;
 mod item_source;

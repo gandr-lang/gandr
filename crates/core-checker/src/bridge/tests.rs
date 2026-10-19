@@ -105,6 +105,7 @@ use quenchant_shape::shape::Maybe;
 
 use super::Erasure;
 use super::Frame;
+use super::LeadingCount;
 use super::Mode as Reading;
 use super::Outcome;
 use super::Positions;
@@ -113,8 +114,10 @@ use super::Readmitted;
 use super::Refusal;
 use super::Replayed;
 use super::Source;
+use super::crossed;
 use super::fault;
 use super::readmit;
+use super::readmit_resuming;
 use super::readmit_with;
 use crate::code::Lift;
 use crate::code::Unfolded;
@@ -771,6 +774,110 @@ fn a_code_constant_unfolds_in_conversion_and_its_trace_replays()
             entry.outcome()
         );
     }
+}
+
+/// #776: a readmission resumed from a record of its leading declarations,
+/// made over another arena, answers what a whole readmission answers — the
+/// same entries, audit and artifact, the later declarations unfolding the
+/// resumed ones' bodies as their own arena holds them — and a record whose
+/// verdicts disagree with the report is not resumed.
+#[test]
+fn a_resumed_readmission_answers_as_a_whole_one_776()
+{
+    // def Num : Type = Integer ; def Alias : Type = Num ;
+    // def n : Num = 0 ; def m : Alias = 0 ;
+    //
+    // Each module is the first `declarations` of these, built after `padding`
+    // unrelated nodes so that no two arenas number a node alike; a refused one
+    // gives `Alias` an integer for its body.
+    let judged = |padding: u32, refused: bool, declarations: usize| {
+        let mut arena = CoreArena::new();
+        for index in 0 .. padding {
+            let _padding = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        }
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let code = arena.value_quote(integer);
+        let num = arena.value_constant(ConstantIndex::from(0_usize));
+        let alias = arena.value_constant(ConstantIndex::from(1_usize));
+        let decoded_num = arena.value_type_element(num, Level::zero());
+        let decoded_alias = arena.value_type_element(alias, Level::zero());
+        let zero = arena.value_literal(integer_literal());
+        let module = [
+            declaration(At(0), Maybe::Present(small), Maybe::Present(code)),
+            declaration(
+                At(1),
+                Maybe::Present(small),
+                Maybe::Present(if refused { zero } else { num }),
+            ),
+            declaration(At(2), Maybe::Present(decoded_num), Maybe::Present(zero)),
+            declaration(At(3), Maybe::Present(decoded_alias), Maybe::Present(zero)),
+        ];
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, module.get(.. declarations).unwrap())
+        };
+        (arena, report)
+    };
+    let (mut first, first_report) = judged(0, false, 3);
+    let (_, recorded) = readmit_resuming(
+        &mut first,
+        &first_report,
+        LeadingCount::from(2_usize),
+        Maybe::Absent(crossed::Absent::Unasked),
+    );
+    let Maybe::Present(recorded) = recorded
+    else {
+        panic!("the two leading declarations are recorded: {recorded:?}");
+    };
+    assert_eq!(recorded.boundary(), LeadingCount::from(2_usize));
+
+    let (mut whole_arena, whole_report) = judged(7, false, 4);
+    let whole = readmit(&mut whole_arena, &whole_report);
+    let (mut resumed_arena, resumed_report) = judged(7, false, 4);
+    let (resumed, again) = readmit_resuming(
+        &mut resumed_arena,
+        &resumed_report,
+        LeadingCount::from(2_usize),
+        Maybe::Present(&recorded),
+    );
+    assert_eq!(
+        resumed.resumed(),
+        LeadingCount::from(2_usize),
+        "the leading two are resumed"
+    );
+    assert!(
+        matches!(again, Maybe::Absent(crossed::Absent::Unchanged)),
+        "a readmission that resumed every leading declaration records nothing new"
+    );
+    assert_eq!(resumed.readmitted(), whole.readmitted());
+    assert_eq!(resumed.audit(), whole.audit());
+    assert_eq!(
+        resumed.export(BTreeMap::new()),
+        whole.export(BTreeMap::new()),
+        "the resumed artifact is the whole one, byte for byte"
+    );
+    assert_eq!(
+        steps(&resumed.readmitted()[3]),
+        [convertible(At(1)), convertible(At(0))],
+        "a later declaration unfolds the resumed ones as its own arena holds them"
+    );
+
+    let (mut whole_arena, whole_report) = judged(7, true, 4);
+    let whole = readmit(&mut whole_arena, &whole_report);
+    let (mut refused_arena, refused_report) = judged(7, true, 4);
+    let (refused, _) = readmit_resuming(
+        &mut refused_arena,
+        &refused_report,
+        LeadingCount::from(2_usize),
+        Maybe::Present(&recorded),
+    );
+    assert_eq!(
+        refused.resumed(),
+        LeadingCount::from(0_usize),
+        "a record whose verdicts disagree is not resumed"
+    );
+    assert_eq!(refused.readmitted(), whole.readmitted());
 }
 
 /// A run's certificate keeps a code constant it is handed as the constant:

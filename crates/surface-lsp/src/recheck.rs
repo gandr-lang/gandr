@@ -29,14 +29,17 @@
 //!
 //! **The log.** Each synchronisation writes one line to the log `serve` is
 //! given — `<uri> at version <n>: <molded>/<forms> forms molded,
-//! <judged>/<items> items judged, <wall> ms, admitted in <wall> ms` — naming
-//! the forms the parse molded, the items the incremental checker judged, the
-//! recheck's wall from the judgement to the diagnostics, and the admission's
-//! wall after them; a document refused whole has nothing to admit, and its line
-//! ends at the recheck's wall. A line the log refuses is dropped; the protocol
-//! never depends on it. Over a generated document of two thousand forms, one
-//! edit molds one to eight forms and publishes what opening the edited text
-//! publishes.
+//! <judged>/<items> items judged, <wall> ms, admitted in <wall> ms,
+//! <crossed>/<declarations> declarations crossed` — naming the forms the parse
+//! molded, the items the incremental checker judged, the recheck's wall from
+//! the judgement to the diagnostics, the admission's wall after them, and the
+//! declarations the admission offered the kernel again, the rest resumed from
+//! the readmission of the document's import closure; a document refused whole
+//! has nothing to admit, and its line ends at the recheck's wall. A line the
+//! log refuses is dropped; the protocol never depends on it. Over a generated
+//! document of two thousand forms, one edit molds one to eight forms and
+//! publishes what opening the edited text publishes; an edit to a document's
+//! own text after the first offers the kernel its own declarations alone.
 //!
 //! **Alternatives.** Full synchronisation alone ships the whole buffer per
 //! keystroke and leaves the session nothing a change names; it stays as the
@@ -381,6 +384,21 @@ pub struct Timing
     wall: Duration,
     /// The admission's wall: from the diagnostics to the kernel artifact.
     admitted: Maybe<Duration, admitted::Absent>,
+    /// How many declarations the admission offered the kernel again, of
+    /// those judged.
+    crossed: Maybe<Crossing, admitted::Absent>,
+}
+
+/// How many declarations an admission offered the kernel again, of those
+/// the checker judged: the rest it resumed from the process's readmission of
+/// the document's import closure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Crossing
+{
+    /// The declarations offered again.
+    crossed: usize,
+    /// The declarations judged.
+    judged: usize,
 }
 
 quenchant_shape::reason_enum! {
@@ -409,6 +427,9 @@ quenchant_shape::reason_enum! {
             /// There was nothing to admit: the revision was refused whole or
             /// never judged.
             Unadmitted,
+            /// The kernel did not re-derive a declaration the checker
+            /// accepted, and the admission exported nothing.
+            Disagreed,
         }
     }
 }
@@ -421,7 +442,8 @@ impl fmt::Display for Timing
     /// - requires: nothing.
     /// - ensures: `<molded>/<forms> forms molded, <judged>/<items> items
     ///   judged, <wall> ms`, the judgement replaced by why none was made, then
-    ///   `, admitted in <wall> ms` when the admission ran.
+    ///   `, admitted in <wall> ms` when the admission ran and `,
+    ///   <crossed>/<judged> declarations crossed` when it exported.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither its written bytes nor
     ///   its sink's failure state.
@@ -459,9 +481,21 @@ impl fmt::Display for Timing
                     f,
                     ", admitted in {:.1} ms",
                     wall.as_secs_f64() * 1_000.0_f64
-                )
+                )?;
             },
-            Maybe::Absent(admitted::Absent::Pending | admitted::Absent::Unadmitted) => Ok(()),
+            Maybe::Absent(
+                admitted::Absent::Pending
+                | admitted::Absent::Unadmitted
+                | admitted::Absent::Disagreed,
+            ) => {},
+        }
+        match self.crossed {
+            Maybe::Present(crossing) => write!(
+                f,
+                ", {}/{} declarations crossed",
+                crossing.crossed, crossing.judged
+            ),
+            Maybe::Absent(_) => Ok(()),
         }
     }
 }
@@ -548,6 +582,7 @@ pub fn recheck(
             judged: Maybe::Absent(judged::Absent::Unchecked),
             wall: started.elapsed(),
             admitted: Maybe::Absent(admitted::Absent::Unadmitted),
+            crossed: Maybe::Absent(admitted::Absent::Unadmitted),
         },
     };
     let session = match *session {
@@ -593,14 +628,11 @@ pub fn recheck(
         Err(fault) => return unchecked(Diagnostic::at_origin(fault.to_string())),
     };
     let forms = submission.forms();
-    let (judged, admission) = match submission.resumed() {
-        Maybe::Present(resumed) => (
-            Maybe::Present(resumed.census()),
-            Maybe::Absent(admitted::Absent::Pending),
-        ),
+    let (judged, pending) = match submission.resumed() {
+        Maybe::Present(resumed) => (Maybe::Present(resumed.census()), admitted::Absent::Pending),
         Maybe::Absent(_) => (
             Maybe::Absent(judged::Absent::RefusedWhole),
-            Maybe::Absent(admitted::Absent::Unadmitted),
+            admitted::Absent::Unadmitted,
         ),
     };
     let diagnostics = diagnostics_of(submission, uri, text, verbosity, spelling);
@@ -611,7 +643,8 @@ pub fn recheck(
             forms,
             judged,
             wall: started.elapsed(),
-            admitted: admission,
+            admitted: Maybe::Absent(pending),
+            crossed: Maybe::Absent(pending),
         },
     }
 }
@@ -648,10 +681,11 @@ quenchant_shape::reason_enum! {
 /// - requires: `timing` is the timing of the recheck that judged the session's
 ///   latest revision.
 /// - ensures: when the recheck left an admission pending, it runs, and the
-///   timing carries its wall; a kernel disagreement is one error at the origin
-///   naming the fault `submit` would have reported, to publish in place of the
-///   recheck's diagnostics. Otherwise nothing runs and the timing is returned
-///   as it was.
+///   timing carries its wall and, when it exported, how many declarations it
+///   offered the kernel of those judged; a kernel disagreement is one error at
+///   the origin naming the fault `submit` would have reported, to publish in
+///   place of the recheck's diagnostics. Otherwise nothing runs and the timing
+///   is returned as it was.
 /// - provides: the second half of every synchronisation, run after its
 ///   diagnostics are published.
 /// - fails: never; a disagreement is a diagnostic.
@@ -659,15 +693,19 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a synchronisation's timing line carries the admission's
-///   wall after the recheck's, and a refused document's carries none.
+///   wall after the recheck's, and a refused document's carries none; an
+///   importer's line counts the closure's declarations at its opening and its
+///   own alone after an edit to its own text.
 /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `tests::session::an_importer_edit_offers_the_kernel_its_own_declarations_776`
 /// - witness: `recheck::tests::an_admission_follows_the_published_diagnostics`
 #[spec(ensures: |ret| ret.timing.forms == timing.forms && ret.timing.judged == timing.judged
     && ret.timing.wall == timing.wall
     && match timing.admitted {
         Maybe::Absent(admitted::Absent::Pending) => matches!(ret.timing.admitted, Maybe::Present(_)),
-        Maybe::Present(_) | Maybe::Absent(admitted::Absent::Unadmitted) =>
-            ret.timing.admitted == timing.admitted && matches!(ret.fault, Maybe::Absent(_)),
+        Maybe::Present(_) | Maybe::Absent(admitted::Absent::Unadmitted | admitted::Absent::Disagreed) =>
+            ret.timing.admitted == timing.admitted && ret.timing.crossed == timing.crossed
+                && matches!(ret.fault, Maybe::Absent(_)),
     })]
 #[must_use]
 pub fn admit(
@@ -685,16 +723,30 @@ pub fn admit(
         return unchanged;
     };
     let started = Instant::now();
-    let fault = match session.admit() {
-        Ok(_) => Maybe::Absent(agreed::Absent::Agreed),
-        Err(disagreement) => Maybe::Present(Diagnostic::at_origin(
-            SessionFault::Compose(ComposeFault::Readmission(disagreement)).to_string(),
-        )),
+    let (fault, crossed) = match session.admit() {
+        Ok(Maybe::Present(admitted)) => (
+            Maybe::Absent(agreed::Absent::Agreed),
+            Maybe::Present(Crossing {
+                crossed: usize::from(admitted.crossed()),
+                judged: usize::from(admitted.judged()),
+            }),
+        ),
+        Ok(Maybe::Absent(_)) => (
+            Maybe::Absent(agreed::Absent::Agreed),
+            Maybe::Absent(admitted::Absent::Unadmitted),
+        ),
+        Err(disagreement) => (
+            Maybe::Present(Diagnostic::at_origin(
+                SessionFault::Compose(ComposeFault::Readmission(disagreement)).to_string(),
+            )),
+            Maybe::Absent(admitted::Absent::Disagreed),
+        ),
     };
     Admitted {
         fault,
         timing: Timing {
             admitted: Maybe::Present(started.elapsed()),
+            crossed,
             ..timing
         },
     }

@@ -613,11 +613,104 @@ impl Admission
             .collect::<alloc::vec::Vec<_>>()],
         ensures: |ref ret| ret.as_ref().err().is_none_or(|fault| judged.contains(&fault.constant())),
     )]
-    pub fn admit(mut self) -> Result<EncodedArtifact, bridge::Readmitted>
+    pub fn admit(self) -> Result<EncodedArtifact, bridge::Readmitted>
     {
-        let readmission = readmitted(&mut self.arena, &self.verdicts)?;
-        Ok(readmission.export(self.names))
+        self.admit_resuming(
+            bridge::LeadingCount::NONE,
+            Maybe::Absent(bridge::crossed::Absent::Unasked),
+        )
+        .artifact
     }
+
+    /// [`admit`](Self::admit), resuming the readmission of the verdicts' first
+    /// `boundary` declarations from `crossed`, an earlier readmission's record
+    /// of them, and recording them for a later admission to resume.
+    ///
+    /// # Specification
+    /// - requires: `crossed`, when present, was recorded by the readmission of
+    ///   verdicts whose first `boundary` declarations were judged as these were
+    ///   — the same content, consulting the same answers — which the caller
+    ///   compares, as [`bridge::readmit_resuming`] requires.
+    /// - ensures: [`admit`](Self::admit)'s artifact or disagreement; how many
+    ///   leading declarations the readmission resumed, of how many judged; and
+    ///   the record [`bridge::readmit_resuming`] made of the first `boundary`.
+    /// - provides: an editor's admission of a document laid out after its
+    ///   import closure, which resumes the closure each revision leaves alone.
+    /// - fails: as [`admit`](Self::admit), in the artifact.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an admission of a laid-out document resumed from the
+    ///   record of another revision's admission exports, byte for byte, what a
+    ///   whole admission exports, resuming the closure's declarations alone; a
+    ///   revision of the closure itself is not resumed.
+    /// - witness: `compose::tests::a_resumed_admission_exports_what_a_whole_one_does_776`
+    #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body readmits every judged declaration; the capture copies each one's constant once"
+        )
+    )]
+    #[spec(
+        captures: [judged = self.verdicts.judged().iter().map(gandr_core_checker::Judged::constant)
+            .collect::<alloc::vec::Vec<_>>()],
+        ensures: |ref ret| usize::from(ret.judged) == judged.len() && ret.resumed <= ret.judged
+            && ret.artifact.as_ref().err().is_none_or(|fault| judged.contains(&fault.constant())),
+    )]
+    #[must_use]
+    pub fn admit_resuming(
+        mut self,
+        boundary: bridge::LeadingCount,
+        crossed: Maybe<&bridge::Crossed, bridge::crossed::Absent>,
+    ) -> Resumption
+    {
+        let judged = bridge::LeadingCount::from(self.verdicts.judged().len());
+        let (readmission, crossed) =
+            readmitted(&mut self.arena, &self.verdicts, (boundary, crossed));
+        match readmission {
+            Ok(readmission) => Resumption {
+                resumed: readmission.resumed(),
+                judged,
+                artifact: Ok(readmission.export(self.names)),
+                crossed,
+            },
+            Err(fault) => Resumption {
+                artifact: Err(fault),
+                resumed: bridge::LeadingCount::NONE,
+                judged,
+                crossed,
+            },
+        }
+    }
+}
+
+/// What [`Admission::admit_resuming`] answers.
+///
+/// # Specification
+/// - requires: constructed by [`Admission::admit_resuming`].
+/// - ensures: no more declarations resumed than judged.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`Admission::admit_resuming`] carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Admission::admit_resuming`].
+/// - witness: `compose::tests::a_resumed_admission_exports_what_a_whole_one_does_776`
+#[derive(Debug)]
+pub struct Resumption
+{
+    /// The kernel artifact of every declaration that crossed, or the first
+    /// declaration the kernel did not re-derive.
+    pub artifact: Result<EncodedArtifact, bridge::Readmitted>,
+    /// How many leading declarations the readmission resumed rather than
+    /// crossed again.
+    pub resumed: bridge::LeadingCount,
+    /// How many declarations the checker judged.
+    pub judged: bridge::LeadingCount,
+    /// The record of the first declarations, for a later admission to resume.
+    pub crossed: Maybe<bridge::Crossed, bridge::crossed::Absent>,
 }
 
 /// Why one source could not be carried through the pipeline: an engine
@@ -1967,11 +2060,14 @@ fn abstract_type(sealing: Sealing) -> AbstractType
 }
 
 /// Have the kernel re-derive every declaration in `verdicts` the checker
-/// accepted.
+/// accepted, resuming the first of them from `leading`'s record and
+/// recording its boundary's, as [`bridge::readmit_resuming`] does.
 ///
 /// # Specification
-/// - requires: `verdicts` was judged over `arena`.
-/// - ensures: succeeds with the readmission when every accepted declaration
+/// - requires: `verdicts` was judged over `arena`; `leading`'s record, when
+///   present, as [`bridge::readmit_resuming`] requires.
+/// - ensures: beside [`bridge::readmit_resuming`]'s record of `leading`'s
+///   boundary, succeeds with the readmission when every accepted declaration
 ///   crossed as a definition or an axiom, or stays on the checker's side as a
 ///   static definition or as an effectful one the bridge refuses by its
 ///   effectful former; a refused declaration crosses as its mark, a suspended
@@ -2001,7 +2097,7 @@ fn abstract_type(sealing: Sealing) -> AbstractType
 /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
 /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
 /// - witness: `compose::tests::an_effectful_declaration_stays_on_the_checkers_side`
-#[spec(ensures: |ref ret| match *ret {
+#[spec(ensures: |ref ret| match ret.0 {
     Ok(ref readmission) => readmission.readmitted().len() == verdicts.judged().len()
         && readmission.readmitted().iter().zip(verdicts.judged()).all(|(crossed, judged)|
             crossed.constant() == judged.constant() && (matches!(*crossed.outcome(),
@@ -2023,9 +2119,17 @@ fn abstract_type(sealing: Sealing) -> AbstractType
 fn readmitted(
     arena: &mut CoreArena,
     verdicts: &ModuleReport,
-) -> Result<bridge::Readmission, bridge::Readmitted>
+    leading: (
+        bridge::LeadingCount,
+        Maybe<&bridge::Crossed, bridge::crossed::Absent>,
+    ),
+) -> (
+    Result<bridge::Readmission, bridge::Readmitted>,
+    Maybe<bridge::Crossed, bridge::crossed::Absent>,
+)
 {
-    let readmission = bridge::readmit(arena, verdicts);
+    let (boundary, crossed) = leading;
+    let (readmission, recorded) = bridge::readmit_resuming(arena, verdicts, boundary, crossed);
     for readmitted in readmission.readmitted() {
         match *readmitted.outcome() {
             bridge::Outcome::Data { .. }
@@ -2052,11 +2156,11 @@ fn readmitted(
                 | bridge::Refusal::MachineInvariant,
             )
             | bridge::Outcome::Rejected(_) => {
-                return Err(readmitted.clone());
+                return (Err(readmitted.clone()), recorded);
             },
         }
     }
-    Ok(readmission)
+    (Ok(readmission), recorded)
 }
 
 /// Which side of the boundary a declaration holding a former the kernel has
@@ -2212,6 +2316,15 @@ mod tests
     {
         built_in().expect("the built-in grammar builds")
     }
+
+    /// A readmission that resumes nothing and records nothing.
+    const WHOLE: (
+        bridge::LeadingCount,
+        Maybe<&bridge::Crossed, bridge::crossed::Absent>,
+    ) = (
+        bridge::LeadingCount::NONE,
+        Maybe::Absent(bridge::crossed::Absent::Unasked),
+    );
 
     /// `source` composed under `root`, which must settle.
     ///
@@ -2605,7 +2718,8 @@ def h = 1 ;"#,
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
             &adapt(&module),
         );
-        let admission = readmitted(&mut arena, &verdicts)
+        let admission = readmitted(&mut arena, &verdicts, WHOLE)
+            .0
             .expect("marks and withheld references are not disagreements");
         let [ref marked, ref withheld, ref defined] = *admission.readmitted()
         else {
@@ -2625,7 +2739,7 @@ def h = 1 ;"#,
             "the reference is accepted by the checker despite the withheld body"
         );
         let mut foreign = CoreArena::new();
-        let Err(fault) = readmitted(&mut foreign, &verdicts)
+        let (Err(fault), _) = readmitted(&mut foreign, &verdicts, WHOLE)
         else {
             panic!("over a foreign arena the accepted ids dangle");
         };
@@ -2680,8 +2794,9 @@ def h = 1 ;"#,
                 &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
                 &adapt(&module),
             );
-            let readmission =
-                readmitted(&mut arena, &verdicts).expect("the kernel re-derives every acceptance");
+            let readmission = readmitted(&mut arena, &verdicts, WHOLE)
+                .0
+                .expect("the kernel re-derives every acceptance");
             let kernel = readmission.export(module.structured_names());
             let mut program = Program::new(&arena, &module, &verdicts);
             let report = settle(
@@ -2754,6 +2869,67 @@ def h = 1 ;"#,
                 "the admission completes the composition with the same kernel artifact"
             );
         }
+    }
+
+    /// #776: an admission resumed from the record another revision's
+    /// admission made of the declarations both lead with exports, byte for
+    /// byte, what a whole admission of the revision exports, crossing only the
+    /// revision's own declarations.
+    #[test]
+    fn a_resumed_admission_exports_what_a_whole_one_does_776()
+    {
+        let grammar = grammar();
+        let closure = "def one : Integer ; def one = 1 ;\ndef two : Integer ; def two = one ;\n";
+        let first = format!("{closure}def three : Integer ; def three = two ;");
+        let later = format!(
+            "{closure}def four : Integer ; def four = 4 ;\ndef five : Integer ; def five = two ;"
+        );
+        let admission = |text: &str| {
+            let Lowered::Module { module, arena } = lower_source(
+                &grammar,
+                SourceText::from(text),
+                &mut LoweringCount::default(),
+            )
+            .expect("the revision lowers")
+            .into_lowered()
+            else {
+                panic!("the revision is not refused whole");
+            };
+            judge(
+                CorpusRoot::Fixture,
+                (module, SourceText::from(text)),
+                arena,
+                &HostGrant::UNBOUNDED,
+            )
+            .into_parts()
+            .1
+        };
+        let recorded = admission(&first).admit_resuming(
+            bridge::LeadingCount::from(2_usize),
+            Maybe::Absent(bridge::crossed::Absent::Unasked),
+        );
+        assert!(recorded.artifact.is_ok(), "{:?}", recorded.artifact);
+        assert_eq!(
+            usize::from(recorded.resumed),
+            0_usize,
+            "nothing was held to resume"
+        );
+        let Maybe::Present(ref crossed) = recorded.crossed
+        else {
+            panic!("the closure is recorded: {:?}", recorded.crossed);
+        };
+        let whole = admission(&later).admit();
+        let resumed = admission(&later)
+            .admit_resuming(bridge::LeadingCount::from(2_usize), Maybe::Present(crossed));
+        assert_eq!(
+            (usize::from(resumed.resumed), usize::from(resumed.judged)),
+            (2_usize, 4_usize),
+            "the closure's two declarations are resumed, and the revision's own two cross"
+        );
+        assert_eq!(
+            resumed.artifact, whole,
+            "the resumed artifact is the whole one, byte for byte"
+        );
     }
 
     #[test]

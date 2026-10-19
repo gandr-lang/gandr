@@ -101,6 +101,9 @@ pub struct Session
     keystrokes: usize,
     /// The diagnostics last published.
     published: Value,
+    /// What each check read: the publication, the inline completion and,
+    /// against the oracle, the hover at the cursor.
+    answers: Vec<Value>,
 }
 
 impl Session
@@ -231,6 +234,7 @@ impl Session
             version: 1_i32,
             keystrokes: 0_usize,
             published: Value::Null,
+            answers: Vec::new(),
         };
         session.published = session.publication(&opened);
         session.check(Oracle::Keystroke);
@@ -262,6 +266,16 @@ impl Session
     pub const fn published(&self) -> &Value
     {
         &self.published
+    }
+
+    /// What each check read, in order: the publication, the inline completion
+    /// and, against the oracle, the hover at the cursor.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn answers(&self) -> &[Value]
+    {
+        &self.answers
     }
 
     /// The codes of the diagnostics last published, in order, each `null`
@@ -471,13 +485,15 @@ impl Session
     ///   oracle, the hover and selection ranges at the cursor answer likewise,
     ///   and the published diagnostics, the whole-document answers and the
     ///   inline completion and selection ranges at the cursor equal a fresh
-    ///   connection's for the buffer's text.
+    ///   connection's for the buffer's text. [`answers`](Self::answers) gains
+    ///   the publication, the inline completion and, against the oracle, the
+    ///   hover.
     /// - provides: the per-keystroke invariants.
     /// - panics: a query is refused or answered twice, an answer disagrees, or
     ///   a decision of the molder's tables differs from its dry runs'.
     /// - executable: none — the answers compared are the two connections'
-    ///   replies, read and asserted inside the call; it returns nothing and
-    ///   keeps no record of them.
+    ///   replies, read and asserted inside the call; the record is what was
+    ///   read, which a clause would only restate.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the oracle is a fresh connection opening the text
@@ -522,9 +538,11 @@ impl Session
         let ghost = self
             .exchanging(|client| client.request(Method("textDocument/inlineCompletion"), &inline));
         if cadence == Oracle::Line {
+            self.answers
+                .push(json!({ "diagnostics": self.published, "ghost": ghost }));
             return;
         }
-        let _hover = self.exchanging(|client| client.request(Method("textDocument/hover"), &at));
+        let hover = self.exchanging(|client| client.request(Method("textDocument/hover"), &at));
         let ranges = self
             .exchanging(|client| client.request(Method("textDocument/selectionRange"), &selection));
         let mut fresh = Client::initialized(Record::Dropped, Quiet::Unheld);
@@ -569,6 +587,9 @@ impl Session
             "the selection ranges are a fresh connection's{}",
             self.scene()
         );
+        self.answers.push(json!({
+            "diagnostics": self.published, "ghost": ghost, "hover": hover,
+        }));
     }
 
     /// Run `exchange` over the connection, a panic in it — the loop stopped

@@ -1034,6 +1034,58 @@ fn an_edit_to_a_large_document_rechecks_its_forms()
     );
 }
 
+/// #776: an importer's edit to its own text offers the kernel its own
+/// declarations alone, as its synchronisation's log line counts them, where
+/// opening it offered the whole closure.
+#[test]
+fn an_importer_edit_offers_the_kernel_its_own_declarations_776()
+{
+    let directory =
+        std::env::temp_dir().join(format!("gandr-lsp-closure-776-{}", std::process::id()));
+    let _cleared = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+    let directory =
+        std::fs::canonicalize(&directory).expect("the scratch directory has a canonical path");
+    let document = directory.join("document.gandr");
+    std::fs::write(
+        directory.join("base.gandr"),
+        "/// #776: the server's closure.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer \
+         ;\ndef two = one ;\n",
+    )
+    .expect("the sibling is written");
+    // The editor's buffer is what is judged; the file only has to exist.
+    std::fs::write(&document, "").expect("the document is written");
+    let address = uri(&document);
+    let first = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n";
+    let mut messages = opening();
+    messages.push(open(&Source {
+        uri: address.clone(),
+        text: first.to_owned(),
+    }));
+    messages.push(
+        json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+            "textDocument": {"uri": address, "version": 2_i32},
+            "contentChanges": [{"text": format!("{first}def four : Integer ;\ndef four = three ;\n")}],
+        }}),
+    );
+    messages.extend(closing());
+    let (served, _, log) = logged(&messages);
+    let _removed = std::fs::remove_dir_all(&directory);
+    assert_eq!(served, Served::Clean);
+    let [ref opened, ref changed] = *log.as_slice()
+    else {
+        panic!("one timing line per synchronisation: {log:?}");
+    };
+    assert!(
+        opened.contains(", 3/3 declarations crossed"),
+        "opening offers the kernel the closure and the document: {opened}"
+    );
+    assert!(
+        changed.contains(", 2/4 declarations crossed"),
+        "an edit to its own text offers the document's declarations alone: {changed}"
+    );
+}
+
 #[test]
 fn wire_helpers_preserve_escaped_paths_and_unicode_payloads()
 {
