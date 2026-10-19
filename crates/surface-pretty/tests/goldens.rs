@@ -3097,6 +3097,28 @@ fn a_body_answering_a_type_keeps_its_pure_815()
     );
 }
 
+/// A body that ends answering a `run` keeps its `pure`: bare at a statement's
+/// head, `run down(a)` opens a bind, `run x <- c ; …`, and does not parse
+/// (#815).
+#[test]
+fn a_body_answering_a_run_keeps_its_pure_815()
+{
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let returns_one = core.computation_return(one);
+    let ran = core.value_run(returns_one);
+    let returns_run = core.computation_return(ran);
+    let answers_run = core.computation_lambda(returns_run);
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        spelled(
+            &source,
+            Root::Computation(CoreNode::Computation(answers_run))
+        ),
+        faithful(Written("fn (a) { pure (run (pure 1)) }"))
+    );
+}
+
 /// A prelude primitive the surface writes as an operator is written so: an
 /// infix one between its operands, a prefix one before its operand.
 #[test]
