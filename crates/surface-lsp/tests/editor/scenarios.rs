@@ -809,6 +809,11 @@ fn each_in_parallel(
     });
 }
 
+/// How many positions apart a hover sweep hovers a source; at least one.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Every(pub usize);
+
 /// One position of a corpus source as the sweep hovers it.
 pub(super) struct Hovered
 {
@@ -823,12 +828,16 @@ pub(super) struct Hovered
     pub shown: Value,
 }
 
-/// Every position of `source`, each hovered over a fresh connection opening
-/// it whole.
+/// The positions of `source` from the first, `every` apart, and the first
+/// position of each name and constructor pattern, whose answers
+/// [`shapes::judged`] reads for the positions they head, each hovered over a
+/// fresh connection opening it whole. An `every` of one hovers every position.
 ///
 /// # Specification
 /// - requires: `source` parses under `grammar`.
-/// - ensures: one entry per character boundary of the text and its end, in
+/// - ensures: one entry per hovered position — each character boundary of the
+///   text and its end whose rank among them is a multiple of `every`, and each
+///   boundary starting the leaf of a name or of a constructor pattern — in
 ///   order, each with whether a comment holds it — a line comment holding the
 ///   newline that closes it — the owner of the written leaf holding it — none
 ///   for layout and comments — and the hover's answer.
@@ -836,15 +845,17 @@ pub(super) struct Hovered
 /// - panics: a written byte lies in no leaf, or the server faults.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the sweep counts every non-comment position of the corpus
-///   through this, and the goldens pin every answer of five sources.
+/// - hypothesis: L3 — the sweep counts the non-comment positions of the corpus
+///   it hovers through this, and the goldens pin every answer of five sources.
 /// - witness: `tests::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
 /// - witness: `tests::editor::shapes::the_headline_sources_hover_as_their_goldens`
 /// - witness: `tests::editor::scenarios::a_line_comment_holds_the_newline_closing_it_456`
-#[spec(ensures: |ret| ret.len() == source.text.chars().count().saturating_add(1))]
+#[spec(ensures: |ret| ret.len() <= source.text.chars().count().saturating_add(1)
+    && (every.0 > 1 || ret.len() == source.text.chars().count().saturating_add(1)))]
 pub(super) fn hovered(
     grammar: &Pbg,
     source: &Source,
+    every: Every,
 ) -> Vec<Hovered>
 {
     let owners = owners(grammar, SourceText::from(source.text.as_str()));
@@ -874,12 +885,25 @@ pub(super) fn hovered(
                 .then_some((start, end.saturating_add(usize::from(closes))))
         })
         .collect();
+    // The leaves whose first answer the shape judgement reads for the other
+    // positions of their form: a name's, and a constructor pattern's.
+    let heads: Vec<usize> = owners
+        .iter()
+        .filter(|owner| {
+            owner.kind.ends_with(" name") || owner.kind == "pattern constructor_pattern"
+        })
+        .map(|owner| owner.leaf.0)
+        .collect();
     source
         .text
         .char_indices()
         .map(|(offset, _)| offset)
         .chain([source.text.len()])
-        .map(|offset| {
+        .enumerate()
+        .filter(|&(rank, offset)| {
+            rank.checked_rem(every.0) == Some(0_usize) || heads.binary_search(&offset).is_ok()
+        })
+        .map(|(_, offset)| {
             let at = Position::of(text, Offset(offset));
             let shown = client.request(
                 Method("textDocument/hover"),
@@ -1260,7 +1284,7 @@ fn a_line_comment_holds_the_newline_closing_it_456()
         text: String::from(text),
     };
     let grammar = built_in().expect("the built-in grammar builds");
-    let hovers = hovered(&grammar, &source);
+    let hovers = hovered(&grammar, &source, Every(1));
     let newline = text.find('\n').expect("the comment ends its line");
     let commented: Vec<usize> = hovers
         .iter()
@@ -1286,12 +1310,15 @@ fn a_line_comment_holds_the_newline_closing_it_456()
 /// (#467).
 mod sweeps
 {
+    use gandr_surface_dispatcher::classify;
+    use gandr_surface_dispatcher::lay_out;
     use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
     use gandr_workflow_sweep::Sweep;
     use proptest::test_runner::RngSeed;
+    use quenchant_shape::shape::Maybe;
 
     use super::*;
 
@@ -1314,11 +1341,15 @@ mod sweeps
         size: SampleSize(16),
     };
 
-    /// The longest source the typing sweep's sample types, in bytes: typing
-    /// costs a check per keystroke over the whole text, so a long source alone
-    /// types for longer than the bound. A changed source past it is typed
-    /// nightly, a part of it each night; the erasure and the hover sweep visit
-    /// it on the pull request.
+    /// The most bytes one check of a source the typing sweep's sample types
+    /// may read ([`checked`]): typing costs a check per keystroke over the
+    /// whole text the server judges, the source laid out after its import
+    /// closure, so a source whose check reads more types for longer than the
+    /// bound. The λ-calculus model's laws, half a kibibyte each over a 10 KB
+    /// closure, typed for 4.5 to 6.8 s each with specifications enforced, and
+    /// a 1 KB refusal over a 13 KB closure for 12.8 s. A changed source past
+    /// it is typed nightly, a part of it each night; the erasure and the hover
+    /// sweep visit it on the pull request.
     const TYPED_CEILING: Ceiling = Ceiling(1024);
 
     /// The erasure's sample: twenty-four sources, every keystroke held to the
@@ -1333,43 +1364,137 @@ mod sweeps
     /// costs its length squared: the 196 lines of the circle group's model
     /// took 13.7 s alone on a local machine and timed out on the Linux runner,
     /// about three times slower. A sampled erasure of a longer source deletes
-    /// as many lines per keystroke as keep it to this many; the circle group
-    /// erases five at a time, about 3 s locally. The `sweeps` profile erases
-    /// every source line by line.
+    /// as many lines per keystroke as keep it to this many, and its checks to
+    /// [`ERASED_BYTES`]; the circle group erases five at a time, about 3 s
+    /// locally. The `sweeps` profile erases every source line by line.
     const ERASED_KEYSTROKES: usize = 48;
 
+    /// The most bytes a sampled erasure's checks read for one source, summed
+    /// over its keystrokes: 96 KiB. A keystroke checks the text left laid out
+    /// after the source's import closure ([`checked`]), so a short source
+    /// over a long closure pays the closure's check at every keystroke: the
+    /// λ-calculus model's record, 111 lines over a 41 KB closure, took 29.1 s
+    /// for its 37 keystrokes with specifications enforced. A source whose
+    /// check reads more than a 48th of this erases in fewer keystrokes, one at
+    /// least; the record erases in two.
+    const ERASED_BYTES: usize = 98_304;
+
     /// The stride a run erases `source` at: one line per keystroke under the
-    /// `sweeps` profile, at most [`ERASED_KEYSTROKES`] keystrokes otherwise.
+    /// `sweeps` profile; otherwise as many lines as keep it to
+    /// [`ERASED_KEYSTROKES`] keystrokes and its checks to [`ERASED_BYTES`].
     ///
     /// # Specification
     /// trivial.
-    fn erased_stride(source: &Source) -> Stride
+    fn erased_stride(
+        grammar: &Pbg,
+        source: &Source,
+    ) -> Stride
     {
         match gandr_workflow_sweep::Coverage::asked() {
             gandr_workflow_sweep::Coverage::Full => Stride(1),
-            gandr_workflow_sweep::Coverage::Sampled => Stride(
-                source
-                    .text
-                    .lines()
-                    .count()
-                    .div_ceil(ERASED_KEYSTROKES)
-                    .max(1),
-            ),
+            gandr_workflow_sweep::Coverage::Sampled => {
+                let keystrokes = ERASED_BYTES
+                    .checked_div(checked(grammar, source).0)
+                    .unwrap_or(ERASED_KEYSTROKES)
+                    .clamp(1, ERASED_KEYSTROKES);
+                Stride(source.text.lines().count().div_ceil(keystrokes).max(1))
+            },
         }
     }
 
     /// The hover sweep's sample with specifications enforced: forty-eight
-    /// sources, every position hovered.
+    /// sources, each hovered at the positions [`hovered_every`] spaces.
     const HOVERED: Sample = Sample {
         name: SampleName("hovering_every_position_of_each_corpus_source_answers_without_fault"),
         size: SampleSize(48),
     };
 
-    /// The length in bytes past which a sampled sweep leaves a source to the
-    /// `sweeps` profile.
+    /// The most a sampled hover of one source costs, counted as the positions
+    /// it hovers times the bytes its check reads ([`checked`]): 16 MiB. A
+    /// hover answers from the type table of the whole text the server judges,
+    /// and the types it prints grow with the development that text lays out:
+    /// the λ-calculus model's record, 3796 positions over a 41 KB closure,
+    /// hovered for 17.3 s with specifications enforced, its 9 KB base, 5239
+    /// positions, for 0.6 s. A source past it is hovered as many positions
+    /// apart as keep it within; the record, ten apart.
+    const HOVERED_BYTES: usize = 0x0100_0000;
+
+    /// How many positions apart a run hovers `source`: one under the `sweeps`
+    /// profile; otherwise as few as keep its positions times its [`checked`]
+    /// bytes within [`HOVERED_BYTES`].
+    ///
+    /// # Specification
+    /// trivial.
+    fn hovered_every(
+        grammar: &Pbg,
+        source: &Source,
+    ) -> Every
+    {
+        match gandr_workflow_sweep::Coverage::asked() {
+            gandr_workflow_sweep::Coverage::Full => Every(1),
+            gandr_workflow_sweep::Coverage::Sampled => Every(
+                source
+                    .text
+                    .chars()
+                    .count()
+                    .saturating_add(1)
+                    .saturating_mul(checked(grammar, source).0)
+                    .div_ceil(HOVERED_BYTES)
+                    .max(1),
+            ),
+        }
+    }
+
+    /// The bytes one check of a source reads.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    struct Checked(usize);
+
+    /// The bytes one check of `source` reads: the text the server judges it
+    /// in, its import closure laid out before its own text, or its own text
+    /// when it imports nothing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the length of the text [`lay_out`] lays out for the path of
+    ///   `source`'s URI under the root that path classifies as, or of
+    ///   `source`'s own text when no closure is laid out; never less than the
+    ///   own text's.
+    /// - provides: the size the typing ceiling, the erasure's keystrokes and
+    ///   the hover's spacing bound a source's work by.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — measured by its own bytes alone, a short source over
+    ///   a long closure types, erases and hovers its closure's check at every
+    ///   step unbounded: the λ-calculus model's sources took each of the three
+    ///   sweeps to the test bound.
+    /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
+    /// - witness: `tests::editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault`
+    #[spec(ensures: |ret| ret.0 >= source.text.len())]
+    fn checked(
+        grammar: &Pbg,
+        source: &Source,
+    ) -> Checked
+    {
+        let path = DocumentUri::from(source.uri.as_str()).path();
+        match lay_out(
+            grammar,
+            &path,
+            classify(&path),
+            SourceText::from(source.text.as_str()),
+        ) {
+            Maybe::Present(laid) => Checked(laid.text.len()),
+            Maybe::Absent(_) => Checked(source.text.len()),
+        }
+    }
+
+    /// The bytes one check of a source may read past which a sampled sweep
+    /// leaves the source to the `sweeps` profile.
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug)]
-    struct Ceiling(u64);
+    struct Ceiling(usize);
 
     /// How a corpus sweep spreads its whole over the nights of the `nightly`
     /// profile.
@@ -1384,10 +1509,10 @@ mod sweeps
 
     /// The sources `sample` visits in this run, the longest first so the
     /// longest starts at once, and the rotation they are visited under. A
-    /// sampled run draws from the sources no longer than `ceiling`; the
-    /// `sweeps` profile visits every source whole, and the `nightly` profile
-    /// the night's slice of them or the night's part of each, as `nightly`
-    /// says.
+    /// sampled run under a `ceiling` draws from the sources whose check reads
+    /// no more bytes than it ([`checked`]); the `sweeps` profile visits every
+    /// source whole, and the `nightly` profile the night's slice of them or the
+    /// night's part of each, as `nightly` says.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1408,18 +1533,27 @@ mod sweeps
     #[spec(ensures: |ret| ret.1.is_sorted_by(|longer, shorter| longer.text.len() >= shorter.text.len()))]
     fn visited(
         sample: Sample,
-        ceiling: Ceiling,
+        ceiling: Option<Ceiling>,
         nightly: Nightly,
     ) -> (Rotation, Vec<Source>)
     {
         let sweep = Sweep::asked().expect("the run's sweep resolves");
         eprintln!("{}", sweep.rotation());
+        let grammar = built_in().expect("the built-in grammar builds");
         let candidates: Vec<_> = gandr_workflow_sweep::corpus::sources()
             .expect("the corpus reads")
             .into_iter()
             .filter(|source| {
                 sweep.coverage() == gandr_workflow_sweep::Coverage::Full
-                    || std::fs::metadata(&source.path).is_ok_and(|meta| meta.len() <= ceiling.0)
+                    || ceiling.is_none_or(|ceiling| {
+                        // A source's own bytes bound its check's below, so
+                        // only a short one is laid out.
+                        std::fs::metadata(&source.path).is_ok_and(|meta| {
+                            usize::try_from(meta.len()).is_ok_and(|own| own <= ceiling.0)
+                        }) && opened(core::slice::from_ref(source))
+                            .first()
+                            .is_some_and(|opened| checked(&grammar, opened).0 <= ceiling.0)
+                    })
             })
             .collect();
         let chosen = match nightly {
@@ -1460,7 +1594,7 @@ mod sweeps
     #[test]
     fn typing_each_corpus_source_keeps_every_answer_faithful()
     {
-        let (rotation, sources) = visited(TYPED, TYPED_CEILING, Nightly::Part);
+        let (rotation, sources) = visited(TYPED, Some(TYPED_CEILING), Nightly::Part);
         each_in_parallel(&sources, |source| {
             let part = rotation.part(gandr_workflow_sweep::Text(&source.text));
             let opening = source
@@ -1485,7 +1619,8 @@ mod sweeps
     #[test]
     fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
     {
-        let (_rotation, sources) = visited(ERASED, Ceiling(u64::MAX), Nightly::Slice);
+        let (_rotation, sources) = visited(ERASED, None, Nightly::Slice);
+        let grammar = built_in().expect("the built-in grammar builds");
         each_in_parallel(&sources, |source| {
             let mut session = Session::open(
                 source.uri.clone(),
@@ -1493,7 +1628,7 @@ mod sweeps
                 Typing::Assisted,
                 Oracle::Keystroke,
             );
-            session.erase_lines(erased_stride(source));
+            session.erase_lines(erased_stride(&grammar, source));
             assert!(
                 session.buffer().text().0.is_empty(),
                 "the document is erased"
@@ -1513,14 +1648,14 @@ mod sweeps
             sources
         }
         else {
-            visited(HOVERED, Ceiling(u64::MAX), Nightly::Slice).1
+            visited(HOVERED, None, Nightly::Slice).1
         };
         let grammar = built_in().expect("the built-in grammar builds");
         let positions = AtomicUsize::new(0_usize);
         let unanswered = AtomicUsize::new(0_usize);
         let by_kind: Mutex<BTreeMap<String, Coverage>> = Mutex::new(BTreeMap::new());
         each_in_parallel(&sources, |source| {
-            let hovers = hovered(&grammar, source);
+            let hovers = hovered(&grammar, source, hovered_every(&grammar, source));
             let shaped = shapes::judged(&grammar, source, &hovers);
             let text = Text(&source.text);
             let mut rows: BTreeMap<String, Coverage> = BTreeMap::new();

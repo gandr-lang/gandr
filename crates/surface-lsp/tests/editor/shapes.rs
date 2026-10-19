@@ -34,6 +34,7 @@ use serde_json::Value;
 use super::buffer::Offset;
 use super::buffer::Position;
 use super::buffer::Text;
+use super::scenarios::Every;
 use super::scenarios::Hovered;
 use super::scenarios::MEANINGLESS;
 use super::scenarios::Owner;
@@ -487,7 +488,7 @@ fn the_headline_sources_hover_as_their_goldens()
             .iter()
             .find(|source| source.uri.ends_with(&format!("surface-corpus/{path}")))
             .unwrap_or_else(|| panic!("`{path}` is a corpus source"));
-        let hovers = hovered(&grammar, source);
+        let hovers = hovered(&grammar, source, Every(1));
         expect_file![goldens.join(path).with_extension("hover")]
             .assert_eq(&golden(source, &hovers));
     }
