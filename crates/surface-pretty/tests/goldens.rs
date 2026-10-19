@@ -2360,6 +2360,46 @@ fn a_composite_of_flows_spells_infix()
     }
 }
 
+/// A returned composite of paths spells infix in the sugared form, `p then
+/// q`, as the surface writes it and the lowering derives its transport;
+/// the explicit form writes the transport. A transport whose fixed endpoint
+/// names the motive's binder is no composite and keeps its spelling (#754).
+#[test]
+fn a_returned_composite_of_paths_is_written_infix_754()
+{
+    let mut core = CoreArena::new();
+    let circle = core.value_type_abstract(ConstantIndex::from(0_usize));
+    let base = core.value_constant(ConstantIndex::from(1_usize));
+    let around = core.value_constant(ConstantIndex::from(2_usize));
+    let twice = gandr_core_term::identity::then(&mut core, circle, base, around, around);
+    let composite = core.value_returned(twice);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let lifted =
+        gandr_core_term::shift_value_type(&mut core, circle, gandr_core_term::Binders::ONE)
+            .settle(&mut core);
+    let diagonal = core.value_type_path(lifted, bound, bound);
+    let moved = core.computation_path_transport(diagonal, around, around);
+    let transported = core.value_returned(moved);
+    let names = [Name::from("Circle"), Name::from("base"), Name::from("loop")];
+    let source = CoreSource::new(&core, &names);
+    for (root, form, expected) in [
+        (composite, Form::Sugared, "loop then loop"),
+        (
+            composite,
+            Form::Explicit,
+            "transport(\\a. Path(Circle, base, a), loop, loop)",
+        ),
+        (
+            transported,
+            Form::Sugared,
+            "transport(\\a. Path(Circle, a, a), loop, loop)",
+        ),
+    ] {
+        let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
+        assert_eq!(rendered.as_ref(), expected, "{form:?}");
+    }
+}
+
 /// An elaborated body spells as the grammar writes it, its exits elided:
 /// a returner at the end of a block bare, a call by its head, a thunk in
 /// a body spelled; a case binds its summand's payload, a split its

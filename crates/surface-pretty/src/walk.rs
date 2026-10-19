@@ -1815,6 +1815,144 @@ where
     matches!(source.read(head), Former::Force(_)).then_some((bound, rest))
 }
 
+/// The transported value and the path of the composite `p then q` that
+/// `body` is the transport of: a path transport whose motive is `Path(A, a,
+/// y)` over its own binder `y`, the carrier `A` and the fixed endpoint `a`
+/// naming no `y`.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the transport's value and path exactly when `body` reads as a
+///   path transport whose motive reads as a path type whose right endpoint
+///   reads as the intuitionistic variable of index zero, and whose carrier and
+///   left endpoint, read down through every child [`children`] lists, name no
+///   intuitionistic variable counting out to the motive's binder; absent
+///   otherwise, and absent when that scan reads more than [`VISIT_BUDGET`]
+///   nodes.
+/// - provides: the shape `transport(\y. Path(A, a, y), q, p)` that `p then q`
+///   derives (`gandr_core_term::identity`), which the sugared form writes as
+///   the lowering reads it back (#754).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn pops one pending node and spends one of at most
+/// [`VISIT_BUDGET`] visits.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a composite of two loops and a transport whose fixed
+///   endpoint names the motive's binder; a scan that skipped the endpoints,
+///   read the wrong index or ignored the binder count fails the golden.
+/// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_infix_754`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(body), Former::PathTransport { .. }))]
+fn composite<S>(
+    source: &S,
+    body: S::Node,
+) -> Option<(S::Node, S::Node)>
+where
+    S: Source + ?Sized,
+{
+    let Former::PathTransport {
+        motive,
+        path,
+        value,
+    } = source.read(body)
+    else {
+        return None;
+    };
+    let Former::Path {
+        carrier,
+        left,
+        right,
+    } = source.read(motive)
+    else {
+        return None;
+    };
+    let Former::Variable {
+        zone: Zone::Intuitionistic,
+        index,
+    } = source.read(right)
+    else {
+        return None;
+    };
+    if u32::from(index) != 0_u32 {
+        return None;
+    }
+    // Neither the carrier nor the fixed endpoint may name the motive's
+    // binder, which counts out from each at the binders opened above it.
+    let mut pending = Vec::from([
+        (carrier, Admits::ValueType, 0_usize),
+        (left, Admits::Value, 0_usize),
+    ]);
+    let mut visits = 0_u32;
+    while let Some((node, admits, above)) = pending.pop() {
+        visits = visits
+            .checked_add(1_u32)
+            .filter(|&visits| visits <= VISIT_BUDGET)?;
+        let former = source.read(node);
+        if let Former::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = former
+            && usize::try_from(u32::from(index)).ok()? == above
+        {
+            return None;
+        }
+        for slot in children(source, node, &former, admits, Bodies::Spelled) {
+            let Some(child) = slot.node
+            else {
+                continue;
+            };
+            let deeper = if slot.binds.zone == Zone::Intuitionistic {
+                above.checked_add(slot.binds.count)?
+            }
+            else {
+                above
+            };
+            pending.push((child, slot.admits, deeper));
+        }
+    }
+    Some((value, path))
+}
+
+/// The former the walk reads at `node` in `form`: the source's, but in the
+/// sugared form a returned transport that a composite of paths derives reads
+/// as the composite, `p then q`.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Former::Then`] over the transported value and the path when
+///   `form` is [`Form::Sugared`] and `node` reads as [`Former::Returned`] over
+///   a body [`composite`] answers; what `source` reads at `node` otherwise.
+/// - provides: the one read of each node the walk visits.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the composite's golden in both forms; a read that rewrote
+///   the explicit form, or a transport standing as a computation rather than a
+///   returned value, changes a spelling.
+/// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_infix_754`
+#[spec(ensures: |ref ret| form == Form::Sugared
+    || core::mem::discriminant(ret) == core::mem::discriminant(&source.read(node)))]
+fn reading<S>(
+    source: &S,
+    node: S::Node,
+    form: Form,
+) -> Former<'_, S::Node>
+where
+    S: Source + ?Sized,
+{
+    let former = source.read(node);
+    if form == Form::Sugared
+        && let Former::Returned(body) = former
+        && let Some((value, path)) = composite(source, body)
+    {
+        return Former::Then(value, path);
+    }
+    former
+}
+
 /// A name as a former spelled by parts writes it: the name itself, or `?`.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5405,7 +5543,9 @@ impl Walk<'_, '_>
                 writes(Production("lazy_record_expression"), Binding::Atom)
             },
             // A flow composite is written infix, as the surface writes it and
-            // the lowering reads it back where a flow is answered (#631).
+            // the lowering reads it back where a flow is answered (#631); so
+            // is a path composite the sugared form reads off its transport
+            // (#754).
             Former::Then(..) => {
                 let _ = parts
                     .piece(Binding::Atom)
@@ -6146,7 +6286,14 @@ where
                     return Ok(Walked::OverBudget);
                 };
                 walk.remaining = left;
-                walk.visit(source, node, source.read(node), admits, depth, &mut tasks)?;
+                walk.visit(
+                    source,
+                    node,
+                    reading(source, node, walk.form),
+                    admits,
+                    depth,
+                    &mut tasks,
+                )?;
             },
             Task::Returned { node, depth } => {
                 let Some(left) = walk.remaining.checked_sub(1_u32)
