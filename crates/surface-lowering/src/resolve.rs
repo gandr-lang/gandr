@@ -49,9 +49,8 @@
 //! keyword `unit` and its type `Unit`; the empty parentheses `()` are an empty
 //! list, refused as a value or a type (`EmptyList`), and read only before `=>`,
 //! where `() => C` takes no argument and is `+U (-F C)`, distinct from `Unit =>
-//! C`. The `unit` pattern molds, and a match refuses it as unadmitted: it tests
-//! nothing, and the match compiler has no head that would hold its scrutinee to
-//! `Unit`.
+//! C`. The `unit` pattern is the empty product's, `#{}` spelled as the value
+//! it matches: a match splits its scrutinee into no components.
 //!
 //! Choice: the unit value is a keyword, and `()` is never the unit. A product
 //! of no components and a domain list of no members are both the empty list, so
