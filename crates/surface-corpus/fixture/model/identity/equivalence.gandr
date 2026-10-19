@@ -22,14 +22,15 @@ def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> -F (a ≃ b) {
 /// inverse's round trip at `y` carried back along the left inverse, joined to
 /// the left inverse's round trip at `h(y)`, makes the two inverses agree at
 /// `y`; carried along the forward map, that agreement turns the right
-/// inverse's round trip into the left one's.
+/// inverse's round trip into the left one's. Each map is stated as `a => b`,
+/// which `cong` reads as it reads `+U (a -> -F b)` (#791).
 @[ checks ]
 def leftRetraction(
   a : Type,
   b : Type,
-  t : +U (a -> -F b),
-  g : +U (b -> -F a),
-  h : +U (b -> -F a),
+  t : a => b,
+  g : b => a,
+  h : b => a,
   y : b,
   sh : Path(a, g(t(h(y))), h(y)),
   ry : Path(b, t(h(y)), y)

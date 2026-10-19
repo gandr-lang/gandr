@@ -670,8 +670,8 @@ enum Synthesis
     /// `frame`: `cong`.
     Mapped
     {
-        /// The result type's syntax node.
-        codomain: NodeIndex,
+        /// The result type.
+        codomain: Codomain,
         /// The frame the result type is read under.
         frame: Frame,
     },
@@ -688,14 +688,51 @@ enum Synthesis
     /// stands, so the codomain is carried there.
     Bound
     {
-        /// The codomain's syntax node.
-        codomain: NodeIndex,
+        /// The codomain.
+        codomain: Codomain,
         /// The frame the parameter's type, and so the codomain, is read
         /// under.
         frame: Frame,
         /// The frame the map's use stands under in a type; none in a body.
         in_type: Option<Frame>,
     },
+}
+
+/// Where a `cong` reads the type its function returns.
+///
+/// # Specification
+/// - ensures: a computation type returns its returner's result; a value
+///   function's codomain is that result itself, the alias `A => B` standing for
+///   `+U (A -> -F B)`.
+/// - executable: none — a tag holds no tree to check its reading against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `cong` by a parameter stated as `+U (A -> -F B)` and as
+///   `A => B` reads the same carrier.
+/// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
+/// - witness: `lower::identity::tests::cong_reads_a_map_stated_as_a_value_function_791`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Codomain
+{
+    /// A written computation type, `-F B`: a definition's result or a thunked
+    /// arrow's codomain.
+    Returner(NodeIndex),
+    /// The codomain `B` of a value function `A => B`.
+    Returned(NodeIndex),
+}
+
+impl Codomain
+{
+    /// The codomain's syntax node.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn node(self) -> NodeIndex
+    {
+        match self {
+            Self::Returner(node) | Self::Returned(node) => node,
+        }
+    }
 }
 
 /// The path type a derived operation minted at: its carrier and its two
@@ -2158,7 +2195,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     #[spec(ensures: |ret| match ret {
-        | Ok(Synthesis::Mapped { codomain, frame: read }) => self.reading(codomain).frame() == read,
+        | Ok(Synthesis::Mapped { codomain, frame: read }) => self.reading(codomain.node()).frame() == read,
         | Ok(Synthesis::Thunked { .. }) | Err(_) => true,
         | Ok(Synthesis::Paths | Synthesis::Bound { .. }) => false,
     })]
@@ -2190,7 +2227,7 @@ impl<'source> Lowerer<'_, 'source>
                         result: Maybe::Present(codomain),
                         ..
                     }) => Ok(Synthesis::Mapped {
-                        codomain,
+                        codomain: Codomain::Returner(codomain),
                         frame: self.reading(codomain).frame(),
                     }),
                     Some(_) | None => Err(unannotated),
@@ -2244,13 +2281,14 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// The codomain of the arrow the value type at `declared` thunks: `C` of
-    /// `+U (A -> C)`, through parentheses.
+    /// The codomain of the map the value type at `declared` states: `C` of
+    /// `+U (A -> C)`, or `B` of `A => B`, through parentheses.
     ///
     /// # Specification
     /// - requires: the ascending sweep has classified `declared`.
-    /// - ensures: the codomain node when the walk through transparent plans
-    ///   meets one thunk and then an arrow; nothing otherwise.
+    /// - ensures: the returner codomain when the walk through transparent plans
+    ///   meets one thunk and then an arrow; the returned codomain when it meets
+    ///   a value function of one domain; nothing otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2259,14 +2297,15 @@ impl<'source> Lowerer<'_, 'source>
     /// a finite tree.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a parameter at a thunked arrow gives its codomain,
-    ///   one at a path type none.
+    /// - hypothesis: L3 — a parameter at a thunked arrow and one at a value
+    ///   function each give their codomain, one at a path type none.
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
-    #[spec(ensures: |ret| ret.is_none_or(|codomain| codomain != declared))]
+    /// - witness: `lower::identity::tests::cong_reads_a_map_stated_as_a_value_function_791`
+    #[spec(ensures: |ret| ret.is_none_or(|codomain| codomain.node() != declared))]
     fn thunked_codomain(
         &self,
         declared: NodeIndex,
-    ) -> Option<NodeIndex>
+    ) -> Option<Codomain>
     {
         let mut at = declared;
         let mut thunked = false;
@@ -2277,7 +2316,14 @@ impl<'source> Lowerer<'_, 'source>
                     thunked = true;
                     at = inner;
                 },
-                Some(&Plan::Arrow(_, codomain)) if thunked => return Some(codomain),
+                Some(&Plan::Arrow(_, codomain)) if thunked => {
+                    return Some(Codomain::Returner(codomain));
+                },
+                Some(&Plan::ValueFunction(domains, codomain))
+                    if !thunked && domains.end.checked_sub(domains.start) == Some(1_usize) =>
+                {
+                    return Some(Codomain::Returned(codomain));
+                },
                 _ => return None,
             }
         }
@@ -2392,17 +2438,18 @@ impl<'source> Lowerer<'_, 'source>
                 (Synthesis::Thunked { declared }, Some(function)) => {
                     match self.thunked_codomain(declared) {
                         Some(codomain)
-                            if self.reading(codomain).frame() == self.reading(declared).frame() =>
+                            if self.reading(codomain.node()).frame()
+                                == self.reading(declared).frame() =>
                         {
                             Synthesis::Bound {
                                 codomain,
-                                frame: self.reading(codomain).frame(),
+                                frame: self.reading(codomain.node()).frame(),
                                 in_type: self.used_in_type(function),
                             }
                         },
                         Some(codomain) => Synthesis::Mapped {
                             codomain,
-                            frame: self.reading(codomain).frame(),
+                            frame: self.reading(codomain.node()).frame(),
                         },
                         None => synthesis,
                     }
@@ -2418,10 +2465,10 @@ impl<'source> Lowerer<'_, 'source>
             let closed = match synthesis {
                 Synthesis::Paths => true,
                 Synthesis::Mapped { codomain, frame } => {
-                    !self.collected.refused(codomain).0
+                    !self.collected.refused(codomain.node()).0
                         && self.scope.telescope_binders(frame).all(|binds| !binds)
                 },
-                Synthesis::Bound { codomain, .. } => !self.collected.refused(codomain).0,
+                Synthesis::Bound { codomain, .. } => !self.collected.refused(codomain.node()).0,
                 Synthesis::Thunked { .. } => false,
             };
             let transported = self.reads_path(path, &read)?;
@@ -2494,7 +2541,7 @@ impl<'source> Lowerer<'_, 'source>
             if let Synthesis::Mapped { codomain, .. } | Synthesis::Bound { codomain, .. } =
                 synthesis
             {
-                types.push(codomain);
+                types.push(codomain.node());
             }
             types.extend(
                 [typings.transported, typings.onward]
@@ -3272,13 +3319,23 @@ impl<'source> Lowerer<'_, 'source>
                 Derivation::Cong { .. },
                 Synthesis::Mapped { codomain, .. } | Synthesis::Bound { codomain, .. },
             ) => {
-                let written = match self.comp_type_at(codomain) {
-                    Maybe::Present(written) => written,
-                    Maybe::Absent(reason) => return Maybe::Absent(reason),
-                };
-                let Some(&CompType::Returner { result, .. }) = sink.arena.comp_type(written)
-                else {
-                    return Maybe::Absent(lowered::Absent::OtherSort);
+                let result = match codomain {
+                    Codomain::Returner(codomain) => {
+                        let written = match self.comp_type_at(codomain) {
+                            Maybe::Present(written) => written,
+                            Maybe::Absent(reason) => return Maybe::Absent(reason),
+                        };
+                        let Some(&CompType::Returner { result, .. }) =
+                            sink.arena.comp_type(written)
+                        else {
+                            return Maybe::Absent(lowered::Absent::OtherSort);
+                        };
+                        result
+                    },
+                    Codomain::Returned(codomain) => match self.value_type_at(codomain) {
+                        Maybe::Present(result) => result,
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    },
                 };
                 let carrier = match synthesis {
                     Synthesis::Bound {

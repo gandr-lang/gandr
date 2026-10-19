@@ -21,11 +21,9 @@ use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_type_syntax;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
-use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
-use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::lower_module;
 use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_syntax::NodeKey;
@@ -118,7 +116,7 @@ fn halves(declaration: &LoweredDeclaration<'_>) -> impl Iterator<Item = NodeKey>
 ///   kind; else [`Agreement::Declarations`] with each of `before`'s
 ///   declarations whose pair is not so, in order: the keys of the forms holding
 ///   it, its name and span, and why — the refusal the rewritten declaration
-///   met, #791's read of a stated type named apart.
+///   met, or that it lowered otherwise.
 /// - provides: the check a rewrite's output passes.
 /// - fails: never.
 /// - panics: none.
@@ -249,10 +247,6 @@ pub fn agree(
 fn reason(outcome: DeclarationOutcome<'_>) -> Withdrawn
 {
     match outcome {
-        DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
-            boundary: FragmentBoundary::Unannotated,
-            ..
-        }) => Withdrawn::StatedSugar,
         DeclarationOutcome::Refused(refusal) => Withdrawn::Refused(format!("{refusal}")),
         DeclarationOutcome::Completed { .. }
         | DeclarationOutcome::Uncompleted { .. }
