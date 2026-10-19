@@ -2672,6 +2672,50 @@ fn sum_patterns_case_on_the_stated_arity()
     );
 }
 
+/// #791: before the fix, a match read a parameter's summands only off the
+/// braced `+{A, B}`, so one stated as the chain `A + B`, the same type, refused
+/// its labelled sum patterns as unannotated.
+#[test]
+fn a_sum_pattern_reads_a_sum_stated_as_a_chain_791()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def two(t : Integer + Integer) -> -F Integer { case t { +{.1 = x} => return x, _ => return 0 } }\ndef three(s : String + String + Integer) -> -F Integer { case s { +{.2 = n} => return n, _ => return 0 } }\ndef grouped(s : Integer + (String + Unit)) -> -F Integer { case s { +{.0 = n} => return n, +{.1 = r} => return 1 } }\ndef nested(t : (Integer + Integer) * Integer) -> -F Integer { case t { #{+{.1 = x}, y} => return x, #{_, y} => return y } }\n",
+        ),
+        &mut arena,
+    );
+    let summands = |name: &str| -> Vec<usize> {
+        reachable(
+            &arena,
+            tail_of(&arena, body_named(&module, SurfaceName::from(name))),
+        )
+        .into_iter()
+        .filter_map(|at| match arena.computation(at) {
+            Some(&Computation::Case { ref branches, .. }) => Some(branches.len()),
+            _ => None,
+        })
+        .collect()
+    };
+    assert_eq!(summands("two"), [2_usize], "a chain of two is a binary sum");
+    assert_eq!(
+        summands("three"),
+        [3_usize],
+        "a chain of three is one sum of three, as `+{{A, B, C}}`"
+    );
+    assert_eq!(
+        summands("grouped"),
+        [2_usize],
+        "a parenthesized sum is one summand"
+    );
+    assert_eq!(
+        summands("nested"),
+        [2_usize],
+        "a chain inside a product reads its component's type"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_loop_mints_the_words_at_its_point()
 {

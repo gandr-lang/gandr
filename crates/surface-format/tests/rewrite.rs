@@ -9,14 +9,10 @@ use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Formatted;
 use gandr_surface_format::RewriteName;
 use gandr_surface_format::Selection;
-use gandr_surface_format::Withdrawal;
-use gandr_surface_format::Withdrawn;
 use gandr_surface_format::format;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_parser::parse;
-use gandr_surface_syntax::ByteOffset;
-use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 
 /// Every pair of the table in the explicit spelling, nested and
@@ -169,45 +165,38 @@ fn a_declared_form_wins_over_the_option()
 }
 
 /// #791: a declaration whose sum pattern reads its parameter's stated
-/// `+{…}` keeps that spelling when sugared, and the formatter says so; the
-/// declaration beside it is sugared and unreported. When the lowering reads
-/// `A + B` as it reads `+{A, B}`, the declaration is sugared too and this
-/// witness moves with #791's fix.
+/// `+{…}` is sugared like the declaration beside it, and nothing is
+/// withdrawn: the lowering reads `A + B` as it reads `+{A, B}`. Before the
+/// fix, the sugared match was refused and the declaration kept its spelling.
 #[test]
-fn a_withdrawn_declaration_is_reported_with_its_reason_791()
+fn a_match_over_a_stated_sum_is_sugared_791()
 {
     let grammar = grammar();
-    let matched = "\
-def pick(t : +{Integer, Integer}) -> -F Integer {
-  case t {
-    +{.1 = x} => return x,
-    _ => return 0
-  }
-}";
-    let source = format!("{matched}\n\ndef pair : #{{Integer, String}} ;\n");
+    let matched = |stated: &str| {
+        format!(
+            "def pick(t : {stated}) -> -F Integer {{\n  case t {{\n    +{{.1 = x}} => return x,\n    _ => return 0\n  }}\n}}"
+        )
+    };
+    let source = format!(
+        "{}\n\ndef pair : #{{Integer, String}} ;\n",
+        matched("+{Integer, Integer}")
+    );
     let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
         ..FormatOptions::default()
     };
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
-    let span = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(matched.len()))
-        .expect("the declaration's span");
     assert_eq!(
         (formatted.text().as_ref(), formatted.withdrawn()),
         (
-            format!("{matched}\n\ndef pair : Integer * String ;\n").as_str(),
-            [Withdrawal {
-                declaration: String::from("pick"),
-                span,
-                reason: Withdrawn::StatedSugar,
-            }]
-            .as_slice()
+            format!(
+                "{}\n\ndef pair : Integer * String ;\n",
+                matched("Integer + Integer")
+            )
+            .as_str(),
+            [].as_slice()
         )
-    );
-    assert_eq!(
-        Withdrawn::StatedSugar.to_string(),
-        "the lowering reads its stated sum or function type in the explicit spelling only (#791)"
     );
 }
 
