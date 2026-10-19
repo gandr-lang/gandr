@@ -2956,6 +2956,27 @@ fn a_case_over_words_writes_each_arm_as_the_surface_does_815()
     }
 }
 
+/// What an endpoint receives is bound as the surface reads a receive,
+/// `recv(e) as x ; rest`: under `run x <- …` a receive reads as a statement
+/// that cannot stand there, and the source does not parse (#815).
+#[test]
+fn a_received_payload_is_bound_as_the_surface_reads_it_815()
+{
+    let mut core = CoreArena::new();
+    let received = core.computation_session(gandr_core_term::session::SessionAction::Receive {
+        endpoint: DeBruijnIndex::from(0_u32),
+    });
+    let payload = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(payload);
+    let bound = core.computation_bind(received, returned);
+    let source = CoreSource::new(&core, &[]);
+    let (text, _fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(bound)));
+    assert!(
+        text.contains(") as a ;") && !text.contains("<-"),
+        "the receive binds its payload with `as`: {text}"
+    );
+}
+
 /// A hold of a value at its world is written parenthesized, as the surface
 /// writes it: bare at a block's head, `hold` would open a hold statement and
 /// the block would not parse (#815).
