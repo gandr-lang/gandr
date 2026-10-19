@@ -3492,20 +3492,21 @@ impl Walk<'_, '_>
         None
     }
 
-    /// The thunk a value-function alias stands for, `+U ((a : A) -> B -> -F
-    /// C)`, over its spelled domains and codomain: the spelling of an alias
-    /// chain where an occurrence named a dependent arrow's binder.
+    /// The dependent value-function alias, `(a : A, B) => C`, over its spelled
+    /// domains and codomain: the spelling of an alias chain where an
+    /// occurrence named a dependent arrow's binder, the grammar's sugar for
+    /// `+U ((a : A) -> B -> -F C)`.
     ///
     /// # Specification
     /// - requires: `domains` are the chain's arrows' domains, outermost first,
     ///   `dependent` marks the dependent ones, and their binders, closed, sat
     ///   from the open count up, one per dependent arrow in order.
-    /// - ensures: each arrow is written as the walk writes it alone: a
-    ///   dependent arrow named by its binder where an occurrence named it or
-    ///   the walk approximated, as the plain arrow otherwise; the codomain
-    ///   after `-F`, and the chain in parentheses after `+U`.
-    /// - provides: the alias join's fallback, which decides only once every
-    ///   occurrence was met.
+    /// - ensures: the domains between parentheses, separated by commas, each
+    ///   written as the walk writes its arrow alone: a dependent domain as `a :
+    ///   A`, named by its binder, where an occurrence named it or the walk
+    ///   approximated, and bare otherwise; then `=>` and the codomain.
+    /// - provides: the alias join's dependent spelling, which decides only once
+    ///   every occurrence was met.
     /// - fails: the builder's refusal.
     /// - panics: none.
     ///
@@ -3513,26 +3514,26 @@ impl Walk<'_, '_>
     /// As `fails`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the sugared golden keeps the thunk over a dependent
-    ///   arrow its codomain names, and the #736 golden names a binder the
-    ///   reduct reads.
+    /// - hypothesis: L3 — the sugared golden writes the alias over a dependent
+    ///   arrow its codomain names, a chain mixing a named and a bare domain
+    ///   reads back to the thunk it stands for, and the #736 golden names a
+    ///   binder the reduct reads.
     /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
+    /// - witness: `tests::goldens::a_dependent_alias_names_each_binder_its_codomain_reads_800`
     /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
-    #[spec(ensures: |ref ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(_, binding)| binding == Binding::Prefix))]
-    fn thunked(
+    #[spec(ensures: |ref ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(_, binding)| binding == Binding::Arrow))]
+    fn dependent_alias(
         &mut self,
         domains: &[Piece],
         dependent: Dependent,
         codomain: Piece,
     ) -> Result<(Doc, Binding), PresentationError>
     {
-        let returns = self.leaf(Glyphs("-F "))?;
-        let result = self.bare_up_to(codomain, Binding::Atom)?;
-        let mut rest = self.builder.concat(returns, result)?;
         let open = self.opened.len();
         let mut binders = usize::try_from(dependent.0.count_ones())
             .ok()
             .ok_or(PresentationError::Unbalanced)?;
+        let mut entries = Vec::with_capacity(domains.len());
         for (at, &domain) in domains.iter().enumerate().rev() {
             let bit = u32::try_from(at)
                 .ok()
@@ -3547,31 +3548,25 @@ impl Walk<'_, '_>
                 (self.fidelity != Fidelity::Faithful || self.occurring.contains(&position))
                     .then_some(OpenBinders(binders))
             };
-            let head = if let Some(offset) = named {
+            let doc = if let Some(offset) = named {
                 let binder = self.binder(offset)?;
-                let opener = self.leaf(Glyphs("("))?;
                 let colon = self.leaf(Glyphs(" : "))?;
-                let arrow = self.leaf(Glyphs(") ->"))?;
-                self.builder
-                    .concat_all(&[opener, binder, colon, domain.doc, arrow])?
+                self.builder.concat_all(&[binder, colon, domain.doc])?
             }
             else {
-                let domain = self.bare_up_to(domain, Binding::Lazy)?;
-                let arrow = self.leaf(Glyphs(" ->"))?;
-                self.builder.concat(domain, arrow)?
+                domain.doc
             };
-            let head = self.space_or_break(head)?;
-            rest = self.builder.concat(head, rest)?;
+            entries.push(Piece {
+                doc,
+                binding: domain.binding,
+            });
         }
-        let chain = self.bare_up_to(
-            Piece {
-                doc: rest,
-                binding: Binding::Arrow,
-            },
-            Binding::Atom,
-        )?;
-        let thunk = self.leaf(Glyphs("+U "))?;
-        Ok((self.builder.concat(thunk, chain)?, Binding::Prefix))
+        entries.reverse();
+        let domain = self.listed(&entries)?;
+        let arrow = self.leaf(Glyphs(" =>"))?;
+        let head = self.builder.concat(domain, arrow)?;
+        let head = self.space_or_break(head)?;
+        Ok((self.builder.concat(head, codomain.doc)?, Binding::Arrow))
     }
 
     /// The computation and the value type of the typed bind whose bound
@@ -5884,14 +5879,10 @@ impl Walk<'_, '_>
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
                     Join::Prefix(_) | Join::EffectReturner(_) | Join::Lambda | Join::Thunk => Binding::Prefix,
-                    Join::Arrow | Join::Pi | Join::StaticLambda | Join::ValueFunction(_, Dependent(0_u64)) => Binding::Arrow,
-                    // An occurrence of a dependent arrow's binder keeps the
-                    // thunk the alias stands for.
-                    Join::ValueFunction(..) if piece.binding == Binding::Prefix => Binding::Prefix,
+                    Join::Arrow | Join::Pi | Join::StaticLambda | Join::ValueFunction(..) => Binding::Arrow,
                     // A dependent pair naming no binder is the product it
                     // reads as.
                     Join::Sigma if piece.binding == Binding::Product => Binding::Product,
-                    Join::ValueFunction(..) => Binding::Arrow,
                     Join::Sequence | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Sigma | Join::Ua(_) | Join::Tuple(_) => Binding::Atom,
@@ -6021,7 +6012,7 @@ impl Walk<'_, '_>
                 let named = (open .. open.saturating_add(binders))
                     .any(|position| self.occurring.contains(&OpenBinders(position)));
                 if binders > 0_usize && (named || self.fidelity != Fidelity::Faithful) {
-                    self.thunked(&domains, dependent, codomain)?
+                    self.dependent_alias(&domains, dependent, codomain)?
                 }
                 else {
                     let domain = match *domains.as_slice() {

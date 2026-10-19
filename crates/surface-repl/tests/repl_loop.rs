@@ -663,7 +663,7 @@ fn a_loaded_file_is_one_chunk()
 }
 
 /// A function whose later parameter's type reads an earlier type
-/// parameter answers a type line in the dependent arrow's spelling: the
+/// parameter answers a type line in the dependent alias's spelling: the
 /// binder named, its universe, and the decodes written as the binder they
 /// read; its value line follows.
 #[test]
@@ -673,10 +673,7 @@ fn a_dependent_function_names_its_type_with_its_binder()
     assert_eq!(
         lines(&mut repl, "def id(a : Type, x : a) -> -F a { return x }"),
         [
-            (
-                OutKind::Type,
-                "id : +U ((a : Type) -> a -> -F a)".to_owned()
-            ),
+            (OutKind::Type, "id : (a : Type, a) => a".to_owned()),
             (OutKind::Value, "fn (a) { fn (b) { b } }".to_owned())
         ]
     );

@@ -4507,7 +4507,7 @@ mod tests
         );
         assert!(
             spelled.iter().any(|entry| entry.ty().as_ref()
-                == "+U ((c : a) -> -F Path(a, k(t(c)), c)) * +U ((c : b) -> -F Path(b, t(k(c)), c))"),
+                == "((c : a) => Path(a, k(t(c)), c)) * ((c : b) => Path(b, t(k(c)), c))"),
             "the remainder after `t` names it: {spelled:#?}"
         );
     }
@@ -4521,12 +4521,12 @@ mod tests
         for (pattern, remainder, reason) in [
             (
                 "#{.back = k} => k",
-                "+U ((c : a) -> -F Path(a, k(to(c)), c)) * +U ((c : b) -> -F Path(b, to(k(c)), c))",
+                "((c : a) => Path(a, k(to(c)), c)) * ((c : b) => Path(b, to(k(c)), c))",
                 "the omitted forward map answers by its label",
             ),
             (
                 "#{.back = to} => to",
-                "+U ((c : a) -> -F Path(a, to(to′(c)), c)) * +U ((c : b) -> -F Path(b, to′(to(c)), c))",
+                "((c : a) => Path(a, to(to′(c)), c)) * ((c : b) => Path(b, to′(to(c)), c))",
                 "the label primed apart from the written `to`",
             ),
         ] {
@@ -4612,7 +4612,7 @@ mod tests
             .collect();
         for spelled in [
             "(x : Type) -> -F Path(Type, same(same(x)), x)",
-            "#{a : Type => Type, b : +U ((b : Type) -> -F Path(Type, same(a(b)), b))}",
+            "#{a : Type => Type, b : (b : Type) => Path(Type, same(a(b)), b)}",
         ] {
             assert!(
                 trips.iter().any(|&(ref printed, _)| printed == spelled),
