@@ -136,7 +136,6 @@ unproduced = [
   { rule = "co_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
   { rule = "codata_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "command_substitution", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
-  { rule = "cons_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
   { rule = "continue_expression", reason = "a loop form: core has no loop, and the lowering elaborates it away" },
   { rule = "data_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "def_value", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },

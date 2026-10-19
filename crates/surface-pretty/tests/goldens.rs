@@ -1454,10 +1454,14 @@ fn each_glyph_former_is_written_in_the_spelling_asked_782()
     let once = core.value_constructor(loops, ConstructorTag::from(1_usize), vec![nil]);
     let word = core.value_constructor(loops, ConstructorTag::from(1_usize), vec![once]);
     let mut constructors = Constructors::default();
-    constructors.words(Name::from("Loops"), [
-        (Name::from("base"), Arity::from(0_usize)),
-        (Name::from("loop"), Arity::from(1_usize)),
-    ]);
+    constructors.words(
+        Name::from("Loops"),
+        [
+            (Name::from("base"), Arity::from(0_usize)),
+            (Name::from("loop"), Arity::from(1_usize)),
+        ],
+        Name::from("base"),
+    );
     let source = CoreSource::new(&core, &names)
         .naming(&constructors)
         .relating(&relations);
@@ -2220,11 +2224,15 @@ fn every_value_leaf_spells_as_the_surface_writes_it()
         (Name::from("Zero"), Arity::from(0_usize)),
         (Name::from("Succ"), Arity::from(1_usize)),
     ]);
-    constructors.words(Name::from("Loops"), [
-        (Name::from("here(Base)"), Arity::from(0_usize)),
-        (Name::from("loop"), Arity::from(1_usize)),
-        (Name::from("back(loop)"), Arity::from(1_usize)),
-    ]);
+    constructors.words(
+        Name::from("Loops"),
+        [
+            (Name::from("here"), Arity::from(0_usize)),
+            (Name::from("loop"), Arity::from(1_usize)),
+            (Name::from("back(loop)"), Arity::from(1_usize)),
+        ],
+        Name::from("here(Base)"),
+    );
     let unnamed = CoreSource::new(&core, &names);
     let named = CoreSource::new(&core, &names).naming(&constructors);
     for (source, root, expected) in [
@@ -2905,6 +2913,47 @@ fn arms_sharing_a_body_bind_distinct_fields_815()
         text.contains("Sort(b, c, d) => unit") && text.contains("Bound(b, c, d, e, f) => unit"),
         "each arm binds distinct fields: {text}"
     );
+}
+
+/// A case over words writes each arm as the surface reads it back: the empty
+/// word bare, `here`, though a value writes it at its point, `here(Base)`, and
+/// each letter before the rest of the word, `back(loop) ∷ b`, never applied to
+/// it (`back(loop)(b)` does not parse, #815).
+#[test]
+fn a_case_over_words_writes_each_arm_as_the_surface_does_815()
+{
+    let mut core = CoreArena::new();
+    let loops = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_loops = core.comp_type_returner(loops);
+    let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let unit = core.value_unit();
+    let returned = core.computation_return(unit);
+    let lettered = core.computation_lambda(returned);
+    let data_case =
+        core.computation_data_case(scrutinee, returns_loops, vec![returned, lettered, lettered]);
+    let matched = core.computation_lambda(data_case);
+    let names = [Name::from("Loops")];
+    let mut constructors = Constructors::default();
+    constructors.words(
+        Name::from("Loops"),
+        [
+            (Name::from("here"), Arity::from(0_usize)),
+            (Name::from("loop"), Arity::from(1_usize)),
+            (Name::from("back(loop)"), Arity::from(1_usize)),
+        ],
+        Name::from("here(Base)"),
+    );
+    constructors.case(data_case, Name::from("Loops"));
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    let (text, fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(matched)));
+    assert_eq!(Fidelity::Faithful, fidelity, "{text}");
+    for arm in [
+        "{ here => unit,",
+        "loop ∷ b => unit",
+        "back(loop) ∷ b => unit",
+    ] {
+        assert!(text.contains(arm), "the case writes `{arm}`: {text}");
+    }
 }
 
 /// A hold of a value at its world is written parenthesized, as the surface
