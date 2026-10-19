@@ -1306,9 +1306,11 @@ pub fn equal_type_syntax(
 ///   abstractions, whose body returns, is read as the value it returns, on the
 ///   same steps, and a decode of such a call as the decode of what it returns
 ///   (#736), the runs its code binds calls by read as the calls first (#768); a
-///   call kept unelaborated is read as the value it returns; and a dependent
-///   arrow is read as the plain arrow where its codomain reads as the arrow's
-///   codomain under the binder, which then names no binder.
+///   call kept unelaborated is read as the value it returns; a dependent arrow
+///   is read as the plain arrow where its codomain reads as the arrow's
+///   codomain under the binder, which then names no binder; and a dependent
+///   pair as the product of two where its second factor reads as the product's
+///   second component under the binder (#771).
 /// - provides: the comparison a printed type's reading back is held to: a type
 ///   of words has no name the surface writes, and is spelled as the path type
 ///   it reads as; a session type at a state is spelled as the protocol from
@@ -1316,7 +1318,8 @@ pub fn equal_type_syntax(
 ///   surface cannot apply is spelled as its reduct, and so is a call of a
 ///   function literal; a stage has no spelling, and a staged type is spelled as
 ///   its base; a dependent arrow ignoring its binder has no spelling, and is
-///   spelled as the arrow.
+///   spelled as the arrow; a dependent pair ignoring its binder is spelled as
+///   the product.
 /// - fails: returns `Different` on a dangling node.
 /// - panics: none.
 ///
@@ -1338,7 +1341,9 @@ pub fn equal_type_syntax(
 ///   different. A decoded literal call reads as what it returns, and a
 ///   dependent arrow whose binder only that call names as the arrow; so does a
 ///   literal decoded at a run-bound call, forty side by side in one comparison,
-///   while a run calling a name stays a decode.
+///   while a run calling a name stays a decode. A dependent pair ignoring its
+///   binder reads as the product, in either order; one naming it stays
+///   different.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
@@ -1348,6 +1353,7 @@ pub fn equal_type_syntax(
 /// - witness: `syntax::tests::a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow`
 /// - witness: `syntax::tests::a_decoded_literal_call_reads_as_what_it_returns_736`
 /// - witness: `syntax::tests::a_literal_decoded_at_a_run_bound_call_reads_as_what_it_returns_768`
+/// - witness: `syntax::tests::a_dependent_pair_ignoring_its_binder_reads_as_the_product_771`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
 #[inline]
 #[must_use]
@@ -2236,9 +2242,11 @@ fn session_children(
 ///   redex read as its reduct ([`decoded_value_type`], [`decoded_comp_type`]),
 ///   a call of a function literal read as the value its body returns
 ///   ([`called_reduct`]), a call kept unelaborated read as the value it
-///   returns, as the lowering keeps it where a type after it reads it, and a
+///   returns, as the lowering keeps it where a type after it reads it, a
 ///   dependent arrow read as the plain arrow where its codomain reads as the
-///   arrow's codomain weakened past its binder; under [`Reading::Syntax`] no
+///   arrow's codomain weakened past its binder, and a dependent pair as the
+///   product of two where its second factor reads as the product's second
+///   component weakened past its binder (#771); under [`Reading::Syntax`] no
 ///   reduction is performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
 ///   second traversal pretending to be an independent postcondition.
@@ -3056,6 +3064,38 @@ fn equal_syntax(
                     {
                         pending.extend([VT(a, c), VT(b, d)]);
                     }
+                    // The surface reads a record whose later field names no
+                    // earlier one as the product, and the printer spells a
+                    // dependent pair whose second factor, as printed, names
+                    // no binder as that record: read back, it is the product.
+                    // The second factor is compared with the product's second
+                    // component weakened past the binder, so a binder only a
+                    // reduced call names (#771) reads as the product too.
+                    else if matches!(reading, Reading::Printed(_))
+                        && let Some((first, second, component, rest)) =
+                            match (matched_left_value, matched_right_value) {
+                                (
+                                    &ValueType::Sigma { first, second },
+                                    &ValueType::Product(ref parts),
+                                )
+                                | (
+                                    &ValueType::Product(ref parts),
+                                    &ValueType::Sigma { first, second },
+                                ) => match **parts {
+                                    [component, rest] => Some((first, second, component, rest)),
+                                    _ => None,
+                                },
+                                _ => None,
+                            }
+                    {
+                        let rest = crate::rewrite::shift_value_type(
+                            arena.to_mut(),
+                            rest,
+                            crate::rewrite::Binders::ONE,
+                        )
+                        .settle(arena.to_mut());
+                        pending.extend([VT(first, component), VT(second, rest)]);
+                    }
                     else if let ValueType::Thunk(a) = *matched_left_value
                         && let ValueType::Thunk(b) = *matched_right_value
                     {
@@ -3867,6 +3907,55 @@ mod tests
             equal_type_reading(&arena, &signatures, dependent, plain),
             CertificateEquality::Different,
             "a dependent arrow naming its binder does not read as the arrow"
+        );
+    }
+
+    /// #771: a dependent pair whose second factor names no binder prints as
+    /// the product, and reads back as one, in either order; one whose second
+    /// factor names its binder stays different.
+    #[test]
+    fn a_dependent_pair_ignoring_its_binder_reads_as_the_product_771()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let path = |arena: &mut crate::CoreArena, index: u32| {
+            let end = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+            arena.value_type_path(nat, end, end)
+        };
+        // Under one binder around the type: the pair's second factor names
+        // that binder at index one, the product's component at index zero.
+        let (outer_under, outer, own) = (
+            path(&mut arena, 1),
+            path(&mut arena, 0),
+            path(&mut arena, 0),
+        );
+        let vacuous = arena.value_type_sigma(nat, outer_under);
+        let product = arena.value_type_product(&[nat, outer]);
+        let dependent = arena.value_type_sigma(nat, own);
+        for (left, right, what) in [
+            (
+                vacuous,
+                product,
+                "a dependent pair ignoring its binder against the product",
+            ),
+            (product, vacuous, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, dependent, product),
+            CertificateEquality::Different,
+            "a dependent pair naming its binder does not read as the product"
         );
     }
 

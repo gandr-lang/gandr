@@ -4649,4 +4649,34 @@ mod tests
             "the pair at the call reads back as what the literal returns: {trips:?}"
         );
     }
+
+    /// #771: a dependent record whose later field names an earlier one only
+    /// in a family a literal fills prints, the family read, as the product
+    /// it reads as, and reads back as its type.
+    #[test]
+    fn a_record_whose_dependency_reads_away_reads_back_771()
+    {
+        let source = SourceText::from(
+            "data N : Type {\n  Z : N;\n  S : (n : N) --> N;\n}\n\ndata T : Type {\n  V : T;\n}\n\ndef \
+             ext(g : N) -> -F N { return S(g) }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
+             w : #{c : Type, tm : +U (c -> -F Type), e : (g : c) => c, a : (g : c, t : tm(e(g))) \
+             => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fn (g) { \
+             return T } }, #{ext, #{k, k}}}} ;\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let trips: Vec<(String, RoundTrip)> = table(source)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared)
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        let record: Vec<&RoundTrip> = trips
+            .iter()
+            .filter(|&&(ref spelled, _)| spelled == "(N => N) * (((N, T) => T) * ((N, T) => T))")
+            .map(|&(_, ref trip)| trip)
+            .collect();
+        assert!(
+            !record.is_empty() && record.iter().all(|&trip| *trip == RoundTrip::Equal),
+            "the record whose dependency reads away reads back as its type: {trips:?}"
+        );
+    }
 }
