@@ -1640,12 +1640,16 @@ impl<'source> Lowerer<'_, 'source>
 
     /// The type over labels `former` the type at `node` states, read through
     /// parentheses and, when `thunked`, one `+U`: its own node and its
-    /// entries.
+    /// entries. A sum chain `A + B + …` states the labelled sum `+{A, B, …}`,
+    /// and a product chain `A * B * …` the telescope `#{A, B, …}`.
     ///
     /// # Specification
     /// - requires: `node` is a type's syntax node.
-    /// - ensures: the stated form's node and its entries in written order;
-    ///   nothing when the type, so read, is another former.
+    /// - ensures: the stated form's node and its entries in written order, a
+    ///   sum chain read for a labelled sum and a product chain read for a
+    ///   telescope answering their components as positional entries, as
+    ///   [`Self::links`] reads them; nothing when the type, so read, is another
+    ///   former.
     /// - fails: [`LoweringRefusal::BudgetExceeded`]; the stated form's own
     ///   malformation, at the stated form.
     /// - panics: none.
@@ -1661,13 +1665,15 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an injection under an annotation, a match over a
-    ///   parameter, a copattern block under its function's result, an
-    ///   observation of a thunked parameter and a selection off a dependent
-    ///   record each read their labels here.
+    ///   parameter, a match over a parameter stated as a sum chain, a copattern
+    ///   block under its function's result, an observation of a thunked
+    ///   parameter and a selection off a dependent record each read their
+    ///   labels here.
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
     /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
+    /// - witness: `lower::native::tests::a_sum_pattern_reads_a_sum_stated_as_a_chain_791`
     /// - witness: `lower::arity::tests::an_observation_reads_through_one_thunk_only`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownMold { .. })))]
     pub(super) fn stated_form(
@@ -1728,6 +1734,16 @@ impl<'source> Lowerer<'_, 'source>
                     .and_then(|()| self.type_entries(stated, &mut cursor, TileName::BRACE_CLOSE))
                     .map(|entries| Maybe::Present((at, entries)));
             }
+            let chain = match (held, former) {
+                (Former::SumType, Former::LabelledSumType) => Some(Former::SumType),
+                (Former::ProductType, Former::TelescopeType) => Some(Former::ProductType),
+                _ => None,
+            };
+            if let Some(link) = chain {
+                break self
+                    .links(stated, at, link)
+                    .map(|entries| Maybe::Present((at, entries)));
+            }
             let inner = if held == Former::ParenthesizedType {
                 let _open = cursor.tile(TileName::PAREN_OPEN);
                 let run = cursor.operands();
@@ -1755,6 +1771,59 @@ impl<'source> Lowerer<'_, 'source>
         self.scratch = scratch;
 
         found
+    }
+
+    /// The components of the chain of `link` at `chain`, `A + B + …` or `A *
+    /// B * …`, as the positional entries of the labelled sum `+{A, B, …}` or
+    /// the telescope `#{A, B, …}` it is.
+    ///
+    /// # Specification
+    /// - requires: `chain` is a syntax node of `link`, a sum or a product
+    ///   chain, read at `site`.
+    /// - ensures: one positional entry per component in written order, each
+    ///   unparenthesized link of the chain followed as the chain's own
+    ///   classification follows it, so a parenthesized chain is one component.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`]; a link's own malformation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`],
+    /// [`LoweringRefusal::MalformedForm`] and
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Termination
+    /// Each round spends one step of the allowance and replaces one link of
+    /// the finite tree by its two operands.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match over a parameter stated as a sum chain of two
+    ///   and of three, one summand a parenthesized sum, and as a product chain
+    ///   holding a sum chain, cases on the arity the braced spelling states.
+    /// - witness: `lower::native::tests::a_sum_pattern_reads_a_sum_stated_as_a_chain_791`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!((entry.key, entry.held), (Key::Positional, Held::Operand(_))))))]
+    fn links(
+        &mut self,
+        site: Site,
+        chain: NodeIndex,
+        link: Former,
+    ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
+    {
+        let mut entries = Vec::new();
+        let mut pending = Vec::from([chain]);
+        while let Some(operand) = pending.pop() {
+            self.fuel.spend()?;
+            if let Some([first, second]) = self.chained(site, operand, link)? {
+                pending.extend([second, first]);
+            }
+            else if let Some(node) = self.tree.node(operand) {
+                entries.push(Entry {
+                    key: Key::Positional,
+                    held: Held::Operand(Placed::of(operand, node)),
+                });
+            }
+        }
+
+        Ok(entries)
     }
 
     /// The index and the entry the label `name`, written at `written`, names
