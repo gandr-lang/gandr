@@ -728,8 +728,9 @@ where
     arena.truncate_to(arena_mark);
     provenance.truncate_to(provenance_mark);
     let mut prepared = BTreeMap::new();
+    let mut scratch = CoreArena::new();
+    let empty = scratch.watermark();
     for combinator in wanted {
-        let mut scratch = CoreArena::new();
         let root = crate::identity::build(core, combinator, &mut scratch)?;
         let mut closed = Focusing::new(&scratch, arena, provenance);
         closed.tasks.push(Task::Value(root));
@@ -738,6 +739,7 @@ where
             return Err(FocusRefusal::TranslationInvariant);
         }
         let _replaced = prepared.insert(combinator, closed.single_producer()?);
+        scratch.truncate_to(empty);
     }
     let mut run = Focusing::new(core, arena, provenance);
     run.prepared = prepared;
