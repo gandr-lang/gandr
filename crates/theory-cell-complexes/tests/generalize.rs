@@ -110,13 +110,14 @@ proptest! {
             prop_assert_eq!(member, &rebuilt, "each member is its generalization under its arms");
         }
         let columns: Vec<Vec<Image<'_>>> = generalization.points.iter().map(column).collect();
-        for (index, images) in columns.iter().enumerate() {
+        let mut seen: std::collections::HashSet<&[Image<'_>]> = std::collections::HashSet::new();
+        for images in &columns {
             prop_assert!(
                 images.iter().any(|image| image != &images[0]),
                 "a point stands only where two members differ"
             );
             prop_assert!(
-                !columns[.. index].contains(images),
+                seen.insert(images.as_slice()),
                 "and one point stands per distinct column"
             );
         }

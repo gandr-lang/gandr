@@ -5,11 +5,6 @@
 //! cases live here rather than beside the code because they need `std`: the
 //! property runner, and a thread with a small stack.
 
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(linear_search_in_loop, reason = "1 cost-shape site; #814 lists it")
-)]
-
 #[cfg(test)]
 mod depth;
 #[cfg(test)]

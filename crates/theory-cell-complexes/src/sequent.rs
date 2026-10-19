@@ -356,9 +356,10 @@ impl CellMeta
     {
         let left: Vec<&MetaVar> = lhs.metavars().collect();
         let right: Vec<&MetaVar> = rhs.metavars().collect();
+        let mut seen: BTreeSet<&HoleName> = BTreeSet::new();
         let mut vars: Vec<CellVarMeta> = Vec::new();
         for &var in left.iter().chain(&right) {
-            if vars.iter().any(|seen| seen.var.hole() == var.hole()) {
+            if !seen.insert(var.hole()) {
                 continue;
             }
             let worn_at = |cat: Cat| {
