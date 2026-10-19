@@ -1,0 +1,2 @@
+/// `host_escape`: a host expression escaped into a shell block.
+def printed = #!{ printf '%s' $(answer); } ;

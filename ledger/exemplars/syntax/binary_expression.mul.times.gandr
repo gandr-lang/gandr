@@ -1,0 +1,2 @@
+/// `binary_expression.mul.times`: multiplication.
+def product = 2 * 3 ;

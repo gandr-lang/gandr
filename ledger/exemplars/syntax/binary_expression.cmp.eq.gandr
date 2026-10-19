@@ -1,0 +1,2 @@
+/// `binary_expression.cmp.eq`: an equality comparison.
+def same = 1 == 1 ;

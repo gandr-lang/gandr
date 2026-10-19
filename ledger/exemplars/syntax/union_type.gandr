@@ -1,0 +1,2 @@
+/// `union_type`: a union type.
+def either : Integer | String ;

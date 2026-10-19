@@ -1,0 +1,2 @@
+/// `type_path`: a type named through a module.
+def counter : Counter.T ;

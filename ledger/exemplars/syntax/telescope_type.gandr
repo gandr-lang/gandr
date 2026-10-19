@@ -1,0 +1,2 @@
+/// `telescope_type`: a telescope type.
+def point : #{x : Integer, y : Integer} ;

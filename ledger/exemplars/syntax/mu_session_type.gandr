@@ -1,0 +1,2 @@
+/// `mu_session_type`: a recursive session type.
+def forever : mu t. !Integer. t ;

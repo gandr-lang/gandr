@@ -1,0 +1,2 @@
+/// `single_quoted_string`: a single-quoted shell string.
+def greeting = #!{ echo 'hello'; } ;

@@ -1,0 +1,6 @@
+/// `labelled_sum_pattern`: a labelled sum pattern: one label and its payload.
+def unwrap(v : +{only : Integer}) -> -F Integer {
+  case v {
+    +{.only = n} => return n
+  }
+}

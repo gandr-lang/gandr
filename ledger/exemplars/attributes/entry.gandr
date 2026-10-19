@@ -1,0 +1,6 @@
+/// `entry`: names the worlds a declaration is entered at.
+world seat ;
+@[ entry(seat) ]
+def opened() -> -F Unit {
+  pure unit
+}

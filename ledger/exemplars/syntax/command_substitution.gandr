@@ -1,0 +1,2 @@
+/// `command_substitution`: a shell command substitution.
+def today = #!{ echo $!{ date }; } ;

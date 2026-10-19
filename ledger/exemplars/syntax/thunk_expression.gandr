@@ -1,0 +1,2 @@
+/// `thunk_expression`: a thunk: a suspended computation.
+def later = thunk { return 42 } ;

@@ -1,0 +1,7 @@
+/// `list_pattern`: a list pattern.
+def head(xs : List(Integer)) -> -F Integer {
+  case xs {
+    [x, ..rest] => return x,
+    [] => return 0
+  }
+}

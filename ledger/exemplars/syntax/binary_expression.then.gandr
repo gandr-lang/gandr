@@ -1,0 +1,2 @@
+/// `binary_expression.then`: path composition: one path, then another.
+def twice = loop then loop ;

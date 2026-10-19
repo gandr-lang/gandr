@@ -1,0 +1,4 @@
+/// `pure_expression`: a pure computation returning a value.
+def answer() -> -F Integer {
+  pure 42
+}

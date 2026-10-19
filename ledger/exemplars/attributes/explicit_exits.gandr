@@ -1,0 +1,5 @@
+/// `explicit_exits`: asks that every exit a declaration takes be written.
+@[ explicit_exits ]
+def answer() -> -F Integer {
+  return 42
+}

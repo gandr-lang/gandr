@@ -1,0 +1,2 @@
+/// `number.type`: a number in type position.
+def two : Fin(2) ;

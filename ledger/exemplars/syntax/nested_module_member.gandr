@@ -1,0 +1,6 @@
+/// `nested_module_member`: a module inside a module body.
+module Config {
+  module limits {
+    def soft = 10;
+  }
+}

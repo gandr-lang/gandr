@@ -1,0 +1,2 @@
+/// `val_statement`: a value binding written as a statement.
+val answer = 42 ;

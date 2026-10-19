@@ -1,0 +1,2 @@
+/// `intersection_type`: an intersection type.
+def both : Integer /\ String ;

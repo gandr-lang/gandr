@@ -1,0 +1,6 @@
+/// `telescope_pattern`: a telescope pattern.
+def nothing(t : #{}) -> -F Integer {
+  case t {
+    #{} => return 0
+  }
+}

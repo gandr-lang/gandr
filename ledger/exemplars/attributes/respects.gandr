@@ -1,0 +1,6 @@
+/// `respects`: names the laws a recursive definition respects.
+def unit_law : Path(Integer, 0, 0) ;
+@[ respects(unit_law) ]
+def rec count(n : Integer) -> -F Integer {
+  return 0
+}

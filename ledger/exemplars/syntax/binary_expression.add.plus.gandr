@@ -1,0 +1,2 @@
+/// `binary_expression.add.plus`: addition.
+def sum = 1 + 2 ;

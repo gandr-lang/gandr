@@ -1,0 +1,2 @@
+/// `representable_universe_type`: the universe of representable types.
+def code : Type+ ;

@@ -1,0 +1,2 @@
+/// `labelled_sum_type`: a labelled sum type.
+def tagged : +{Integer, String} ;

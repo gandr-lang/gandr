@@ -1,0 +1,2 @@
+/// `pack_expression`: packing a value with the type it hides.
+def counter = pack [ Integer ] thunk { return #{ .seed = 7 } } ;

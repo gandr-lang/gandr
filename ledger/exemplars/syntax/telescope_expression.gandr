@@ -1,0 +1,2 @@
+/// `telescope_expression`: a telescope with labelled fields.
+def point = #{ .x = 1, .y = 2 } ;

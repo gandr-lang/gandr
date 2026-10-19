@@ -1,0 +1,4 @@
+/// `for_expression`: a for loop.
+def each(n : Integer) -> -F Unit {
+  for x in n { tick(x); }
+}

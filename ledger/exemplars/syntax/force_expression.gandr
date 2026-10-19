@@ -1,0 +1,2 @@
+/// `force_expression`: forcing a thunk.
+def forced = thunk { become force later } ;

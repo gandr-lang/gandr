@@ -1,0 +1,2 @@
+/// `lazy_record_expression`: a lazy record: one computation per label.
+def binary = thunk { &{.0 => return 1, .1 => return "s"} } ;

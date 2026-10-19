@@ -1,0 +1,7 @@
+/// `constructor_pattern`: a constructor pattern with its fields.
+def first(xs : Stack) -> -F Integer {
+  case xs {
+    Push(x, rest) => return x,
+    Empty => return 0
+  }
+}

@@ -1,0 +1,3 @@
+/// `form`: declares the spelling a source is laid out in.
+@[ form(sugared) ]
+def answer = 42 ;

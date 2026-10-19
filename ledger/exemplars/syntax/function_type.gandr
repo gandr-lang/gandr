@@ -1,0 +1,2 @@
+/// `function_type`: a function type.
+def partial : Integer -> -F Integer ;

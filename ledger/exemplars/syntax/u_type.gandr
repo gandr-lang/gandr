@@ -1,0 +1,2 @@
+/// `u_type`: a thunk type.
+def later : +U (-F Integer) ;

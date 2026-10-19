@@ -1,0 +1,6 @@
+/// `dup_expression`: a duplication of a shared endpoint.
+def duplicated() -> -F Unit {
+  fork (seat : end) { close(seat) } as desk;
+  dup(desk);
+  close(desk)
+}

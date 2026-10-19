@@ -1,0 +1,2 @@
+/// `environment_assignment`: a shell environment assignment.
+def built = #!{ CC=clang make; } ;

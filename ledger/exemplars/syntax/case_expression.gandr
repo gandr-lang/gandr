@@ -1,0 +1,7 @@
+/// `case_expression`: a case analysis.
+def sign(b : Boolean) -> -F Integer {
+  case b {
+    true => return 1,
+    false => return 0
+  }
+}

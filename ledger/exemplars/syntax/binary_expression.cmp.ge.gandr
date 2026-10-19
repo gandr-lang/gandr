@@ -1,0 +1,2 @@
+/// `binary_expression.cmp.ge`: an at-least comparison.
+def at_least = 2 >= 1 ;

@@ -1,0 +1,4 @@
+/// `module_declaration`: a module: a named body of definitions.
+module Counter {
+  def zero = 0;
+}

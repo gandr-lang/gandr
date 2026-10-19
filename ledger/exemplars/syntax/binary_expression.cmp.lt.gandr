@@ -1,0 +1,2 @@
+/// `binary_expression.cmp.lt`: a less-than comparison.
+def smaller = 1 < 2 ;

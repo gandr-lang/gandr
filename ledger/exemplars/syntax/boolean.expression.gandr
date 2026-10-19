@@ -1,0 +1,2 @@
+/// `boolean.expression`: a boolean.
+def yes = true ;

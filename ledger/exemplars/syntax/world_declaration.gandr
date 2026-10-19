@@ -1,0 +1,2 @@
+/// `world_declaration`: a world: a name a computation can be placed at.
+world seat ;

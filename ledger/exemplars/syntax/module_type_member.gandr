@@ -1,0 +1,4 @@
+/// `module_type_member`: a type definition inside a module body.
+module Counter {
+  type T = Integer;
+}

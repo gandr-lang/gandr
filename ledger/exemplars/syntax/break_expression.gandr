@@ -1,0 +1,5 @@
+/// `break_expression`: a break out of a loop.
+def once(n : Integer) -> -F Integer {
+  loop { break; } ;
+  return n
+}

@@ -1,0 +1,2 @@
+/// `binary_expression.cmp.gt`: a greater-than comparison.
+def larger = 2 > 1 ;

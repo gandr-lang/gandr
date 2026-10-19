@@ -538,6 +538,9 @@ jobs:
       - name: check the syntax ledger
         if: *plain-gate
         run: mise run check:syntax-ledger
+      - name: check the syntax exemplars
+        if: *plain-gate
+        run: mise run check:syntax-exemplars
       - name: check private-item rustdoc
         if: *plain-gate
         env:

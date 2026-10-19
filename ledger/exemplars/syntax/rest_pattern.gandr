@@ -1,0 +1,2 @@
+/// `rest_pattern`: a rest pattern, matching the remainder of a list.
+def first = case xs { [x, ..Rest] => x } ;

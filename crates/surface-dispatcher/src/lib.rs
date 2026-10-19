@@ -18,7 +18,8 @@
 //! [`Formatting`], which reaches its paths as a walk does, and reads, lays out
 //! and rewrites each source as the driver advances it with
 //! [`Formatting::step`]. The `ledger` verb routes to a [`LedgerTask`], which
-//! builds its ledger and writes its files when the driver runs it.
+//! builds its ledger and writes its files, or verifies its exemplars, when the
+//! driver runs it.
 //!
 //! `dispatch` reads no file and writes nothing: it builds the grammar the walk
 //! parses with, which is computation, and returns. The walk's I/O happens as
@@ -176,7 +177,11 @@ pub use crate::format::FormatFault;
 pub use crate::format::FormatStep;
 pub use crate::format::Formatting;
 pub use crate::format::Rewrite;
+pub use crate::ledger::ExemplarFault;
+pub use crate::ledger::ExemplarFinding;
+pub use crate::ledger::ExemplarReport;
 pub use crate::ledger::LedgerFault;
+pub use crate::ledger::LedgerRun;
 pub use crate::ledger::LedgerTask;
 pub use crate::ledger::SyntaxLedger;
 pub use crate::report::Goals;
@@ -282,7 +287,8 @@ pub enum Invocation
         /// The threads the sources are laid out on.
         width: Width,
     },
-    /// `ledger`: generate a ledger of the language surface and write it.
+    /// `ledger`: generate a ledger of the language surface and write it, or
+    /// verify its exemplars.
     Ledger(LedgerTask),
 }
 
@@ -315,7 +321,8 @@ pub enum Outcome
     Stage(Staging),
     /// Sources to lay out, not yet read.
     Format(Formatting),
-    /// A ledger to generate and write, not yet built.
+    /// A ledger to generate and write, or whose exemplars to verify, not yet
+    /// run.
     Ledger(LedgerTask),
 }
 

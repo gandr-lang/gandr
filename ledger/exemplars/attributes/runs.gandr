@@ -1,0 +1,5 @@
+/// `runs`: states the value a declaration's run is expected to return.
+@[ runs("42") ]
+def answer() -> -F Integer {
+  return 42
+}

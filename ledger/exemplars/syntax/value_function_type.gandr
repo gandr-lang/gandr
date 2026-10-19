@@ -1,0 +1,2 @@
+/// `value_function_type`: a value function type.
+def bump : Integer => Integer ;

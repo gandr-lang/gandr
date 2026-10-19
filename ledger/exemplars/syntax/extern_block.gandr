@@ -1,0 +1,4 @@
+/// `extern_block`: an extern block: foreign declarations from a library.
+extern "c" from "sensor" {
+  def read(channel : i32) -> i64;
+}

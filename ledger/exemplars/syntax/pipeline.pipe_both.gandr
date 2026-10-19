@@ -1,0 +1,2 @@
+/// `pipeline.pipe_both`: a shell pipeline carrying standard error too.
+def logged = #!{ make |& tee log; } ;

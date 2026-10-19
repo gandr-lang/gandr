@@ -1,0 +1,2 @@
+/// `shell_block`: a shell block.
+def listing = #!{ ls; } ;

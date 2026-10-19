@@ -1,0 +1,6 @@
+/// `identifier.pattern`: a name bound by a pattern.
+def same(n : Integer) -> -F Integer {
+  case n {
+    m => return m
+  }
+}

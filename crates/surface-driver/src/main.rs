@@ -9,9 +9,9 @@
 //!
 //! | Code | Meaning |
 //! | ---- | ------- |
-//! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, or a ledger was written; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
-//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
-//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, output the driver could not write, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated or written |
+//! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, a ledger was written, or every exemplar held; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
+//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
+//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, output the driver could not write, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated, written or listed |
 //!
 //! A fault outranks an unsettled declaration: a run with both exits `2`. The
 //! walk continues past a faulted path, so every fault of a run is printed.
@@ -38,6 +38,7 @@
 //! | `gandr fmt --form <explicit\|sugared> <paths>` | as `fmt`, asking for that spelling: a source declaring a form with `@[ form(…) ]` keeps its own, and one declaring none is refused, since no layout changes a token | as `fmt` |
 //! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
 //! | `gandr ledger syntax --write <directory>` | the path of each file written, `syntax.md` then `syntax.json` (`gandr-surface-dispatcher`'s `ledger` module) | a ledger that cannot be generated or written |
+//! | `gandr ledger exemplars <directory>` | each exemplar that does not hold, `<path>: <fault>`, then the count verified and found (`gandr-surface-dispatcher`'s `ledger::exemplars` module) | an exemplar that does not hold, or a directory that cannot be listed |
 //! | `gandr lsp` | the language server's frames on standard output, until `exit`, served by the workspace's hub on Unix | a session ended before `shutdown` |
 //! | `gandr lsp --standalone` | as `lsp`, served in its own process | as `lsp` |
 //! | `gandr lsp --socket <path> --linger-ms <ms>` | as `lsp`, through the hub on that socket, a hub it starts lingering that long | as `lsp` |
@@ -260,6 +261,7 @@ use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Invocation;
+use gandr_surface_dispatcher::LedgerRun;
 use gandr_surface_dispatcher::LedgerTask;
 use gandr_surface_dispatcher::Lints;
 use gandr_surface_dispatcher::OperationName;
@@ -322,6 +324,9 @@ const REFUSED: u8 = 1;
 
 /// The exit code of `fmt --check` over a source out of layout.
 const UNFORMATTED: u8 = 1;
+
+/// The exit code of `ledger exemplars` over an exemplar that does not hold.
+const UNEXEMPLIFIED: u8 = 1;
 
 /// gandr language toolchain driver.
 #[derive(Debug, clap::Parser)]
@@ -551,20 +556,22 @@ enum Command
         #[arg(required = true)]
         paths: Vec<PathBuf>,
     },
-    /// Generate a ledger of the language surface and write it.
+    /// Generate a ledger of the language surface and write it, or verify its
+    /// exemplars.
     ///
-    /// Prints the path of each file written. Exits 0 when the ledger was
-    /// written, and 2 when it cannot be generated or a file cannot be
-    /// written.
+    /// Prints the path of each file written, or each exemplar that does not
+    /// hold and a count. Exits 0 when the ledger was written or every exemplar
+    /// holds, 1 when an exemplar does not, and 2 when the ledger cannot be
+    /// generated or a file cannot be written or listed.
     Ledger
     {
-        /// The ledger to write.
+        /// The ledger to write or verify.
         #[command(subcommand)]
         ledger: LedgerName,
     },
 }
 
-/// The ledgers `gandr ledger` writes.
+/// The ledgers `gandr ledger` writes or verifies.
 #[derive(Debug, clap::Subcommand)]
 enum LedgerName
 {
@@ -576,6 +583,14 @@ enum LedgerName
         /// The directory both files are written into, created when missing.
         #[arg(long, value_name = "DIRECTORY")]
         write: PathBuf,
+    },
+    /// The syntax exemplars: one source per committed rule under `syntax/`
+    /// and per attribute under `attributes/`, each parsed and checked for the
+    /// form it names.
+    Exemplars
+    {
+        /// The directory holding `syntax/` and `attributes/`.
+        directory: PathBuf,
     },
 }
 
@@ -851,6 +866,12 @@ fn main() -> ExitCode
             ledger: LedgerName::Syntax { write },
         }) => (
             Invocation::Ledger(LedgerTask::Syntax { directory: write }),
+            Verbosity::User,
+        ),
+        Some(Command::Ledger {
+            ledger: LedgerName::Exemplars { directory },
+        }) => (
+            Invocation::Ledger(LedgerTask::Exemplars { directory }),
             Verbosity::User,
         ),
         Some(Command::Lsp {
@@ -1516,16 +1537,20 @@ fn render(
     }
 }
 
-/// Generate and write `task`'s ledger, printing the path of each file
-/// written, and choose the exit code.
+/// Run `task`: write its ledger, printing the path of each file written, or
+/// verify its exemplars, printing each that does not hold; and choose the exit
+/// code.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: each file written is its path, as one line on standard output, in
-///   the order the task writes them, and the exit is zero. A ledger that cannot
-///   be generated or written is `gandr: <fault>` on standard error and exits
-///   two.
-/// - provides: `gandr ledger syntax --write <directory>`.
+///   the order the task writes them, and the exit is zero. A verification
+///   prints each exemplar that does not hold as `<path>: <fault>`, then the
+///   count verified and found, on standard output, and exits zero when nothing
+///   was found and one otherwise. A ledger that cannot be generated, written or
+///   listed is `gandr: <fault>` on standard error and exits two.
+/// - provides: `gandr ledger syntax --write <directory>` and `gandr ledger
+///   exemplars <directory>`.
 /// - fails: the first write error on either stream.
 /// - panics: none.
 ///
@@ -1535,10 +1560,12 @@ fn render(
 /// # Adequacy
 /// - hypothesis: L3 — a run into a fresh directory prints both paths, exits
 ///   zero and leaves files that a second run reproduces byte for byte; a
-///   directory under a file exits two naming it.
+///   directory under a file exits two naming it; the committed exemplars verify
+///   and exit zero, and a stray exemplar exits one naming it.
 /// - witness: `tests::cli::the_syntax_ledger_is_written_and_reproduced`
+/// - witness: `tests::cli::the_exemplars_verify_and_a_stray_one_is_named`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
-    *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FAULTED)))]
+    *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNEXEMPLIFIED) || *exit == ExitCode::from(FAULTED)))]
 fn ledger(
     task: &LedgerTask,
     stdout: &mut dyn std::io::Write,
@@ -1546,11 +1573,23 @@ fn ledger(
 ) -> std::io::Result<ExitCode>
 {
     match task.run() {
-        Ok(paths) => {
+        Ok(LedgerRun::Written(paths)) => {
             for path in paths {
                 writeln!(stdout, "{}", path.display())?;
             }
             Ok(ExitCode::SUCCESS)
+        },
+        Ok(LedgerRun::Verified(report)) => {
+            for finding in report.findings() {
+                writeln!(stdout, "{finding}")?;
+            }
+            writeln!(stdout, "{report}")?;
+            Ok(if report.findings().is_empty() {
+                ExitCode::SUCCESS
+            }
+            else {
+                ExitCode::from(UNEXEMPLIFIED)
+            })
         },
         Err(fault) => {
             writeln!(stderr, "gandr: {fault}")?;

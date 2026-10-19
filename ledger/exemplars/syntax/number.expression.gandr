@@ -1,0 +1,2 @@
+/// `number.expression`: a number.
+def answer = 42 ;

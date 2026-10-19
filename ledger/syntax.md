@@ -3,7 +3,7 @@
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
 - Grammar fingerprint: `0x53f68bb00a999c4b`
-- Rules: 174 — 173 committed, 1 internal
+- Rules: 174 — 162 committed, 12 internal
 - Molds: 2999
 - Attributes: 11
 
@@ -21,233 +21,233 @@ A form spells its rule's tiles and holes in order.
 | `⦅ a ⦆*` | the part, any number of times |
 | `⟨block⟩` | the whole form of rule `block`, written out in place: its tiles are this rule's own |
 
-The group is the rule's precedence group. The kind is the named node kind the rule realises; `*` marks a kind the surface's tree-sitter grammar does not have. The roles are the highlight roles of the rule's tiles, each once, first use first.
+Each committed rule links its exemplar, a small source the exemplar gate parses and checks for a tile of the rule. The group is the rule's precedence group. The kind is the named node kind the rule realises; `*` marks a kind the surface's tree-sitter grammar does not have. The roles are the highlight roles of the rule's tiles, each once, first use first.
 
 ## `item` — 25 rules
 
 | Rule | Form | Group | Kind | Roles |
 | ---- | ---- | ----- | ---- | ----- |
-| `def_value` | `def ⦅ rec ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? { ⦅ ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦅ , ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦆* ⦅ , ⦆? ‖ ⦅ ⟨val_statement⟩ ‖ ⟨bind_statement⟩ ‖ ⟨unpack_statement⟩ ‖ ⟨leta_statement⟩ ‖ ⟨hold_statement⟩ ‖ ⟨recv_statement⟩ ‖ ⟨acquire_statement⟩ ‖ ⟨release_statement⟩ ‖ fork ( ‹identifier› : TYPE ) EXPRESSION as ‹identifier› ; ‖ fork ! ( ‹identifier› : TYPE ) EXPRESSION ; ‖ ⟨expression_statement⟩ ⦆* ⦅ EXPRESSION ⦆? ⦆ } ‖ ‹identifier› ⦅ @[ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ; ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? ⟨block⟩ ⦆ ⦆` | `item.singleton` | `def_value` | Keyword, FunctionDef, Other, VariableParam, TypeVariable, Type, Operator, Member, Variable, VariableDef |
-| `data_declaration` | `data ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ : TYPE ⦆? { ⦅ ⦅ ‹constructor› ⦅ : ⦅ TYPE ‖ ( ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ) ⦆ ⦅ --> TYPE ⦆? ⦅ [ ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦆* ⦅ , ⦆? ] ⦆? ‖ ⦅ ( ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦅ , ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦅ : TYPE ⦆? ⦆? ⦅ [ ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦆* ⦅ , ⦆? ] ⦆? ⦆ ‖ ⦅ oper ‖ op ⦆ ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ‖ rule EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ‖ ‹identifier› : EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦆ ⦅ ⦅ ; ‖ , ⦆ ⦅ ‹constructor› ⦅ : ⦅ TYPE ‖ ( ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ) ⦆ ⦅ --> TYPE ⦆? ⦅ [ ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦆* ⦅ , ⦆? ] ⦆? ‖ ⦅ ( ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦅ , ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦅ : TYPE ⦆? ⦆? ⦅ [ ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦆* ⦅ , ⦆? ] ⦆? ⦆ ‖ ⦅ oper ‖ op ⦆ ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ‖ rule EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ‖ ‹identifier› : EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦆ ⦆* ⦅ ; ‖ , ⦆? ⦆? }` | `item.singleton` | `data_declaration` * | Keyword, Type, Other, TypeVariable, Constructor, Number, VariableParam, Operator, FunctionDef, Member |
-| `codata_declaration` | `codata ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ : TYPE ⦆? { ⦅ ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› ⦅ ( ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦅ , ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆? : TYPE ‖ oper ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ‖ rule EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ⦆ ⦅ ⦅ ; ‖ , ⦆ ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› ⦅ ( ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦅ , ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆? : TYPE ‖ oper ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ‖ rule EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ⦆ ⦆* ⦅ ; ‖ , ⦆? ⦆? }` | `item.singleton` | `codata_declaration` * | Keyword, Type, Other, TypeVariable, Number, Member, VariableParam, FunctionDef, Operator |
-| `module_declaration` | `module ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ = ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ; ‖ ⦅ ( ‹type_identifier› : #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ) ⦆? ⦅ : ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ) ⦆ ‖ :> ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ) ⦆ ⦆? { ⦅ MODULE_MEMBER ⦆* } ⦆` | `item.singleton` | `module_declaration` | Keyword, Type, VariableDef, Other, Member, TypeVariable, Operator |
-| `import_declaration` | `import ⟨string.pattern⟩ ⦅ as ‹identifier› ⦆? ;` | `item.singleton` | `import_declaration` * | Keyword, StringLit, Escape, VariableDef, Other |
-| `world_declaration` | `world ‹identifier› ;` | `item.singleton` | `world_declaration` * | Keyword, Label, Other |
-| `operator_declaration` | `op ⦅ infixl ‖ infixr ‖ infix ‖ prefix ‖ postfix ⦆ ‹number› ⟨string.pattern⟩ ;` | `item.singleton` | `operator_declaration` * | Keyword, Number, StringLit, Escape, Other |
-| `rec_block` | `rec { ⦅ ITEM ⦆* }` | `item.singleton` | `rec_block` * | Keyword, Other |
-| `attribute_block` | `@[ ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦆* ⦅ , ⦆? ]` | `item.singleton` | `attribute_block` | Other |
-| `extern_block` | `extern ⟨string.pattern⟩ from ⟨string.pattern⟩ ⦅ as ‹identifier› ⦆? { ⦅ type ‹type_identifier› ; ‖ def ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? ; ⦆* }` | `item.singleton` | `extern_block` | Keyword, StringLit, Escape, VariableDef, Other, Type, FunctionDef, VariableParam, TypeVariable, Operator |
-| `val_statement` | `val PATTERN = EXPRESSION ;` | `item.singleton` | `val_statement` | Keyword, Other |
-| `bind_statement` | `run PATTERN ⦅ : TYPE ⦆? <- EXPRESSION ;` | `item.singleton` | `bind_statement` | Keyword, Other, Operator |
-| `unpack_statement` | `unpack ‹identifier› : TYPE = EXPRESSION ;` | `item.singleton` | `unpack_statement` * | Keyword, VariableDef, Other |
-| `leta_statement` | `leta ‹identifier› = EXPRESSION ;` | `item.singleton` | `leta_statement` | Keyword, VariableDef, Other |
-| `hold_statement` | `hold ‹identifier› = EXPRESSION ;` | `item.singleton` | `hold_statement` * | Keyword, VariableDef, Other |
-| `recv_statement` | `recv ( EXPRESSION ) as ‹identifier› ;` | `item.singleton` | `recv_statement` | Keyword, Other, VariableDef |
-| `acquire_statement` | `acquire ( EXPRESSION ) as ‹identifier› ;` | `item.singleton` | `acquire_statement` | Keyword, Other, VariableDef |
-| `release_statement` | `release ( EXPRESSION ) as ‹identifier› ;` | `item.singleton` | `release_statement` | Keyword, Other, VariableDef |
-| `fork_statement` | `fork ( ‹identifier› : TYPE ) ⟨block⟩ as ‹identifier› ;` | `item.singleton` | `fork_statement` | Keyword, Other, VariableParam, Operator, VariableDef |
-| `fork_shared_statement` | `fork ! ( ‹identifier› : TYPE ) ⟨block⟩ ;` | `item.singleton` | `fork_shared_statement` | Keyword, Other, VariableParam, Operator, VariableDef |
-| `expression_statement` | `EXPRESSION ;` | `item.singleton` | `expression_statement` | Other |
-| `line_comment` | `line_comment` | `item.singleton` | `line_comment` | Comment |
-| `shebang` | `shebang` | `item.singleton` | `shebang` | Directive |
-| `theory_declaration` | `theory ‹type_identifier› { ⦅ ⦅ sort ‹type_identifier› ⦅ ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆? : TYPE ‖ data ‹constructor› : ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦅ ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦆? ‖ ⦅ oper ‹identifier› ⦅ : ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦅ ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦆? ⦅ { ⦅ node ⦅ ‹identifier› ⦆? : ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ‖ feed ⦅ ‹identifier› ⦆? : ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ⦆* } ⦆? ‖ ( ⦅ ‹identifier› ⦅ : TYPE ⦆? ⦅ , ‹identifier› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? ⦆ ‖ rule ‹identifier› ⦅ : ⦅ ( ⦅ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ‖ ‹identifier› : TYPE ⦆ ⦅ , ⦅ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ‖ ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ‖ EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦆ ⦅ { ⦅ node ⦅ ‹identifier› ⦆? : ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ‖ feed ⦅ ‹identifier› ⦆? : ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ⦆* } ⦆? ‖ EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦆ ⦆ ‖ shape ‹type_identifier› : ‹number› { ⦅ ‹identifier› = { ⦅ ‹number› ⦅ , ‹number› ⦆* ⦆? } ; ⦆* } ⦆ ; ⦆* }` | `item.singleton` | `theory_declaration` * | Keyword, Type, Other, VariableParam, Operator, Constructor, FunctionDef, VariableDef, FunctionCall, Number, Member |
-| `circuit_declaration` | `⦅ oper ‖ rule ⦆ ‹identifier› : ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆? ⦅ { ⦅ node ⦅ ‹identifier› ⦆? : ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ‖ feed ⦅ ‹identifier› ⦆? : ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ⦆* } ⦆?` | `item.singleton` | `circuit_declaration` * | Keyword, FunctionDef, Other, VariableParam, Operator, VariableDef, FunctionCall |
+| [`def_value`](exemplars/syntax/def_value.gandr) | `def ⦅ rec ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? { ⦅ ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦅ , ⦅ . ‹identifier› => EXPRESSION ‖ _ => EXPRESSION ⦆ ⦆* ⦅ , ⦆? ‖ ⦅ ⟨val_statement⟩ ‖ ⟨bind_statement⟩ ‖ ⟨unpack_statement⟩ ‖ ⟨leta_statement⟩ ‖ ⟨hold_statement⟩ ‖ ⟨recv_statement⟩ ‖ ⟨acquire_statement⟩ ‖ ⟨release_statement⟩ ‖ fork ( ‹identifier› : TYPE ) EXPRESSION as ‹identifier› ; ‖ fork ! ( ‹identifier› : TYPE ) EXPRESSION ; ‖ ⟨expression_statement⟩ ⦆* ⦅ EXPRESSION ⦆? ⦆ } ‖ ‹identifier› ⦅ @[ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ; ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? ⟨block⟩ ⦆ ⦆` | `item.singleton` | `def_value` | Keyword, FunctionDef, Other, VariableParam, TypeVariable, Type, Operator, Member, Variable, VariableDef |
+| [`data_declaration`](exemplars/syntax/data_declaration.gandr) | `data ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ : TYPE ⦆? { ⦅ ⦅ ‹constructor› ⦅ : ⦅ TYPE ‖ ( ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ) ⦆ ⦅ --> TYPE ⦆? ⦅ [ ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦆* ⦅ , ⦆? ] ⦆? ‖ ⦅ ( ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦅ , ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦅ : TYPE ⦆? ⦆? ⦅ [ ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦆* ⦅ , ⦆? ] ⦆? ⦆ ‖ ⦅ oper ‖ op ⦆ ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ‖ rule EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ‖ ‹identifier› : EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦆ ⦅ ⦅ ; ‖ , ⦆ ⦅ ‹constructor› ⦅ : ⦅ TYPE ‖ ( ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ) ⦆ ⦅ --> TYPE ⦆? ⦅ [ ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦆* ⦅ , ⦆? ] ⦆? ‖ ⦅ ( ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦅ , ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦅ : TYPE ⦆? ⦆? ⦅ [ ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦆* ⦅ , ⦆? ] ⦆? ⦆ ‖ ⦅ oper ‖ op ⦆ ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ‖ rule EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ‖ ‹identifier› : EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦆ ⦆* ⦅ ; ‖ , ⦆? ⦆? }` | `item.singleton` | `data_declaration` * | Keyword, Type, Other, TypeVariable, Constructor, Number, VariableParam, Operator, FunctionDef, Member |
+| [`codata_declaration`](exemplars/syntax/codata_declaration.gandr) | `codata ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ : TYPE ⦆? { ⦅ ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› ⦅ ( ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦅ , ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆? : TYPE ‖ oper ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ‖ rule EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ⦆ ⦅ ⦅ ; ‖ , ⦆ ⦅ ⦅ ‹number› ‖ ω ⦆? ‹identifier› ⦅ ( ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦅ , ⦅ ‹number› ‖ ω ⦆? ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆? : TYPE ‖ oper ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> ⦅ TYPE ‖ ( ‹identifier› : TYPE ⦅ , ‹identifier› : TYPE ⦆* ⦅ , ⦆? ) ⦆ ⦆? ‖ rule EXPRESSION ⦅ ==> ‖ <=> ‖ ~> ⦆ EXPRESSION ⦆ ⦆* ⦅ ; ‖ , ⦆? ⦆? }` | `item.singleton` | `codata_declaration` * | Keyword, Type, Other, TypeVariable, Number, Member, VariableParam, FunctionDef, Operator |
+| [`module_declaration`](exemplars/syntax/module_declaration.gandr) | `module ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ = ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ; ‖ ⦅ ( ‹type_identifier› : #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ) ⦆? ⦅ : ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ) ⦆ ‖ :> ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ) ⦆ ⦆? { ⦅ MODULE_MEMBER ⦆* } ⦆` | `item.singleton` | `module_declaration` | Keyword, Type, VariableDef, Other, Member, TypeVariable, Operator |
+| [`import_declaration`](exemplars/syntax/import_declaration.gandr) | `import ⟨string.pattern⟩ ⦅ as ‹identifier› ⦆? ;` | `item.singleton` | `import_declaration` * | Keyword, StringLit, Escape, VariableDef, Other |
+| [`world_declaration`](exemplars/syntax/world_declaration.gandr) | `world ‹identifier› ;` | `item.singleton` | `world_declaration` * | Keyword, Label, Other |
+| [`operator_declaration`](exemplars/syntax/operator_declaration.gandr) | `op ⦅ infixl ‖ infixr ‖ infix ‖ prefix ‖ postfix ⦆ ‹number› ⟨string.pattern⟩ ;` | `item.singleton` | `operator_declaration` * | Keyword, Number, StringLit, Escape, Other |
+| [`rec_block`](exemplars/syntax/rec_block.gandr) | `rec { ⦅ ITEM ⦆* }` | `item.singleton` | `rec_block` * | Keyword, Other |
+| [`attribute_block`](exemplars/syntax/attribute_block.gandr) | `@[ ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ) ⦆? ⦆* ⦅ , ⦆? ]` | `item.singleton` | `attribute_block` | Other |
+| [`extern_block`](exemplars/syntax/extern_block.gandr) | `extern ⟨string.pattern⟩ from ⟨string.pattern⟩ ⦅ as ‹identifier› ⦆? { ⦅ type ‹type_identifier› ; ‖ def ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? ; ⦆* }` | `item.singleton` | `extern_block` | Keyword, StringLit, Escape, VariableDef, Other, Type, FunctionDef, VariableParam, TypeVariable, Operator |
+| [`val_statement`](exemplars/syntax/val_statement.gandr) | `val PATTERN = EXPRESSION ;` | `item.singleton` | `val_statement` | Keyword, Other |
+| [`bind_statement`](exemplars/syntax/bind_statement.gandr) | `run PATTERN ⦅ : TYPE ⦆? <- EXPRESSION ;` | `item.singleton` | `bind_statement` | Keyword, Other, Operator |
+| [`unpack_statement`](exemplars/syntax/unpack_statement.gandr) | `unpack ‹identifier› : TYPE = EXPRESSION ;` | `item.singleton` | `unpack_statement` * | Keyword, VariableDef, Other |
+| [`leta_statement`](exemplars/syntax/leta_statement.gandr) | `leta ‹identifier› = EXPRESSION ;` | `item.singleton` | `leta_statement` | Keyword, VariableDef, Other |
+| [`hold_statement`](exemplars/syntax/hold_statement.gandr) | `hold ‹identifier› = EXPRESSION ;` | `item.singleton` | `hold_statement` * | Keyword, VariableDef, Other |
+| [`recv_statement`](exemplars/syntax/recv_statement.gandr) | `recv ( EXPRESSION ) as ‹identifier› ;` | `item.singleton` | `recv_statement` | Keyword, Other, VariableDef |
+| [`acquire_statement`](exemplars/syntax/acquire_statement.gandr) | `acquire ( EXPRESSION ) as ‹identifier› ;` | `item.singleton` | `acquire_statement` | Keyword, Other, VariableDef |
+| [`release_statement`](exemplars/syntax/release_statement.gandr) | `release ( EXPRESSION ) as ‹identifier› ;` | `item.singleton` | `release_statement` | Keyword, Other, VariableDef |
+| [`fork_statement`](exemplars/syntax/fork_statement.gandr) | `fork ( ‹identifier› : TYPE ) ⟨block⟩ as ‹identifier› ;` | `item.singleton` | `fork_statement` | Keyword, Other, VariableParam, Operator, VariableDef |
+| [`fork_shared_statement`](exemplars/syntax/fork_shared_statement.gandr) | `fork ! ( ‹identifier› : TYPE ) ⟨block⟩ ;` | `item.singleton` | `fork_shared_statement` | Keyword, Other, VariableParam, Operator, VariableDef |
+| [`expression_statement`](exemplars/syntax/expression_statement.gandr) | `EXPRESSION ;` | `item.singleton` | `expression_statement` | Other |
+| [`line_comment`](exemplars/syntax/line_comment.gandr) | `line_comment` | `item.singleton` | `line_comment` | Comment |
+| [`shebang`](exemplars/syntax/shebang.gandr) | `shebang` | `item.singleton` | `shebang` | Directive |
+| [`theory_declaration`](exemplars/syntax/theory_declaration.gandr) | `theory ‹type_identifier› { ⦅ ⦅ sort ‹type_identifier› ⦅ ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆? : TYPE ‖ data ‹constructor› : ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦅ ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦆? ‖ ⦅ oper ‹identifier› ⦅ : ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦅ ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦆? ⦅ { ⦅ node ⦅ ‹identifier› ⦆? : ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ‖ feed ⦅ ‹identifier› ⦆? : ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ⦆* } ⦆? ‖ ( ⦅ ‹identifier› ⦅ : TYPE ⦆? ⦅ , ‹identifier› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? ⦆ ‖ rule ‹identifier› ⦅ : ⦅ ( ⦅ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ‖ ‹identifier› : TYPE ⦆ ⦅ , ⦅ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ‖ ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ‖ EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦆ ⦅ { ⦅ node ⦅ ‹identifier› ⦆? : ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ‖ feed ⦅ ‹identifier› ⦆? : ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ⦆* } ⦆? ‖ EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦆ ⦆ ‖ shape ‹type_identifier› : ‹number› { ⦅ ‹identifier› = { ⦅ ‹number› ⦅ , ‹number› ⦆* ⦆? } ; ⦆* } ⦆ ; ⦆* }` | `item.singleton` | `theory_declaration` * | Keyword, Type, Other, VariableParam, Operator, Constructor, FunctionDef, VariableDef, FunctionCall, Number, Member |
+| [`circuit_declaration`](exemplars/syntax/circuit_declaration.gandr) | `⦅ oper ‖ rule ⦆ ‹identifier› : ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆? ⦅ { ⦅ node ⦅ ‹identifier› ⦆? : ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ‖ feed ⦅ ‹identifier› ⦆? : ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ⦆* } ⦆?` | `item.singleton` | `circuit_declaration` * | Keyword, FunctionDef, Other, VariableParam, Operator, VariableDef, FunctionCall |
 
-## `pattern` — 19 rules
-
-| Rule | Form | Group | Kind | Roles |
-| ---- | ---- | ----- | ---- | ----- |
-| `wildcard` | `_` | `pattern.atom` | `wildcard` | Variable |
-| `constructor_pattern` | `‹constructor› ⦅ ( PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? ) ⦆?` | `pattern.atom` | `constructor_pattern` | Constructor, Other |
-| `tuple_pattern` | `( PATTERN , PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? )` | `pattern.atom` | `tuple_pattern` | Other |
-| `telescope_pattern` | `#{ ⦅ ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦅ , ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦆* ⦅ , ⦆? ⦆? }` | `pattern.atom` | `telescope_pattern` * | Other, Member, Number |
-| `labelled_sum_pattern` | `+ { . ⦅ ‹identifier› ‖ ‹number› ⦆ = PATTERN }` | `pattern.atom` | `labelled_sum_pattern` * | Operator, Other, Member, Number |
-| `list_pattern` | `[ ⦅ PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦅ ⟨rest_pattern⟩ ⦆? ⦆? ‖ ⟨rest_pattern⟩ ⦆? ]` | `pattern.atom` | `list_pattern` | Other, Operator |
-| `rest_pattern` | `.. PATTERN` | `pattern.atom` | `rest_pattern` | Operator |
-| `literal_pattern` | `‹number› ‖ ‹typed_number› ‖ " ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* " ‖ true ‖ false` | `pattern.atom` | `literal_pattern` | Number, StringLit, Escape, Boolean |
-| `hole.pattern` | `? ⦅ ‹hole_name› ⦆?` | `pattern.atom` | `hole` | Hole, Label |
-| `cons_pattern` | `‹identifier› ⦅ ( ‹identifier› ) ⦆? ∷ PATTERN` | `pattern.cons` | `cons_pattern` * | Variable, Other, Operator |
-| `or_pattern` | `PATTERN \| PATTERN` | `pattern.or` | `or_pattern` | Operator |
-| `as_pattern` | `PATTERN as ‹identifier›` | `pattern.as` | `as_pattern` | Keyword, VariableDef |
-| `identifier.pattern` | `‹identifier›` | `pattern.atom` | `identifier` | Variable |
-| `constructor.pattern` | `‹constructor›` | `pattern.atom` | `constructor` | Constructor |
-| `boolean.pattern` | `true ‖ false` | `pattern.atom` | `boolean` | Boolean |
-| `unit.pattern` | `unit` | `pattern.atom` | `unit` | Keyword |
-| `number.pattern` | `‹number›` | `pattern.atom` | `number` | Number |
-| `typed_number.pattern` | `‹typed_number›` | `pattern.atom` | `typed_number` | Number |
-| `string.pattern` | `" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* "` | `pattern.atom` | `string` | StringLit, Escape |
-
-## `expression` — 83 rules
+## `pattern` — 14 rules
 
 | Rule | Form | Group | Kind | Roles |
 | ---- | ---- | ----- | ---- | ----- |
-| `pure_expression` | `pure EXPRESSION` | `expression.pure` | `pure_expression` | Keyword |
-| `return_expression` | `return EXPRESSION` | `expression.pure` | `return_expression` * | Keyword |
-| `become_expression` | `become EXPRESSION` | `expression.pure` | `become_expression` * | Keyword |
-| `binary_expression.or` | `EXPRESSION \|\| EXPRESSION` | `expression.or` | `binary_expression` | Operator |
-| `binary_expression.and` | `EXPRESSION && EXPRESSION` | `expression.and` | `binary_expression` | Operator |
-| `binary_expression.cmp.eq` | `EXPRESSION == EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
-| `binary_expression.cmp.ne` | `EXPRESSION != EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
-| `binary_expression.cmp.lt` | `EXPRESSION < EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
-| `binary_expression.cmp.le` | `EXPRESSION <= EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
-| `binary_expression.cmp.gt` | `EXPRESSION > EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
-| `binary_expression.cmp.ge` | `EXPRESSION >= EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
-| `binary_expression.then` | `EXPRESSION then EXPRESSION` | `expression.cmp` | `binary_expression` | Keyword |
-| `binary_expression.cons` | `EXPRESSION ∷ EXPRESSION` | `expression.cons` | `binary_expression` | Operator |
-| `binary_expression.add.concat` | `EXPRESSION ++ EXPRESSION` | `expression.add` | `binary_expression` | Operator |
-| `binary_expression.add.plus` | `EXPRESSION + EXPRESSION` | `expression.add` | `binary_expression` | Operator |
-| `binary_expression.add.minus` | `EXPRESSION - EXPRESSION` | `expression.add` | `binary_expression` | Operator |
-| `binary_expression.mul.times` | `EXPRESSION * EXPRESSION` | `expression.mul` | `binary_expression` | Operator |
-| `unary_expression` | `- EXPRESSION` | `expression.unary` | `unary_expression` | Operator |
-| `force_expression` | `force EXPRESSION` | `expression.unary` | `force_expression` | Keyword |
-| `run_expression` | `run EXPRESSION` | `expression.unary` | `run_expression` * | Keyword |
-| `hold_expression` | `hold EXPRESSION` | `expression.unary` | `hold_expression` | Keyword |
-| `pack_expression` | `pack [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] EXPRESSION` | `expression.pure` | `pack_expression` * | Keyword, Other |
-| `call_expression` | `EXPRESSION ( ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? )` | `expression.postfix` | `call_expression` | Other |
-| `instantiation_expression` | `EXPRESSION [ INSTANTIATION ⦅ , INSTANTIATION ⦆* ⦅ , ⦆? ]` | `expression.postfix` | `instantiation_expression` | Other |
-| `projection_expression` | `EXPRESSION . ⦅ ‹identifier› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | Other, Member, Number |
-| `hole` | `? ⦅ ‹hole_name› ⦆?` | `expression.atom` | `hole` | Hole, Label |
-| `parenthesized_expression` | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆` | `expression.atom` | `parenthesized_expression` | Other |
-| `list_expression` | `[ ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? ]` | `expression.atom` | `list_expression` | Other |
-| `block` | `{ ⦅ ⟨val_statement⟩ ‖ ⟨bind_statement⟩ ‖ ⟨unpack_statement⟩ ‖ ⟨leta_statement⟩ ‖ ⟨hold_statement⟩ ‖ ⟨recv_statement⟩ ‖ ⟨acquire_statement⟩ ‖ ⟨release_statement⟩ ‖ fork ( ‹identifier› : TYPE ) EXPRESSION as ‹identifier› ; ‖ fork ! ( ‹identifier› : TYPE ) EXPRESSION ; ‖ ⟨expression_statement⟩ ⦆* ⦅ EXPRESSION ⦆? }` | `expression.atom` | `block` | Other, Keyword, Operator, VariableDef, VariableParam |
-| `lambda_expression` | `fn ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⟨block⟩ ‖ [ ‹type_variable› ⦅ , ‹type_variable› ⦆* ⦅ , ⦆? ] ⟨block⟩ ⦆` | `expression.atom` | `lambda_expression` | Keyword, Other, VariableParam, TypeVariable, Type, Operator, VariableDef |
-| `thunk_expression` | `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? ⟨block⟩` | `expression.atom` | `thunk_expression` | Keyword, Other, Number, Operator, VariableDef, VariableParam |
-| `case_expression` | `case EXPRESSION ⦅ with EXPRESSION ⦆? ⦅ -> TYPE ⦆? ⦅ { } ‖ ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `case_expression` | Keyword, Operator, Other |
-| `handle_expression` | `handle ‹identifier› : ‹type_identifier› ⟨block⟩ with { ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› , ‹identifier› ) => EXPRESSION ⦆ ⦅ , ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› , ‹identifier› ) => EXPRESSION ⦆ ⦆* ⦅ , ⦆? }` | `expression.atom` | `handle_expression` * | Keyword, VariableDef, Other, Type, Operator, VariableParam, FunctionDef |
-| `if_expression` | `if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ ⟨block⟩ ‖ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⟨block⟩ ⦆` | `expression.atom` | `if_expression` | Keyword, Operator, Other, VariableDef, VariableParam |
-| `for_expression` | `for ‹identifier› in EXPRESSION ⟨block⟩` | `expression.atom` | `for_expression` * | Keyword, VariableDef, Other, Operator, VariableParam |
-| `while_expression` | `while EXPRESSION ⟨block⟩` | `expression.atom` | `while_expression` * | Keyword, Other, Operator, VariableDef, VariableParam |
-| `loop_expression` | `loop ⟨block⟩` | `expression.atom` | `loop_expression` * | Keyword, Other, Operator, VariableDef, VariableParam |
-| `break_expression` | `break` | `expression.atom` | `break_expression` * | Keyword |
-| `break_value_expression` | `break ( EXPRESSION )` | `expression.atom` | `break_value_expression` * | Keyword, Other |
-| `continue_expression` | `continue` | `expression.atom` | `continue_expression` * | Keyword |
-| `co_expression` | `co { ⟨instantiation.explicit⟩ ⦅ , ⟨instantiation.explicit⟩ ⦆* ⦅ , ⦆? }` | `expression.atom` | `co_expression` | Keyword, Other, Member |
-| `glob_expression` | `glob { ⦅ ⟨instantiation.explicit⟩ ; ⦆* }` | `expression.atom` | `glob_expression` * | Keyword, Other, Member |
-| `telescope_expression` | `#{ . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION ⦆* ⦅ , ⦆? } ‖ #{ ⦅ } ‖ EXPRESSION ⦅ = EXPRESSION ⦆? ⦅ \| ⟨instantiation.explicit⟩ ⦅ , ⟨instantiation.explicit⟩ ⦆* ⦅ , ⦆? } ‖ ⦅ , EXPRESSION ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `telescope_expression` * | Other, Member, Number, Operator |
-| `labelled_sum_expression` | `+ { . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION }` | `expression.atom` | `labelled_sum_expression` * | Operator, Other, Member, Number |
-| `lazy_record_expression` | `& { ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦆* ⦅ , ⦆? ⦆? }` | `expression.atom` | `lazy_record_expression` * | Operator, Other, Member, Number |
-| `offer_expression` | `offer ( EXPRESSION ) ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆` | `expression.atom` | `offer_expression` | Keyword, Other, Operator |
-| `migrate_expression` | `migrate [ ‹identifier› ] ⟨block⟩` | `expression.atom` | `migrate_expression` | Keyword, Other, Label, Operator, VariableDef, VariableParam |
-| `send_expression` | `send ( EXPRESSION , EXPRESSION )` | `expression.atom` | `send_expression` | Keyword, Other |
-| `close_expression` | `close ( EXPRESSION )` | `expression.atom` | `close_expression` | Keyword, Other |
-| `select_expression` | `select ( EXPRESSION , ‹identifier› )` | `expression.atom` | `select_expression` | Keyword, Other, Label |
-| `dup_expression` | `dup ( EXPRESSION )` | `expression.atom` | `dup_expression` | Keyword, Other |
-| `drop_expression` | `drop ( EXPRESSION )` | `expression.atom` | `drop_expression` | Keyword, Other |
-| `access_expression` | `access ‹identifier› as ‹identifier› ⟨block⟩ ⦅ unwind ⟨block⟩ ⦆?` | `expression.atom` | `access_expression` * | Keyword, Variable, VariableDef, Other, Operator, VariableParam |
-| `resume_expression` | `resume ( ‹identifier› , EXPRESSION )` | `expression.atom` | `resume_expression` * | Keyword, Other, Variable |
-| `abort_expression` | `abort ( ‹identifier› )` | `expression.atom` | `abort_expression` * | Keyword, Other, Variable |
-| `shell_block` | `#!{ ⦅ EXPRESSION ⦆? }` | `expression.atom` | `shell_block` | Other |
-| `identifier.expression` | `‹identifier›` | `expression.atom` | `identifier` | Variable |
-| `constructor.expression` | `‹constructor›` | `expression.atom` | `constructor` | Constructor |
-| `boolean.expression` | `true ‖ false` | `expression.atom` | `boolean` | Boolean |
-| `unit.expression` | `unit` | `expression.atom` | `unit` | Keyword |
-| `number.expression` | `‹number›` | `expression.atom` | `number` | Number |
-| `typed_number.expression` | `‹typed_number›` | `expression.atom` | `typed_number` | Number |
-| `character` | `‹character›` | `expression.atom` | `character` | Character |
-| `string.expression` | `" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ‖ ${ EXPRESSION } ⦆* "` | `expression.atom` | `string` | StringLit, Escape, Other |
-| `escape_sequence` | `‹escape_sequence›` | `expression.atom` | `escape_sequence` | Escape |
-| `shell_list` | `shell_or ⦅ list_operator shell_or ⦆* ⦅ list_operator ⦆?` | `expression.atom` | `shell_list` | Other, Operator |
-| `list_operator` | `; ‖ & ‖ newline` | `expression.atom` | `list_operator` | Operator |
-| `or_expression` | `shell_and ⦅ \|\| shell_and ⦆*` | `expression.or` | `or_expression` | Other, Operator |
-| `and_expression` | `pipeline_operand ⦅ && pipeline_operand ⦆*` | `expression.and` | `and_expression` | Other, Operator |
-| `pipeline.pipe` | `EXPRESSION \| EXPRESSION` | `expression.postfix` | `pipeline` | Operator |
-| `pipeline.pipe_both` | `EXPRESSION \|& EXPRESSION` | `expression.postfix` | `pipeline` | Operator |
-| `negation` | `negation` | `expression.atom` | `negation` | Operator |
-| `environment_assignment` | `‹environment_assignment›` | `expression.atom` | `environment_assignment` | VariableParam |
-| `shell_word` | `‹shell_word›` | `expression.atom` | `shell_word` | Path |
-| `single_quoted_string` | `' ‹single_quoted_content› '` | `expression.atom` | `single_quoted_string` | StringLit |
-| `double_quoted_string` | `" ⦅ ‹double_string_fragment› ‖ ‹escape_sequence› ‖ ⟨variable_expansion⟩ ⦆* "` | `expression.atom` | `double_quoted_string` | StringLit, Escape, Other, Variable |
-| `variable_expansion` | `$ ‹variable_name› ‖ ${ ‹variable_name› }` | `expression.atom` | `variable_expansion` | Other, Variable |
-| `variable_name` | `‹variable_name›` | `expression.atom` | `variable_name` | Variable |
-| `command_substitution` | `$!{ ⦅ list_operator ⦆? ⦅ shell_list ⦆? }` | `expression.atom` | `command_substitution` | Other, Operator |
-| `host_escape` | `$ ( EXPRESSION )` | `expression.atom` | `host_escape` | Other |
-| `subshell` | `[ ⦅ EXPRESSION ⦆? ]` | `expression.atom` | `subshell` | Other |
-| `file_descriptor` | `‹file_descriptor›` | `expression.atom` | `file_descriptor` | Number |
-| `redirection_operator` | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | Operator |
+| [`wildcard`](exemplars/syntax/wildcard.gandr) | `_` | `pattern.atom` | `wildcard` | Variable |
+| [`constructor_pattern`](exemplars/syntax/constructor_pattern.gandr) | `‹constructor› ⦅ ( PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? ) ⦆?` | `pattern.atom` | `constructor_pattern` | Constructor, Other |
+| [`tuple_pattern`](exemplars/syntax/tuple_pattern.gandr) | `( PATTERN , PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? )` | `pattern.atom` | `tuple_pattern` | Other |
+| [`telescope_pattern`](exemplars/syntax/telescope_pattern.gandr) | `#{ ⦅ ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦅ , ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦆* ⦅ , ⦆? ⦆? }` | `pattern.atom` | `telescope_pattern` * | Other, Member, Number |
+| [`labelled_sum_pattern`](exemplars/syntax/labelled_sum_pattern.gandr) | `+ { . ⦅ ‹identifier› ‖ ‹number› ⦆ = PATTERN }` | `pattern.atom` | `labelled_sum_pattern` * | Operator, Other, Member, Number |
+| [`list_pattern`](exemplars/syntax/list_pattern.gandr) | `[ ⦅ PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦅ ⟨rest_pattern⟩ ⦆? ⦆? ‖ ⟨rest_pattern⟩ ⦆? ]` | `pattern.atom` | `list_pattern` | Other, Operator |
+| [`rest_pattern`](exemplars/syntax/rest_pattern.gandr) | `.. PATTERN` | `pattern.atom` | `rest_pattern` | Operator |
+| [`literal_pattern`](exemplars/syntax/literal_pattern.gandr) | `‹number› ‖ ‹typed_number› ‖ " ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* " ‖ true ‖ false` | `pattern.atom` | `literal_pattern` | Number, StringLit, Escape, Boolean |
+| [`hole.pattern`](exemplars/syntax/hole.pattern.gandr) | `? ⦅ ‹hole_name› ⦆?` | `pattern.atom` | `hole` | Hole, Label |
+| [`cons_pattern`](exemplars/syntax/cons_pattern.gandr) | `‹identifier› ⦅ ( ‹identifier› ) ⦆? ∷ PATTERN` | `pattern.cons` | `cons_pattern` * | Variable, Other, Operator |
+| [`or_pattern`](exemplars/syntax/or_pattern.gandr) | `PATTERN \| PATTERN` | `pattern.or` | `or_pattern` | Operator |
+| [`as_pattern`](exemplars/syntax/as_pattern.gandr) | `PATTERN as ‹identifier›` | `pattern.as` | `as_pattern` | Keyword, VariableDef |
+| [`identifier.pattern`](exemplars/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | Variable |
+| [`unit.pattern`](exemplars/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | Keyword |
+
+## `expression` — 78 rules
+
+| Rule | Form | Group | Kind | Roles |
+| ---- | ---- | ----- | ---- | ----- |
+| [`pure_expression`](exemplars/syntax/pure_expression.gandr) | `pure EXPRESSION` | `expression.pure` | `pure_expression` | Keyword |
+| [`return_expression`](exemplars/syntax/return_expression.gandr) | `return EXPRESSION` | `expression.pure` | `return_expression` * | Keyword |
+| [`become_expression`](exemplars/syntax/become_expression.gandr) | `become EXPRESSION` | `expression.pure` | `become_expression` * | Keyword |
+| [`binary_expression.or`](exemplars/syntax/binary_expression.or.gandr) | `EXPRESSION \|\| EXPRESSION` | `expression.or` | `binary_expression` | Operator |
+| [`binary_expression.and`](exemplars/syntax/binary_expression.and.gandr) | `EXPRESSION && EXPRESSION` | `expression.and` | `binary_expression` | Operator |
+| [`binary_expression.cmp.eq`](exemplars/syntax/binary_expression.cmp.eq.gandr) | `EXPRESSION == EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
+| [`binary_expression.cmp.ne`](exemplars/syntax/binary_expression.cmp.ne.gandr) | `EXPRESSION != EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
+| [`binary_expression.cmp.lt`](exemplars/syntax/binary_expression.cmp.lt.gandr) | `EXPRESSION < EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
+| [`binary_expression.cmp.le`](exemplars/syntax/binary_expression.cmp.le.gandr) | `EXPRESSION <= EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
+| [`binary_expression.cmp.gt`](exemplars/syntax/binary_expression.cmp.gt.gandr) | `EXPRESSION > EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
+| [`binary_expression.cmp.ge`](exemplars/syntax/binary_expression.cmp.ge.gandr) | `EXPRESSION >= EXPRESSION` | `expression.cmp` | `binary_expression` | Operator |
+| [`binary_expression.then`](exemplars/syntax/binary_expression.then.gandr) | `EXPRESSION then EXPRESSION` | `expression.cmp` | `binary_expression` | Keyword |
+| [`binary_expression.cons`](exemplars/syntax/binary_expression.cons.gandr) | `EXPRESSION ∷ EXPRESSION` | `expression.cons` | `binary_expression` | Operator |
+| [`binary_expression.add.concat`](exemplars/syntax/binary_expression.add.concat.gandr) | `EXPRESSION ++ EXPRESSION` | `expression.add` | `binary_expression` | Operator |
+| [`binary_expression.add.plus`](exemplars/syntax/binary_expression.add.plus.gandr) | `EXPRESSION + EXPRESSION` | `expression.add` | `binary_expression` | Operator |
+| [`binary_expression.add.minus`](exemplars/syntax/binary_expression.add.minus.gandr) | `EXPRESSION - EXPRESSION` | `expression.add` | `binary_expression` | Operator |
+| [`binary_expression.mul.times`](exemplars/syntax/binary_expression.mul.times.gandr) | `EXPRESSION * EXPRESSION` | `expression.mul` | `binary_expression` | Operator |
+| [`unary_expression`](exemplars/syntax/unary_expression.gandr) | `- EXPRESSION` | `expression.unary` | `unary_expression` | Operator |
+| [`force_expression`](exemplars/syntax/force_expression.gandr) | `force EXPRESSION` | `expression.unary` | `force_expression` | Keyword |
+| [`run_expression`](exemplars/syntax/run_expression.gandr) | `run EXPRESSION` | `expression.unary` | `run_expression` * | Keyword |
+| [`hold_expression`](exemplars/syntax/hold_expression.gandr) | `hold EXPRESSION` | `expression.unary` | `hold_expression` | Keyword |
+| [`pack_expression`](exemplars/syntax/pack_expression.gandr) | `pack [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] EXPRESSION` | `expression.pure` | `pack_expression` * | Keyword, Other |
+| [`call_expression`](exemplars/syntax/call_expression.gandr) | `EXPRESSION ( ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? )` | `expression.postfix` | `call_expression` | Other |
+| [`instantiation_expression`](exemplars/syntax/instantiation_expression.gandr) | `EXPRESSION [ INSTANTIATION ⦅ , INSTANTIATION ⦆* ⦅ , ⦆? ]` | `expression.postfix` | `instantiation_expression` | Other |
+| [`projection_expression`](exemplars/syntax/projection_expression.gandr) | `EXPRESSION . ⦅ ‹identifier› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | Other, Member, Number |
+| [`hole`](exemplars/syntax/hole.gandr) | `? ⦅ ‹hole_name› ⦆?` | `expression.atom` | `hole` | Hole, Label |
+| [`parenthesized_expression`](exemplars/syntax/parenthesized_expression.gandr) | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆` | `expression.atom` | `parenthesized_expression` | Other |
+| [`list_expression`](exemplars/syntax/list_expression.gandr) | `[ ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? ]` | `expression.atom` | `list_expression` | Other |
+| [`block`](exemplars/syntax/block.gandr) | `{ ⦅ ⟨val_statement⟩ ‖ ⟨bind_statement⟩ ‖ ⟨unpack_statement⟩ ‖ ⟨leta_statement⟩ ‖ ⟨hold_statement⟩ ‖ ⟨recv_statement⟩ ‖ ⟨acquire_statement⟩ ‖ ⟨release_statement⟩ ‖ fork ( ‹identifier› : TYPE ) EXPRESSION as ‹identifier› ; ‖ fork ! ( ‹identifier› : TYPE ) EXPRESSION ; ‖ ⟨expression_statement⟩ ⦆* ⦅ EXPRESSION ⦆? }` | `expression.atom` | `block` | Other, Keyword, Operator, VariableDef, VariableParam |
+| [`lambda_expression`](exemplars/syntax/lambda_expression.gandr) | `fn ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⟨block⟩ ‖ [ ‹type_variable› ⦅ , ‹type_variable› ⦆* ⦅ , ⦆? ] ⟨block⟩ ⦆` | `expression.atom` | `lambda_expression` | Keyword, Other, VariableParam, TypeVariable, Type, Operator, VariableDef |
+| [`thunk_expression`](exemplars/syntax/thunk_expression.gandr) | `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? ⟨block⟩` | `expression.atom` | `thunk_expression` | Keyword, Other, Number, Operator, VariableDef, VariableParam |
+| [`case_expression`](exemplars/syntax/case_expression.gandr) | `case EXPRESSION ⦅ with EXPRESSION ⦆? ⦅ -> TYPE ⦆? ⦅ { } ‖ ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `case_expression` | Keyword, Operator, Other |
+| [`handle_expression`](exemplars/syntax/handle_expression.gandr) | `handle ‹identifier› : ‹type_identifier› ⟨block⟩ with { ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› , ‹identifier› ) => EXPRESSION ⦆ ⦅ , ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› , ‹identifier› ) => EXPRESSION ⦆ ⦆* ⦅ , ⦆? }` | `expression.atom` | `handle_expression` * | Keyword, VariableDef, Other, Type, Operator, VariableParam, FunctionDef |
+| [`if_expression`](exemplars/syntax/if_expression.gandr) | `if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ ⟨block⟩ ‖ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⟨block⟩ ⦆` | `expression.atom` | `if_expression` | Keyword, Operator, Other, VariableDef, VariableParam |
+| [`for_expression`](exemplars/syntax/for_expression.gandr) | `for ‹identifier› in EXPRESSION ⟨block⟩` | `expression.atom` | `for_expression` * | Keyword, VariableDef, Other, Operator, VariableParam |
+| [`while_expression`](exemplars/syntax/while_expression.gandr) | `while EXPRESSION ⟨block⟩` | `expression.atom` | `while_expression` * | Keyword, Other, Operator, VariableDef, VariableParam |
+| [`loop_expression`](exemplars/syntax/loop_expression.gandr) | `loop ⟨block⟩` | `expression.atom` | `loop_expression` * | Keyword, Other, Operator, VariableDef, VariableParam |
+| [`break_expression`](exemplars/syntax/break_expression.gandr) | `break` | `expression.atom` | `break_expression` * | Keyword |
+| [`break_value_expression`](exemplars/syntax/break_value_expression.gandr) | `break ( EXPRESSION )` | `expression.atom` | `break_value_expression` * | Keyword, Other |
+| [`continue_expression`](exemplars/syntax/continue_expression.gandr) | `continue` | `expression.atom` | `continue_expression` * | Keyword |
+| [`co_expression`](exemplars/syntax/co_expression.gandr) | `co { ⟨instantiation.explicit⟩ ⦅ , ⟨instantiation.explicit⟩ ⦆* ⦅ , ⦆? }` | `expression.atom` | `co_expression` | Keyword, Other, Member |
+| [`glob_expression`](exemplars/syntax/glob_expression.gandr) | `glob { ⦅ ⟨instantiation.explicit⟩ ; ⦆* }` | `expression.atom` | `glob_expression` * | Keyword, Other, Member |
+| [`telescope_expression`](exemplars/syntax/telescope_expression.gandr) | `#{ . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION ⦆* ⦅ , ⦆? } ‖ #{ ⦅ } ‖ EXPRESSION ⦅ = EXPRESSION ⦆? ⦅ \| ⟨instantiation.explicit⟩ ⦅ , ⟨instantiation.explicit⟩ ⦆* ⦅ , ⦆? } ‖ ⦅ , EXPRESSION ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `telescope_expression` * | Other, Member, Number, Operator |
+| [`labelled_sum_expression`](exemplars/syntax/labelled_sum_expression.gandr) | `+ { . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION }` | `expression.atom` | `labelled_sum_expression` * | Operator, Other, Member, Number |
+| [`lazy_record_expression`](exemplars/syntax/lazy_record_expression.gandr) | `& { ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦆* ⦅ , ⦆? ⦆? }` | `expression.atom` | `lazy_record_expression` * | Operator, Other, Member, Number |
+| [`offer_expression`](exemplars/syntax/offer_expression.gandr) | `offer ( EXPRESSION ) ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆` | `expression.atom` | `offer_expression` | Keyword, Other, Operator |
+| [`migrate_expression`](exemplars/syntax/migrate_expression.gandr) | `migrate [ ‹identifier› ] ⟨block⟩` | `expression.atom` | `migrate_expression` | Keyword, Other, Label, Operator, VariableDef, VariableParam |
+| [`send_expression`](exemplars/syntax/send_expression.gandr) | `send ( EXPRESSION , EXPRESSION )` | `expression.atom` | `send_expression` | Keyword, Other |
+| [`close_expression`](exemplars/syntax/close_expression.gandr) | `close ( EXPRESSION )` | `expression.atom` | `close_expression` | Keyword, Other |
+| [`select_expression`](exemplars/syntax/select_expression.gandr) | `select ( EXPRESSION , ‹identifier› )` | `expression.atom` | `select_expression` | Keyword, Other, Label |
+| [`dup_expression`](exemplars/syntax/dup_expression.gandr) | `dup ( EXPRESSION )` | `expression.atom` | `dup_expression` | Keyword, Other |
+| [`drop_expression`](exemplars/syntax/drop_expression.gandr) | `drop ( EXPRESSION )` | `expression.atom` | `drop_expression` | Keyword, Other |
+| [`access_expression`](exemplars/syntax/access_expression.gandr) | `access ‹identifier› as ‹identifier› ⟨block⟩ ⦅ unwind ⟨block⟩ ⦆?` | `expression.atom` | `access_expression` * | Keyword, Variable, VariableDef, Other, Operator, VariableParam |
+| [`resume_expression`](exemplars/syntax/resume_expression.gandr) | `resume ( ‹identifier› , EXPRESSION )` | `expression.atom` | `resume_expression` * | Keyword, Other, Variable |
+| [`abort_expression`](exemplars/syntax/abort_expression.gandr) | `abort ( ‹identifier› )` | `expression.atom` | `abort_expression` * | Keyword, Other, Variable |
+| [`shell_block`](exemplars/syntax/shell_block.gandr) | `#!{ ⦅ EXPRESSION ⦆? }` | `expression.atom` | `shell_block` | Other |
+| [`identifier.expression`](exemplars/syntax/identifier.expression.gandr) | `‹identifier›` | `expression.atom` | `identifier` | Variable |
+| [`constructor.expression`](exemplars/syntax/constructor.expression.gandr) | `‹constructor›` | `expression.atom` | `constructor` | Constructor |
+| [`boolean.expression`](exemplars/syntax/boolean.expression.gandr) | `true ‖ false` | `expression.atom` | `boolean` | Boolean |
+| [`unit.expression`](exemplars/syntax/unit.expression.gandr) | `unit` | `expression.atom` | `unit` | Keyword |
+| [`number.expression`](exemplars/syntax/number.expression.gandr) | `‹number›` | `expression.atom` | `number` | Number |
+| [`typed_number.expression`](exemplars/syntax/typed_number.expression.gandr) | `‹typed_number›` | `expression.atom` | `typed_number` | Number |
+| [`character`](exemplars/syntax/character.gandr) | `‹character›` | `expression.atom` | `character` | Character |
+| [`string.expression`](exemplars/syntax/string.expression.gandr) | `" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ‖ ${ EXPRESSION } ⦆* "` | `expression.atom` | `string` | StringLit, Escape, Other |
+| [`list_operator`](exemplars/syntax/list_operator.gandr) | `; ‖ & ‖ newline` | `expression.atom` | `list_operator` | Operator |
+| [`pipeline.pipe`](exemplars/syntax/pipeline.pipe.gandr) | `EXPRESSION \| EXPRESSION` | `expression.postfix` | `pipeline` | Operator |
+| [`pipeline.pipe_both`](exemplars/syntax/pipeline.pipe_both.gandr) | `EXPRESSION \|& EXPRESSION` | `expression.postfix` | `pipeline` | Operator |
+| [`environment_assignment`](exemplars/syntax/environment_assignment.gandr) | `‹environment_assignment›` | `expression.atom` | `environment_assignment` | VariableParam |
+| [`shell_word`](exemplars/syntax/shell_word.gandr) | `‹shell_word›` | `expression.atom` | `shell_word` | Path |
+| [`single_quoted_string`](exemplars/syntax/single_quoted_string.gandr) | `' ‹single_quoted_content› '` | `expression.atom` | `single_quoted_string` | StringLit |
+| [`double_quoted_string`](exemplars/syntax/double_quoted_string.gandr) | `" ⦅ ‹double_string_fragment› ‖ ‹escape_sequence› ‖ ⟨variable_expansion⟩ ⦆* "` | `expression.atom` | `double_quoted_string` | StringLit, Escape, Other, Variable |
+| [`variable_expansion`](exemplars/syntax/variable_expansion.gandr) | `$ ‹variable_name› ‖ ${ ‹variable_name› }` | `expression.atom` | `variable_expansion` | Other, Variable |
+| [`variable_name`](exemplars/syntax/variable_name.gandr) | `‹variable_name›` | `expression.atom` | `variable_name` | Variable |
+| [`command_substitution`](exemplars/syntax/command_substitution.gandr) | `$!{ ⦅ list_operator ⦆? ⦅ shell_list ⦆? }` | `expression.atom` | `command_substitution` | Other, Operator |
+| [`host_escape`](exemplars/syntax/host_escape.gandr) | `$ ( EXPRESSION )` | `expression.atom` | `host_escape` | Other |
+| [`subshell`](exemplars/syntax/subshell.gandr) | `[ ⦅ EXPRESSION ⦆? ]` | `expression.atom` | `subshell` | Other |
+| [`file_descriptor`](exemplars/syntax/file_descriptor.gandr) | `‹file_descriptor›` | `expression.atom` | `file_descriptor` | Number |
+| [`redirection_operator`](exemplars/syntax/redirection_operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | Operator |
 
 ## `type` — 36 rules
 
 | Rule | Form | Group | Kind | Roles |
 | ---- | ---- | ----- | ---- | ----- |
-| `forall_type` | `forall ⦅ ‹type_variable› ⦆* . TYPE` | `type.arrow` | `forall_type` | Keyword, TypeVariable, Other |
-| `package_type` | `package [ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ] TYPE` | `type.application` | `package_type` * | Keyword, Other, Type |
-| `function_type` | `TYPE -> TYPE` | `type.arrow` | `function_type` | Operator |
-| `value_function_type` | `TYPE => TYPE` | `type.arrow` | `value_function_type` * | Operator |
-| `static_abstraction` | `\ ⦅ ‹type_identifier› ‖ ‹type_variable› ⦆ . TYPE` | `type.arrow` | `static_abstraction` * | Operator, Type, TypeVariable, Other |
-| `union_type` | `TYPE \| TYPE` | `type.union` | `union_type` | Operator |
-| `intersection_type` | `TYPE /\ TYPE` | `type.intersection` | `intersection_type` | Operator |
-| `lazy_product_type` | `TYPE & TYPE` | `type.lazy_product` | `lazy_product_type` | Operator |
-| `equivalence_type` | `TYPE ≃ TYPE` | `type.equivalence` | `equivalence_type` * | Operator |
-| `isomorphism_type` | `TYPE ≅ TYPE` | `type.equivalence` | `isomorphism_type` * | Operator |
-| `universe_flow_type` | `TYPE ⇝ TYPE` | `type.equivalence` | `universe_flow_type` * | Operator |
-| `sum_type` | `TYPE + TYPE` | `type.sum` | `sum_type` | Operator |
-| `product_type` | `TYPE * TYPE` | `type.product` | `product_type` | Operator |
-| `f_type.row` | `-F [ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ] TYPE` | `type.application` | `f_type` | Keyword, Other, Type |
-| `f_type` | `-F TYPE` | `type.application` | `f_type` | Keyword |
-| `u_type` | `+U ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? TYPE` | `type.application` | `u_type` | Keyword, Other, Number |
-| `universe_type` | `Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆?` | `type.atom` | `universe_type` * | TypeBuiltin, Other, Keyword, Number |
-| `representable_universe_type` | `Type+` | `type.atom` | `representable_universe_type` * | TypeBuiltin |
-| `at_type` | `TYPE at ‹identifier›` | `type.application` | `at_type` | Keyword, Label |
-| `path_type` | `Path ( ⦅ Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆? , TYPE , TYPE ‖ TYPE , EXPRESSION , EXPRESSION ⦆ )` | `type.application` | `path_type` * | TypeBuiltin, Other, Operator, Number |
-| `type_application` | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? )` | `type.application` | `type_application` | Type, TypeVariable, Other, Operator |
-| `type_path` | `TYPE . ‹type_identifier›` | `type.path` | `type_path` * | Other, Type |
-| `parenthesized_type` | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | Other |
-| `telescope_type` | `#{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | Other |
-| `send_session_type` | `! TYPE . TYPE` | `type.arrow` | `send_session_type` | Operator, Other |
-| `receive_session_type` | `? TYPE . TYPE` | `type.arrow` | `receive_session_type` | Operator, Other |
-| `end_session_type` | `end` | `type.atom` | `end_session_type` | Keyword |
-| `labelled_sum_type` | `+ { ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `labelled_sum_type` * | Operator, Other |
-| `lazy_record_type` | `& { ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `lazy_record_type` * | Operator, Other |
-| `mu_session_type` | `mu ‹type_variable› . TYPE` | `type.arrow` | `mu_session_type` | Keyword, TypeVariable, Other |
-| `primitive_type` | `Any ‖ Unknown ‖ Never ‖ Boolean ‖ Integer ‖ u32 ‖ u64 ‖ i32 ‖ i64 ‖ f32 ‖ f64 ‖ Char ‖ String ‖ Symbol ‖ Unit ‖ Void` | `type.atom` | `primitive_type` | TypeBuiltin |
-| `unknown_type` | `?` | `type.atom` | `unknown_type` * | TypeBuiltin |
-| `type_identifier` | `‹type_identifier›` | `type.atom` | `type_identifier` | Type |
-| `type_variable` | `‹type_variable›` | `type.atom` | `type_variable` | TypeVariable |
-| `capability_type` | `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` | `type.atom` | `capability_type` * | TypeBuiltin, Other, Number, Member |
-| `number.type` | `‹number›` | `type.atom` | `number` | Number |
+| [`forall_type`](exemplars/syntax/forall_type.gandr) | `forall ⦅ ‹type_variable› ⦆* . TYPE` | `type.arrow` | `forall_type` | Keyword, TypeVariable, Other |
+| [`package_type`](exemplars/syntax/package_type.gandr) | `package [ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ] TYPE` | `type.application` | `package_type` * | Keyword, Other, Type |
+| [`function_type`](exemplars/syntax/function_type.gandr) | `TYPE -> TYPE` | `type.arrow` | `function_type` | Operator |
+| [`value_function_type`](exemplars/syntax/value_function_type.gandr) | `TYPE => TYPE` | `type.arrow` | `value_function_type` * | Operator |
+| [`static_abstraction`](exemplars/syntax/static_abstraction.gandr) | `\ ⦅ ‹type_identifier› ‖ ‹type_variable› ⦆ . TYPE` | `type.arrow` | `static_abstraction` * | Operator, Type, TypeVariable, Other |
+| [`union_type`](exemplars/syntax/union_type.gandr) | `TYPE \| TYPE` | `type.union` | `union_type` | Operator |
+| [`intersection_type`](exemplars/syntax/intersection_type.gandr) | `TYPE /\ TYPE` | `type.intersection` | `intersection_type` | Operator |
+| [`lazy_product_type`](exemplars/syntax/lazy_product_type.gandr) | `TYPE & TYPE` | `type.lazy_product` | `lazy_product_type` | Operator |
+| [`equivalence_type`](exemplars/syntax/equivalence_type.gandr) | `TYPE ≃ TYPE` | `type.equivalence` | `equivalence_type` * | Operator |
+| [`isomorphism_type`](exemplars/syntax/isomorphism_type.gandr) | `TYPE ≅ TYPE` | `type.equivalence` | `isomorphism_type` * | Operator |
+| [`universe_flow_type`](exemplars/syntax/universe_flow_type.gandr) | `TYPE ⇝ TYPE` | `type.equivalence` | `universe_flow_type` * | Operator |
+| [`sum_type`](exemplars/syntax/sum_type.gandr) | `TYPE + TYPE` | `type.sum` | `sum_type` | Operator |
+| [`product_type`](exemplars/syntax/product_type.gandr) | `TYPE * TYPE` | `type.product` | `product_type` | Operator |
+| [`f_type.row`](exemplars/syntax/f_type.row.gandr) | `-F [ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ] TYPE` | `type.application` | `f_type` | Keyword, Other, Type |
+| [`f_type`](exemplars/syntax/f_type.gandr) | `-F TYPE` | `type.application` | `f_type` | Keyword |
+| [`u_type`](exemplars/syntax/u_type.gandr) | `+U ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? TYPE` | `type.application` | `u_type` | Keyword, Other, Number |
+| [`universe_type`](exemplars/syntax/universe_type.gandr) | `Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆?` | `type.atom` | `universe_type` * | TypeBuiltin, Other, Keyword, Number |
+| [`representable_universe_type`](exemplars/syntax/representable_universe_type.gandr) | `Type+` | `type.atom` | `representable_universe_type` * | TypeBuiltin |
+| [`at_type`](exemplars/syntax/at_type.gandr) | `TYPE at ‹identifier›` | `type.application` | `at_type` | Keyword, Label |
+| [`path_type`](exemplars/syntax/path_type.gandr) | `Path ( ⦅ Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆? , TYPE , TYPE ‖ TYPE , EXPRESSION , EXPRESSION ⦆ )` | `type.application` | `path_type` * | TypeBuiltin, Other, Operator, Number |
+| [`type_application`](exemplars/syntax/type_application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? )` | `type.application` | `type_application` | Type, TypeVariable, Other, Operator |
+| [`type_path`](exemplars/syntax/type_path.gandr) | `TYPE . ‹type_identifier›` | `type.path` | `type_path` * | Other, Type |
+| [`parenthesized_type`](exemplars/syntax/parenthesized_type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | Other |
+| [`telescope_type`](exemplars/syntax/telescope_type.gandr) | `#{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | Other |
+| [`send_session_type`](exemplars/syntax/send_session_type.gandr) | `! TYPE . TYPE` | `type.arrow` | `send_session_type` | Operator, Other |
+| [`receive_session_type`](exemplars/syntax/receive_session_type.gandr) | `? TYPE . TYPE` | `type.arrow` | `receive_session_type` | Operator, Other |
+| [`end_session_type`](exemplars/syntax/end_session_type.gandr) | `end` | `type.atom` | `end_session_type` | Keyword |
+| [`labelled_sum_type`](exemplars/syntax/labelled_sum_type.gandr) | `+ { ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `labelled_sum_type` * | Operator, Other |
+| [`lazy_record_type`](exemplars/syntax/lazy_record_type.gandr) | `& { ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `lazy_record_type` * | Operator, Other |
+| [`mu_session_type`](exemplars/syntax/mu_session_type.gandr) | `mu ‹type_variable› . TYPE` | `type.arrow` | `mu_session_type` | Keyword, TypeVariable, Other |
+| [`primitive_type`](exemplars/syntax/primitive_type.gandr) | `Any ‖ Unknown ‖ Never ‖ Boolean ‖ Integer ‖ u32 ‖ u64 ‖ i32 ‖ i64 ‖ f32 ‖ f64 ‖ Char ‖ String ‖ Symbol ‖ Unit ‖ Void` | `type.atom` | `primitive_type` | TypeBuiltin |
+| [`unknown_type`](exemplars/syntax/unknown_type.gandr) | `?` | `type.atom` | `unknown_type` * | TypeBuiltin |
+| [`type_identifier`](exemplars/syntax/type_identifier.gandr) | `‹type_identifier›` | `type.atom` | `type_identifier` | Type |
+| [`type_variable`](exemplars/syntax/type_variable.gandr) | `‹type_variable›` | `type.atom` | `type_variable` | TypeVariable |
+| [`capability_type`](exemplars/syntax/capability_type.gandr) | `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` | `type.atom` | `capability_type` * | TypeBuiltin, Other, Number, Member |
+| [`number.type`](exemplars/syntax/number.type.gandr) | `‹number›` | `type.atom` | `number` | Number |
 
-## `instantiation` — 6 rules
+## `instantiation` — 5 rules
 
 | Rule | Form | Group | Kind | Roles |
 | ---- | ---- | ----- | ---- | ----- |
-| `instantiation.type` | `TYPE` | `expression.atom` | `instantiation_expression` | — |
-| `instantiation.direction.descent` | `<` | `expression.atom` | `instantiation_expression` | Operator |
-| `instantiation.direction.productivity` | `>` | `expression.atom` | `instantiation_expression` | Operator |
-| `instantiation.named_measure` | `‹identifier› <` | `expression.atom` | `instantiation_expression` | VariableParam, Operator |
-| `instantiation.explicit` | `‹identifier› = EXPRESSION` | `expression.atom` | `instantiation_expression` | VariableParam, Other |
-| `instantiation.tail` | `tail` | `expression.atom` | `instantiation_expression` | Keyword |
+| [`instantiation.direction.descent`](exemplars/syntax/instantiation.direction.descent.gandr) | `<` | `expression.atom` | `instantiation_expression` | Operator |
+| [`instantiation.direction.productivity`](exemplars/syntax/instantiation.direction.productivity.gandr) | `>` | `expression.atom` | `instantiation_expression` | Operator |
+| [`instantiation.named_measure`](exemplars/syntax/instantiation.named_measure.gandr) | `‹identifier› <` | `expression.atom` | `instantiation_expression` | VariableParam, Operator |
+| [`instantiation.explicit`](exemplars/syntax/instantiation.explicit.gandr) | `‹identifier› = EXPRESSION` | `expression.atom` | `instantiation_expression` | VariableParam, Other |
+| [`instantiation.tail`](exemplars/syntax/instantiation.tail.gandr) | `tail` | `expression.atom` | `instantiation_expression` | Keyword |
 
 ## `module_member` — 4 rules
 
 | Rule | Form | Group | Kind | Roles |
 | ---- | ---- | ----- | ---- | ----- |
-| `module_definition_member` | `def ‹identifier› ⦅ @[ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ; ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? ⟨block⟩ ⦆` | `item.singleton` | `module_declaration` | Keyword, FunctionDef, Other, VariableParam, TypeVariable, Type, Operator, VariableDef |
-| `attributed_module_member` | `⟨attribute_block⟩ ⦅ ⟨attribute_block⟩ ⦆* ⦅ ⟨module_definition_member⟩ ‖ ⟨module_type_member⟩ ⦆` | `item.singleton` | `module_declaration` | Other, Keyword, FunctionDef, VariableParam, TypeVariable, Type, Operator, VariableDef |
-| `module_type_member` | `type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? = TYPE ;` | `item.singleton` | `module_declaration` | Keyword, Type, Other, TypeVariable |
-| `nested_module_member` | `module ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ) ⦆ ‖ :> ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ) ⦆ ⦆? { ⦅ MODULE_MEMBER ⦆* }` | `item.singleton` | `module_declaration` | Keyword, VariableDef, Type, Other, Member, TypeVariable, Operator |
+| [`module_definition_member`](exemplars/syntax/module_definition_member.gandr) | `def ‹identifier› ⦅ @[ ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ : TYPE ⦆* ⦅ , ⦆? ⦆? ] ⦆? ⦅ : TYPE ; ‖ = EXPRESSION ; ‖ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? ⟨block⟩ ⦆` | `item.singleton` | `module_declaration` | Keyword, FunctionDef, Other, VariableParam, TypeVariable, Type, Operator, VariableDef |
+| [`attributed_module_member`](exemplars/syntax/attributed_module_member.gandr) | `⟨attribute_block⟩ ⦅ ⟨attribute_block⟩ ⦆* ⦅ ⟨module_definition_member⟩ ‖ ⟨module_type_member⟩ ⦆` | `item.singleton` | `module_declaration` | Other, Keyword, FunctionDef, VariableParam, TypeVariable, Type, Operator, VariableDef |
+| [`module_type_member`](exemplars/syntax/module_type_member.gandr) | `type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? = TYPE ;` | `item.singleton` | `module_declaration` | Keyword, Type, Other, TypeVariable |
+| [`nested_module_member`](exemplars/syntax/nested_module_member.gandr) | `module ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ) ⦆ ‖ :> ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ) ⦆ ⦆? { ⦅ MODULE_MEMBER ⦆* }` | `item.singleton` | `module_declaration` | Keyword, VariableDef, Type, Other, Member, TypeVariable, Operator |
 
-## Internal — 1 rule
+## Internal — 12 rules
 
-A rule whose every reading passes a tile the labeler reads as layout: layout takes no mold, so no source molds the rule.
+A rule no source can mold, with the reason and what the reason is read from: the grammar's forms, the labeler over a tile's own text, or a parser probe. These rules have no exemplar.
 
-| Rule | Sort | Form | Layout tile |
-| ---- | ---- | ---- | ----------- |
-| `block_comment` | item | `/* ⦅ block_comment ‖ block_comment_content ⦆* */` | `/*` |
+| Rule | Sort | Form | Reason | Read from |
+| ---- | ---- | ---- | ------ | --------- |
+| `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
+| `constructor.pattern` | pattern | `‹constructor›` | every reading is read by `constructor_pattern`, which is committed instead | grammar |
+| `boolean.pattern` | pattern | `true ‖ false` | every reading is read by `literal_pattern`, which is committed instead | grammar |
+| `number.pattern` | pattern | `‹number›` | every reading is read by `literal_pattern`, which is committed instead | grammar |
+| `typed_number.pattern` | pattern | `‹typed_number›` | every reading is read by `literal_pattern`, which is committed instead | grammar |
+| `string.pattern` | pattern | `" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* "` | every reading is read by `literal_pattern`, which is committed instead | grammar |
+| `escape_sequence` | expression | `‹escape_sequence›` | no probe molds it: `escape_sequence` is lexed only where another rule's tile takes it | parser probe |
+| `block_comment` | item | `/* ⦅ block_comment ‖ block_comment_content ⦆* */` | every reading passes `/*`, which is layout | labeler |
+| `shell_list` | expression | `shell_or ⦅ list_operator shell_or ⦆* ⦅ list_operator ⦆?` | its one required word `shell_or` is read as a class by `identifier.expression` | labeler |
+| `or_expression` | expression | `shell_and ⦅ \|\| shell_and ⦆*` | its one required word `shell_and` is read as a class by `identifier.expression` | labeler |
+| `and_expression` | expression | `pipeline_operand ⦅ && pipeline_operand ⦆*` | its one required word `pipeline_operand` is read as a class by `identifier.expression` | labeler |
+| `negation` | expression | `negation` | its one required word `negation` is read as a class by `identifier.expression` | labeler |
 
 ## Attributes — 11 attributes
 
-Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes.
+Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
 
 | Attribute | Payload |
 | --------- | ------- |
-| `checks` | no payload |
-| `owes` | an integer payload |
-| `refuses` | a text payload |
-| `runs` | a text payload |
-| `normalizes` | a text payload |
-| `doc` | a text payload |
-| `explicit_exits` | no payload |
-| `explicit_runs` | no payload or the text "effects" |
-| `respects` | a declared name or a tuple of declared names |
-| `entry` | a declared name or a tuple of declared names |
-| `form` | one of the words `explicit`, `sugared` |
+| [`checks`](exemplars/attributes/checks.gandr) | no payload |
+| [`owes`](exemplars/attributes/owes.gandr) | an integer payload |
+| [`refuses`](exemplars/attributes/refuses.gandr) | a text payload |
+| [`runs`](exemplars/attributes/runs.gandr) | a text payload |
+| [`normalizes`](exemplars/attributes/normalizes.gandr) | a text payload |
+| [`doc`](exemplars/attributes/doc.gandr) | a text payload |
+| [`explicit_exits`](exemplars/attributes/explicit_exits.gandr) | no payload |
+| [`explicit_runs`](exemplars/attributes/explicit_runs.gandr) | no payload or the text "effects" |
+| [`respects`](exemplars/attributes/respects.gandr) | a declared name or a tuple of declared names |
+| [`entry`](exemplars/attributes/entry.gandr) | a declared name or a tuple of declared names |
+| [`form`](exemplars/attributes/form.gandr) | one of the words `explicit`, `sugared` |

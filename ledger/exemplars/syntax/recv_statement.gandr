@@ -1,0 +1,2 @@
+/// `recv_statement`: a receipt from a session endpoint, bound.
+recv(desk) as task ;

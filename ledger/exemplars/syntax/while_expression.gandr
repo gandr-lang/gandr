@@ -1,0 +1,5 @@
+/// `while_expression`: a while loop.
+def until_done(n : Integer) -> -F Integer {
+  while n > 0 { return n } ;
+  return 0
+}

@@ -1,0 +1,5 @@
+/// `drop_expression`: a drop of a shared endpoint.
+def dropped() -> -F Unit {
+  fork (seat : end) { close(seat) } as desk;
+  drop(desk)
+}

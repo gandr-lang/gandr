@@ -1,0 +1,2 @@
+/// `subshell`: a shell subshell.
+def greeted = #!{ [ echo hi ]; } ;

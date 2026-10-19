@@ -1,0 +1,2 @@
+/// `double_quoted_string`: a double-quoted shell string.
+def greeting = #!{ echo "hello world"; } ;

@@ -752,6 +752,46 @@ fn the_syntax_ledger_is_written_and_reproduced()
 }
 
 #[test]
+fn the_exemplars_verify_and_a_stray_one_is_named()
+{
+    let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ledger/exemplars");
+    let (ledger, exemplars) = (Path::new("ledger"), Path::new("exemplars"));
+
+    let clean = ran(gandr(&[ledger, exemplars, &committed]));
+    assert_eq!(code(&clean), Code(0_i32), "{}", stdout(&clean));
+    assert!(
+        stdout(&clean).ends_with(" exemplars verified, 0 findings\n"),
+        "{}",
+        stdout(&clean)
+    );
+
+    let scratch = Scratch::new(Path::new("exemplars"));
+    for folder in ["syntax", "attributes"] {
+        for entry in std::fs::read_dir(committed.join(folder)).expect("the folder lists") {
+            let source = entry.expect("the entry reads").path();
+            let name = source.file_name().expect("an exemplar is a file");
+            let text = std::fs::read_to_string(&source).expect("the exemplar reads");
+            let _path = scratch.file(&Path::new(folder).join(name), Text::from(text.as_str()));
+        }
+    }
+    let stray = scratch.file(
+        Path::new("syntax/unknown_rule.gandr"),
+        Text::from("/// `unknown_rule`: no such rule.\ndef answer = 42 ;\n"),
+    );
+    let found = ran(gandr(&[ledger, exemplars, &scratch.0]));
+    assert_eq!(code(&found), Code(1_i32), "{}", stderr(&found));
+    assert!(
+        stdout(&found).starts_with(&format!(
+            "{}: names no committed rule or registered attribute\n",
+            stray.display()
+        )),
+        "{}",
+        stdout(&found)
+    );
+    assert!(stdout(&found).ends_with(" exemplars verified, 1 finding\n"));
+}
+
+#[test]
 fn every_width_prints_the_serial_run()
 {
     let scratch = Scratch::new(Path::new("widths"));

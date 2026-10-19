@@ -1,0 +1,2 @@
+/// `list_operator`: a shell list operator.
+def background = #!{ sleep 1 & } ;

@@ -1,0 +1,4 @@
+/// `loop_expression`: a loop.
+def spin(n : Integer) -> -F Integer {
+  loop { tick(n); }
+}
