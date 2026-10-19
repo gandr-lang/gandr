@@ -80,7 +80,7 @@ crates/
 ├── workflow-build-state/          the `build-state` binary: build state kept to one build's units
 ├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
 ├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: what specifications cost the tests
-├── workflow-sweep/                the corpus sources a sweep test visits: a stated sample per pull request, the whole corpus nightly
+├── workflow-sweep/                the corpus sources a sweep test visits: a stated sample per pull request, the whole corpus over the nightly rotation
 └── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings
 ```
 

@@ -7,11 +7,12 @@
 name: Nightly
 
 # Every sweep over its whole input, which the merge queue samples: the
-# `sweeps` nextest profile, plain and with specifications enforced (`mise run
-# ci:sweeps-plain`, `mise run ci:sweeps-enforcing`). Daily on main when main
-# moved since the last successful run; a failure is a red run on main, never
-# a blocked queue. A dispatch always runs. Beside them, every day, each CI
-# lane's median job time against its budget.
+# `nightly` nextest profile with specifications enforced (`mise run
+# ci:sweeps-nightly`), the four costliest sweeps over the night's slice of
+# the corpus. Daily on main when main moved since the last successful run; a
+# failure is a red run on main, never a blocked queue. A dispatch always
+# runs. Beside them, every day, each CI lane's median job time against its
+# budget. The whole workflow is held to fifteen minutes summed over its jobs.
 on:
   schedule:
     - cron: "0 4 * * *"
@@ -170,22 +171,21 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: gh run list --workflow nightly.yml --branch main --status success --limit 1 --json headSha --jq '"stale=" + ((.[0].headSha // "") != env.GITHUB_SHA | tostring)' >> "$GITHUB_OUTPUT"
 
-  # Each lane restores the ci.yml test state its task builds on and runs the
-  # task; the job sets which. The enforcing half reuses main's enforcing
-  # state; the plain half starts from the plain-only lane's state and builds
-  # the rest of the plain test graph.
-  sweeps-enforcing:
-    name: sweep every input, specifications enforced
-    needs: &nightly-needs [ci-image-ref, freshness]
-    if: &nightly-lane ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') }}
+  # The sweeps restore main's enforcing test state, which Cargo's
+  # fingerprints bring up to date, and run the nightly task. The plain build
+  # of the whole test graph costs six minutes on its own; the sweeps run
+  # enforced alone, as every pull-request lane runs their samples.
+  sweeps:
+    name: sweep the night's inputs, specifications enforced
+    needs: [ci-image-ref, freshness]
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') }}
     runs-on: *linux
     permissions: *image-read-permissions
     container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
-    timeout-minutes: 60
+    timeout-minutes: 15
     env:
       CI_BUILD_STATE: cargo-test-enforcing
-      NIGHTLY_TASK: ci:sweeps-enforcing
-    steps: &nightly-steps
+    steps:
       - *git-checkout
       - *trust-workspace
       - *install-policy-tools
@@ -194,21 +194,8 @@ jobs:
       - *restore-test-state
       - *unpack-build-state
       - *fetch-dependencies
-      - name: run the whole lane
-        run: mise run "$NIGHTLY_TASK"
-
-  sweeps-plain:
-    name: sweep every input
-    needs: *nightly-needs
-    if: *nightly-lane
-    runs-on: *linux
-    permissions: *image-read-permissions
-    container: *ci-image # zizmor: ignore[unpinned-images]
-    timeout-minutes: 60
-    env:
-      CI_BUILD_STATE: cargo-test-plain-only
-      NIGHTLY_TASK: ci:sweeps-plain
-    steps: *nightly-steps
+      - name: run the night's sweeps
+        run: mise run ci:sweeps-nightly
 
   # Each lane's median job time over the newest ten merge-queue and
   # pull-request runs of ci.yml against its budget, as the job summary and on

@@ -1,17 +1,21 @@
 //! **Sweeps**: the corpus sources a sweep test visits. A sweep drives the
 //! whole corpus through one feature — typing and erasing every source,
 //! formatting it, molding every token drop — and runs in two budgets: a
-//! stated sample on every pull request and every merge-queue entry, plain
-//! and with specifications enforced, within the 30 s every test is held to,
-//! and the whole corpus nightly under the `sweeps` nextest profile.
+//! stated sample on every pull request and every merge-queue entry, with
+//! specifications enforced, within the 30 s every test is held to; and whole
+//! under the `nightly` nextest profile, where the costliest sweeps visit a
+//! rotating slice of the corpus each night and the rest visit all of it. The
+//! `sweeps` profile visits the whole corpus in every sweep at once.
 //!
 //! - [`coverage`] reads which budget a run is in from the nextest profile.
 //! - [`corpus`] walks the corpus and names each source's class.
 //! - [`changed`] lists the corpus sources a change touches.
 //! - [`sample`] draws a sample's hashed, stratified slice.
+//! - [`rotation`] names the night's slice of a rotating sweep.
 //!
 //! A sweep test asks [`Sweep::asked`] once, filters [`corpus::sources`] to
-//! its candidates, and visits what [`Sweep::visit`] returns:
+//! its candidates, and visits what [`Sweep::visit`] returns, or what
+//! [`Sweep::visit_rotating`] returns when it rotates nightly:
 //!
 //! ```no_run
 //! use gandr_workflow_sweep::Sample;
@@ -40,10 +44,11 @@
 //! day.
 //!
 //! **The profile is the knob.** nextest names the running profile to every
-//! test in `NEXTEST_PROFILE`; the `sweeps` profile means the whole corpus and
-//! every other profile, or a run outside nextest, the sample. A sweep is
-//! selected by the `sweeps` module it sits in, so that profile's filter names
-//! no test. The alternative was a variable per lane, which a task forgets to
+//! test in `NEXTEST_PROFILE`; the `sweeps` profile means the whole corpus, the
+//! `nightly` profile the whole corpus over its rotation, and every other
+//! profile, or a run outside nextest, the sample. A sweep is selected by the
+//! `sweeps` module it sits in, so neither whole profile's filter names a test.
+//! The alternative was a variable per lane, which a task forgets to
 //! set and a local run never sets.
 //!
 //! **A hashed slice at a fixed size.** A sample ranks its candidates by the
@@ -73,12 +78,31 @@
 //! base's order — the invariant `gandr-surface-format` checks on every text
 //! it returns — so every sweep reads it as before, and it leaves the change.
 //! A corpus-wide layout then keeps every sample at its stated size; the
-//! nightly `sweeps` profile, visiting every source, is the backstop. The
-//! alternative was every touched file in, which put the corpus's layout pass
-//! past the 30 s bound in every sample at once (#492).
+//! nightly profile, visiting every source over its rotation, is the backstop.
+//! The alternative was every touched file in, which put the corpus's layout
+//! pass past the 30 s bound in every sample at once (#492).
+//!
+//! **A rotating cover nightly.** The whole nightly run is held to fifteen
+//! minutes summed over its jobs. Four sweeps cost more than that alone:
+//! typing, erasing, the token drops and the table verdicts check the whole
+//! text at every keystroke or token, so each costs its source's length
+//! squared. The erasure, the token drops and the table verdicts each visit one
+//! of [`NIGHTS`] slices of the corpus a night, the slice a hash of the
+//! sweep's name and the source's corpus path ([`Rotation::holds`]). The typing
+//! cannot: its costliest source alone types for longer than the budget, so it
+//! types every source each night, opened whole up to the night's part and
+//! typed through it, the parts cut so each costs about a [`NIGHTS`]th
+//! ([`Rotation::part`]). Either way the night is the UTC day, every keystroke
+//! and every token is visited within [`NIGHTS`] consecutive nights, the run
+//! prints the night it visited, and `GANDR_SWEEP_NIGHT` replays it. Every
+//! other sweep visits the whole corpus every night. The alternatives were a
+//! stride over the keystrokes, which never visits the text between its steps;
+//! shards across jobs, which each pay the build again inside one summed
+//! budget; and retiring a sweep, which no pull-request lane covers whole.
 //!
 //! **Reversal**: a runner that takes the whole sweeps between nightlies, or
-//! nextest's own test partitioning by input, makes the sample unnecessary.
+//! nextest's own test partitioning by input, makes the sample and the
+//! rotation unnecessary.
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-sweep/README.md).
 
@@ -88,6 +112,7 @@ pub mod changed;
 pub mod corpus;
 pub mod coverage;
 pub mod error;
+pub mod rotation;
 pub mod sample;
 
 use anodized::spec;
@@ -98,15 +123,25 @@ pub use crate::corpus::CorpusName;
 pub use crate::corpus::Source;
 pub use crate::coverage::Coverage;
 pub use crate::error::SweepError;
+pub use crate::rotation::Held;
+pub use crate::rotation::NIGHTS;
+pub use crate::rotation::Night;
+pub use crate::rotation::Offset;
+pub use crate::rotation::Part;
+pub use crate::rotation::Rotation;
+pub use crate::rotation::Slice;
+pub use crate::rotation::Text;
 pub use crate::sample::Sample;
 pub use crate::sample::SampleName;
 pub use crate::sample::SampleSize;
 
 /// What a run asks a sweep to visit: its coverage, and, when sampled, the
-/// sources the change touches.
+/// sources the change touches, and, when whole, the slice a rotating sweep
+/// visits.
 ///
 /// # Specification
-/// - provides: [`Sweep::visit`], the one selection every sweep test applies.
+/// - provides: [`Sweep::visit`] and [`Sweep::visit_rotating`], the selections
+///   every sweep test applies.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Sweep
 {
@@ -115,6 +150,10 @@ pub struct Sweep
     /// The changed corpus sources; empty under [`Coverage::Full`], which
     /// visits every one.
     changed: Changed,
+    /// The slice a rotating sweep visits under [`Coverage::Full`];
+    /// [`Rotation::Whole`] under [`Coverage::Sampled`], whose sample draws
+    /// from every source.
+    rotation: Rotation,
 }
 
 impl Sweep
@@ -124,10 +163,13 @@ impl Sweep
     /// # Specification
     /// - requires: when sampled, as [`Changed::asked`].
     /// - ensures: the coverage [`Coverage::asked`] reads; when sampled, the
-    ///   change [`Changed::asked`] lists against the corpus directory.
+    ///   change [`Changed::asked`] lists against the corpus directory and the
+    ///   whole rotation; when full, no change and the rotation
+    ///   [`Rotation::asked`] reads.
     /// - provides: what a sweep test reads once before choosing its inputs.
     /// - fails: [`SweepError::Walk`] when the corpus directory cannot be
-    ///   resolved, and [`SweepError::Git`] when the change cannot be listed.
+    ///   resolved, [`SweepError::Git`] when the change cannot be listed, and
+    ///   [`SweepError::Night`] when the night cannot be read.
     /// - panics: none.
     /// - executable: none — the outcome is the environment's and Git's.
     ///
@@ -142,14 +184,22 @@ impl Sweep
     pub fn asked() -> Result<Self, SweepError>
     {
         let coverage = Coverage::asked();
-        let changed = match coverage {
-            Coverage::Full => Changed::default(),
-            Coverage::Sampled => Changed::asked(&corpus::directory()?)?,
+        let (changed, rotation) = match coverage {
+            Coverage::Full => (Changed::default(), Rotation::asked()?),
+            Coverage::Sampled => {
+                let changed = Changed::asked(&corpus::directory()?)?;
+                (changed, Rotation::Whole)
+            },
         };
-        Ok(Self { coverage, changed })
+        Ok(Self {
+            coverage,
+            changed,
+            rotation,
+        })
     }
 
-    /// A sweep of `coverage` over a change touching `changed`.
+    /// A sweep of `coverage` over a change touching `changed`, rotating as
+    /// `rotation` says when full.
     ///
     /// # Specification
     /// trivial.
@@ -158,9 +208,14 @@ impl Sweep
     pub const fn new(
         coverage: Coverage,
         changed: Changed,
+        rotation: Rotation,
     ) -> Self
     {
-        Self { coverage, changed }
+        Self {
+            coverage,
+            changed,
+            rotation,
+        }
     }
 
     /// The budget the run is in.
@@ -172,6 +227,18 @@ impl Sweep
     pub const fn coverage(&self) -> Coverage
     {
         self.coverage
+    }
+
+    /// The slice a rotating sweep visits when full; a rotating sweep prints
+    /// it, so its failure names the night it visited.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn rotation(&self) -> Rotation
+    {
+        self.rotation
     }
 
     /// The candidates the sweep visits: every one under [`Coverage::Full`],
@@ -202,6 +269,42 @@ impl Sweep
             Coverage::Sampled => sample.select(candidates, &self.changed),
         }
     }
+
+    /// The candidates a rotating sweep visits: those the night's slice holds
+    /// under [`Coverage::Full`], `sample`'s selection otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: under [`Coverage::Full`], exactly the candidates
+    ///   [`Rotation::holds`] for `sample`'s name, every one under
+    ///   [`Rotation::Whole`]; [`Sample::select`] over the change otherwise.
+    /// - provides: the sources a sweep too costly to visit whole every night
+    ///   visits, in the candidates' order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nightly sweep over the corpus on [`NIGHTS`]
+    ///   consecutive nights, a whole one and a sampled one; a rotation applied
+    ///   to a sampled run or ignored by a full one changes a count.
+    /// - witness: `tests::a_rotating_sweep_covers_the_corpus_over_its_nights`
+    #[spec(ensures: |ret| self.coverage != Coverage::Full || ret.len() == candidates.iter().filter(|candidate| self.rotation.holds(sample.name, candidate) == Held::Tonight).count())]
+    #[inline]
+    #[must_use]
+    pub fn visit_rotating(
+        &self,
+        sample: Sample,
+        candidates: &[Source],
+    ) -> Vec<Source>
+    {
+        match self.coverage {
+            Coverage::Full => candidates
+                .iter()
+                .filter(|candidate| self.rotation.holds(sample.name, candidate) == Held::Tonight)
+                .cloned()
+                .collect(),
+            Coverage::Sampled => sample.select(candidates, &self.changed),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -209,6 +312,9 @@ mod tests
 {
     use super::Changed;
     use super::Coverage;
+    use super::NIGHTS;
+    use super::Night;
+    use super::Rotation;
     use super::Sample;
     use super::SampleName;
     use super::SampleSize;
@@ -223,11 +329,14 @@ mod tests
             name: SampleName("a sweep"),
             size: SampleSize(3),
         };
+        let tonight = Rotation::Night(Night(0));
         assert_eq!(
-            Sweep::new(Coverage::Full, Changed::default()).visit(sample, &corpus),
-            corpus
+            Sweep::new(Coverage::Full, Changed::default(), tonight).visit(sample, &corpus),
+            corpus,
+            "a sweep that does not rotate visits everything on every night"
         );
-        let sampled = Sweep::new(Coverage::Sampled, Changed::default()).visit(sample, &corpus);
+        let sampled = Sweep::new(Coverage::Sampled, Changed::default(), Rotation::Whole)
+            .visit(sample, &corpus);
         assert!(
             sampled.len() < corpus.len() && sampled.len() >= 3,
             "{} of {}",
@@ -236,5 +345,52 @@ mod tests
         );
         let asked = Sweep::asked().expect("the run's sweep resolves");
         assert_eq!(asked.coverage(), Coverage::asked());
+    }
+
+    #[test]
+    fn a_rotating_sweep_covers_the_corpus_over_its_nights()
+    {
+        let corpus = sources().expect("the corpus reads");
+        let sample = Sample {
+            name: SampleName("a sweep"),
+            size: SampleSize(3),
+        };
+        let mut visits = 0_usize;
+        let mut covered = alloc::collections::BTreeSet::new();
+        for night in 0 .. NIGHTS {
+            let sweep = Sweep::new(
+                Coverage::Full,
+                Changed::default(),
+                Rotation::Night(Night(night)),
+            );
+            let visited = sweep.visit_rotating(sample, &corpus);
+            assert!(
+                visited.len() < corpus.len(),
+                "night {night} visits a slice: {} of {}",
+                visited.len(),
+                corpus.len()
+            );
+            visits = visits.saturating_add(visited.len());
+            covered.extend(visited.into_iter().map(|source| source.name));
+        }
+        assert_eq!(visits, corpus.len(), "no source is visited twice");
+        assert_eq!(covered.len(), corpus.len(), "every source is visited");
+        assert_eq!(
+            Sweep::new(Coverage::Full, Changed::default(), Rotation::Whole)
+                .visit_rotating(sample, &corpus),
+            corpus,
+            "the whole rotation visits every source"
+        );
+        let sampled = Sweep::new(
+            Coverage::Sampled,
+            Changed::default(),
+            Rotation::Night(Night(0)),
+        )
+        .visit_rotating(sample, &corpus);
+        assert_eq!(
+            sampled,
+            sample.select(&corpus, &Changed::default()),
+            "a sampled run draws its sample, whatever the night"
+        );
     }
 }

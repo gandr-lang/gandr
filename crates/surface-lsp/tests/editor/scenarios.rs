@@ -4,7 +4,9 @@
 //!
 //! The corpus scenarios and the random scripts are sweeps, in [`sweeps`]: each
 //! visits its stated sample under every pull-request profile and every source
-//! and every script under the `sweeps` profile, nightly.
+//! and every script under the `sweeps` profile; nightly, the erasure visits
+//! the night's slice of the corpus and the typing the night's part of every
+//! source.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -1284,6 +1286,7 @@ fn a_line_comment_holds_the_newline_closing_it_456()
 /// (#467).
 mod sweeps
 {
+    use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -1314,7 +1317,8 @@ mod sweeps
     /// The longest source the typing sweep's sample types, in bytes: typing
     /// costs a check per keystroke over the whole text, so a long source alone
     /// types for longer than the bound. A changed source past it is typed
-    /// nightly; the erasure and the hover sweep visit it on the pull request.
+    /// nightly, a part of it each night; the erasure and the hover sweep visit
+    /// it on the pull request.
     const TYPED_CEILING: Ceiling = Ceiling(1024);
 
     /// The erasure's sample: twenty-four sources, every keystroke held to the
@@ -1367,29 +1371,49 @@ mod sweeps
     #[derive(Clone, Copy, Debug)]
     struct Ceiling(u64);
 
+    /// How a corpus sweep spreads its whole over the nights of the `nightly`
+    /// profile.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Nightly
+    {
+        /// The night's slice of the sources, each visited whole.
+        Slice,
+        /// Every source, the night's part of each.
+        Part,
+    }
+
     /// The sources `sample` visits in this run, the longest first so the
-    /// longest starts at once. A sampled run draws from the sources no longer
-    /// than `ceiling`; the `sweeps` profile visits every source.
+    /// longest starts at once, and the rotation they are visited under. A
+    /// sampled run draws from the sources no longer than `ceiling`; the
+    /// `sweeps` profile visits every source whole, and the `nightly` profile
+    /// the night's slice of them or the night's part of each, as `nightly`
+    /// says.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the visited sources, sorted longest first.
+    /// - ensures: the rotation [`Sweep::asked`] reads, and the visited sources
+    ///   sorted longest first: under [`Nightly::Slice`] what
+    ///   [`Sweep::visit_rotating`] returns, under [`Nightly::Part`] what
+    ///   [`Sweep::visit`] returns.
     /// - provides: the sources each corpus sweep visits.
-    /// - panics: the corpus or the change cannot be read.
+    /// - panics: the corpus, the change or the night cannot be read.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every corpus sweep draws its sources through this; a
     ///   lost or misordered source changes what a sweep visits, which the
-    ///   sample's own witnesses in `gandr-workflow-sweep` pin.
+    ///   sample's and the rotation's own witnesses in `gandr-workflow-sweep`
+    ///   pin.
     /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
     /// - witness: `tests::editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful`
-    #[spec(ensures: |ret| ret.is_sorted_by(|longer, shorter| longer.text.len() >= shorter.text.len()))]
+    #[spec(ensures: |ret| ret.1.is_sorted_by(|longer, shorter| longer.text.len() >= shorter.text.len()))]
     fn visited(
         sample: Sample,
         ceiling: Ceiling,
-    ) -> Vec<Source>
+        nightly: Nightly,
+    ) -> (Rotation, Vec<Source>)
     {
         let sweep = Sweep::asked().expect("the run's sweep resolves");
+        eprintln!("{}", sweep.rotation());
         let candidates: Vec<_> = gandr_workflow_sweep::corpus::sources()
             .expect("the corpus reads")
             .into_iter()
@@ -1398,14 +1422,19 @@ mod sweeps
                     || std::fs::metadata(&source.path).is_ok_and(|meta| meta.len() <= ceiling.0)
             })
             .collect();
-        let mut sources = opened(&sweep.visit(sample, &candidates));
+        let chosen = match nightly {
+            Nightly::Slice => sweep.visit_rotating(sample, &candidates),
+            Nightly::Part => sweep.visit(sample, &candidates),
+        };
+        let mut sources = opened(&chosen);
         assert!(
-            sources.len() >= sample.size.0,
+            sweep.coverage() == gandr_workflow_sweep::Coverage::Full
+                || sources.len() >= sample.size.0,
             "the sample is drawn: {}",
             sources.len()
         );
         sources.sort_by_key(|source| core::cmp::Reverse(source.text.len()));
-        sources
+        (sweep.rotation(), sources)
     }
 
     /// The random scripts the run generates: [`SAMPLED_CASES`] from
@@ -1425,14 +1454,30 @@ mod sweeps
         }
     }
 
+    /// Every source of the run typed: from its start, or under the `nightly`
+    /// profile opened whole up to the night's part and typed through it, so
+    /// every keystroke of every source is typed once every few nights.
     #[test]
     fn typing_each_corpus_source_keeps_every_answer_faithful()
     {
-        let sources = visited(TYPED, TYPED_CEILING);
+        let (rotation, sources) = visited(TYPED, TYPED_CEILING, Nightly::Part);
         each_in_parallel(&sources, |source| {
-            let mut session =
-                Session::open(source.uri.clone(), Text(""), Typing::Assisted, Oracle::Line);
-            session.type_in(Text(&source.text));
+            let part = rotation.part(gandr_workflow_sweep::Text(&source.text));
+            let opening = source
+                .text
+                .get(.. part.start.0)
+                .expect("a part starts on a line");
+            let typed = source
+                .text
+                .get(part.start.0 .. part.end.0)
+                .expect("a part ends on a line");
+            let mut session = Session::open(
+                source.uri.clone(),
+                Text(opening),
+                Typing::Assisted,
+                Oracle::Line,
+            );
+            session.type_in(Text(typed));
             session.closes_over_streams();
         });
     }
@@ -1440,7 +1485,7 @@ mod sweeps
     #[test]
     fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
     {
-        let sources = visited(ERASED, Ceiling(u64::MAX));
+        let (_rotation, sources) = visited(ERASED, Ceiling(u64::MAX), Nightly::Slice);
         each_in_parallel(&sources, |source| {
             let mut session = Session::open(
                 source.uri.clone(),
@@ -1468,7 +1513,7 @@ mod sweeps
             sources
         }
         else {
-            visited(HOVERED, Ceiling(u64::MAX))
+            visited(HOVERED, Ceiling(u64::MAX), Nightly::Slice).1
         };
         let grammar = built_in().expect("the built-in grammar builds");
         let positions = AtomicUsize::new(0_usize);

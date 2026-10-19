@@ -1,13 +1,21 @@
 //! How much of its inputs a sweep visits: its sample under every
-//! pull-request profile, everything under the nightly one.
+//! pull-request profile, everything under the `sweeps` profile, and the night's
+//! slice of a rotating sweep's inputs under the nightly one.
 
 use anodized::spec;
 
 /// The nextest profile that runs every sweep whole.
 pub const SWEEPS_PROFILE: &str = "sweeps";
 
+/// The nextest profile the nightly workflow runs: every input a sweep visits
+/// is visited whole, and a rotating sweep visits the night's slice of its
+/// inputs ([`Rotation`]).
+///
+/// [`Rotation`]: crate::rotation::Rotation
+pub const NIGHTLY_PROFILE: &str = "nightly";
+
 /// The variable nextest names the running profile in.
-const PROFILE: &str = "NEXTEST_PROFILE";
+pub(crate) const PROFILE: &str = "NEXTEST_PROFILE";
 
 /// How much of its inputs a sweep visits.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -16,7 +24,8 @@ pub enum Coverage
     /// The stated sample: every pull-request profile, `cargo test`, and any
     /// run outside nextest.
     Sampled,
-    /// Every input: the `sweeps` profile, nightly.
+    /// Every input it visits whole: the `sweeps` profile, and the nightly one,
+    /// where a rotating sweep visits the night's slice.
     Full,
 }
 
@@ -31,20 +40,22 @@ impl Coverage
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Coverage::Full`] exactly under [`SWEEPS_PROFILE`].
+    /// - ensures: [`Coverage::Full`] exactly under [`SWEEPS_PROFILE`] and
+    ///   [`NIGHTLY_PROFILE`].
     /// - provides: the one knob between a sweep's two budgets.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the sweeps profile, each pull-request profile and an
-    ///   empty name; a prefix match or a default of full changes an answer.
-    /// - witness: `coverage::tests::only_the_sweeps_profile_runs_whole`
-    #[spec(ensures: |ret| (ret == Self::Full) == (profile.0 == SWEEPS_PROFILE))]
+    /// - hypothesis: L3 — the two whole profiles, each pull-request profile and
+    ///   an empty name; a prefix match, a lost whole profile or a default of
+    ///   full changes an answer.
+    /// - witness: `coverage::tests::only_the_whole_profiles_run_whole`
+    #[spec(ensures: |ret| (ret == Self::Full) == (profile.0 == SWEEPS_PROFILE || profile.0 == NIGHTLY_PROFILE))]
     #[inline]
     #[must_use]
     pub fn of(profile: Profile<'_>) -> Self
     {
-        if profile.0 == SWEEPS_PROFILE {
+        if profile.0 == SWEEPS_PROFILE || profile.0 == NIGHTLY_PROFILE {
             Self::Full
         }
         else {
@@ -67,7 +78,7 @@ impl Coverage
     /// # Adequacy
     /// - hypothesis: L3 — [`Coverage::of`] carries the decision; this reads the
     ///   variable nextest documents.
-    /// - witness: `coverage::tests::only_the_sweeps_profile_runs_whole`
+    /// - witness: `coverage::tests::only_the_whole_profiles_run_whole`
     #[inline]
     #[must_use]
     pub fn asked() -> Self
@@ -83,15 +94,17 @@ mod tests
     use super::Profile;
 
     #[test]
-    fn only_the_sweeps_profile_runs_whole()
+    fn only_the_whole_profiles_run_whole()
     {
         assert_eq!(Coverage::of(Profile("sweeps")), Coverage::Full);
+        assert_eq!(Coverage::of(Profile("nightly")), Coverage::Full);
         for profile in [
             "default",
             "ci",
             "ci-enforcing",
             "coverage",
             "sweeps-old",
+            "nightly-old",
             "",
         ] {
             assert_eq!(

@@ -8,7 +8,8 @@
 //! `gandr-surface-format` checks on every text it returns — and every sweep
 //! reads the source as it did before. Such a source leaves the change, so a
 //! layout pass over the corpus keeps the sample at its stated size; the
-//! nightly `sweeps` profile, which visits every source, is the backstop.
+//! nightly profile, which visits every source over its rotation, is the
+//! backstop.
 //! The alternative was listing every touched file, which puts a corpus-wide
 //! layout into every sample at once and past the 30 s bound (#492).
 
