@@ -5729,8 +5729,13 @@ impl Walk<'_, '_>
                 writes(Production("at_type"), Binding::Cons)
             },
             Former::WorldHold(_) => {
-                let _ = parts.text("hold ").piece(Binding::Prefix);
-                writes(Production("hold_expression"), Binding::Prefix)
+                // Parenthesized, as the surface writes it: bare at a block's
+                // head, `hold` opens a hold statement, `hold x = v ; …`.
+                let _ = parts.text("(hold ").piece(Binding::Prefix).text(")");
+                writes(
+                    Production("parenthesized_expression"),
+                    writes(Production("hold_expression"), Binding::Atom),
+                )
             },
             Former::Leta { .. } => {
                 let _ = parts
