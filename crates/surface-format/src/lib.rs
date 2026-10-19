@@ -8,9 +8,41 @@
 //! string, a shell block and a hole are copied byte for byte.
 //!
 //! The formatted text is parsed again before it is returned: its content
-//! digest must equal the source's and its tokens and comments must be the
-//! source's, or [`format`] refuses with [`FormatError::Changed`] and returns
-//! nothing.
+//! digest must equal the source's, its tokens and comments must be the
+//! source's, and each comment must belong to the node it belonged to, or
+//! [`format`] refuses with [`FormatError::Changed`] and returns nothing.
+//!
+//! # Every comment belongs to a node
+//!
+//! The parser places each comment among the children of the node it
+//! describes. [`comments`] reads that placement back as a record beside the
+//! tree: for each comment its [`CommentKind`] — line, block or
+//! documentation — its [`Role`] among its owner's children, its owner and the
+//! owner's cross-tree key (its top-level form's digest and its rank there),
+//! its source column and the width of its text. A comment on its own line
+//! before material of its owner leads it; one after material on that
+//! material's line trails it; one on its own line with nothing of its owner
+//! after it but a closing bracket dangles on it. [`format`] reads the record
+//! of the source and of its own text and refuses with
+//! [`Change::Attachment`] when a comment would leave its owner or change its
+//! role, so a layout that breaks a group or joins one moves each comment with
+//! the node it describes.
+//!
+//! - Choice: a record beside the tree, keyed by the owner's cross-tree key, so
+//!   the tree, its losslessness and every digest are untouched, and the record
+//!   read from the formatted text compares with the source's.
+//! - Alternative: comments re-homed into the tree as leading and trailing
+//!   trivia of tokens, as Rowan's green trees hold them, which every reader of
+//!   a form's children would have to learn.
+//! - Reversal: a reader that needs the attachment inside the tree, at which
+//!   point the parser places trivia there and the record reads it.
+//!
+//! Comment reflow is accounted for here and not built. A reflow pass would
+//! rewrap each comment's text at the page width — paragraph breaks and code
+//! fences kept, a URL never broken, where `rustfmt`'s `wrap_comments` goes
+//! wrong — running over the attached comments before layout and reading the
+//! column each comment is laid at and its width. No layout here rewraps a
+//! comment.
 //!
 //! # The form a source is spelled in
 //!
@@ -45,11 +77,14 @@
 //! | [`FormatOptions`] | the page width and the form                             |
 //! | [`Form`]          | the spelling a source is laid out in                    |
 //! | [`FormatError`]   | why a source was not formatted                          |
+//! | [`comments`]      | every comment of a source beside the node it belongs to |
+//! | [`Comment`]       | one comment, its owner, role, kind, column and width    |
 
 #![no_std]
 
 extern crate alloc;
 
+mod attach;
 mod layout;
 mod leaf;
 
@@ -73,6 +108,13 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 
+pub use crate::attach::Attachment;
+pub use crate::attach::Column;
+pub use crate::attach::Comment;
+pub use crate::attach::CommentKind;
+pub use crate::attach::Role;
+pub use crate::attach::Width;
+pub use crate::attach::comments;
 use crate::layout::Gap;
 use crate::leaf::Integrity;
 use crate::leaf::Leaf;
@@ -173,6 +215,8 @@ pub enum Change
     Meaning,
     /// The tokens or comments, or their order.
     Material,
+    /// A comment's owner or its role among the owner's children.
+    Attachment,
 }
 
 impl From<BuildError> for FormatError
@@ -228,6 +272,12 @@ impl fmt::Display for FormatError
             },
             Self::Changed(Change::Material) => {
                 write!(f, "formatting would change the source's tokens or comments")
+            },
+            Self::Changed(Change::Attachment) => {
+                write!(
+                    f,
+                    "formatting would move a comment off the node it belongs to"
+                )
             },
         }
     }
@@ -315,9 +365,10 @@ pub enum Layout
 ///
 /// # Specification
 /// - requires: `parsed` was parsed under `grammar`.
-/// - ensures: the text keeps every token and comment of the source, in order;
-///   each top-level form starts on a line of its own, and the source's blank
-///   lines between them are kept, one at most; a comment the source wrote on a
+/// - ensures: the text keeps every token and comment of the source, in order,
+///   each comment with the node it belongs to and in its role there; each
+///   top-level form starts on a line of its own, and the source's blank lines
+///   between them are kept, one at most; a comment the source wrote on a
 ///   top-level form's last line stays there, as does a separator ending a
 ///   top-level statement; the text ends in one line break unless it is empty,
 ///   and uses the line ending most of the source's breaks use. A form the
@@ -352,6 +403,7 @@ pub enum Layout
 /// - witness: `tests::format::a_source_split_evenly_between_endings_keeps_line_feeds`
 /// - witness: `tests::format::an_explicit_source_keeps_its_explicit_spelling`
 /// - witness: `tests::format::a_form_the_source_does_not_declare_is_refused`
+/// - witness: `tests::attach::a_layout_that_breaks_or_joins_a_group_keeps_each_comment_with_its_owner`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
 pub fn format(
@@ -569,8 +621,9 @@ impl Ending
     }
 }
 
-/// Check that `text` parses to the root digest of `parsed` and spells the
-/// tokens and comments of `leaves`, its leaves, in order.
+/// Check that `text` parses to the root digest of `parsed`, spells the
+/// tokens and comments of `leaves`, its leaves, in order, and keeps each
+/// comment with its owner in its role.
 ///
 /// # Specification
 /// trivial.
@@ -589,6 +642,15 @@ fn verify(
     let again = leaf::flatten(grammar, reparsed.tree(), reparsed.obligations());
     if material(leaves).ne(material(&again.leaves)) {
         return Err(FormatError::Changed(Change::Material));
+    }
+    let before = comments(parsed.tree());
+    let after = comments(reparsed.tree());
+    if before
+        .iter()
+        .map(Comment::attachment)
+        .ne(after.iter().map(Comment::attachment))
+    {
+        return Err(FormatError::Changed(Change::Attachment));
     }
     Ok(())
 }
