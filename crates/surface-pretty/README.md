@@ -102,8 +102,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The input is a source | [`former`](src/former.rs) |
 | Products, sums and tuples between their braces, native universe paths, break points, a body's statements breaking together, binder names, bounds | [`walk`](src/walk.rs) |
 
-The deferred golden rows, each with the former it needs, are tracked in [#206](https://github.com/gandr-lang/gandr/issues/206).
-
 ## License
 
 Apache-2.0 WITH LLVM-exception. See [Apache-2.0](../../LICENSE.Apache-2.0.txt) and the [LLVM exception](../../LICENSE.LLVM-exception.txt) at the repository root.

@@ -93,8 +93,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The user's configuration file | [`config`](src/config.rs) |
 | The global allocator | [`allocator`](src/allocator.rs) |
 
-The `gandr run` floor — the script-runner rows ported and those deferred — is tracked in [#208](https://github.com/gandr-lang/gandr/issues/208).
-
 ## License
 
 Apache-2.0 WITH LLVM-exception. The licence text is at the repository root.

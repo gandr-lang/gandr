@@ -87,8 +87,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | A declaration's type and documentation | [`typed`](src/typed.rs) |
 | Live match checkpoints | [`live_match`](src/live_match.rs) |
 
-The deferred behavioural floor — the named census and the live-match and pattern-hole suites — is tracked in [#211](https://github.com/gandr-lang/gandr/issues/211).
-
 ## License
 
 Apache-2.0 WITH LLVM-exception, the workspace licence; the text is at the repository root.

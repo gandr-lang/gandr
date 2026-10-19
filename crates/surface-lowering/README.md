@@ -111,8 +111,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Origins | [`origin`](src/origin.rs) |
 | References | [`src/lib.rs`](src/lib.rs) |
 
-The behavioural floor — the description suites, and the module and namespace tests held until their readers exist — is tracked in [#212](https://github.com/gandr-lang/gandr/issues/212).
-
 ## License
 
 Apache-2.0 WITH LLVM-exception. The licence text is at the repository root.

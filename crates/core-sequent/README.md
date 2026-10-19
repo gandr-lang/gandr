@@ -126,8 +126,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 Running a command — marks, fixpoints, effects, delimited control and temporary access — is `gandr-runtime-emitter`'s, whose `src/lower.rs` states the linear form and `src/host.rs` the control.
 
-The deferred behavioural floor of the L machine is tracked in [#200](https://github.com/gandr-lang/gandr/issues/200).
-
 ## License
 
 Apache-2.0 WITH LLVM-exception, the workspace licence; the text is at the repository root.
